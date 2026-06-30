@@ -8691,24 +8691,17 @@ def _beam_uls_flexure_audit_dataframe(flexure_preview_df: pd.DataFrame | None) -
 
 
 
-_BEAM_ULS_STATIC_FIG_WIDTH = 980
-_BEAM_ULS_STATIC_FIG_HEIGHT = 460
+_BEAM_ULS_STATIC_FIG_WIDTH = 1440
+_BEAM_ULS_STATIC_FIG_HEIGHT = 560
 
 
 def _render_beam_uls_static_plotly_figure(fig: go.Figure, *, caption: str | None = None) -> None:
-    """Render Beam/Girder ULS diagrams as compact static PNG.
+    """Render Beam/Girder ULS diagrams as wide static PNG review figures.
 
-    Streamlit Cloud can occasionally fail to fetch the lazily imported
-    frontend PlotlyChart JavaScript chunk after a deployment/browser-cache
-    mismatch.  Beam/Girder ULS diagrams are result-review graphics, so a static
-    PNG is an acceptable default and avoids the frontend dynamic-import failure.
-    The figure data and calculations are unchanged.
-
-    Keep the exported image aspect ratio compact.  Full-container image scaling
-    can stretch narrow Plotly exports to the app width and make the chart look
-    like a poster.  A fixed review-width PNG
-    preserves dashboard proportions while still keeping the solver-free static
-    rendering path.
+    Beam/Girder ULS diagrams are span-oriented engineering figures.  Export a
+    wide high-resolution PNG and let Streamlit scale it to the available content
+    width so station-by-station demand/capacity trends remain readable on the
+    Analysis workspace.  Figure data and engineering calculations are unchanged.
     """
 
     try:
@@ -8717,24 +8710,24 @@ def _render_beam_uls_static_plotly_figure(fig: go.Figure, *, caption: str | None
             autosize=False,
             width=_BEAM_ULS_STATIC_FIG_WIDTH,
             height=_BEAM_ULS_STATIC_FIG_HEIGHT,
-            margin=dict(l=76, r=30, t=78, b=86),
-            font=dict(size=11),
-            title_font=dict(size=17),
+            margin=dict(l=82, r=42, t=86, b=116),
+            font=dict(size=12),
+            title_font=dict(size=18),
             legend=dict(
-                font=dict(size=10),
+                font=dict(size=11),
                 orientation="h",
                 yanchor="top",
                 y=-0.18,
                 xanchor="center",
                 x=0.5,
-                itemwidth=46,
-                entrywidth=130,
+                itemwidth=62,
+                entrywidth=165,
                 entrywidthmode="pixels",
             ),
-            hoverlabel=dict(font=dict(size=11)),
+            hoverlabel=dict(font=dict(size=12)),
         )
-        fig.update_xaxes(tickfont=dict(size=10), title_font=dict(size=12))
-        fig.update_yaxes(tickfont=dict(size=10), title_font=dict(size=12))
+        fig.update_xaxes(tickfont=dict(size=11), title_font=dict(size=13))
+        fig.update_yaxes(tickfont=dict(size=11), title_font=dict(size=13))
         image_bytes = fig.to_image(
             format="png",
             width=_BEAM_ULS_STATIC_FIG_WIDTH,
@@ -8749,9 +8742,12 @@ def _render_beam_uls_static_plotly_figure(fig: go.Figure, *, caption: str | None
         st.caption(f"Chart export detail: {type(exc).__name__}")
         return
     try:
-        st.image(image_bytes, width=_BEAM_ULS_STATIC_FIG_WIDTH, caption=caption)
+        st.image(image_bytes, use_container_width=True, caption=caption)
     except TypeError:  # Streamlit compatibility for older image API
-        st.image(image_bytes, use_column_width=False, caption=caption)
+        try:
+            st.image(image_bytes, use_column_width=True, caption=caption)
+        except TypeError:
+            st.image(image_bytes, width=_BEAM_ULS_STATIC_FIG_WIDTH, caption=caption)
 
 
 BEAM_ULS_CHECK_TAB_LABELS = ["Flexure", "Shear", "Torsion", "Shear + Torsion"]
@@ -9713,15 +9709,17 @@ def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *,
             xaxis_title="Distance from left end of member (m)",
             yaxis_title="Demand / Capacity ratio",
             hovermode="x unified",
-            legend=dict(orientation="h", yanchor="bottom", y=-0.35, xanchor="center", x=0.5),
+            legend=dict(orientation="h", yanchor="top", y=-0.22, xanchor="center", x=0.5),
+            margin=dict(l=82, r=42, t=86, b=116),
+            height=_BEAM_ULS_STATIC_FIG_HEIGHT,
         )
         return fig
 
     plot_df = _beam_uls_combined_vt_plot_dataframe(vt_df)
     traces = [
-        ("Stress D/C", "Stress D/C value"),
-        ("Transverse D/C", "Transverse D/C value"),
-        ("Long. Al D/C", "Longitudinal D/C value"),
+        ("Stress D/C (V+T stress)", "Stress D/C value"),
+        ("Transverse D/C ((Av+2At)/s)", "Transverse D/C value"),
+        ("Longitudinal Al D/C", "Longitudinal D/C value"),
     ]
     has_trace = False
     if not plot_df.empty:
@@ -9736,9 +9734,9 @@ def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *,
                             y=values,
                             mode="lines+markers",
                             name=f"{trace_name} — {case_name}",
-                            line={"width": 3},
-                            marker={"size": 7},
-                            hovertemplate="x=%{x:.3f} m<br>D/C=%{y:.3f}<extra></extra>",
+                            line=dict(_BEAM_ULS_UTIL_LINE_STYLE.get(column, {"width": 3})),
+                            marker=dict(_BEAM_ULS_UTIL_MARKER_STYLE.get(column, {"size": 7})),
+                            hovertemplate=f"{trace_name}<br>x=%{{x:.3f}} m<br>D/C=%{{y:.3f}}<extra></extra>",
                         )
                     )
                     has_trace = True
@@ -9772,8 +9770,8 @@ def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *,
                         text=[f"Gov. D/C {dc:.3f}"],
                         textposition="bottom center" if dc >= 0.85 else "top center",
                         textfont={"size": 10},
-                        name="Gov. V+T",
-                        marker={"symbol": "diamond", "size": 11},
+                        name="Governing V+T",
+                        marker={"symbol": "diamond", "size": 12, "color": "#111827", "line": {"color": "#ffffff", "width": 1.5}},
                         hovertemplate="x=%{x:.3f} m<br>Governing D/C=%{y:.3f}<extra></extra>",
                     )
                 )
@@ -9792,8 +9790,9 @@ def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *,
         xaxis_title="Distance from left end of member (m)",
         yaxis_title="Demand / Capacity ratio",
         hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=-0.35, xanchor="center", x=0.5),
-        margin=dict(l=30, r=20, t=70, b=90),
+        legend=dict(orientation="h", yanchor="top", y=-0.22, xanchor="center", x=0.5),
+        margin=dict(l=82, r=42, t=86, b=116),
+        height=_BEAM_ULS_STATIC_FIG_HEIGHT,
     )
     return fig
 
@@ -10287,6 +10286,19 @@ _BEAM_ULS_DEMAND_MARKER_STYLE = {"color": "#1f77b4", "size": 7}
 # station resultants. Use this convention for future beam/girder design diagrams.
 _BEAM_ULS_CHECK_LINE_STYLE = {"color": "red", "dash": "dash", "width": 3}
 _BEAM_ULS_REFERENCE_LINE_STYLE = {"color": "orange", "dash": "dash", "width": 3}
+_BEAM_ULS_UTIL_STRESS_LINE_STYLE = {"color": "#2563eb", "width": 3}
+_BEAM_ULS_UTIL_TRANSVERSE_LINE_STYLE = {"color": "#0f766e", "width": 3}
+_BEAM_ULS_UTIL_LONGITUDINAL_LINE_STYLE = {"color": "#f59e0b", "width": 3, "dash": "dot"}
+_BEAM_ULS_UTIL_MARKER_STYLE = {
+    "Stress D/C value": {"size": 8, "symbol": "circle", "color": "#2563eb"},
+    "Transverse D/C value": {"size": 8, "symbol": "square", "color": "#0f766e"},
+    "Longitudinal D/C value": {"size": 9, "symbol": "triangle-up", "color": "#f59e0b"},
+}
+_BEAM_ULS_UTIL_LINE_STYLE = {
+    "Stress D/C value": _BEAM_ULS_UTIL_STRESS_LINE_STYLE,
+    "Transverse D/C value": _BEAM_ULS_UTIL_TRANSVERSE_LINE_STYLE,
+    "Longitudinal D/C value": _BEAM_ULS_UTIL_LONGITUDINAL_LINE_STYLE,
+}
 def _make_beam_uls_demand_figure(active_df: pd.DataFrame, *, column: str, title: str, y_label: str) -> go.Figure:
     plot_df = active_df[["Station x (m)", "Case Name", column]].copy()
     plot_df = plot_df[pd.to_numeric(plot_df["Station x (m)"], errors="coerce").notna()]
@@ -10326,8 +10338,9 @@ def _make_beam_uls_demand_figure(active_df: pd.DataFrame, *, column: str, title:
         title={"text": f"{title}<br><sup>Demand only — capacity curves planned</sup>"},
         xaxis_title="Distance from left end of member (m)",
         yaxis_title=y_label,
-        legend={"orientation": "h", "yanchor": "bottom", "y": -0.33, "xanchor": "center", "x": 0.5},
-        margin={"l": 60, "r": 30, "t": 70, "b": 85},
+        legend={"orientation": "h", "yanchor": "top", "y": -0.22, "xanchor": "center", "x": 0.5},
+        margin={"l": 82, "r": 42, "t": 86, "b": 116},
+        height=_BEAM_ULS_STATIC_FIG_HEIGHT,
     )
     fig.add_hline(y=0.0, line_width=1)
     return fig
@@ -11142,7 +11155,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                 _render_beam_uls_static_plotly_figure(
                     _make_beam_uls_combined_vt_utilization_figure(combined_vt_df, code_label=code_label)
                 )
-                st.caption("Combined V+T is plotted as utilization ratio versus station because Vu and Tu have different units. The red dashed line is the D/C = 1.0 check limit.")
+                st.caption("Combined V+T is plotted as utilization ratio versus station because Vu and Tu have different units. Stress D/C is the combined concrete stress interaction; Transverse D/C is the provided transverse reinforcement utilization. The red dashed line is the D/C = 1.0 check limit.")
             else:
                 st.info("Combined V+T utilization diagram is hidden until finite stress/transverse/longitudinal D/C source terms are ready.")
 
