@@ -3265,6 +3265,31 @@ def _report_qa_dashboard_cards(state: object) -> list[dict[str, object]]:
     ]
 
 
+def _render_report_qa_result_summary_alignment(state: object) -> None:
+    """Render the same decision snapshot and required actions used by Result Summary.
+
+    Report / QA is downstream of Analysis and Result Summary.  Keeping this
+    review block on the report page prevents a dangerous split-brain state where
+    Result Summary says REVIEW/FAIL but Report / QA only shows generic export
+    readiness.  The helper only reads stored result rows and does not invoke
+    solver actions.
+    """
+
+    rows = _results_governing_rows(state)
+    render_section_bar(
+        "Result Summary alignment",
+        "Same stored status, critical check basis, and governing rows used by Result Summary Overview. No calculation is triggered here.",
+        mark="R",
+    )
+    _render_results_executive_summary(rows, state)
+    render_section_bar(
+        "Required Actions",
+        "Same prioritized actions as Result Summary Overview. Resolve or document these items before report issue.",
+        mark="A",
+    )
+    _render_results_required_actions(state, rows)
+
+
 def render_report_qa_workspace() -> None:
     render_page_header(
         "Report / QA",
@@ -3275,8 +3300,9 @@ def render_report_qa_workspace() -> None:
         accent="blue",
     )
     render_metric_cards(_report_qa_dashboard_cards(st.session_state))
+    _render_report_qa_result_summary_alignment(st.session_state)
     render_section_bar(
-        "Report / QA workspace",
+        "Traceability / report tools",
         "Report and QA tools summarize stored results only; PMM, SLS, ULS, and verification solvers are not rerun here.",
         mark="Q",
     )
