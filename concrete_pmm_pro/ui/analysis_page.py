@@ -9693,6 +9693,37 @@ def _beam_uls_combined_vt_plot_dataframe(vt_df: pd.DataFrame | None) -> pd.DataF
     return plot_df
 
 
+
+def _beam_uls_combined_vt_should_plot_trace(plot_df: pd.DataFrame, column: str) -> bool:
+    """Return whether a V+T utilization trace should appear in the chart.
+
+    Longitudinal Al is a conditional check.  When it is not required/not active
+    for every design station, hide that trace and its legend entry so the chart
+    focuses on the governing stress and transverse-reinforcement checks.
+    """
+
+    if plot_df is None or plot_df.empty or column not in plot_df.columns:
+        return False
+    values = pd.to_numeric(plot_df.get(column), errors="coerce")
+    if not values.notna().any():
+        return False
+    if column == "Longitudinal D/C value":
+        if "Longitudinal status" not in plot_df.columns:
+            return True
+        statuses = plot_df.get("Longitudinal status", pd.Series(index=plot_df.index, dtype=object)).astype(str).str.upper().str.strip()
+        design_mask = ~plot_df.get("Station type", pd.Series(index=plot_df.index, dtype=object)).astype(str).eq("DIAGRAM BOUNDARY")
+        design_statuses = statuses[design_mask] if design_mask.any() else statuses
+        design_values = values[design_mask] if design_mask.any() else values
+        inactive_labels = {"", "-", "NONE", "NAN", "NOT ACTIVE", "NOT REQUIRED", "NO", "OPTIONAL"}
+        if not design_values.notna().any():
+            return False
+        if design_statuses.isin(inactive_labels).all():
+            return False
+        finite_design = design_values.dropna().astype(float)
+        if not finite_design.empty and finite_design.abs().max() <= 1.0e-12 and design_statuses.isin(inactive_labels | {"PASS"}).all():
+            return False
+    return True
+
 def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *, code_label: str) -> go.Figure:
     fig = go.Figure()
     if vt_df is None or vt_df.empty:
@@ -9717,15 +9748,17 @@ def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *,
 
     plot_df = _beam_uls_combined_vt_plot_dataframe(vt_df)
     traces = [
-        ("Stress D/C (V+T stress)", "Stress D/C value"),
-        ("Transverse D/C ((Av+2At)/s)", "Transverse D/C value"),
-        ("Longitudinal Al D/C", "Longitudinal D/C value"),
+        ("Stress D/C", "Stress D/C value"),
+        ("Transverse D/C", "Transverse D/C value"),
+        ("Long. Al D/C", "Longitudinal D/C value"),
     ]
     has_trace = False
     if not plot_df.empty:
         plot_df = plot_df.sort_values(["Case", "__x_m"], kind="stable")
         for case_name, case_df in plot_df.groupby("Case", sort=False):
             for trace_name, column in traces:
+                if not _beam_uls_combined_vt_should_plot_trace(case_df, column):
+                    continue
                 values = pd.to_numeric(case_df.get(column), errors="coerce")
                 if values.notna().any():
                     fig.add_trace(
@@ -9770,7 +9803,7 @@ def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *,
                         text=[f"Gov. D/C {dc:.3f}"],
                         textposition="bottom center" if dc >= 0.85 else "top center",
                         textfont={"size": 10},
-                        name="Governing V+T",
+                        name="Gov. V+T",
                         marker={"symbol": "diamond", "size": 12, "color": "#111827", "line": {"color": "#ffffff", "width": 1.5}},
                         hovertemplate="x=%{x:.3f} m<br>Governing D/C=%{y:.3f}<extra></extra>",
                     )
@@ -10175,7 +10208,7 @@ def _beam_uls_empty_workspace_html(selected_check: str) -> str:
 
 
 
-def _beam_uls_summary_cards(active_df: pd.DataFrame, *, workflow_label: str, code_label: str, flexure_preview_df: pd.DataFrame | None = None, shear_check_df: pd.DataFrame | None = None, torsion_check_df: pd.DataFrame | None = None) -> list[dict[str, object]]:
+def _beam_uls_summary_cards(active_df: pd.DataFrame, *, workflow_label: str, code_label: str, flexure_preview_df: pd.DataFrame | None = None, shear_check_df: pd.DataFrame | None = None, torsion_check_df: pd.DataFrame | None = None, combined_vt_df: pd.DataFrame | None = None) -> list[dict[str, object]]:
     if active_df.empty:
         return [
             {
@@ -10224,18 +10257,48 @@ def _beam_uls_summary_cards(active_df: pd.DataFrame, *, workflow_label: str, cod
         flexure_card_detail = f"{flexure_detail}; {flex_preview.get('Capacity', '-')}"
         shear_status_text = shear_overall_status if shear_result is not None else "NOT READY"
         if shear_result is not None:
-            if status_text == "FAIL" or shear_status_text == "FAIL" or torsion_status_text == "FAIL":
-                overall_value = "ULS PARTIAL CHECK — FAIL"
+            combined_result = _beam_uls_governing_combined_vt_row(combined_vt_df)
+            combined_status_text = str(combined_result.get("Status") or "REVIEW") if combined_result is not None else "NOT CALCULATED"
+            combined_available = combined_result is not None
+            combined_accept_statuses = {"PASS", "PASS — REVIEW", "BELOW THRESHOLD", "NOT APPLICABLE"}
+            torsion_accept_statuses = {"OPTIONAL", "BELOW THRESHOLD", "PASS"}
+            has_fail = (
+                status_text == "FAIL"
+                or shear_status_text == "FAIL"
+                or torsion_status_text == "FAIL"
+                or combined_status_text == "FAIL"
+            )
+            all_strength_checks_available = (
+                status_text in {"PASS", "FAIL", "REVIEW"}
+                and shear_result is not None
+                and torsion_result is not None
+                and combined_available
+            )
+            all_strength_checks_pass = (
+                status_text == "PASS"
+                and shear_status_text == "PASS"
+                and torsion_status_text in torsion_accept_statuses
+                and combined_status_text in combined_accept_statuses
+            )
+            if has_fail:
+                overall_value = "ULS STRENGTH CHECK — FAIL" if all_strength_checks_available else "ULS PARTIAL CHECK — FAIL"
                 overall_status = "danger"
-            elif status_text == "PASS" and shear_status_text == "PASS" and torsion_status_text in {"OPTIONAL", "BELOW THRESHOLD", "PASS"}:
-                overall_value = "ULS PARTIAL CHECK — PASS"
+            elif all_strength_checks_pass:
+                overall_value = "ULS STRENGTH CHECK — PASS"
                 overall_status = "ready"
+            elif all_strength_checks_available:
+                overall_value = "ULS STRENGTH CHECK — REVIEW"
+                overall_status = "warning"
             else:
                 overall_value = "ULS PARTIAL CHECK — REVIEW"
                 overall_status = "warning"
+            if combined_available:
+                combined_detail = f"combined V+T = {combined_status_text}"
+            else:
+                combined_detail = "combined V+T = not calculated"
             overall_detail = (
-                f"{len(active_df):,} active demand row(s). Flexure = {status_text}; shear = {shear_status_text}; torsion = {torsion_status_text}. "
-                "Combined V+T is reported in its own workspace when calculated; development-length/shop-drawing detailing remain project review items."
+                f"{len(active_df):,} active demand row(s). Flexure = {status_text}; shear = {shear_status_text}; torsion = {torsion_status_text}; {combined_detail}. "
+                "Development-length/shop-drawing detailing remain project review items."
             )
         else:
             overall_value = f"FLEXURE CHECK — {status_text}"
@@ -10909,6 +10972,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             flexure_preview_df=flexure_preview_df,
             shear_check_df=shear_check_df,
             torsion_check_df=torsion_check_df,
+            combined_vt_df=combined_vt_df,
         ),
         columns=5,
     )

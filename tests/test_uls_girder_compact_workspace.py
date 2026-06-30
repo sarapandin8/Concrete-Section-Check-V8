@@ -2818,3 +2818,80 @@ def test_ui_plot4_shear_capacity_figure_uses_report_style_layout_and_decision_ma
     assert marker_traces
     assert "FAIL · Av/s min D/C 1.893" in marker_traces[0].text[0]
 
+
+
+def test_uls_chart_ui2_hides_longitudinal_al_trace_when_not_required() -> None:
+    vt = pd.DataFrame(
+        [
+            {
+                "Status": "PASS",
+                "Station type": "LOAD STATION",
+                "Governing x": "4.000 m",
+                "Case": "Strength I",
+                "Stress status": "PASS",
+                "Transverse status": "PASS",
+                "Longitudinal status": "NOT ACTIVE",
+                "Stress D/C value": 0.012,
+                "Transverse D/C value": 0.426,
+                "Longitudinal D/C value": 0.0,
+                "Overall D/C value": 0.426,
+                "Vu kN": 57.137,
+                "Tu kN-m": 100.0,
+            },
+            {
+                "Status": "PASS",
+                "Station type": "LOAD STATION",
+                "Governing x": "6.000 m",
+                "Case": "Strength I",
+                "Stress status": "PASS",
+                "Transverse status": "PASS",
+                "Longitudinal status": "NOT ACTIVE",
+                "Stress D/C value": 0.020,
+                "Transverse D/C value": 0.410,
+                "Longitudinal D/C value": 0.0,
+                "Overall D/C value": 0.410,
+                "Vu kN": 40.0,
+                "Tu kN-m": 100.0,
+            },
+        ]
+    )
+
+    fig = _make_beam_uls_combined_vt_utilization_figure(vt, code_label="AASHTO LRFD 9th Edition")
+    names = {str(trace.name) for trace in fig.data}
+
+    assert "Stress D/C — Strength I" in names
+    assert "Transverse D/C — Strength I" in names
+    assert not any(name.startswith("Long. Al D/C") for name in names)
+
+
+def test_uls_chart_ui2_summary_reports_full_uls_pass_when_all_four_checks_are_available() -> None:
+    active = pd.DataFrame(
+        [
+            {"Active": True, "Station x (m)": 4.0, "Case Name": "Strength I", "Mux": 3805.24, "Vuy": 1075.99, "Tu": 100.0, "Muy": 0.0, "Vux": 0.0, "Nu": 0.0, "Note": ""},
+        ]
+    )
+    flexure = pd.DataFrame(
+        [
+            {"Check": "Flexure", "Status": "PASS", "Governing x": "5.000 m", "Case": "Strength I", "Demand": "3,805.24 kN-m", "Capacity": "φMn = 11,527.47 kN-m", "Utilization": "0.330", "Demand kN-m": 3805.24, "Capacity kN-m": 11527.47, "Utilization value": 0.330},
+        ]
+    )
+    shear = pd.DataFrame(
+        [
+            {"Check": "Shear", "Status": "PASS", "Governing x": "8.000 m", "Case": "Strength I", "Demand": "1,075.99 kN", "Demand kN": 1075.99, "Capacity": "φVn = 2,797.42 kN", "Utilization": "Strength D/C 0.385; Av/s min D/C 0.639", "D/C value": 0.385, "Governing D/C value": 0.639},
+        ]
+    )
+    torsion = pd.DataFrame(
+        [
+            {"Check": "Torsion", "Status": "BELOW THRESHOLD", "Governing x": "4.000 m", "Case": "Strength I", "Demand": "100.00 kN-m", "Capacity": "φTn = 1,686.90 kN-m", "Utilization": "0.059", "D/C value": 0.059},
+        ]
+    )
+    vt = pd.DataFrame(
+        [
+            {"Status": "PASS", "Station type": "LOAD STATION", "Governing x": "4.000 m", "Case": "Strength I", "Stress status": "PASS", "Transverse status": "PASS", "Longitudinal status": "NOT ACTIVE", "Stress D/C value": 0.012, "Transverse D/C value": 0.426, "Longitudinal D/C value": 0.0, "Overall D/C value": 0.426, "Vu kN": 57.137, "Tu kN-m": 100.0},
+        ]
+    )
+
+    cards = _beam_uls_summary_cards(active, workflow_label="Bridge Beam/Girder", code_label="AASHTO LRFD", flexure_preview_df=flexure, shear_check_df=shear, torsion_check_df=torsion, combined_vt_df=vt)
+
+    assert cards[0]["value"] == "ULS STRENGTH CHECK — PASS"
+    assert "combined V+T = PASS" in cards[0]["detail"]
