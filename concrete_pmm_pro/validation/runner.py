@@ -1,0 +1,43 @@
+"""Validation runner for Concrete Section Pro QA checks."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+
+from concrete_pmm_pro.validation.composite_section import validate_composite_section_properties
+from concrete_pmm_pro.validation.effective_width import validate_effective_width
+from concrete_pmm_pro.validation.girder_service_stress import validate_girder_service_stress
+from concrete_pmm_pro.validation.girder_prestress import validate_girder_prestress_stress
+from concrete_pmm_pro.validation.girder_stage import validate_girder_service_stage_stress
+from concrete_pmm_pro.validation.girder_code_limits import validate_girder_code_limits
+from concrete_pmm_pro.validation.material_routing import validate_material_routing
+from concrete_pmm_pro.validation.materials import validate_materials
+from concrete_pmm_pro.validation.models import ValidationReport, ValidationResult
+from concrete_pmm_pro.validation.pmm_sanity import validate_pmm_solver_sanity
+from concrete_pmm_pro.validation.prestress_guards import validate_prestress_guards
+from concrete_pmm_pro.validation.section_properties import validate_section_properties
+
+ValidationSuite = Callable[[], list[ValidationResult]]
+
+
+def validation_suites() -> list[ValidationSuite]:
+    return [
+        validate_materials,
+        validate_section_properties,
+        validate_composite_section_properties,
+        validate_effective_width,
+        validate_material_routing,
+        validate_girder_service_stress,
+        validate_girder_prestress_stress,
+        validate_girder_service_stage_stress,
+        validate_girder_code_limits,
+        validate_pmm_solver_sanity,
+        validate_prestress_guards,
+    ]
+
+
+def run_all_validations() -> ValidationReport:
+    results: list[ValidationResult] = []
+    for suite in validation_suites():
+        results.extend(suite())
+    return ValidationReport(results)

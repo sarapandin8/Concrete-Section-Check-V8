@@ -1,0 +1,18 @@
+AASHTO-COL-VT3 targeted verification
+====================================
+Command:
+pytest -q tests/test_aashto_col_vt1.py tests/test_aashto_col_shear1.py tests/test_aashto_col_torsion1.py tests/test_valid_column_pier_vt.py tests/test_aashto_col_seismic1.py tests/test_aashto_col_seismic3_typography.py tests/test_aashto_col_seismic4_fail_reason.py tests/test_aashto_col_seismic5_visual_status.py tests/test_analysis_runtime.py
+
+Result:
+110 passed in 1.32s
+
+Focused VT tests:
+pytest -q tests/test_aashto_col_vt1.py
+10 passed in 0.77s
+
+Full-suite smoke check:
+pytest -q -x
+262 passed before stopping at the known/pre-existing README closeout boundary test:
+tests/test_closeout_railway_u_girder1.py::test_closeout_rail_ugirder1_docs_and_readme_lock_closeout_boundary
+Assertion: README must start with ### CLOSEOUT.RAIL.UGIRDER1.
+This failure existed outside the AASHTO-COL-VT3 changes and is not caused by the V+T UI/cause/seismic-scope update.

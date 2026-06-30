@@ -1,0 +1,103 @@
+# PMM.FINAL.AUDIT1 - Flexural PMM Final-Readiness Audit
+
+Milestone: `PMM.FINAL.AUDIT1`
+
+This audit controls the path from the current Flexural PMM engineering-review
+workflow toward a commercial final-status workflow. It does not change solver
+equations, resistance factors, prestress stress logic, demand/capacity
+extraction, or UI result status wording.
+
+## Scope
+
+- Member family: Column / Pier / Wall / Pylon - RC / Prestressed Member.
+- Active subview: `Flexural (PMM)`.
+- Checks covered: axial-biaxial PMM strength and ULS demand/capacity review.
+- Checks not covered: shear, torsion, serviceability, detailing, development
+  length, confinement detailing, second-order analysis, and construction-stage
+  checks.
+
+## Current implementation evidence
+
+| Area | Current evidence | Readiness classification |
+|---|---|---|
+| PMM solver | `concrete_pmm_pro/analysis/pmm_solver.py` runs an ACI-oriented strain-compatibility PMM sweep. | Implemented, engineering-review |
+| Demand/capacity | `concrete_pmm_pro/analysis/capacity_check.py` checks active ULS load cases against the PMM result. | Implemented, engineering-review |
+| RC validation | `VALID.RC1`, `VALID.RC2`, hand checks, and PMM benchmark packs exist. | Strong candidate for next finalization milestone |
+| Directional D/C | `VALID.PMM.DC1` and slice-envelope checks exist. | Implemented, still needs final reference cases |
+| Prestress PMM | `VALID.PS1`, `VALID.PS2`, `SOLVER.PS.PASSIVE1`, `SOLVER.PS.STRESS1`, and `SOLVER.PS.COMP1` exist. | Implemented with retained prestress limitations |
+| Axial cap | `QA.PO1` validates the prestress-aware ACI-style axial cap helper. | Candidate for method-note downgrade |
+| AASHTO LRFD PMM | `AASHTO.COL.PMM1` adds a separate AASHTO LRFD 9th B-region axial-flexure route with SI-safe stress-block, phi, and axial-cap handling. | Implemented, engineering-review / not final code-certified |
+
+## Final-status blockers
+
+The current Flexural PMM workflow must not be relabeled as final or
+code-certified until these blockers are closed by named milestones:
+
+1. Published or independently traceable reference examples are still needed for
+   RC uniaxial and true biaxial PMM capacity.
+2. Directional D/C extraction needs final reference cases showing that the
+   selected method does not overestimate capacity for non-circular and
+   non-symmetric PMM envelopes.
+3. Prestressed PMM needs published/reference examples for bonded active
+   prestress behavior, stress-state policy, and governing-region effects.
+4. Prestress compression reversal is not fully modeled; current behavior is a
+   documented limitation and cannot be hidden as a final solver assumption.
+5. Unbonded prestress is ignored by the PMM solver and must remain a hard
+   limitation until a separate unbonded model exists.
+6. AASHTO LRFD Column/Pier PMM is implemented by `AASHTO.COL.PMM1` as an engineering-review B-region axial-flexure route, but it is not yet a final code-certified AASHTO design solver. Shear, torsion, slenderness/second-order, seismic, hollow-wall local-buckling, development, and detailing checks remain guarded.
+7. Neutral-axis sweep resolution and irregular-section numerical robustness
+   need final acceptance criteria before final certification wording.
+8. Validation must be runnable in the delivery environment. In this Codex
+   runtime, validation execution was blocked by missing `shapely`, even though
+   `requirements.txt` lists `shapely>=2.0`.
+
+## Allowed status after this audit
+
+The safest commercial wording after `PMM.FINAL.AUDIT1` is:
+
+> Flexural PMM is an implemented engineering-review strength workflow with
+> substantial validation evidence. It is not yet a final code-certified solver.
+
+For ACI 318 Column/Pier PMM, the accepted closeout status is:
+
+> Finalized production preview
+
+This status is allowed only after `PMM.FINAL.RC1.STATUS.READINESS1` passes with
+documented benchmark evidence and `PMM.FINAL.RC1.CLOSEOUT` keeps the UI/report
+wording guarded against final certification claims.
+
+For AASHTO LRFD Column/Pier PMM after `AASHTO.COL.PMM1`, the current status is:
+
+> Implemented engineering-review route / not final code-certified
+
+No AASHTO LRFD final PMM claim is allowed until independent reference examples, D/C extraction cases, prestress reference behavior, slenderness/seismic/detailing boundaries, and report-readiness wording are validated by later named milestones.
+
+This audit does not change solver equations.
+
+## Do-not-change rules
+
+- Do not remove prototype or engineering-review wording solely to make the UI
+  look final.
+- Do not modify solver equations merely to make validation checks pass.
+- Do not reuse Beam/Girder shear, torsion, or flexure readiness to certify
+  Column/Pier PMM.
+- Do not treat the AASHTO.COL.PMM1 engineering-review route as final code-certified AASHTO LRFD PMM.
+- Do not hide unbonded prestress, compression reversal, convex-hull fallback,
+  or D/C interpolation limitations from report/readiness outputs.
+
+## Recommended next milestones
+
+1. `PMM.FINAL.RC1.CLOSEOUT` - ACI 318 RC Column/Pier PMM finalized
+   production-preview closeout:
+   scope, uniaxial, biaxial, phi, D/C no-overestimate, UI/report wording, and
+   certification guards.
+2. Published/reference RC PMM examples for future code-certified ambitions:
+   uniaxial, biaxial, and D/C examples before final certification wording.
+3. `PMM.FINAL.PS1` - Bonded prestress final-readiness:
+   active bonded prestress reference cases, compression-reversal policy, and
+   prestress stress-state governance.
+4. `AASHTO.COL.PMM1.VALIDATE1` - AASHTO LRFD Column/Pier PMM validation expansion:
+   independent reference cases, biaxial demand/capacity checks, prestress cases, and final report-readiness guard review.
+5. Future UI/report wording changes:
+   keep `PMM.FINAL.RC1.CLOSEOUT` as the RC-only boundary and create a new named
+   milestone before expanding PMM claims.

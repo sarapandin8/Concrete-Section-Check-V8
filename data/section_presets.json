@@ -1,0 +1,1787 @@
+{
+  "schema_version": 1,
+  "units": "mm",
+  "categories": [
+    "Basic Solid",
+    "Hollow / Voided",
+    "Pier / Column",
+    "Precast Composite Girder",
+    "General / Non-composite Girder",
+    "Custom"
+  ],
+  "presets": [
+    {
+      "key": "rectangle",
+      "display_name": "Rectangle",
+      "category": "Basic Solid",
+      "generator": "rectangle",
+      "dimensions_generator": "rectangle",
+      "parameters": [
+        {
+          "name": "width_mm",
+          "label": "Width B (mm)",
+          "type": "number",
+          "default": 400,
+          "min": 1,
+          "max": 10000,
+          "step": 10
+        },
+        {
+          "name": "height_mm",
+          "label": "Height H (mm)",
+          "type": "number",
+          "default": 600,
+          "min": 1,
+          "max": 10000,
+          "step": 10
+        }
+      ],
+      "allowed_workflows": [
+        "column_pier_pmm",
+        "building_beam_girder"
+      ],
+      "application_domain": "general_structural"
+    },
+    {
+      "key": "rectangular_chamfered",
+      "display_name": "Rectangular Chamfered",
+      "category": "Basic Solid",
+      "generator": "rectangular_chamfered",
+      "dimensions_generator": "rectangular_chamfered",
+      "parameters": [
+        {
+          "name": "width_mm",
+          "label": "Width B (mm)",
+          "type": "number",
+          "default": 500,
+          "min": 1,
+          "max": 10000,
+          "step": 10
+        },
+        {
+          "name": "height_mm",
+          "label": "Height H (mm)",
+          "type": "number",
+          "default": 700,
+          "min": 1,
+          "max": 10000,
+          "step": 10
+        },
+        {
+          "name": "chamfer_x_mm",
+          "label": "Chamfer x cx (mm)",
+          "type": "number",
+          "default": 50,
+          "min": 0,
+          "max": 2000,
+          "step": 5
+        },
+        {
+          "name": "chamfer_y_mm",
+          "label": "Chamfer y cy (mm)",
+          "type": "number",
+          "default": 50,
+          "min": 0,
+          "max": 2000,
+          "step": 5
+        }
+      ],
+      "allowed_workflows": [
+        "column_pier_pmm",
+        "building_beam_girder"
+      ],
+      "application_domain": "general_structural"
+    },
+    {
+      "key": "rectangular_filleted",
+      "display_name": "Rectangular Filleted",
+      "category": "Basic Solid",
+      "generator": "rectangular_filleted",
+      "dimensions_generator": "rectangular_filleted",
+      "parameters": [
+        {
+          "name": "width_mm",
+          "label": "Width B (mm)",
+          "type": "number",
+          "default": 1000,
+          "min": 1,
+          "max": 10000,
+          "step": 10
+        },
+        {
+          "name": "height_mm",
+          "label": "Height H (mm)",
+          "type": "number",
+          "default": 1000,
+          "min": 1,
+          "max": 10000,
+          "step": 10
+        },
+        {
+          "name": "corner_radius_mm",
+          "label": "Fillet radius R (mm)",
+          "type": "number",
+          "default": 200,
+          "min": 0,
+          "max": 5000,
+          "step": 10
+        }
+      ],
+      "allowed_workflows": [
+        "column_pier_pmm",
+        "building_beam_girder"
+      ],
+      "application_domain": "general_structural"
+    },
+    {
+      "key": "circle",
+      "display_name": "Circle",
+      "category": "Basic Solid",
+      "generator": "circle",
+      "dimensions_generator": "circle",
+      "parameters": [
+        {
+          "name": "diameter_mm",
+          "label": "Diameter D (mm)",
+          "type": "number",
+          "default": 600,
+          "min": 1,
+          "max": 10000,
+          "step": 10
+        }
+      ],
+      "allowed_workflows": [
+        "column_pier_pmm",
+        "building_beam_girder"
+      ],
+      "application_domain": "general_structural"
+    },
+    {
+      "key": "circular_hollow",
+      "display_name": "Circular Hollow",
+      "category": "Hollow / Voided",
+      "generator": "circular_hollow",
+      "dimensions_generator": "circular_hollow",
+      "parameters": [
+        {
+          "name": "outer_diameter_mm",
+          "label": "Outer diameter Do (mm)",
+          "type": "number",
+          "default": 900,
+          "min": 1,
+          "max": 20000,
+          "step": 10
+        },
+        {
+          "name": "inner_diameter_mm",
+          "label": "Inner diameter Di (mm)",
+          "type": "number",
+          "default": 500,
+          "min": 1,
+          "max": 19990,
+          "step": 10
+        }
+      ],
+      "allowed_workflows": [
+        "column_pier_pmm",
+        "building_beam_girder"
+      ],
+      "application_domain": "general_structural"
+    },
+    {
+      "key": "rectangular_hollow",
+      "display_name": "Rectangular Hollow",
+      "category": "Hollow / Voided",
+      "generator": "rectangular_hollow",
+      "dimensions_generator": "rectangular_hollow",
+      "parameters": [
+        {
+          "name": "width_mm",
+          "label": "Width B (mm)",
+          "type": "number",
+          "default": 1000,
+          "min": 1,
+          "max": 20000,
+          "step": 10
+        },
+        {
+          "name": "height_mm",
+          "label": "Height H (mm)",
+          "type": "number",
+          "default": 800,
+          "min": 1,
+          "max": 20000,
+          "step": 10
+        },
+        {
+          "name": "t_top_mm",
+          "label": "t_top (mm)",
+          "type": "number",
+          "default": 120,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "t_bottom_mm",
+          "label": "t_bottom (mm)",
+          "type": "number",
+          "default": 140,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "t_left_mm",
+          "label": "t_left (mm)",
+          "type": "number",
+          "default": 110,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "t_right_mm",
+          "label": "t_right (mm)",
+          "type": "number",
+          "default": 130,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        }
+      ],
+      "allowed_workflows": [
+        "column_pier_pmm",
+        "building_beam_girder"
+      ],
+      "application_domain": "general_structural"
+    },
+    {
+      "key": "rectangular_hollow_filleted",
+      "display_name": "Rectangular Hollow Filleted",
+      "category": "Basic Solid",
+      "generator": "rectangular_hollow_filleted",
+      "dimensions_generator": "rectangular_hollow_filleted",
+      "parameters": [
+        {
+          "name": "width_mm",
+          "label": "Width B (mm)",
+          "type": "number",
+          "default": 1000,
+          "min": 1,
+          "max": 10000,
+          "step": 10
+        },
+        {
+          "name": "height_mm",
+          "label": "Height H (mm)",
+          "type": "number",
+          "default": 800,
+          "min": 1,
+          "max": 10000,
+          "step": 10
+        },
+        {
+          "name": "t_top_mm",
+          "label": "t_top (mm)",
+          "type": "number",
+          "default": 120,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "t_bottom_mm",
+          "label": "t_bottom (mm)",
+          "type": "number",
+          "default": 140,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "t_left_mm",
+          "label": "t_left (mm)",
+          "type": "number",
+          "default": 110,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "t_right_mm",
+          "label": "t_right (mm)",
+          "type": "number",
+          "default": 130,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "r_outer_mm",
+          "label": "Outer fillet radius Ro (mm)",
+          "type": "number",
+          "default": 120,
+          "min": 0,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "r_inner_mm",
+          "label": "Inner fillet radius Ri (mm)",
+          "type": "number",
+          "default": 60,
+          "min": 0,
+          "max": 5000,
+          "step": 5
+        }
+      ],
+      "allowed_workflows": [
+        "column_pier_pmm",
+        "building_beam_girder"
+      ],
+      "application_domain": "general_structural"
+    },
+    {
+      "key": "rectangular_hollow_outer_filleted_inner_chamfered",
+      "display_name": "Rectangular Hollow Filleted-Chamfered",
+      "category": "Basic Solid",
+      "generator": "rectangular_hollow_outer_filleted_inner_chamfered",
+      "dimensions_generator": "rectangular_hollow_outer_filleted_inner_chamfered",
+      "parameters": [
+        {
+          "name": "width_mm",
+          "label": "Width B (mm)",
+          "type": "number",
+          "default": 1000,
+          "min": 1,
+          "max": 10000,
+          "step": 10
+        },
+        {
+          "name": "height_mm",
+          "label": "Height H (mm)",
+          "type": "number",
+          "default": 800,
+          "min": 1,
+          "max": 10000,
+          "step": 10
+        },
+        {
+          "name": "t_top_mm",
+          "label": "t_top (mm)",
+          "type": "number",
+          "default": 120,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "t_bottom_mm",
+          "label": "t_bottom (mm)",
+          "type": "number",
+          "default": 140,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "t_left_mm",
+          "label": "t_left (mm)",
+          "type": "number",
+          "default": 110,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "t_right_mm",
+          "label": "t_right (mm)",
+          "type": "number",
+          "default": 130,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "r_outer_mm",
+          "label": "Outer fillet radius Ro (mm)",
+          "type": "number",
+          "default": 120,
+          "min": 0,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "inner_chamfer_mm",
+          "label": "Inner chamfer Ci (mm)",
+          "type": "number",
+          "default": 60,
+          "min": 0,
+          "max": 5000,
+          "step": 5
+        }
+      ],
+      "allowed_workflows": [
+        "column_pier_pmm",
+        "building_beam_girder"
+      ],
+      "application_domain": "general_structural"
+    },
+    {
+      "key": "box_section_fillet",
+      "display_name": "Precast Box Beam – Interior",
+      "category": "Precast Composite Girder",
+      "generator": "box_section_fillet",
+      "dimensions_generator": "box_section_fillet",
+      "parameters": [
+        {
+          "name": "width_mm",
+          "label": "Width B (mm)",
+          "type": "number",
+          "default": 990,
+          "min": 1,
+          "max": 30000,
+          "step": 10
+        },
+        {
+          "name": "height_mm",
+          "label": "Height H (mm)",
+          "type": "number",
+          "default": 700,
+          "min": 1,
+          "max": 30000,
+          "step": 10
+        },
+        {
+          "name": "h1_mm",
+          "label": "h1 — Top cover (mm)",
+          "type": "number",
+          "default": 180,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "h3_mm",
+          "label": "h3 — Bottom cover to inner flat (mm)",
+          "type": "number",
+          "default": 160,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "h4_mm",
+          "label": "h4 — Inner chamfer height (mm)",
+          "type": "number",
+          "default": 80,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "h5_mm",
+          "label": "h5 — Inner vertical wall height (mm)",
+          "type": "number",
+          "default": 200,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "h6_mm",
+          "label": "h6 — Top to outer side break (mm)",
+          "type": "number",
+          "default": 300,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "h7_mm",
+          "label": "h7 — Bottom to outer side break (mm)",
+          "type": "number",
+          "default": 400,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "h8_mm",
+          "label": "h8 — Vertical rise from point 1 to point 2 (mm)",
+          "type": "number",
+          "default": 70,
+          "min": 0,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "b2_mm",
+          "label": "b2 — Inner chamfer run (mm)",
+          "type": "number",
+          "default": 100,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "b4_mm",
+          "label": "b4 — Horizontal run from point 1 to point 2 (mm)",
+          "type": "number",
+          "default": 70,
+          "min": 0,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "b3_mm",
+          "label": "b3 — Inner flat width at center line (mm)",
+          "type": "number",
+          "default": 290,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        }
+      ],
+      "description": "Interior precast composite box beam using drawing variables B, H, h1, h3, h4, h5, h6, h7, h8, b2, b3, and b4. h1 is the top cover above the inner void.",
+      "allowed_workflows": [
+        "beam_girder"
+      ],
+      "application_domain": "bridge_infrastructure"
+    },
+    {
+      "key": "precast_box_beam_exterior",
+      "display_name": "Precast Box Beam – Exterior",
+      "category": "Precast Composite Girder",
+      "generator": "precast_box_beam_exterior",
+      "dimensions_generator": "precast_box_beam_exterior",
+      "parameters": [
+        {
+          "name": "width_mm",
+          "label": "Width B (mm)",
+          "type": "number",
+          "default": 990,
+          "min": 1,
+          "max": 30000,
+          "step": 10
+        },
+        {
+          "name": "height_mm",
+          "label": "Height H (mm)",
+          "type": "number",
+          "default": 700,
+          "min": 1,
+          "max": 30000,
+          "step": 10
+        },
+        {
+          "name": "h1_mm",
+          "label": "h1 — Top cover (mm)",
+          "type": "number",
+          "default": 180,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "h3_mm",
+          "label": "h3 — Bottom cover to inner flat (mm)",
+          "type": "number",
+          "default": 160,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "h4_mm",
+          "label": "h4 — Inner chamfer height (mm)",
+          "type": "number",
+          "default": 80,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "h5_mm",
+          "label": "h5 — Inner vertical wall height (mm)",
+          "type": "number",
+          "default": 200,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "h6_mm",
+          "label": "h6 — Top to left outer break (mm)",
+          "type": "number",
+          "default": 300,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "h7_mm",
+          "label": "h7 — Bottom to left outer break (mm)",
+          "type": "number",
+          "default": 400,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "h8_mm",
+          "label": "h8 — Vertical rise from point 1 to point 2 (mm)",
+          "type": "number",
+          "default": 70,
+          "min": 0,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "b2_mm",
+          "label": "b2 — Inner chamfer run (mm)",
+          "type": "number",
+          "default": 100,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "b4_mm",
+          "label": "b4 — Horizontal run from point 1 to point 2 (mm)",
+          "type": "number",
+          "default": 70,
+          "min": 0,
+          "max": 5000,
+          "step": 5
+        },
+        {
+          "name": "b3_mm",
+          "label": "b3 — Inner flat width (exterior default 360) (mm)",
+          "type": "number",
+          "default": 360,
+          "min": 1,
+          "max": 5000,
+          "step": 5
+        }
+      ],
+      "description": "Exterior precast composite box beam using drawing variables B, H, h1, h3, h4, h5, h6, h7, h8, b2, b3, and b4. The right outer face is straight; default b3 is 360 mm and the right end of b3 sits b2 + 180 mm from the rightmost outer edge.",
+      "allowed_workflows": [
+        "beam_girder"
+      ],
+      "application_domain": "bridge_infrastructure"
+    },
+    {
+      "key": "parametric_i_girder",
+      "display_name": "Precast I-Girder",
+      "category": "Precast Composite Girder",
+      "generator": "parametric_i_girder",
+      "dimensions_generator": "parametric_i_girder",
+      "parameters": [
+        {
+          "name": "B1_mm",
+          "label": "B1 Top flange width (mm)",
+          "type": "number",
+          "default": 800,
+          "min": 1,
+          "max": 10000,
+          "step": 10,
+          "description": "Top flange overall width."
+        },
+        {
+          "name": "B2_mm",
+          "label": "B2 Bottom flange width (mm)",
+          "type": "number",
+          "default": 500,
+          "min": 1,
+          "max": 10000,
+          "step": 10,
+          "description": "Bottom flange overall width."
+        },
+        {
+          "name": "D1_mm",
+          "label": "D1 Overall depth (mm)",
+          "type": "number",
+          "default": 1400,
+          "min": 1,
+          "max": 10000,
+          "step": 10,
+          "description": "Total girder section depth."
+        },
+        {
+          "name": "D2_mm",
+          "label": "D2 Top flange thickness (mm)",
+          "type": "number",
+          "default": 200,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Vertical thickness of the top flange zone."
+        },
+        {
+          "name": "D3_mm",
+          "label": "D3 Top haunch / taper depth (mm)",
+          "type": "number",
+          "default": 150,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Vertical depth of the transition from top flange width to upper web width."
+        },
+        {
+          "name": "D5_mm",
+          "label": "D5 Bottom flange thickness (mm)",
+          "type": "number",
+          "default": 250,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Vertical thickness of the bottom flange zone."
+        },
+        {
+          "name": "D6_mm",
+          "label": "D6 Bottom haunch / taper depth (mm)",
+          "type": "number",
+          "default": 150,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Vertical depth of the transition from lower web width to bottom flange width."
+        },
+        {
+          "name": "T1_mm",
+          "label": "T1 Upper web width (mm)",
+          "type": "number",
+          "default": 200,
+          "min": 1,
+          "max": 5000,
+          "step": 5,
+          "description": "Web width at the bottom of the top haunch."
+        },
+        {
+          "name": "T2_mm",
+          "label": "T2 Lower / main web width (mm)",
+          "type": "number",
+          "default": 200,
+          "min": 1,
+          "max": 5000,
+          "step": 5,
+          "description": "Web width at the top of the bottom haunch."
+        },
+        {
+          "name": "C1_mm",
+          "label": "C1 Corner chamfer (mm)",
+          "type": "number",
+          "default": 0,
+          "min": 0,
+          "max": 2000,
+          "step": 5,
+          "description": "Optional outside corner chamfer. Use 0 for square corners."
+        }
+      ],
+      "allowed_workflows": [
+        "beam_girder",
+        "building_beam_girder"
+      ],
+      "application_domain": "shared_building_bridge",
+      "workflow_display_names": {
+        "beam_girder": "Precast I-Girder: Bridge · Precast Composite Girder",
+        "building_beam_girder": "Precast I-Girder: Building · Precast Composite Girder"
+      }
+    },
+    {
+      "key": "parametric_plank_girder_interior",
+      "display_name": "Precast Plank Girder — Interior",
+      "category": "Precast Composite Girder",
+      "generator": "parametric_plank_girder_interior",
+      "dimensions_generator": "parametric_plank_girder_interior",
+      "parameters": [
+        {
+          "name": "B_mm",
+          "label": "B Overall plank width (mm)",
+          "type": "number",
+          "default": 990,
+          "min": 1,
+          "max": 20000,
+          "step": 5,
+          "description": "Overall precast plank width."
+        },
+        {
+          "name": "b1_mm",
+          "label": "b1 Top side offset (mm)",
+          "type": "number",
+          "default": 45,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Top side offset shown in the plank detail."
+        },
+        {
+          "name": "b2_mm",
+          "label": "b2 Lower side offset (mm)",
+          "type": "number",
+          "default": 70,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Lower side offset. Interior: B ≈ b3 + 2b2. Exterior: B ≈ b3 + b2."
+        },
+        {
+          "name": "b3_mm",
+          "label": "b3 Lower reference width (mm)",
+          "type": "number",
+          "default": 850,
+          "min": 1,
+          "max": 20000,
+          "step": 5,
+          "description": "Bottom/lower reference width of the precast plank."
+        },
+        {
+          "name": "H_mm",
+          "label": "H Overall plank depth (mm)",
+          "type": "number",
+          "default": 450,
+          "min": 1,
+          "max": 10000,
+          "step": 5,
+          "description": "Overall depth of the precast plank."
+        },
+        {
+          "name": "h1_mm",
+          "label": "h1 Lower step height (mm)",
+          "type": "number",
+          "default": 80,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Lower step height shown in the plank detail."
+        },
+        {
+          "name": "h2_mm",
+          "label": "h2 Side transition depth (mm)",
+          "type": "number",
+          "default": 140,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Side transition depth shown in the plank detail."
+        },
+        {
+          "name": "Tslab_mm",
+          "label": "Tslab Deck/topping thickness (mm)",
+          "type": "number",
+          "default": 100,
+          "min": 0,
+          "max": 1000,
+          "step": 5,
+          "description": "Composite deck/topping thickness metadata. Not merged into precast polygon in this milestone."
+        },
+        {
+          "name": "Be_mm",
+          "label": "Be Effective slab width (mm)",
+          "type": "number",
+          "default": 1000,
+          "min": 1,
+          "max": 20000,
+          "step": 5,
+          "description": "Manual effective width for current milestone. AASHTO auto calculation is planned."
+        },
+        {
+          "name": "Ebeam_MPa",
+          "label": "Ebeam Girder concrete modulus (MPa)",
+          "type": "number",
+          "default": 35000,
+          "min": 1,
+          "max": 100000,
+          "step": 100,
+          "description": "Precast girder concrete modulus used for n = Edeck/Ebeam."
+        },
+        {
+          "name": "Edeck_MPa",
+          "label": "Edeck Deck concrete modulus (MPa)",
+          "type": "number",
+          "default": 28560,
+          "min": 1,
+          "max": 100000,
+          "step": 100,
+          "description": "Deck concrete modulus used for n = Edeck/Ebeam."
+        },
+        {
+          "name": "girder_length_mm",
+          "label": "Girder length / span (mm)",
+          "type": "number",
+          "default": 12000,
+          "min": 1,
+          "max": 1000000,
+          "step": 100,
+          "description": "Girder length metadata for future bridge-girder checks."
+        }
+      ],
+      "allowed_workflows": [
+        "beam_girder"
+      ],
+      "application_domain": "bridge_infrastructure"
+    },
+    {
+      "key": "parametric_plank_girder_exterior",
+      "display_name": "Precast Plank Girder — Exterior",
+      "category": "Precast Composite Girder",
+      "generator": "parametric_plank_girder_exterior",
+      "dimensions_generator": "parametric_plank_girder_exterior",
+      "parameters": [
+        {
+          "name": "B_mm",
+          "label": "B Overall plank width (mm)",
+          "type": "number",
+          "default": 990,
+          "min": 1,
+          "max": 20000,
+          "step": 5,
+          "description": "Overall precast plank width."
+        },
+        {
+          "name": "b1_mm",
+          "label": "b1 Top side offset (mm)",
+          "type": "number",
+          "default": 45,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Top side offset shown in the plank detail."
+        },
+        {
+          "name": "b2_mm",
+          "label": "b2 Lower side offset (mm)",
+          "type": "number",
+          "default": 70,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Lower side offset. Interior: B ≈ b3 + 2b2. Exterior: B ≈ b3 + b2."
+        },
+        {
+          "name": "b3_mm",
+          "label": "b3 Lower reference width (mm)",
+          "type": "number",
+          "default": 920,
+          "min": 1,
+          "max": 20000,
+          "step": 5,
+          "description": "Bottom/lower reference width of the precast plank."
+        },
+        {
+          "name": "H_mm",
+          "label": "H Overall plank depth (mm)",
+          "type": "number",
+          "default": 450,
+          "min": 1,
+          "max": 10000,
+          "step": 5,
+          "description": "Overall depth of the precast plank."
+        },
+        {
+          "name": "h1_mm",
+          "label": "h1 Lower step height (mm)",
+          "type": "number",
+          "default": 80,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Lower step height shown in the plank detail."
+        },
+        {
+          "name": "h2_mm",
+          "label": "h2 Side transition depth (mm)",
+          "type": "number",
+          "default": 140,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Side transition depth shown in the plank detail."
+        },
+        {
+          "name": "Tslab_mm",
+          "label": "Tslab Deck/topping thickness (mm)",
+          "type": "number",
+          "default": 100,
+          "min": 0,
+          "max": 1000,
+          "step": 5,
+          "description": "Composite deck/topping thickness metadata. Not merged into precast polygon in this milestone."
+        },
+        {
+          "name": "Be_mm",
+          "label": "Be Effective slab width (mm)",
+          "type": "number",
+          "default": 1000,
+          "min": 1,
+          "max": 20000,
+          "step": 5,
+          "description": "Manual effective width for current milestone. AASHTO auto calculation is planned."
+        },
+        {
+          "name": "Ebeam_MPa",
+          "label": "Ebeam Girder concrete modulus (MPa)",
+          "type": "number",
+          "default": 35000,
+          "min": 1,
+          "max": 100000,
+          "step": 100,
+          "description": "Precast girder concrete modulus used for n = Edeck/Ebeam."
+        },
+        {
+          "name": "Edeck_MPa",
+          "label": "Edeck Deck concrete modulus (MPa)",
+          "type": "number",
+          "default": 28560,
+          "min": 1,
+          "max": 100000,
+          "step": 100,
+          "description": "Deck concrete modulus used for n = Edeck/Ebeam."
+        },
+        {
+          "name": "girder_length_mm",
+          "label": "Girder length / span (mm)",
+          "type": "number",
+          "default": 12000,
+          "min": 1,
+          "max": 1000000,
+          "step": 100,
+          "description": "Girder length metadata for future bridge-girder checks."
+        },
+        {
+          "name": "overhang_mm",
+          "label": "Overhang width for AASHTO Be (mm)",
+          "type": "number",
+          "default": 500,
+          "min": 0,
+          "max": 20000,
+          "step": 5,
+          "description": "Exterior overhang metadata for future AASHTO effective width calculation."
+        }
+      ],
+      "allowed_workflows": [
+        "beam_girder"
+      ],
+      "application_domain": "bridge_infrastructure"
+    },
+    {
+      "key": "parametric_plank_girder_voided_interior",
+      "display_name": "Precast Voided Plank Girder — Interior",
+      "category": "Precast Composite Girder",
+      "generator": "parametric_plank_girder_voided_interior",
+      "dimensions_generator": "parametric_plank_girder_voided_interior",
+      "parameters": [
+        {
+          "name": "B_mm",
+          "label": "B Overall plank width (mm)",
+          "type": "number",
+          "default": 990,
+          "min": 1,
+          "max": 20000,
+          "step": 5,
+          "description": "Overall precast plank width."
+        },
+        {
+          "name": "b1_mm",
+          "label": "b1 Top side offset (mm)",
+          "type": "number",
+          "default": 45,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Top side offset shown in the plank detail."
+        },
+        {
+          "name": "b2_mm",
+          "label": "b2 Lower side offset (mm)",
+          "type": "number",
+          "default": 70,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Lower side offset. Interior: B ≈ b3 + 2b2. Exterior: B ≈ b3 + b2."
+        },
+        {
+          "name": "b3_mm",
+          "label": "b3 Lower reference width (mm)",
+          "type": "number",
+          "default": 850,
+          "min": 1,
+          "max": 20000,
+          "step": 5,
+          "description": "Bottom/lower reference width of the precast plank."
+        },
+        {
+          "name": "H_mm",
+          "label": "H Overall plank depth (mm)",
+          "type": "number",
+          "default": 450,
+          "min": 1,
+          "max": 10000,
+          "step": 5,
+          "description": "Overall depth of the precast plank."
+        },
+        {
+          "name": "h1_mm",
+          "label": "h1 Lower step height (mm)",
+          "type": "number",
+          "default": 80,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Lower step height shown in the plank detail."
+        },
+        {
+          "name": "h2_mm",
+          "label": "h2 Side transition depth (mm)",
+          "type": "number",
+          "default": 140,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Side transition depth shown in the plank detail."
+        },
+        {
+          "name": "void_diameter_mm",
+          "label": "Void diameter (mm)",
+          "type": "number",
+          "default": 150,
+          "min": 1,
+          "max": 5000,
+          "step": 5,
+          "description": "Diameter of each circular void in the voided plank girder."
+        },
+        {
+          "name": "void_y_mm_from_bottom",
+          "label": "Void center y from bottom (mm)",
+          "type": "number",
+          "default": 225,
+          "min": 0,
+          "max": 10000,
+          "step": 5,
+          "description": "Vertical center of the three circular voids measured from the bottom fiber."
+        },
+        {
+          "name": "void_left_x_from_left_mm",
+          "label": "Left void center x from left edge (mm)",
+          "type": "number",
+          "default": 245,
+          "min": 0,
+          "max": 20000,
+          "step": 5,
+          "description": "Left circular void center measured from the left edge of the plank."
+        },
+        {
+          "name": "void_middle_x_from_left_mm",
+          "label": "Middle void center x from left edge (mm)",
+          "type": "number",
+          "default": 495,
+          "min": 0,
+          "max": 20000,
+          "step": 5,
+          "description": "Middle circular void center measured from the left edge of the plank."
+        },
+        {
+          "name": "void_right_x_from_left_mm",
+          "label": "Right void center x from left edge (mm)",
+          "type": "number",
+          "default": 745,
+          "min": 0,
+          "max": 20000,
+          "step": 5,
+          "description": "Right circular void center measured from the left edge of the plank."
+        },
+        {
+          "name": "Tslab_mm",
+          "label": "Tslab Deck/topping thickness (mm)",
+          "type": "number",
+          "default": 100,
+          "min": 0,
+          "max": 1000,
+          "step": 5,
+          "description": "Composite deck/topping thickness metadata. Not merged into precast polygon in this milestone."
+        },
+        {
+          "name": "Be_mm",
+          "label": "Be Effective slab width (mm)",
+          "type": "number",
+          "default": 1000,
+          "min": 1,
+          "max": 20000,
+          "step": 5,
+          "description": "Manual effective width for current milestone. AASHTO auto calculation is planned."
+        },
+        {
+          "name": "Ebeam_MPa",
+          "label": "Ebeam Girder concrete modulus (MPa)",
+          "type": "number",
+          "default": 35000,
+          "min": 1,
+          "max": 100000,
+          "step": 100,
+          "description": "Precast girder concrete modulus used for n = Edeck/Ebeam."
+        },
+        {
+          "name": "Edeck_MPa",
+          "label": "Edeck Deck concrete modulus (MPa)",
+          "type": "number",
+          "default": 28560,
+          "min": 1,
+          "max": 100000,
+          "step": 100,
+          "description": "Deck concrete modulus used for n = Edeck/Ebeam."
+        },
+        {
+          "name": "girder_length_mm",
+          "label": "Girder length / span (mm)",
+          "type": "number",
+          "default": 12000,
+          "min": 1,
+          "max": 1000000,
+          "step": 100,
+          "description": "Girder length metadata for future bridge-girder checks."
+        }
+      ],
+      "allowed_workflows": [
+        "beam_girder"
+      ],
+      "application_domain": "bridge_infrastructure"
+    },
+    {
+      "key": "parametric_plank_girder_voided_exterior",
+      "display_name": "Precast Voided Plank Girder — Exterior",
+      "category": "Precast Composite Girder",
+      "generator": "parametric_plank_girder_voided_exterior",
+      "dimensions_generator": "parametric_plank_girder_voided_exterior",
+      "parameters": [
+        {
+          "name": "B_mm",
+          "label": "B Overall plank width (mm)",
+          "type": "number",
+          "default": 990,
+          "min": 1,
+          "max": 20000,
+          "step": 5,
+          "description": "Overall precast plank width."
+        },
+        {
+          "name": "b1_mm",
+          "label": "b1 Top side offset (mm)",
+          "type": "number",
+          "default": 45,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Top side offset shown in the plank detail."
+        },
+        {
+          "name": "b2_mm",
+          "label": "b2 Lower side offset (mm)",
+          "type": "number",
+          "default": 70,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Lower side offset. Interior: B ≈ b3 + 2b2. Exterior: B ≈ b3 + b2."
+        },
+        {
+          "name": "b3_mm",
+          "label": "b3 Lower reference width (mm)",
+          "type": "number",
+          "default": 920,
+          "min": 1,
+          "max": 20000,
+          "step": 5,
+          "description": "Bottom/lower reference width of the precast plank."
+        },
+        {
+          "name": "H_mm",
+          "label": "H Overall plank depth (mm)",
+          "type": "number",
+          "default": 450,
+          "min": 1,
+          "max": 10000,
+          "step": 5,
+          "description": "Overall depth of the precast plank."
+        },
+        {
+          "name": "h1_mm",
+          "label": "h1 Lower step height (mm)",
+          "type": "number",
+          "default": 80,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Lower step height shown in the plank detail."
+        },
+        {
+          "name": "h2_mm",
+          "label": "h2 Side transition depth (mm)",
+          "type": "number",
+          "default": 140,
+          "min": 0,
+          "max": 5000,
+          "step": 5,
+          "description": "Side transition depth shown in the plank detail."
+        },
+        {
+          "name": "void_diameter_mm",
+          "label": "Void diameter (mm)",
+          "type": "number",
+          "default": 150,
+          "min": 1,
+          "max": 5000,
+          "step": 5,
+          "description": "Diameter of each circular void in the voided plank girder."
+        },
+        {
+          "name": "void_y_mm_from_bottom",
+          "label": "Void center y from bottom (mm)",
+          "type": "number",
+          "default": 225,
+          "min": 0,
+          "max": 10000,
+          "step": 5,
+          "description": "Vertical center of the three circular voids measured from the bottom fiber."
+        },
+        {
+          "name": "void_left_x_from_left_mm",
+          "label": "Left void center x from left edge (mm)",
+          "type": "number",
+          "default": 240,
+          "min": 0,
+          "max": 20000,
+          "step": 5,
+          "description": "Left circular void center measured from the left edge of the plank."
+        },
+        {
+          "name": "void_middle_x_from_left_mm",
+          "label": "Middle void center x from left edge (mm)",
+          "type": "number",
+          "default": 540,
+          "min": 0,
+          "max": 20000,
+          "step": 5,
+          "description": "Middle circular void center measured from the left edge of the plank."
+        },
+        {
+          "name": "void_right_x_from_left_mm",
+          "label": "Right void center x from left edge (mm)",
+          "type": "number",
+          "default": 810,
+          "min": 0,
+          "max": 20000,
+          "step": 5,
+          "description": "Right circular void center measured from the left edge of the plank."
+        },
+        {
+          "name": "Tslab_mm",
+          "label": "Tslab Deck/topping thickness (mm)",
+          "type": "number",
+          "default": 100,
+          "min": 0,
+          "max": 1000,
+          "step": 5,
+          "description": "Composite deck/topping thickness metadata. Not merged into precast polygon in this milestone."
+        },
+        {
+          "name": "Be_mm",
+          "label": "Be Effective slab width (mm)",
+          "type": "number",
+          "default": 1000,
+          "min": 1,
+          "max": 20000,
+          "step": 5,
+          "description": "Manual effective width for current milestone. AASHTO auto calculation is planned."
+        },
+        {
+          "name": "Ebeam_MPa",
+          "label": "Ebeam Girder concrete modulus (MPa)",
+          "type": "number",
+          "default": 35000,
+          "min": 1,
+          "max": 100000,
+          "step": 100,
+          "description": "Precast girder concrete modulus used for n = Edeck/Ebeam."
+        },
+        {
+          "name": "Edeck_MPa",
+          "label": "Edeck Deck concrete modulus (MPa)",
+          "type": "number",
+          "default": 28560,
+          "min": 1,
+          "max": 100000,
+          "step": 100,
+          "description": "Deck concrete modulus used for n = Edeck/Ebeam."
+        },
+        {
+          "name": "girder_length_mm",
+          "label": "Girder length / span (mm)",
+          "type": "number",
+          "default": 12000,
+          "min": 1,
+          "max": 1000000,
+          "step": 100,
+          "description": "Girder length metadata for future bridge-girder checks."
+        },
+        {
+          "name": "overhang_mm",
+          "label": "Overhang width for AASHTO Be (mm)",
+          "type": "number",
+          "default": 500,
+          "min": 0,
+          "max": 20000,
+          "step": 5,
+          "description": "Exterior overhang metadata for future AASHTO effective width calculation."
+        }
+      ],
+      "allowed_workflows": [
+        "beam_girder"
+      ],
+      "application_domain": "bridge_infrastructure"
+    },
+    {
+      "key": "slab_bridge",
+      "display_name": "Slab Bridge",
+      "category": "General / Non-composite Girder",
+      "generator": "slab_bridge",
+      "dimensions_generator": "slab_bridge",
+      "parameters": [
+        {
+          "name": "width_mm",
+          "label": "B Overall slab width (mm)",
+          "type": "number",
+          "default": 5100,
+          "min": 1,
+          "max": 30000,
+          "step": 10,
+          "description": "Total slab bridge width from outside edge to outside edge. Default follows the provided drawing: 5100 mm."
+        },
+        {
+          "name": "edge_depth_mm",
+          "label": "He Edge depth (mm)",
+          "type": "number",
+          "default": 400,
+          "min": 1,
+          "max": 10000,
+          "step": 5,
+          "description": "Slab depth at both outside edges. Default follows the provided drawing: 400 mm."
+        },
+        {
+          "name": "center_depth_mm",
+          "label": "Hc Centerline depth (mm)",
+          "type": "number",
+          "default": 450,
+          "min": 1,
+          "max": 10000,
+          "step": 5,
+          "description": "Slab depth at the bridge centerline/crown. Default follows the provided drawing: 450 mm."
+        }
+      ],
+      "allowed_workflows": [
+        "beam_girder"
+      ],
+      "application_domain": "bridge_infrastructure"
+    },
+    {
+      "key": "railway_u_girder",
+      "display_name": "Railway U-Girder",
+      "category": "General / Non-composite Girder",
+      "generator": "railway_u_girder",
+      "dimensions_generator": "railway_u_girder",
+      "parameters": [
+        {
+          "name": "width_mm",
+          "label": "B Overall width (mm)",
+          "type": "number",
+          "default": 5500,
+          "min": 1,
+          "max": 30000,
+          "step": 10,
+          "description": "Total railway U-girder width from outside edge to outside edge. Default follows the provided drawing: 5500 mm."
+        },
+        {
+          "name": "depth_mm",
+          "label": "H Overall depth (mm)",
+          "type": "number",
+          "default": 1600,
+          "min": 1,
+          "max": 10000,
+          "step": 10,
+          "description": "Total section depth from top of side wall to bottom. Default follows the provided drawing: 1600 mm."
+        },
+        {
+          "name": "top_wall_width_mm",
+          "label": "Top wall width (mm)",
+          "type": "number",
+          "default": 600,
+          "min": 1,
+          "max": 10000,
+          "step": 5,
+          "description": "Top side-wall width on each side. The outside notch is derived from lower side width minus this value."
+        },
+        {
+          "name": "bottom_side_width_mm",
+          "label": "Bottom side width (mm)",
+          "type": "number",
+          "default": 650,
+          "min": 1,
+          "max": 10000,
+          "step": 5,
+          "description": "Lower side block width on each side. With the 600 mm top wall this derives the 50 mm exterior notch."
+        },
+        {
+          "name": "haunch_x_mm",
+          "label": "Haunch X (mm)",
+          "type": "number",
+          "default": 300,
+          "min": 1,
+          "max": 5000,
+          "step": 5,
+          "description": "Horizontal projection of the inner haunch from the side wall face toward the bridge centerline."
+        },
+        {
+          "name": "haunch_y_mm",
+          "label": "Haunch Y (mm)",
+          "type": "number",
+          "default": 300,
+          "min": 1,
+          "max": 5000,
+          "step": 5,
+          "description": "Vertical projection of the inner haunch from the vertical side wall down to the floor top at the side."
+        },
+        {
+          "name": "h1_step_height_mm",
+          "label": "h1 Step from bottom (mm)",
+          "type": "number",
+          "default": 670,
+          "min": 1,
+          "max": 10000,
+          "step": 5,
+          "description": "Vertical distance from section bottom to the exterior side notch/step. Default follows the drawing: 670 mm."
+        },
+        {
+          "name": "h2_bottom_opening_mm",
+          "label": "h2 Bottom recess (mm)",
+          "type": "number",
+          "default": 305,
+          "min": 1,
+          "max": 5000,
+          "step": 5,
+          "description": "Vertical recess depth from section bottom to the floor-slab underside. Default follows the drawing: 305 mm."
+        },
+        {
+          "name": "h3_floor_side_thickness_mm",
+          "label": "h3 Side floor thk (mm)",
+          "type": "number",
+          "default": 395,
+          "min": 1,
+          "max": 5000,
+          "step": 5,
+          "description": "Floor slab thickness at the haunch toe/side. Default follows the drawing: 395 mm."
+        },
+        {
+          "name": "h4_floor_center_thickness_mm",
+          "label": "h4 Center floor thk (mm)",
+          "type": "number",
+          "default": 450,
+          "min": 1,
+          "max": 5000,
+          "step": 5,
+          "description": "Floor slab thickness at bridge centerline. Default follows the drawing: 450 mm."
+        }
+      ],
+      "allowed_workflows": [
+        "beam_girder"
+      ],
+      "application_domain": "bridge_infrastructure"
+    },
+    {
+      "key": "psc_i_girder",
+      "display_name": "PSC I-Girder",
+      "category": "General / Non-composite Girder",
+      "generator": "psc_i_girder",
+      "dimensions_generator": "psc_i_girder",
+      "parameters": [
+        {
+          "name": "depth_mm",
+          "label": "Overall depth D (mm)",
+          "type": "number",
+          "default": 1800,
+          "min": 1,
+          "max": 6000,
+          "step": 10
+        },
+        {
+          "name": "top_flange_width_mm",
+          "label": "Top flange width (mm)",
+          "type": "number",
+          "default": 900,
+          "min": 1,
+          "max": 6000,
+          "step": 10
+        },
+        {
+          "name": "top_flange_thickness_mm",
+          "label": "Top flange thickness (mm)",
+          "type": "number",
+          "default": 180,
+          "min": 1,
+          "max": 3000,
+          "step": 5
+        },
+        {
+          "name": "web_width_mm",
+          "label": "Web width (mm)",
+          "type": "number",
+          "default": 220,
+          "min": 1,
+          "max": 3000,
+          "step": 5
+        },
+        {
+          "name": "bottom_flange_width_mm",
+          "label": "Bottom flange width (mm)",
+          "type": "number",
+          "default": 700,
+          "min": 1,
+          "max": 6000,
+          "step": 10
+        },
+        {
+          "name": "bottom_flange_thickness_mm",
+          "label": "Bottom flange thickness (mm)",
+          "type": "number",
+          "default": 220,
+          "min": 1,
+          "max": 3000,
+          "step": 5
+        }
+      ],
+      "allowed_workflows": [
+        "beam_girder",
+        "building_beam_girder"
+      ],
+      "application_domain": "shared_generic_girder"
+    },
+    {
+      "key": "u_girder",
+      "display_name": "Precast U-Girder",
+      "category": "Precast Composite Girder",
+      "generator": "u_girder",
+      "dimensions_generator": "u_girder",
+      "parameters": [
+        {
+          "name": "depth_mm",
+          "label": "Overall depth D (mm)",
+          "type": "number",
+          "default": 1600,
+          "min": 1,
+          "max": 6000,
+          "step": 10
+        },
+        {
+          "name": "top_width_mm",
+          "label": "Top width (mm)",
+          "type": "number",
+          "default": 2200,
+          "min": 1,
+          "max": 12000,
+          "step": 10
+        },
+        {
+          "name": "bottom_width_mm",
+          "label": "Bottom width (mm)",
+          "type": "number",
+          "default": 1200,
+          "min": 1,
+          "max": 12000,
+          "step": 10
+        },
+        {
+          "name": "wall_thickness_mm",
+          "label": "Wall thickness (mm)",
+          "type": "number",
+          "default": 180,
+          "min": 1,
+          "max": 3000,
+          "step": 5
+        },
+        {
+          "name": "bottom_slab_thickness_mm",
+          "label": "Bottom slab thickness (mm)",
+          "type": "number",
+          "default": 220,
+          "min": 1,
+          "max": 3000,
+          "step": 5
+        }
+      ],
+      "allowed_workflows": [
+        "beam_girder"
+      ],
+      "application_domain": "bridge_infrastructure"
+    },
+    {
+      "key": "single_cell_box_girder",
+      "display_name": "Single Cell Box Girder",
+      "category": "General / Non-composite Girder",
+      "generator": "single_cell_box_girder",
+      "dimensions_generator": "single_cell_box_girder",
+      "parameters": [
+        {
+          "name": "width_mm",
+          "label": "Width b (mm)",
+          "type": "number",
+          "default": 3000,
+          "min": 1,
+          "max": 30000,
+          "step": 10
+        },
+        {
+          "name": "depth_mm",
+          "label": "Depth D (mm)",
+          "type": "number",
+          "default": 1800,
+          "min": 1,
+          "max": 10000,
+          "step": 10
+        },
+        {
+          "name": "top_slab_thickness_mm",
+          "label": "Top slab thickness (mm)",
+          "type": "number",
+          "default": 220,
+          "min": 1,
+          "max": 3000,
+          "step": 5
+        },
+        {
+          "name": "bottom_slab_thickness_mm",
+          "label": "Bottom slab thickness (mm)",
+          "type": "number",
+          "default": 200,
+          "min": 1,
+          "max": 3000,
+          "step": 5
+        },
+        {
+          "name": "web_thickness_mm",
+          "label": "Web thickness (mm)",
+          "type": "number",
+          "default": 180,
+          "min": 1,
+          "max": 3000,
+          "step": 5
+        }
+      ],
+      "allowed_workflows": [
+        "beam_girder",
+        "building_beam_girder"
+      ],
+      "application_domain": "shared_generic_girder"
+    }
+  ]
+}
