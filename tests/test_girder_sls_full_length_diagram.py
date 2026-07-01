@@ -138,12 +138,13 @@ def test_sls_limit4_has_reinforcement_aware_tension_limit_guide() -> None:
     assert "Auto rebar detection is a screening aid only" in SOURCE
 
 
-def test_sls_tension_default1_defaults_to_verified_bonded_reinforcement() -> None:
+def test_sls_stage_stress_qa1_defaults_to_conservative_not_verified_profile() -> None:
     guide_block = SOURCE[SOURCE.find("def _render_girder_tension_limit_guidance"):SOURCE.find("def _render_girder_code_limit_preview")]
-    assert "SLS.TENSION.DEFAULT1" in guide_block
-    assert 'default_method = "Verified bonded tension reinforcement"' in guide_block
-    assert 'current_method == "Auto from current ordinary rebar layout"' in guide_block
-    assert "verified_default_applied" in guide_block
+    assert "SLS.STAGE.STRESS.QA1" in guide_block
+    assert 'default_method = "Not verified / use conservative preview"' in guide_block
+    assert '"Verified bonded tension reinforcement"} and not explicit_bonded_confirmed' in guide_block
+    assert "stage_stress_qa1_default_applied" in guide_block
+    assert "I have verified bonded auxiliary reinforcement at the governing tensile face" in guide_block
 
 
 def test_sls_limit4_1_tensile_limit_guide_is_visible_in_full_length_diagram() -> None:
@@ -162,6 +163,16 @@ def test_sls_limit4_1_bridge_diagram_uses_workflow_enforced_code_profile() -> No
     assert "_girder_sls_profile_code_from_session()" in guide_block
     assert "project_design_code_from_session(st.session_state)" not in profile_block
     assert "project_design_code_from_session(st.session_state)" not in guide_block
+
+
+def test_sls_stage_stress_qa1_uses_single_limit_profile_source_of_truth() -> None:
+    profile_block = SOURCE[SOURCE.find("def _girder_stage_limit_profile_for_diagram"):SOURCE.find("def _girder_sls_diagram_stress_limit_rows")]
+    assert "source of truth for the stage summary" in profile_block
+    assert "Higher temporary bonded-auxiliary profiles are not accepted unless" in profile_block
+    assert "_girder_sls_profile_requires_bonded_aux_confirmation" in SOURCE
+    assert "Limit profile key" in SOURCE
+    assert "Limit profile source" in SOURCE
+    assert "Higher bonded-auxiliary tensile limit was requested" in SOURCE
 
 
 def test_sls_limit4_2_visible_guide_shows_formula_and_non_service_aci_note() -> None:

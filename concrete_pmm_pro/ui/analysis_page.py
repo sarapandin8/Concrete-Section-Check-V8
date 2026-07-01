@@ -10832,7 +10832,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
     st.markdown(_ANALYSIS_DASHBOARD_CSS, unsafe_allow_html=True)
     st.markdown("### ULS Beam/Girder decision summary")
     st.caption(
-        "Decision-first Beam/Girder ULS workspace. Loads remain the source of truth; Analysis reviews active station rows only."
+        "Decision-first Beam/Girder ULS workspace. Loads page is the source of truth; Analysis reviews active station rows only."
     )
     with st.expander("Beam/Girder ULS scope / engineering assumptions", expanded=False):
         st.markdown(
@@ -14305,8 +14305,74 @@ def _girder_sls_diagram_profile_key(stage_label: str) -> str:
     return f"girder_sls_diagram_limit_profile_key_{safe_stage}"
 
 
+def _girder_sls_full_length_guide_title(stage_label: str) -> str:
+    """Return the canonical title used by a stage SLS full-length limit guide."""
+
+    return f"{_beam_sls_stage_label_for_analysis(stage_label)} full-length diagram"
+
+
+def _girder_sls_bonded_confirmation_key_from_title(title: str) -> str:
+    """Return the explicit confirmation key for higher bonded-reinforcement limits."""
+
+    safe_title = str(title or "SLS").replace(" ", "_").replace("/", "_")
+    return f"girder_tension_limit_bonded_confirm_{safe_title}"
+
+
+def _girder_sls_bonded_confirmation_key(stage_label: str) -> str:
+    """Return the explicit confirmation key for a stage full-length diagram."""
+
+    return _girder_sls_bonded_confirmation_key_from_title(_girder_sls_full_length_guide_title(stage_label))
+
+
+def _girder_sls_profile_requires_bonded_aux_confirmation(profile_key: str | None) -> bool:
+    """Return True when a selected profile uses a higher temporary bonded-auxiliary tensile limit."""
+
+    return str(profile_key or "") in {"aashto_transfer_bonded_aux", "aashto_deck_precomp_bonded_aux"}
+
+
+def _girder_sls_conservative_profile_key_for_stage(code: str, limit_stage: str) -> str | None:
+    """Return the conservative default profile key for a code/stage combination."""
+
+    options = girder_sls_limit_profile_options(code=code, stage=limit_stage)
+    if not options:
+        return None
+    for option in options:
+        key = str(option.key)
+        if key in {"aashto_transfer_no_aux", "aashto_deck_precomp_user", "aci_transfer_basic", "aci_deck_precomp_cip_pour_fr"}:
+            return key
+    return str(options[0].key)
+
+
+def _girder_sls_stage_profile_warning_key(stage_label: str) -> str:
+    safe_stage = _beam_sls_stage_label_for_analysis(stage_label).replace(" ", "_").replace("/", "_")
+    return f"girder_sls_stage_profile_warning_{safe_stage}"
+
+
+def _girder_sls_limit_profile_source_label(stage_label: str, profile: object) -> str:
+    """Return a short traceability label for the selected SLS limit profile."""
+
+    key = str(getattr(profile, "limit_profile_key", "") or "")
+    if _girder_sls_profile_requires_bonded_aux_confirmation(key):
+        confirmed = bool(st.session_state.get(_girder_sls_bonded_confirmation_key(stage_label), False))
+        return "Engineer-confirmed bonded auxiliary reinforcement" if confirmed else "Blocked: bonded auxiliary not explicitly confirmed"
+    if key in {"aashto_transfer_no_aux", "aashto_deck_precomp_user"}:
+        return "Conservative default — bonded auxiliary reinforcement not verified"
+    if key in {"aashto_transfer_no_tension", "aashto_deck_no_tension", "aashto_service_unbonded_no_tension"}:
+        return "Conservative no-tension profile"
+    if "service" in key:
+        return "Service exposure/duration guide"
+    return "Project-code stage profile"
+
+
 def _girder_stage_limit_profile_for_diagram(stage_label: str):
-    """Return the project-code preview stress-limit profile for a stage diagram."""
+    """Return the project-code preview stress-limit profile for a stage diagram.
+
+    SLS.STAGE.STRESS.QA1 makes this the source of truth for the stage summary,
+    detail cards, graph limit lines, Result Summary handoff, and report/QA rows.
+    Higher temporary bonded-auxiliary profiles are not accepted unless the
+    engineer has explicitly confirmed the reinforcement condition in the visible
+    tensile-limit guide.
+    """
 
     code = _girder_sls_profile_code_from_session()
     limit_stage = _beam_sls_stage_default_code_limit_stage(stage_label)
@@ -14314,7 +14380,24 @@ def _girder_stage_limit_profile_for_diagram(stage_label: str):
     option_keys = {option.key for option in girder_sls_limit_profile_options(code=code, stage=limit_stage)}
     selected_key = str(st.session_state.get(profile_key) or "")
     if selected_key not in option_keys:
-        selected_key = None
+        selected_key = _girder_sls_conservative_profile_key_for_stage(code, limit_stage)
+        if selected_key is not None:
+            st.session_state[profile_key] = selected_key
+
+    warning_key = _girder_sls_stage_profile_warning_key(stage_label)
+    st.session_state.pop(warning_key, None)
+    if _girder_sls_profile_requires_bonded_aux_confirmation(selected_key):
+        confirmed = bool(st.session_state.get(_girder_sls_bonded_confirmation_key(stage_label), False))
+        if not confirmed:
+            conservative_key = _girder_sls_conservative_profile_key_for_stage(code, limit_stage)
+            st.session_state[warning_key] = (
+                "Higher bonded-auxiliary tensile limit was requested but explicit reinforcement confirmation is missing; "
+                "the stage stress summary, graph, Result Summary, and Report / QA use the conservative profile instead."
+            )
+            selected_key = conservative_key
+            if selected_key is not None:
+                st.session_state[profile_key] = selected_key
+
     return build_girder_sls_limit_profile(code=code, stage=limit_stage, limit_profile_key=selected_key)
 
 
@@ -14362,7 +14445,7 @@ def _render_girder_sls_diagram_tensile_limit_guide(stage_label: str, df: pd.Data
     )
     with st.expander(f"Tensile stress limit guide — {stage_label}", expanded=False):
         _, notes = _render_girder_tension_limit_guidance(
-            title=f"{stage_label} full-length diagram",
+            title=_girder_sls_full_length_guide_title(stage_label),
             code=code,
             stage=limit_stage,
             stresses=_girder_sls_diagram_stress_limit_rows(df),
@@ -14376,6 +14459,9 @@ def _render_girder_sls_diagram_tensile_limit_guide(stage_label: str, df: pd.Data
             # guide without duplicate widget keys.
             show_end_zone_controls=(stage_label == "Transfer stage"),
         )
+        warning_note = st.session_state.get(_girder_sls_stage_profile_warning_key(stage_label))
+        if warning_note:
+            st.warning(str(warning_note))
         if notes:
             for note in notes:
                 st.warning(note)
@@ -14483,6 +14569,9 @@ def _girder_sls4b_governing_demand_rows(df: pd.DataFrame, stage_label: str) -> l
     if df.empty:
         return []
     compression_limit, tension_limit, profile_label = _girder_sls_diagram_limit_summary(stage_label)
+    profile = _girder_stage_limit_profile_for_diagram(stage_label)
+    profile_key = str(getattr(profile, "limit_profile_key", "") or "")
+    profile_source = _girder_sls_limit_profile_source_label(stage_label, profile)
     comp_idx = df["Max compression (MPa)"].idxmin()
     span = float(pd.to_numeric(df.get("Station x (m)", pd.Series([0.0])), errors="coerce").max(skipna=True) or 0.0)
     tension_utilizations: list[tuple[float, object, float]] = []
@@ -14522,6 +14611,8 @@ def _girder_sls4b_governing_demand_rows(df: pd.DataFrame, stage_label: str) -> l
                 "Limit stress (MPa)": float(signed_limit),
                 "Utilization": utilization,
                 "Limit profile": profile_label,
+                "Limit profile key": profile_key,
+                "Limit profile source": profile_source,
                 "Case Name": str(row.get("Case Name") or "Unnamed"),
                 "Basis": str(row.get("Basis") or ""),
             }
@@ -14566,6 +14657,8 @@ def _girder_sls4b_stage_decision_row(df: pd.DataFrame, stage_label: str, selecte
             "Limit stress (MPa)": None,
             "Utilization": None,
             "Limit profile": detail,
+            "Limit profile key": "",
+            "Limit profile source": "No valid station rows",
         }
     return {
         "Stage": stage_label,
@@ -14578,6 +14671,8 @@ def _girder_sls4b_stage_decision_row(df: pd.DataFrame, stage_label: str, selecte
         "Limit stress (MPa)": controlling["Limit stress (MPa)"],
         "Utilization": controlling["Utilization"],
         "Limit profile": controlling["Limit profile"],
+        "Limit profile key": controlling.get("Limit profile key", ""),
+        "Limit profile source": controlling.get("Limit profile source", ""),
     }
 
 
@@ -14829,6 +14924,7 @@ def _girder_sls4c_stage_basis_cards(
     """
 
     profile = _girder_stage_limit_profile_for_diagram(stage_label)
+    profile_source = _girder_sls_limit_profile_source_label(stage_label, profile)
     selected_basis = "From Loads rows"
     if "Basis" in df.columns and not df.empty:
         basis_values = [str(value) for value in df["Basis"].dropna().unique() if str(value).strip()]
@@ -14855,7 +14951,7 @@ def _girder_sls4c_stage_basis_cards(
         {
             "title": "Design code / limit basis",
             "value": str(profile.code),
-            "detail": f"{profile.stage} · {profile.limit_profile_label}",
+            "detail": f"{profile.stage} · {profile.limit_profile_label} · {profile_source}",
             "status": "info",
             "strong": True,
         },
@@ -15042,6 +15138,13 @@ def _render_girder_sls4b_combined_stage_result_table(
     st.session_state["result_summary_beam_girder_sls_code_label"] = workflow_project_code_label_from_session(st.session_state)
     st.session_state["result_summary_beam_girder_sls_cache_hash"] = str(st.session_state.get("analysis_input_hash") or st.session_state.get("project_input_hash") or "")
     _render_girder_sls4b_governing_summary_cards(summary_df)
+    profile_warnings = [
+        str(st.session_state.get(_girder_sls_stage_profile_warning_key(stage_label)) or "")
+        for _stage_key, stage_label, _stage_note in _beam_sls_stage_tab_specs()
+    ]
+    profile_warnings = [warning for warning in dict.fromkeys(profile_warnings) if warning]
+    for warning in profile_warnings:
+        st.warning(warning)
     st.dataframe(_clean_girder_sls4b_decision_dataframe(summary_df), use_container_width=True, hide_index=True)
     with st.expander("Compression / tension demand details — all stages", expanded=False):
         st.caption(
@@ -17838,18 +17941,19 @@ def _render_girder_tension_limit_guidance(
         "Not verified / use conservative preview",
         "No bonded reinforcement / no-tension condition",
     ]
-    # SLS.TENSION.DEFAULT1: default all SLS stage tensile-limit guides to
-    # the engineer-verified bonded reinforcement condition.  The Auto option
-    # remains available as a screening aid, but it is no longer the startup
-    # default because it can silently downgrade the tensile limit when ordinary
-    # rebar is disabled or hidden from the current preview.  A one-time
-    # migration also promotes legacy Auto defaults to the verified condition;
-    # after that, explicit user selections are preserved.
-    default_method = "Verified bonded tension reinforcement"
-    default_migration_key = f"{guide_method_key}_verified_default_applied"
+    # SLS.STAGE.STRESS.QA1: default stage tensile-limit guides to the
+    # conservative not-verified condition.  The higher bonded-auxiliary tension
+    # limits require an explicit engineer confirmation checkbox before they can
+    # become the source of truth for summary/detail/graph/report rows.  A
+    # one-time migration demotes legacy implicit Verified/Auto defaults to this
+    # conservative condition unless the new explicit confirmation is present.
+    default_method = "Not verified / use conservative preview"
+    default_migration_key = f"{guide_method_key}_stage_stress_qa1_default_applied"
     current_method = st.session_state.get(guide_method_key)
+    bonded_confirm_key = _girder_sls_bonded_confirmation_key_from_title(title)
+    explicit_bonded_confirmed = bool(st.session_state.get(bonded_confirm_key, False))
     if not bool(st.session_state.get(default_migration_key, False)):
-        if current_method not in method_options or current_method == "Auto from current ordinary rebar layout":
+        if current_method not in method_options or (current_method in {"Auto from current ordinary rebar layout", "Verified bonded tension reinforcement"} and not explicit_bonded_confirmed):
             st.session_state[guide_method_key] = default_method
         st.session_state[default_migration_key] = True
     elif st.session_state.get(guide_method_key) not in method_options:
@@ -17901,6 +18005,7 @@ def _render_girder_tension_limit_guidance(
             duration = "Full service / total"
             st.markdown("**Effect duration**")
             st.caption("Not applied to this stage; service duration controls only service-stage classification.")
+    pre_guidance_notes: list[str] = []
     if method == "Auto from current ordinary rebar layout":
         # CODE.SLS.LIMIT5: ACI transfer end-zone higher limit requires an
         # engineer-verified R24.5.3 condition.  Auto rebar detection is only a
@@ -17909,8 +18014,28 @@ def _render_girder_tension_limit_guidance(
             verified = None
         else:
             verified = summary.get("auto_verified")
+            if verified is True:
+                pre_guidance_notes.append(
+                    "Auto detected ordinary reinforcement is a screening aid only; explicit confirmation is still required before using higher bonded-auxiliary tensile limits in report decisions."
+                )
+                verified = None
     elif method == "Verified bonded tension reinforcement":
-        verified = True
+        explicit_bonded_confirmed = bool(
+            st.checkbox(
+                "I have verified bonded auxiliary reinforcement at the governing tensile face",
+                value=bool(st.session_state.get(bonded_confirm_key, False)),
+                key=bonded_confirm_key,
+                help=(
+                    "Required before higher temporary bonded-auxiliary tensile stress limits can be used by the stage summary, graph, Result Summary, or Report / QA. "
+                    "Confirm area, location, development/transfer-zone applicability, and project specification before checking this box."
+                ),
+            )
+        )
+        verified = True if explicit_bonded_confirmed else None
+        if not explicit_bonded_confirmed:
+            pre_guidance_notes.append(
+                "Verified bonded reinforcement was selected, but the explicit confirmation box is not checked; conservative not-verified tensile limits remain active."
+            )
     elif method == "No bonded reinforcement / no-tension condition":
         verified = False
         exposure = "no tension"
@@ -18047,7 +18172,7 @@ def _render_girder_tension_limit_guidance(
     if code != "AASHTO LRFD Bridge" and stage != STAGE_FINAL_SERVICE:
         st.info("ACI Class U / Class T service classification changes the Service-stage tensile limit only. Transfer and Construction use their own stage-specific limit formulas.")
 
-    notes = list(guidance.warnings)
+    notes = list(pre_guidance_notes) + list(guidance.warnings)
     if method == "Auto from current ordinary rebar layout":
         notes.append("Auto rebar detection is a screening aid only; it does not verify code-required bonded reinforcement area, detailing, development, or crack-control requirements.")
     return (selected_profile_key, notes)
