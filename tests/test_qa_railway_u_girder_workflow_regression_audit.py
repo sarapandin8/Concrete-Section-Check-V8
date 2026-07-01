@@ -209,7 +209,7 @@ def test_qa_rail_ugirder1_source_and_docs_keep_guarded_review_language() -> None
     assert "Lifting stage" in ANALYSIS_SOURCE
     assert "Construction stage" in ANALYSIS_SOURCE
     assert "Service stage" in ANALYSIS_SOURCE
-    assert "default_method = \"Verified bonded tension reinforcement\"" in ANALYSIS_SOURCE
+    assert "default_method = \"Engineer-confirmed bonded auxiliary reinforcement\"" in ANALYSIS_SOURCE
     assert "Top web fiber" in ANALYSIS_SOURCE
     assert "CIP slab bottom fiber" in ANALYSIS_SOURCE
 

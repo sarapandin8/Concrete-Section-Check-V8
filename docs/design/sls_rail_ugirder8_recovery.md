@@ -37,5 +37,5 @@ The targeted tests include the multi-fiber plot plus the previously accepted fix
 
 - Railway U-Girder Lifting stage tab.
 - Transfer stage `f'ci` routing.
-- Verified bonded tension reinforcement default.
+- Engineer-confirmed bonded auxiliary reinforcement default.
 - Debonding and prestress station handoff.

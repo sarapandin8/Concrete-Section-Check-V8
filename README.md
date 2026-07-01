@@ -1084,11 +1084,11 @@ Corrects the parametric plank-girder concrete outline to follow the user-confirm
 - No solver equations, geometry, section-property, prestress-loss, ULS, shear/torsion, report, or project-schema calculation logic changed.
 
 
-### SLS.TENSION.DEFAULT1 — Verified Bonded Tension Reinforcement Default
+### SLS.TENSION.DEFAULT1 — Bonded Tension Reinforcement Default
 
-- Default the SLS tensile-limit guide to `Verified bonded tension reinforcement` for all section/stage stress tabs.
+- Earlier milestone defaulted the SLS tensile-limit guide to a bonded-reinforcement assumption; QA2 now labels the practical route as `Engineer-confirmed bonded auxiliary reinforcement`.
 - Promote legacy Auto defaults once while preserving explicit conservative/no-tension user selections.
-- Keep `Auto from current ordinary rebar layout` available as a manual screening option.
+- Keep `Model-detected active ordinary rebar at tensile face` available as a manual screening option.
 - No solver, material-strength routing, geometry, prestress/debonding, ULS, or report logic changes.
 
 ### REPORT.RAIL.UGIRDER1 — Railway U-Girder SLS Engineering Review Report Section
@@ -1212,3 +1212,17 @@ This is presentation-only polish. It does not change trace coordinates, result d
 Replaced the previous solid dark-navy Streamlit expander bars with a lighter blue accordion style so secondary audit/detail sections no longer dominate the commercial dashboard visual hierarchy. Collapsed and expanded expander headers now use light-blue surfaces, blue borders, and dark readable text; navy is retained for structural/brand emphasis rather than default accordion fills.
 
 This is presentation-only UI polish. It does not change solver equations, SLS/ULS/PMM/prestress/rebar logic, project schema, widget keys, save/load behavior, or navigation state.
+
+## SLS.STAGE.STRESS.QA2 — Practical Auxiliary Reinforcement Basis
+
+This milestone keeps the SLS staged stress limit source-of-truth from QA1, but changes the temporary tensile-limit guide to match practical precast-girder use. The higher bonded-auxiliary tensile limit can now be traced to either engineer confirmation from design/detailing drawings or model-detected active ordinary rebar at the tensile face. The app no longer presents a disabled ordinary rebar model as a contradiction when the engineer-confirmed drawing basis is intentionally used.
+
+Key UI/QA changes:
+
+- Renamed the user-facing temporary reinforcement route from `Verified bonded tension reinforcement` to `Engineer-confirmed bonded auxiliary reinforcement`.
+- Added a separate `Model-detected active ordinary rebar at tensile face` route for projects where ordinary rebar is enabled and modeled.
+- Added report/summary traceability for bonded-auxiliary source: engineer-confirmed from drawings versus model-detected active rebar.
+- Keeps conservative not-verified limits active when engineer confirmation is selected but not checked, or when model detection is selected but no active tensile-face rebar is detected.
+- Rewords the guide card from `Detected tensile fiber` to `Reinforcement basis source` so the UI does not imply model verification when the proof source is external drawings.
+
+No stress equations, Pe(x), debonding, load routing, geometry, material routing, ULS/SLS calculation kernel, Project JSON schema, or result-cache persistence were changed. This is UI/QA traceability and source-basis wording only; development length, anchorage, end-zone, continuity, area adequacy, crack-control, and project certification remain separate engineering reviews.

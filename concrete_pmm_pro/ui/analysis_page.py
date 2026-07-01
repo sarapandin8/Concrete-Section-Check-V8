@@ -14318,6 +14318,32 @@ def _girder_sls_bonded_confirmation_key_from_title(title: str) -> str:
     return f"girder_tension_limit_bonded_confirm_{safe_title}"
 
 
+def _girder_sls_bonded_confirmation_source_key_from_title(title: str) -> str:
+    """Return the source key for the practical bonded-auxiliary reinforcement basis."""
+
+    safe_title = str(title or "SLS").replace(" ", "_").replace("/", "_")
+    return f"girder_tension_limit_bonded_source_{safe_title}"
+
+
+def _girder_sls_bonded_confirmation_source_key(stage_label: str) -> str:
+    """Return the source key for a stage full-length diagram bonded-auxiliary basis."""
+
+    return _girder_sls_bonded_confirmation_source_key_from_title(_girder_sls_full_length_guide_title(stage_label))
+
+
+def _girder_sls_bonded_source_label(stage_label: str) -> str:
+    """Return report/summary wording for the higher bonded-auxiliary profile source."""
+
+    source = str(st.session_state.get(_girder_sls_bonded_confirmation_source_key(stage_label)) or "").strip()
+    if source == "model_detected":
+        return "Model-detected active rebar at tensile face"
+    if source == "engineer_confirmed_drawings":
+        return "Engineer-confirmed from drawings"
+    if source == "legacy_engineer_confirmed":
+        return "Engineer-confirmed bonded auxiliary reinforcement"
+    return "Engineer-confirmed bonded auxiliary reinforcement"
+
+
 def _girder_sls_bonded_confirmation_key(stage_label: str) -> str:
     """Return the explicit confirmation key for a stage full-length diagram."""
 
@@ -14354,7 +14380,7 @@ def _girder_sls_limit_profile_source_label(stage_label: str, profile: object) ->
     key = str(getattr(profile, "limit_profile_key", "") or "")
     if _girder_sls_profile_requires_bonded_aux_confirmation(key):
         confirmed = bool(st.session_state.get(_girder_sls_bonded_confirmation_key(stage_label), False))
-        return "Engineer-confirmed bonded auxiliary reinforcement" if confirmed else "Blocked: bonded auxiliary not explicitly confirmed"
+        return _girder_sls_bonded_source_label(stage_label) if confirmed else "Blocked: bonded auxiliary not explicitly confirmed"
     if key in {"aashto_transfer_no_aux", "aashto_deck_precomp_user"}:
         return "Conservative default — bonded auxiliary reinforcement not verified"
     if key in {"aashto_transfer_no_tension", "aashto_deck_no_tension", "aashto_service_unbonded_no_tension"}:
@@ -14369,9 +14395,10 @@ def _girder_stage_limit_profile_for_diagram(stage_label: str):
 
     SLS.STAGE.STRESS.QA1 makes this the source of truth for the stage summary,
     detail cards, graph limit lines, Result Summary handoff, and report/QA rows.
-    Higher temporary bonded-auxiliary profiles are not accepted unless the
-    engineer has explicitly confirmed the reinforcement condition in the visible
-    tensile-limit guide.
+    Higher temporary bonded-auxiliary profiles are accepted only when the
+    visible tensile-limit guide records a practical source: engineer confirmation
+    from design/detailing drawings or model-detected active ordinary rebar at the
+    tensile face.
     """
 
     code = _girder_sls_profile_code_from_session()
@@ -17936,25 +17963,36 @@ def _render_girder_tension_limit_guidance(
     duration_key = f"girder_tension_limit_duration_{title}"
     summary = _girder_ordinary_rebar_tension_face_summary(stresses)
     method_options = [
-        "Auto from current ordinary rebar layout",
-        "Verified bonded tension reinforcement",
+        "Engineer-confirmed bonded auxiliary reinforcement",
+        "Model-detected active ordinary rebar at tensile face",
         "Not verified / use conservative preview",
         "No bonded reinforcement / no-tension condition",
     ]
-    # SLS.STAGE.STRESS.QA1: default stage tensile-limit guides to the
-    # conservative not-verified condition.  The higher bonded-auxiliary tension
-    # limits require an explicit engineer confirmation checkbox before they can
-    # become the source of truth for summary/detail/graph/report rows.  A
-    # one-time migration demotes legacy implicit Verified/Auto defaults to this
-    # conservative condition unless the new explicit confirmation is present.
-    default_method = "Not verified / use conservative preview"
-    default_migration_key = f"{guide_method_key}_stage_stress_qa1_default_applied"
+    # SLS.STAGE.STRESS.QA2: practical precast-girder workflow.  The higher
+    # bonded-auxiliary tension limits are allowed when the source is visible and
+    # traceable: either engineer-confirmed from design/detailing drawings or
+    # model-detected active ordinary rebar at the tensile face.  Do not present
+    # either case as final code/detailing certification.
+    default_method = "Engineer-confirmed bonded auxiliary reinforcement"
+    default_migration_key = f"{guide_method_key}_stage_stress_qa2_default_applied"
+    legacy_migration_key = f"{guide_method_key}_stage_stress_qa1_default_applied"
     current_method = st.session_state.get(guide_method_key)
+    legacy_method_map = {
+        "Verified bonded tension reinforcement": "Engineer-confirmed bonded auxiliary reinforcement",
+        "Auto from current ordinary rebar layout": "Model-detected active ordinary rebar at tensile face",
+    }
+    if current_method in legacy_method_map:
+        current_method = legacy_method_map[str(current_method)]
+        st.session_state[guide_method_key] = current_method
     bonded_confirm_key = _girder_sls_bonded_confirmation_key_from_title(title)
+    bonded_source_key = _girder_sls_bonded_confirmation_source_key_from_title(title)
     explicit_bonded_confirmed = bool(st.session_state.get(bonded_confirm_key, False))
     if not bool(st.session_state.get(default_migration_key, False)):
-        if current_method not in method_options or (current_method in {"Auto from current ordinary rebar layout", "Verified bonded tension reinforcement"} and not explicit_bonded_confirmed):
+        if current_method not in method_options:
             st.session_state[guide_method_key] = default_method
+        # Keep the QA1 migration marker for old project JSONs, but QA2 owns the
+        # default from this point onward.
+        st.session_state[legacy_migration_key] = True
         st.session_state[default_migration_key] = True
     elif st.session_state.get(guide_method_key) not in method_options:
         st.session_state[guide_method_key] = default_method
@@ -17970,7 +18008,7 @@ def _render_girder_tension_limit_guidance(
             "Tension reinforcement condition",
             method_options,
             key=guide_method_key,
-            help="Auto detection is only a screening aid. Use verified/manual selections when project reinforcement conditions control tensile stress limits.",
+            help="Use engineer confirmation from drawings for typical precast detailing, or model detection when the active ordinary rebar layout is part of this analysis model. Both remain preview/reporting assumptions, not final detailing certification.",
         )
     with cols[1]:
         if code == "AASHTO LRFD Bridge":
@@ -18006,42 +18044,79 @@ def _render_girder_tension_limit_guidance(
             st.markdown("**Effect duration**")
             st.caption("Not applied to this stage; service duration controls only service-stage classification.")
     pre_guidance_notes: list[str] = []
-    if method == "Auto from current ordinary rebar layout":
-        # CODE.SLS.LIMIT5: ACI transfer end-zone higher limit requires an
-        # engineer-verified R24.5.3 condition.  Auto rebar detection is only a
-        # screening aid and must not silently select the higher end-zone limit.
-        if code == "ACI 318" and stage == STAGE_TRANSFER:
-            verified = None
+    reinforcement_source_detail = str(summary.get("detail"))
+    reinforcement_source_status = "info" if summary.get("auto_verified") else "warning"
+    if method == "Model-detected active ordinary rebar at tensile face":
+        # Model detection is a practical screening route when ordinary rebar is
+        # part of the active section model.  It checks presence near the tensile
+        # face only; area, detailing, anchorage, and development remain separate
+        # engineering checks.
+        verified = True if summary.get("auto_verified") is True else None
+        if verified is True:
+            st.session_state[bonded_confirm_key] = True
+            st.session_state[bonded_source_key] = "model_detected"
+            reinforcement_source_detail = (
+                f"Model detected {summary.get('bars_near_tension_face')} ordinary bar(s) near the tensile face. "
+                "This is a presence check only; detailing and development remain separate."
+            )
+            reinforcement_source_status = "ready"
+            pre_guidance_notes.append(
+                "Model-detected ordinary reinforcement is a screening aid only; confirm area, continuity, development, anchorage, and stage applicability before final report acceptance."
+            )
         else:
-            verified = summary.get("auto_verified")
-            if verified is True:
-                pre_guidance_notes.append(
-                    "Auto detected ordinary reinforcement is a screening aid only; explicit confirmation is still required before using higher bonded-auxiliary tensile limits in report decisions."
-                )
-                verified = None
-    elif method == "Verified bonded tension reinforcement":
+            st.session_state[bonded_confirm_key] = False
+            st.session_state[bonded_source_key] = "model_detection_missing"
+            pre_guidance_notes.append(
+                "Model-detected rebar basis was selected, but active ordinary rebar at the governing tensile face was not detected; conservative not-verified tensile limits remain active."
+            )
+            reinforcement_source_detail = str(summary.get("detail"))
+            reinforcement_source_status = "warning"
+    elif method == "Engineer-confirmed bonded auxiliary reinforcement":
         explicit_bonded_confirmed = bool(
             st.checkbox(
-                "I have verified bonded auxiliary reinforcement at the governing tensile face",
+                "Use engineer-confirmed bonded auxiliary reinforcement from design/detailing drawings",
                 value=bool(st.session_state.get(bonded_confirm_key, False)),
                 key=bonded_confirm_key,
                 help=(
-                    "Required before higher temporary bonded-auxiliary tensile stress limits can be used by the stage summary, graph, Result Summary, or Report / QA. "
-                    "Confirm area, location, development/transfer-zone applicability, and project specification before checking this box."
+                    "Required before higher temporary bonded-auxiliary tensile stress limits can be used by the stage summary, graph, Result Summary, or Report / QA when the active rebar model does not prove the condition. "
+                    "Confirm tensile-face location, continuity, development/transfer-zone applicability, anchorage, and project specification before checking this box."
                 ),
             )
         )
-        verified = True if explicit_bonded_confirmed else None
-        if not explicit_bonded_confirmed:
+        if explicit_bonded_confirmed:
+            verified = True
+            st.session_state[bonded_source_key] = "engineer_confirmed_drawings"
+            if summary.get("auto_verified") is True:
+                reinforcement_source_detail = (
+                    "Engineer-confirmed from drawings; active ordinary rebar is also detected near the tensile face. "
+                    "Detailing/development verification remains separate."
+                )
+            else:
+                reinforcement_source_detail = (
+                    "Engineer-confirmed from design/detailing drawings. The active ordinary rebar model is not used as the proof source for this stage limit."
+                )
+            reinforcement_source_status = "ready"
+        else:
+            verified = None
+            st.session_state[bonded_source_key] = "engineer_confirmation_missing"
             pre_guidance_notes.append(
-                "Verified bonded reinforcement was selected, but the explicit confirmation box is not checked; conservative not-verified tensile limits remain active."
+                "Engineer-confirmed bonded auxiliary reinforcement was selected, but the confirmation box is not checked; conservative not-verified tensile limits remain active."
             )
+            if not ordinary_rebar_enabled(st.session_state, default=True):
+                reinforcement_source_detail = (
+                    "Ordinary rebar system is disabled in the analysis model. Check the engineer-confirmation box only when drawings/details provide the bonded auxiliary reinforcement source."
+                )
+                reinforcement_source_status = "warning"
     elif method == "No bonded reinforcement / no-tension condition":
         verified = False
+        st.session_state[bonded_confirm_key] = False
+        st.session_state[bonded_source_key] = "no_bonded_reinforcement"
         exposure = "no tension"
         aci_service_class = "No tension"
     else:
         verified = None
+        st.session_state[bonded_confirm_key] = False
+        st.session_state[bonded_source_key] = "not_verified_conservative"
     guidance = recommend_girder_tension_limit_profile(
         code=code,
         stage=stage,
@@ -18057,19 +18132,25 @@ def _render_girder_tension_limit_guidance(
         st.markdown("**Guided profile**")
         st.caption(recommended_key.replace("_", " "))
     status = "ready" if guidance.status == "OK" else "warning"
+    guide_basis_detail = guidance.basis
+    if verified is True:
+        if method == "Engineer-confirmed bonded auxiliary reinforcement":
+            guide_basis_detail = f"{guidance.basis} Source: engineer-confirmed from design/detailing drawings; not model-certified."
+        elif method == "Model-detected active ordinary rebar at tensile face":
+            guide_basis_detail = f"{guidance.basis} Source: active ordinary rebar detected near tensile face; detailing verification remains separate."
     _render_analysis_summary_strip(
         [
             {
                 "title": "Tensile limit guide",
                 "value": guidance.status,
-                "detail": guidance.basis,
+                "detail": guide_basis_detail,
                 "status": status,
             },
             {
-                "title": "Detected tensile fiber",
+                "title": "Reinforcement basis source",
                 "value": str(summary.get("tension_fibers")),
-                "detail": str(summary.get("detail")),
-                "status": "info" if summary.get("auto_verified") else "warning",
+                "detail": reinforcement_source_detail,
+                "status": reinforcement_source_status,
             },
         ],
         columns=2,
@@ -18173,8 +18254,10 @@ def _render_girder_tension_limit_guidance(
         st.info("ACI Class U / Class T service classification changes the Service-stage tensile limit only. Transfer and Construction use their own stage-specific limit formulas.")
 
     notes = list(pre_guidance_notes) + list(guidance.warnings)
-    if method == "Auto from current ordinary rebar layout":
-        notes.append("Auto rebar detection is a screening aid only; it does not verify code-required bonded reinforcement area, detailing, development, or crack-control requirements.")
+    if method == "Model-detected active ordinary rebar at tensile face":
+        notes.append("Model-detected rebar is a screening aid only; it does not verify code-required bonded reinforcement area, detailing, development, anchorage, or crack-control requirements.")
+    if method == "Engineer-confirmed bonded auxiliary reinforcement":
+        notes.append("Engineer-confirmed bonded auxiliary reinforcement is accepted as a report traceability assumption; final detailing, development, anchorage, and end-zone checks remain separate.")
     return (selected_profile_key, notes)
 
 
