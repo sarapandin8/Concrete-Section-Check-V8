@@ -14953,6 +14953,129 @@ def _render_girder_sls4b_governing_summary_cards(summary_df: pd.DataFrame) -> No
 
 
 
+
+def _girder_sls5_lifting_action_review_rows(lifting_row: Mapping[str, object]) -> list[dict[str, str]]:
+    """Return prioritized lifting-stage action rows from an already-computed SLS row.
+
+    SLS.STAGE.STRESS.QA5 is decision guidance only.  It reads the staged SLS
+    preview result and does not change stress equations, Pe(x), debonding,
+    geometry, material routing, or load routing.
+    """
+
+    demand = str(lifting_row.get("Controls") or lifting_row.get("Demand") or "Stress")
+    actual = _format_girder_stress_mpa(lifting_row.get("Actual stress (MPa)"))
+    limit = _format_girder_stress_mpa(lifting_row.get("Limit stress (MPa)"))
+    utilization = _format_girder_sls_utilization(lifting_row.get("Utilization"))
+    station = _format_optional_number(lifting_row.get("Station x (m)"), precision=3)
+    fiber = str(lifting_row.get("Fiber") or "N/A")
+    profile = str(lifting_row.get("Limit profile") or "selected preview limit")
+    source = str(lifting_row.get("Limit profile source") or "selected stage profile")
+    stress_context = f"{demand} controls at x={station} m ({fiber}); actual {actual} vs limit {limit}; D/C {utilization}."
+    return [
+        {
+            "Priority": "1",
+            "Review item": "Lifting geometry and rigging basis",
+            "Why it matters": stress_context,
+            "Required action": "Confirm lifting a/L, lifting-point tolerance, spreader/rigging arrangement, temporary support condition, and whether the analyzed unit basis matches the handling method.",
+        },
+        {
+            "Priority": "2",
+            "Review item": "Lifting impact factor and self-weight basis",
+            "Why it matters": "Lifting-stage stress is sensitive to dynamic allowance and member self-weight distribution.",
+            "Required action": "Confirm the project lifting impact factor, actual unit weight, lifting sequence, and whether any temporary attachments or wet components are included/excluded correctly.",
+        },
+        {
+            "Priority": "3",
+            "Review item": "Top auxiliary reinforcement at tensile face",
+            "Why it matters": f"The current tensile limit basis is {profile}; source: {source}.",
+            "Required action": "Verify top longitudinal/auxiliary bars from drawings, bar continuity through the governing zone, anchorage/development, and applicability at the lifting stage before accepting the higher tensile limit.",
+        },
+        {
+            "Priority": "4",
+            "Review item": "Prestress force state and debonding",
+            "Why it matters": "Prestress eccentricity and Pe(x) can drive top-fiber tension during handling.",
+            "Required action": "Review release/lifting Pe, strand eccentricity, debonded lengths near member ends, transfer length, and whether additional debonding or revised strand layout is needed.",
+        },
+        {
+            "Priority": "5",
+            "Review item": "Local lifting hardware and end-zone checks",
+            "Why it matters": "A passing global stress preview would not certify local lifting insert, bursting, splitting, or end-zone behavior.",
+            "Required action": "Check lifting insert/local concrete stresses, end-zone reinforcement, cracking, shear at pickup points, and shop-drawing handling notes separately.",
+        },
+    ]
+
+
+def _render_girder_sls5_lifting_action_review(summary_df: pd.DataFrame) -> None:
+    """Render a focused action review when lifting-stage SLS stress needs attention."""
+
+    if summary_df.empty or "Stage" not in summary_df.columns:
+        return
+    lifting_rows = summary_df[summary_df["Stage"].astype(str) == "Lifting stage"]
+    if lifting_rows.empty:
+        return
+    lifting_row = lifting_rows.iloc[0].to_dict()
+    status = str(lifting_row.get("Status") or "")
+    try:
+        utilization = float(lifting_row.get("Utilization"))
+    except (TypeError, ValueError):
+        utilization = math.nan
+    needs_attention = "FAIL" in status.upper() or "REVIEW" in status.upper() or (math.isfinite(utilization) and utilization >= 0.90)
+    if not needs_attention:
+        return
+
+    actual = _format_girder_stress_mpa(lifting_row.get("Actual stress (MPa)"))
+    limit = _format_girder_stress_mpa(lifting_row.get("Limit stress (MPa)"))
+    util_text = _format_girder_sls_utilization(lifting_row.get("Utilization"))
+    station = _format_optional_number(lifting_row.get("Station x (m)"), precision=3)
+    fiber = str(lifting_row.get("Fiber") or "N/A")
+    demand = str(lifting_row.get("Controls") or "Stress")
+    span = _girder_sls_span_length_from_session()
+    lifting_summary = _girder_sls_lifting_point_summary("Lifting stage", span)
+    lifting_context = lifting_summary[2] if lifting_summary else "Confirm lifting point locations in Section Builder."
+    profile = str(lifting_row.get("Limit profile") or "selected preview limit")
+    source = str(lifting_row.get("Limit profile source") or "selected stage profile")
+
+    st.markdown("##### Governing lifting-stage action review")
+    st.caption(
+        "SLS.STAGE.STRESS.QA5: focused next-step review for lifting-stage stress. "
+        "This is guidance from stored preview results only; it does not rerun or modify the SLS solver."
+    )
+    _render_analysis_summary_strip(
+        [
+            {
+                "title": "Lifting stress status",
+                "value": status or "REVIEW",
+                "detail": f"{demand} at x={station} m · {fiber} fiber",
+                "status": "danger" if "FAIL" in status.upper() else "warning",
+                "strong": True,
+            },
+            {
+                "title": "Actual / limit",
+                "value": f"{actual} / {limit}",
+                "detail": f"Utilization {util_text}",
+                "status": "danger" if math.isfinite(utilization) and utilization > 1.0 else "warning",
+            },
+            {
+                "title": "Lifting geometry",
+                "value": "Two-point lifting",
+                "detail": lifting_context,
+                "status": "info",
+            },
+            {
+                "title": "Limit basis",
+                "value": profile,
+                "detail": source,
+                "status": "neutral",
+            },
+        ],
+        columns=4,
+    )
+    st.dataframe(pd.DataFrame(_girder_sls5_lifting_action_review_rows(lifting_row)), use_container_width=True, hide_index=True)
+    st.info(
+        "If lifting-stage D/C remains above 1.0 after confirming the tensile-limit basis, treat lifting geometry/impact, top auxiliary reinforcement, Pe(x)/debonding, and local lifting hardware checks as the first design-review path."
+    )
+
+
 def _girder_sls_plot2_controlling_reason(
     *,
     status: str,
@@ -15548,6 +15671,7 @@ def _render_girder_sls4b_combined_stage_result_table(
     for warning in profile_warnings:
         st.warning(warning)
     st.dataframe(_clean_girder_sls4b_decision_dataframe(summary_df), use_container_width=True, hide_index=True)
+    _render_girder_sls5_lifting_action_review(summary_df)
     with st.expander("Compression / tension demand details — all stages", expanded=False):
         st.caption(
             "Shows both governing compression and governing tension demand for each summarized stage. "
