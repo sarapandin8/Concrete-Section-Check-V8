@@ -26,8 +26,9 @@ def default_report_section_plan(
 ) -> list[ReportSection]:
     figure_keys = _available_figure_keys(figures)
     high_limitation_keys = _limitation_keys(limitations, {"HIGH", "CRITICAL"})
-    pmm_status = "AVAILABLE" if snapshot.pmm_result_available else "MISSING"
-    dc_status = "AVAILABLE" if snapshot.dc_result_available else ("PARTIAL" if snapshot.pmm_result_available else "MISSING")
+    uls_available = bool(getattr(snapshot, "uls_result_available", False) or snapshot.pmm_result_available)
+    pmm_status = "AVAILABLE" if snapshot.pmm_result_available else ("NOT_APPLICABLE" if uls_available else "MISSING")
+    dc_status = "AVAILABLE" if snapshot.dc_result_available else ("PARTIAL" if uls_available else "MISSING")
     sls_status = "AVAILABLE" if snapshot.sls_result_available else "MISSING"
     crack_status = "AVAILABLE" if snapshot.crack_classification_available else ("PARTIAL" if snapshot.sls_result_available else "MISSING")
     beam_summary = None

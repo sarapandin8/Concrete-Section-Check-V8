@@ -232,7 +232,7 @@ def _add_executive_summary(document: DocumentObject, manifest: ReportManifest) -
     summary = {
         "Readiness status": manifest.readiness_summary.overall_status,
         "Analysis mode / member type": snapshot.member_type or "",
-        "ULS result available": "Yes" if snapshot.pmm_result_available else "No",
+        "ULS result available": "Yes" if getattr(snapshot, "uls_result_available", False) else "No",
         "SLS result available": "Yes" if snapshot.sls_result_available else "No",
         "Governing ULS combo": snapshot.governing_uls_combo or "Not available",
         "Governing SLS combo": snapshot.governing_sls_combo or "Not available",
@@ -244,8 +244,8 @@ def _add_executive_summary(document: DocumentObject, manifest: ReportManifest) -
         "Available figure count": len([figure for figure in manifest.figures if figure.available]),
     }
     dataframe_to_word_table(document, pd.DataFrame([{"Item": key, "Value": value} for key, value in summary.items()]))
-    if not snapshot.pmm_result_available:
-        document.add_paragraph("No ULS PMM result is currently available in the stored session.")
+    if not getattr(snapshot, "uls_result_available", False):
+        document.add_paragraph("No stored ULS result is currently available in the stored session.")
     if not snapshot.sls_result_available:
         document.add_paragraph("No SLS result is currently available in the stored session.")
 
@@ -256,7 +256,7 @@ def _add_analysis_scope(document: DocumentObject, manifest: ReportManifest) -> N
     scope_rows = [
         {"Item": "Member type", "Value": snapshot.member_type or ""},
         {"Item": "Analysis workflow", "Value": snapshot.analysis_workflow or ""},
-        {"Item": "PMM workflow status", "Value": "Available" if snapshot.pmm_result_available else "Not run / not available"},
+        {"Item": "ULS workflow status", "Value": "Available" if getattr(snapshot, "uls_result_available", False) else "Not run / not available"},
         {"Item": "SLS workflow status", "Value": "Available" if snapshot.sls_result_available else "Not run / not available"},
     ]
     dataframe_to_word_table(document, pd.DataFrame(scope_rows))

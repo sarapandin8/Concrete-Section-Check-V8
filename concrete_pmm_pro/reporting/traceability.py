@@ -39,11 +39,15 @@ class ResultTraceabilitySnapshot:
     pmm_result_available: bool = False
     pmm_point_count: int = 0
     dc_result_available: bool = False
+    uls_result_available: bool = False
+    uls_result_label: str | None = None
+    uls_result_count: int = 0
     governing_uls_combo: str | None = None
     max_uls_dcr: float | None = None
     uls_overall_status: str | None = None
     pmm_capacity_method: str | None = None
     sls_result_available: bool = False
+    sls_result_label: str | None = None
     sls_overall_status: str | None = None
     governing_sls_combo: str | None = None
     governing_sls_point: str | None = None
@@ -154,6 +158,97 @@ def _first_capacity_method(dc_summary: Any) -> str | None:
     return None
 
 
+def _dataframe_available(value: Any) -> bool:
+    return isinstance(value, pd.DataFrame) and not value.empty
+
+
+def _beam_girder_uls_cache_count(session_state: Any) -> int:
+    cache = _get(session_state, "_beam_girder_uls_manual_calculation_cache", {})
+    if not isinstance(cache, dict):
+        return 0
+    return sum(1 for entry in cache.values() if isinstance(entry, dict) and bool(entry))
+
+
+def _column_pier_vt_available(session_state: Any) -> bool:
+    for key in ("column_pier_combined_vt_result_df", "column_pier_combined_vt_df"):
+        if _dataframe_available(_get(session_state, key)):
+            return True
+    return False
+
+
+def _railway_u_girder_sls_decision_dataframe(session_state: Any) -> pd.DataFrame | None:
+    for key in (
+        "railway_u_girder_sls_decision_summary_df",
+        "railway_u_girder_sls_decision_summary",
+        "railway_u_girder_sls_report_decision_summary",
+    ):
+        value = _get(session_state, key)
+        if _dataframe_available(value):
+            return value.copy()
+    try:
+        from concrete_pmm_pro.reporting.railway_u_girder_report import build_railway_u_girder_sls_report_package
+
+        package = build_railway_u_girder_sls_report_package(session_state)
+        decision = getattr(package, "decision_summary", None)
+        if bool(getattr(package, "available", False)) and _dataframe_available(decision):
+            return decision.copy()
+    except Exception:
+        return None
+    return None
+
+
+def _generic_stage_sls_available(session_state: Any) -> bool:
+    for key in (
+        "result_summary_beam_girder_sls_stage_summary_df",
+        "generic_precast_lifting_governing_rows_df",
+    ):
+        if _dataframe_available(_get(session_state, key)):
+            return True
+    rows = _get(session_state, "result_summary_beam_girder_sls_stage_summary_rows", [])
+    return isinstance(rows, list) and bool(rows)
+
+
+def _workflow_uls_status(session_state: Any, *, pmm_result: Any = None, dc_summary: Any = None) -> tuple[bool, str | None, int]:
+    beam_count = _beam_girder_uls_cache_count(session_state)
+    if beam_count:
+        return True, "Beam/Girder ULS", beam_count
+    if dc_summary is not None:
+        return True, "ULS demand/capacity", 1
+    if pmm_result is not None:
+        return True, "ULS PMM", 1
+    if _column_pier_vt_available(session_state):
+        return True, "Column/Pier V+T", 1
+    return False, None, 0
+
+
+def _workflow_sls_status(session_state: Any, *, serviceability_summary: Any = None) -> tuple[bool, str | None]:
+    if serviceability_summary is not None and bool(getattr(serviceability_summary, "stress_results", [])):
+        return True, "SLS stress"
+    railway_decision = _railway_u_girder_sls_decision_dataframe(session_state)
+    if railway_decision is not None and not railway_decision.empty:
+        return True, "Railway U-Girder staged SLS"
+    if bool(_get(session_state, "railway_u_girder_sls_report_package_available", False)):
+        return True, "Railway U-Girder staged SLS"
+    if _generic_stage_sls_available(session_state):
+        return True, "Beam/Girder staged SLS"
+    return False, None
+
+
+def _railway_sls_governing_values(session_state: Any) -> tuple[str | None, str | None, float | None]:
+    decision = _railway_u_girder_sls_decision_dataframe(session_state)
+    if decision is None or decision.empty:
+        return None, None, None
+    work = decision.copy()
+    util_col = "Max utilization" if "Max utilization" in work.columns else None
+    if util_col:
+        numeric = pd.to_numeric(work[util_col], errors="coerce")
+        if numeric.notna().any():
+            row = work.loc[numeric.idxmax()]
+            return str(row.get("Decision") or ""), str(row.get("Governing source") or ""), float(numeric.max())
+    row = work.iloc[0]
+    return str(row.get("Decision") or ""), str(row.get("Governing source") or ""), None
+
+
 def build_result_traceability_snapshot(session_state: Any) -> ResultTraceabilitySnapshot:
     mode = _coerce_analysis_mode(_get(session_state, "analysis_mode_settings", AnalysisModeSettings()))
     pmm_result = _get(session_state, "rc_pmm_result")
@@ -163,6 +258,9 @@ def build_result_traceability_snapshot(session_state: Any) -> ResultTraceability
     custom_points = list(_get(session_state, "custom_stress_check_points", []) or [])
     concrete_material = _get(session_state, "concrete_material")
     materials_available = concrete_material is not None
+    uls_available, uls_label, uls_count = _workflow_uls_status(session_state, pmm_result=pmm_result, dc_summary=dc_summary)
+    sls_available, sls_label = _workflow_sls_status(session_state, serviceability_summary=serviceability_summary)
+    railway_sls_status, railway_sls_source, railway_sls_util = _railway_sls_governing_values(session_state)
     warnings = collect_engineering_warnings(
         pmm_result=pmm_result,
         dc_summary=dc_summary,
@@ -187,15 +285,19 @@ def build_result_traceability_snapshot(session_state: Any) -> ResultTraceability
         pmm_result_available=pmm_result is not None,
         pmm_point_count=len(getattr(pmm_result, "points", []) or []),
         dc_result_available=dc_summary is not None,
+        uls_result_available=uls_available,
+        uls_result_label=uls_label,
+        uls_result_count=uls_count,
         governing_uls_combo=getattr(dc_summary, "governing_combo", None),
         max_uls_dcr=getattr(dc_summary, "max_dcr", None),
         uls_overall_status=getattr(dc_summary, "overall_status", None),
         pmm_capacity_method=_first_capacity_method(dc_summary),
-        sls_result_available=serviceability_summary is not None and bool(getattr(serviceability_summary, "stress_results", [])),
-        sls_overall_status=getattr(serviceability_summary, "overall_status", None),
-        governing_sls_combo=getattr(serviceability_summary, "governing_combo", None),
+        sls_result_available=sls_available,
+        sls_result_label=sls_label,
+        sls_overall_status=getattr(serviceability_summary, "overall_status", None) or railway_sls_status,
+        governing_sls_combo=getattr(serviceability_summary, "governing_combo", None) or railway_sls_source,
         governing_sls_point=getattr(serviceability_summary, "governing_point", None),
-        max_sls_utilization=getattr(serviceability_summary, "max_utilization", None),
+        max_sls_utilization=getattr(serviceability_summary, "max_utilization", None) if serviceability_summary is not None else railway_sls_util,
         section_basis_used=getattr(serviceability_summary, "section_basis_used", None),
         prestress_included_in_sls=bool(getattr(serviceability_summary, "prestress_included", False)),
         crack_classification_available=crack_summary is not None,

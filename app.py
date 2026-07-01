@@ -1580,13 +1580,20 @@ _RESULTS_DASHBOARD_CSS = """
 
 def _results_style_for_status(status: object) -> str:
     label = str(status or "").strip().upper()
-    if any(token in label for token in ["FAIL", "ERROR", "DANGER", "EXCEED", "BLOCKED"]):
+    normalized = label.replace("_", " ").replace("-", " ")
+    if "PREVIEW FAIL" in normalized:
         return "danger"
-    if any(token in label for token in ["REVIEW", "WARNING", "NOT READY", "NOT CALCULATED", "NOT RUN", "INCOMPLETE", "STALE", "PLANNED", "PLACEHOLDER", "DATA REQUIRED"]):
+    if "PREVIEW PASS" in normalized:
+        return "ready"
+    if any(token in normalized for token in ["NOT READY", "NOT CALCULATED", "NOT RUN", "INCOMPLETE", "STALE", "PLANNED", "PLACEHOLDER", "DATA REQUIRED"]):
         return "warning"
-    if any(token in label for token in ["N/A", "NOT ACTIVE", "NONE", "NO RESULT"]):
+    if any(token in normalized for token in ["FAIL", "ERROR", "DANGER", "EXCEED", "BLOCKED"]):
+        return "danger"
+    if any(token in normalized for token in ["REVIEW", "WARNING"]):
+        return "warning"
+    if any(token in normalized for token in ["N/A", "NOT ACTIVE", "NONE", "NO RESULT"]):
         return "neutral"
-    if any(token in label for token in ["PASS", "READY", "AVAILABLE", "CURRENT", "CALCULATED", "BELOW THRESHOLD", "CLEAR"]):
+    if any(token in normalized for token in ["PASS", "READY", "AVAILABLE", "CURRENT", "CALCULATED", "BELOW THRESHOLD", "CLEAR"]):
         return "ready"
     return "info"
 

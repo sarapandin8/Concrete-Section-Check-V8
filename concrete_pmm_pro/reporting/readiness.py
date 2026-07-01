@@ -64,29 +64,32 @@ def check_report_readiness(snapshot: ResultTraceabilitySnapshot) -> ReportReadin
             "Analysis mode metadata is available." if snapshot.member_type else "Analysis mode metadata is required.",
         )
     )
-    has_result = snapshot.pmm_result_available or snapshot.sls_result_available
+    uls_available = bool(getattr(snapshot, "uls_result_available", False) or snapshot.pmm_result_available)
+    uls_label = getattr(snapshot, "uls_result_label", None) or ("ULS PMM" if snapshot.pmm_result_available else "ULS")
+    sls_label = getattr(snapshot, "sls_result_label", None) or "SLS"
+    has_result = uls_available or snapshot.sls_result_available
     items.append(
         _item(
             "Results",
             "At least one analysis result",
             READY if has_result else MISSING,
-            "At least one ULS PMM or SLS result is available." if has_result else "Run ULS PMM or SLS checks before report export.",
+            "At least one stored ULS or SLS result is available." if has_result else "Run ULS or SLS checks before report export.",
         )
     )
     items.append(
         _item(
             "Results",
-            "ULS PMM result",
-            READY if snapshot.pmm_result_available else OPTIONAL,
-            "ULS PMM result is available." if snapshot.pmm_result_available else "ULS PMM result is optional for SLS-only review.",
+            "ULS result",
+            READY if uls_available else OPTIONAL,
+            f"{uls_label} result is available." if uls_available else "ULS result is optional for SLS-only review.",
         )
     )
     items.append(
         _item(
             "Results",
-            "SLS stress result",
+            "SLS result",
             READY if snapshot.sls_result_available else OPTIONAL,
-            "SLS stress result is available." if snapshot.sls_result_available else "SLS result is optional for ULS-only review.",
+            f"{sls_label} result is available." if snapshot.sls_result_available else "SLS result is optional for ULS-only review.",
         )
     )
     items.append(
@@ -125,7 +128,7 @@ def check_report_readiness(snapshot: ResultTraceabilitySnapshot) -> ReportReadin
         overall_status = "NOT_READY"
     elif critical_missing:
         overall_status = "NOT_READY"
-    elif snapshot.pmm_result_available and snapshot.sls_result_available:
+    elif bool(getattr(snapshot, "uls_result_available", False) or snapshot.pmm_result_available) and snapshot.sls_result_available:
         overall_status = "READY"
     else:
         overall_status = "PARTIAL"

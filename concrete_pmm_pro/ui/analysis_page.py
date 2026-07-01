@@ -19377,8 +19377,50 @@ def _render_railway_u_girder_uls_framework_preview_panel() -> None:
                 key=f"ui_keys1_analysis_page_download_button_{key}",
             )
 
+def _report_readiness_display_label(overall_status: object, snapshot: object | None = None) -> str:
+    raw = str(overall_status or "").strip().upper().replace("_", " ")
+    has_stored_result = False
+    has_review_limiter = False
+    if snapshot is not None:
+        has_stored_result = bool(getattr(snapshot, "uls_result_available", False) or getattr(snapshot, "pmm_result_available", False) or getattr(snapshot, "sls_result_available", False))
+        has_review_limiter = bool(getattr(snapshot, "high_or_critical_limitation_count", 0) or getattr(snapshot, "warning_count", 0))
+    if raw in {"READY", "CURRENT"} and has_review_limiter:
+        return "Review required"
+    if raw in {"NOT READY", "NOTREADY"} and has_stored_result and has_review_limiter:
+        return "Review required"
+    if raw == "NOT READY" or raw == "NOTREADY":
+        return "Not ready"
+    if raw == "REVIEW REQUIRED":
+        return "Review required"
+    if raw == "PARTIAL":
+        return "Partial"
+    if raw == "READY":
+        return "Ready"
+    return str(overall_status or "-").replace("_", " ").title()
+
+
+def _snapshot_uls_metric_title(snapshot: object) -> str:
+    label = str(getattr(snapshot, "uls_result_label", "") or "").lower()
+    if "beam/girder" in label:
+        return "ULS Beam/Girder Result"
+    if "pmm" in label:
+        return "ULS PMM Result"
+    if "column/pier" in label:
+        return "Column/Pier ULS Result"
+    return "Stored ULS Result"
+
+
+def _snapshot_sls_metric_title(snapshot: object) -> str:
+    label = str(getattr(snapshot, "sls_result_label", "") or "").lower()
+    if "railway u-girder" in label:
+        return "SLS Railway U-Girder Result"
+    if "beam/girder" in label:
+        return "SLS Beam/Girder Result"
+    return "Stored SLS Result"
+
+
 def _render_pre_report_qa_expander() -> None:
-    with st.expander("Pre-Report QA / Result Traceability", expanded=False):
+    with st.expander("Stored Result Traceability / Export QA", expanded=False):
         st.info(
             "This section summarizes existing results for future report export. "
             "It does not rerun PMM, SLS, verification, or cracking checks."
@@ -19402,9 +19444,9 @@ def _render_pre_report_qa_expander() -> None:
         figures_df = report_figures_to_dataframe(figures)
 
         status_cols = st.columns(5)
-        status_cols[0].metric("Report Readiness", readiness.overall_status)
-        status_cols[1].metric("ULS PMM Result", "Yes" if snapshot.pmm_result_available else "No")
-        status_cols[2].metric("SLS Result", "Yes" if snapshot.sls_result_available else "No")
+        status_cols[0].metric("Report Readiness", _report_readiness_display_label(readiness.overall_status, snapshot))
+        status_cols[1].metric(_snapshot_uls_metric_title(snapshot), "Available" if getattr(snapshot, "uls_result_available", False) else "No")
+        status_cols[2].metric(_snapshot_sls_metric_title(snapshot), "Available" if snapshot.sls_result_available else "No")
         status_cols[3].metric("Warning Count", f"{snapshot.warning_count:,}")
         status_cols[4].metric("High/Critical Limitations", f"{snapshot.high_or_critical_limitation_count:,}")
 
@@ -19630,10 +19672,10 @@ def _render_pre_report_qa_expander() -> None:
         detail_cols = st.columns(2)
         include_full_terminology = detail_cols[0].checkbox("Include full terminology", value=True, key="report_include_full_terminology")
         include_full_registries = detail_cols[1].checkbox("Include full registries", value=True, key="report_include_full_registries")
-        if not snapshot.pmm_result_available:
-            st.warning("No ULS PMM result is currently available for the draft report.")
+        if not getattr(snapshot, "uls_result_available", False):
+            st.warning("No stored ULS result is currently available for the draft report.")
         if not snapshot.sls_result_available:
-            st.warning("No SLS result is currently available for the draft report.")
+            st.warning("No stored SLS result is currently available for the draft report.")
         if snapshot.high_or_critical_limitation_count:
             st.warning(f"{snapshot.high_or_critical_limitation_count} high/critical engineering limitation(s) require review.")
         if st.button("Build Draft Word Report", use_container_width=True, key="ui_keys1_analysis_page_button_15573"):
