@@ -14390,10 +14390,148 @@ def _girder_sls_limit_profile_source_label(stage_label: str, profile: object) ->
     return "Project-code stage profile"
 
 
+
+def _girder_sls_stage_profile_keys_from_guide_state(stage_label: str) -> dict[str, str]:
+    """Return the hidden state keys shared by the stage guide and top summary.
+
+    SLS.STAGE.STRESS.QA3 keeps the all-stage summary synchronized with the
+    lower per-stage graph/detail cards.  Streamlit renders the all-stage summary
+    before the active stage guide, so the summary must read the same persisted
+    guide selections directly instead of waiting for the lower guide renderer to
+    write the final profile key later in the same run.
+    """
+
+    title = _girder_sls_full_length_guide_title(stage_label)
+    return {
+        "title": title,
+        "guide_enabled": f"girder_tension_limit_guide_enabled_{title}",
+        "guide_method": f"girder_tension_limit_guide_method_{title}",
+        "exposure": f"girder_tension_limit_exposure_{title}",
+        "aci_class": f"girder_tension_limit_aci_class_{title}",
+        "duration": f"girder_tension_limit_duration_{title}",
+        "bonded_confirm": _girder_sls_bonded_confirmation_key_from_title(title),
+        "bonded_source": _girder_sls_bonded_confirmation_source_key_from_title(title),
+    }
+
+
+def _girder_sls_normalized_guide_method_from_state(stage_label: str) -> str:
+    """Return the practical tensile-limit guide method currently selected."""
+
+    keys = _girder_sls_stage_profile_keys_from_guide_state(stage_label)
+    method_options = {
+        "Engineer-confirmed bonded auxiliary reinforcement",
+        "Model-detected active ordinary rebar at tensile face",
+        "Not verified / use conservative preview",
+        "No bonded reinforcement / no-tension condition",
+    }
+    legacy_method_map = {
+        "Verified bonded tension reinforcement": "Engineer-confirmed bonded auxiliary reinforcement",
+        "Auto from current ordinary rebar layout": "Model-detected active ordinary rebar at tensile face",
+    }
+    method = str(st.session_state.get(keys["guide_method"]) or "Engineer-confirmed bonded auxiliary reinforcement")
+    method = legacy_method_map.get(method, method)
+    if method not in method_options:
+        method = "Engineer-confirmed bonded auxiliary reinforcement"
+    st.session_state[keys["guide_method"]] = method
+    return method
+
+
+def _girder_sls_sync_stage_profile_from_guide_state(
+    stage_label: str,
+    *,
+    code: str | None = None,
+    limit_stage: str | None = None,
+    profile_options: tuple | None = None,
+) -> str | None:
+    """Synchronize the stage profile key from the visible guide state.
+
+    QA3 fixes the observed state split where the top Overall SLS table still
+    used the conservative/default profile while the active stage graph/detail
+    cards used the engineer-confirmed bonded-auxiliary profile.  This helper is
+    intentionally UI-state synchronization only; it does not change stress,
+    Pe(x), load, geometry, material, or code-limit formulas.
+    """
+
+    code = code or _girder_sls_profile_code_from_session()
+    limit_stage = limit_stage or _beam_sls_stage_default_code_limit_stage(stage_label)
+    profile_options = profile_options or girder_sls_limit_profile_options(code=code, stage=limit_stage)
+    option_keys = {str(option.key) for option in profile_options}
+    profile_key = _girder_sls_diagram_profile_key(stage_label)
+    selected_key = str(st.session_state.get(profile_key) or "")
+    if selected_key not in option_keys:
+        selected_key = _girder_sls_conservative_profile_key_for_stage(code, limit_stage)
+        if selected_key is not None:
+            st.session_state[profile_key] = selected_key
+
+    keys = _girder_sls_stage_profile_keys_from_guide_state(stage_label)
+    guide_enabled = bool(st.session_state.get(keys["guide_enabled"], True))
+    method = _girder_sls_normalized_guide_method_from_state(stage_label)
+
+    if guide_enabled:
+        exposure = str(st.session_state.get(keys["exposure"]) or "Moderate exposure / bonded")
+        duration = str(st.session_state.get(keys["duration"]) or "Full service / total")
+        aci_service_class = str(st.session_state.get(keys["aci_class"]) or "Class U")
+        if code == "AASHTO LRFD Bridge":
+            if limit_stage == STAGE_FINAL_SERVICE:
+                if "severe" in exposure.casefold():
+                    exposure_condition = "severe"
+                elif "unbonded" in exposure.casefold() or "no tension" in exposure.casefold():
+                    exposure_condition = "no tension"
+                else:
+                    exposure_condition = "moderate"
+            else:
+                exposure_condition = "moderate"
+        else:
+            exposure_condition = "moderate"
+            if limit_stage != STAGE_FINAL_SERVICE:
+                aci_service_class = "Class U"
+
+        if limit_stage != STAGE_FINAL_SERVICE:
+            duration = "Full service / total"
+
+        confirmed = bool(st.session_state.get(keys["bonded_confirm"], False))
+        source = str(st.session_state.get(keys["bonded_source"]) or "")
+        if method == "Engineer-confirmed bonded auxiliary reinforcement":
+            verified = True if confirmed else None
+            st.session_state[keys["bonded_source"]] = "engineer_confirmed_drawings" if confirmed else "engineer_confirmation_missing"
+        elif method == "Model-detected active ordinary rebar at tensile face":
+            # The top summary cannot run the lower tensile-face detector because
+            # it renders before the guide.  Trust only the persisted detector
+            # confirmation written by a previous guide render; otherwise fall
+            # back to the conservative not-verified route.
+            verified = True if confirmed and source == "model_detected" else None
+            if verified is not True:
+                st.session_state[keys["bonded_confirm"]] = False
+                st.session_state[keys["bonded_source"]] = "model_detection_missing"
+        elif method == "No bonded reinforcement / no-tension condition":
+            verified = False
+            exposure_condition = "no tension"
+            aci_service_class = "No tension"
+            st.session_state[keys["bonded_confirm"]] = False
+            st.session_state[keys["bonded_source"]] = "no_bonded_reinforcement"
+        else:
+            verified = None
+            st.session_state[keys["bonded_confirm"]] = False
+            st.session_state[keys["bonded_source"]] = "not_verified_conservative"
+
+        guidance = recommend_girder_tension_limit_profile(
+            code=code,
+            stage=limit_stage,
+            bonded_tension_reinforcement_verified=verified,
+            exposure_condition=exposure_condition,
+            aci_service_class=aci_service_class,
+            effect_duration=duration,
+        )
+        if guidance.recommended_profile_key in option_keys:
+            selected_key = str(guidance.recommended_profile_key)
+            st.session_state[profile_key] = selected_key
+
+    return selected_key
+
 def _girder_stage_limit_profile_for_diagram(stage_label: str):
     """Return the project-code preview stress-limit profile for a stage diagram.
 
-    SLS.STAGE.STRESS.QA1 makes this the source of truth for the stage summary,
+    SLS.STAGE.STRESS.QA1/QA3 make this the source of truth for the stage summary,
     detail cards, graph limit lines, Result Summary handoff, and report/QA rows.
     Higher temporary bonded-auxiliary profiles are accepted only when the
     visible tensile-limit guide records a practical source: engineer confirmation
@@ -14403,9 +14541,16 @@ def _girder_stage_limit_profile_for_diagram(stage_label: str):
 
     code = _girder_sls_profile_code_from_session()
     limit_stage = _beam_sls_stage_default_code_limit_stage(stage_label)
+    profile_options = girder_sls_limit_profile_options(code=code, stage=limit_stage)
     profile_key = _girder_sls_diagram_profile_key(stage_label)
-    option_keys = {option.key for option in girder_sls_limit_profile_options(code=code, stage=limit_stage)}
-    selected_key = str(st.session_state.get(profile_key) or "")
+    option_keys = {option.key for option in profile_options}
+    selected_key = _girder_sls_sync_stage_profile_from_guide_state(
+        stage_label,
+        code=code,
+        limit_stage=limit_stage,
+        profile_options=profile_options,
+    )
+    selected_key = str(selected_key or "")
     if selected_key not in option_keys:
         selected_key = _girder_sls_conservative_profile_key_for_stage(code, limit_stage)
         if selected_key is not None:
@@ -14589,7 +14734,7 @@ def _girder_sls4b_governing_demand_rows(df: pd.DataFrame, stage_label: str) -> l
     """Return compression and tension governing rows for one full-length stage result.
 
     The function is a SLS result-interpretation helper only.  It consumes the
-    existing GIRDER.SLS4A dataframe and default preview limits; no stress formula,
+    existing GIRDER.SLS4A dataframe and selected preview-limit source of truth; no stress formula,
     Pe(x), section-basis, or load-schema logic is changed.
     """
 
