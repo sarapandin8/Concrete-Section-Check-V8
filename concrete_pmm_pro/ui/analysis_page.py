@@ -14414,16 +14414,30 @@ def _girder_sls_stage_profile_keys_from_guide_state(stage_label: str) -> dict[st
     }
 
 
+_GIRDER_SLS_GUIDE_METHOD_OPTIONS: tuple[str, ...] = (
+    "Engineer-confirmed bonded auxiliary reinforcement",
+    "Model-detected active ordinary rebar at tensile face",
+    "Not verified / use conservative preview",
+    "No bonded reinforcement / no-tension condition",
+)
+
+_GIRDER_SLS_AASHTO_EXPOSURE_OPTIONS: tuple[str, ...] = (
+    "Moderate exposure / bonded",
+    "Severe exposure / bonded",
+    "Unbonded or no tension",
+)
+
+_GIRDER_SLS_EFFECT_DURATION_OPTIONS: tuple[str, ...] = (
+    "Full service / total",
+    "Sustained or permanent only",
+)
+
+
 def _girder_sls_normalized_guide_method_from_state(stage_label: str) -> str:
     """Return the practical tensile-limit guide method currently selected."""
 
     keys = _girder_sls_stage_profile_keys_from_guide_state(stage_label)
-    method_options = {
-        "Engineer-confirmed bonded auxiliary reinforcement",
-        "Model-detected active ordinary rebar at tensile face",
-        "Not verified / use conservative preview",
-        "No bonded reinforcement / no-tension condition",
-    }
+    method_options = set(_GIRDER_SLS_GUIDE_METHOD_OPTIONS)
     legacy_method_map = {
         "Verified bonded tension reinforcement": "Engineer-confirmed bonded auxiliary reinforcement",
         "Auto from current ordinary rebar layout": "Model-detected active ordinary rebar at tensile face",
@@ -15258,6 +15272,215 @@ def _render_girder_sls4c_action_hints(
     )
     st.markdown(html, unsafe_allow_html=True)
 
+
+def _girder_sls_stage_is_temporary_for_auxiliary_basis(stage_label: str) -> bool:
+    """Return True for stages where bonded-auxiliary temporary tensile limits can apply."""
+
+    return _beam_sls_stage_default_code_limit_stage(stage_label) != STAGE_FINAL_SERVICE
+
+
+def _girder_sls_apply_stage_profile_control_state(
+    stage_label: str,
+    *,
+    method: str,
+    engineer_confirmed: bool,
+    exposure: str | None = None,
+    duration: str | None = None,
+) -> None:
+    """Apply an all-stage matrix row into the visible per-stage guide state.
+
+    SLS.STAGE.STRESS.QA4 keeps the all-stage summary, lower stage tabs, graphs,
+    Result Summary, and Report/QA on the same profile basis while avoiding
+    Streamlit duplicate-widget keys.  The control matrix uses its own widget key
+    and writes these guide keys before the lower per-stage guide widgets are
+    created in the same run.
+    """
+
+    keys = _girder_sls_stage_profile_keys_from_guide_state(stage_label)
+    method = str(method or "").strip()
+    if method not in _GIRDER_SLS_GUIDE_METHOD_OPTIONS:
+        method = "Engineer-confirmed bonded auxiliary reinforcement"
+    exposure = str(exposure or _GIRDER_SLS_AASHTO_EXPOSURE_OPTIONS[0]).strip()
+    if exposure not in _GIRDER_SLS_AASHTO_EXPOSURE_OPTIONS:
+        exposure = _GIRDER_SLS_AASHTO_EXPOSURE_OPTIONS[0]
+    duration = str(duration or _GIRDER_SLS_EFFECT_DURATION_OPTIONS[0]).strip()
+    if duration not in _GIRDER_SLS_EFFECT_DURATION_OPTIONS:
+        duration = _GIRDER_SLS_EFFECT_DURATION_OPTIONS[0]
+
+    st.session_state[keys["guide_enabled"]] = True
+    st.session_state[keys["guide_method"]] = method
+    st.session_state[keys["exposure"]] = exposure
+    st.session_state[keys["duration"]] = duration
+
+    if method == "Engineer-confirmed bonded auxiliary reinforcement":
+        st.session_state[keys["bonded_confirm"]] = bool(engineer_confirmed)
+        st.session_state[keys["bonded_source"]] = "engineer_confirmed_drawings" if engineer_confirmed else "engineer_confirmation_missing"
+    elif method == "Model-detected active ordinary rebar at tensile face":
+        # The lower visible guide performs the actual model-detection screen.
+        # Keep any prior model-detected confirmation; otherwise the sync helper
+        # will conservatively fall back to not-verified limits.
+        if st.session_state.get(keys["bonded_source"]) != "model_detected":
+            st.session_state[keys["bonded_confirm"]] = False
+            st.session_state[keys["bonded_source"]] = "model_detection_missing"
+    elif method == "No bonded reinforcement / no-tension condition":
+        st.session_state[keys["bonded_confirm"]] = False
+        st.session_state[keys["bonded_source"]] = "no_bonded_reinforcement"
+    else:
+        st.session_state[keys["bonded_confirm"]] = False
+        st.session_state[keys["bonded_source"]] = "not_verified_conservative"
+
+
+def _girder_sls_apply_engineer_confirmed_to_temporary_stages() -> None:
+    """Apply engineer-confirmed drawing basis to Transfer/Lifting/Construction stages."""
+
+    for _stage_key, stage_label, _stage_note in _beam_sls_stage_tab_specs():
+        if not _girder_sls_stage_is_temporary_for_auxiliary_basis(stage_label):
+            continue
+        _girder_sls_apply_stage_profile_control_state(
+            stage_label,
+            method="Engineer-confirmed bonded auxiliary reinforcement",
+            engineer_confirmed=True,
+            exposure=_GIRDER_SLS_AASHTO_EXPOSURE_OPTIONS[0],
+            duration=_GIRDER_SLS_EFFECT_DURATION_OPTIONS[0],
+        )
+
+
+def _girder_sls_apply_conservative_to_temporary_stages() -> None:
+    """Apply conservative not-verified preview basis to temporary stages."""
+
+    for _stage_key, stage_label, _stage_note in _beam_sls_stage_tab_specs():
+        if not _girder_sls_stage_is_temporary_for_auxiliary_basis(stage_label):
+            continue
+        _girder_sls_apply_stage_profile_control_state(
+            stage_label,
+            method="Not verified / use conservative preview",
+            engineer_confirmed=False,
+            exposure=_GIRDER_SLS_AASHTO_EXPOSURE_OPTIONS[0],
+            duration=_GIRDER_SLS_EFFECT_DURATION_OPTIONS[0],
+        )
+
+
+def _girder_sls_current_stage_profile_control_row(stage_label: str) -> dict[str, object]:
+    """Return one all-stage limit basis control row from persisted guide state."""
+
+    keys = _girder_sls_stage_profile_keys_from_guide_state(stage_label)
+    method = _girder_sls_normalized_guide_method_from_state(stage_label)
+    exposure = str(st.session_state.get(keys["exposure"]) or _GIRDER_SLS_AASHTO_EXPOSURE_OPTIONS[0])
+    if exposure not in _GIRDER_SLS_AASHTO_EXPOSURE_OPTIONS:
+        exposure = _GIRDER_SLS_AASHTO_EXPOSURE_OPTIONS[0]
+    duration = str(st.session_state.get(keys["duration"]) or _GIRDER_SLS_EFFECT_DURATION_OPTIONS[0])
+    if duration not in _GIRDER_SLS_EFFECT_DURATION_OPTIONS:
+        duration = _GIRDER_SLS_EFFECT_DURATION_OPTIONS[0]
+    confirmed = bool(st.session_state.get(keys["bonded_confirm"], False))
+    profile = _girder_stage_limit_profile_for_diagram(stage_label)
+    fc = _girder_fc_for_sls_limit_preview(stage_label)
+    try:
+        tension_limit = float(profile.tension_allowable_MPa(fc))
+    except Exception:
+        tension_limit = math.nan
+    return {
+        "Stage": stage_label,
+        "Tension reinforcement condition": method,
+        "Confirm drawing source": confirmed if method == "Engineer-confirmed bonded auxiliary reinforcement" else False,
+        "Exposure / tendon condition": exposure,
+        "Effect duration": duration,
+        "Current limit": "No tension" if math.isfinite(tension_limit) and tension_limit <= _GIRDER_DISPLAY_ZERO_TOLERANCE_MPA else (f"{tension_limit:.3f} MPa" if math.isfinite(tension_limit) else "N/A"),
+        "Current profile": str(getattr(profile, "limit_profile_label", "") or ""),
+        "Source": _girder_sls_limit_profile_source_label(stage_label, profile),
+    }
+
+
+def _render_girder_sls4d_all_stage_profile_control_matrix() -> None:
+    """Render a single all-stage tensile-limit basis matrix above the SLS summary.
+
+    QA4 addresses the UX weakness observed after QA3A: the top Overall SLS
+    result was correct, but users had to open each stage tab to understand or
+    change the selected tensile-limit basis.  This matrix makes the governing
+    basis visible before the summary and writes the same per-stage guide state
+    consumed by the stage detail cards and graphs.
+    """
+
+    st.markdown("##### All-stage tensile limit basis control")
+    st.caption(
+        "SLS.STAGE.STRESS.QA4: set the stress-limit basis for all stages before reading the Overall SLS preview. "
+        "The matrix updates the same per-stage profile source used by the summary, detail cards, graphs, Result Summary, and Report / QA."
+    )
+    c1, c2 = st.columns([1.0, 1.0])
+    with c1:
+        if st.button(
+            "Apply engineer-confirmed bonded auxiliary reinforcement to temporary stages",
+            key="girder_sls4d_apply_engineer_confirmed_temp_stages",
+            use_container_width=True,
+            help="Applies the drawing-confirmed bonded auxiliary basis to Transfer, Lifting, and Construction/Pre-composite stages. Service-stage exposure/duration remains separate.",
+        ):
+            _girder_sls_apply_engineer_confirmed_to_temporary_stages()
+            st.rerun()
+    with c2:
+        if st.button(
+            "Reset temporary stages to conservative preview",
+            key="girder_sls4d_reset_conservative_temp_stages",
+            use_container_width=True,
+            help="Restores not-verified temporary tensile limits for Transfer, Lifting, and Construction/Pre-composite stages.",
+        ):
+            _girder_sls_apply_conservative_to_temporary_stages()
+            st.rerun()
+
+    control_rows = [_girder_sls_current_stage_profile_control_row(stage_label) for _stage_key, stage_label, _stage_note in _beam_sls_stage_tab_specs()]
+    if not control_rows:
+        return
+    control_df = pd.DataFrame(control_rows)
+    edited_df = st.data_editor(
+        control_df,
+        use_container_width=True,
+        hide_index=True,
+        num_rows="fixed",
+        key="girder_sls4d_all_stage_profile_control_matrix",
+        column_config={
+            "Stage": st.column_config.TextColumn("Stage"),
+            "Tension reinforcement condition": st.column_config.SelectboxColumn(
+                "Tension reinforcement condition",
+                options=list(_GIRDER_SLS_GUIDE_METHOD_OPTIONS),
+                help="Engineer-confirmed drawing basis is appropriate for typical precast girders when the tensile-face auxiliary reinforcement is confirmed by drawings/details. Model-detected basis requires active ordinary rebar in the analysis model.",
+            ),
+            "Confirm drawing source": st.column_config.CheckboxColumn(
+                "Confirm drawing source",
+                help="Required before higher temporary bonded-auxiliary tensile limits are accepted from design/detailing drawings.",
+            ),
+            "Exposure / tendon condition": st.column_config.SelectboxColumn(
+                "Exposure / tendon condition",
+                options=list(_GIRDER_SLS_AASHTO_EXPOSURE_OPTIONS),
+            ),
+            "Effect duration": st.column_config.SelectboxColumn(
+                "Effect duration",
+                options=list(_GIRDER_SLS_EFFECT_DURATION_OPTIONS),
+            ),
+            "Current limit": st.column_config.TextColumn("Current limit"),
+            "Current profile": st.column_config.TextColumn("Current profile"),
+            "Source": st.column_config.TextColumn("Source"),
+        },
+        disabled=["Stage", "Current limit", "Current profile", "Source"],
+    )
+    try:
+        edited_records = pd.DataFrame(edited_df).to_dict("records")
+    except Exception:
+        edited_records = control_rows
+    valid_stages = {stage_label for _stage_key, stage_label, _stage_note in _beam_sls_stage_tab_specs()}
+    for row in edited_records:
+        stage_label = str(row.get("Stage") or "").strip()
+        if stage_label not in valid_stages:
+            continue
+        _girder_sls_apply_stage_profile_control_state(
+            stage_label,
+            method=str(row.get("Tension reinforcement condition") or ""),
+            engineer_confirmed=bool(row.get("Confirm drawing source", False)),
+            exposure=str(row.get("Exposure / tendon condition") or _GIRDER_SLS_AASHTO_EXPOSURE_OPTIONS[0]),
+            duration=str(row.get("Effect duration") or _GIRDER_SLS_EFFECT_DURATION_OPTIONS[0]),
+        )
+    st.info(
+        "For engineer-confirmed temporary profiles, the source is a report traceability assumption from drawings/details; development, anchorage, transfer-zone applicability, lifting hardware, and end-zone checks remain separate."
+    )
+
+
 def _render_girder_sls4b_combined_stage_result_table(
     *,
     beam_sls_rows: list[dict[str, object]],
@@ -15276,6 +15499,7 @@ def _render_girder_sls4b_combined_stage_result_table(
         "GIRDER.SLS4B summarizes Transfer, Railway lifting where applicable, Construction, and Service in one decision table. "
         "It reports actual stress versus the matching preview limit, utilization, governing station, and controlling fiber."
     )
+    _render_girder_sls4d_all_stage_profile_control_matrix()
     if not beam_sls_rows:
         st.info("No active imported Beam/Girder SLS Loads rows are available; SLS5A will use generated auto-load station rows where possible.")
     summary_rows: list[dict[str, object]] = []
@@ -18113,12 +18337,7 @@ def _render_girder_tension_limit_guidance(
     aci_class_key = f"girder_tension_limit_aci_class_{title}"
     duration_key = f"girder_tension_limit_duration_{title}"
     summary = _girder_ordinary_rebar_tension_face_summary(stresses)
-    method_options = [
-        "Engineer-confirmed bonded auxiliary reinforcement",
-        "Model-detected active ordinary rebar at tensile face",
-        "Not verified / use conservative preview",
-        "No bonded reinforcement / no-tension condition",
-    ]
+    method_options = list(_GIRDER_SLS_GUIDE_METHOD_OPTIONS)
     # SLS.STAGE.STRESS.QA2: practical precast-girder workflow.  The higher
     # bonded-auxiliary tension limits are allowed when the source is visible and
     # traceable: either engineer-confirmed from design/detailing drawings or
@@ -18163,7 +18382,7 @@ def _render_girder_tension_limit_guidance(
         )
     with cols[1]:
         if code == "AASHTO LRFD Bridge":
-            exposure_options = ["Moderate exposure / bonded", "Severe exposure / bonded", "Unbonded or no tension"]
+            exposure_options = list(_GIRDER_SLS_AASHTO_EXPOSURE_OPTIONS)
             if st.session_state.get(exposure_key) not in exposure_options:
                 st.session_state[exposure_key] = exposure_options[0]
             if stage == STAGE_FINAL_SERVICE:
@@ -18185,7 +18404,7 @@ def _render_girder_tension_limit_guidance(
                 st.caption("Not applied to Transfer/Construction; this stage uses its stage-specific tensile stress limit formula.")
             exposure = "moderate"
     with cols[2]:
-        duration_options = ["Full service / total", "Sustained or permanent only"]
+        duration_options = list(_GIRDER_SLS_EFFECT_DURATION_OPTIONS)
         if st.session_state.get(duration_key) not in duration_options:
             st.session_state[duration_key] = duration_options[0]
         if stage == STAGE_FINAL_SERVICE:
