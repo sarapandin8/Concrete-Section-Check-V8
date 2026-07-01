@@ -1,3 +1,24 @@
+### SLS.STAGE.STRESS.QA3A — Streamlit widget-state hotfix
+
+Hotfixes the QA3 staged SLS profile synchronization so read-only summary/detail synchronization never writes back to Streamlit widget-bound keys after the visible guide widgets are instantiated.
+
+#### What changed
+- Stops `_girder_sls_normalized_guide_method_from_state()` from assigning to the `Tension reinforcement condition` selectbox session-state key during downstream graph/status rendering.
+- Keeps bonded-confirmation checkbox keys read-only inside the summary/detail sync helper; only non-widget traceability source keys may be updated.
+- Preserves QA3 behavior: summary tables, detail cards, graphs, Result Summary, and Report / QA continue to use the selected per-stage tensile limit profile.
+
+#### Not changed
+- No stress equations, Pe(x), debonding, load routing, geometry, material routing, ULS/SLS calculation kernel, Project JSON behavior, or result-cache persistence changed.
+
+#### Validation run
+```bash
+python -m py_compile app.py concrete_pmm_pro/ui/analysis_page.py concrete_pmm_pro/serviceability/girder_code_limits.py concrete_pmm_pro/reporting/traceability.py concrete_pmm_pro/reporting/readiness.py concrete_pmm_pro/reporting/word_export.py
+pytest -q tests/test_sls_stage_stress_qa3_profile_sync.py tests/test_sls_stage_stress_qa2_practical_auxiliary_basis.py
+pytest -q tests/test_girder_sls_full_length_diagram.py tests/test_railway_u_girder_sls_stage_preview.py tests/test_railway_u_girder_sls_stage_limits.py tests/test_result_summary2_sls_code_integration.py tests/test_report_qa2_unified_readiness.py
+```
+
+Targeted SLS staged stress profile-sync, full-length diagram, Railway U-Girder staged SLS, Result Summary, and Report/QA tests passed.
+
 ### SLS.RAIL.UGIRDER9 — Lifting a/L and Debonding Audit Table
 
 Adds a read-only audit panel to **Analysis → SLS / Stress & Cracking → Lifting stage** for Railway U-Girder staged stress previews.

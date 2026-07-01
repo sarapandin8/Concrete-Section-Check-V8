@@ -14432,7 +14432,12 @@ def _girder_sls_normalized_guide_method_from_state(stage_label: str) -> str:
     method = legacy_method_map.get(method, method)
     if method not in method_options:
         method = "Engineer-confirmed bonded auxiliary reinforcement"
-    st.session_state[keys["guide_method"]] = method
+    # SLS.STAGE.STRESS.QA3A: this helper is called both before and after
+    # the visible guide widget is rendered.  Do not write back to the
+    # selectbox-bound session_state key here; Streamlit raises when a widget
+    # key is mutated after instantiation.  Return the normalized method as a
+    # read-only value and let the guide renderer handle any pre-widget legacy
+    # migration.
     return method
 
 
@@ -14498,20 +14503,21 @@ def _girder_sls_sync_stage_profile_from_guide_state(
             # The top summary cannot run the lower tensile-face detector because
             # it renders before the guide.  Trust only the persisted detector
             # confirmation written by a previous guide render; otherwise fall
-            # back to the conservative not-verified route.
+            # back to the conservative not-verified route.  Do not clear the
+            # checkbox-bound confirmation key here because this helper may run
+            # after the visible guide widget is instantiated.
             verified = True if confirmed and source == "model_detected" else None
             if verified is not True:
-                st.session_state[keys["bonded_confirm"]] = False
                 st.session_state[keys["bonded_source"]] = "model_detection_missing"
         elif method == "No bonded reinforcement / no-tension condition":
             verified = False
             exposure_condition = "no tension"
             aci_service_class = "No tension"
-            st.session_state[keys["bonded_confirm"]] = False
+            # Read-only with respect to widget-bound confirmation keys; source
+            # traceability remains safe because it is not a widget key.
             st.session_state[keys["bonded_source"]] = "no_bonded_reinforcement"
         else:
             verified = None
-            st.session_state[keys["bonded_confirm"]] = False
             st.session_state[keys["bonded_source"]] = "not_verified_conservative"
 
         guidance = recommend_girder_tension_limit_profile(
