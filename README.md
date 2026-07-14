@@ -1281,3 +1281,7 @@ Adds the first layout/data-foundation milestone for the Portal Frame Crossbeam â
 Reorders the Portal Frame Crossbeam Sections subpages so Segment Layout follows Section Builder, changes the clean/default crossbeam length to 20.000 m, and replaces free-text Section role / Section ID assignment with a dropdown sourced from the same two Portal Frame Crossbeam presets used by Section Builder. Legacy UI1 solid/hollow rows are migrated to the corresponding preset keys, while existing workflows retain their original Section Builder / Rebar / Prestress navigation and calculation routes.
 
 No prestress-loss, SLS, ULS, shear/torsion, Project JSON schema, result-cache, or report solver logic was changed.
+
+## CROSSBEAM.UI1B â€” Full-length dashed hollow-void elevation
+
+Updates only the Portal Frame Crossbeam Segment Layout elevation so hidden hollow void boundaries extend across the complete assigned hollow segment and are shown with dashed lines instead of an inset solid cut-out. Hollow segment fill remains lighter for rapid Solid/Hollow recognition. No geometry properties, assignment data, tendon data, solver paths, Project JSON behavior, or non-Crossbeam workflow is changed.

@@ -447,14 +447,18 @@ def _elevation_figure(rows: list[dict[str, Any]], length_m: float) -> go.Figure:
             layer="below",
         )
         if role == "Hollow":
+            # Elevation convention: the longitudinal void runs through the
+            # complete assigned hollow segment.  Because the void is hidden
+            # in elevation, show its full-length boundary with dashed lines
+            # rather than a shortened solid cut-out.
             fig.add_shape(
                 type="rect",
-                x0=start + 0.15 * (end - start),
-                x1=end - 0.15 * (end - start),
+                x0=start,
+                x1=end,
                 y0=0.25,
                 y1=0.75,
-                fillcolor="white",
-                line={"color": "#607d94", "width": 1.1},
+                fillcolor="rgba(0,0,0,0)",
+                line={"color": "#607d94", "width": 1.4, "dash": "dash"},
                 layer="below",
             )
         fig.add_annotation(
@@ -959,7 +963,7 @@ def render_crossbeam_segment_layout_page() -> None:
 
     st.plotly_chart(_elevation_figure(rows, length_m), use_container_width=True, config=FIGURE_CONFIG)
     st.caption(
-        "Elevation is a preset-based geometric review figure. Every segment references a Portal Frame Crossbeam preset from Section Builder; exact station solver properties and solid-to-hollow D-region checks remain future scope."
+        "Elevation is a preset-based geometric review figure. Dashed lines show the hidden void extending from the start to the end of each hollow segment. Every segment references a Portal Frame Crossbeam preset from Section Builder; exact station solver properties and solid-to-hollow D-region checks remain future scope."
     )
 
 
