@@ -140,6 +140,50 @@ def _rounded_rectangle_points(width_mm: float, height_mm: float, radius_mm: floa
         segments_per_corner,
     )
 
+
+def _bottom_filleted_rectangle_from_bounds(
+    left: float,
+    bottom: float,
+    right: float,
+    top: float,
+    radius_mm: float,
+    segments_per_corner: int = 12,
+) -> list[Point2D]:
+    """Return a rectangle with circular fillets at the two bottom corners only."""
+
+    width = right - left
+    height = top - bottom
+    radius = float(radius_mm)
+    if radius <= 0:
+        return _rectangle_from_bounds(left, bottom, right, top)
+    if radius * 2.0 > width or radius > height:
+        raise ValueError("Invalid geometry: bottom fillet radius is too large for the selected rectangle dimensions.")
+    n = max(1, int(segments_per_corner))
+    points: list[Point2D] = [_point(left + radius, bottom), _point(right - radius, bottom)]
+    # Right bottom arc: bottom edge to right side.
+    cx_r, cy_r = right - radius, bottom + radius
+    for index in range(1, n + 1):
+        angle = -math.pi / 2.0 + (math.pi / 2.0) * index / n
+        points.append(_point(cx_r + radius * math.cos(angle), cy_r + radius * math.sin(angle)))
+    points.extend([_point(right, top), _point(left, top), _point(left, bottom + radius)])
+    # Left bottom arc: left side back to bottom edge.
+    cx_l, cy_l = left + radius, bottom + radius
+    for index in range(1, n + 1):
+        angle = math.pi + (math.pi / 2.0) * index / n
+        points.append(_point(cx_l + radius * math.cos(angle), cy_l + radius * math.sin(angle)))
+    return points
+
+
+def _bottom_filleted_rectangle_points(width_mm: float, height_mm: float, radius_mm: float, segments_per_corner: int = 12) -> list[Point2D]:
+    return _bottom_filleted_rectangle_from_bounds(
+        -width_mm / 2.0,
+        -height_mm / 2.0,
+        width_mm / 2.0,
+        height_mm / 2.0,
+        radius_mm,
+        segments_per_corner,
+    )
+
 def _precast_box_beam_outer_points(
     width_mm: float,
     height_mm: float,
@@ -558,6 +602,97 @@ def rectangular_filleted(
         },
     )
 
+
+
+
+def crossbeam_rectangular_solid_bottom_fillets(
+    width_mm: float,
+    height_mm: float,
+    bottom_fillet_radius_mm: float = 200.0,
+    n_fillet: int = 16,
+    name: str = "PC crossbeam rectangular solid with bottom fillets",
+) -> SectionGeometry:
+    """Portal-frame PC crossbeam solid rectangle with bottom-only fillets."""
+
+    _require_positive("B", width_mm)
+    _require_positive("H", height_mm)
+    _require_non_negative("bottom_fillet_radius_mm", bottom_fillet_radius_mm)
+    if n_fillet < 4:
+        raise ValueError("Invalid geometry: n_fillet must be at least 4.")
+    if bottom_fillet_radius_mm * 2.0 > width_mm or bottom_fillet_radius_mm > height_mm:
+        raise ValueError("Invalid geometry: bottom_fillet_radius_mm is too large for the selected dimensions.")
+    points = _bottom_filleted_rectangle_points(width_mm, height_mm, bottom_fillet_radius_mm, n_fillet)
+    _ensure_valid_simple_polygon(points, name)
+    return SectionGeometry(
+        name=name,
+        outer_polygon=points,
+        holes=[],
+        metadata={
+            "preset": "crossbeam_rectangular_solid_bottom_fillets",
+            "bottom_fillet_radius_mm": float(bottom_fillet_radius_mm),
+            "n_fillet": int(n_fillet),
+            "crossbeam_section_role": "Solid",
+        },
+    )
+
+
+def crossbeam_rectangular_hollow_bottom_fillets_inner_chamfers(
+    width_mm: float,
+    height_mm: float,
+    t_top_mm: float,
+    t_bottom_mm: float,
+    t_left_mm: float,
+    t_right_mm: float,
+    bottom_fillet_radius_mm: float = 200.0,
+    inner_chamfer_mm: float = 150.0,
+    n_fillet: int = 16,
+    name: str = "PC crossbeam rectangular hollow with bottom fillets and inner chamfers",
+) -> SectionGeometry:
+    """Portal-frame PC crossbeam hollow rectangle with wall-thickness void definition."""
+
+    top, bottom, left, right = _resolve_wall_thicknesses(
+        t_top_mm=t_top_mm,
+        t_bottom_mm=t_bottom_mm,
+        t_left_mm=t_left_mm,
+        t_right_mm=t_right_mm,
+        wall_thickness_mm=None,
+    )
+    _require_non_negative("bottom_fillet_radius_mm", bottom_fillet_radius_mm)
+    _require_non_negative("inner_chamfer_mm", inner_chamfer_mm)
+    if n_fillet < 4:
+        raise ValueError("Invalid geometry: n_fillet must be at least 4.")
+    if bottom_fillet_radius_mm * 2.0 > width_mm or bottom_fillet_radius_mm > height_mm:
+        raise ValueError("Invalid geometry: bottom_fillet_radius_mm is too large for the selected dimensions.")
+    inner_bounds = _inner_rect_bounds(
+        width_mm=width_mm,
+        height_mm=height_mm,
+        t_top_mm=top,
+        t_bottom_mm=bottom,
+        t_left_mm=left,
+        t_right_mm=right,
+    )
+    inner_width = inner_bounds[2] - inner_bounds[0]
+    inner_height = inner_bounds[3] - inner_bounds[1]
+    if inner_chamfer_mm * 2.0 > min(inner_width, inner_height):
+        raise ValueError("Invalid geometry: inner_chamfer_mm is too large for the wall-thickness-defined opening.")
+    outer_polygon = _bottom_filleted_rectangle_points(width_mm, height_mm, bottom_fillet_radius_mm, n_fillet)
+    inner_hole = list(reversed(_chamfered_rectangle_from_bounds(*inner_bounds, inner_chamfer_mm)))
+    _ensure_valid_polygon_with_holes(outer_polygon, [inner_hole], name)
+    return SectionGeometry(
+        name=name,
+        outer_polygon=outer_polygon,
+        holes=[inner_hole],
+        metadata={
+            "preset": "crossbeam_rectangular_hollow_bottom_fillets_inner_chamfers",
+            "wall_thicknesses_mm": {"top": top, "bottom": bottom, "left": left, "right": right},
+            "opening_width_mm": inner_width,
+            "opening_height_mm": inner_height,
+            "bottom_fillet_radius_mm": float(bottom_fillet_radius_mm),
+            "inner_chamfer_mm": float(inner_chamfer_mm),
+            "n_fillet": int(n_fillet),
+            "crossbeam_section_role": "Hollow",
+        },
+    )
 
 def circle(diameter_mm: float, segments: int = 128, name: str = "Circle") -> SectionGeometry:
     _require_positive("D", diameter_mm)
@@ -1735,6 +1870,93 @@ def rectangular_filleted_dimensions(
     return dims
 
 
+
+
+def crossbeam_rectangular_solid_bottom_fillets_dimensions(
+    width_mm: float,
+    height_mm: float,
+    bottom_fillet_radius_mm: float = 200.0,
+    n_fillet: int = 16,
+    **kwargs: object,
+) -> list[DimensionItem]:
+    _ = (n_fillet, kwargs)
+    dims = rectangle_dimensions(width_mm, height_mm)
+    r = float(bottom_fillet_radius_mm)
+    if r > 0:
+        w = width_mm / 2.0
+        h = height_mm / 2.0
+        dims.append(
+            _dim(
+                "R",
+                _point(w - r * (1.0 - math.cos(math.pi / 4.0)), -h + r * (1.0 - math.sin(math.pi / 4.0))),
+                _point(w + 0.6 * r, -h - 0.6 * r),
+                _point(w + 0.38 * r, -h - 0.38 * r),
+                "radial",
+                r,
+            )
+        )
+    return dims
+
+
+def crossbeam_rectangular_hollow_bottom_fillets_inner_chamfers_dimensions(
+    width_mm: float,
+    height_mm: float,
+    t_top_mm: float,
+    t_bottom_mm: float,
+    t_left_mm: float,
+    t_right_mm: float,
+    bottom_fillet_radius_mm: float = 200.0,
+    inner_chamfer_mm: float = 150.0,
+    n_fillet: int = 16,
+    **kwargs: object,
+) -> list[DimensionItem]:
+    _ = (n_fillet,)
+    dims = rectangular_hollow_dimensions(
+        width_mm,
+        height_mm,
+        t_top_mm=t_top_mm,
+        t_bottom_mm=t_bottom_mm,
+        t_left_mm=t_left_mm,
+        t_right_mm=t_right_mm,
+        **kwargs,
+    )
+    w = width_mm / 2.0
+    h = height_mm / 2.0
+    r = float(bottom_fillet_radius_mm)
+    if r > 0:
+        dims.append(
+            _dim(
+                "R",
+                _point(w - r * (1.0 - math.cos(math.pi / 4.0)), -h + r * (1.0 - math.sin(math.pi / 4.0))),
+                _point(w + 0.6 * r, -h - 0.6 * r),
+                _point(w + 0.38 * r, -h - 0.38 * r),
+                "radial",
+                r,
+            )
+        )
+    if inner_chamfer_mm > 0:
+        top, bottom, left, right = _resolve_wall_thicknesses(
+            t_top_mm=t_top_mm,
+            t_bottom_mm=t_bottom_mm,
+            t_left_mm=t_left_mm,
+            t_right_mm=t_right_mm,
+            wall_thickness_mm=None,
+        )
+        inner_right = width_mm / 2.0 - right
+        inner_bottom = -height_mm / 2.0 + bottom
+        c = float(inner_chamfer_mm)
+        dims.append(
+            _dim(
+                "C",
+                _point(inner_right - c, inner_bottom),
+                _point(inner_right, inner_bottom + c),
+                _point(inner_right + 0.28 * c, inner_bottom + 0.28 * c),
+                "aligned",
+                c,
+            )
+        )
+    return dims
+
 def circle_dimensions(diameter_mm: float, **_: object) -> list[DimensionItem]:
     r = diameter_mm / 2.0
     return [_dim("D", _point(-r, 0), _point(r, 0), _point(0, -0.18 * diameter_mm), "diameter", diameter_mm)]
@@ -2704,6 +2926,14 @@ def register_builtin_generators(registry: GeometryRegistry) -> None:
         "rectangular_hollow_outer_filleted_inner_chamfered": (
             rectangular_hollow_outer_filleted_inner_chamfered,
             rectangular_hollow_outer_filleted_inner_chamfered_dimensions,
+        ),
+        "crossbeam_rectangular_solid_bottom_fillets": (
+            crossbeam_rectangular_solid_bottom_fillets,
+            crossbeam_rectangular_solid_bottom_fillets_dimensions,
+        ),
+        "crossbeam_rectangular_hollow_bottom_fillets_inner_chamfers": (
+            crossbeam_rectangular_hollow_bottom_fillets_inner_chamfers,
+            crossbeam_rectangular_hollow_bottom_fillets_inner_chamfers_dimensions,
         ),
         "box_section_fillet": (box_section_fillet, box_section_fillet_dimensions),
         "precast_box_beam_exterior": (precast_box_beam_exterior, precast_box_beam_exterior_dimensions),

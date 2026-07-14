@@ -71,6 +71,8 @@ def allowed_project_design_codes_for_workflow(member_type: object | None) -> tup
         return (PROJECT_CODE_AASHTO_LRFD,)
     if member == "building_beam_girder":
         return (PROJECT_CODE_ACI318,)
+    if member == "portal_frame_crossbeam":
+        return (PROJECT_CODE_ACI318,)
     return PROJECT_DESIGN_CODE_OPTIONS
 
 
@@ -94,6 +96,8 @@ def workflow_code_policy_message(member_type: object | None) -> str:
         return "Bridge Beam/Girder workflow uses AASHTO LRFD design basis only."
     if member == "building_beam_girder":
         return "Building Beam/Girder workflow uses ACI 318 design basis only."
+    if member == "portal_frame_crossbeam":
+        return "Portal Frame Crossbeam workflow uses ACI 318 design basis; prestress-loss basis is selected separately in future loss modules."
     return "Column / Pier / Wall / Pylon workflow may use ACI 318 or AASHTO LRFD, with capability guards where engines are not yet implemented."
 
 
@@ -271,6 +275,12 @@ def project_code_capability_cards(code: object | None, member_type: str | None =
         pmm_note = "Column/Pier PMM is hidden in the Building Beam/Girder workflow."
         girder_status = "PREVIEW / REVIEW"
         girder_note = "Building Beam/Girder uses ACI 318. Current flexure, SHEAR.CODE2, TORSION.CODE2, staged SLS, deflection/camber, and prestress tools remain guarded preview / engineering-review workflows; bridge-specific tools are intentionally hidden."
+    elif member == "portal_frame_crossbeam":
+        workflow_note = "Active Portal Frame Crossbeam workflow"
+        pmm_status = "NOT APPLICABLE"
+        pmm_note = "Column/Pier PMM is hidden in the Portal Frame Crossbeam workflow."
+        girder_status = "LAYOUT READY"
+        girder_note = "Portal Frame Crossbeam uses ACI 318 for member-design routing. WF1 establishes segmented solid/hollow geometry and top-referenced tendon profile source-of-truth only; SLS, ULS, losses, anchorage, and D-region certification remain future guarded scope."
     elif canonical == PROJECT_CODE_AASHTO_LRFD:
         workflow_note = "Active Column/Pier/Wall/Pylon workflow"
         pmm_status = "AVAILABLE / REVIEW"

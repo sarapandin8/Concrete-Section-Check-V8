@@ -464,6 +464,7 @@ _MEMBER_TYPE_OPTIONS: dict[str, str] = {
     "Column / Pier / Wall / Pylon — RC / Prestressed Member": "column_pier_pmm",
     "Bridge Beam / Girder — RC / Prestressed Member": "beam_girder",
     "Building Beam / Girder — RC / Prestressed Member": "building_beam_girder",
+    "Portal Frame Crossbeam — Prestressed Concrete": "portal_frame_crossbeam",
 }
 
 _LEGACY_MEMBER_TYPE_LABELS: dict[str, str] = {
@@ -502,6 +503,12 @@ def _mode_guidance_lines(settings: AnalysisModeSettings) -> list[str]:
             "Building Beam/Girder workflow uses ACI 318 design basis.",
             "Bridge-specific girder spacing, number of girders, barrier/sidewalk/wearing surface, CSiBridge, and staged composite assumptions are hidden.",
             "Building beam/girder ULS/SLS tools are guarded preview / engineering-review workflows; final code-certified design remains future scope.",
+        ]
+    if settings.member_type == "portal_frame_crossbeam":
+        return [
+            "Portal Frame Crossbeam workflow uses ACI 318 design-code routing.",
+            "WF1 adds station-based solid/hollow crossbeam layout and top-referenced tendon profile source data only.",
+            "Prestress-loss basis, SLS stress, ULS strength, anchorage zones, and D-region checks remain future guarded milestones.",
         ]
     return [
         "Column/Pier/Wall/Pylon mode uses the existing Pu, Mux, Muy PMM workflow.",
@@ -595,7 +602,7 @@ def _render_analysis_mode_selector(current: AnalysisModeSettings) -> AnalysisMod
                 "Change active member workflow",
                 labels,
                 key=widget_key,
-                help="Bridge Beam/Girder activates guarded AASHTO LRFD bridge girder tools. Building Beam/Girder activates guarded ACI 318 beam/girder tools. Column/Pier can use ACI 318 or AASHTO LRFD with capability guards.",
+                help="Bridge Beam/Girder activates guarded AASHTO LRFD bridge girder tools. Building Beam/Girder activates guarded ACI 318 beam/girder tools. Portal Frame Crossbeam activates ACI prestressed crossbeam layout tools. Column/Pier can use ACI 318 or AASHTO LRFD with capability guards.",
                 label_visibility="visible",
             )
         note = st.session_state.get(note_key, current.note or "")
@@ -784,6 +791,9 @@ def _analysis_configuration_cards(analysis_mode: AnalysisModeSettings) -> list[D
     elif analysis_mode.member_type == "building_beam_girder":
         beam_status = "Building planned"
         beam_detail = "Building beam/girder engines are guarded; bridge-specific assumptions are hidden"
+    elif analysis_mode.member_type == "portal_frame_crossbeam":
+        beam_status = "Crossbeam layout active"
+        beam_detail = "Station-based solid/hollow layout and tendon profile source data are available; solvers remain guarded"
     else:
         beam_status = "Not active"
         beam_detail = "Select Bridge or Building Beam/Girder to activate beam/girder routing"

@@ -23,8 +23,8 @@ PrestressStressModel = Literal["linear_cap", "bilinear"]
 # ``general_section`` is kept as a legacy input value so old project/session
 # data can be normalized without crashing. It is no longer exposed as an active
 # workflow in the UI.
-MemberType = Literal["column_pier_pmm", "beam_girder", "building_beam_girder", "general_section"]
-AnalysisWorkflow = Literal["pmm_section", "beam_girder_future", "bridge_beam_girder", "building_beam_girder", "general_section"]
+MemberType = Literal["column_pier_pmm", "beam_girder", "building_beam_girder", "portal_frame_crossbeam", "general_section"]
+AnalysisWorkflow = Literal["pmm_section", "beam_girder_future", "bridge_beam_girder", "building_beam_girder", "portal_frame_crossbeam", "general_section"]
 
 
 class AnalysisModeSettings(BaseModel):
@@ -62,6 +62,11 @@ class AnalysisModeSettings(BaseModel):
             object.__setattr__(self, "allow_beam_girder_placeholder", True)
         elif self.member_type == "building_beam_girder":
             object.__setattr__(self, "analysis_workflow", "building_beam_girder")
+            object.__setattr__(self, "allow_pmm_workflow", False)
+            object.__setattr__(self, "allow_sls_workflow", False)
+            object.__setattr__(self, "allow_beam_girder_placeholder", True)
+        elif self.member_type == "portal_frame_crossbeam":
+            object.__setattr__(self, "analysis_workflow", "portal_frame_crossbeam")
             object.__setattr__(self, "allow_pmm_workflow", False)
             object.__setattr__(self, "allow_sls_workflow", False)
             object.__setattr__(self, "allow_beam_girder_placeholder", True)

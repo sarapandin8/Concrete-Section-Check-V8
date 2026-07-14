@@ -128,6 +128,11 @@ def default_section_reinforcement_flags(
             return False, True
         return True, False
 
+    if member == "portal_frame_crossbeam":
+        # CROSSBEAM.WF1: PC crossbeams require mild reinforcement detailing and
+        # prestressing tendon definitions as active source data from the start.
+        return True, True
+
     return True, False
 
 

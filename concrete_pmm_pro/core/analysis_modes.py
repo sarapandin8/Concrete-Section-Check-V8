@@ -7,6 +7,7 @@ from concrete_pmm_pro.core.analysis import AnalysisModeSettings
 COLUMN_PIER_WORKFLOW = "column_pier_pmm"
 BRIDGE_BEAM_GIRDER_WORKFLOW = "beam_girder"
 BUILDING_BEAM_GIRDER_WORKFLOW = "building_beam_girder"
+PORTAL_FRAME_CROSSBEAM_WORKFLOW = "portal_frame_crossbeam"
 
 
 def analysis_mode_label(settings: AnalysisModeSettings) -> str:
@@ -16,6 +17,8 @@ def analysis_mode_label(settings: AnalysisModeSettings) -> str:
         return "Bridge Beam / Girder — RC / Prestressed Member"
     if settings.member_type == BUILDING_BEAM_GIRDER_WORKFLOW:
         return "Building Beam / Girder — RC / Prestressed Member"
+    if settings.member_type == PORTAL_FRAME_CROSSBEAM_WORKFLOW:
+        return "Portal Frame Crossbeam — Prestressed Concrete"
     if settings.member_type == "general_section":
         return "Column / Pier / Wall / Pylon — RC / Prestressed Member"
     return "Unknown Analysis Mode"
@@ -38,6 +41,12 @@ def analysis_mode_description(settings: AnalysisModeSettings) -> str:
         return (
             "Building Beam/Girder workflow for RC/prestressed building members. ACI 318 is the project code basis; "
             "implemented tools include guarded Beam/Girder ULS flexure/shear/torsion gates and building-oriented SLS stress/deflection previews; bridge-specific tools remain hidden."
+        )
+    if settings.member_type == PORTAL_FRAME_CROSSBEAM_WORKFLOW:
+        return (
+            "Portal frame prestressed concrete crossbeam workflow for station-based solid/hollow member layout, "
+            "top-referenced tendon profile definition, ACI design-code routing, and future prestress-loss FEA handoff. "
+            "WF1 establishes geometry and tendon source-of-truth only; SLS, ULS, loss, anchorage, and D-region checks remain future guarded scope."
         )
     if settings.member_type == "general_section":
         return (
@@ -70,6 +79,10 @@ def is_building_beam_girder_workflow(settings: AnalysisModeSettings) -> bool:
     return settings.member_type == BUILDING_BEAM_GIRDER_WORKFLOW
 
 
+def is_portal_frame_crossbeam_workflow(settings: AnalysisModeSettings) -> bool:
+    return settings.member_type == PORTAL_FRAME_CROSSBEAM_WORKFLOW
+
+
 def analysis_mode_warnings(settings: AnalysisModeSettings) -> list[str]:
     warnings: list[str] = []
     if settings.member_type == BRIDGE_BEAM_GIRDER_WORKFLOW:
@@ -85,6 +98,13 @@ def analysis_mode_warnings(settings: AnalysisModeSettings) -> list[str]:
             [
                 "Building Beam/Girder uses ACI 318 project code basis.",
                 "Building Beam/Girder ULS/SLS tools are guarded preview / engineering-review workflows; bridge-specific staged girder assumptions are intentionally hidden.",
+            ]
+        )
+    elif settings.member_type == PORTAL_FRAME_CROSSBEAM_WORKFLOW:
+        warnings.extend(
+            [
+                "Portal Frame Crossbeam uses ACI 318 project design-code routing, while prestress-loss basis remains an explicit engineer-selected method in later PSLOSS milestones.",
+                "WF1 does not certify SLS stress, prestress losses, ULS strength, anchorage zones, solid/hollow transition zones, column joint regions, or local D-regions.",
             ]
         )
     elif settings.member_type == "general_section":

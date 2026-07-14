@@ -7,7 +7,8 @@
     "Pier / Column",
     "Precast Composite Girder",
     "General / Non-composite Girder",
-    "Custom"
+    "Custom",
+    "Portal Frame Crossbeam"
   ],
   "presets": [
     {
@@ -1782,6 +1783,133 @@
         "building_beam_girder"
       ],
       "application_domain": "shared_generic_girder"
+    },
+    {
+      "key": "crossbeam_rectangular_solid_bottom_fillets",
+      "display_name": "PC Crossbeam — Rectangular Solid with Bottom Fillets",
+      "category": "Portal Frame Crossbeam",
+      "generator": "crossbeam_rectangular_solid_bottom_fillets",
+      "dimensions_generator": "crossbeam_rectangular_solid_bottom_fillets",
+      "parameters": [
+        {
+          "name": "width_mm",
+          "label": "Overall width B (mm)",
+          "type": "number",
+          "default": 2500,
+          "min": 1,
+          "max": 20000,
+          "step": 50
+        },
+        {
+          "name": "height_mm",
+          "label": "Overall depth H (mm)",
+          "type": "number",
+          "default": 1500,
+          "min": 1,
+          "max": 10000,
+          "step": 50
+        },
+        {
+          "name": "bottom_fillet_radius_mm",
+          "label": "Bottom fillet radius R (mm)",
+          "type": "number",
+          "default": 200,
+          "min": 0,
+          "max": 5000,
+          "step": 10
+        }
+      ],
+      "allowed_workflows": [
+        "portal_frame_crossbeam"
+      ],
+      "application_domain": "portal_frame_crossbeam",
+      "crossbeam_section_role": "solid"
+    },
+    {
+      "key": "crossbeam_rectangular_hollow_bottom_fillets_inner_chamfers",
+      "display_name": "PC Crossbeam — Rectangular Hollow with Bottom Fillets and Inner Chamfers",
+      "category": "Portal Frame Crossbeam",
+      "generator": "crossbeam_rectangular_hollow_bottom_fillets_inner_chamfers",
+      "dimensions_generator": "crossbeam_rectangular_hollow_bottom_fillets_inner_chamfers",
+      "parameters": [
+        {
+          "name": "width_mm",
+          "label": "Overall width B (mm)",
+          "type": "number",
+          "default": 2500,
+          "min": 1,
+          "max": 20000,
+          "step": 50
+        },
+        {
+          "name": "height_mm",
+          "label": "Overall depth H (mm)",
+          "type": "number",
+          "default": 1500,
+          "min": 1,
+          "max": 10000,
+          "step": 50
+        },
+        {
+          "name": "t_top_mm",
+          "label": "Top wall thickness tt (mm)",
+          "type": "number",
+          "default": 300,
+          "min": 1,
+          "max": 5000,
+          "step": 10
+        },
+        {
+          "name": "t_bottom_mm",
+          "label": "Bottom wall thickness tb (mm)",
+          "type": "number",
+          "default": 350,
+          "min": 1,
+          "max": 5000,
+          "step": 10
+        },
+        {
+          "name": "t_left_mm",
+          "label": "Left wall thickness tl (mm)",
+          "type": "number",
+          "default": 300,
+          "min": 1,
+          "max": 5000,
+          "step": 10
+        },
+        {
+          "name": "t_right_mm",
+          "label": "Right wall thickness tr (mm)",
+          "type": "number",
+          "default": 300,
+          "min": 1,
+          "max": 5000,
+          "step": 10
+        },
+        {
+          "name": "bottom_fillet_radius_mm",
+          "label": "Bottom fillet radius R (mm)",
+          "type": "number",
+          "default": 200,
+          "min": 0,
+          "max": 5000,
+          "step": 10
+        },
+        {
+          "name": "inner_chamfer_mm",
+          "label": "Inner opening chamfer C (mm)",
+          "type": "number",
+          "default": 150,
+          "min": 0,
+          "max": 5000,
+          "step": 10
+        }
+      ],
+      "allowed_workflows": [
+        "portal_frame_crossbeam"
+      ],
+      "application_domain": "portal_frame_crossbeam",
+      "crossbeam_section_role": "hollow"
     }
   ]
 }

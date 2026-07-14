@@ -1247,3 +1247,7 @@ Key UI/QA changes:
 - Rewords the guide card from `Detected tensile fiber` to `Reinforcement basis source` so the UI does not imply model verification when the proof source is external drawings.
 
 No stress equations, Pe(x), debonding, load routing, geometry, material routing, ULS/SLS calculation kernel, Project JSON schema, or result-cache persistence were changed. This is UI/QA traceability and source-basis wording only; development length, anchorage, end-zone, continuity, area adequacy, crack-control, and project certification remain separate engineering reviews.
+
+## CROSSBEAM.WF1 — Portal frame PC crossbeam workflow
+
+Adds the first layout/data-foundation milestone for the Portal Frame Crossbeam — Prestressed Concrete workflow. Scope is intentionally limited to workflow routing, ACI design-code gating, two crossbeam section presets, station-based solid/hollow layout, and top-referenced tendon profile source data. It does not calculate prestress losses, SLS stresses, ULS capacity, anchorage zones, or D-region checks.
