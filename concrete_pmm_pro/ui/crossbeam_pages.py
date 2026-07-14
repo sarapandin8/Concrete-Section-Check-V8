@@ -430,12 +430,44 @@ def _elevation_figure(rows: list[dict[str, Any]], length_m: float) -> go.Figure:
     fills = {"Solid": "rgba(120,140,160,0.52)", "Hollow": "rgba(120,140,160,0.22)"}
     outlines = {"Solid": "#3d556b", "Hollow": "#607d94"}
 
+    # Compact engineering legend.  The actual segment bodies remain layout
+    # shapes so station boundaries stay exact; these traces are legend keys.
+    fig.add_trace(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="markers",
+            marker={"symbol": "square", "size": 14, "color": fills["Solid"], "line": {"color": outlines["Solid"], "width": 1}},
+            name="Solid segment",
+            hoverinfo="skip",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="markers",
+            marker={"symbol": "square", "size": 14, "color": fills["Hollow"], "line": {"color": outlines["Hollow"], "width": 1}},
+            name="Hollow segment",
+            hoverinfo="skip",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=[None, None],
+            y=[None, None],
+            mode="lines",
+            line={"color": outlines["Hollow"], "width": 1.5, "dash": "dash"},
+            name="Hidden void boundary",
+            hoverinfo="skip",
+        )
+    )
+
     for row in rows:
         start = row["x_start_m"]
         end = row["x_end_m"]
         role = row["Section role"]
         preset_name = row["Section type / preset"]
-        preset_short = "Rectangular Solid" if role == "Solid" else "Rectangular Hollow"
         fig.add_shape(
             type="rect",
             x0=start,
@@ -458,13 +490,35 @@ def _elevation_figure(rows: list[dict[str, Any]], length_m: float) -> go.Figure:
                 y0=0.25,
                 y1=0.75,
                 fillcolor="rgba(0,0,0,0)",
-                line={"color": "#607d94", "width": 1.4, "dash": "dash"},
+                line={"color": outlines["Hollow"], "width": 1.4, "dash": "dash"},
                 layer="below",
             )
+
+        # Transparent hover surface keeps the visible label compact while
+        # preserving the complete Section Builder preset and station audit.
+        fig.add_trace(
+            go.Scatter(
+                x=[start, end, end, start, start],
+                y=[0.0, 0.0, height, height, 0.0],
+                mode="lines",
+                line={"color": "rgba(0,0,0,0)", "width": 0},
+                fill="toself",
+                fillcolor="rgba(0,0,0,0.001)",
+                hoveron="fills",
+                name=f"{row['Segment']} hover",
+                showlegend=False,
+                hovertemplate=(
+                    f"<b>{row['Segment']} · {role}</b><br>"
+                    f"Section Builder preset: {preset_name}<br>"
+                    f"Station: {start:.3f}–{end:.3f} m<br>"
+                    f"Length: {end - start:.3f} m<extra></extra>"
+                ),
+            )
+        )
         fig.add_annotation(
             x=(start + end) / 2.0,
             y=0.5,
-            text=f"<b>{row['Segment']}</b><br>{role}<br>{preset_short}",
+            text=f"<b>{row['Segment']}</b><br>{role}",
             showarrow=False,
             font={"size": 11, "color": "#17324d"},
         )
@@ -483,16 +537,53 @@ def _elevation_figure(rows: list[dict[str, Any]], length_m: float) -> go.Figure:
         go.Scatter(
             x=[0.0, length_m],
             y=[0.5, 0.5],
-            mode="markers+text",
-            marker={"symbol": "triangle-right", "size": 13},
+            mode="markers",
+            marker={"symbol": ["triangle-right", "triangle-left"], "size": 13, "color": "#1f6fb2"},
             text=["Left anchorage", "Right anchorage"],
-            textposition=["top right", "top left"],
             name="Anchorage heads",
+            showlegend=False,
             hovertemplate="%{text}<extra></extra>",
         )
     )
-    fig.update_layout(**_base_figure_layout("Crossbeam Longitudinal Segment Elevation", "Station s (m)", "Section role schematic", height=500))
-    fig.update_yaxes(range=[-0.22, 1.22], showticklabels=False, fixedrange=True)
+    fig.add_annotation(
+        x=0.0,
+        y=0.5,
+        text="<b>Left anchorage</b>",
+        showarrow=True,
+        arrowhead=2,
+        arrowsize=0.8,
+        arrowwidth=1.2,
+        arrowcolor="#1f6fb2",
+        ax=44,
+        ay=-54,
+        bgcolor="rgba(255,255,255,0.92)",
+        bordercolor="#c8d6e3",
+        borderwidth=1,
+        font={"size": 10, "color": "#17324d"},
+    )
+    fig.add_annotation(
+        x=length_m,
+        y=0.5,
+        text="<b>Right anchorage</b>",
+        showarrow=True,
+        arrowhead=2,
+        arrowsize=0.8,
+        arrowwidth=1.2,
+        arrowcolor="#1f6fb2",
+        ax=-44,
+        ay=-54,
+        bgcolor="rgba(255,255,255,0.92)",
+        bordercolor="#c8d6e3",
+        borderwidth=1,
+        font={"size": 10, "color": "#17324d"},
+    )
+
+    fig.update_layout(**_base_figure_layout("Crossbeam Longitudinal Segment Elevation", "Station s (m)", "Section role schematic", height=510))
+    fig.update_layout(
+        margin={"l": 72, "r": 36, "t": 96, "b": 64},
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5},
+    )
+    fig.update_yaxes(range=[-0.22, 1.28], showticklabels=False, fixedrange=True)
     fig.update_xaxes(range=[-0.02 * length_m, 1.02 * length_m])
     return fig
 
