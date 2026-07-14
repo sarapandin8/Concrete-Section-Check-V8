@@ -1309,3 +1309,7 @@ No prestress-loss, SLS, ULS, shear/torsion, Project JSON schema, result-cache, o
 ## CROSSBEAM.UI1B — Full-length dashed hollow-void elevation
 
 Updates only the Portal Frame Crossbeam Segment Layout elevation so hidden hollow void boundaries extend across the complete assigned hollow segment and are shown with dashed lines instead of an inset solid cut-out. Hollow segment fill remains lighter for rapid Solid/Hollow recognition. No geometry properties, assignment data, tendon data, solver paths, Project JSON behavior, or non-Crossbeam workflow is changed.
+
+## CROSSBEAM.SECLIB1C — Table-driven active section synchronization
+
+The Crossbeam Project Section Summary now supports single-row selection. Selecting a row safely stages that Section ID as active, then synchronizes the Section Builder geometry editor, gross properties, live preview, and section-management controls on rerun without mutating widget-owned Session State after instantiation. See `README_CROSSBEAM_SECLIB1C.md`.

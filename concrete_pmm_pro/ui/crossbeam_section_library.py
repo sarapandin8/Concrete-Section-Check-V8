@@ -257,6 +257,49 @@ def _project_section_summary_rows(
     return rows
 
 
+def _summary_selection_rows(selection_event: Any) -> list[int]:
+    """Return selected dataframe row indices across Streamlit event shapes.
+
+    Streamlit exposes dataframe selection as an attribute-style object at
+    runtime, while tests and future compatibility layers may provide a mapping.
+    Keeping the extraction in one pure helper avoids coupling the section
+    library workflow to one exact event representation.
+    """
+
+    if selection_event is None:
+        return []
+    selection = getattr(selection_event, "selection", None)
+    if selection is None and isinstance(selection_event, Mapping):
+        selection = selection_event.get("selection", selection_event)
+    rows = getattr(selection, "rows", None)
+    if rows is None and isinstance(selection, Mapping):
+        rows = selection.get("rows")
+    if not isinstance(rows, (list, tuple)):
+        return []
+    selected: list[int] = []
+    for value in rows:
+        try:
+            selected.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return selected
+
+
+def _selected_section_id_from_summary_event(
+    selection_event: Any,
+    summary_rows: list[dict[str, Any]],
+) -> str:
+    """Resolve the Section ID selected in the Project Section Summary."""
+
+    rows = _summary_selection_rows(selection_event)
+    if not rows:
+        return ""
+    row_index = rows[0]
+    if row_index < 0 or row_index >= len(summary_rows):
+        return ""
+    return str(summary_rows[row_index].get("Section ID") or "").strip()
+
+
 def _rename_section_name_form(definitions: list[dict[str, Any]], active_id: str) -> None:
     active = definition_map(definitions)[active_id]
     with st.form(f"crossbeam_seclib1b_name_{active_id}", border=False):
@@ -489,13 +532,16 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
 
     st.markdown("#### Project Section Summary")
     st.caption(
-        "Visible inventory of every Solid/Hollow project section, its key dimensions, calculated gross properties, and Segment Layout usage."
+        "Click any row to make that Section ID active. The geometry editor, calculated properties, live preview, and management controls below update together."
     )
     summary_rows = _project_section_summary_rows(definitions, usage, active_id)
-    st.dataframe(
+    summary_event = st.dataframe(
         pd.DataFrame(summary_rows),
         use_container_width=True,
         hide_index=True,
+        key=f"crossbeam_seclib1c_project_section_summary_{active_id}",
+        on_select="rerun",
+        selection_mode="single-row",
         column_config={
             "Area mm²": st.column_config.NumberColumn(format="%.1f"),
             "Centroid from top mm": st.column_config.NumberColumn(format="%.2f"),
@@ -503,6 +549,15 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
             "Iy mm⁴": st.column_config.NumberColumn(format="%.3e"),
         },
     )
+    selected_from_table = _selected_section_id_from_summary_event(summary_event, summary_rows)
+    if selected_from_table and selected_from_table != active_id:
+        _stage_definition_selection(
+            st.session_state,
+            definitions,
+            selected_from_table,
+            notice=f"Now editing {selected_from_table} selected from Project Section Summary.",
+        )
+        st.rerun()
 
     st.markdown("#### Manage Selected Section")
     manage_name_col, manage_delete_col = st.columns([0.68, 0.32], gap="medium")
