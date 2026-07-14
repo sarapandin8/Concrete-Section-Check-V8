@@ -15,7 +15,7 @@ def test_crossbeam_ui1_module_exists_and_is_solver_free():
 
 def test_crossbeam_navigation_is_workflow_scoped():
     source = Path("app.py").read_text()
-    assert 'return ["Section Builder", "Rebar", "Tendon System", "Segment Layout", "Tendon Profile"]' in source
+    assert 'return ["Section Builder", "Segment Layout", "Rebar", "Tendon System", "Tendon Profile"]' in source
     assert 'return list(WORKSPACE_NAVIGATION["Sections"])' in source
     assert '"Sections": ["Section Builder", "Rebar", "Prestress"]' in source
 

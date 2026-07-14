@@ -67,7 +67,7 @@ def _sections_navigation_options() -> list[str]:
 
     mode = _analysis_mode_from_session_for_chrome()
     if is_portal_frame_crossbeam_workflow(mode):
-        return ["Section Builder", "Rebar", "Tendon System", "Segment Layout", "Tendon Profile"]
+        return ["Section Builder", "Segment Layout", "Rebar", "Tendon System", "Tendon Profile"]
     return list(WORKSPACE_NAVIGATION["Sections"])
 
 

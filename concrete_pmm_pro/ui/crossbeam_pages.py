@@ -28,12 +28,18 @@ from concrete_pmm_pro.crossbeam.workflow import (
     DEFAULT_STRANDS_PER_TENDON,
     DEFAULT_TENDON_COUNT,
     DEFAULT_TENDON_TYPE,
+    CROSSBEAM_SECTION_PRESETS,
+    CROSSBEAM_SOLID_PRESET_KEY,
+    CROSSBEAM_SOLID_PRESET_NAME,
+    CROSSBEAM_HOLLOW_PRESET_KEY,
+    CROSSBEAM_HOLLOW_PRESET_NAME,
     JACKING_END_OPTIONS,
     TENDON_TYPE_OPTIONS,
     calculated_fpj_mpa,
     default_crossbeam_segment_rows,
     default_crossbeam_tendon_rows,
 )
+from concrete_pmm_pro.geometry.presets import load_section_presets
 from concrete_pmm_pro.geometry.summary import summarize_geometry
 from concrete_pmm_pro.ui.commercial import render_metric_cards, render_page_header, render_section_bar
 
@@ -55,6 +61,7 @@ CB_PROFILE_ROWS_KEY = "crossbeam_ui1_tendon_profile_points"
 CB_PROFILE_REV_KEY = "crossbeam_ui1_tendon_profile_editor_revision"
 CB_ACTIVE_TENDONS_KEY = "crossbeam_ui1_active_tendon_ids"
 CB_3D_TRANSPARENT_KEY = "crossbeam_ui1_3d_transparent"
+CB_UI1A_MIGRATION_KEY = "crossbeam_ui1a_segment_assignment_migrated"
 
 
 FIGURE_CONFIG = {
@@ -201,18 +208,131 @@ def _profile_points_from_legacy(
     return points
 
 
+def _crossbeam_preset_catalog() -> list[dict[str, str]]:
+    """Return the two Section Builder presets available to Segment Layout.
+
+    The catalog is defined beside the Section Builder preset keys so segment
+    assignment cannot drift into arbitrary free-text section IDs.
+    """
+
+    configured_roles = {key: role for key, _name, role in CROSSBEAM_SECTION_PRESETS}
+    catalog: list[dict[str, str]] = []
+    try:
+        for preset in load_section_presets():
+            key = str(preset.get("key") or "")
+            if key not in configured_roles:
+                continue
+            catalog.append(
+                {
+                    "key": key,
+                    "name": str(preset.get("display_name") or key),
+                    "role": configured_roles[key],
+                }
+            )
+    except Exception:
+        catalog = []
+
+    if len(catalog) == len(CROSSBEAM_SECTION_PRESETS):
+        return catalog
+    return [
+        {"key": key, "name": name, "role": role}
+        for key, name, role in CROSSBEAM_SECTION_PRESETS
+    ]
+
+
+def _preset_by_name_or_key(value: Any, fallback_role: Any = None) -> dict[str, str] | None:
+    text = str(value or "").strip()
+    role_text = str(fallback_role or "").strip().title()
+    catalog = _crossbeam_preset_catalog()
+    for item in catalog:
+        if text in {item["key"], item["name"]}:
+            return item
+    if role_text in {"Solid", "Hollow"}:
+        return next((item for item in catalog if item["role"] == role_text), None)
+    return None
+
+
+def _canonical_segment_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Migrate UI1 free-text role/ID rows to Section Builder preset references."""
+
+    canonical: list[dict[str, Any]] = []
+    for index, row in enumerate(rows):
+        selected = _preset_by_name_or_key(
+            row.get("Section type / preset", row.get("Section preset key", row.get("Section ID"))),
+            row.get("Section role"),
+        )
+        if selected is None:
+            selected = _crossbeam_preset_catalog()[index % 2]
+        canonical.append(
+            {
+                "Segment": str(row.get("Segment") or f"S{index + 1}"),
+                "x_start_m": _finite_float(row.get("x_start_m", row.get("s_start (m)")), 0.0),
+                "x_end_m": _finite_float(row.get("x_end_m", row.get("s_end (m)")), 0.0),
+                "Section type / preset": selected["name"],
+                "Section preset key": selected["key"],
+                "Section role": selected["role"],
+                # Compatibility alias; no longer editable or user-defined.
+                "Section ID": selected["key"],
+            }
+        )
+    return canonical
+
+
+def _segment_editor_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return only user-editable segment assignment fields."""
+
+    return [
+        {
+            "Segment": row["Segment"],
+            "x_start_m": row["x_start_m"],
+            "x_end_m": row["x_end_m"],
+            "Section type / preset": row["Section type / preset"],
+        }
+        for row in _canonical_segment_rows(rows)
+    ]
+
+
+def _rows_match_old_30m_seed(rows: list[dict[str, Any]]) -> bool:
+    """Identify untouched UI1 30 m seed rows for one-time default migration."""
+
+    if len(rows) != 6:
+        return False
+    expected = [0.0, 4.5, 10.5, 15.0, 19.5, 25.5, 30.0]
+    canonical = sorted(_canonical_segment_rows(rows), key=lambda row: row["x_start_m"] )
+    actual = [canonical[0]["x_start_m"], *[row["x_end_m"] for row in canonical]]
+    return all(abs(a - b) <= 1e-6 for a, b in zip(actual, expected))
+
+
 def _ensure_state() -> None:
     context = _section_context()
 
+    legacy_segments = _records(st.session_state.get(LEGACY_SEGMENT_ROWS_KEY))
+    existing_segments = _records(st.session_state.get(CB_SEGMENT_ROWS_KEY))
+
     if CB_LENGTH_KEY not in st.session_state:
-        st.session_state[CB_LENGTH_KEY] = _finite_float(
-            st.session_state.get(LEGACY_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M
-        )
+        legacy_length = _finite_float(st.session_state.get(LEGACY_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M)
+        # UI1 used 30 m as its untouched seed. UI1A intentionally adopts
+        # 20 m for new/default layouts while preserving genuinely edited data.
+        if abs(legacy_length - 30.0) <= 1e-9 and _rows_match_old_30m_seed(legacy_segments):
+            legacy_length = DEFAULT_CROSSBEAM_LENGTH_M
+            legacy_segments = []
+        st.session_state[CB_LENGTH_KEY] = legacy_length
+
     length_m = max(_finite_float(st.session_state.get(CB_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M), 0.1)
 
     if CB_SEGMENT_ROWS_KEY not in st.session_state:
-        legacy_segments = _records(st.session_state.get(LEGACY_SEGMENT_ROWS_KEY))
-        st.session_state[CB_SEGMENT_ROWS_KEY] = legacy_segments or default_crossbeam_segment_rows(length_m)
+        st.session_state[CB_SEGMENT_ROWS_KEY] = _canonical_segment_rows(legacy_segments) or default_crossbeam_segment_rows(length_m)
+    elif not st.session_state.get(CB_UI1A_MIGRATION_KEY):
+        # Heal the exact UI1 seed and the observed stale 0.1 m widget state, but
+        # never overwrite a custom segment layout. This runs before widgets.
+        current_rows = _records(st.session_state.get(CB_SEGMENT_ROWS_KEY))
+        if _rows_match_old_30m_seed(current_rows):
+            st.session_state[CB_LENGTH_KEY] = DEFAULT_CROSSBEAM_LENGTH_M
+            length_m = DEFAULT_CROSSBEAM_LENGTH_M
+            st.session_state[CB_SEGMENT_ROWS_KEY] = default_crossbeam_segment_rows(length_m)
+        else:
+            st.session_state[CB_SEGMENT_ROWS_KEY] = _canonical_segment_rows(current_rows)
+        st.session_state[CB_UI1A_MIGRATION_KEY] = True
     st.session_state.setdefault(CB_SEGMENT_REV_KEY, 0)
 
     if CB_TENDON_COUNT_KEY not in st.session_state:
@@ -261,21 +381,8 @@ def _length_input() -> float:
 
 
 def _validate_segments(rows: list[dict[str, Any]], length_m: float) -> tuple[list[dict[str, Any]], list[str]]:
-    normalized: list[dict[str, Any]] = []
+    normalized = _canonical_segment_rows(rows)
     errors: list[str] = []
-    for index, row in enumerate(rows):
-        start = _finite_float(row.get("x_start_m", row.get("s_start (m)")), 0.0)
-        end = _finite_float(row.get("x_end_m", row.get("s_end (m)")), start)
-        role = str(row.get("Section role") or "Unassigned").strip().title()
-        normalized.append(
-            {
-                "Segment": str(row.get("Segment") or f"S{index + 1}"),
-                "x_start_m": start,
-                "x_end_m": end,
-                "Section role": role,
-                "Section ID": str(row.get("Section ID") or "").strip(),
-            }
-        )
     normalized.sort(key=lambda row: (row["x_start_m"], row["x_end_m"]))
 
     tolerance = max(1e-6, length_m * 1e-6)
@@ -286,13 +393,12 @@ def _validate_segments(rows: list[dict[str, Any]], length_m: float) -> tuple[lis
         errors.append("The first segment must start at s = 0.")
     if abs(normalized[-1]["x_end_m"] - length_m) > tolerance:
         errors.append("The final segment must end at s = L.")
+    valid_keys = {item["key"] for item in _crossbeam_preset_catalog()}
     for index, row in enumerate(normalized):
         if row["x_end_m"] <= row["x_start_m"]:
             errors.append(f"{row['Segment']}: s_end must be greater than s_start.")
-        if row["Section role"] not in {"Solid", "Hollow"}:
-            errors.append(f"{row['Segment']}: Section role must be Solid or Hollow.")
-        if not row["Section ID"]:
-            errors.append(f"{row['Segment']}: Section ID is required.")
+        if row["Section preset key"] not in valid_keys:
+            errors.append(f"{row['Segment']}: select a Crossbeam Section Builder preset.")
         if index:
             previous_end = normalized[index - 1]["x_end_m"]
             if abs(row["x_start_m"] - previous_end) > tolerance:
@@ -328,7 +434,8 @@ def _elevation_figure(rows: list[dict[str, Any]], length_m: float) -> go.Figure:
         start = row["x_start_m"]
         end = row["x_end_m"]
         role = row["Section role"]
-        section_id = row["Section ID"]
+        preset_name = row["Section type / preset"]
+        preset_short = "Rectangular Solid" if role == "Solid" else "Rectangular Hollow"
         fig.add_shape(
             type="rect",
             x0=start,
@@ -353,7 +460,7 @@ def _elevation_figure(rows: list[dict[str, Any]], length_m: float) -> go.Figure:
         fig.add_annotation(
             x=(start + end) / 2.0,
             y=0.5,
-            text=f"<b>{row['Segment']}</b><br>{role}<br>{section_id}",
+            text=f"<b>{row['Segment']}</b><br>{role}<br>{preset_short}",
             showarrow=False,
             font={"size": 11, "color": "#17324d"},
         )
@@ -799,10 +906,18 @@ def render_crossbeam_segment_layout_page() -> None:
         st.session_state[CB_SEGMENT_REV_KEY] = int(st.session_state.get(CB_SEGMENT_REV_KEY, 0)) + 1
         st.rerun()
 
+    catalog = _crossbeam_preset_catalog()
+    preset_names = [item["name"] for item in catalog]
+    active_preset = str(st.session_state.get("section_preset_name") or "Not selected")
+    st.info(
+        "Segment type is assigned from the same Portal Frame Crossbeam presets used by Section Builder. "
+        f"Active Section Builder preset: {active_preset}."
+    )
+
     revision = int(st.session_state.get(CB_SEGMENT_REV_KEY, 0))
     source_rows = _records(st.session_state.get(CB_SEGMENT_ROWS_KEY)) or default_crossbeam_segment_rows(length_m)
     edited = st.data_editor(
-        pd.DataFrame(source_rows),
+        pd.DataFrame(_segment_editor_rows(source_rows)),
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
@@ -811,13 +926,17 @@ def render_crossbeam_segment_layout_page() -> None:
             "Segment": st.column_config.TextColumn("Segment", required=True),
             "x_start_m": st.column_config.NumberColumn("s_start (m)", min_value=0.0, format="%.3f", required=True),
             "x_end_m": st.column_config.NumberColumn("s_end (m)", min_value=0.0, format="%.3f", required=True),
-            "Section role": st.column_config.SelectboxColumn("Section role", options=["Solid", "Hollow"], required=True),
-            "Section ID": st.column_config.TextColumn("Section ID", required=True),
+            "Section type / preset": st.column_config.SelectboxColumn(
+                "Section type / preset",
+                options=preset_names,
+                required=True,
+                help="Options are sourced from the Portal Frame Crossbeam presets in Section Builder.",
+            ),
         },
     )
     raw_rows = _records(edited)
-    st.session_state[CB_SEGMENT_ROWS_KEY] = raw_rows
     rows, errors = _validate_segments(raw_rows, length_m)
+    st.session_state[CB_SEGMENT_ROWS_KEY] = rows
 
     solid_count = sum(row["Section role"] == "Solid" for row in rows)
     hollow_count = sum(row["Section role"] == "Hollow" for row in rows)
@@ -840,7 +959,7 @@ def render_crossbeam_segment_layout_page() -> None:
 
     st.plotly_chart(_elevation_figure(rows, length_m), use_container_width=True, config=FIGURE_CONFIG)
     st.caption(
-        "Elevation is a role-based geometric review figure. Solid/hollow station assignment and Section ID are shown; exact station solver properties and solid-to-hollow D-region checks remain future scope."
+        "Elevation is a preset-based geometric review figure. Every segment references a Portal Frame Crossbeam preset from Section Builder; exact station solver properties and solid-to-hollow D-region checks remain future scope."
     )
 
 

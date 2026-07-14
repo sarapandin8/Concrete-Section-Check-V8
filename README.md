@@ -1275,3 +1275,9 @@ No stress equations, Pe(x), debonding, load routing, geometry, material routing,
 ## CROSSBEAM.WF1 — Portal frame PC crossbeam workflow
 
 Adds the first layout/data-foundation milestone for the Portal Frame Crossbeam — Prestressed Concrete workflow. Scope is intentionally limited to workflow routing, ACI design-code gating, two crossbeam section presets, station-based solid/hollow layout, and top-referenced tendon profile source data. It does not calculate prestress losses, SLS stresses, ULS capacity, anchorage zones, or D-region checks.
+
+## CROSSBEAM.UI1A — Section-Builder-linked segment assignment
+
+Reorders the Portal Frame Crossbeam Sections subpages so Segment Layout follows Section Builder, changes the clean/default crossbeam length to 20.000 m, and replaces free-text Section role / Section ID assignment with a dropdown sourced from the same two Portal Frame Crossbeam presets used by Section Builder. Legacy UI1 solid/hollow rows are migrated to the corresponding preset keys, while existing workflows retain their original Section Builder / Rebar / Prestress navigation and calculation routes.
+
+No prestress-loss, SLS, ULS, shear/torsion, Project JSON schema, result-cache, or report solver logic was changed.

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-DEFAULT_CROSSBEAM_LENGTH_M = 30.0
+DEFAULT_CROSSBEAM_LENGTH_M = 20.0
 DEFAULT_STRAND_FPU_MPA = 1860.0
 DEFAULT_STRAND_APS_MM2 = 140.0
 DEFAULT_FPJ_RATIO = 0.75
@@ -17,6 +17,15 @@ DEFAULT_TENDON_COUNT = 4
 DEFAULT_STRANDS_PER_TENDON = 19
 DEFAULT_JACKING_END = "both"
 DEFAULT_TENDON_TYPE = "Internal"
+
+CROSSBEAM_SOLID_PRESET_KEY = "crossbeam_rectangular_solid_bottom_fillets"
+CROSSBEAM_SOLID_PRESET_NAME = "PC Crossbeam — Rectangular Solid with Bottom Fillets"
+CROSSBEAM_HOLLOW_PRESET_KEY = "crossbeam_rectangular_hollow_bottom_fillets_inner_chamfers"
+CROSSBEAM_HOLLOW_PRESET_NAME = "PC Crossbeam — Rectangular Hollow with Bottom Fillets and Inner Chamfers"
+CROSSBEAM_SECTION_PRESETS = (
+    (CROSSBEAM_SOLID_PRESET_KEY, CROSSBEAM_SOLID_PRESET_NAME, "Solid"),
+    (CROSSBEAM_HOLLOW_PRESET_KEY, CROSSBEAM_HOLLOW_PRESET_NAME, "Hollow"),
+)
 
 TENDON_TYPE_OPTIONS = ("Internal", "External")
 JACKING_END_OPTIONS = ("left", "right", "both")
@@ -73,16 +82,26 @@ def default_crossbeam_segment_rows(length_m: float = DEFAULT_CROSSBEAM_LENGTH_M)
 
     L = max(float(length_m), 1.0)
     boundaries = [0.0, 0.15 * L, 0.35 * L, 0.50 * L, 0.65 * L, 0.85 * L, L]
-    types = ["Solid", "Hollow", "Solid", "Hollow", "Solid", "Hollow"]
+    presets = [
+        CROSSBEAM_SECTION_PRESETS[0],
+        CROSSBEAM_SECTION_PRESETS[1],
+        CROSSBEAM_SECTION_PRESETS[0],
+        CROSSBEAM_SECTION_PRESETS[1],
+        CROSSBEAM_SECTION_PRESETS[0],
+        CROSSBEAM_SECTION_PRESETS[1],
+    ]
     return [
         {
             "Segment": f"S{i + 1}",
             "x_start_m": round(boundaries[i], 3),
             "x_end_m": round(boundaries[i + 1], 3),
-            "Section role": types[i],
-            "Section ID": f"CS-{types[i][0]}{i + 1}",
+            "Section type / preset": presets[i][1],
+            "Section preset key": presets[i][0],
+            "Section role": presets[i][2],
+            # Compatibility alias retained for accepted WF1/UI1 state readers.
+            "Section ID": presets[i][0],
         }
-        for i in range(len(types))
+        for i in range(len(presets))
     ]
 
 
