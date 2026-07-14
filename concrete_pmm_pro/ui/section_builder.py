@@ -73,6 +73,7 @@ SECTION_BUILDER_ORDINARY_REBAR_SYNC_KEY = "section_builder_ordinary_rebar_enable
 SECTION_BUILDER_PRESTRESS_SYNC_KEY = "section_builder_prestressing_steel_enabled"
 SECTION_BUILDER_STEEL_SYSTEMS_PRESET_KEY = "section_builder_steel_systems_preset_key"
 SECTION_BUILDER_STEEL_SYSTEMS_USER_OVERRIDE_KEY = "section_builder_steel_systems_user_overridden"
+SECTION_BUILDER_STEEL_SYSTEMS_OVERRIDE_PRESET_KEY = "section_builder_steel_systems_override_preset_key"
 RAILWAY_U_GIRDER_DEFAULT_WEB_FC_MPA = 45.0
 RAILWAY_U_GIRDER_DEFAULT_WEB_FCI_MPA = 36.0
 RAILWAY_U_GIRDER_DEFAULT_SLAB_FC_MPA = 35.0
@@ -1645,14 +1646,15 @@ def _render_section_builder_status_strip(preset: dict[str, Any], material_assign
 
     rebar_status = "Enabled" if ordinary_rebar_enabled(st.session_state) else "Disabled"
     prestress_status = "Enabled" if prestressing_steel_enabled(st.session_state) else "Disabled"
+    axis_value, axis_detail = _section_axis_status_for_workflow(settings)
 
     st.markdown("##### Section Workspace Status")
     st.markdown(
         _property_strip_html(
             [
                 SectionMetric("Section", _workflow_specific_preset_display_name(preset, settings), str(preset.get("category", "General")), "info", True),
-                SectionMetric("Workflow", analysis_mode_label(settings), _girder_section_family_label(preset), "ready", True),
-                SectionMetric("Axis", "x/y/z", "x horizontal, y vertical, z longitudinal", "neutral"),
+                SectionMetric("Workflow", analysis_mode_label(settings), _section_family_label_for_workflow(preset, settings), "ready", True),
+                SectionMetric("Axis", axis_value, axis_detail, "neutral"),
                 SectionMetric("Rebar / Prestress", f"{rebar_status} / {prestress_status}", "stored reinforcement is previewed on its own page", "ready" if prestress_status == "Enabled" or rebar_status == "Enabled" else "neutral"),
                 SectionMetric("Concrete", material_detail, "visible in material assignment panel", "info"),
             ]
@@ -1797,6 +1799,33 @@ def _girder_section_family_label(preset: dict[str, Any]) -> str:
     return "Column/Pier/Wall/Pylon section"
 
 
+def _section_family_label_for_workflow(
+    preset: dict[str, Any], settings: AnalysisModeSettings | None = None
+) -> str:
+    """Return a workflow-scoped section-family label without changing legacy routes.
+
+    CROSSBEAM.WF1A keeps the established girder/column classification helpers
+    untouched for existing workflows.  Portal Frame Crossbeam receives its own
+    explicit family label so status cards do not fall through to Column/Pier.
+    """
+
+    active_settings = settings or _analysis_mode_from_session_state()
+    if is_portal_frame_crossbeam_workflow(active_settings):
+        return "Portal Frame Crossbeam"
+    return _girder_section_family_label(preset)
+
+
+def _section_axis_status_for_workflow(settings: AnalysisModeSettings) -> tuple[str, str]:
+    """Return the visible coordinate convention for the active workflow."""
+
+    if is_portal_frame_crossbeam_workflow(settings):
+        return (
+            "s/u/v",
+            "s longitudinal left→right; u horizontal in section/plan; v vertical",
+        )
+    return "x/y/z", "x horizontal, y vertical, z longitudinal"
+
+
 def _recommended_service_basis_for_preset(preset: dict[str, Any]) -> str:
     """Return the default Service-stage basis implied by the selected section family."""
 
@@ -1819,9 +1848,21 @@ def _ensure_reinforcement_flags_for_preset(preset: dict[str, Any]) -> None:
     preset_key = str(preset.get("key", ""))
     default_rebar, default_prestress = _default_reinforcement_flags_for_preset(preset)
     metadata = dict(st.session_state.get("project_metadata", {}) or {})
-    user_overridden = bool(metadata.get(SECTION_BUILDER_STEEL_SYSTEMS_USER_OVERRIDE_KEY, False)) or bool(
+    user_override_exists = bool(metadata.get(SECTION_BUILDER_STEEL_SYSTEMS_USER_OVERRIDE_KEY, False)) or bool(
         st.session_state.get(SECTION_BUILDER_STEEL_SYSTEMS_USER_OVERRIDE_KEY, False)
     )
+    override_preset_key = str(
+        st.session_state.get(SECTION_BUILDER_STEEL_SYSTEMS_OVERRIDE_PRESET_KEY)
+        or metadata.get(SECTION_BUILDER_STEEL_SYSTEMS_OVERRIDE_PRESET_KEY)
+        or metadata.get(REINFORCEMENT_FLAGS_PRESET_KEY)
+        or ""
+    )
+    # A user override belongs to the preset on which it was made.  This keeps
+    # same-preset navigation persistent while preventing a Column/Pier OFF state
+    # from leaking into a newly selected Portal Frame Crossbeam preset.  Legacy
+    # project files remain compatible because REINFORCEMENT_FLAGS_PRESET_KEY is
+    # used as the fallback scope when the new key is absent.
+    user_overridden = user_override_exists and override_preset_key == preset_key
 
     # These switches are explicit engineering input, not transient UI state.
     # Returning to Section Builder after Analysis must not silently reset them.
@@ -1844,8 +1885,15 @@ def _ensure_reinforcement_flags_for_preset(preset: dict[str, Any]) -> None:
 
 def _on_reinforcement_flags_changed() -> None:
     st.session_state[SECTION_BUILDER_STEEL_SYSTEMS_USER_OVERRIDE_KEY] = True
+    active_preset_key = str(
+        st.session_state.get(REINFORCEMENT_FLAGS_PRESET_KEY)
+        or st.session_state.get("section_preset_key")
+        or ""
+    )
+    st.session_state[SECTION_BUILDER_STEEL_SYSTEMS_OVERRIDE_PRESET_KEY] = active_preset_key
     metadata = dict(st.session_state.get("project_metadata", {}) or {})
     metadata[SECTION_BUILDER_STEEL_SYSTEMS_USER_OVERRIDE_KEY] = True
+    metadata[SECTION_BUILDER_STEEL_SYSTEMS_OVERRIDE_PRESET_KEY] = active_preset_key
     st.session_state["project_metadata"] = metadata
     _store_reinforcement_flags_metadata()
 
@@ -1865,6 +1913,7 @@ def _store_reinforcement_flags_metadata() -> None:
         PRESTRESSING_STEEL_FLAG_KEY,
         REINFORCEMENT_FLAGS_PRESET_KEY,
         SECTION_BUILDER_STEEL_SYSTEMS_USER_OVERRIDE_KEY,
+        SECTION_BUILDER_STEEL_SYSTEMS_OVERRIDE_PRESET_KEY,
     ):
         if flag_name in st.session_state:
             metadata[flag_name] = st.session_state[flag_name]
@@ -1888,7 +1937,7 @@ def _render_reinforcement_prestress_system_panel(preset: dict[str, Any]) -> None
 
     _ensure_reinforcement_flags_for_preset(preset)
     default_rebar, default_prestress = _default_reinforcement_flags_for_preset(preset)
-    family_label = _girder_section_family_label(preset)
+    family_label = _section_family_label_for_workflow(preset)
     st.markdown("##### Section Steel Systems")
     st.markdown(
         '<div class="cpmm-section-note">Choose which internal steel systems are included in this section analysis. '
@@ -2053,9 +2102,18 @@ def _analysis_mode_from_session_state() -> AnalysisModeSettings:
     return AnalysisModeSettings()
 
 
-def _axis_convention_rows() -> list[tuple[str, str]]:
-    """Return the shared axis/action convention used by Section Builder and Loads."""
+def _axis_convention_rows(settings: AnalysisModeSettings | None = None) -> list[tuple[str, str]]:
+    """Return the workflow-scoped axis/action convention used by Section Builder."""
 
+    active_settings = settings or _analysis_mode_from_session_state()
+    if is_portal_frame_crossbeam_workflow(active_settings):
+        return [
+            ("s-axis", "Crossbeam longitudinal station, positive from left anchorage to right anchorage"),
+            ("u-axis", "Horizontal coordinate in the cross-section and plan view"),
+            ("v-axis", "Vertical coordinate; tendon input remains depth downward from the top surface"),
+            ("dtop(s)", "Tendon depth measured downward from the section top surface"),
+            ("e(s)", "Calculated tendon eccentricity; positive below the active-section centroid"),
+        ]
     return [
         ("x-axis", "Horizontal section width direction in the section preview"),
         ("y-axis", "Vertical section depth direction; positive upward in the section preview"),
@@ -2077,7 +2135,7 @@ def _render_axis_convention_card() -> None:
         "Confirm these axes against the live section preview before entering loads; major/minor labels are intentionally avoided.</div>",
         unsafe_allow_html=True,
     )
-    st.markdown(_kv_panel_html(_axis_convention_rows()), unsafe_allow_html=True)
+    st.markdown(_kv_panel_html(_axis_convention_rows(_analysis_mode_from_session_state())), unsafe_allow_html=True)
 
 
 def _render_member_type_section_guidance(preset: dict[str, Any]) -> None:
@@ -3224,6 +3282,24 @@ def _render_section_properties_summary(
         else "Concrete polygon only; no transformed deck/slab included"
     )
 
+    settings = _analysis_mode_from_session_state()
+    workflow_metrics: list[SectionMetric]
+    if is_portal_frame_crossbeam_workflow(settings):
+        workflow_metrics = [
+            SectionMetric("ULS PMM", "Not active", "Crossbeam station-based ULS remains future guarded scope", "neutral"),
+            SectionMetric("Crossbeam station model", "Layout foundation", "Segment assignment is defined separately from the section library", "info"),
+        ]
+    else:
+        workflow_metrics = [
+            SectionMetric("ULS PMM", "Supported", "Current section-analysis workflow", "ready"),
+            SectionMetric(
+                "Beam/Girder",
+                "Planned" if _is_composite_capable_preset(preset) else "N/A",
+                "Future station assignment",
+                "info" if _is_composite_capable_preset(preset) else "neutral",
+            ),
+        ]
+
     st.markdown(
         _property_strip_html(
             [
@@ -3248,15 +3324,9 @@ def _render_section_properties_summary(
                 SectionMetric("Z top / bottom", f"{summary.z_top_display} / {summary.z_bottom_display}", "gross section modulus"),
                 SectionMetric("Composite slab", "Excluded", composite_detail, "info"),
                 SectionMetric("Holes / Voids", f"{len(geometry.holes):,}"),
-                SectionMetric("Active Preset", _workflow_specific_preset_display_name(preset, _analysis_mode_from_session_state())),
+                SectionMetric("Active Preset", _workflow_specific_preset_display_name(preset, settings)),
                 SectionMetric("Category", str(preset.get("category", "N/A"))),
-                SectionMetric("ULS PMM", "Supported", "Current section-analysis workflow", "ready"),
-                SectionMetric(
-                    "Beam/Girder",
-                    "Planned" if _is_composite_capable_preset(preset) else "N/A",
-                    "Future station assignment",
-                    "info" if _is_composite_capable_preset(preset) else "neutral",
-                ),
+                *workflow_metrics,
                 SectionMetric("Readiness", _readiness_label(validation), "", _validation_status(validation), True),
             ]
         ),
@@ -3359,6 +3429,10 @@ def _render_crossbeam_layout_tendon_foundation(
             num_rows="dynamic",
             use_container_width=True,
             key="crossbeam_wf1_segment_layout_editor",
+            column_config={
+                "x_start_m": st.column_config.NumberColumn("s_start (m)", help="Longitudinal start station from the left anchorage."),
+                "x_end_m": st.column_config.NumberColumn("s_end (m)", help="Longitudinal end station toward the right anchorage."),
+            },
         )
         st.session_state[segment_source_key] = segment_rows
 
@@ -3417,6 +3491,11 @@ def _render_crossbeam_layout_tendon_foundation(
             num_rows="dynamic",
             use_container_width=True,
             key="crossbeam_wf1_tendon_profile_editor",
+            column_config={
+                "x/L": st.column_config.NumberColumn("s/L", help="Normalized longitudinal station from left to right anchorage."),
+                "x_m": st.column_config.NumberColumn("s (m)", help="Longitudinal station measured from the left anchorage."),
+                "Depth from top mm": st.column_config.NumberColumn("dtop (mm)", help="Tendon depth measured downward from the active section top surface."),
+            },
         )
         st.session_state[tendon_source_key] = tendon_rows
 
@@ -3431,12 +3510,12 @@ def _render_crossbeam_layout_tendon_foundation(
                 computed_rows.append(
                     {
                         "Tendon ID": row.get("Tendon ID", ""),
-                        "x/L": row.get("x/L", ""),
+                        "s/L": row.get("x/L", row.get("s/L", "")),
                         "Type": row.get("Type", "Internal"),
                         "Jacking end": row.get("Jacking end", "both"),
-                        "Depth from top mm": round(depth, 3),
-                        "yc from top mm": round(centroid_top_mm, 3),
-                        "e(x) mm": round(
+                        "dtop mm": round(depth, 3),
+                        "centroid depth from top mm": round(centroid_top_mm, 3),
+                        "e(s) mm": round(
                             tendon_eccentricity_from_top_mm(
                                 depth,
                                 total_depth_mm=total_depth_mm,
@@ -3458,7 +3537,7 @@ def _render_crossbeam_layout_tendon_foundation(
                     SectionMetric("fpu", f"{DEFAULT_STRAND_FPU_MPA:,.0f} MPa", "default, editable per row"),
                     SectionMetric("Aps / strand", f"{DEFAULT_STRAND_APS_MM2:,.0f} mm²", "default, editable per row"),
                     SectionMetric("Default fpj", f"{calculated_fpj_mpa():,.0f} MPa", "0.75 fpu", "info", True),
-                    SectionMetric("Anchorage heads", "Left + Right ends", "x = 0 and x = L stations"),
+                    SectionMetric("Anchorage heads", "Left + Right ends", "s = 0 and s = L stations"),
                     SectionMetric("Jacking end", "Left / Right / Both", "both-end jacking changes losses, not total Pj"),
                     SectionMetric("Loss basis", "Future selector", "ACI 423.10R default; AASHTO/reference/user-defined later", "warning"),
                     SectionMetric("Solver status", "NOT CALCULATED", "losses/SLS/ULS remain future milestones", "neutral", True),
