@@ -36,6 +36,8 @@ from concrete_pmm_pro.ui.commercial import render_metric_cards, render_section_b
 SECTION_PARAMETERS_PRESET_KEY = "section_parameters_preset_key"
 CB_SEGMENT_ROWS_KEY = "crossbeam_ui1_segment_layout_rows"
 CB_SEGMENT_REV_KEY = "crossbeam_ui1_segment_editor_revision"
+CB_SECLIB_PENDING_ACTIVE_ID_KEY = "crossbeam_seclib1_pending_active_section_id"
+CB_SECLIB_NOTICE_KEY = "crossbeam_seclib1_notice"
 
 
 def _records(value: Any) -> list[dict[str, Any]]:
@@ -69,6 +71,47 @@ def _set_builder_widget_state(session_state: MutableMapping[str, Any], definitio
         session_state["active_concrete_material_name"] = material
         session_state["primary_concrete_material_name"] = material
     session_state[CB_SECLIB_LOADED_ID_KEY] = row["Section ID"]
+
+
+def _stage_definition_selection(
+    session_state: MutableMapping[str, Any],
+    definitions: list[dict[str, Any]],
+    active_id: str,
+    *,
+    notice: str = "",
+) -> None:
+    """Stage a library update without mutating a rendered widget key.
+
+    Streamlit forbids writing to the session-state key owned by a selectbox
+    after that widget has been instantiated in the current run.  Library
+    actions therefore store a *pending* active Section ID and rerun.  The
+    pending selection is applied by ``prepare_crossbeam_section_library_for_builder``
+    before any Section Builder widgets are rendered on the next run.
+    """
+
+    session_state[CB_SECLIB_DEFINITIONS_KEY] = canonical_section_definitions(definitions)
+    session_state[CB_SECLIB_REVISION_KEY] = int(session_state.get(CB_SECLIB_REVISION_KEY, 0) or 0) + 1
+    session_state[CB_SECLIB_PENDING_ACTIVE_ID_KEY] = str(active_id)
+    session_state.pop(CB_SECLIB_LOADED_ID_KEY, None)
+    if notice:
+        session_state[CB_SECLIB_NOTICE_KEY] = notice
+
+
+def _apply_pending_definition_selection(
+    session_state: MutableMapping[str, Any],
+    definitions: list[dict[str, Any]],
+) -> bool:
+    """Apply a staged active definition before widget instantiation."""
+
+    pending_id = str(session_state.pop(CB_SECLIB_PENDING_ACTIVE_ID_KEY, "") or "")
+    if not pending_id:
+        return False
+    definition = definition_map(definitions).get(pending_id)
+    if definition is None:
+        return False
+    session_state[CB_SECLIB_ACTIVE_ID_KEY] = pending_id
+    _set_builder_widget_state(session_state, definition)
+    return True
 
 
 def ensure_crossbeam_section_library_state(session_state: MutableMapping[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -130,6 +173,8 @@ def prepare_crossbeam_section_library_for_builder(settings: Any) -> None:
     if not is_portal_frame_crossbeam_workflow(settings):
         return
     definitions = ensure_crossbeam_section_library_state(st.session_state)
+    if _apply_pending_definition_selection(st.session_state, definitions):
+        return
     active_id = str(st.session_state.get(CB_SECLIB_ACTIVE_ID_KEY) or "")
     loaded_id = str(st.session_state.get(CB_SECLIB_LOADED_ID_KEY) or "")
     if loaded_id == active_id:
@@ -150,12 +195,13 @@ def _active_section_changed() -> None:
         _set_builder_widget_state(st.session_state, definition)
 
 
-def _set_definitions(definitions: list[dict[str, Any]], active_id: str) -> None:
-    st.session_state[CB_SECLIB_DEFINITIONS_KEY] = canonical_section_definitions(definitions)
-    st.session_state[CB_SECLIB_ACTIVE_ID_KEY] = active_id
-    st.session_state[CB_SECLIB_REVISION_KEY] = int(st.session_state.get(CB_SECLIB_REVISION_KEY, 0) or 0) + 1
-    st.session_state.pop(CB_SECLIB_LOADED_ID_KEY, None)
-    _active_section_changed()
+def _set_definitions(definitions: list[dict[str, Any]], active_id: str, *, notice: str = "") -> None:
+    _stage_definition_selection(
+        st.session_state,
+        definitions,
+        active_id,
+        notice=notice,
+    )
 
 
 def _identity_form(definitions: list[dict[str, Any]], active_id: str) -> None:
@@ -172,7 +218,7 @@ def _identity_form(definitions: list[dict[str, Any]], active_id: str) -> None:
             )
         with col_action:
             st.write("")
-            apply_identity = st.form_submit_button("Apply identity", use_container_width=True)
+            apply_identity = st.form_submit_button("Save name / ID", use_container_width=True)
     if not apply_identity:
         return
     try:
@@ -191,7 +237,11 @@ def _identity_form(definitions: list[dict[str, Any]], active_id: str) -> None:
             _records(st.session_state.get(CB_SEGMENT_ROWS_KEY)), active_id, new_id
         )
         st.session_state[CB_SEGMENT_REV_KEY] = int(st.session_state.get(CB_SEGMENT_REV_KEY, 0) or 0) + 1
-    _set_definitions(renamed, new_id)
+    _set_definitions(
+        renamed,
+        new_id,
+        notice=f"Updated project section {new_id}.",
+    )
     st.rerun()
 
 
@@ -208,126 +258,182 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
         st.session_state[CB_SECLIB_ACTIVE_ID_KEY] = active_id
 
     render_section_bar(
-        "Crossbeam Section Definition Library",
-        "Create project-specific Solid/Hollow section instances, then assign their Section IDs in Segment Layout. Geometry edits below update the active definition only.",
+        "Crossbeam Project Sections",
+        "Select the project section to edit. For another web/flange thickness, duplicate the current section, edit the dimensions below, then assign the new Section ID in Segment Layout.",
         mark="SL",
     )
 
-    usage = section_ids_used_by_segments(_records(st.session_state.get(CB_SEGMENT_ROWS_KEY)))
-    ready_count = sum(record["Status"] in {"READY", "REVIEW"} for record in section_property_records(definitions))
-    render_metric_cards(
-        [
-            {
-                "title": "Definitions",
-                "value": len(definitions),
-                "detail": "Project section instances",
-                "status": "info",
-            },
-            {
-                "title": "Solid / Hollow",
-                "value": f"{sum(row['Section role'] == 'Solid' for row in definitions)} / {sum(row['Section role'] == 'Hollow' for row in definitions)}",
-                "detail": "Geometry-family count",
-                "status": "neutral",
-            },
-            {
-                "title": "Geometry ready",
-                "value": f"{ready_count} / {len(definitions)}",
-                "detail": "Calculated gross properties",
-                "status": "ready" if ready_count == len(definitions) and not errors else "warning",
-            },
-            {
-                "title": "Segment assignments",
-                "value": sum(len(items) for items in usage.values()),
-                "detail": "References by Section ID",
-                "status": "info",
-            },
-        ]
-    )
+    notice = str(st.session_state.pop(CB_SECLIB_NOTICE_KEY, "") or "")
+    if notice:
+        st.success(notice)
 
-    select_col, family_col, add_col, duplicate_col, delete_col = st.columns([0.34, 0.28, 0.12, 0.13, 0.13], gap="small")
+    usage = section_ids_used_by_segments(_records(st.session_state.get(CB_SEGMENT_ROWS_KEY)))
+    section_map = definition_map(definitions)
+
+    select_col, duplicate_col, hollow_col, solid_col = st.columns([0.43, 0.19, 0.19, 0.19], gap="small")
     with select_col:
-        st.selectbox(
-            "Active Section ID",
+        selected_active_id = st.selectbox(
+            "Section to edit",
             options=ids,
-            format_func=lambda section_id: f"{section_id} — {definition_map(definitions)[section_id]['Section name']}",
+            format_func=lambda section_id: f"{section_id} · {section_map[section_id]['Section name']}",
             key=CB_SECLIB_ACTIVE_ID_KEY,
             on_change=_active_section_changed,
-            help="The selected definition owns the Section Builder geometry inputs below.",
+            help="Geometry and material controls below edit only this project Section ID.",
         )
-    with family_col:
-        new_family = st.selectbox(
-            "New section family",
-            options=[CROSSBEAM_SOLID_PRESET_KEY, CROSSBEAM_HOLLOW_PRESET_KEY],
-            format_func=preset_display_name,
-            key="crossbeam_seclib1_new_family",
-        )
-    with add_col:
-        st.write("")
-        if st.button("Add", key="crossbeam_seclib1_add", use_container_width=True):
-            updated, new_id = add_default_definition(definitions, new_family, _current_material_name(st.session_state))
-            _set_definitions(updated, new_id)
-            st.rerun()
+    active_id = str(selected_active_id)
+    active = section_map[active_id]
+
     with duplicate_col:
         st.write("")
-        if st.button("Duplicate", key="crossbeam_seclib1_duplicate", use_container_width=True):
+        if st.button(
+            "Duplicate current",
+            key="crossbeam_seclib1_duplicate",
+            use_container_width=True,
+            type="primary",
+            help="Recommended for creating another Hollow/Solid section with different dimensions.",
+        ):
             updated, new_id = duplicate_definition(definitions, active_id)
-            _set_definitions(updated, new_id)
+            _set_definitions(
+                updated,
+                new_id,
+                notice=f"Created {new_id} from {active_id}. Edit its dimensions below.",
+            )
             st.rerun()
-    with delete_col:
+    with hollow_col:
         st.write("")
-        delete_clicked = st.button("Delete", key="crossbeam_seclib1_delete", use_container_width=True)
-
-    if delete_clicked:
-        assigned = usage.get(active_id, [])
-        if assigned:
-            st.error(f"Cannot delete {active_id}; it is assigned to: {', '.join(assigned)}.")
-        elif len(definitions) <= 1:
-            st.error("At least one Crossbeam section definition must remain.")
-        else:
-            updated = [row for row in definitions if row["Section ID"] != active_id]
-            _set_definitions(updated, updated[0]["Section ID"])
+        if st.button("New Hollow", key="crossbeam_seclib1_add_hollow", use_container_width=True):
+            updated, new_id = add_default_definition(
+                definitions,
+                CROSSBEAM_HOLLOW_PRESET_KEY,
+                _current_material_name(st.session_state),
+            )
+            _set_definitions(
+                updated,
+                new_id,
+                notice=f"Created {new_id} — Hollow section. Edit its wall thicknesses below.",
+            )
+            st.rerun()
+    with solid_col:
+        st.write("")
+        if st.button("New Solid", key="crossbeam_seclib1_add_solid", use_container_width=True):
+            updated, new_id = add_default_definition(
+                definitions,
+                CROSSBEAM_SOLID_PRESET_KEY,
+                _current_material_name(st.session_state),
+            )
+            _set_definitions(
+                updated,
+                new_id,
+                notice=f"Created {new_id} — Solid section. Edit its dimensions below.",
+            )
             st.rerun()
 
-    _identity_form(definitions, active_id)
-
-    property_rows = section_property_records(definitions)
-    table_rows: list[dict[str, Any]] = []
-    for record in property_rows:
-        segments = usage.get(record["Section ID"], [])
-        table_rows.append(
-            {
-                "Active": "●" if record["Section ID"] == active_id else "",
-                "Section ID": record["Section ID"],
-                "Section name": record["Section name"],
-                "Role": record["Section role"],
-                "Preset family": record["Preset family"],
-                "Material": record["Material"],
-                "Area mm²": record["Area mm²"],
-                "Centroid from top mm": record["Centroid from top mm"],
-                "Ix mm⁴": record["Ix mm4"],
-                "Iy mm⁴": record["Iy mm4"],
-                "Used by segments": ", ".join(segments) if segments else "—",
-                "Status": record["Status"],
-            }
-        )
-    st.dataframe(
-        pd.DataFrame(table_rows),
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Area mm²": st.column_config.NumberColumn(format="%.1f"),
-            "Centroid from top mm": st.column_config.NumberColumn(format="%.2f"),
-            "Ix mm⁴": st.column_config.NumberColumn(format="%.3e"),
-            "Iy mm⁴": st.column_config.NumberColumn(format="%.3e"),
-        },
+    assigned_segments = usage.get(active_id, [])
+    assigned_text = ", ".join(assigned_segments) if assigned_segments else "Not assigned yet"
+    st.caption(
+        f"Editing **{active_id} · {active['Section name']}** · {active['Section role']} · "
+        f"Used by segments: **{assigned_text}**"
     )
     st.info(
-        "Preset family defines topology; Section ID defines the actual project geometry. Duplicate a Hollow definition and edit its four wall thicknesses below to create another hollow segment type without adding a global preset."
+        "Fast workflow: select a section → **Duplicate current** → change the geometry below → assign the new Section ID in **Segment Layout**. "
+        "The preset family is fixed for each Section ID to avoid accidental topology changes."
     )
+
     for error in errors:
         st.error(error)
     for warning in warnings:
         st.warning(warning)
+
+    with st.expander("Manage section names, deletion, and property review", expanded=False):
+        ready_count = sum(record["Status"] in {"READY", "REVIEW"} for record in section_property_records(definitions))
+        render_metric_cards(
+            [
+                {
+                    "title": "Project sections",
+                    "value": len(definitions),
+                    "detail": "Section IDs available",
+                    "status": "info",
+                },
+                {
+                    "title": "Solid / Hollow",
+                    "value": f"{sum(row['Section role'] == 'Solid' for row in definitions)} / {sum(row['Section role'] == 'Hollow' for row in definitions)}",
+                    "detail": "Geometry-family count",
+                    "status": "neutral",
+                },
+                {
+                    "title": "Geometry ready",
+                    "value": f"{ready_count} / {len(definitions)}",
+                    "detail": "Calculated gross properties",
+                    "status": "ready" if ready_count == len(definitions) and not errors else "warning",
+                },
+                {
+                    "title": "Assignments",
+                    "value": sum(len(items) for items in usage.values()),
+                    "detail": "Segment references",
+                    "status": "info",
+                },
+            ]
+        )
+
+        st.markdown("##### Rename current section")
+        _identity_form(definitions, active_id)
+
+        assigned = usage.get(active_id, [])
+        delete_disabled = bool(assigned) or len(definitions) <= 1
+        delete_help = (
+            f"Remove assignments from {', '.join(assigned)} before deleting this section."
+            if assigned
+            else "At least one Crossbeam section definition must remain."
+            if len(definitions) <= 1
+            else "Delete the selected project section definition."
+        )
+        if st.button(
+            "Delete current section",
+            key="crossbeam_seclib1_delete",
+            disabled=delete_disabled,
+            help=delete_help,
+        ):
+            updated = [row for row in definitions if row["Section ID"] != active_id]
+            next_id = updated[0]["Section ID"]
+            _set_definitions(
+                updated,
+                next_id,
+                notice=f"Deleted {active_id}; now editing {next_id}.",
+            )
+            st.rerun()
+        if delete_disabled:
+            st.caption(delete_help)
+
+        property_rows = section_property_records(definitions)
+        table_rows: list[dict[str, Any]] = []
+        for record in property_rows:
+            segments = usage.get(record["Section ID"], [])
+            table_rows.append(
+                {
+                    "Current": "●" if record["Section ID"] == active_id else "",
+                    "Section ID": record["Section ID"],
+                    "Section name": record["Section name"],
+                    "Role": record["Section role"],
+                    "Material": record["Material"],
+                    "Area mm²": record["Area mm²"],
+                    "Centroid from top mm": record["Centroid from top mm"],
+                    "Ix mm⁴": record["Ix mm4"],
+                    "Iy mm⁴": record["Iy mm4"],
+                    "Used by segments": ", ".join(segments) if segments else "—",
+                    "Status": record["Status"],
+                }
+            )
+        st.dataframe(
+            pd.DataFrame(table_rows),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Area mm²": st.column_config.NumberColumn(format="%.1f"),
+                "Centroid from top mm": st.column_config.NumberColumn(format="%.2f"),
+                "Ix mm⁴": st.column_config.NumberColumn(format="%.3e"),
+                "Iy mm⁴": st.column_config.NumberColumn(format="%.3e"),
+            },
+        )
 
 
 def sync_crossbeam_section_library_after_builder(

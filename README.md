@@ -1,3 +1,9 @@
+### CROSSBEAM.SECLIB1A — Streamlit State Hotfix and Low-Effort Section Workflow
+
+Fixes the Crossbeam Section Definition Library selectbox session-state mutation error and simplifies section creation to Select → Duplicate/New → Edit geometry → Assign in Segment Layout, while keeping advanced management collapsed and all existing workflows unchanged.
+
+See `README_CROSSBEAM_SECLIB1A.md`.
+
 ### CROSSBEAM.SECLIB1 — Multi-Section Definition Library and Segment Assignment
 
 Adds project Section IDs above the two Crossbeam geometry preset families, supports several Solid/Hollow instances with independent dimensions and gross properties, assigns Section IDs in Segment Layout, and persists the workflow-scoped library in backward-compatible Project JSON metadata without connecting it to existing solvers.

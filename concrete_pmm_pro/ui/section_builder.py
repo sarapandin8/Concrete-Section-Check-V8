@@ -2876,18 +2876,28 @@ def _render_section_definition_panel(
                 ''',
                 unsafe_allow_html=True,
             )
-            selected_preset_key = st.selectbox(
-                "Change Section Type / Preset",
-                preset_keys,
-                index=preset_keys.index(selector_initial_key),
-                format_func=lambda key: label_map.get(str(key), str(key)),
-                key=selector_state_key,
-                help=(
-                    "Select the actual section geometry directly. The geometry family/category is shown "
-                    "after the dot for reference only."
-                ),
-                label_visibility="visible",
-            )
+            if is_portal_frame_crossbeam_workflow(analysis_mode_settings):
+                selected_preset_key = current_preset_key
+                st.markdown(
+                    f"**Preset family:** {_workflow_specific_preset_display_name(current_preset, analysis_mode_settings)}"
+                )
+                st.caption(
+                    "Controlled by the selected Crossbeam Project Section above. "
+                    "Create a New Solid/New Hollow section instead of changing topology in place."
+                )
+            else:
+                selected_preset_key = st.selectbox(
+                    "Change Section Type / Preset",
+                    preset_keys,
+                    index=preset_keys.index(selector_initial_key),
+                    format_func=lambda key: label_map.get(str(key), str(key)),
+                    key=selector_state_key,
+                    help=(
+                        "Select the actual section geometry directly. The geometry family/category is shown "
+                        "after the dot for reference only."
+                    ),
+                    label_visibility="visible",
+                )
         preset = preset_map[str(selected_preset_key)]
         selected_category = str(preset.get("category", "General"))
 
