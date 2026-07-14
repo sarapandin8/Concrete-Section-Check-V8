@@ -204,29 +204,113 @@ def _set_definitions(definitions: list[dict[str, Any]], active_id: str, *, notic
     )
 
 
-def _identity_form(definitions: list[dict[str, Any]], active_id: str) -> None:
+def _section_dimension_summary(definition: Mapping[str, Any]) -> tuple[str, str]:
+    """Return compact dimensions and geometry details for the visible summary table."""
+
+    row = canonical_section_definition(definition)
+    params = row["Parameters"]
+    width = float(params.get("width_mm", 0.0) or 0.0)
+    height = float(params.get("height_mm", 0.0) or 0.0)
+    size = f"{width:.0f} × {height:.0f} mm"
+    radius = float(params.get("bottom_fillet_radius_mm", 0.0) or 0.0)
+    if row["Section role"] == "Hollow":
+        top = float(params.get("t_top_mm", 0.0) or 0.0)
+        bottom = float(params.get("t_bottom_mm", 0.0) or 0.0)
+        left = float(params.get("t_left_mm", 0.0) or 0.0)
+        right = float(params.get("t_right_mm", 0.0) or 0.0)
+        chamfer = float(params.get("inner_chamfer_mm", 0.0) or 0.0)
+        detail = (
+            f"tt/tb = {top:.0f}/{bottom:.0f} mm · "
+            f"tl/tr = {left:.0f}/{right:.0f} mm · R = {radius:.0f} mm · C = {chamfer:.0f} mm"
+        )
+    else:
+        detail = f"Bottom fillet R = {radius:.0f} mm"
+    return size, detail
+
+
+def _project_section_summary_rows(
+    definitions: list[dict[str, Any]],
+    usage: Mapping[str, list[str]],
+    active_id: str,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for record in section_property_records(definitions):
+        section_id = str(record["Section ID"])
+        size, geometry = _section_dimension_summary(record)
+        segments = list(usage.get(section_id, []))
+        rows.append(
+            {
+                "Active": "●" if section_id == active_id else "",
+                "Section ID": section_id,
+                "Section name": record["Section name"],
+                "Family": record["Section role"],
+                "B × H": size,
+                "Geometry summary": geometry,
+                "Area mm²": record["Area mm²"],
+                "Centroid from top mm": record["Centroid from top mm"],
+                "Ix mm⁴": record["Ix mm4"],
+                "Iy mm⁴": record["Iy mm4"],
+                "Segments using": ", ".join(segments) if segments else "—",
+                "Status": record["Status"],
+            }
+        )
+    return rows
+
+
+def _rename_section_name_form(definitions: list[dict[str, Any]], active_id: str) -> None:
     active = definition_map(definitions)[active_id]
-    with st.form(f"crossbeam_seclib1_identity_{active_id}", border=False):
-        col_id, col_name, col_action = st.columns([0.25, 0.55, 0.20], gap="small")
-        with col_id:
-            proposed_id = st.text_input("Section ID", value=active_id, key=f"crossbeam_seclib1_id_{active_id}")
-        with col_name:
+    with st.form(f"crossbeam_seclib1b_name_{active_id}", border=False):
+        name_col, action_col = st.columns([0.78, 0.22], gap="small")
+        with name_col:
             proposed_name = st.text_input(
                 "Section name",
                 value=active["Section name"],
-                key=f"crossbeam_seclib1_name_{active_id}",
+                key=f"crossbeam_seclib1b_name_input_{active_id}",
+                help="A user-facing project name. Section ID remains stable for Segment Layout and Project JSON references.",
             )
-        with col_action:
+        with action_col:
             st.write("")
-            apply_identity = st.form_submit_button("Save name / ID", use_container_width=True)
-    if not apply_identity:
+            save_name = st.form_submit_button("Save name", use_container_width=True, type="primary")
+    if not save_name:
+        return
+    try:
+        renamed = rename_definition(
+            definitions,
+            active_id,
+            new_section_id=active_id,
+            new_section_name=proposed_name,
+        )
+    except (ValueError, KeyError) as exc:
+        st.error(str(exc))
+        return
+    _set_definitions(renamed, active_id, notice=f"Renamed {active_id} to {str(proposed_name).strip()}.")
+    st.rerun()
+
+
+def _advanced_identity_form(definitions: list[dict[str, Any]], active_id: str) -> None:
+    """Allow deliberate Section-ID changes while updating every segment reference."""
+
+    active = definition_map(definitions)[active_id]
+    with st.form(f"crossbeam_seclib1b_identity_{active_id}", border=False):
+        id_col, action_col = st.columns([0.78, 0.22], gap="small")
+        with id_col:
+            proposed_id = st.text_input(
+                "Section ID",
+                value=active_id,
+                key=f"crossbeam_seclib1b_id_input_{active_id}",
+                help="Advanced operation. Changing this ID also updates Segment Layout references.",
+            )
+        with action_col:
+            st.write("")
+            apply_id = st.form_submit_button("Update ID", use_container_width=True)
+    if not apply_id:
         return
     try:
         renamed = rename_definition(
             definitions,
             active_id,
             new_section_id=proposed_id,
-            new_section_name=proposed_name,
+            new_section_name=active["Section name"],
         )
     except (ValueError, KeyError) as exc:
         st.error(str(exc))
@@ -237,12 +321,40 @@ def _identity_form(definitions: list[dict[str, Any]], active_id: str) -> None:
             _records(st.session_state.get(CB_SEGMENT_ROWS_KEY)), active_id, new_id
         )
         st.session_state[CB_SEGMENT_REV_KEY] = int(st.session_state.get(CB_SEGMENT_REV_KEY, 0) or 0) + 1
-    _set_definitions(
-        renamed,
-        new_id,
-        notice=f"Updated project section {new_id}.",
-    )
+    _set_definitions(renamed, new_id, notice=f"Updated Section ID {active_id} → {new_id}.")
     st.rerun()
+
+
+def _delete_current_section_control(
+    definitions: list[dict[str, Any]],
+    active_id: str,
+    assigned_segments: list[str],
+) -> None:
+    delete_disabled = bool(assigned_segments) or len(definitions) <= 1
+    if assigned_segments:
+        reason = f"Cannot delete {active_id}; it is used by segments: {', '.join(assigned_segments)}. Reassign those segments first."
+    elif len(definitions) <= 1:
+        reason = "At least one Crossbeam project section must remain."
+    else:
+        reason = "This section is not assigned to any segment and may be deleted."
+
+    st.caption(reason)
+    confirm = st.checkbox(
+        f"Confirm deletion of {active_id}",
+        key=f"crossbeam_seclib1b_confirm_delete_{active_id}",
+        disabled=delete_disabled,
+    )
+    if st.button(
+        "Delete selected section",
+        key=f"crossbeam_seclib1b_delete_{active_id}",
+        use_container_width=True,
+        disabled=delete_disabled or not confirm,
+        help=reason,
+    ):
+        updated = [row for row in definitions if row["Section ID"] != active_id]
+        next_id = updated[0]["Section ID"]
+        _set_definitions(updated, next_id, notice=f"Deleted {active_id}; now editing {next_id}.")
+        st.rerun()
 
 
 def render_crossbeam_section_library_panel(settings: Any) -> None:
@@ -335,8 +447,8 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
         f"Used by segments: **{assigned_text}**"
     )
     st.info(
-        "Fast workflow: select a section → **Duplicate current** → change the geometry below → assign the new Section ID in **Segment Layout**. "
-        "The preset family is fixed for each Section ID to avoid accidental topology changes."
+        "Fast workflow: select a section → **Duplicate current** → rename it below → change the geometry → assign the Section ID in **Segment Layout**. "
+        "The preset family is fixed for each Section ID to prevent accidental topology changes."
     )
 
     for error in errors:
@@ -344,96 +456,68 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
     for warning in warnings:
         st.warning(warning)
 
-    with st.expander("Manage section names, deletion, and property review", expanded=False):
-        ready_count = sum(record["Status"] in {"READY", "REVIEW"} for record in section_property_records(definitions))
-        render_metric_cards(
-            [
-                {
-                    "title": "Project sections",
-                    "value": len(definitions),
-                    "detail": "Section IDs available",
-                    "status": "info",
-                },
-                {
-                    "title": "Solid / Hollow",
-                    "value": f"{sum(row['Section role'] == 'Solid' for row in definitions)} / {sum(row['Section role'] == 'Hollow' for row in definitions)}",
-                    "detail": "Geometry-family count",
-                    "status": "neutral",
-                },
-                {
-                    "title": "Geometry ready",
-                    "value": f"{ready_count} / {len(definitions)}",
-                    "detail": "Calculated gross properties",
-                    "status": "ready" if ready_count == len(definitions) and not errors else "warning",
-                },
-                {
-                    "title": "Assignments",
-                    "value": sum(len(items) for items in usage.values()),
-                    "detail": "Segment references",
-                    "status": "info",
-                },
-            ]
-        )
-
-        st.markdown("##### Rename current section")
-        _identity_form(definitions, active_id)
-
-        assigned = usage.get(active_id, [])
-        delete_disabled = bool(assigned) or len(definitions) <= 1
-        delete_help = (
-            f"Remove assignments from {', '.join(assigned)} before deleting this section."
-            if assigned
-            else "At least one Crossbeam section definition must remain."
-            if len(definitions) <= 1
-            else "Delete the selected project section definition."
-        )
-        if st.button(
-            "Delete current section",
-            key="crossbeam_seclib1_delete",
-            disabled=delete_disabled,
-            help=delete_help,
-        ):
-            updated = [row for row in definitions if row["Section ID"] != active_id]
-            next_id = updated[0]["Section ID"]
-            _set_definitions(
-                updated,
-                next_id,
-                notice=f"Deleted {active_id}; now editing {next_id}.",
-            )
-            st.rerun()
-        if delete_disabled:
-            st.caption(delete_help)
-
-        property_rows = section_property_records(definitions)
-        table_rows: list[dict[str, Any]] = []
-        for record in property_rows:
-            segments = usage.get(record["Section ID"], [])
-            table_rows.append(
-                {
-                    "Current": "●" if record["Section ID"] == active_id else "",
-                    "Section ID": record["Section ID"],
-                    "Section name": record["Section name"],
-                    "Role": record["Section role"],
-                    "Material": record["Material"],
-                    "Area mm²": record["Area mm²"],
-                    "Centroid from top mm": record["Centroid from top mm"],
-                    "Ix mm⁴": record["Ix mm4"],
-                    "Iy mm⁴": record["Iy mm4"],
-                    "Used by segments": ", ".join(segments) if segments else "—",
-                    "Status": record["Status"],
-                }
-            )
-        st.dataframe(
-            pd.DataFrame(table_rows),
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Area mm²": st.column_config.NumberColumn(format="%.1f"),
-                "Centroid from top mm": st.column_config.NumberColumn(format="%.2f"),
-                "Ix mm⁴": st.column_config.NumberColumn(format="%.3e"),
-                "Iy mm⁴": st.column_config.NumberColumn(format="%.3e"),
+    property_rows = section_property_records(definitions)
+    ready_count = sum(record["Status"] in {"READY", "REVIEW"} for record in property_rows)
+    render_metric_cards(
+        [
+            {
+                "title": "Project sections",
+                "value": len(definitions),
+                "detail": "Section IDs available",
+                "status": "info",
             },
+            {
+                "title": "Solid / Hollow",
+                "value": f"{sum(row['Section role'] == 'Solid' for row in definitions)} / {sum(row['Section role'] == 'Hollow' for row in definitions)}",
+                "detail": "Geometry-family count",
+                "status": "neutral",
+            },
+            {
+                "title": "Geometry ready",
+                "value": f"{ready_count} / {len(definitions)}",
+                "detail": "Calculated gross properties",
+                "status": "ready" if ready_count == len(definitions) and not errors else "warning",
+            },
+            {
+                "title": "Assignments",
+                "value": sum(len(items) for items in usage.values()),
+                "detail": "Segment references",
+                "status": "info",
+            },
+        ]
+    )
+
+    st.markdown("#### Project Section Summary")
+    st.caption(
+        "Visible inventory of every Solid/Hollow project section, its key dimensions, calculated gross properties, and Segment Layout usage."
+    )
+    summary_rows = _project_section_summary_rows(definitions, usage, active_id)
+    st.dataframe(
+        pd.DataFrame(summary_rows),
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Area mm²": st.column_config.NumberColumn(format="%.1f"),
+            "Centroid from top mm": st.column_config.NumberColumn(format="%.2f"),
+            "Ix mm⁴": st.column_config.NumberColumn(format="%.3e"),
+            "Iy mm⁴": st.column_config.NumberColumn(format="%.3e"),
+        },
+    )
+
+    st.markdown("#### Manage Selected Section")
+    manage_name_col, manage_delete_col = st.columns([0.68, 0.32], gap="medium")
+    with manage_name_col:
+        st.caption(f"Stable Section ID: **{active_id}** · Edit the user-facing name without breaking Segment Layout references.")
+        _rename_section_name_form(definitions, active_id)
+    with manage_delete_col:
+        st.caption("Deletion is guarded: assigned sections cannot be removed.")
+        _delete_current_section_control(definitions, active_id, assigned_segments)
+
+    with st.expander("Advanced Section ID management", expanded=False):
+        st.warning(
+            "Changing a Section ID updates every current Segment Layout reference. Use this only when the project naming convention requires it."
         )
+        _advanced_identity_form(definitions, active_id)
 
 
 def sync_crossbeam_section_library_after_builder(

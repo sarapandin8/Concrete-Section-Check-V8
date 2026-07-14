@@ -1,3 +1,9 @@
+### CROSSBEAM.SECLIB1B — Visible Section Summary and Low-Effort Management
+
+Adds a visible project-section inventory plus direct name editing and guarded deletion while preserving stable Section IDs, Segment Layout references, Streamlit state safety, and all existing workflow/solver behavior.
+
+See `README_CROSSBEAM_SECLIB1B.md`.
+
 ### CROSSBEAM.SECLIB1A — Streamlit State Hotfix and Low-Effort Section Workflow
 
 Fixes the Crossbeam Section Definition Library selectbox session-state mutation error and simplifies section creation to Select → Duplicate/New → Edit geometry → Assign in Segment Layout, while keeping advanced management collapsed and all existing workflows unchanged.
