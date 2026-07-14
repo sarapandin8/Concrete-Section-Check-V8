@@ -40,8 +40,8 @@ def test_elevation_has_compact_engineering_legend():
 def test_segment_labels_are_compact_and_full_preset_is_in_hover():
     fig = _elevation_figure(_rows(), 9.0)
     annotation_text = [str(annotation.text) for annotation in fig.layout.annotations]
-    assert "<b>S1</b><br>Solid" in annotation_text
-    assert "<b>S2</b><br>Hollow" in annotation_text
+    assert "<b>S1 · CB-S01</b><br>Solid" in annotation_text
+    assert "<b>S2 · CB-H01</b><br>Hollow" in annotation_text
     assert not any("Rectangular Solid" in text or "Rectangular Hollow" in text for text in annotation_text)
 
     hover_templates = [str(trace.hovertemplate) for trace in fig.data if str(trace.name).endswith(" hover")]

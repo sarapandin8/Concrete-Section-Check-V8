@@ -19,6 +19,12 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from concrete_pmm_pro.crossbeam.section_library import (
+    canonical_section_definitions,
+    definition_map as crossbeam_section_definition_map,
+    migrate_segment_rows_to_library,
+    section_property_records,
+)
 from concrete_pmm_pro.crossbeam.workflow import (
     DEFAULT_CROSSBEAM_LENGTH_M,
     DEFAULT_FPJ_RATIO,
@@ -42,6 +48,7 @@ from concrete_pmm_pro.crossbeam.workflow import (
 from concrete_pmm_pro.geometry.presets import load_section_presets
 from concrete_pmm_pro.geometry.summary import summarize_geometry
 from concrete_pmm_pro.ui.commercial import render_metric_cards, render_page_header, render_section_bar
+from concrete_pmm_pro.ui.crossbeam_section_library import ensure_crossbeam_section_library_state
 
 
 # Accepted WF1/WF1A keys retained for migration compatibility.
@@ -252,41 +259,55 @@ def _preset_by_name_or_key(value: Any, fallback_role: Any = None) -> dict[str, s
     return None
 
 
-def _canonical_segment_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Migrate UI1 free-text role/ID rows to Section Builder preset references."""
+def _crossbeam_section_definitions() -> list[dict[str, Any]]:
+    return canonical_section_definitions(ensure_crossbeam_section_library_state(st.session_state))
 
+
+def _crossbeam_section_definition_map() -> dict[str, dict[str, Any]]:
+    return crossbeam_section_definition_map(_crossbeam_section_definitions())
+
+
+def _canonical_segment_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Migrate preset-based UI1 rows to project Section ID references."""
+
+    definitions = _crossbeam_section_definitions()
+    migrated = migrate_segment_rows_to_library(rows, definitions)
+    by_id = crossbeam_section_definition_map(definitions)
     canonical: list[dict[str, Any]] = []
-    for index, row in enumerate(rows):
-        selected = _preset_by_name_or_key(
-            row.get("Section type / preset", row.get("Section preset key", row.get("Section ID"))),
-            row.get("Section role"),
-        )
-        if selected is None:
-            selected = _crossbeam_preset_catalog()[index % 2]
+    for index, row in enumerate(migrated):
+        section_id = str(row.get("Section ID") or "").strip()
+        definition = by_id.get(section_id)
+        if definition is None and definitions:
+            definition = definitions[index % len(definitions)]
+            section_id = definition["Section ID"]
+        definition = definition or {}
         canonical.append(
             {
                 "Segment": str(row.get("Segment") or f"S{index + 1}"),
                 "x_start_m": _finite_float(row.get("x_start_m", row.get("s_start (m)")), 0.0),
                 "x_end_m": _finite_float(row.get("x_end_m", row.get("s_end (m)")), 0.0),
-                "Section type / preset": selected["name"],
-                "Section preset key": selected["key"],
-                "Section role": selected["role"],
-                # Compatibility alias; no longer editable or user-defined.
-                "Section ID": selected["key"],
+                "Section ID": section_id,
+                "Section name": str(definition.get("Section name") or row.get("Section name") or ""),
+                "Section type / preset": str(definition.get("Preset family") or row.get("Section type / preset") or ""),
+                "Section preset key": str(definition.get("Preset key") or row.get("Section preset key") or ""),
+                "Section role": str(definition.get("Section role") or row.get("Section role") or "Solid"),
             }
         )
     return canonical
 
 
 def _segment_editor_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return only user-editable segment assignment fields."""
+    """Return editable station fields plus derived Section Library context."""
 
     return [
         {
             "Segment": row["Segment"],
             "x_start_m": row["x_start_m"],
             "x_end_m": row["x_end_m"],
-            "Section type / preset": row["Section type / preset"],
+            "Section ID": row["Section ID"],
+            "Section name": row["Section name"],
+            "Section role": row["Section role"],
+            "Preset family": row["Section type / preset"],
         }
         for row in _canonical_segment_rows(rows)
     ]
@@ -305,6 +326,7 @@ def _rows_match_old_30m_seed(rows: list[dict[str, Any]]) -> bool:
 
 def _ensure_state() -> None:
     context = _section_context()
+    definitions = ensure_crossbeam_section_library_state(st.session_state)
 
     legacy_segments = _records(st.session_state.get(LEGACY_SEGMENT_ROWS_KEY))
     existing_segments = _records(st.session_state.get(CB_SEGMENT_ROWS_KEY))
@@ -321,7 +343,8 @@ def _ensure_state() -> None:
     length_m = max(_finite_float(st.session_state.get(CB_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M), 0.1)
 
     if CB_SEGMENT_ROWS_KEY not in st.session_state:
-        st.session_state[CB_SEGMENT_ROWS_KEY] = _canonical_segment_rows(legacy_segments) or default_crossbeam_segment_rows(length_m)
+        seed_rows = legacy_segments or default_crossbeam_segment_rows(length_m)
+        st.session_state[CB_SEGMENT_ROWS_KEY] = migrate_segment_rows_to_library(seed_rows, definitions)
     elif not st.session_state.get(CB_UI1A_MIGRATION_KEY):
         # Heal the exact UI1 seed and the observed stale 0.1 m widget state, but
         # never overwrite a custom segment layout. This runs before widgets.
@@ -329,7 +352,9 @@ def _ensure_state() -> None:
         if _rows_match_old_30m_seed(current_rows):
             st.session_state[CB_LENGTH_KEY] = DEFAULT_CROSSBEAM_LENGTH_M
             length_m = DEFAULT_CROSSBEAM_LENGTH_M
-            st.session_state[CB_SEGMENT_ROWS_KEY] = default_crossbeam_segment_rows(length_m)
+            st.session_state[CB_SEGMENT_ROWS_KEY] = migrate_segment_rows_to_library(
+                default_crossbeam_segment_rows(length_m), definitions
+            )
         else:
             st.session_state[CB_SEGMENT_ROWS_KEY] = _canonical_segment_rows(current_rows)
         st.session_state[CB_UI1A_MIGRATION_KEY] = True
@@ -393,12 +418,12 @@ def _validate_segments(rows: list[dict[str, Any]], length_m: float) -> tuple[lis
         errors.append("The first segment must start at s = 0.")
     if abs(normalized[-1]["x_end_m"] - length_m) > tolerance:
         errors.append("The final segment must end at s = L.")
-    valid_keys = {item["key"] for item in _crossbeam_preset_catalog()}
+    valid_ids = set(_crossbeam_section_definition_map())
     for index, row in enumerate(normalized):
         if row["x_end_m"] <= row["x_start_m"]:
             errors.append(f"{row['Segment']}: s_end must be greater than s_start.")
-        if row["Section preset key"] not in valid_keys:
-            errors.append(f"{row['Segment']}: select a Crossbeam Section Builder preset.")
+        if row["Section ID"] not in valid_ids:
+            errors.append(f"{row['Segment']}: select a valid Crossbeam Section ID from Section Builder.")
         if index:
             previous_end = normalized[index - 1]["x_end_m"]
             if abs(row["x_start_m"] - previous_end) > tolerance:
@@ -440,6 +465,7 @@ def _base_figure_layout(title: str, x_title: str, y_title: str, *, height: int =
 
 
 def _elevation_figure(rows: list[dict[str, Any]], length_m: float) -> go.Figure:
+    rows = _canonical_segment_rows(rows)
     fig = go.Figure()
     height = 1.0
     fills = {"Solid": "rgba(120,140,160,0.52)", "Hollow": "rgba(120,140,160,0.22)"}
@@ -483,6 +509,8 @@ def _elevation_figure(rows: list[dict[str, Any]], length_m: float) -> go.Figure:
         end = row["x_end_m"]
         role = row["Section role"]
         preset_name = row["Section type / preset"]
+        section_id = row.get("Section ID", "")
+        section_name = row.get("Section name", "")
         fig.add_shape(
             type="rect",
             x0=start,
@@ -523,8 +551,9 @@ def _elevation_figure(rows: list[dict[str, Any]], length_m: float) -> go.Figure:
                 name=f"{row['Segment']} hover",
                 showlegend=False,
                 hovertemplate=(
-                    f"<b>{row['Segment']} · {role}</b><br>"
-                    f"Section Builder preset: {preset_name}<br>"
+                    f"<b>{row['Segment']} · {section_id} · {role}</b><br>"
+                    f"Section: {section_name}<br>"
+                    f"Preset family: {preset_name}<br>"
                     f"Station: {start:.3f}–{end:.3f} m<br>"
                     f"Length: {end - start:.3f} m<extra></extra>"
                 ),
@@ -533,7 +562,7 @@ def _elevation_figure(rows: list[dict[str, Any]], length_m: float) -> go.Figure:
         fig.add_annotation(
             x=(start + end) / 2.0,
             y=0.5,
-            text=f"<b>{row['Segment']}</b><br>{role}",
+            text=f"<b>{row['Segment']} · {section_id}</b><br>{role}",
             showarrow=False,
             font={"size": 11, "color": "#17324d"},
         )
@@ -1011,21 +1040,26 @@ def render_crossbeam_segment_layout_page() -> None:
     )
     length_m = _length_input()
 
+    definitions = _crossbeam_section_definitions()
+    definition_by_id = crossbeam_section_definition_map(definitions)
+    section_ids = list(definition_by_id)
     if st.button("Reset segment layout to solid/hollow seed", key="crossbeam_ui1_reset_segments"):
-        st.session_state[CB_SEGMENT_ROWS_KEY] = default_crossbeam_segment_rows(length_m)
+        st.session_state[CB_SEGMENT_ROWS_KEY] = migrate_segment_rows_to_library(
+            default_crossbeam_segment_rows(length_m), definitions
+        )
         st.session_state[CB_SEGMENT_REV_KEY] = int(st.session_state.get(CB_SEGMENT_REV_KEY, 0)) + 1
         st.rerun()
 
-    catalog = _crossbeam_preset_catalog()
-    preset_names = [item["name"] for item in catalog]
-    active_preset = str(st.session_state.get("section_preset_name") or "Not selected")
+    active_section_id = str(st.session_state.get("crossbeam_seclib1_active_section_id") or "Not selected")
     st.info(
-        "Segment type is assigned from the same Portal Frame Crossbeam presets used by Section Builder. "
-        f"Active Section Builder preset: {active_preset}."
+        "Each segment is assigned to a project Section ID from the Crossbeam Section Definition Library in Section Builder. "
+        f"Active Section Builder definition: {active_section_id}."
     )
 
     revision = int(st.session_state.get(CB_SEGMENT_REV_KEY, 0))
-    source_rows = _records(st.session_state.get(CB_SEGMENT_ROWS_KEY)) or default_crossbeam_segment_rows(length_m)
+    source_rows = _records(st.session_state.get(CB_SEGMENT_ROWS_KEY)) or migrate_segment_rows_to_library(
+        default_crossbeam_segment_rows(length_m), definitions
+    )
     edited = st.data_editor(
         pd.DataFrame(_segment_editor_rows(source_rows)),
         num_rows="dynamic",
@@ -1036,13 +1070,17 @@ def render_crossbeam_segment_layout_page() -> None:
             "Segment": st.column_config.TextColumn("Segment", required=True),
             "x_start_m": st.column_config.NumberColumn("s_start (m)", min_value=0.0, format="%.3f", required=True),
             "x_end_m": st.column_config.NumberColumn("s_end (m)", min_value=0.0, format="%.3f", required=True),
-            "Section type / preset": st.column_config.SelectboxColumn(
-                "Section type / preset",
-                options=preset_names,
+            "Section ID": st.column_config.SelectboxColumn(
+                "Section ID",
+                options=section_ids,
                 required=True,
-                help="Options are sourced from the Portal Frame Crossbeam presets in Section Builder.",
+                help="Section IDs are created and edited in Section Builder. Different Hollow IDs may use different wall thicknesses.",
             ),
+            "Section name": st.column_config.TextColumn("Section name", disabled=True),
+            "Section role": st.column_config.TextColumn("Role", disabled=True),
+            "Preset family": st.column_config.TextColumn("Preset family", disabled=True),
         },
+        disabled=["Section name", "Section role", "Preset family"],
     )
     raw_rows = _records(edited)
     rows, errors = _validate_segments(raw_rows, length_m)
@@ -1050,17 +1088,18 @@ def render_crossbeam_segment_layout_page() -> None:
 
     solid_count = sum(row["Section role"] == "Solid" for row in rows)
     hollow_count = sum(row["Section role"] == "Hollow" for row in rows)
+    section_ids_used = len({row["Section ID"] for row in rows if row.get("Section ID")})
     render_metric_cards(
         [
             {
                 "title": "Layout status",
                 "value": "LAYOUT READY" if not errors else "LAYOUT REQUIRED",
-                "detail": "Editable geometry map; not a solver result",
+                "detail": f"Extent 0–{length_m:.3f} m; not a solver result",
                 "status": "ready" if not errors else "warning",
             },
             {"title": "Segments", "value": len(rows), "detail": "Station ranges", "status": "info"},
-            {"title": "Solid / Hollow", "value": f"{solid_count} / {hollow_count}", "detail": "Section role count", "status": "neutral"},
-            {"title": "Extent", "value": f"0–{length_m:.3f} m", "detail": "Left to right anchorage", "status": "info"},
+            {"title": "Section IDs used", "value": section_ids_used, "detail": f"{len(definitions)} available in library", "status": "info"},
+            {"title": "Solid / Hollow", "value": f"{solid_count} / {hollow_count}", "detail": "Assigned segment roles", "status": "neutral"},
         ]
     )
     if errors:
@@ -1069,7 +1108,7 @@ def render_crossbeam_segment_layout_page() -> None:
 
     st.plotly_chart(_elevation_figure(rows, length_m), use_container_width=True, config=FIGURE_CONFIG)
     st.caption(
-        "Elevation is a preset-based geometric review figure. Dashed lines show the hidden void extending from the start to the end of each hollow segment. Every segment references a Portal Frame Crossbeam preset from Section Builder; exact station solver properties and solid-to-hollow D-region checks remain future scope."
+        "Elevation is a Section-ID-based geometric review figure. Dashed lines show the hidden void extending from the start to the end of each hollow segment. Each Section ID owns its own dimensions and calculated gross properties in Section Builder; station solver handoff and solid-to-hollow D-region checks remain future scope."
     )
 
 

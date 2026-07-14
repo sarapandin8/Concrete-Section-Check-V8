@@ -1,3 +1,9 @@
+### CROSSBEAM.SECLIB1 — Multi-Section Definition Library and Segment Assignment
+
+Adds project Section IDs above the two Crossbeam geometry preset families, supports several Solid/Hollow instances with independent dimensions and gross properties, assigns Section IDs in Segment Layout, and persists the workflow-scoped library in backward-compatible Project JSON metadata without connecting it to existing solvers.
+
+See `README_CROSSBEAM_SECLIB1.md`.
+
 ### CROSSBEAM.RB1 — Segment-Based Rebar Templates and Joint Participation
 
 Adds a Crossbeam-only Rebar workspace with segment/zone templates, a locked zero-ordinary-rebar rule at every segment joint, tendon-only global joint continuity, schematic rebar elevation, and station/joint audit tables. Existing workflows, solvers, Project JSON, and result persistence are unchanged.

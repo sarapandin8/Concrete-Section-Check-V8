@@ -32,6 +32,16 @@ from concrete_pmm_pro.core.reinforcement_system import (
 from concrete_pmm_pro.core.models import LoadCase, PrestressElement, Rebar
 from concrete_pmm_pro.core.project import ProjectModel
 from concrete_pmm_pro.core.units import N_to_kN, Nmm_to_kNm
+from concrete_pmm_pro.crossbeam.section_library import (
+    CB_SECLIB_ACTIVE_ID_KEY,
+    CB_SECLIB_DEFINITIONS_KEY,
+    CB_SECLIB_LOADED_ID_KEY,
+    CB_SECLIB_MIGRATION_KEY,
+    SECLIB_METADATA_KEY,
+    SECLIB_SCHEMA_VERSION,
+    canonical_section_definitions,
+    migrate_segment_rows_to_library,
+)
 from concrete_pmm_pro.data.prestress_tendon_products import (
     DEFAULT_STRAND_DIAMETER_MM,
     DEFAULT_STRAND_EP_MPA,
@@ -167,6 +177,27 @@ WORKFLOW_LOAD_TABLE_METADATA_KEYS = (
     "beam_uls_loads_table",
     "beam_sls_loads_table",
 )
+
+CROSSBEAM_LENGTH_STATE_KEY = "crossbeam_ui1_length_m"
+CROSSBEAM_SEGMENT_ROWS_STATE_KEY = "crossbeam_ui1_segment_layout_rows"
+CROSSBEAM_SEGMENT_REVISION_STATE_KEY = "crossbeam_ui1_segment_editor_revision"
+
+
+def _crossbeam_input_metadata_from_session(session_state: Any) -> dict[str, Any]:
+    """Serialize workflow-scoped Crossbeam geometry inputs only."""
+
+    definitions = canonical_section_definitions(_get_session_value(session_state, CB_SECLIB_DEFINITIONS_KEY, []))
+    segment_rows = _clean_table_value(_get_session_value(session_state, CROSSBEAM_SEGMENT_ROWS_STATE_KEY, []))
+    if not definitions and not segment_rows:
+        return {}
+    migrated_segments = migrate_segment_rows_to_library(segment_rows or [], definitions) if definitions else list(segment_rows or [])
+    return {
+        "schema_version": SECLIB_SCHEMA_VERSION,
+        "section_definitions": _clean_table_value(definitions),
+        "active_section_id": _get_session_value(session_state, CB_SECLIB_ACTIVE_ID_KEY, None),
+        "length_m": _clean_table_value(_get_session_value(session_state, CROSSBEAM_LENGTH_STATE_KEY, None)),
+        "segment_rows": _clean_table_value(migrated_segments),
+    }
 
 
 def _workflow_load_table_metadata_from_session(session_state: Any) -> dict[str, list[dict[str, Any]]]:
@@ -723,6 +754,11 @@ def project_from_session_state(session_state: Any) -> ProjectModel:
     building_service_load_settings = _building_beam_girder_service_load_settings_metadata_from_session(session_state)
     if building_service_load_settings:
         metadata[BUILDING_BEAM_GIRDER_SERVICE_LOAD_SETTINGS_KEY] = building_service_load_settings
+    crossbeam_input_metadata = _crossbeam_input_metadata_from_session(session_state)
+    if crossbeam_input_metadata:
+        metadata[SECLIB_METADATA_KEY] = crossbeam_input_metadata
+    else:
+        metadata.pop(SECLIB_METADATA_KEY, None)
     analysis_results_metadata = _analysis_results_metadata_from_session(session_state)
     if analysis_results_metadata:
         metadata[ANALYSIS_RESULTS_METADATA_KEY] = analysis_results_metadata
@@ -1121,6 +1157,28 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
     session_state["serviceability_settings"] = project.serviceability_settings or ServiceabilitySettings()
     session_state["custom_stress_check_points"] = list(project.custom_stress_check_points)
     session_state["include_default_stress_check_points"] = project.include_default_stress_check_points
+
+    crossbeam_input = project.metadata.get(SECLIB_METADATA_KEY)
+    if isinstance(crossbeam_input, dict):
+        definitions = canonical_section_definitions(crossbeam_input.get("section_definitions") or [])
+        if definitions:
+            session_state[CB_SECLIB_DEFINITIONS_KEY] = definitions
+            active_id = str(crossbeam_input.get("active_section_id") or "")
+            valid_ids = {row["Section ID"] for row in definitions}
+            session_state[CB_SECLIB_ACTIVE_ID_KEY] = active_id if active_id in valid_ids else definitions[0]["Section ID"]
+            session_state.pop(CB_SECLIB_LOADED_ID_KEY, None)
+            session_state[CB_SECLIB_MIGRATION_KEY] = True
+        length_m = crossbeam_input.get("length_m")
+        if length_m is not None:
+            session_state[CROSSBEAM_LENGTH_STATE_KEY] = length_m
+        segment_rows = crossbeam_input.get("segment_rows")
+        if isinstance(segment_rows, list):
+            session_state[CROSSBEAM_SEGMENT_ROWS_STATE_KEY] = (
+                migrate_segment_rows_to_library(segment_rows, definitions) if definitions else list(segment_rows)
+            )
+            session_state[CROSSBEAM_SEGMENT_REVISION_STATE_KEY] = int(
+                session_state.get(CROSSBEAM_SEGMENT_REVISION_STATE_KEY, 0) or 0
+            ) + 1
 
     session_state["loads_table"] = _loads_to_table(project.loads)
     workflow_load_tables = project.metadata.get("workflow_load_tables")

@@ -50,8 +50,9 @@ def test_legacy_role_rows_migrate_to_section_builder_preset_dropdown_values():
     assert normalized[-1]["x_end_m"] == 20.0
 
 
-def test_segment_layout_editor_uses_section_preset_selectbox():
+def test_segment_layout_editor_uses_project_section_id_selectbox():
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text()
-    assert 'SelectboxColumn(\n                "Section type / preset"' in source
-    assert "Options are sourced from the Portal Frame Crossbeam presets in Section Builder." in source
-    assert 'TextColumn("Section ID"' not in source
+    assert 'SelectboxColumn(\n                "Section ID"' in source
+    assert "Section IDs are created and edited in Section Builder" in source
+    assert 'TextColumn("Section name", disabled=True)' in source
+    assert 'TextColumn("Preset family", disabled=True)' in source

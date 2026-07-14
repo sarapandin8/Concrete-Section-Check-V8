@@ -56,6 +56,11 @@ from concrete_pmm_pro.serviceability.girder_sls_load_components import (
     system_settings_from_mapping,
 )
 from concrete_pmm_pro.visualization import create_section_preview
+from concrete_pmm_pro.ui.crossbeam_section_library import (
+    prepare_crossbeam_section_library_for_builder,
+    render_crossbeam_section_library_panel,
+    sync_crossbeam_section_library_after_builder,
+)
 
 RAILWAY_U_GIRDER_PRESET_KEY = "railway_u_girder"
 RAILWAY_U_GIRDER_STAGE_SETTINGS_KEY = "railway_u_girder_stage_settings"
@@ -3364,12 +3369,15 @@ def _render_section_properties_summary(
 
 def render_section_builder() -> None:
     _ensure_section_parameter_owner_from_session()
+    settings = _analysis_mode_from_session_state()
+    prepare_crossbeam_section_library_for_builder(settings)
     st.markdown(_SECTION_BUILDER_CSS, unsafe_allow_html=True)
     _render_commercial_section_header()
 
     presets = load_section_presets()
     categories = load_section_categories()
 
+    render_crossbeam_section_library_panel(settings)
     selection = _render_section_definition_panel(presets, categories)
 
     if selection is None:
@@ -3385,6 +3393,12 @@ def render_section_builder() -> None:
 
     if geometry is not None and validation.is_valid:
         _store_valid_section_state(preset, params, geometry, dimensions)
+        sync_crossbeam_section_library_after_builder(
+            settings,
+            preset=preset,
+            params=params,
+            material_assignment=material_assignment,
+        )
     else:
         _clear_section_geometry_state()
 
