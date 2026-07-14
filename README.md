@@ -1,3 +1,9 @@
+### CROSSBEAM.RB1 — Segment-Based Rebar Templates and Joint Participation
+
+Adds a Crossbeam-only Rebar workspace with segment/zone templates, a locked zero-ordinary-rebar rule at every segment joint, tendon-only global joint continuity, schematic rebar elevation, and station/joint audit tables. Existing workflows, solvers, Project JSON, and result persistence are unchanged.
+
+See `README_CROSSBEAM_RB1.md`.
+
 ### CROSSBEAM.UI1 — Segment Layout and Tendon Plan/Profile/3D workspaces
 
 Separates the Portal Frame Prestressed Crossbeam geometry foundation into workflow-scoped `Tendon System`, `Segment Layout`, and `Tendon Profile` subpages while leaving existing workflows on `Section Builder | Rebar | Prestress`.

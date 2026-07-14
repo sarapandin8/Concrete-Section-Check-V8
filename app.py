@@ -44,6 +44,7 @@ from concrete_pmm_pro.ui.crossbeam_pages import (
     render_crossbeam_tendon_profile_page,
     render_crossbeam_tendon_system_page,
 )
+from concrete_pmm_pro.ui.crossbeam_rebar_page import render_crossbeam_rebar_page
 from concrete_pmm_pro.visualization.plot_readability import install_streamlit_plotly_readability_patch
 
 
@@ -1425,7 +1426,11 @@ def render_sections_workspace() -> None:
     if active == "Section Builder":
         render_section_builder()
     elif active == "Rebar":
-        render_rebar_page()
+        mode = _analysis_mode_from_session_for_chrome()
+        if is_portal_frame_crossbeam_workflow(mode):
+            render_crossbeam_rebar_page()
+        else:
+            render_rebar_page()
     elif active == "Prestress":
         render_prestress_page()
     elif active == "Tendon System":

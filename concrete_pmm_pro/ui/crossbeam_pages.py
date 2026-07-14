@@ -409,6 +409,21 @@ def _validate_segments(rows: list[dict[str, Any]], length_m: float) -> tuple[lis
     return normalized, errors
 
 
+def crossbeam_segment_layout_from_state() -> tuple[float, list[dict[str, Any]], list[str]]:
+    """Return the current validated Crossbeam segment source without rendering UI.
+
+    Workflow-scoped pages such as CROSSBEAM.RB1 use this read-only accessor so
+    Segment Layout remains the single source of truth.  It does not mutate
+    generic Rebar state or invoke any solver.
+    """
+
+    _ensure_state()
+    length_m = max(_finite_float(st.session_state.get(CB_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M), 0.1)
+    source_rows = _records(st.session_state.get(CB_SEGMENT_ROWS_KEY)) or default_crossbeam_segment_rows(length_m)
+    rows, errors = _validate_segments(source_rows, length_m)
+    return length_m, rows, errors
+
+
 def _base_figure_layout(title: str, x_title: str, y_title: str, *, height: int = 480) -> dict[str, Any]:
     return {
         "title": {"text": title, "x": 0.5, "xanchor": "center", "font": {"size": 17}},
