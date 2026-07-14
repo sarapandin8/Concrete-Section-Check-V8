@@ -1,3 +1,27 @@
+### CROSSBEAM.UI1 — Segment Layout and Tendon Plan/Profile/3D workspaces
+
+Separates the Portal Frame Prestressed Crossbeam geometry foundation into workflow-scoped `Tendon System`, `Segment Layout`, and `Tendon Profile` subpages while leaving existing workflows on `Section Builder | Rebar | Prestress`.
+
+#### What changed
+- Removes the combined crossbeam longitudinal-layout/tendon table from Section Builder.
+- Adds a segment elevation with solid/hollow role assignment, station boundaries, Section IDs, segment lengths, and left/right anchorage markers.
+- Adds one tendon-system row per tendon for Internal/External type, strand count, Aps/strand, fpu, fpj/fpu, and Left/Right/Both jacking.
+- Adds one tendon geometry source for Plan (`s-x`), Profile (`s-dtop`), interactive 3D (`s-x-y`), and a calculated eccentricity audit.
+- Keeps cross-section axes `x-y`, adds longitudinal station `s`, and preserves top-referenced `dtop` and centroid-based `e(s)`.
+- Uses crossbeam-namespaced Streamlit state with in-session migration from accepted WF1/WF1A seed keys.
+
+#### Not changed
+- No prestress-loss, SLS, ULS, shear/torsion, anchorage-zone, deviator-force, D-region, Project JSON schema, solver, or result-persistence changes.
+- Railway U-Girder, Bridge/Building Beam-Girder, and Column/Pier Sections navigation remains unchanged.
+
+#### Validation run
+```bash
+python -m py_compile app.py concrete_pmm_pro/ui/crossbeam_pages.py concrete_pmm_pro/ui/section_builder.py
+pytest -q tests/test_crossbeam_ui1_workspaces.py tests/test_crossbeam_wf1a_routing_safety.py tests/test_crossbeam_wf1_workflow.py tests/test_reinforcement_system_flags.py tests/test_workflow_status_alignment.py tests/test_preset_routing1_workflow_presets.py tests/test_workflow_type3_shared_section_presets.py tests/test_navigation_workspace.py tests/test_ui_active_tabs1_navigation.py tests/test_app_commercial_tabs.py tests/test_project_io.py tests/test_project_dashboard.py tests/test_section_builder_layout.py tests/test_rebar_railway_u_girder3_section_builder_sync.py tests/test_prestress_tendon_products.py tests/test_qa_railway_u_girder_workflow_regression_audit.py tests/test_building_beam_girder_sls_load_workflow.py tests/test_girder_service_workflow.py tests/test_design_code_source_of_truth.py tests/test_design_code_sync3_setup_widget.py
+```
+
+Crossbeam UI1 and cross-workflow regression gate: **200 passed**.
+
 ### SLS.STAGE.STRESS.QA3A — Streamlit widget-state hotfix
 
 Hotfixes the QA3 staged SLS profile synchronization so read-only summary/detail synchronization never writes back to Streamlit widget-bound keys after the visible guide widgets are instantiated.

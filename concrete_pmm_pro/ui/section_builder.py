@@ -16,16 +16,6 @@ from concrete_pmm_pro.core.analysis_modes import (
     is_building_beam_girder_workflow,
     is_portal_frame_crossbeam_workflow,
 )
-from concrete_pmm_pro.crossbeam.workflow import (
-    DEFAULT_CROSSBEAM_LENGTH_M,
-    DEFAULT_FPJ_RATIO,
-    DEFAULT_STRAND_APS_MM2,
-    DEFAULT_STRAND_FPU_MPA,
-    calculated_fpj_mpa,
-    default_crossbeam_segment_rows,
-    default_crossbeam_tendon_rows,
-    tendon_eccentricity_from_top_mm,
-)
 from concrete_pmm_pro.core.concrete_materials import (
     DEFAULT_DECK_TOPPING_MATERIAL,
     c45_precast_material,
@@ -1820,8 +1810,8 @@ def _section_axis_status_for_workflow(settings: AnalysisModeSettings) -> tuple[s
 
     if is_portal_frame_crossbeam_workflow(settings):
         return (
-            "s/u/v",
-            "s longitudinal left→right; u horizontal in section/plan; v vertical",
+            "x/y + s",
+            "x/y local cross-section axes; s longitudinal left→right",
         )
     return "x/y/z", "x horizontal, y vertical, z longitudinal"
 
@@ -2108,9 +2098,9 @@ def _axis_convention_rows(settings: AnalysisModeSettings | None = None) -> list[
     active_settings = settings or _analysis_mode_from_session_state()
     if is_portal_frame_crossbeam_workflow(active_settings):
         return [
+            ("x-axis", "Horizontal local coordinate in the cross-section; also used as tendon lateral position in plan"),
+            ("y-axis", "Vertical local coordinate in the cross-section; positive upward"),
             ("s-axis", "Crossbeam longitudinal station, positive from left anchorage to right anchorage"),
-            ("u-axis", "Horizontal coordinate in the cross-section and plan view"),
-            ("v-axis", "Vertical coordinate; tendon input remains depth downward from the top surface"),
             ("dtop(s)", "Tendon depth measured downward from the section top surface"),
             ("e(s)", "Calculated tendon eccentricity; positive below the active-section centroid"),
         ]
@@ -3372,180 +3362,6 @@ def _render_section_properties_summary(
 
 
 
-def _render_crossbeam_layout_tendon_foundation(
-    preset: dict[str, Any],
-    params: dict[str, Any],
-    geometry: Any | None,
-    validation: ValidationResult,
-) -> None:
-    """Render CROSSBEAM.WF1 station-layout and tendon source-of-truth controls."""
-
-    settings = _analysis_mode_from_session_state()
-    if not is_portal_frame_crossbeam_workflow(settings):
-        return
-
-    with st.container(border=True):
-        st.markdown(
-            _commercial_panel_title_html(
-                "Portal Frame Crossbeam Layout / Tendon Source",
-                "CROSSBEAM.WF1",
-                "Station-based",
-                "Top-referenced tendon profile",
-                "No solver rerun",
-            ),
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            '<div class="cpmm-section-note">WF1 establishes the source-of-truth for segmented solid/hollow crossbeam geometry and tendon profile coordinates. '
-            'It does not calculate prestress losses, SLS stresses, ULS strength, anchorage zones, column-joint regions, or solid/hollow transition D-regions.</div>',
-            unsafe_allow_html=True,
-        )
-
-        length_key = "crossbeam_wf1_length_m"
-        st.session_state.setdefault(length_key, DEFAULT_CROSSBEAM_LENGTH_M)
-        length_m = float(
-            st.number_input(
-                "Crossbeam total length L (m)",
-                min_value=0.1,
-                max_value=500.0,
-                value=float(st.session_state.get(length_key, DEFAULT_CROSSBEAM_LENGTH_M)),
-                step=0.5,
-                format="%.3f",
-                key=length_key,
-                help="Longitudinal station basis for segment layout, tendon profile, and future FEA handoff tables.",
-            )
-        )
-
-        segment_source_key = "crossbeam_wf1_segment_layout_rows"
-        if segment_source_key not in st.session_state:
-            st.session_state[segment_source_key] = default_crossbeam_segment_rows(length_m)
-        if st.button("Reset crossbeam segment layout to solid/hollow seed", key="crossbeam_wf1_reset_segments"):
-            st.session_state[segment_source_key] = default_crossbeam_segment_rows(length_m)
-
-        st.markdown("##### Crossbeam longitudinal segment layout")
-        st.caption("Use this table to map station ranges to solid/hollow section roles. Future station checks will select the active section properties from this map.")
-        segment_rows = st.data_editor(
-            st.session_state.get(segment_source_key, default_crossbeam_segment_rows(length_m)),
-            num_rows="dynamic",
-            use_container_width=True,
-            key="crossbeam_wf1_segment_layout_editor",
-            column_config={
-                "x_start_m": st.column_config.NumberColumn("s_start (m)", help="Longitudinal start station from the left anchorage."),
-                "x_end_m": st.column_config.NumberColumn("s_end (m)", help="Longitudinal end station toward the right anchorage."),
-            },
-        )
-        st.session_state[segment_source_key] = segment_rows
-
-        role_counts: dict[str, int] = {}
-        for row in segment_rows if isinstance(segment_rows, list) else []:
-            role = str(row.get("Section role", "")).strip() or "Unassigned"
-            role_counts[role] = role_counts.get(role, 0) + 1
-        st.markdown(
-            _property_strip_html(
-                [
-                    SectionMetric("Layout status", "LAYOUT READY", "editable station map; not a solver result", "info", True),
-                    SectionMetric("Segments", f"{len(segment_rows) if isinstance(segment_rows, list) else 0:,}", "solid/hollow station rows"),
-                    SectionMetric("Solid rows", f"{role_counts.get('Solid', 0):,}", "section role count"),
-                    SectionMetric("Hollow rows", f"{role_counts.get('Hollow', 0):,}", "section role count"),
-                ]
-            ),
-            unsafe_allow_html=True,
-        )
-
-        st.markdown("##### Tendon profile foundation")
-        st.caption(
-            "Tendon depth is always entered from the top surface. The app calculates e(x) from the active section centroid; positive e means tendon below centroid."
-        )
-        if geometry is not None and validation.is_valid:
-            summary = summarize_geometry(geometry)
-            total_depth_mm = float(params.get("height_mm", summary.top_fiber_distance_mm + summary.bottom_fiber_distance_mm))
-            centroid_yb_mm = float(summary.centroid_y_from_bottom_mm)
-            centroid_top_mm = total_depth_mm - centroid_yb_mm
-        else:
-            total_depth_mm = float(params.get("height_mm", 1500.0) or 1500.0)
-            centroid_yb_mm = total_depth_mm / 2.0
-            centroid_top_mm = total_depth_mm / 2.0
-
-        tendon_count_key = "crossbeam_wf1_tendon_count"
-        st.session_state.setdefault(tendon_count_key, 4)
-        tendon_count = int(
-            st.number_input(
-                "Number of tendons",
-                min_value=2,
-                max_value=48,
-                value=int(st.session_state.get(tendon_count_key, 4)),
-                step=1,
-                key=tendon_count_key,
-                help="Crossbeam may use more than two tendons. Each tendon is seeded with left/mid/right profile points.",
-            )
-        )
-
-        tendon_source_key = "crossbeam_wf1_tendon_profile_rows"
-        if tendon_source_key not in st.session_state:
-            st.session_state[tendon_source_key] = default_crossbeam_tendon_rows(length_m, tendon_count=tendon_count, section_depth_mm=total_depth_mm)
-        if st.button("Reset tendon profile seed", key="crossbeam_wf1_reset_tendons"):
-            st.session_state[tendon_source_key] = default_crossbeam_tendon_rows(length_m, tendon_count=tendon_count, section_depth_mm=total_depth_mm)
-
-        tendon_rows = st.data_editor(
-            st.session_state.get(tendon_source_key, default_crossbeam_tendon_rows(length_m, tendon_count=tendon_count, section_depth_mm=total_depth_mm)),
-            num_rows="dynamic",
-            use_container_width=True,
-            key="crossbeam_wf1_tendon_profile_editor",
-            column_config={
-                "x/L": st.column_config.NumberColumn("s/L", help="Normalized longitudinal station from left to right anchorage."),
-                "x_m": st.column_config.NumberColumn("s (m)", help="Longitudinal station measured from the left anchorage."),
-                "Depth from top mm": st.column_config.NumberColumn("dtop (mm)", help="Tendon depth measured downward from the active section top surface."),
-            },
-        )
-        st.session_state[tendon_source_key] = tendon_rows
-
-        computed_rows: list[dict[str, Any]] = []
-        if isinstance(tendon_rows, list):
-            for row in tendon_rows:
-                depth = float(row.get("Depth from top mm", 0.0) or 0.0)
-                fpu = float(row.get("fpu MPa", DEFAULT_STRAND_FPU_MPA) or DEFAULT_STRAND_FPU_MPA)
-                fpj_ratio = float(row.get("fpj/fpu", DEFAULT_FPJ_RATIO) or DEFAULT_FPJ_RATIO)
-                strands = float(row.get("Strands", 0.0) or 0.0)
-                aps = float(row.get("Aps/strand mm²", DEFAULT_STRAND_APS_MM2) or DEFAULT_STRAND_APS_MM2)
-                computed_rows.append(
-                    {
-                        "Tendon ID": row.get("Tendon ID", ""),
-                        "s/L": row.get("x/L", row.get("s/L", "")),
-                        "Type": row.get("Type", "Internal"),
-                        "Jacking end": row.get("Jacking end", "both"),
-                        "dtop mm": round(depth, 3),
-                        "centroid depth from top mm": round(centroid_top_mm, 3),
-                        "e(s) mm": round(
-                            tendon_eccentricity_from_top_mm(
-                                depth,
-                                total_depth_mm=total_depth_mm,
-                                centroid_y_from_bottom_mm=centroid_yb_mm,
-                            ),
-                            3,
-                        ),
-                        "fpj MPa": round(calculated_fpj_mpa(fpu, fpj_ratio), 3),
-                        "Aps total mm²": round(strands * aps, 3),
-                    }
-                )
-
-        st.markdown("##### Calculated tendon profile check — preview only")
-        st.dataframe(computed_rows, use_container_width=True, hide_index=True)
-        st.markdown(
-            _property_strip_html(
-                [
-                    SectionMetric("Strand type", "7-wire low relaxation", "default tendon material source", "info"),
-                    SectionMetric("fpu", f"{DEFAULT_STRAND_FPU_MPA:,.0f} MPa", "default, editable per row"),
-                    SectionMetric("Aps / strand", f"{DEFAULT_STRAND_APS_MM2:,.0f} mm²", "default, editable per row"),
-                    SectionMetric("Default fpj", f"{calculated_fpj_mpa():,.0f} MPa", "0.75 fpu", "info", True),
-                    SectionMetric("Anchorage heads", "Left + Right ends", "s = 0 and s = L stations"),
-                    SectionMetric("Jacking end", "Left / Right / Both", "both-end jacking changes losses, not total Pj"),
-                    SectionMetric("Loss basis", "Future selector", "ACI 423.10R default; AASHTO/reference/user-defined later", "warning"),
-                    SectionMetric("Solver status", "NOT CALCULATED", "losses/SLS/ULS remain future milestones", "neutral", True),
-                ]
-            ),
-            unsafe_allow_html=True,
-        )
-
 def render_section_builder() -> None:
     _ensure_section_parameter_owner_from_session()
     st.markdown(_SECTION_BUILDER_CSS, unsafe_allow_html=True)
@@ -3577,8 +3393,6 @@ def render_section_builder() -> None:
 
     with preview_col:
         _render_section_preview_panel(geometry, dimensions, label_mode, validation)
-
-    _render_crossbeam_layout_tendon_foundation(preset, params, geometry, validation)
 
     if geometry is not None:
         with st.expander("Generated SectionGeometry"):

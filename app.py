@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from concrete_pmm_pro.core.analysis import AnalysisModeSettings
-from concrete_pmm_pro.core.analysis_modes import analysis_mode_label
+from concrete_pmm_pro.core.analysis_modes import analysis_mode_label, is_portal_frame_crossbeam_workflow
 from concrete_pmm_pro.core.design_code import workflow_project_code_label_from_session
 from concrete_pmm_pro.state.dirty_state import current_project_dirty_status, update_dirty_state_from_session
 from concrete_pmm_pro.io.project_io import (
@@ -39,6 +39,11 @@ from concrete_pmm_pro.ui.commercial import render_metric_cards, render_page_head
 from concrete_pmm_pro.visualization.plot_readability import apply_global_plot_readability
 from concrete_pmm_pro.ui.rebar_page import render_rebar_page
 from concrete_pmm_pro.ui.section_builder import render_section_builder
+from concrete_pmm_pro.ui.crossbeam_pages import (
+    render_crossbeam_segment_layout_page,
+    render_crossbeam_tendon_profile_page,
+    render_crossbeam_tendon_system_page,
+)
 from concrete_pmm_pro.visualization.plot_readability import install_streamlit_plotly_readability_patch
 
 
@@ -55,6 +60,21 @@ RESULTS_WORKSPACE_PLACEHOLDER = (
     "Future Result Summary workspace. Current detailed outputs remain available under Analysis. "
     "The Result Summary dashboard shows stored decision summaries only and does not rerun solvers."
 )
+
+
+def _sections_navigation_options() -> list[str]:
+    """Return workflow-scoped Section subpages without changing other workflows."""
+
+    mode = _analysis_mode_from_session_for_chrome()
+    if is_portal_frame_crossbeam_workflow(mode):
+        return ["Section Builder", "Rebar", "Tendon System", "Segment Layout", "Tendon Profile"]
+    return list(WORKSPACE_NAVIGATION["Sections"])
+
+
+def _workspace_subpages(workspace: str) -> list[str]:
+    if str(workspace) == "Sections":
+        return _sections_navigation_options()
+    return list(WORKSPACE_NAVIGATION.get(str(workspace), []))
 
 
 _COMMERCIAL_TAB_CSS = """
@@ -1167,6 +1187,9 @@ def _commercial_subpage_icon(subpage: str) -> str:
         "Section Builder": "◇",
         "Rebar": "#",
         "Prestress": "PT",
+        "Tendon System": "PT",
+        "Segment Layout": "SG",
+        "Tendon Profile": "3D",
         "ULS Strength": "ULS",
         "SLS / Stress & Cracking": "SLS",
         "SLS Deflection / Camber": "δ",
@@ -1298,7 +1321,7 @@ def _render_commercial_sidebar(active_workspace: str | None = None) -> None:
                 if callable(rerun):
                     rerun()
 
-    subpages = WORKSPACE_NAVIGATION.get(active, [])
+    subpages = _workspace_subpages(active)
     if len(subpages) > 1:
         subpage_key = {
             "Setup": "_nav_setup_subpage",
@@ -1397,13 +1420,20 @@ def render_setup_workspace() -> None:
 
 
 def render_sections_workspace() -> None:
-    active = _safe_choice("Sections workspace", WORKSPACE_NAVIGATION["Sections"], key="_nav_sections_subpage")
+    options = _sections_navigation_options()
+    active = _safe_choice("Sections workspace", options, key="_nav_sections_subpage")
     if active == "Section Builder":
         render_section_builder()
     elif active == "Rebar":
         render_rebar_page()
     elif active == "Prestress":
         render_prestress_page()
+    elif active == "Tendon System":
+        render_crossbeam_tendon_system_page()
+    elif active == "Segment Layout":
+        render_crossbeam_segment_layout_page()
+    elif active == "Tendon Profile":
+        render_crossbeam_tendon_profile_page()
 
 
 def render_loads_workspace() -> None:

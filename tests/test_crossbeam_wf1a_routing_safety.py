@@ -26,8 +26,8 @@ def test_crossbeam_family_and_coordinate_labels_are_workflow_scoped() -> None:
 
     assert section_builder._section_family_label_for_workflow(CROSSBEAM_PRESET, crossbeam) == "Portal Frame Crossbeam"
     assert section_builder._section_axis_status_for_workflow(crossbeam) == (
-        "s/u/v",
-        "s longitudinal left→right; u horizontal in section/plan; v vertical",
+        "x/y + s",
+        "x/y local cross-section axes; s longitudinal left→right",
     )
 
     # Existing Column/Pier wording remains unchanged.
