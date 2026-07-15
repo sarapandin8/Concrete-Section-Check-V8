@@ -311,6 +311,7 @@ def generate_perimeter_rebar_layout(
     edge_offset_mm: float = 75.0,
     target_spacing_mm: float = 150.0,
     min_bars: int = 4,
+    exact_bar_count: int | None = None,
     label_prefix: str = "B",
 ) -> PerimeterRebarLayoutResult:
     """Generate a preview rebar table from an inward offset perimeter.
@@ -339,6 +340,8 @@ def generate_perimeter_rebar_layout(
         return PerimeterRebarLayoutResult(table=empty_table, errors=("Target spacing must be positive.",))
     if min_bars < 1:
         return PerimeterRebarLayoutResult(table=empty_table, errors=("Minimum bar count must be at least 1.",))
+    if exact_bar_count is not None and int(exact_bar_count) < 4:
+        return PerimeterRebarLayoutResult(table=empty_table, errors=("Exact bar count must be at least 4.",))
 
     try:
         section = _as_polygon(geometry)
@@ -370,12 +373,29 @@ def generate_perimeter_rebar_layout(
     if perimeter_length_mm <= 0:
         return PerimeterRebarLayoutResult(table=empty_table, errors=("Generated offset perimeter has zero length.",))
 
-    distances, actual_spacing_mm, control_count = _corner_controlled_distances(
-        layout_polygon,
-        target_spacing_mm=float(target_spacing_mm),
-        min_bars=int(min_bars),
-    )
-    minimum_center_spacing_mm = _minimum_center_spacing_for_layout(float(diameter_mm), float(target_spacing_mm))
+    requested_count = int(exact_bar_count) if exact_bar_count is not None else None
+    if requested_count is None:
+        distances, actual_spacing_mm, control_count = _corner_controlled_distances(
+            layout_polygon,
+            target_spacing_mm=float(target_spacing_mm),
+            min_bars=int(min_bars),
+        )
+        spacing_basis_mm = float(target_spacing_mm)
+    else:
+        distances, actual_spacing_mm, control_count = _corner_controlled_distances(
+            layout_polygon,
+            target_spacing_mm=max(perimeter_length_mm * 2.0, 1.0),
+            min_bars=requested_count,
+        )
+        if control_count > requested_count:
+            return PerimeterRebarLayoutResult(
+                table=empty_table,
+                errors=(
+                    f"Exact bar count {requested_count} is smaller than the {control_count} required corner/control bars; increase the count.",
+                ),
+            )
+        spacing_basis_mm = perimeter_length_mm / requested_count
+    minimum_center_spacing_mm = _minimum_center_spacing_for_layout(float(diameter_mm), spacing_basis_mm)
     distances, removed_close_points = _enforce_minimum_center_spacing(
         distances,
         perimeter_length_mm,
@@ -394,7 +414,7 @@ def generate_perimeter_rebar_layout(
     else:
         info.append("No geometric corner/control points were detected; uniform perimeter layout is used.")
 
-    if actual_spacing_mm > target_spacing_mm * 1.15:
+    if requested_count is None and actual_spacing_mm > target_spacing_mm * 1.15:
         warnings.append(
             f"Maximum generated spacing is {actual_spacing_mm:.1f} mm, more than 15% above the target {target_spacing_mm:.1f} mm."
         )
@@ -421,6 +441,10 @@ def generate_perimeter_rebar_layout(
             f"Merged {merged_spatial_points} spatially close generated bar point(s) where opposite offset faces were closer than the minimum center spacing guard."
         )
     generated_count = len(candidate_points)
+    if requested_count is not None and generated_count != requested_count:
+        errors.append(
+            f"Exact count {requested_count} could not be maintained after spacing/geometry guards; generated {generated_count}. Adjust count, offset, or bar size."
+        )
     prefix = str(label_prefix or "B").strip() or "B"
     for index, (x_mm, y_mm) in enumerate(candidate_points):
         point = Point(float(x_mm), float(y_mm))
@@ -438,7 +462,10 @@ def generate_perimeter_rebar_layout(
                 "Diameter_mm": float(diameter_mm),
                 "Material": str(material or "SD40"),
                 "Count": 1,
-                "Note": f"Auto perimeter: corner-controlled, offset={edge_offset_mm:g} mm, target spacing={target_spacing_mm:g} mm",
+                "Note": (
+                    f"Auto perimeter: corner-controlled, offset={edge_offset_mm:g} mm, "
+                    + (f"exact count={requested_count}" if requested_count is not None else f"target spacing={target_spacing_mm:g} mm")
+                ),
             }
         )
 
@@ -452,6 +479,8 @@ def generate_perimeter_rebar_layout(
     info.append(
         f"Generated {generated_count} bar(s) along an inward offset perimeter; maximum segment spacing ≈ {actual_spacing_mm:.1f} mm."
     )
+    if requested_count is not None:
+        info.append(f"Layout method = exact perimeter count ({requested_count} bars).")
     info.append(f"Bar center offset from concrete edge = {edge_offset_mm:.1f} mm.")
     info.append(f"Minimum generated bar center spacing guard = {minimum_center_spacing_mm:.1f} mm.")
 
@@ -475,6 +504,7 @@ def generate_inner_face_rebar_layout(
     edge_offset_mm: float = 50.0,
     target_spacing_mm: float = 150.0,
     min_bars: int = 4,
+    exact_bar_count: int | None = None,
     label_prefix: str = "I",
 ) -> PerimeterRebarLayoutResult:
     """Generate bars around one void, offset outward into the concrete wall.
@@ -502,6 +532,8 @@ def generate_inner_face_rebar_layout(
         return PerimeterRebarLayoutResult(table=empty_table, errors=("Target spacing must be positive.",))
     if min_bars < 1:
         return PerimeterRebarLayoutResult(table=empty_table, errors=("Minimum bar count must be at least 1.",))
+    if exact_bar_count is not None and int(exact_bar_count) < 4:
+        return PerimeterRebarLayoutResult(table=empty_table, errors=("Exact bar count must be at least 4.",))
     if not geometry.holes:
         return PerimeterRebarLayoutResult(
             table=empty_table,
@@ -543,12 +575,29 @@ def generate_inner_face_rebar_layout(
     if perimeter_length_mm <= 0:
         return PerimeterRebarLayoutResult(table=empty_table, errors=("Generated inner-face perimeter has zero length.",))
 
-    distances, actual_spacing_mm, control_count = _corner_controlled_distances(
-        layout_polygon,
-        target_spacing_mm=float(target_spacing_mm),
-        min_bars=int(min_bars),
-    )
-    minimum_center_spacing_mm = _minimum_center_spacing_for_layout(float(diameter_mm), float(target_spacing_mm))
+    requested_count = int(exact_bar_count) if exact_bar_count is not None else None
+    if requested_count is None:
+        distances, actual_spacing_mm, control_count = _corner_controlled_distances(
+            layout_polygon,
+            target_spacing_mm=float(target_spacing_mm),
+            min_bars=int(min_bars),
+        )
+        spacing_basis_mm = float(target_spacing_mm)
+    else:
+        distances, actual_spacing_mm, control_count = _corner_controlled_distances(
+            layout_polygon,
+            target_spacing_mm=max(perimeter_length_mm * 2.0, 1.0),
+            min_bars=requested_count,
+        )
+        if control_count > requested_count:
+            return PerimeterRebarLayoutResult(
+                table=empty_table,
+                errors=(
+                    f"Exact bar count {requested_count} is smaller than the {control_count} required corner/control bars; increase the count.",
+                ),
+            )
+        spacing_basis_mm = perimeter_length_mm / requested_count
+    minimum_center_spacing_mm = _minimum_center_spacing_for_layout(float(diameter_mm), spacing_basis_mm)
     distances, removed_close_points = _enforce_minimum_center_spacing(
         distances,
         perimeter_length_mm,
@@ -574,6 +623,10 @@ def generate_inner_face_rebar_layout(
     )
     if merged_spatial_points:
         warnings.append(f"Merged {merged_spatial_points} spatially close inner-face bar point(s).")
+    if requested_count is not None and len(candidate_points) != requested_count:
+        errors.append(
+            f"Exact count {requested_count} could not be maintained after spacing/geometry guards; generated {len(candidate_points)}. Adjust count, offset, or bar size."
+        )
 
     outside_count = 0
     inside_void_count = 0
@@ -597,7 +650,7 @@ def generate_inner_face_rebar_layout(
                 "Count": 1,
                 "Note": (
                     f"Auto inner face: void={hole_index + 1}, offset={edge_offset_mm:g} mm, "
-                    f"target spacing={target_spacing_mm:g} mm"
+                    + (f"exact count={requested_count}" if requested_count is not None else f"target spacing={target_spacing_mm:g} mm")
                 ),
             }
         )
@@ -608,7 +661,7 @@ def generate_inner_face_rebar_layout(
         errors.append(
             f"{outside_count} generated inner-face bar point(s) are outside concrete; reduce the void-face offset."
         )
-    if actual_spacing_mm > target_spacing_mm * 1.15:
+    if requested_count is None and actual_spacing_mm > target_spacing_mm * 1.15:
         warnings.append(
             f"Maximum inner-face spacing is {actual_spacing_mm:.1f} mm, more than 15% above the target "
             f"{target_spacing_mm:.1f} mm."
@@ -618,6 +671,8 @@ def generate_inner_face_rebar_layout(
         f"Generated {len(rows)} inner-face bar(s) around void {hole_index + 1}; maximum segment spacing ≈ "
         f"{actual_spacing_mm:.1f} mm."
     )
+    if requested_count is not None:
+        info.append(f"Layout method = exact inner-face count ({requested_count} bars).")
     info.append(f"Bar center offset from void face = {edge_offset_mm:.1f} mm.")
 
     return PerimeterRebarLayoutResult(

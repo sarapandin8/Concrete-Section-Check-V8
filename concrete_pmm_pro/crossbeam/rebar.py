@@ -6,7 +6,9 @@ template-level outer/inner-face auto-layout controls and graphical section
 preview data while remaining intentionally disconnected from every ULS/SLS
 solver. RB2A preserves the locked zero ordinary-rebar crossing rule while
 explicitly treating post-tensioning continuity as required but not verified
-until the Tendon System/Profile audit is connected.
+until the Tendon System/Profile audit is connected. RB2B adds project-template
+management and spacing-or-exact-count layout controls without changing solver
+ownership.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ TEMPLATE_ROLE_OPTIONS = ("Hollow", "Solid", "Any")
 TEMPLATE_CONSTRUCTION_OPTIONS = ("Factory precast", "Cast in place", "Project-defined")
 TEMPLATE_LONGITUDINAL_BASIS_OPTIONS = ("Segment-local", "Zone-local")
 TEMPLATE_BAR_SIZE_OPTIONS = ("DB10", "DB12", "DB16", "DB20", "DB25", "DB28", "DB32")
+TEMPLATE_LAYOUT_METHOD_OPTIONS = ("By target spacing", "By exact bar count")
 REBAR_DIAMETER_BY_SIZE = {
     "DB10": 10.0,
     "DB12": 12.0,
@@ -70,11 +73,15 @@ def _layout_defaults(role: str, template_id: str) -> dict[str, Any]:
         "Outer face bars": True,
         "Outer bar size": outer_size,
         "Outer center offset mm": 50.0,
+        "Outer layout method": "By target spacing",
         "Outer target spacing mm": 150.0,
+        "Outer exact bar count": 24,
         "Inner face bars": role_text == "Hollow",
         "Inner bar size": "DB16",
         "Inner center offset mm": 50.0,
+        "Inner layout method": "By target spacing",
         "Inner target spacing mm": 150.0,
+        "Inner exact bar count": 16,
     }
 
 
@@ -159,6 +166,12 @@ def canonical_rebar_templates(rows: list[dict[str, Any]]) -> list[dict[str, Any]
         inner_size = str(row.get("Inner bar size") or layout_defaults["Inner bar size"]).strip().upper()
         if inner_size not in TEMPLATE_BAR_SIZE_OPTIONS:
             inner_size = str(layout_defaults["Inner bar size"])
+        outer_method = str(row.get("Outer layout method") or layout_defaults["Outer layout method"]).strip()
+        if outer_method not in TEMPLATE_LAYOUT_METHOD_OPTIONS:
+            outer_method = "By target spacing"
+        inner_method = str(row.get("Inner layout method") or layout_defaults["Inner layout method"]).strip()
+        if inner_method not in TEMPLATE_LAYOUT_METHOD_OPTIONS:
+            inner_method = "By target spacing"
         canonical.append(
             {
                 "Active": _bool(row.get("Active"), True),
@@ -176,24 +189,75 @@ def canonical_rebar_templates(rows: list[dict[str, Any]]) -> list[dict[str, Any]
                 "Rebar material": str(row.get("Rebar material") or layout_defaults["Rebar material"]).strip() or "SD40",
                 "Outer face bars": _bool(row.get("Outer face bars"), bool(layout_defaults["Outer face bars"])),
                 "Outer bar size": outer_size,
+                "Outer layout method": outer_method,
                 "Outer center offset mm": max(
                     _float(row.get("Outer center offset mm"), float(layout_defaults["Outer center offset mm"])), 1.0
                 ),
                 "Outer target spacing mm": max(
                     _float(row.get("Outer target spacing mm"), float(layout_defaults["Outer target spacing mm"])), 1.0
                 ),
+                "Outer exact bar count": max(int(_float(row.get("Outer exact bar count"), float(layout_defaults["Outer exact bar count"]))), 4),
                 "Inner face bars": _bool(row.get("Inner face bars"), bool(layout_defaults["Inner face bars"])),
                 "Inner bar size": inner_size,
+                "Inner layout method": inner_method,
                 "Inner center offset mm": max(
                     _float(row.get("Inner center offset mm"), float(layout_defaults["Inner center offset mm"])), 1.0
                 ),
                 "Inner target spacing mm": max(
                     _float(row.get("Inner target spacing mm"), float(layout_defaults["Inner target spacing mm"])), 1.0
                 ),
+                "Inner exact bar count": max(int(_float(row.get("Inner exact bar count"), float(layout_defaults["Inner exact bar count"]))), 4),
                 "Notes": str(row.get("Notes") or "").strip(),
             }
         )
     return canonical
+
+
+def next_rebar_template_id(role: str, existing_ids: list[str] | tuple[str, ...] | set[str]) -> str:
+    """Return a stable project template ID without changing existing references."""
+
+    prefix = "RB-H" if str(role).strip().title() == "Hollow" else "RB-S"
+    used = {str(value or "").strip().upper() for value in existing_ids}
+    index = 1
+    while f"{prefix}{index:02d}" in used:
+        index += 1
+    return f"{prefix}{index:02d}"
+
+
+def new_rebar_template(role: str, existing_ids: list[str] | tuple[str, ...] | set[str]) -> dict[str, Any]:
+    """Create one canonical user template for the selected section family."""
+
+    role_text = "Hollow" if str(role).strip().title() == "Hollow" else "Solid"
+    template_id = next_rebar_template_id(role_text, existing_ids)
+    construction = "Factory precast" if role_text == "Hollow" else "Cast in place"
+    basis = "Segment-local" if role_text == "Hollow" else "Zone-local"
+    row = {
+        "Active": True,
+        "Template ID": template_id,
+        "Template name": f"New {role_text.lower()} reinforcement template",
+        "Applicable role": role_text,
+        "Construction": construction,
+        "Longitudinal basis": basis,
+        "Credit inside segment": True,
+        "Top As mm²": 0.0,
+        "Bottom As mm²": 0.0,
+        "Side As mm²": 0.0,
+        "Av/s mm²/mm": 0.0,
+        "fy MPa": 390.0,
+        **_layout_defaults(role_text, template_id),
+        "Notes": "Project-defined segment/zone reinforcement; ordinary rebar never crosses a segment joint.",
+    }
+    return canonical_rebar_templates([row])[0]
+
+
+def duplicate_rebar_template(source: Mapping[str, Any], existing_ids: list[str] | tuple[str, ...] | set[str]) -> dict[str, Any]:
+    """Duplicate a template with a new stable ID and user-facing copy name."""
+
+    role = str(source.get("Applicable role") or "Solid")
+    row = dict(source)
+    row["Template ID"] = next_rebar_template_id(role, existing_ids)
+    row["Template name"] = f"{str(source.get('Template name') or source.get('Template ID') or 'Template')} — Copy"
+    return canonical_rebar_templates([row])[0]
 
 
 def template_map(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:

@@ -1,3 +1,9 @@
+### CROSSBEAM.RB2B — Rebar Template Management and Count/Spacing Layout
+
+Adds Crossbeam-only Rebar Template create/duplicate/guarded-delete actions plus outer/inner layouts by target spacing or exact bar count, while retaining compact no-scroll summaries, zero ordinary-rebar joint crossing, and unchanged solvers.
+
+See `README_CROSSBEAM_RB2B.md`.
+
 ### CROSSBEAM.RB2A — Rebar Review Hardening and PT-Continuity Guard
 
 Hardens the Crossbeam rebar review workspace with compact no-scroll tables, selected-template editing, separate generated/adopted reinforcement, enhanced bar markers, and an explicit PT-continuity-required/not-verified guard while leaving all existing solvers unchanged.

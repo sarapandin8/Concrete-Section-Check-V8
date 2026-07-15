@@ -1,10 +1,10 @@
 """Workflow-scoped Rebar workspace for segmental Portal Frame Crossbeams.
 
-CROSSBEAM.RB2A hardens the RB2 review workspace with compact no-scroll tables,
-selected-template editing, separate auto-generated versus adopted reinforcement,
-enhanced/true-scale bar display modes, and an explicit unverified PT-continuity
-guard. It never routes the new template, zone, or preview state into existing
-PMM, Beam/Girder, SLS, shear, torsion, or report solvers.
+CROSSBEAM.RB2B adds low-effort project Template creation, duplication, guarded
+deletion, and spacing-or-exact-count auto layouts while preserving the RB2A
+compact no-scroll review pattern and unverified PT-continuity guard. It never
+routes template, zone, or preview state into existing PMM, Beam/Girder, SLS,
+shear, torsion, or report solvers.
 """
 
 from __future__ import annotations
@@ -26,10 +26,13 @@ from concrete_pmm_pro.crossbeam.rebar import (
     TEMPLATE_LONGITUDINAL_BASIS_OPTIONS,
     TEMPLATE_ROLE_OPTIONS,
     TEMPLATE_BAR_SIZE_OPTIONS,
+    TEMPLATE_LAYOUT_METHOD_OPTIONS,
     canonical_rebar_templates,
+    duplicate_rebar_template,
     canonical_rebar_zones,
     default_crossbeam_rebar_templates,
     default_crossbeam_rebar_zones,
+    new_rebar_template,
     segment_joint_audit_rows,
     segment_signature,
     station_rebar_audit_rows,
@@ -64,6 +67,8 @@ CB_RB_PREVIEW_ZONE_KEY = "crossbeam_rb2_preview_zone"
 CB_RB_ACTIVE_TEMPLATE_KEY = "crossbeam_rb2a_active_template"
 CB_RB_PREVIEW_MARKER_MODE_KEY = "crossbeam_rb2a_preview_marker_mode"
 CB_RB_ZONE_PURPOSE_KEY_PREFIX = "crossbeam_rb2a_zone_purpose"
+CB_RB_TEMPLATE_ACTION_KEY = "crossbeam_rb2b_template_pending_action"
+CB_RB_TEMPLATE_DELETE_CONFIRM_KEY = "crossbeam_rb2b_template_delete_confirm"
 
 RB2_SUBVIEWS = (
     ("Templates", "Templates"),
@@ -279,18 +284,82 @@ def _render_locked_joint_rule() -> None:
         "column D-regions, and tendon-continuity verification remain separate checks."
     )
 
+def _queue_template_action(action: str, template_id: str = "") -> None:
+    st.session_state[CB_RB_TEMPLATE_ACTION_KEY] = {"action": str(action), "template_id": str(template_id)}
+
+
+def _apply_pending_template_action(
+    rows: list[dict[str, Any]],
+    zone_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], str | None]:
+    pending = st.session_state.pop(CB_RB_TEMPLATE_ACTION_KEY, None)
+    if not isinstance(pending, Mapping):
+        return rows, None
+    action = str(pending.get("action") or "")
+    selected_id = str(pending.get("template_id") or st.session_state.get(CB_RB_ACTIVE_TEMPLATE_KEY) or "")
+    existing_ids = [str(row.get("Template ID") or "") for row in rows]
+    message: str | None = None
+    if action == "reset":
+        rows = default_crossbeam_rebar_templates()
+        st.session_state[CB_RB_ACTIVE_TEMPLATE_KEY] = str(rows[0].get("Template ID") or "")
+        message = "Reset the Rebar Template Library to the three Crossbeam defaults."
+    elif action == "new_hollow":
+        created = new_rebar_template("Hollow", existing_ids)
+        rows.append(created)
+        st.session_state[CB_RB_ACTIVE_TEMPLATE_KEY] = created["Template ID"]
+        message = f"Created {created['Template ID']}. Edit its name and layout below."
+    elif action == "new_solid":
+        created = new_rebar_template("Solid", existing_ids)
+        rows.append(created)
+        st.session_state[CB_RB_ACTIVE_TEMPLATE_KEY] = created["Template ID"]
+        message = f"Created {created['Template ID']}. Edit its name and layout below."
+    elif action == "duplicate":
+        source = next((row for row in rows if str(row.get("Template ID") or "") == selected_id), None)
+        if source is not None:
+            created = duplicate_rebar_template(source, existing_ids)
+            rows.append(created)
+            st.session_state[CB_RB_ACTIVE_TEMPLATE_KEY] = created["Template ID"]
+            message = f"Duplicated {selected_id} as {created['Template ID']}."
+    elif action == "delete":
+        used_by = sorted(
+            str(zone.get("Zone ID") or "")
+            for zone in canonical_rebar_zones(zone_rows)
+            if str(zone.get("Rebar template") or "") == selected_id
+        )
+        if used_by:
+            message = f"Cannot delete {selected_id}; used by zones: {', '.join(used_by)}."
+        elif len(rows) <= 1:
+            message = "At least one Rebar Template must remain."
+        else:
+            rows = [row for row in rows if str(row.get("Template ID") or "") != selected_id]
+            st.session_state[CB_RB_ACTIVE_TEMPLATE_KEY] = str(rows[0].get("Template ID") or "")
+            st.session_state[CB_RB_TEMPLATE_DELETE_CONFIRM_KEY] = False
+            message = f"Deleted {selected_id}."
+    rows = canonical_rebar_templates(rows)
+    st.session_state[CB_RB_TEMPLATE_ROWS_KEY] = rows
+    st.session_state[CB_RB_TEMPLATE_REV_KEY] = int(st.session_state.get(CB_RB_TEMPLATE_REV_KEY, 0)) + 1
+    return rows, message
+
+
 def _auto_layout_summary(template: Mapping[str, Any]) -> str:
     parts: list[str] = []
     if bool(template.get("Outer face bars")):
-        parts.append(
-            f"Outer {template.get('Outer bar size', '')}@{float(template.get('Outer target spacing mm') or 0.0):.0f}"
+        outer_method = str(template.get("Outer layout method") or "By target spacing")
+        outer_basis = (
+            f"{int(template.get('Outer exact bar count') or 0)} bars"
+            if outer_method == "By exact bar count"
+            else f"@{float(template.get('Outer target spacing mm') or 0.0):.0f}"
         )
+        parts.append(f"Outer {template.get('Outer bar size', '')} {outer_basis}")
     if bool(template.get("Inner face bars")):
-        parts.append(
-            f"Inner {template.get('Inner bar size', '')}@{float(template.get('Inner target spacing mm') or 0.0):.0f}"
+        inner_method = str(template.get("Inner layout method") or "By target spacing")
+        inner_basis = (
+            f"{int(template.get('Inner exact bar count') or 0)} bars"
+            if inner_method == "By exact bar count"
+            else f"@{float(template.get('Inner target spacing mm') or 0.0):.0f}"
         )
+        parts.append(f"Inner {template.get('Inner bar size', '')} {inner_basis}")
     return " · ".join(parts) if parts else "Layout OFF"
-
 
 def _adopted_reinforcement_summary(template: Mapping[str, Any]) -> str:
     top = float(template.get("Top As mm²") or 0.0)
@@ -302,22 +371,28 @@ def _adopted_reinforcement_summary(template: Mapping[str, Any]) -> str:
     return f"T/B/S {top:.0f}/{bottom:.0f}/{side:.0f} · Av/s {avs:.4f}"
 
 
-def _render_template_library(template_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _render_template_library(
+    template_rows: list[dict[str, Any]],
+    zone_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     st.markdown("### Rebar Template Library")
     st.caption(
-        "Select one template and edit it below. The summary table is intentionally compact so every column remains visible without horizontal scrolling."
+        "Create, duplicate, edit, or remove project templates. The compact summary remains read-only so every column stays visible without horizontal scrolling."
     )
-    if st.button("Reset Crossbeam rebar templates", key="crossbeam_rb1_reset_templates"):
-        st.session_state[CB_RB_TEMPLATE_ROWS_KEY] = default_crossbeam_rebar_templates()
-        st.session_state[CB_RB_TEMPLATE_REV_KEY] = int(st.session_state.get(CB_RB_TEMPLATE_REV_KEY, 0)) + 1
-        st.session_state.pop(CB_RB_ACTIVE_TEMPLATE_KEY, None)
-        st.rerun()
 
     rows = canonical_rebar_templates(template_rows)
+    rows, action_message = _apply_pending_template_action(rows, zone_rows)
+    if action_message:
+        if action_message.startswith("Cannot") or action_message.startswith("At least"):
+            st.warning(action_message)
+        else:
+            st.success(action_message)
+
     template_ids = [str(row.get("Template ID") or "") for row in rows]
     if not template_ids:
-        st.warning("No Crossbeam Rebar Template is available. Reset the template library.")
-        return rows
+        rows = default_crossbeam_rebar_templates()
+        template_ids = [str(row.get("Template ID") or "") for row in rows]
+        st.session_state[CB_RB_TEMPLATE_ROWS_KEY] = rows
     current = str(st.session_state.get(CB_RB_ACTIVE_TEMPLATE_KEY) or template_ids[0])
     if current not in template_ids:
         st.session_state[CB_RB_ACTIVE_TEMPLATE_KEY] = template_ids[0]
@@ -327,6 +402,21 @@ def _render_template_library(template_rows: list[dict[str, Any]]) -> list[dict[s
         format_func=lambda value: f"{value} · {next((row.get('Template name', '') for row in rows if row.get('Template ID') == value), '')}",
         key=CB_RB_ACTIVE_TEMPLATE_KEY,
     )
+
+    used_by = sorted(
+        str(zone.get("Zone ID") or "")
+        for zone in canonical_rebar_zones(zone_rows)
+        if str(zone.get("Rebar template") or "") == selected_id
+    )
+    action_cols = st.columns([0.23, 0.23, 0.23, 0.31], gap="small")
+    with action_cols[0]:
+        st.button("Duplicate selected", use_container_width=True, key="crossbeam_rb2b_duplicate", on_click=_queue_template_action, args=("duplicate", selected_id))
+    with action_cols[1]:
+        st.button("New Hollow", use_container_width=True, key="crossbeam_rb2b_new_hollow", on_click=_queue_template_action, args=("new_hollow", selected_id))
+    with action_cols[2]:
+        st.button("New Solid", use_container_width=True, key="crossbeam_rb2b_new_solid", on_click=_queue_template_action, args=("new_solid", selected_id))
+    with action_cols[3]:
+        st.caption("Assigned zones: " + (", ".join(used_by) if used_by else "None"))
 
     summary_rows = [
         {
@@ -341,13 +431,12 @@ def _render_template_library(template_rows: list[dict[str, Any]]) -> list[dict[s
     ]
     st.dataframe(
         pd.DataFrame(summary_rows),
-        use_container_width=True,
-        hide_index=True,
+        use_container_width=True, hide_index=True,
         column_config={
             "Template": st.column_config.TextColumn(width="small"),
             "Role": st.column_config.TextColumn(width="small"),
             "Construction": st.column_config.TextColumn(width="medium"),
-            "Auto layout": st.column_config.TextColumn(width="medium"),
+            "Auto layout": st.column_config.TextColumn(width="large"),
             "Adopted reinforcement": st.column_config.TextColumn(width="medium"),
             "Status": st.column_config.TextColumn(width="small"),
         },
@@ -356,139 +445,113 @@ def _render_template_library(template_rows: list[dict[str, Any]]) -> list[dict[s
     index = template_ids.index(selected_id)
     selected = dict(rows[index])
     st.markdown(f"#### Edit Selected Template — `{selected_id}`")
-    st.caption(str(selected.get("Template name") or selected_id))
+    st.caption("Changes are stored immediately in the current app session; the stable Template ID is used by Segment / Zone assignments.")
 
     identity_1, identity_2, identity_3 = st.columns([0.46, 0.24, 0.30], gap="medium")
     with identity_1:
-        selected["Template name"] = st.text_input(
-            "Template name",
-            value=str(selected.get("Template name") or ""),
-            key=f"crossbeam_rb2a_template_name_{selected_id}",
-        )
+        selected["Template name"] = st.text_input("Template name", value=str(selected.get("Template name") or ""), key=f"crossbeam_rb2b_template_name_{selected_id}")
     with identity_2:
         selected["Applicable role"] = st.selectbox(
-            "Applicable role",
-            options=list(TEMPLATE_ROLE_OPTIONS),
+            "Applicable role", options=list(TEMPLATE_ROLE_OPTIONS),
             index=list(TEMPLATE_ROLE_OPTIONS).index(str(selected.get("Applicable role") or "Any")),
-            key=f"crossbeam_rb2a_template_role_{selected_id}",
+            key=f"crossbeam_rb2b_template_role_{selected_id}",
         )
     with identity_3:
         selected["Construction"] = st.selectbox(
-            "Construction",
-            options=list(TEMPLATE_CONSTRUCTION_OPTIONS),
+            "Construction", options=list(TEMPLATE_CONSTRUCTION_OPTIONS),
             index=list(TEMPLATE_CONSTRUCTION_OPTIONS).index(str(selected.get("Construction") or "Project-defined")),
-            key=f"crossbeam_rb2a_template_construction_{selected_id}",
+            key=f"crossbeam_rb2b_template_construction_{selected_id}",
         )
 
     identity_4, identity_5, identity_6, identity_7 = st.columns(4, gap="medium")
     with identity_4:
         selected["Longitudinal basis"] = st.selectbox(
-            "Longitudinal basis",
-            options=list(TEMPLATE_LONGITUDINAL_BASIS_OPTIONS),
+            "Longitudinal basis", options=list(TEMPLATE_LONGITUDINAL_BASIS_OPTIONS),
             index=list(TEMPLATE_LONGITUDINAL_BASIS_OPTIONS).index(str(selected.get("Longitudinal basis") or "Segment-local")),
-            key=f"crossbeam_rb2a_template_basis_{selected_id}",
+            key=f"crossbeam_rb2b_template_basis_{selected_id}",
         )
     with identity_5:
-        selected["fy MPa"] = st.number_input(
-            "fy (MPa)", min_value=0.0, value=float(selected.get("fy MPa") or 390.0), step=10.0,
-            key=f"crossbeam_rb2a_template_fy_{selected_id}",
-        )
+        selected["fy MPa"] = st.number_input("fy (MPa)", min_value=0.0, value=float(selected.get("fy MPa") or 390.0), step=10.0, key=f"crossbeam_rb2b_template_fy_{selected_id}")
     with identity_6:
-        selected["Rebar material"] = st.text_input(
-            "Material", value=str(selected.get("Rebar material") or "SD40"),
-            key=f"crossbeam_rb2a_template_material_{selected_id}",
-        )
+        selected["Rebar material"] = st.text_input("Material", value=str(selected.get("Rebar material") or "SD40"), key=f"crossbeam_rb2b_template_material_{selected_id}")
     with identity_7:
-        selected["Active"] = st.toggle(
-            "Active", value=bool(selected.get("Active")), key=f"crossbeam_rb2a_template_active_{selected_id}"
-        )
-        selected["Credit inside segment"] = st.toggle(
-            "Credit inside zone", value=bool(selected.get("Credit inside segment")),
-            key=f"crossbeam_rb2a_template_credit_{selected_id}",
-        )
+        selected["Active"] = st.toggle("Active", value=bool(selected.get("Active")), key=f"crossbeam_rb2b_template_active_{selected_id}")
+        selected["Credit inside segment"] = st.toggle("Credit inside zone", value=bool(selected.get("Credit inside segment")), key=f"crossbeam_rb2b_template_credit_{selected_id}")
 
     with st.expander("Auto-generated section layout", expanded=True):
-        st.caption(
-            "These controls generate the graphical longitudinal-bar layout. Generated As remains a preview and is not the adopted solver reinforcement."
-        )
-        outer_cols = st.columns([0.18, 0.22, 0.30, 0.30], gap="medium")
+        st.caption("Choose spacing-based generation or an exact perimeter bar count. Generated As remains a graphical preview and is not adopted solver reinforcement.")
+        outer_cols = st.columns([0.14, 0.18, 0.26, 0.20, 0.22], gap="small")
         with outer_cols[0]:
-            selected["Outer face bars"] = st.toggle(
-                "Outer faces", value=bool(selected.get("Outer face bars")), key=f"crossbeam_rb2a_outer_on_{selected_id}"
-            )
+            selected["Outer face bars"] = st.toggle("Outer faces", value=bool(selected.get("Outer face bars")), key=f"crossbeam_rb2b_outer_on_{selected_id}")
         with outer_cols[1]:
-            selected["Outer bar size"] = st.selectbox(
-                "Outer bar", options=list(TEMPLATE_BAR_SIZE_OPTIONS),
-                index=list(TEMPLATE_BAR_SIZE_OPTIONS).index(str(selected.get("Outer bar size") or "DB16")),
-                key=f"crossbeam_rb2a_outer_bar_{selected_id}",
-            )
+            selected["Outer bar size"] = st.selectbox("Outer bar", options=list(TEMPLATE_BAR_SIZE_OPTIONS), index=list(TEMPLATE_BAR_SIZE_OPTIONS).index(str(selected.get("Outer bar size") or "DB16")), key=f"crossbeam_rb2b_outer_bar_{selected_id}")
         with outer_cols[2]:
-            selected["Outer center offset mm"] = st.number_input(
-                "Outer center offset (mm)", min_value=1.0, value=float(selected.get("Outer center offset mm") or 50.0),
-                step=5.0, key=f"crossbeam_rb2a_outer_offset_{selected_id}",
-            )
+            selected["Outer layout method"] = st.selectbox("Outer layout method", options=list(TEMPLATE_LAYOUT_METHOD_OPTIONS), index=list(TEMPLATE_LAYOUT_METHOD_OPTIONS).index(str(selected.get("Outer layout method") or "By target spacing")), key=f"crossbeam_rb2b_outer_method_{selected_id}")
         with outer_cols[3]:
-            selected["Outer target spacing mm"] = st.number_input(
-                "Outer target spacing (mm)", min_value=1.0, value=float(selected.get("Outer target spacing mm") or 150.0),
-                step=10.0, key=f"crossbeam_rb2a_outer_spacing_{selected_id}",
-            )
+            selected["Outer center offset mm"] = st.number_input("Outer offset (mm)", min_value=1.0, value=float(selected.get("Outer center offset mm") or 50.0), step=5.0, key=f"crossbeam_rb2b_outer_offset_{selected_id}")
+        with outer_cols[4]:
+            if selected["Outer layout method"] == "By exact bar count":
+                selected["Outer exact bar count"] = st.number_input("Outer exact bars", min_value=4, value=int(selected.get("Outer exact bar count") or 24), step=1, key=f"crossbeam_rb2b_outer_count_{selected_id}")
+            else:
+                selected["Outer target spacing mm"] = st.number_input("Outer spacing (mm)", min_value=1.0, value=float(selected.get("Outer target spacing mm") or 150.0), step=10.0, key=f"crossbeam_rb2b_outer_spacing_{selected_id}")
 
-        inner_cols = st.columns([0.18, 0.22, 0.30, 0.30], gap="medium")
+        inner_disabled = str(selected.get("Applicable role")) == "Solid"
+        inner_cols = st.columns([0.14, 0.18, 0.26, 0.20, 0.22], gap="small")
         with inner_cols[0]:
-            selected["Inner face bars"] = st.toggle(
-                "Inner faces", value=bool(selected.get("Inner face bars")),
-                disabled=str(selected.get("Applicable role")) == "Solid",
-                key=f"crossbeam_rb2a_inner_on_{selected_id}",
-            )
+            selected["Inner face bars"] = st.toggle("Inner faces", value=bool(selected.get("Inner face bars")), disabled=inner_disabled, key=f"crossbeam_rb2b_inner_on_{selected_id}")
         with inner_cols[1]:
-            selected["Inner bar size"] = st.selectbox(
-                "Inner bar", options=list(TEMPLATE_BAR_SIZE_OPTIONS),
-                index=list(TEMPLATE_BAR_SIZE_OPTIONS).index(str(selected.get("Inner bar size") or "DB16")),
-                key=f"crossbeam_rb2a_inner_bar_{selected_id}",
-            )
+            selected["Inner bar size"] = st.selectbox("Inner bar", options=list(TEMPLATE_BAR_SIZE_OPTIONS), index=list(TEMPLATE_BAR_SIZE_OPTIONS).index(str(selected.get("Inner bar size") or "DB16")), disabled=inner_disabled, key=f"crossbeam_rb2b_inner_bar_{selected_id}")
         with inner_cols[2]:
-            selected["Inner center offset mm"] = st.number_input(
-                "Inner center offset (mm)", min_value=1.0, value=float(selected.get("Inner center offset mm") or 50.0),
-                step=5.0, key=f"crossbeam_rb2a_inner_offset_{selected_id}",
-            )
+            selected["Inner layout method"] = st.selectbox("Inner layout method", options=list(TEMPLATE_LAYOUT_METHOD_OPTIONS), index=list(TEMPLATE_LAYOUT_METHOD_OPTIONS).index(str(selected.get("Inner layout method") or "By target spacing")), disabled=inner_disabled, key=f"crossbeam_rb2b_inner_method_{selected_id}")
         with inner_cols[3]:
-            selected["Inner target spacing mm"] = st.number_input(
-                "Inner target spacing (mm)", min_value=1.0, value=float(selected.get("Inner target spacing mm") or 150.0),
-                step=10.0, key=f"crossbeam_rb2a_inner_spacing_{selected_id}",
-            )
+            selected["Inner center offset mm"] = st.number_input("Inner offset (mm)", min_value=1.0, value=float(selected.get("Inner center offset mm") or 50.0), step=5.0, disabled=inner_disabled, key=f"crossbeam_rb2b_inner_offset_{selected_id}")
+        with inner_cols[4]:
+            if selected["Inner layout method"] == "By exact bar count":
+                selected["Inner exact bar count"] = st.number_input("Inner exact bars", min_value=4, value=int(selected.get("Inner exact bar count") or 16), step=1, disabled=inner_disabled, key=f"crossbeam_rb2b_inner_count_{selected_id}")
+            else:
+                selected["Inner target spacing mm"] = st.number_input("Inner spacing (mm)", min_value=1.0, value=float(selected.get("Inner target spacing mm") or 150.0), step=10.0, disabled=inner_disabled, key=f"crossbeam_rb2b_inner_spacing_{selected_id}")
 
     with st.expander("Adopted provided reinforcement", expanded=False):
-        st.caption(
-            "Enter actual project reinforcement only. These adopted quantities stay separate from the auto-generated graphical layout until an explicit future solver handoff."
-        )
+        st.caption("Enter actual project reinforcement only. These quantities remain separate from the auto-generated graphical layout until a future explicit solver handoff.")
         qcols = st.columns(4, gap="medium")
-        labels = (("Top As mm²", "Top As (mm²)", "%.1f"), ("Bottom As mm²", "Bottom As (mm²)", "%.1f"),
-                  ("Side As mm²", "Side As (mm²)", "%.1f"), ("Av/s mm²/mm", "Av/s (mm²/mm)", "%.4f"))
-        for col, (field, label, _fmt) in zip(qcols, labels):
+        labels = (("Top As mm²", "Top As (mm²)"), ("Bottom As mm²", "Bottom As (mm²)"), ("Side As mm²", "Side As (mm²)"), ("Av/s mm²/mm", "Av/s (mm²/mm)"))
+        for col, (field, label) in zip(qcols, labels):
             with col:
                 step = 0.01 if field == "Av/s mm²/mm" else 100.0
-                selected[field] = st.number_input(
-                    label, min_value=0.0, value=float(selected.get(field) or 0.0), step=step,
-                    key=f"crossbeam_rb2a_{field}_{selected_id}",
-                )
+                selected[field] = st.number_input(label, min_value=0.0, value=float(selected.get(field) or 0.0), step=step, key=f"crossbeam_rb2b_{field}_{selected_id}")
 
-    selected["Notes"] = st.text_area(
-        "Template notes", value=str(selected.get("Notes") or ""), height=80, key=f"crossbeam_rb2a_template_notes_{selected_id}"
-    )
+    selected["Notes"] = st.text_area("Template notes", value=str(selected.get("Notes") or ""), height=80, key=f"crossbeam_rb2b_template_notes_{selected_id}")
     rows[index] = canonical_rebar_templates([selected])[0]
     st.session_state[CB_RB_TEMPLATE_ROWS_KEY] = rows
 
-    duplicate_ids = sorted(
-        template_id for template_id in set(template_ids) if template_id and template_ids.count(template_id) > 1
-    )
+    delete_cols = st.columns([0.70, 0.15, 0.15], gap="small")
+    with delete_cols[0]:
+        if used_by:
+            st.caption(f"Delete blocked: {selected_id} is assigned to {', '.join(used_by)}. Reassign those zones first.")
+        else:
+            st.caption("Delete is available because this template is not assigned to any zone.")
+    with delete_cols[1]:
+        confirmed = st.checkbox("Confirm delete", key=f"{CB_RB_TEMPLATE_DELETE_CONFIRM_KEY}_{selected_id}", disabled=bool(used_by) or len(rows) <= 1)
+    with delete_cols[2]:
+        st.button("Delete template", use_container_width=True, disabled=not confirmed or bool(used_by) or len(rows) <= 1, key="crossbeam_rb2b_delete_template", on_click=_queue_template_action, args=("delete", selected_id))
+
+    with st.expander("Reset Rebar Template Library", expanded=False):
+        st.warning("Reset replaces all current project templates with the three default Crossbeam templates. Existing zone assignments must be reviewed afterward.")
+        reset_confirmed = st.checkbox("Confirm reset of all Rebar Templates", key="crossbeam_rb2b_reset_confirm")
+        st.button(
+            "Reset to Crossbeam defaults",
+            type="secondary",
+            disabled=not reset_confirmed,
+            key="crossbeam_rb2b_reset_templates",
+            on_click=_queue_template_action,
+            args=("reset", selected_id),
+        )
+
+    duplicate_ids = sorted(template_id for template_id in set(template_ids) if template_id and template_ids.count(template_id) > 1)
     if duplicate_ids:
         st.error("Duplicate Rebar Template IDs: " + ", ".join(duplicate_ids))
-    st.info(
-        f"{RB_HOLLOW_MIN}: factory-cast Hollow minimum/detailing steel · "
-        f"{RB_SOLID_COLUMN}: cast-in-place Solid column-region steel · "
-        f"{RB_SOLID_ANCHORAGE}: local anchorage/D-region steel, not global section-strength credit."
-    )
     return rows
+
 
 def _render_zone_assignment(
     segment_rows: list[dict[str, Any]],
@@ -766,7 +829,9 @@ def _render_section_rebar_preview(
         outer_result = generate_perimeter_rebar_layout(
             geometry, bar_size=outer_size, diameter_mm=rebar_diameter_mm(outer_size), material=material,
             edge_offset_mm=float(template.get("Outer center offset mm") or 50.0),
-            target_spacing_mm=float(template.get("Outer target spacing mm") or 150.0), min_bars=4, label_prefix="O",
+            target_spacing_mm=float(template.get("Outer target spacing mm") or 150.0), min_bars=4,
+            exact_bar_count=(int(template.get("Outer exact bar count") or 0) if str(template.get("Outer layout method")) == "By exact bar count" else None),
+            label_prefix="O",
         )
     inner_result = PerimeterRebarLayoutResult(table=pd.DataFrame())
     if role == "Hollow" and bool(template.get("Inner face bars")):
@@ -774,7 +839,9 @@ def _render_section_rebar_preview(
         inner_result = generate_inner_face_rebar_layout(
             geometry, hole_index=0, bar_size=inner_size, diameter_mm=rebar_diameter_mm(inner_size), material=material,
             edge_offset_mm=float(template.get("Inner center offset mm") or 50.0),
-            target_spacing_mm=float(template.get("Inner target spacing mm") or 150.0), min_bars=4, label_prefix="I",
+            target_spacing_mm=float(template.get("Inner target spacing mm") or 150.0), min_bars=4,
+            exact_bar_count=(int(template.get("Inner exact bar count") or 0) if str(template.get("Inner layout method")) == "By exact bar count" else None),
+            label_prefix="I",
         )
 
     outer_rebars = _result_rebars(outer_result, layer="Outer") if outer_result.ok else []
@@ -912,7 +979,7 @@ def render_crossbeam_rebar_page() -> None:
     active_view = _render_rb2_subnavigation()
 
     if active_view == "Templates":
-        template_rows = _render_template_library(template_rows)
+        template_rows = _render_template_library(template_rows, zone_rows)
         active_templates = template_map(template_rows)
         quantity_defined = sum(_template_quantity_defined(row) for row in active_templates.values())
         render_metric_cards(
