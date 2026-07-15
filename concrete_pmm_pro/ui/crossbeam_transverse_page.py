@@ -453,29 +453,93 @@ def transverse_cross_section_figure(
     return fig
 
 
-def transverse_elevation_figure(
-    template: Mapping[str, Any],
+def transverse_full_elevation_figure(
+    segment_rows: list[dict[str, Any]],
+    zone_rows: list[dict[str, Any]],
+    transverse_template_rows: list[dict[str, Any]],
     *,
-    start_m: float,
-    end_m: float,
-    segment_id: str,
-    zone_id: str,
+    selected_zone_id: str = "",
 ) -> go.Figure:
-    row = canonical_transverse_templates([dict(template)])[0]
-    stations = transverse_set_stations(row, start_m, end_m)
+    segments = sorted(segment_rows, key=lambda item: float(item.get("x_start_m") or 0.0))
+    zones = canonical_rebar_zones(zone_rows)
+    template_by_id = transverse_template_map(transverse_template_rows)
+    length_m = max((float(row.get("x_end_m") or 0.0) for row in segments), default=0.0)
+
     fig = go.Figure()
-    fig.add_shape(type="rect", x0=start_m, x1=end_m, y0=0.0, y1=1.0, line={"color":"#526b82","width":1.2}, fillcolor="rgba(120,140,160,0.22)")
-    for station in stations:
-        fig.add_trace(go.Scatter(x=[station,station], y=[0.08,0.92], mode="lines", line={"color":"#d97706","width":2}, showlegend=False, hovertemplate=f"s={station:.3f} m<extra></extra>"))
-    fig.add_vline(x=start_m, line={"color":"#b44444","width":1.5,"dash":"dash"})
-    fig.add_vline(x=end_m, line={"color":"#b44444","width":1.5,"dash":"dash"})
-    fig.add_trace(go.Scatter(x=[None,None],y=[None,None],mode="lines",line={"color":"#d97706","width":2},name="Transverse set",hoverinfo="skip"))
+    height = 1.0
+    fills = {"Solid": "rgba(120,140,160,0.52)", "Hollow": "rgba(120,140,160,0.22)"}
+    outlines = {"Solid": "#3d556b", "Hollow": "#607d94"}
+    selected_zone_fill = "rgba(31,111,178,0.10)"
+    selected_zone_outline = "#1f6fb2"
+    transverse_line = "#d97706"
+    transverse_line_muted = "rgba(217,119,6,0.65)"
+
+    fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker={"symbol":"square","size":14,"color":fills["Solid"],"line":{"color":outlines["Solid"],"width":1}}, name="Solid segment", hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker={"symbol":"square","size":14,"color":fills["Hollow"],"line":{"color":outlines["Hollow"],"width":1}}, name="Hollow segment", hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=[None,None], y=[None,None], mode="lines", line={"color":outlines["Hollow"],"width":1.5,"dash":"dash"}, name="Hidden void boundary", hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=[None,None], y=[None,None], mode="lines", line={"color":transverse_line,"width":2}, name="Transverse set", hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=[None,None], y=[None,None], mode="lines", line={"color":selected_zone_outline,"width":5}, name="Selected zone", hoverinfo="skip"))
+
+    segment_by_id = {str(row.get("Segment") or ""): row for row in segments}
+    for row in segments:
+        start = float(row.get("x_start_m") or 0.0)
+        end = float(row.get("x_end_m") or start)
+        role = str(row.get("Section role") or "Solid")
+        section_id = str(row.get("Section ID") or "")
+        section_name = str(row.get("Section name") or "")
+        fig.add_shape(type="rect", x0=start, x1=end, y0=0.0, y1=height, fillcolor=fills.get(role, "rgba(160,160,160,0.20)"), line={"color": outlines.get(role, "#555"), "width": 1.5}, layer="below")
+        if role == "Hollow":
+            fig.add_shape(type="rect", x0=start, x1=end, y0=0.25, y1=0.75, fillcolor="rgba(0,0,0,0)", line={"color": outlines["Hollow"], "width": 1.4, "dash": "dash"}, layer="below")
+        fig.add_annotation(x=(start+end)/2.0, y=0.53, text=f"<b>{row.get('Segment','')} · {section_id}</b><br>{role}", showarrow=False, font={"size":11, "color":"#17324d"})
+        fig.add_annotation(x=(start+end)/2.0, y=-0.12, text=f"{end-start:.3f} m", showarrow=False, font={"size":10, "color":"#526577"})
+        fig.add_trace(go.Scatter(x=[start, end, end, start, start], y=[0.0,0.0,height,height,0.0], mode="lines", line={"color": "rgba(0,0,0,0)", "width": 0}, fill="toself", fillcolor="rgba(0,0,0,0.001)", hoveron="fills", name=f"{row.get('Segment','')} hover", showlegend=False, hovertemplate=(f"<b>{row.get('Segment','')} · {section_id} · {role}</b><br>Section: {section_name}<br>Station: {start:.3f}–{end:.3f} m<br>Length: {end-start:.3f} m<extra></extra>")))
+
+    zone_sorted = sorted(zones, key=lambda item: (float(item.get("s_start_m") or 0.0), float(item.get("s_end_m") or 0.0), str(item.get("Zone ID") or "")))
+    for zone in zone_sorted:
+        zone_id = str(zone.get("Zone ID") or "")
+        template_id = str(zone.get("Transverse template") or "")
+        template = template_by_id.get(template_id)
+        if template is None:
+            continue
+        start_m = float(zone.get("s_start_m") or 0.0)
+        end_m = float(zone.get("s_end_m") or start_m)
+        segment_id = str(zone.get("Segment") or "")
+        stations = transverse_set_stations(template, start_m, end_m)
+        is_selected = zone_id == selected_zone_id
+        line_color = transverse_line if is_selected else transverse_line_muted
+        line_width = 2.2 if is_selected else 1.5
+        if is_selected:
+            fig.add_shape(type="rect", x0=start_m, x1=end_m, y0=-0.02, y1=1.02, fillcolor=selected_zone_fill, line={"color": selected_zone_outline, "width": 1.4}, layer="below")
+        hover_text = (
+            f"<b>{zone_id} · {segment_id}</b><br>"
+            f"Template: {template_id}<br>"
+            f"Bar / spacing: {template.get('Bar size','')} @ {float(template.get('Spacing mm') or 0.0):.0f} mm<br>"
+            f"Zone: {start_m:.3f}–{end_m:.3f} m<br>"
+            f"Offsets: {float(template.get('First bar offset mm') or 0.0):.0f}/{float(template.get('Last bar offset mm') or 0.0):.0f} mm<br>"
+            f"Sets in zone: {len(stations)}<extra></extra>"
+        )
+        fig.add_trace(go.Scatter(x=[start_m, end_m, end_m, start_m, start_m], y=[0.0,0.0,height,height,0.0], mode="lines", line={"color":"rgba(0,0,0,0)", "width":0}, fill="toself", fillcolor="rgba(0,0,0,0.001)", hoveron="fills", name=f"{zone_id} hover", showlegend=False, hovertemplate=hover_text))
+        for station in stations:
+            fig.add_trace(go.Scatter(x=[station, station], y=[0.08, 0.92], mode="lines", line={"color": line_color, "width": line_width}, showlegend=False, hovertemplate=(f"<b>{zone_id}</b><br>{template_id}<br>s={station:.3f} m<extra></extra>")))
+
+    for station in sorted({0.0, length_m, *[float(row.get("x_start_m") or 0.0) for row in segments], *[float(row.get("x_end_m") or 0.0) for row in segments]}):
+        fig.add_shape(type="line", x0=station, x1=station, y0=-0.02, y1=1.04, line={"color":"#9b1c31","width":1})
+
+    fig.add_trace(go.Scatter(x=[0.0, length_m], y=[0.5, 0.5], mode="markers", marker={"symbol": ["triangle-right", "triangle-left"], "size": 13, "color": "#1f6fb2"}, text=["Left anchorage", "Right anchorage"], name="Anchorage heads", showlegend=False, hovertemplate="%{text}<extra></extra>"))
+    if length_m > 0:
+        fig.add_annotation(x=0.0, y=0.5, text="<b>Left anchorage</b>", showarrow=True, arrowhead=2, arrowsize=0.8, arrowwidth=1.2, arrowcolor="#1f6fb2", ax=44, ay=-54, bgcolor="rgba(255,255,255,0.92)", bordercolor="#c8d6e3", borderwidth=1, font={"size": 10, "color": "#17324d"})
+        fig.add_annotation(x=length_m, y=0.5, text="<b>Right anchorage</b>", showarrow=True, arrowhead=2, arrowsize=0.8, arrowwidth=1.2, arrowcolor="#1f6fb2", ax=-44, ay=-54, bgcolor="rgba(255,255,255,0.92)", bordercolor="#c8d6e3", borderwidth=1, font={"size": 10, "color": "#17324d"})
+
     fig.update_layout(
-        title={"text":f"Transverse Reinforcement Elevation — {segment_id} / {zone_id}","x":0.5,"xanchor":"center"},
-        height=320, margin={"l":55,"r":25,"t":70,"b":55}, paper_bgcolor="white", plot_bgcolor="white",
-        xaxis={"title":"Station s (m)","range":[start_m-0.02*max(end_m-start_m,1),end_m+0.02*max(end_m-start_m,1)],"gridcolor":"#e7edf4"},
-        yaxis={"title":"Schematic","range":[-0.05,1.05],"showticklabels":False,"showgrid":False},
-        legend={"orientation":"h","yanchor":"bottom","y":1.02,"xanchor":"center","x":0.5},
+        title={"text":"Crossbeam Transverse Reinforcement Elevation", "x":0.5, "xanchor":"center"},
+        height=380,
+        margin={"l":72, "r":36, "t":96, "b":64},
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        xaxis={"title":"Station s (m)", "range":[-0.02*max(length_m,1.0), 1.02*max(length_m,1.0)], "gridcolor":"#e7edf4"},
+        yaxis={"title":"Transverse set schematic", "range":[-0.22, 1.28], "showticklabels":False, "showgrid":True, "gridcolor":"#e7edf4"},
+        legend={"orientation":"h", "yanchor":"bottom", "y":1.02, "xanchor":"center", "x":0.5},
+        hovermode="closest",
     )
     return fig
 
@@ -489,6 +553,9 @@ def render_transverse_preview_summary(
     zone_id: str,
     start_m: float,
     end_m: float,
+    segment_rows: list[dict[str, Any]],
+    zone_rows: list[dict[str, Any]],
+    transverse_template_rows: list[dict[str, Any]],
     figure_config: Mapping[str, Any],
 ) -> None:
     row = canonical_transverse_templates([dict(template)])[0]
@@ -502,5 +569,15 @@ def render_transverse_preview_summary(
     ])
     st.plotly_chart(transverse_cross_section_figure(geometry, definition, row, title=f"Transverse Cage Preview — {segment_id} / {zone_id} · {row['Template ID']}"), use_container_width=True, config=dict(figure_config))
     st.caption("Cross-section transverse cage/tie schematic. Longitudinal bars are omitted in this view; no code-minimum, φVn, torsion, confinement, or D-region result is implied.")
-    st.plotly_chart(transverse_elevation_figure(row, start_m=start_m, end_m=end_m, segment_id=segment_id, zone_id=zone_id), use_container_width=True, config=dict(figure_config))
-    st.warning("JOINT SHEAR GUARD — Transverse reinforcement terminates within the selected Segment/Zone and receives no automatic segment-joint shear-transfer credit. Shear keys, interface behavior, tendon clamping, decompression/opening, and joint shear remain separate future checks.")
+    st.plotly_chart(
+        transverse_full_elevation_figure(
+            segment_rows,
+            zone_rows,
+            transverse_template_rows,
+            selected_zone_id=zone_id,
+        ),
+        use_container_width=True,
+        config=dict(figure_config),
+    )
+    st.caption("Full-length transverse reinforcement elevation. Segment boundaries, Solid/Hollow regions, and transverse sets are plotted across the entire crossbeam using each Zone's actual template spacing and first/last offsets; the selected Zone is highlighted.")
+    st.warning("JOINT SHEAR GUARD — Transverse reinforcement remains local to each Segment/Zone and receives no automatic segment-joint shear-transfer credit. Shear keys, interface behavior, tendon clamping, decompression/opening, and joint shear remain separate future checks.")

@@ -1464,6 +1464,9 @@ def _render_section_rebar_preview(
             zone_id=selected_zone_id,
             start_m=float(selected_zone["s_start_m"]),
             end_m=float(selected_zone["s_end_m"]),
+            segment_rows=segment_rows,
+            zone_rows=zone_rows,
+            transverse_template_rows=transverse_template_rows,
             figure_config=FIGURE_CONFIG,
         )
 
