@@ -1,3 +1,9 @@
+### CROSSBEAM.RB2A — Rebar Review Hardening and PT-Continuity Guard
+
+Hardens the Crossbeam rebar review workspace with compact no-scroll tables, selected-template editing, separate generated/adopted reinforcement, enhanced bar markers, and an explicit PT-continuity-required/not-verified guard while leaving all existing solvers unchanged.
+
+See `README_CROSSBEAM_RB2A.md`.
+
 ### CROSSBEAM.RB2 — Segment Section Rebar Preview and Subnavigation Polish
 
 Adds Crossbeam-only segment/zone section rebar figures with Solid outer-perimeter and Hollow outer/inner-face layouts, clearer template controls, and separated button navigation while keeping ordinary-rebar joint crossing locked at zero and all existing solvers unchanged.

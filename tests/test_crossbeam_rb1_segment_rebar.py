@@ -40,14 +40,15 @@ def test_rb1_default_zone_assignment_follows_segment_role_and_covers_each_segmen
         assert zone["Rebar template"] == expected
 
 
-def test_rb1_joint_rule_is_locked_to_zero_ordinary_rebar_and_tendons_only():
+def test_rb2a_joint_rule_locks_zero_ordinary_rebar_and_guards_unverified_pt_continuity():
     segments = default_crossbeam_segment_rows(20.0)
     joints = segment_joint_audit_rows(segments)
     assert len(joints) == len(segments) - 1
     assert {row["Ordinary rebar crossing joint"] for row in joints} == {"0 mm² (LOCKED)"}
     assert {row["Ordinary rebar strength credit"] for row in joints} == {"None"}
-    assert {row["Global continuity system"] for row in joints} == {"Post-tensioning tendons only"}
-    assert {row["Status"] for row in joints} == {"LOCKED"}
+    assert {row["Global continuity system"] for row in joints} == {"PT continuity required — not verified"}
+    assert {row["Tendon continuity"] for row in joints} == {"REQUIRED — NOT VERIFIED"}
+    assert {row["Status"] for row in joints} == {"REVIEW REQUIRED"}
 
 
 def test_rb1_station_audit_distinguishes_interior_from_joint_planes():
@@ -60,7 +61,8 @@ def test_rb1_station_audit_distinguishes_interior_from_joint_planes():
     assert len(joint_rows) == len(segments) - 1
     assert len(interior_rows) == len(segments)
     assert all(row["Ordinary rebar across joints"] == "0 mm² (LOCKED)" for row in joint_rows)
-    assert all(row["Status"] == "TENDONS ONLY" for row in joint_rows)
+    assert all(row["Tendon continuity"] == "REQUIRED — NOT VERIFIED" for row in joint_rows)
+    assert all(row["Status"] == "REVIEW REQUIRED" for row in joint_rows)
 
 
 def test_rb1_elevation_stops_rebar_traces_at_zone_boundaries_and_marks_joints():
@@ -69,7 +71,7 @@ def test_rb1_elevation_stops_rebar_traces_at_zone_boundaries_and_marks_joints():
     zones = default_crossbeam_rebar_zones(segments)
     fig = _rebar_elevation_figure(segments, zones, templates, 20.0)
     annotations = [str(item.text) for item in fig.layout.annotations]
-    assert annotations.count("<b>Ord. rebar = 0</b><br>Tendons only") == len(segments) - 1
+    assert annotations.count("<b>Ord. rebar = 0</b><br>PT not verified") == len(segments) - 1
     zone_traces = [trace for trace in fig.data if str(trace.name).endswith(" rebar") and trace.showlegend is False]
     assert zone_traces
     joint_stations = {float(row["x_end_m"]) for row in segments[:-1]}

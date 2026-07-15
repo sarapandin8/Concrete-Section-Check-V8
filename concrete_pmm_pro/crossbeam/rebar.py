@@ -4,8 +4,9 @@ CROSSBEAM.RB1 introduced workflow-scoped template/zone inputs and the accepted
 construction rule that no ordinary rebar crosses a segment joint.  RB2 adds
 template-level outer/inner-face auto-layout controls and graphical section
 preview data while remaining intentionally disconnected from every ULS/SLS
-solver.  Global continuity at every joint is provided by post-tensioning
-tendons only.
+solver. RB2A preserves the locked zero ordinary-rebar crossing rule while
+explicitly treating post-tensioning continuity as required but not verified
+until the Tendon System/Profile audit is connected.
 """
 
 from __future__ import annotations
@@ -333,10 +334,12 @@ def validate_rebar_zones(
 
 
 def segment_joint_audit_rows(segment_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return locked joint-participation rows.
+    """Return locked ordinary-rebar and guarded tendon-continuity rows.
 
-    Ordinary reinforcement crossing every segment joint is fixed at zero.  This
-    is not a user-selectable assumption for the accepted Crossbeam workflow.
+    Ordinary reinforcement crossing every segment joint is fixed at zero.
+    Post-tensioning continuity is an engineering requirement, but RB2A does not
+    claim that tendon geometry or active tendon area has already been verified
+    across each joint.
     """
 
     ordered = sorted(segment_rows, key=lambda item: _float(item.get("x_start_m"), 0.0))
@@ -349,8 +352,9 @@ def segment_joint_audit_rows(segment_rows: list[dict[str, Any]]) -> list[dict[st
                 "s (m)": station,
                 "Ordinary rebar crossing joint": "0 mm² (LOCKED)",
                 "Ordinary rebar strength credit": "None",
-                "Global continuity system": "Post-tensioning tendons only",
-                "Status": "LOCKED",
+                "Global continuity system": "PT continuity required — not verified",
+                "Tendon continuity": "REQUIRED — NOT VERIFIED",
+                "Status": "REVIEW REQUIRED",
             }
         )
     return joints
@@ -392,7 +396,8 @@ def station_rebar_audit_rows(
             "Active template": "None across joint",
             "Ordinary rebar credited locally": "No",
             "Ordinary rebar across joints": "0 mm² (LOCKED)",
-            "Status": "TENDONS ONLY",
+            "Tendon continuity": "REQUIRED — NOT VERIFIED",
+            "Status": "REVIEW REQUIRED",
         }
         for row in segment_joint_audit_rows(segment_rows)
     )
