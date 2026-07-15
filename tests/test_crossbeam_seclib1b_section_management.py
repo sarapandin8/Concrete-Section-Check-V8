@@ -24,7 +24,7 @@ def test_summary_rows_show_every_project_section_geometry_and_usage() -> None:
 
     assert [row["Section ID"] for row in rows] == [DEFAULT_SOLID_SECTION_ID, DEFAULT_HOLLOW_SECTION_ID]
     hollow = next(row for row in rows if row["Section ID"] == DEFAULT_HOLLOW_SECTION_ID)
-    assert hollow["Active"] == "●"
+    assert "Active" not in hollow
     assert hollow["Family"] == "Hollow"
     assert hollow["B × H"] == "2500 × 1500 mm"
     assert "tt/tb = 300/350 mm" in hollow["Geometry summary"]
@@ -61,7 +61,7 @@ def test_seclib1b_surfaces_summary_rename_delete_and_keeps_id_advanced() -> None
 
     assert '"#### Project Section Summary"' in source
     assert '"#### Manage Selected Section"' in source
-    assert '"Save name"' in source
+    assert '"Save section name"' in source
     assert '"Delete selected section"' in source
     assert '"Advanced Section ID management"' in source
     assert "assigned sections cannot be removed" in source

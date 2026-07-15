@@ -38,6 +38,10 @@ CB_SEGMENT_ROWS_KEY = "crossbeam_ui1_segment_layout_rows"
 CB_SEGMENT_REV_KEY = "crossbeam_ui1_segment_editor_revision"
 CB_SECLIB_PENDING_ACTIVE_ID_KEY = "crossbeam_seclib1_pending_active_section_id"
 CB_SECLIB_NOTICE_KEY = "crossbeam_seclib1_notice"
+CB_SECLIB_NAME_INPUT_PREFIX = "crossbeam_seclib1d_name_input"
+CB_SECLIB_NAME_SUGGESTION_PREFIX = "crossbeam_seclib1d_name_suggestion"
+CB_SECLIB_NAME_SOURCE_PREFIX = "crossbeam_seclib1d_name_source"
+CUSTOM_SECTION_NAME_OPTION = "Custom project name"
 
 
 def _records(value: Any) -> list[dict[str, Any]]:
@@ -240,7 +244,6 @@ def _project_section_summary_rows(
         segments = list(usage.get(section_id, []))
         rows.append(
             {
-                "Active": "●" if section_id == active_id else "",
                 "Section ID": section_id,
                 "Section name": record["Section name"],
                 "Family": record["Section role"],
@@ -300,21 +303,145 @@ def _selected_section_id_from_summary_event(
     return str(summary_rows[row_index].get("Section ID") or "").strip()
 
 
+def _section_name_suggestions(role: str) -> list[str]:
+    """Return concise project-facing section-name suggestions by geometry role.
+
+    Suggestions accelerate common naming but never constrain the user; the
+    ``Custom project name`` option leaves the free-text field fully editable.
+    """
+
+    if str(role).strip().title() == "Hollow":
+        return [
+            "Hollow typical",
+            "Hollow heavy web",
+            "Hollow near column",
+            "Hollow near anchorage",
+            "Hollow transition",
+            CUSTOM_SECTION_NAME_OPTION,
+        ]
+    return [
+        "Solid column region",
+        "Solid anchorage block",
+        "Solid transition region",
+        "Solid end block",
+        "Solid typical",
+        CUSTOM_SECTION_NAME_OPTION,
+    ]
+
+
+def _name_editor_keys(active_id: str) -> tuple[str, str, str]:
+    safe_id = str(active_id).replace(" ", "_")
+    return (
+        f"{CB_SECLIB_NAME_INPUT_PREFIX}_{safe_id}",
+        f"{CB_SECLIB_NAME_SUGGESTION_PREFIX}_{safe_id}",
+        f"{CB_SECLIB_NAME_SOURCE_PREFIX}_{safe_id}",
+    )
+
+
+def _matching_name_suggestion(section_name: str, suggestions: list[str]) -> str:
+    target = str(section_name or "").strip().casefold()
+    for option in suggestions:
+        if option != CUSTOM_SECTION_NAME_OPTION and option.casefold() == target:
+            return option
+    return CUSTOM_SECTION_NAME_OPTION
+
+
+def _prepare_name_editor_state(active: Mapping[str, Any]) -> tuple[str, str]:
+    """Synchronize name-editor widget state before widget instantiation."""
+
+    active_id = str(active["Section ID"])
+    current_name = str(active["Section name"])
+    suggestions = _section_name_suggestions(str(active["Section role"]))
+    name_key, suggestion_key, source_key = _name_editor_keys(active_id)
+    if str(st.session_state.get(source_key) or "") != current_name:
+        st.session_state[name_key] = current_name
+        st.session_state[suggestion_key] = _matching_name_suggestion(current_name, suggestions)
+        st.session_state[source_key] = current_name
+    else:
+        st.session_state.setdefault(name_key, current_name)
+        st.session_state.setdefault(suggestion_key, _matching_name_suggestion(current_name, suggestions))
+    return name_key, suggestion_key
+
+
+def _apply_section_name_suggestion(active_id: str) -> None:
+    """Populate the free-text name from a quick suggestion before rerun."""
+
+    name_key, suggestion_key, _source_key = _name_editor_keys(active_id)
+    selected = str(st.session_state.get(suggestion_key) or "")
+    if selected and selected != CUSTOM_SECTION_NAME_OPTION:
+        st.session_state[name_key] = selected
+
+
+def _style_project_section_summary(
+    summary_rows: list[dict[str, Any]],
+    active_id: str,
+) -> pd.io.formats.style.Styler:
+    """Highlight the current Section ID without a redundant Active column."""
+
+    frame = pd.DataFrame(summary_rows)
+
+    def _highlight(row: pd.Series) -> list[str]:
+        active = str(row.get("Section ID") or "") == str(active_id)
+        style = "background-color: #eaf4ff; font-weight: 600;" if active else ""
+        return [style] * len(row)
+
+    return frame.style.apply(_highlight, axis=1)
+
+
+def _conflicting_section_name_ids(
+    definitions: list[dict[str, Any]],
+    active_id: str,
+    proposed_name: str,
+) -> list[str]:
+    target = str(proposed_name or "").strip().casefold()
+    if not target:
+        return []
+    return [
+        str(row["Section ID"])
+        for row in canonical_section_definitions(definitions)
+        if str(row["Section ID"]) != str(active_id)
+        and str(row["Section name"]).strip().casefold() == target
+    ]
+
+
 def _rename_section_name_form(definitions: list[dict[str, Any]], active_id: str) -> None:
     active = definition_map(definitions)[active_id]
-    with st.form(f"crossbeam_seclib1b_name_{active_id}", border=False):
+    suggestions = _section_name_suggestions(str(active["Section role"]))
+    name_key, suggestion_key = _prepare_name_editor_state(active)
+
+    suggestion_col, note_col = st.columns([0.46, 0.54], gap="small")
+    with suggestion_col:
+        st.selectbox(
+            "Suggested section role / name",
+            options=suggestions,
+            key=suggestion_key,
+            on_change=_apply_section_name_suggestion,
+            args=(active_id,),
+            help="Choose a common project role to fill the name field, or keep Custom project name for unrestricted text.",
+        )
+    with note_col:
+        st.caption(
+            "Suggestions reduce typing but do not control analysis. The Section ID remains the stable internal reference; the name is project-facing and fully editable."
+        )
+
+    with st.form(f"crossbeam_seclib1d_name_{active_id}", border=False):
         name_col, action_col = st.columns([0.78, 0.22], gap="small")
         with name_col:
             proposed_name = st.text_input(
                 "Section name",
-                value=active["Section name"],
-                key=f"crossbeam_seclib1b_name_input_{active_id}",
-                help="A user-facing project name. Section ID remains stable for Segment Layout and Project JSON references.",
+                key=name_key,
+                help="A concise project-facing name. Section ID remains stable for Segment Layout and Project JSON references.",
             )
         with action_col:
             st.write("")
-            save_name = st.form_submit_button("Save name", use_container_width=True, type="primary")
+            save_name = st.form_submit_button("Save section name", use_container_width=True, type="primary")
     if not save_name:
+        return
+    conflicts = _conflicting_section_name_ids(definitions, active_id, proposed_name)
+    if conflicts:
+        st.error(
+            f"Section name is already used by: {', '.join(conflicts)}. Choose a distinct project-facing name."
+        )
         return
     try:
         renamed = rename_definition(
@@ -326,7 +453,9 @@ def _rename_section_name_form(definitions: list[dict[str, Any]], active_id: str)
     except (ValueError, KeyError) as exc:
         st.error(str(exc))
         return
-    _set_definitions(renamed, active_id, notice=f"Renamed {active_id} to {str(proposed_name).strip()}.")
+    clean_name = str(proposed_name).strip()
+    st.session_state[_name_editor_keys(active_id)[2]] = clean_name
+    _set_definitions(renamed, active_id, notice=f"Renamed {active_id} to {clean_name}.")
     st.rerun()
 
 
@@ -428,12 +557,12 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
     select_col, duplicate_col, hollow_col, solid_col = st.columns([0.43, 0.19, 0.19, 0.19], gap="small")
     with select_col:
         selected_active_id = st.selectbox(
-            "Section to edit",
+            "Quick section switch",
             options=ids,
             format_func=lambda section_id: f"{section_id} · {section_map[section_id]['Section name']}",
             key=CB_SECLIB_ACTIVE_ID_KEY,
             on_change=_active_section_changed,
-            help="Geometry and material controls below edit only this project Section ID.",
+            help="Optional quick switch. You can also click any row in Project Section Summary below.",
         )
     active_id = str(selected_active_id)
     active = section_map[active_id]
@@ -485,9 +614,9 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
 
     assigned_segments = usage.get(active_id, [])
     assigned_text = ", ".join(assigned_segments) if assigned_segments else "Not assigned yet"
-    st.caption(
-        f"Editing **{active_id} · {active['Section name']}** · {active['Section role']} · "
-        f"Used by segments: **{assigned_text}**"
+    st.markdown(
+        f"**ACTIVE PROJECT SECTION** · `{active_id}` — **{active['Section name']}** · "
+        f"{active['Section role']} · Segments: **{assigned_text}**"
     )
     st.info(
         "Fast workflow: select a section → **Duplicate current** → rename it below → change the geometry → assign the Section ID in **Segment Layout**. "
@@ -532,21 +661,28 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
 
     st.markdown("#### Project Section Summary")
     st.caption(
-        "Click any row to make that Section ID active. The geometry editor, calculated properties, live preview, and management controls below update together."
+        "Click any row to make it active. The current row is highlighted; geometry, properties, live preview, and management controls update together."
     )
     summary_rows = _project_section_summary_rows(definitions, usage, active_id)
     summary_event = st.dataframe(
-        pd.DataFrame(summary_rows),
+        _style_project_section_summary(summary_rows, active_id),
         use_container_width=True,
         hide_index=True,
         key=f"crossbeam_seclib1c_project_section_summary_{active_id}",
         on_select="rerun",
         selection_mode="single-row",
         column_config={
-            "Area mm²": st.column_config.NumberColumn(format="%.1f"),
-            "Centroid from top mm": st.column_config.NumberColumn(format="%.2f"),
-            "Ix mm⁴": st.column_config.NumberColumn(format="%.3e"),
-            "Iy mm⁴": st.column_config.NumberColumn(format="%.3e"),
+            "Section ID": st.column_config.TextColumn(width="small"),
+            "Section name": st.column_config.TextColumn(width="medium"),
+            "Family": st.column_config.TextColumn(width="small"),
+            "B × H": st.column_config.TextColumn(width="small"),
+            "Geometry summary": st.column_config.TextColumn(width="large"),
+            "Area mm²": st.column_config.NumberColumn(format="%.1f", width="small"),
+            "Centroid from top mm": st.column_config.NumberColumn(format="%.2f", width="small"),
+            "Ix mm⁴": st.column_config.NumberColumn(format="%.3e", width="small"),
+            "Iy mm⁴": st.column_config.NumberColumn(format="%.3e", width="small"),
+            "Segments using": st.column_config.TextColumn(width="medium"),
+            "Status": st.column_config.TextColumn(width="small"),
         },
     )
     selected_from_table = _selected_section_id_from_summary_event(summary_event, summary_rows)

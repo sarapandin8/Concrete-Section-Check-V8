@@ -47,4 +47,4 @@ def test_seclib1c_uses_table_row_selection_and_staged_active_state() -> None:
     assert 'key=f"crossbeam_seclib1c_project_section_summary_{active_id}"' in source
     assert "_selected_section_id_from_summary_event(summary_event, summary_rows)" in source
     assert "_stage_definition_selection(" in source
-    assert "The geometry editor, calculated properties, live preview, and management controls below update together." in source
+    assert "geometry, properties, live preview, and management controls update together." in source

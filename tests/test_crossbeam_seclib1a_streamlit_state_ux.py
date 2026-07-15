@@ -68,7 +68,7 @@ def test_seclib1a_primary_workflow_is_one_click_and_crossbeam_scoped() -> None:
     library_source = (root / "concrete_pmm_pro" / "ui" / "crossbeam_section_library.py").read_text(encoding="utf-8")
     builder_source = (root / "concrete_pmm_pro" / "ui" / "section_builder.py").read_text(encoding="utf-8")
 
-    assert '"Section to edit"' in library_source
+    assert '"Quick section switch"' in library_source
     assert '"Duplicate current"' in library_source
     assert '"New Hollow"' in library_source
     assert '"New Solid"' in library_source

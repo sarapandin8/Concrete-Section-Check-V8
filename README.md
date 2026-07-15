@@ -1,3 +1,9 @@
+### CROSSBEAM.SECLIB1D — Section Naming and Active-Row Polish
+
+Adds optional role-based section-name suggestions, duplicate-name protection, a clear active-project-section line, and highlighted table selection while keeping Section IDs stable and existing workflows/solvers unchanged.
+
+See `README_CROSSBEAM_SECLIB1D.md`.
+
 ### CROSSBEAM.SECLIB1B — Visible Section Summary and Low-Effort Management
 
 Adds a visible project-section inventory plus direct name editing and guarded deletion while preserving stable Section IDs, Segment Layout references, Streamlit state safety, and all existing workflow/solver behavior.
