@@ -1,3 +1,9 @@
+### CROSSBEAM.RB2D — Editable Template IDs and Linked Rebar Grade Dropdowns
+
+Makes Crossbeam Rebar Template IDs engineer-editable with atomic Segment/Zone reference updates, and replaces free-form rebar grade inputs with linked SD40/SD50 and 390/490 MPa dropdowns while preserving all solver and joint-continuity guards.
+
+See `README_CROSSBEAM_RB2D.md`.
+
 ### CROSSBEAM.RB2C — Direct-Edit Rebar Template Tables
 
 Replaces the selected-template form with compact direct-edit tables for default and project Rebar Templates, including inline dropdown/number inputs, per-row copy/delete selection, guarded deletion, and six-column no-scroll table limits while preserving stable Template IDs, zero ordinary-rebar joint crossing, and unchanged solvers.

@@ -3,7 +3,9 @@
 CROSSBEAM.RB2C replaces the selected-template form with compact editable tables.
 Default and project templates use the same direct-edit workflow; project rows may
 be copied or marked for guarded deletion without exposing hidden horizontal columns.
-The unverified PT-continuity guard and all solver ownership remain unchanged. It never
+RB2D makes Template IDs engineer-editable with atomic Zone-reference updates and
+links the SD40/SD50 material dropdown to the 390/490 MPa fy dropdown. The
+unverified PT-continuity guard and all solver ownership remain unchanged. It never
 routes template, zone, or preview state into existing PMM, Beam/Girder, SLS,
 shear, torsion, or report solvers.
 """
@@ -11,6 +13,7 @@ shear, torsion, or report solvers.
 from __future__ import annotations
 
 from collections.abc import Mapping
+import re
 from typing import Any
 
 import pandas as pd
@@ -28,6 +31,10 @@ from concrete_pmm_pro.crossbeam.rebar import (
     TEMPLATE_ROLE_OPTIONS,
     TEMPLATE_BAR_SIZE_OPTIONS,
     TEMPLATE_LAYOUT_METHOD_OPTIONS,
+    TEMPLATE_MATERIAL_OPTIONS,
+    TEMPLATE_FY_OPTIONS,
+    REBAR_FY_BY_MATERIAL,
+    REBAR_MATERIAL_BY_FY,
     canonical_rebar_templates,
     duplicate_rebar_template,
     canonical_rebar_zones,
@@ -95,7 +102,10 @@ def _ensure_rb1_state(segment_rows: list[dict[str, Any]]) -> None:
     st.session_state.setdefault(CB_RB_TEMPLATE_REV_KEY, 0)
 
     if CB_RB_ZONE_ROWS_KEY not in st.session_state:
-        st.session_state[CB_RB_ZONE_ROWS_KEY] = default_crossbeam_rebar_zones(segment_rows)
+        st.session_state[CB_RB_ZONE_ROWS_KEY] = default_crossbeam_rebar_zones(
+            segment_rows,
+            st.session_state[CB_RB_TEMPLATE_ROWS_KEY],
+        )
         st.session_state[CB_RB_SEGMENT_SIGNATURE_KEY] = segment_signature(segment_rows)
     st.session_state.setdefault(CB_RB_ZONE_REV_KEY, 0)
 
@@ -278,7 +288,7 @@ def _render_locked_joint_rule() -> None:
     st.warning(
         "LOCKED WORKFLOW RULE — Ordinary rebar crossing every segment joint = 0 mm². "
         "Rebar may be credited only inside its assigned segment/zone. PT continuity across each joint is REQUIRED, "
-        "but CROSSBEAM.RB2C does not yet verify active tendon geometry or Aps at the joint plane."
+        "but CROSSBEAM.RB2D does not yet verify active tendon geometry or Aps at the joint plane."
     )
     st.caption(
         "Joint shear transfer, interface behavior, opening/decompression, shear keys, anchorage zones, solid–hollow transitions, "
@@ -370,6 +380,120 @@ def _adopted_reinforcement_summary(template: Mapping[str, Any]) -> str:
     if not any(value > 0.0 for value in (top, bottom, side, avs)):
         return "Not adopted"
     return f"T/B/S {top:.0f}/{bottom:.0f}/{side:.0f} · Av/s {avs:.4f}"
+
+
+def _normalize_template_id(value: Any) -> str:
+    """Return a compact engineer-editable Template ID.
+
+    Spaces are converted to hyphens and unsupported punctuation is removed so
+    the result remains safe for Zone references and future project persistence.
+    """
+
+    text = str(value or "").strip().upper()
+    text = re.sub(r"\s+", "-", text)
+    text = re.sub(r"[^A-Z0-9_-]+", "", text)
+    text = re.sub(r"-{2,}", "-", text).strip("-_")
+    return text[:48]
+
+
+def _template_identity_rows_from_editor(
+    template_rows: list[dict[str, Any]],
+    editor_rows: list[dict[str, Any]],
+    zone_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, str], list[str]]:
+    """Apply editable Template IDs and update every Zone reference atomically."""
+
+    rows = canonical_rebar_templates(template_rows)
+    zones = canonical_rebar_zones(zone_rows)
+    proposed: list[dict[str, Any]] = []
+    rename_map: dict[str, str] = {}
+    errors: list[str] = []
+
+    for index, source in enumerate(rows):
+        item = editor_rows[index] if index < len(editor_rows) else {}
+        original_id = str(item.get("_Original ID") or source.get("Template ID") or "").strip()
+        if original_id != str(source.get("Template ID") or ""):
+            source = next(
+                (row for row in rows if str(row.get("Template ID") or "") == original_id),
+                source,
+            )
+        new_id = _normalize_template_id(item.get("Template ID", source.get("Template ID")))
+        if not new_id:
+            errors.append(f"{original_id or f'Row {index + 1}'} requires a Template ID.")
+            new_id = original_id
+        updated = dict(source)
+        updated["Template ID"] = new_id
+        updated["Template name"] = str(item.get("Template name") or source.get("Template name") or new_id).strip()
+        updated["Applicable role"] = str(item.get("Role") or source.get("Applicable role") or "Any")
+        updated["Construction"] = str(item.get("Construction") or source.get("Construction") or "Project-defined")
+        if str(updated.get("Applicable role") or "") == "Solid":
+            updated["Inner face bars"] = False
+        proposed.append(updated)
+        if original_id and original_id != new_id:
+            rename_map[original_id] = new_id
+
+    normalized_ids = [str(row.get("Template ID") or "") for row in proposed]
+    duplicates = sorted({item for item in normalized_ids if item and normalized_ids.count(item) > 1})
+    if duplicates:
+        errors.append("Duplicate Template IDs are not allowed: " + ", ".join(duplicates) + ".")
+    if errors:
+        return rows, zones, {}, errors
+
+    updated_zones: list[dict[str, Any]] = []
+    for zone in zones:
+        updated = dict(zone)
+        old_reference = str(updated.get("Rebar template") or "")
+        if old_reference in rename_map:
+            updated["Rebar template"] = rename_map[old_reference]
+        updated_zones.append(updated)
+
+    return canonical_rebar_templates(proposed), canonical_rebar_zones(updated_zones), rename_map, []
+
+
+def _template_material_rows_from_editor(
+    template_rows: list[dict[str, Any]],
+    editor_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Merge linked Material/fy dropdowns without allowing an inconsistent pair."""
+
+    rows = canonical_rebar_templates(template_rows)
+    by_id = {str(row.get("Template ID") or ""): dict(row) for row in rows}
+    warnings: list[str] = []
+    for item in editor_rows:
+        template_id = str(item.get("Template ID") or "").strip()
+        target = by_id.get(template_id)
+        if target is None:
+            continue
+        old_material = str(target.get("Rebar material") or "SD40")
+        old_fy = float(target.get("fy MPa") or 390.0)
+        new_material = str(item.get("Material") or old_material).strip().upper()
+        try:
+            new_fy = float(item.get("fy (MPa)") or old_fy)
+        except (TypeError, ValueError):
+            new_fy = old_fy
+        if new_material not in TEMPLATE_MATERIAL_OPTIONS:
+            new_material = old_material
+        new_fy = 490.0 if abs(new_fy - 490.0) < abs(new_fy - 390.0) else 390.0
+
+        material_changed = new_material != old_material
+        fy_changed = new_fy != old_fy
+        if material_changed and not fy_changed:
+            new_fy = REBAR_FY_BY_MATERIAL[new_material]
+        elif fy_changed and not material_changed:
+            new_material = REBAR_MATERIAL_BY_FY[new_fy]
+        elif material_changed and fy_changed and REBAR_FY_BY_MATERIAL[new_material] != new_fy:
+            warnings.append(
+                f"{template_id}: Material and fy were inconsistent; adopted {new_material} with fy = "
+                f"{REBAR_FY_BY_MATERIAL[new_material]:.0f} MPa."
+            )
+            new_fy = REBAR_FY_BY_MATERIAL[new_material]
+
+        target["Rebar material"] = new_material
+        target["fy MPa"] = new_fy
+        target["Longitudinal basis"] = str(item.get("Basis") or target.get("Longitudinal basis") or "Segment-local")
+        target["Active"] = bool(item.get("Active"))
+        target["Credit inside segment"] = bool(item.get("Credit"))
+    return canonical_rebar_templates([by_id[str(row.get("Template ID") or "")] for row in rows]), warnings
 
 
 def _template_rows_from_editor(
@@ -500,7 +624,7 @@ def _render_template_library(
 ) -> list[dict[str, Any]]:
     st.markdown("### Rebar Template Library")
     st.caption(
-        "Edit default and project templates directly in the compact tables below. Template ID is the only locked field because Segment / Zone assignments reference it."
+        "Edit default and project templates directly in the compact tables below. Template IDs are editable; any change updates Segment / Zone references atomically."
     )
 
     rows = canonical_rebar_templates(template_rows)
@@ -527,6 +651,7 @@ def _render_template_library(
     st.markdown("#### Template identity and row actions")
     identity_rows = [
         {
+            "_Original ID": row["Template ID"],
             "Copy": False,
             "Delete": False,
             "Template ID": row["Template ID"],
@@ -542,11 +667,16 @@ def _render_template_library(
         hide_index=True,
         num_rows="fixed",
         key=f"crossbeam_rb2c_identity_editor_{revision}",
-        disabled=["Template ID"],
         column_config={
+            "_Original ID": None,
             "Copy": st.column_config.CheckboxColumn("Copy", width="small"),
             "Delete": st.column_config.CheckboxColumn("Delete", width="small"),
-            "Template ID": st.column_config.TextColumn("Template ID", width="small"),
+            "Template ID": st.column_config.TextColumn(
+                "Template ID",
+                help="Editable stable reference. Spaces are converted to hyphens; Zone assignments update automatically.",
+                required=True,
+                width="medium",
+            ),
             "Template name": st.column_config.TextColumn("Template name", required=True, width="large"),
             "Role": st.column_config.SelectboxColumn("Role", options=list(TEMPLATE_ROLE_OPTIONS), required=True, width="small"),
             "Construction": st.column_config.SelectboxColumn("Construction", options=list(TEMPLATE_CONSTRUCTION_OPTIONS), required=True, width="medium"),
@@ -554,11 +684,30 @@ def _render_template_library(
     )
     identity_records = _records(identity_edited)
     previous_roles = {str(row.get("Template ID") or ""): str(row.get("Applicable role") or "") for row in rows}
-    rows = _template_rows_from_editor(
+    rows, updated_zones, rename_map, identity_errors = _template_identity_rows_from_editor(
         rows,
         identity_records,
-        {"Template name": "Template name", "Role": "Applicable role", "Construction": "Construction"},
+        zone_rows,
     )
+    if identity_errors:
+        for message in identity_errors:
+            st.error(message)
+    else:
+        if rename_map:
+            active_id = str(st.session_state.get(CB_RB_ACTIVE_TEMPLATE_KEY) or "")
+            if active_id in rename_map:
+                st.session_state[CB_RB_ACTIVE_TEMPLATE_KEY] = rename_map[active_id]
+            st.session_state[CB_RB_ZONE_ROWS_KEY] = updated_zones
+            st.session_state[CB_RB_ZONE_REV_KEY] = int(st.session_state.get(CB_RB_ZONE_REV_KEY, 0)) + 1
+            _store_template_rows(rows)
+            _bump_template_editor_revision()
+            st.session_state[CB_RB_TEMPLATE_ACTION_KEY] = {
+                "action": "notice",
+                "message": "Updated Template ID references: "
+                + ", ".join(f"{old} → {new}" for old, new in rename_map.items())
+                + ".",
+            }
+            st.rerun()
     _store_template_rows(rows)
     role_changed = any(
         previous_roles.get(str(row.get("Template ID") or "")) != str(row.get("Applicable role") or "")
@@ -626,7 +775,7 @@ def _render_template_library(
         {
             "Template ID": row["Template ID"],
             "Basis": row["Longitudinal basis"],
-            "fy (MPa)": row["fy MPa"],
+            "fy (MPa)": int(round(float(row["fy MPa"]))),
             "Material": row["Rebar material"],
             "Active": row["Active"],
             "Credit": row["Credit inside segment"],
@@ -643,24 +792,24 @@ def _render_template_library(
         column_config={
             "Template ID": st.column_config.TextColumn(width="small"),
             "Basis": st.column_config.SelectboxColumn(options=list(TEMPLATE_LONGITUDINAL_BASIS_OPTIONS), required=True, width="medium"),
-            "fy (MPa)": st.column_config.NumberColumn(min_value=0.0, step=10.0, format="%.0f", width="small"),
-            "Material": st.column_config.TextColumn(required=True, width="medium"),
+            "fy (MPa)": st.column_config.SelectboxColumn(
+                options=[int(value) for value in TEMPLATE_FY_OPTIONS],
+                required=True,
+                width="small",
+            ),
+            "Material": st.column_config.SelectboxColumn(
+                options=list(TEMPLATE_MATERIAL_OPTIONS),
+                required=True,
+                width="small",
+            ),
             "Active": st.column_config.CheckboxColumn(width="small"),
             "Credit": st.column_config.CheckboxColumn("Credit in zone", width="small"),
         },
     )
-    rows = _template_rows_from_editor(
-        rows,
-        _records(participation_edited),
-        {
-            "Basis": "Longitudinal basis",
-            "fy (MPa)": "fy MPa",
-            "Material": "Rebar material",
-            "Active": "Active",
-            "Credit": "Credit inside segment",
-        },
-    )
+    rows, material_warnings = _template_material_rows_from_editor(rows, _records(participation_edited))
     _store_template_rows(rows)
+    for message in material_warnings:
+        st.warning(message)
 
     st.markdown("#### Outer-face auto layout")
     st.caption("Target means spacing in mm for **By target spacing**, or total perimeter bar count for **By exact bar count**.")
@@ -832,7 +981,7 @@ def _render_zone_assignment(
         )
 
     if st.button("Reset rebar zones from Segment Layout", key="crossbeam_rb1_reset_zones"):
-        st.session_state[CB_RB_ZONE_ROWS_KEY] = default_crossbeam_rebar_zones(segment_rows)
+        st.session_state[CB_RB_ZONE_ROWS_KEY] = default_crossbeam_rebar_zones(segment_rows, template_rows)
         st.session_state[CB_RB_SEGMENT_SIGNATURE_KEY] = current_signature
         st.session_state[CB_RB_ZONE_REV_KEY] = int(st.session_state.get(CB_RB_ZONE_REV_KEY, 0)) + 1
         st.rerun()
@@ -1192,7 +1341,8 @@ def render_crossbeam_rebar_page() -> None:
         _records(st.session_state.get(CB_RB_TEMPLATE_ROWS_KEY)) or default_crossbeam_rebar_templates()
     )
     zone_rows = canonical_rebar_zones(
-        _records(st.session_state.get(CB_RB_ZONE_ROWS_KEY)) or default_crossbeam_rebar_zones(segment_rows)
+        _records(st.session_state.get(CB_RB_ZONE_ROWS_KEY))
+        or default_crossbeam_rebar_zones(segment_rows, template_rows)
     )
     active_templates = template_map(template_rows)
 
@@ -1364,6 +1514,6 @@ def render_crossbeam_rebar_page() -> None:
             },
         )
         st.info(
-            "CROSSBEAM.RB2C does not modify ULS/SLS capacity, shear/torsion, Result Summary, Report/QA, or Project JSON. "
+            "CROSSBEAM.RB2D does not modify ULS/SLS capacity, shear/torsion, Result Summary, Report/QA, or Project JSON. "
             "A future Tendon audit must verify active tendon geometry/Aps at each joint before ULS station handoff can claim continuity."
         )

@@ -9,8 +9,9 @@ explicitly treating post-tensioning continuity as required but not verified
 until the Tendon System/Profile audit is connected. RB2B adds project-template
 management and spacing-or-exact-count layout controls. RB2C moves all ordinary
 template inputs into compact editable tables and allows every default/project row
-to be edited while retaining stable Template IDs and guarded deletion. Solver
-ownership remains unchanged.
+to be edited with guarded deletion. RB2D adds engineer-editable Template IDs with
+atomic Zone-reference updates, plus linked SD40/SD50 and 390/490 MPa dropdown
+pairs. Solver ownership remains unchanged.
 """
 
 from __future__ import annotations
@@ -28,6 +29,10 @@ TEMPLATE_CONSTRUCTION_OPTIONS = ("Factory precast", "Cast in place", "Project-de
 TEMPLATE_LONGITUDINAL_BASIS_OPTIONS = ("Segment-local", "Zone-local")
 TEMPLATE_BAR_SIZE_OPTIONS = ("DB10", "DB12", "DB16", "DB20", "DB25", "DB28", "DB32")
 TEMPLATE_LAYOUT_METHOD_OPTIONS = ("By target spacing", "By exact bar count")
+TEMPLATE_MATERIAL_OPTIONS = ("SD40", "SD50")
+TEMPLATE_FY_OPTIONS = (390.0, 490.0)
+REBAR_FY_BY_MATERIAL = {"SD40": 390.0, "SD50": 490.0}
+REBAR_MATERIAL_BY_FY = {390.0: "SD40", 490.0: "SD50"}
 REBAR_DIAMETER_BY_SIZE = {
     "DB10": 10.0,
     "DB12": 12.0,
@@ -174,6 +179,14 @@ def canonical_rebar_templates(rows: list[dict[str, Any]]) -> list[dict[str, Any]
         inner_method = str(row.get("Inner layout method") or layout_defaults["Inner layout method"]).strip()
         if inner_method not in TEMPLATE_LAYOUT_METHOD_OPTIONS:
             inner_method = "By target spacing"
+        raw_material = str(row.get("Rebar material") or "").strip().upper()
+        raw_fy = _float(row.get("fy MPa"), 390.0)
+        if raw_material in TEMPLATE_MATERIAL_OPTIONS:
+            material = raw_material
+            fy_mpa = REBAR_FY_BY_MATERIAL[material]
+        else:
+            fy_mpa = 490.0 if abs(raw_fy - 490.0) < abs(raw_fy - 390.0) else 390.0
+            material = REBAR_MATERIAL_BY_FY[fy_mpa]
         canonical.append(
             {
                 "Active": _bool(row.get("Active"), True),
@@ -187,8 +200,8 @@ def canonical_rebar_templates(rows: list[dict[str, Any]]) -> list[dict[str, Any]
                 "Bottom As mm²": max(_float(row.get("Bottom As mm²"), 0.0), 0.0),
                 "Side As mm²": max(_float(row.get("Side As mm²"), 0.0), 0.0),
                 "Av/s mm²/mm": max(_float(row.get("Av/s mm²/mm"), 0.0), 0.0),
-                "fy MPa": max(_float(row.get("fy MPa"), 390.0), 0.0),
-                "Rebar material": str(row.get("Rebar material") or layout_defaults["Rebar material"]).strip() or "SD40",
+                "fy MPa": fy_mpa,
+                "Rebar material": material,
                 "Outer face bars": _bool(row.get("Outer face bars"), bool(layout_defaults["Outer face bars"])),
                 "Outer bar size": outer_size,
                 "Outer layout method": outer_method,
@@ -275,7 +288,33 @@ def _segment_role(row: Mapping[str, Any]) -> str:
     return role if role in {"Solid", "Hollow"} else "Solid"
 
 
-def default_crossbeam_rebar_zones(segment_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def default_crossbeam_rebar_zones(
+    segment_rows: list[dict[str, Any]],
+    template_rows: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Return one default zone per segment using available compatible templates.
+
+    Template IDs are user-editable from RB2D onward. When a project has renamed
+    the original defaults, a zone reset must not silently restore stale hard-coded
+    IDs. The preferred default ID is used when present; otherwise the first active
+    compatible template is selected.
+    """
+
+    templates = canonical_rebar_templates(template_rows or default_crossbeam_rebar_templates())
+    active = [row for row in templates if bool(row.get("Active"))]
+
+    def _template_for(role: str) -> str:
+        preferred = RB_HOLLOW_MIN if role == "Hollow" else RB_SOLID_COLUMN
+        if any(str(row.get("Template ID") or "") == preferred for row in active):
+            return preferred
+        compatible = [
+            row
+            for row in active
+            if str(row.get("Applicable role") or "") in {role, "Any"}
+        ]
+        candidates = compatible or active
+        return str(candidates[0].get("Template ID") or "") if candidates else ""
+
     zones: list[dict[str, Any]] = []
     for index, segment in enumerate(sorted(segment_rows, key=lambda item: _float(item.get("x_start_m"), 0.0))):
         role = _segment_role(segment)
@@ -286,7 +325,7 @@ def default_crossbeam_rebar_zones(segment_rows: list[dict[str, Any]]) -> list[di
                 "Segment": segment_id,
                 "s_start_m": _float(segment.get("x_start_m"), 0.0),
                 "s_end_m": _float(segment.get("x_end_m"), 0.0),
-                "Rebar template": RB_HOLLOW_MIN if role == "Hollow" else RB_SOLID_COLUMN,
+                "Rebar template": _template_for(role),
                 "Purpose": "Minimum/detailing reinforcement" if role == "Hollow" else "Solid CIP column-region reinforcement",
             }
         )
@@ -403,7 +442,7 @@ def segment_joint_audit_rows(segment_rows: list[dict[str, Any]]) -> list[dict[st
     """Return locked ordinary-rebar and guarded tendon-continuity rows.
 
     Ordinary reinforcement crossing every segment joint is fixed at zero.
-    Post-tensioning continuity is an engineering requirement, but RB2C does not
+    Post-tensioning continuity is an engineering requirement, but RB2D does not
     claim that tendon geometry or active tendon area has already been verified
     across each joint.
     """
