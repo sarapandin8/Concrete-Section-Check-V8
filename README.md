@@ -1,3 +1,9 @@
+### CROSSBEAM.RB2 — Segment Section Rebar Preview and Subnavigation Polish
+
+Adds Crossbeam-only segment/zone section rebar figures with Solid outer-perimeter and Hollow outer/inner-face layouts, clearer template controls, and separated button navigation while keeping ordinary-rebar joint crossing locked at zero and all existing solvers unchanged.
+
+See `README_CROSSBEAM_RB2.md`.
+
 ### CROSSBEAM.SECLIB1E — One-Click Project-Section Selection
 
 Fixes the Crossbeam Project Section Summary so the selected row/checkbox activates the section on the first click by staging the Section ID in a pre-rerun callback before geometry and preview widgets render.

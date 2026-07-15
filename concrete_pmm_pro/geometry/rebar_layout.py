@@ -463,3 +463,168 @@ def generate_perimeter_rebar_layout(
         perimeter_length_mm=perimeter_length_mm,
         actual_spacing_mm=actual_spacing_mm,
     )
+
+
+def generate_inner_face_rebar_layout(
+    geometry: SectionGeometry | None,
+    *,
+    hole_index: int = 0,
+    bar_size: str,
+    diameter_mm: float,
+    material: str,
+    edge_offset_mm: float = 50.0,
+    target_spacing_mm: float = 150.0,
+    min_bars: int = 4,
+    label_prefix: str = "I",
+) -> PerimeterRebarLayoutResult:
+    """Generate bars around one void, offset outward into the concrete wall.
+
+    This is the hollow-section counterpart to :func:`generate_perimeter_rebar_layout`.
+    It is preview/detailing geometry only and does not feed any solver.  The selected
+    hole boundary is buffered outward by the requested bar-center offset, then bars
+    are placed at corner/control points and filled at approximately the target
+    spacing.  Every generated point is checked to remain inside concrete and outside
+    the void.
+    """
+
+    columns = ["Active", "Label", "x_mm", "y_mm", "Bar Size", "Diameter_mm", "Material", "Count", "Note"]
+    empty_table = pd.DataFrame(columns=columns)
+    if geometry is None:
+        return PerimeterRebarLayoutResult(
+            table=empty_table,
+            errors=("Section geometry is required before an inner-face rebar layout can be generated.",),
+        )
+    if diameter_mm <= 0:
+        return PerimeterRebarLayoutResult(table=empty_table, errors=("Bar diameter must be positive.",))
+    if edge_offset_mm <= 0:
+        return PerimeterRebarLayoutResult(table=empty_table, errors=("Bar center offset from the void face must be positive.",))
+    if target_spacing_mm <= 0:
+        return PerimeterRebarLayoutResult(table=empty_table, errors=("Target spacing must be positive.",))
+    if min_bars < 1:
+        return PerimeterRebarLayoutResult(table=empty_table, errors=("Minimum bar count must be at least 1.",))
+    if not geometry.holes:
+        return PerimeterRebarLayoutResult(
+            table=empty_table,
+            errors=("The selected section has no void/hole for an inner-face layout.",),
+        )
+    if hole_index < 0 or hole_index >= len(geometry.holes):
+        return PerimeterRebarLayoutResult(
+            table=empty_table,
+            errors=(f"Hole index {hole_index} is outside the available range 0–{len(geometry.holes) - 1}.",),
+        )
+
+    try:
+        section = _as_polygon(geometry)
+    except ValueError as exc:
+        return PerimeterRebarLayoutResult(table=empty_table, errors=(str(exc),))
+
+    hole = Polygon([point.as_tuple() for point in geometry.holes[hole_index]])
+    if not hole.is_valid:
+        hole = hole.buffer(0)
+    if not isinstance(hole, Polygon) or hole.is_empty or hole.area <= 0:
+        return PerimeterRebarLayoutResult(table=empty_table, errors=("Selected section void is not a valid polygon.",))
+
+    offset_geom = hole.buffer(float(edge_offset_mm), join_style=2, mitre_limit=2.0)
+    layout_polygon, discarded_pieces = _largest_polygon(offset_geom)
+    if layout_polygon is None or layout_polygon.is_empty or layout_polygon.area <= 0:
+        return PerimeterRebarLayoutResult(
+            table=empty_table,
+            errors=("Unable to create the requested outward offset from the void face.",),
+        )
+
+    warnings: list[str] = []
+    info: list[str] = []
+    errors: list[str] = []
+    if discarded_pieces:
+        warnings.append("Void-face offset created disconnected regions; the largest region is used for this preview.")
+
+    perimeter = layout_polygon.exterior
+    perimeter_length_mm = float(perimeter.length)
+    if perimeter_length_mm <= 0:
+        return PerimeterRebarLayoutResult(table=empty_table, errors=("Generated inner-face perimeter has zero length.",))
+
+    distances, actual_spacing_mm, control_count = _corner_controlled_distances(
+        layout_polygon,
+        target_spacing_mm=float(target_spacing_mm),
+        min_bars=int(min_bars),
+    )
+    minimum_center_spacing_mm = _minimum_center_spacing_for_layout(float(diameter_mm), float(target_spacing_mm))
+    distances, removed_close_points = _enforce_minimum_center_spacing(
+        distances,
+        perimeter_length_mm,
+        minimum_center_spacing_mm,
+    )
+    actual_spacing_mm = _max_circular_spacing(distances, perimeter_length_mm)
+    if removed_close_points:
+        warnings.append(
+            f"Removed {removed_close_points} closely spaced inner-face point(s); minimum center spacing guard = "
+            f"{minimum_center_spacing_mm:.1f} mm."
+        )
+    if control_count:
+        info.append(f"Corner-controlled inner-face layout: {control_count} void corner/control point(s) used.")
+
+    candidate_points = [
+        (float(point.x), float(point.y))
+        for point in (perimeter.interpolate(distance % perimeter_length_mm) for distance in distances)
+    ]
+    candidate_points, merged_spatial_points = _merge_spatially_close_points(
+        candidate_points,
+        section,
+        minimum_center_spacing_mm,
+    )
+    if merged_spatial_points:
+        warnings.append(f"Merged {merged_spatial_points} spatially close inner-face bar point(s).")
+
+    outside_count = 0
+    inside_void_count = 0
+    rows: list[dict[str, object]] = []
+    prefix = str(label_prefix or "I").strip() or "I"
+    for index, (x_mm, y_mm) in enumerate(candidate_points):
+        point = Point(x_mm, y_mm)
+        if hole.covers(point):
+            inside_void_count += 1
+        elif not _point_is_effectively_inside(section, point):
+            outside_count += 1
+        rows.append(
+            {
+                "Active": True,
+                "Label": f"{prefix}{index + 1}",
+                "x_mm": round(x_mm, 3),
+                "y_mm": round(y_mm, 3),
+                "Bar Size": str(bar_size),
+                "Diameter_mm": float(diameter_mm),
+                "Material": str(material or "SD40"),
+                "Count": 1,
+                "Note": (
+                    f"Auto inner face: void={hole_index + 1}, offset={edge_offset_mm:g} mm, "
+                    f"target spacing={target_spacing_mm:g} mm"
+                ),
+            }
+        )
+
+    if inside_void_count:
+        errors.append(f"{inside_void_count} generated inner-face bar point(s) remain inside the void.")
+    if outside_count:
+        errors.append(
+            f"{outside_count} generated inner-face bar point(s) are outside concrete; reduce the void-face offset."
+        )
+    if actual_spacing_mm > target_spacing_mm * 1.15:
+        warnings.append(
+            f"Maximum inner-face spacing is {actual_spacing_mm:.1f} mm, more than 15% above the target "
+            f"{target_spacing_mm:.1f} mm."
+        )
+
+    info.append(
+        f"Generated {len(rows)} inner-face bar(s) around void {hole_index + 1}; maximum segment spacing ≈ "
+        f"{actual_spacing_mm:.1f} mm."
+    )
+    info.append(f"Bar center offset from void face = {edge_offset_mm:.1f} mm.")
+
+    return PerimeterRebarLayoutResult(
+        table=pd.DataFrame(rows, columns=columns),
+        errors=tuple(errors),
+        warnings=tuple(warnings),
+        info=tuple(info),
+        perimeter_length_mm=perimeter_length_mm,
+        actual_spacing_mm=actual_spacing_mm,
+    )

@@ -1,9 +1,11 @@
 """Crossbeam-only rebar data foundation for segmental post-tensioned members.
 
-CROSSBEAM.RB1 intentionally does not connect ordinary reinforcement to any
-ULS/SLS solver.  It defines workflow-scoped template/zone inputs and enforces
-the accepted construction rule that no ordinary rebar crosses a segment joint;
-global continuity at every joint is provided by post-tensioning tendons only.
+CROSSBEAM.RB1 introduced workflow-scoped template/zone inputs and the accepted
+construction rule that no ordinary rebar crosses a segment joint.  RB2 adds
+template-level outer/inner-face auto-layout controls and graphical section
+preview data while remaining intentionally disconnected from every ULS/SLS
+solver.  Global continuity at every joint is provided by post-tensioning
+tendons only.
 """
 
 from __future__ import annotations
@@ -19,6 +21,16 @@ RB_SOLID_ANCHORAGE = "RB-SOLID-ANCHORAGE"
 TEMPLATE_ROLE_OPTIONS = ("Hollow", "Solid", "Any")
 TEMPLATE_CONSTRUCTION_OPTIONS = ("Factory precast", "Cast in place", "Project-defined")
 TEMPLATE_LONGITUDINAL_BASIS_OPTIONS = ("Segment-local", "Zone-local")
+TEMPLATE_BAR_SIZE_OPTIONS = ("DB10", "DB12", "DB16", "DB20", "DB25", "DB28", "DB32")
+REBAR_DIAMETER_BY_SIZE = {
+    "DB10": 10.0,
+    "DB12": 12.0,
+    "DB16": 16.0,
+    "DB20": 20.0,
+    "DB25": 25.0,
+    "DB28": 28.0,
+    "DB32": 32.0,
+}
 
 
 def _float(value: Any, default: float = 0.0) -> float:
@@ -40,6 +52,29 @@ def _bool(value: Any, default: bool = False) -> bool:
     if text in {"0", "false", "no", "n", "off", "disabled"}:
         return False
     return bool(value)
+
+
+def rebar_diameter_mm(bar_size: Any, default: float = 16.0) -> float:
+    """Return the nominal diameter for a supported deformed-bar label."""
+
+    return float(REBAR_DIAMETER_BY_SIZE.get(str(bar_size or "").strip().upper(), default))
+
+
+def _layout_defaults(role: str, template_id: str) -> dict[str, Any]:
+    role_text = str(role or "Any").title()
+    solid_column = str(template_id) == RB_SOLID_COLUMN
+    outer_size = "DB20" if solid_column else "DB16"
+    return {
+        "Rebar material": "SD40",
+        "Outer face bars": True,
+        "Outer bar size": outer_size,
+        "Outer center offset mm": 50.0,
+        "Outer target spacing mm": 150.0,
+        "Inner face bars": role_text == "Hollow",
+        "Inner bar size": "DB16",
+        "Inner center offset mm": 50.0,
+        "Inner target spacing mm": 150.0,
+    }
 
 
 def default_crossbeam_rebar_templates() -> list[dict[str, Any]]:
@@ -64,6 +99,7 @@ def default_crossbeam_rebar_templates() -> list[dict[str, Any]]:
             "Side As mm²": 0.0,
             "Av/s mm²/mm": 0.0,
             "fy MPa": 390.0,
+            **_layout_defaults("Hollow", RB_HOLLOW_MIN),
             "Notes": "Enter actual minimum/detailing reinforcement; no ordinary bar crosses either segment joint.",
         },
         {
@@ -79,6 +115,7 @@ def default_crossbeam_rebar_templates() -> list[dict[str, Any]]:
             "Side As mm²": 0.0,
             "Av/s mm²/mm": 0.0,
             "fy MPa": 390.0,
+            **_layout_defaults("Solid", RB_SOLID_COLUMN),
             "Notes": "Define actual CIP reinforcement within the solid zone; column-joint and D-region review remain separate.",
         },
         {
@@ -94,6 +131,7 @@ def default_crossbeam_rebar_templates() -> list[dict[str, Any]]:
             "Side As mm²": 0.0,
             "Av/s mm²/mm": 0.0,
             "fy MPa": 390.0,
+            **_layout_defaults("Solid", RB_SOLID_ANCHORAGE),
             "Notes": "Local anchorage/bursting reinforcement only; not credited by RB1 for global section strength.",
         },
     ]
@@ -113,6 +151,13 @@ def canonical_rebar_templates(rows: list[dict[str, Any]]) -> list[dict[str, Any]
         basis = str(row.get("Longitudinal basis") or "Segment-local").strip()
         if basis not in TEMPLATE_LONGITUDINAL_BASIS_OPTIONS:
             basis = "Segment-local"
+        layout_defaults = _layout_defaults(role, template_id)
+        outer_size = str(row.get("Outer bar size") or layout_defaults["Outer bar size"]).strip().upper()
+        if outer_size not in TEMPLATE_BAR_SIZE_OPTIONS:
+            outer_size = str(layout_defaults["Outer bar size"])
+        inner_size = str(row.get("Inner bar size") or layout_defaults["Inner bar size"]).strip().upper()
+        if inner_size not in TEMPLATE_BAR_SIZE_OPTIONS:
+            inner_size = str(layout_defaults["Inner bar size"])
         canonical.append(
             {
                 "Active": _bool(row.get("Active"), True),
@@ -127,6 +172,23 @@ def canonical_rebar_templates(rows: list[dict[str, Any]]) -> list[dict[str, Any]
                 "Side As mm²": max(_float(row.get("Side As mm²"), 0.0), 0.0),
                 "Av/s mm²/mm": max(_float(row.get("Av/s mm²/mm"), 0.0), 0.0),
                 "fy MPa": max(_float(row.get("fy MPa"), 390.0), 0.0),
+                "Rebar material": str(row.get("Rebar material") or layout_defaults["Rebar material"]).strip() or "SD40",
+                "Outer face bars": _bool(row.get("Outer face bars"), bool(layout_defaults["Outer face bars"])),
+                "Outer bar size": outer_size,
+                "Outer center offset mm": max(
+                    _float(row.get("Outer center offset mm"), float(layout_defaults["Outer center offset mm"])), 1.0
+                ),
+                "Outer target spacing mm": max(
+                    _float(row.get("Outer target spacing mm"), float(layout_defaults["Outer target spacing mm"])), 1.0
+                ),
+                "Inner face bars": _bool(row.get("Inner face bars"), bool(layout_defaults["Inner face bars"])),
+                "Inner bar size": inner_size,
+                "Inner center offset mm": max(
+                    _float(row.get("Inner center offset mm"), float(layout_defaults["Inner center offset mm"])), 1.0
+                ),
+                "Inner target spacing mm": max(
+                    _float(row.get("Inner target spacing mm"), float(layout_defaults["Inner target spacing mm"])), 1.0
+                ),
                 "Notes": str(row.get("Notes") or "").strip(),
             }
         )
