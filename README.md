@@ -1,3 +1,9 @@
+### CROSSBEAM.RB2C — Direct-Edit Rebar Template Tables
+
+Replaces the selected-template form with compact direct-edit tables for default and project Rebar Templates, including inline dropdown/number inputs, per-row copy/delete selection, guarded deletion, and six-column no-scroll table limits while preserving stable Template IDs, zero ordinary-rebar joint crossing, and unchanged solvers.
+
+See `README_CROSSBEAM_RB2C.md`.
+
 ### CROSSBEAM.RB2B — Rebar Template Management and Count/Spacing Layout
 
 Adds Crossbeam-only Rebar Template create/duplicate/guarded-delete actions plus outer/inner layouts by target spacing or exact bar count, while retaining compact no-scroll summaries, zero ordinary-rebar joint crossing, and unchanged solvers.

@@ -7,8 +7,10 @@ preview data while remaining intentionally disconnected from every ULS/SLS
 solver. RB2A preserves the locked zero ordinary-rebar crossing rule while
 explicitly treating post-tensioning continuity as required but not verified
 until the Tendon System/Profile audit is connected. RB2B adds project-template
-management and spacing-or-exact-count layout controls without changing solver
-ownership.
+management and spacing-or-exact-count layout controls. RB2C moves all ordinary
+template inputs into compact editable tables and allows every default/project row
+to be edited while retaining stable Template IDs and guarded deletion. Solver
+ownership remains unchanged.
 """
 
 from __future__ import annotations
@@ -401,7 +403,7 @@ def segment_joint_audit_rows(segment_rows: list[dict[str, Any]]) -> list[dict[st
     """Return locked ordinary-rebar and guarded tendon-continuity rows.
 
     Ordinary reinforcement crossing every segment joint is fixed at zero.
-    Post-tensioning continuity is an engineering requirement, but RB2A does not
+    Post-tensioning continuity is an engineering requirement, but RB2C does not
     claim that tendon geometry or active tendon area has already been verified
     across each joint.
     """

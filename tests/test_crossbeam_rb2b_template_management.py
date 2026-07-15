@@ -74,15 +74,14 @@ def test_rb2b_exact_count_generators_return_requested_bar_counts():
     assert any("exact inner-face count" in item for item in inner.info)
 
 
-def test_rb2b_page_exposes_create_duplicate_delete_and_compact_summary():
+def test_rb2b_page_exposes_create_duplicate_delete_and_compact_editing():
     source = Path("concrete_pmm_pro/ui/crossbeam_rebar_page.py").read_text()
-    for label in ("Duplicate selected", "New Hollow", "New Solid", "Delete template"):
+    for label in ("Duplicate checked", "New Hollow", "New Solid", "Delete checked"):
         assert label in source
     assert "By exact bar count" in source
-    assert "Outer exact bars" in source
-    assert "Inner exact bars" in source
-    assert "used by zones" in source or "Assigned zones" in source
-    assert '"Template", "Role", "Construction", "Auto layout", "Adopted reinforcement", "Status"' not in source
-    # Six summary fields remain explicit and compact, without adding a hidden seventh column.
-    for label in ("Template", "Role", "Construction", "Auto layout", "Adopted reinforcement", "Status"):
-        assert f'"{label}"' in source
+    assert "Template identity and row actions" in source
+    assert "Outer-face auto layout" in source
+    assert "Inner-face auto layout" in source
+    assert "st.data_editor(" in source
+    assert "Template to edit" not in source
+    assert "Edit Selected Template" not in source
