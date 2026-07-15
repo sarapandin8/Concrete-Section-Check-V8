@@ -1,3 +1,9 @@
+### CROSSBEAM.SECLIB1E — One-Click Project-Section Selection
+
+Fixes the Crossbeam Project Section Summary so the selected row/checkbox activates the section on the first click by staging the Section ID in a pre-rerun callback before geometry and preview widgets render.
+
+See `README_CROSSBEAM_SECLIB1E.md`.
+
 ### CROSSBEAM.SECLIB1D — Section Naming and Active-Row Polish
 
 Adds optional role-based section-name suggestions, duplicate-name protection, a clear active-project-section line, and highlighted table selection while keeping Section IDs stable and existing workflows/solvers unchanged.

@@ -41,6 +41,8 @@ CB_SECLIB_NOTICE_KEY = "crossbeam_seclib1_notice"
 CB_SECLIB_NAME_INPUT_PREFIX = "crossbeam_seclib1d_name_input"
 CB_SECLIB_NAME_SUGGESTION_PREFIX = "crossbeam_seclib1d_name_suggestion"
 CB_SECLIB_NAME_SOURCE_PREFIX = "crossbeam_seclib1d_name_source"
+CB_SECLIB_SUMMARY_WIDGET_KEY_STATE = "crossbeam_seclib1e_summary_widget_key"
+CB_SECLIB_SUMMARY_ROW_IDS_KEY = "crossbeam_seclib1e_summary_row_ids"
 CUSTOM_SECTION_NAME_OPTION = "Custom project name"
 
 
@@ -301,6 +303,45 @@ def _selected_section_id_from_summary_event(
     if row_index < 0 or row_index >= len(summary_rows):
         return ""
     return str(summary_rows[row_index].get("Section ID") or "").strip()
+
+
+
+
+def _project_section_summary_on_select() -> None:
+    """Stage the clicked summary row before the next full Streamlit render.
+
+    A callable ``on_select`` runs before Streamlit reruns the script.  Staging
+    the active Section ID here lets the normal pre-render preparation apply
+    the new section before the selectbox, geometry controls, properties, and
+    preview are instantiated.  This removes the extra click/rerun previously
+    required by the post-render ``on_select="rerun"`` path.
+    """
+
+    widget_key = str(st.session_state.get(CB_SECLIB_SUMMARY_WIDGET_KEY_STATE) or "")
+    row_ids_raw = st.session_state.get(CB_SECLIB_SUMMARY_ROW_IDS_KEY)
+    if not widget_key or not isinstance(row_ids_raw, (list, tuple)):
+        return
+    row_ids = [str(value) for value in row_ids_raw]
+    event = st.session_state.get(widget_key)
+    rows = _summary_selection_rows(event)
+    if not rows:
+        return
+    row_index = rows[0]
+    if row_index < 0 or row_index >= len(row_ids):
+        return
+    selected_id = row_ids[row_index]
+    definitions = ensure_crossbeam_section_library_state(st.session_state)
+    if selected_id not in definition_map(definitions):
+        return
+    active_id = str(st.session_state.get(CB_SECLIB_ACTIVE_ID_KEY) or "")
+    if selected_id == active_id:
+        return
+    _stage_definition_selection(
+        st.session_state,
+        definitions,
+        selected_id,
+        notice=f"Now editing {selected_id} selected from Project Section Summary.",
+    )
 
 
 def _section_name_suggestions(role: str) -> list[str]:
@@ -664,12 +705,16 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
         "Click any row to make it active. The current row is highlighted; geometry, properties, live preview, and management controls update together."
     )
     summary_rows = _project_section_summary_rows(definitions, usage, active_id)
-    summary_event = st.dataframe(
+    summary_revision = int(st.session_state.get(CB_SECLIB_REVISION_KEY, 0) or 0)
+    summary_widget_key = f"crossbeam_seclib1e_project_section_summary_{summary_revision}"
+    st.session_state[CB_SECLIB_SUMMARY_WIDGET_KEY_STATE] = summary_widget_key
+    st.session_state[CB_SECLIB_SUMMARY_ROW_IDS_KEY] = [str(row.get("Section ID") or "") for row in summary_rows]
+    st.dataframe(
         _style_project_section_summary(summary_rows, active_id),
         use_container_width=True,
         hide_index=True,
-        key=f"crossbeam_seclib1c_project_section_summary_{active_id}",
-        on_select="rerun",
+        key=summary_widget_key,
+        on_select=_project_section_summary_on_select,
         selection_mode="single-row",
         column_config={
             "Section ID": st.column_config.TextColumn(width="small"),
@@ -685,15 +730,6 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
             "Status": st.column_config.TextColumn(width="small"),
         },
     )
-    selected_from_table = _selected_section_id_from_summary_event(summary_event, summary_rows)
-    if selected_from_table and selected_from_table != active_id:
-        _stage_definition_selection(
-            st.session_state,
-            definitions,
-            selected_from_table,
-            notice=f"Now editing {selected_from_table} selected from Project Section Summary.",
-        )
-        st.rerun()
 
     st.markdown("#### Manage Selected Section")
     manage_name_col, manage_delete_col = st.columns([0.68, 0.32], gap="medium")

@@ -38,13 +38,11 @@ def test_summary_selection_rejects_empty_invalid_and_out_of_range_rows() -> None
     assert _summary_selection_rows({"selection": {"rows": ["bad", 0]}}) == [0]
 
 
-def test_seclib1c_uses_table_row_selection_and_staged_active_state() -> None:
+def test_seclib1c_table_selection_remains_staged_and_single_row() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "concrete_pmm_pro" / "ui" / "crossbeam_section_library.py").read_text(encoding="utf-8")
 
-    assert 'on_select="rerun"' in source
     assert 'selection_mode="single-row"' in source
-    assert 'key=f"crossbeam_seclib1c_project_section_summary_{active_id}"' in source
-    assert "_selected_section_id_from_summary_event(summary_event, summary_rows)" in source
+    assert "_project_section_summary_on_select" in source
     assert "_stage_definition_selection(" in source
     assert "geometry, properties, live preview, and management controls update together." in source
