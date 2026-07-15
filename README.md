@@ -1,3 +1,9 @@
+### CROSSBEAM.RB2E — Linked Rebar Grade Dropdown Hotfix
+
+Synchronizes the Crossbeam Rebar Template `Material` and `fy` dropdowns visibly after one selection by refreshing the compact editor from the corrected canonical pair.
+
+See `README_CROSSBEAM_RB2E.md`.
+
 ### CROSSBEAM.RB2D — Editable Template IDs and Linked Rebar Grade Dropdowns
 
 Makes Crossbeam Rebar Template IDs engineer-editable with atomic Segment/Zone reference updates, and replaces free-form rebar grade inputs with linked SD40/SD50 and 390/490 MPa dropdowns while preserving all solver and joint-continuity guards.

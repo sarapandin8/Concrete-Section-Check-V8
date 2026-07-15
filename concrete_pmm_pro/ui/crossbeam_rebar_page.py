@@ -4,7 +4,9 @@ CROSSBEAM.RB2C replaces the selected-template form with compact editable tables.
 Default and project templates use the same direct-edit workflow; project rows may
 be copied or marked for guarded deletion without exposing hidden horizontal columns.
 RB2D makes Template IDs engineer-editable with atomic Zone-reference updates and
-links the SD40/SD50 material dropdown to the 390/490 MPa fy dropdown. The
+adds SD40/SD50 plus 390/490 MPa dropdowns. RB2E completes the linked-grade UX by
+refreshing the editor from canonical state whenever either dropdown changes, so a
+single material or fy selection immediately displays the matching pair. The
 unverified PT-continuity guard and all solver ownership remain unchanged. It never
 routes template, zone, or preview state into existing PMM, Beam/Girder, SLS,
 shear, torsion, or report solvers.
@@ -496,6 +498,39 @@ def _template_material_rows_from_editor(
     return canonical_rebar_templates([by_id[str(row.get("Template ID") or "")] for row in rows]), warnings
 
 
+def _material_editor_sync_required(
+    editor_rows: list[dict[str, Any]],
+    canonical_rows: list[dict[str, Any]],
+) -> bool:
+    """Return True when the editor still displays a stale Material/fy pair.
+
+    ``st.data_editor`` retains its widget-owned cell values for the current key.
+    After one linked dropdown is edited, the canonical row is corrected in state,
+    but the companion cell would remain visually stale until the editor receives a
+    fresh key.  This predicate is used to trigger exactly one revision/rerun.
+    """
+
+    canonical_by_id = {
+        str(row.get("Template ID") or ""): row
+        for row in canonical_rebar_templates(canonical_rows)
+    }
+    for item in editor_rows:
+        template_id = str(item.get("Template ID") or "").strip()
+        target = canonical_by_id.get(template_id)
+        if target is None:
+            continue
+        displayed_material = str(item.get("Material") or "").strip().upper()
+        try:
+            displayed_fy = float(item.get("fy (MPa)"))
+        except (TypeError, ValueError):
+            return True
+        canonical_material = str(target.get("Rebar material") or "").strip().upper()
+        canonical_fy = float(target.get("fy MPa") or 0.0)
+        if displayed_material != canonical_material or abs(displayed_fy - canonical_fy) > 1.0e-9:
+            return True
+    return False
+
+
 def _template_rows_from_editor(
     template_rows: list[dict[str, Any]],
     editor_rows: list[dict[str, Any]],
@@ -806,8 +841,14 @@ def _render_template_library(
             "Credit": st.column_config.CheckboxColumn("Credit in zone", width="small"),
         },
     )
-    rows, material_warnings = _template_material_rows_from_editor(rows, _records(participation_edited))
+    participation_records = _records(participation_edited)
+    rows, material_warnings = _template_material_rows_from_editor(rows, participation_records)
     _store_template_rows(rows)
+    # A linked change updates canonical state immediately, then refreshes the
+    # data-editor key once so the companion dropdown is visibly synchronized.
+    if _material_editor_sync_required(participation_records, rows):
+        _bump_template_editor_revision()
+        st.rerun()
     for message in material_warnings:
         st.warning(message)
 
