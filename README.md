@@ -1325,3 +1325,7 @@ Updates only the Portal Frame Crossbeam Segment Layout elevation so hidden hollo
 ## CROSSBEAM.SECLIB1C — Table-driven active section synchronization
 
 The Crossbeam Project Section Summary now supports single-row selection. Selecting a row safely stages that Section ID as active, then synchronizes the Section Builder geometry editor, gross properties, live preview, and section-management controls on rerun without mutating widget-owned Session State after instantiation. See `README_CROSSBEAM_SECLIB1C.md`.
+
+## CROSSBEAM.SECLIB1F — One-click section open and save-action polish
+
+Replaces the Project Section Summary checkbox selector with a dedicated one-click Edit button column and moves Section-name saving to the app-standard blue primary action button. This is Crossbeam-only UI/state polish; geometry, assignments, Project JSON, solvers, reports, and existing workflows are unchanged. See `README_CROSSBEAM_SECLIB1F.md`.

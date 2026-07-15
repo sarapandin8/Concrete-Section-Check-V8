@@ -43,6 +43,8 @@ CB_SECLIB_NAME_SUGGESTION_PREFIX = "crossbeam_seclib1d_name_suggestion"
 CB_SECLIB_NAME_SOURCE_PREFIX = "crossbeam_seclib1d_name_source"
 CB_SECLIB_SUMMARY_WIDGET_KEY_STATE = "crossbeam_seclib1e_summary_widget_key"
 CB_SECLIB_SUMMARY_ROW_IDS_KEY = "crossbeam_seclib1e_summary_row_ids"
+CB_SECLIB_SUMMARY_BUTTON_KEY_STATE = "crossbeam_seclib1f_summary_button_key"
+CB_SECLIB_SUMMARY_BUTTON_ROW_IDS_KEY = "crossbeam_seclib1f_summary_button_row_ids"
 CUSTOM_SECTION_NAME_OPTION = "Custom project name"
 
 
@@ -344,6 +346,55 @@ def _project_section_summary_on_select() -> None:
     )
 
 
+def _summary_button_row_index(click_event: Any) -> int | None:
+    """Return a row index from a Streamlit ButtonColumn click event."""
+
+    if click_event is None:
+        return None
+    row = getattr(click_event, "row", None)
+    if row is None and isinstance(click_event, Mapping):
+        row = click_event.get("row")
+    try:
+        value = int(row)
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0 else None
+
+
+def _project_section_summary_button_click() -> None:
+    """Open the clicked project section from a one-click table button.
+
+    Native dataframe row-selection checkboxes can require an extra interaction
+    when selection state and the active Section Builder state rerun in sequence.
+    A dedicated ButtonColumn sends an explicit row click to this callback, so
+    the selected Section ID is staged before the next full render.
+    """
+
+    click_key = str(st.session_state.get(CB_SECLIB_SUMMARY_BUTTON_KEY_STATE) or "")
+    row_ids_raw = st.session_state.get(CB_SECLIB_SUMMARY_BUTTON_ROW_IDS_KEY)
+    if not click_key or not isinstance(row_ids_raw, (list, tuple)):
+        return
+    row_index = _summary_button_row_index(st.session_state.get(click_key))
+    if row_index is None:
+        return
+    row_ids = [str(value) for value in row_ids_raw]
+    if row_index >= len(row_ids):
+        return
+    selected_id = row_ids[row_index]
+    definitions = ensure_crossbeam_section_library_state(st.session_state)
+    if selected_id not in definition_map(definitions):
+        return
+    active_id = str(st.session_state.get(CB_SECLIB_ACTIVE_ID_KEY) or "")
+    if selected_id == active_id:
+        return
+    _stage_definition_selection(
+        st.session_state,
+        definitions,
+        selected_id,
+        notice=f"Now editing {selected_id} selected from Project Section Summary.",
+    )
+
+
 def _section_name_suggestions(role: str) -> list[str]:
     """Return concise project-facing section-name suggestions by geometry role.
 
@@ -465,17 +516,25 @@ def _rename_section_name_form(definitions: list[dict[str, Any]], active_id: str)
             "Suggestions reduce typing but do not control analysis. The Section ID remains the stable internal reference; the name is project-facing and fully editable."
         )
 
-    with st.form(f"crossbeam_seclib1d_name_{active_id}", border=False):
-        name_col, action_col = st.columns([0.78, 0.22], gap="small")
-        with name_col:
-            proposed_name = st.text_input(
-                "Section name",
-                key=name_key,
-                help="A concise project-facing name. Section ID remains stable for Segment Layout and Project JSON references.",
-            )
-        with action_col:
-            st.write("")
-            save_name = st.form_submit_button("Save section name", use_container_width=True, type="primary")
+    name_col, action_col = st.columns([0.78, 0.22], gap="small")
+    with name_col:
+        proposed_name = st.text_input(
+            "Section name",
+            key=name_key,
+            help="A concise project-facing name. Section ID remains stable for Segment Layout and Project JSON references.",
+        )
+    clean_candidate = str(proposed_name or "").strip()
+    name_changed = bool(clean_candidate) and clean_candidate != str(active["Section name"]).strip()
+    with action_col:
+        st.write("")
+        save_name = st.button(
+            "Save name",
+            key=f"crossbeam_seclib1f_save_name_{active_id}",
+            use_container_width=True,
+            type="primary",
+            disabled=not name_changed,
+            help="Save the edited project-facing name." if name_changed else "Edit the section name before saving.",
+        )
     if not save_name:
         return
     conflicts = _conflicting_section_name_ids(definitions, active_id, proposed_name)
@@ -702,34 +761,66 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
 
     st.markdown("#### Project Section Summary")
     st.caption(
-        "Click any row to make it active. The current row is highlighted; geometry, properties, live preview, and management controls update together."
+        "Click **Edit** once to open a Section ID. The current row is highlighted; geometry, properties, live preview, and management controls update together."
     )
     summary_rows = _project_section_summary_rows(definitions, usage, active_id)
     summary_revision = int(st.session_state.get(CB_SECLIB_REVISION_KEY, 0) or 0)
-    summary_widget_key = f"crossbeam_seclib1e_project_section_summary_{summary_revision}"
-    st.session_state[CB_SECLIB_SUMMARY_WIDGET_KEY_STATE] = summary_widget_key
-    st.session_state[CB_SECLIB_SUMMARY_ROW_IDS_KEY] = [str(row.get("Section ID") or "") for row in summary_rows]
-    st.dataframe(
-        _style_project_section_summary(summary_rows, active_id),
-        use_container_width=True,
-        hide_index=True,
-        key=summary_widget_key,
-        on_select=_project_section_summary_on_select,
-        selection_mode="single-row",
-        column_config={
-            "Section ID": st.column_config.TextColumn(width="small"),
-            "Section name": st.column_config.TextColumn(width="medium"),
-            "Family": st.column_config.TextColumn(width="small"),
-            "B × H": st.column_config.TextColumn(width="small"),
-            "Geometry summary": st.column_config.TextColumn(width="large"),
-            "Area mm²": st.column_config.NumberColumn(format="%.1f", width="small"),
-            "Centroid from top mm": st.column_config.NumberColumn(format="%.2f", width="small"),
-            "Ix mm⁴": st.column_config.NumberColumn(format="%.3e", width="small"),
-            "Iy mm⁴": st.column_config.NumberColumn(format="%.3e", width="small"),
-            "Segments using": st.column_config.TextColumn(width="medium"),
-            "Status": st.column_config.TextColumn(width="small"),
-        },
-    )
+    summary_widget_key = f"crossbeam_seclib1f_project_section_summary_{summary_revision}"
+    row_ids = [str(row.get("Section ID") or "") for row in summary_rows]
+    button_column = getattr(st.column_config, "ButtonColumn", None)
+    if callable(button_column):
+        button_click_key = f"crossbeam_seclib1f_open_section_{summary_revision}"
+        st.session_state[CB_SECLIB_SUMMARY_BUTTON_KEY_STATE] = button_click_key
+        st.session_state[CB_SECLIB_SUMMARY_BUTTON_ROW_IDS_KEY] = row_ids
+        rows_with_action = [{"Open": "Edit", **row} for row in summary_rows]
+        st.dataframe(
+            _style_project_section_summary(rows_with_action, active_id),
+            use_container_width=True,
+            hide_index=True,
+            key=summary_widget_key,
+            column_config={
+                "Open": button_column(
+                    "",
+                    width="small",
+                    type="tertiary",
+                    on_click=_project_section_summary_button_click,
+                    key=button_click_key,
+                    help="Open this Section ID in the geometry editor and live preview.",
+                ),
+                "Section ID": st.column_config.TextColumn(width="small"),
+                "Section name": st.column_config.TextColumn(width="medium"),
+                "Family": st.column_config.TextColumn(width="small"),
+                "B × H": st.column_config.TextColumn(width="small"),
+                "Geometry summary": st.column_config.TextColumn(width="large"),
+                "Area mm²": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "Centroid from top mm": st.column_config.NumberColumn(format="%.2f", width="small"),
+                "Ix mm⁴": st.column_config.NumberColumn(format="%.3e", width="small"),
+                "Iy mm⁴": st.column_config.NumberColumn(format="%.3e", width="small"),
+                "Segments using": st.column_config.TextColumn(width="medium"),
+                "Status": st.column_config.TextColumn(width="small"),
+            },
+        )
+    else:
+        st.dataframe(
+            _style_project_section_summary(summary_rows, active_id),
+            use_container_width=True,
+            hide_index=True,
+            key=summary_widget_key,
+            column_config={
+                "Section ID": st.column_config.TextColumn(width="small"),
+                "Section name": st.column_config.TextColumn(width="medium"),
+                "Family": st.column_config.TextColumn(width="small"),
+                "B × H": st.column_config.TextColumn(width="small"),
+                "Geometry summary": st.column_config.TextColumn(width="large"),
+                "Area mm²": st.column_config.NumberColumn(format="%.1f", width="small"),
+                "Centroid from top mm": st.column_config.NumberColumn(format="%.2f", width="small"),
+                "Ix mm⁴": st.column_config.NumberColumn(format="%.3e", width="small"),
+                "Iy mm⁴": st.column_config.NumberColumn(format="%.3e", width="small"),
+                "Segments using": st.column_config.TextColumn(width="medium"),
+                "Status": st.column_config.TextColumn(width="small"),
+            },
+        )
+        st.caption("Use Quick section switch above to open a section on Streamlit versions without table button columns.")
 
     st.markdown("#### Manage Selected Section")
     manage_name_col, manage_delete_col = st.columns([0.68, 0.32], gap="medium")

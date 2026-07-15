@@ -43,11 +43,11 @@ def test_summary_callback_ignores_current_or_invalid_selection() -> None:
     assert ui.CB_SECLIB_PENDING_ACTIVE_ID_KEY not in state
 
 
-def test_seclib1e_uses_pre_rerun_callback_not_post_render_second_rerun() -> None:
+def test_seclib1e_legacy_callback_remains_pure_but_is_not_the_rendered_selector() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "concrete_pmm_pro" / "ui" / "crossbeam_section_library.py").read_text(encoding="utf-8")
 
-    assert "on_select=_project_section_summary_on_select" in source
+    assert "def _project_section_summary_on_select" in source
     assert 'on_select="rerun",' not in source
     assert "selected_from_table =" not in source
-    assert "summary_widget_key = f\"crossbeam_seclib1e_project_section_summary_{summary_revision}\"" in source
+    assert "on_select=_project_section_summary_on_select" not in source

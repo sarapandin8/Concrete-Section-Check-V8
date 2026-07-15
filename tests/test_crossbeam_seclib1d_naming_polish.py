@@ -62,7 +62,7 @@ def test_seclib1d_surfaces_quick_names_active_badge_and_table_highlight() -> Non
 
     assert '"Suggested section role / name"' in source
     assert '"Custom project name"' in source
-    assert '"Save section name"' in source
+    assert '"Save name"' in source
     assert '"Quick section switch"' in source
     assert '"**ACTIVE PROJECT SECTION**' in source
     assert "_style_project_section_summary(summary_rows, active_id)" in source

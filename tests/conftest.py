@@ -38,6 +38,9 @@ class _DummyColumnConfig:
     def CheckboxColumn(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         return {"type": "CheckboxColumn", "args": args, "kwargs": kwargs}
 
+    def ButtonColumn(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {"type": "ButtonColumn", "args": args, "kwargs": kwargs}
+
     def SelectboxColumn(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         return {"type": "SelectboxColumn", "args": args, "kwargs": kwargs}
 

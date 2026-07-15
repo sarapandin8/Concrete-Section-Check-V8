@@ -61,7 +61,7 @@ def test_seclib1b_surfaces_summary_rename_delete_and_keeps_id_advanced() -> None
 
     assert '"#### Project Section Summary"' in source
     assert '"#### Manage Selected Section"' in source
-    assert '"Save section name"' in source
+    assert '"Save name"' in source
     assert '"Delete selected section"' in source
     assert '"Advanced Section ID management"' in source
     assert "assigned sections cannot be removed" in source
