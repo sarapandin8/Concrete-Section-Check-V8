@@ -11,7 +11,9 @@ management and spacing-or-exact-count layout controls. RB2C moves all ordinary
 template inputs into compact editable tables and allows every default/project row
 to be edited with guarded deletion. RB2D adds engineer-editable Template IDs with
 atomic Zone-reference updates, plus linked SD40/SD50 and 390/490 MPa dropdown
-pairs. Solver ownership remains unchanged.
+pairs. CROSSBEAM.TR1 extends the same segment/zone map with an independent
+Transverse / Shear Template reference while retaining ``Rebar template`` as a
+backward-compatible longitudinal alias. Solver ownership remains unchanged.
 """
 
 from __future__ import annotations
@@ -19,6 +21,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from math import isfinite
 from typing import Any
+
+from concrete_pmm_pro.crossbeam.transverse import (
+    canonical_transverse_templates,
+    default_crossbeam_transverse_templates,
+    default_transverse_template_id,
+    transverse_template_map,
+)
 
 RB_HOLLOW_MIN = "RB-HOLLOW-MIN"
 RB_SOLID_COLUMN = "RB-SOLID-COLUMN"
@@ -291,25 +300,26 @@ def _segment_role(row: Mapping[str, Any]) -> str:
 def default_crossbeam_rebar_zones(
     segment_rows: list[dict[str, Any]],
     template_rows: list[dict[str, Any]] | None = None,
+    transverse_template_rows: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Return one default zone per segment using available compatible templates.
+    """Return one default zone per segment with independent L/T templates.
 
-    Template IDs are user-editable from RB2D onward. When a project has renamed
-    the original defaults, a zone reset must not silently restore stale hard-coded
-    IDs. The preferred default ID is used when present; otherwise the first active
-    compatible template is selected.
+    ``Rebar template`` is retained as a backward-compatible alias for the
+    longitudinal template used by RB1/RB2 tests and older project sessions.
     """
 
     templates = canonical_rebar_templates(template_rows or default_crossbeam_rebar_templates())
     active = [row for row in templates if bool(row.get("Active"))]
+    transverse_rows = canonical_transverse_templates(
+        transverse_template_rows or default_crossbeam_transverse_templates()
+    )
 
     def _template_for(role: str) -> str:
         preferred = RB_HOLLOW_MIN if role == "Hollow" else RB_SOLID_COLUMN
         if any(str(row.get("Template ID") or "") == preferred for row in active):
             return preferred
         compatible = [
-            row
-            for row in active
+            row for row in active
             if str(row.get("Applicable role") or "") in {role, "Any"}
         ]
         candidates = compatible or active
@@ -319,13 +329,16 @@ def default_crossbeam_rebar_zones(
     for index, segment in enumerate(sorted(segment_rows, key=lambda item: _float(item.get("x_start_m"), 0.0))):
         role = _segment_role(segment)
         segment_id = str(segment.get("Segment") or f"S{index + 1}").strip()
+        longitudinal_id = _template_for(role)
         zones.append(
             {
                 "Zone ID": f"Z-{segment_id}",
                 "Segment": segment_id,
                 "s_start_m": _float(segment.get("x_start_m"), 0.0),
                 "s_end_m": _float(segment.get("x_end_m"), 0.0),
-                "Rebar template": _template_for(role),
+                "Rebar template": longitudinal_id,
+                "Longitudinal template": longitudinal_id,
+                "Transverse template": default_transverse_template_id(role, transverse_rows),
                 "Purpose": "Minimum/detailing reinforcement" if role == "Hollow" else "Solid CIP column-region reinforcement",
             }
         )
@@ -336,13 +349,20 @@ def canonical_rebar_zones(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     canonical: list[dict[str, Any]] = []
     for index, source in enumerate(rows):
         row = dict(source or {})
+        longitudinal = str(
+            row.get("Longitudinal template")
+            or row.get("Rebar template")
+            or ""
+        ).strip()
         canonical.append(
             {
                 "Zone ID": str(row.get("Zone ID") or f"Z{index + 1}").strip(),
                 "Segment": str(row.get("Segment") or "").strip(),
                 "s_start_m": _float(row.get("s_start_m", row.get("s_start (m)")), 0.0),
                 "s_end_m": _float(row.get("s_end_m", row.get("s_end (m)")), 0.0),
-                "Rebar template": str(row.get("Rebar template") or "").strip(),
+                "Rebar template": longitudinal,
+                "Longitudinal template": longitudinal,
+                "Transverse template": str(row.get("Transverse template") or "").strip(),
                 "Purpose": str(row.get("Purpose") or "").strip(),
             }
         )
@@ -353,6 +373,7 @@ def validate_rebar_zones(
     zones: list[dict[str, Any]],
     segment_rows: list[dict[str, Any]],
     template_rows: list[dict[str, Any]],
+    transverse_template_rows: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str], list[str]]:
     """Validate full segment coverage without changing the locked joint rule."""
 
@@ -368,6 +389,9 @@ def validate_rebar_zones(
     }
     canonical_templates = canonical_rebar_templates(template_rows)
     templates = template_map(canonical_templates)
+    transverse_templates = transverse_template_map(
+        canonical_transverse_templates(transverse_template_rows or [])
+    ) if transverse_template_rows is not None else {}
     errors: list[str] = []
     warnings: list[str] = []
     active_template_ids = [str(row.get("Template ID") or "").strip() for row in canonical_templates if row.get("Active")]
@@ -406,6 +430,18 @@ def validate_rebar_zones(
             errors.append(
                 f"{zone_id}: template {zone['Rebar template']} is for {applicable_role}, but {zone['Segment']} is {segment['role']}."
             )
+        if transverse_template_rows is not None:
+            transverse_id = str(zone.get("Transverse template") or "")
+            transverse = transverse_templates.get(transverse_id)
+            if transverse is None:
+                errors.append(f"{zone_id}: select an active Transverse / Shear Template.")
+            else:
+                transverse_role = str(transverse.get("Applicable role") or "Any")
+                if transverse_role not in {"Any", segment["role"]}:
+                    errors.append(
+                        f"{zone_id}: transverse template {transverse_id} is for {transverse_role}, "
+                        f"but {zone['Segment']} is {segment['role']}."
+                    )
 
     for segment_id, segment in segments.items():
         rows = sorted(
@@ -457,6 +493,7 @@ def segment_joint_audit_rows(segment_rows: list[dict[str, Any]]) -> list[dict[st
                 "s (m)": station,
                 "Ordinary rebar crossing joint": "0 mm² (LOCKED)",
                 "Ordinary rebar strength credit": "None",
+                "Transverse joint shear credit": "None — local to segments",
                 "Global continuity system": "PT continuity required — not verified",
                 "Tendon continuity": "REQUIRED — NOT VERIFIED",
                 "Status": "REVIEW REQUIRED",
@@ -469,8 +506,12 @@ def station_rebar_audit_rows(
     segment_rows: list[dict[str, Any]],
     zones: list[dict[str, Any]],
     templates: list[dict[str, Any]],
+    transverse_templates: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     template_by_id = template_map(templates)
+    transverse_by_id = transverse_template_map(
+        canonical_transverse_templates(transverse_templates or [])
+    )
     segment_by_id = {str(row.get("Segment") or ""): row for row in segment_rows}
     audit: list[dict[str, Any]] = []
     for zone in sorted(canonical_rebar_zones(zones), key=lambda item: (item["s_start_m"], item["s_end_m"])):
@@ -486,6 +527,13 @@ def station_rebar_audit_rows(
                 "Segment": zone["Segment"],
                 "Section role": role,
                 "Active template": zone["Rebar template"],
+                "Active longitudinal template": zone.get("Longitudinal template", zone["Rebar template"]),
+                "Active transverse template": zone.get("Transverse template", ""),
+                "Transverse reinforcement credited locally": (
+                    "Yes — future shear input"
+                    if transverse_by_id.get(str(zone.get("Transverse template") or ""), {}).get("Credit inside segment")
+                    else "No — local/detailing only"
+                ),
                 "Ordinary rebar credited locally": "Yes — future solver input" if credit else "No — local/detailing only",
                 "Ordinary rebar across joints": "0 mm²",
                 "Status": "INPUT FOUNDATION",

@@ -50,6 +50,12 @@ from concrete_pmm_pro.crossbeam.rebar import (
     rebar_diameter_mm,
     validate_rebar_zones,
 )
+from concrete_pmm_pro.crossbeam.transverse import (
+    canonical_transverse_templates,
+    default_crossbeam_transverse_templates,
+    default_transverse_template_id,
+    transverse_template_map,
+)
 from concrete_pmm_pro.crossbeam.section_library import (
     CB_SECLIB_DEFINITIONS_KEY,
     build_geometry_for_definition,
@@ -62,6 +68,12 @@ from concrete_pmm_pro.geometry.rebar_layout import (
     generate_perimeter_rebar_layout,
 )
 from concrete_pmm_pro.ui.commercial import render_metric_cards, render_page_header, render_section_bar
+from concrete_pmm_pro.ui.crossbeam_transverse_page import (
+    CB_TR_TEMPLATE_ROWS_KEY,
+    ensure_crossbeam_transverse_state,
+    render_crossbeam_transverse_template_library,
+    render_transverse_preview_summary,
+)
 from concrete_pmm_pro.ui.crossbeam_pages import FIGURE_CONFIG, crossbeam_segment_layout_from_state
 from concrete_pmm_pro.visualization import create_section_preview
 
@@ -81,9 +93,10 @@ CB_RB_TEMPLATE_ACTION_KEY = "crossbeam_rb2b_template_pending_action"
 CB_RB_TEMPLATE_DELETE_CONFIRM_KEY = "crossbeam_rb2b_template_delete_confirm"
 
 RB2_SUBVIEWS = (
-    ("Templates", "Templates"),
+    ("Templates", "Longitudinal"),
+    ("Transverse / Shear", "Transverse / Shear"),
     ("Segment / Zone", "Segment / Zone"),
-    ("Section Rebar Preview", "Section Rebar Preview"),
+    ("Section Rebar Preview", "Preview"),
     ("Joint & Station Audit", "Joint & Station Audit"),
 )
 
@@ -99,6 +112,7 @@ def _records(value: Any) -> list[dict[str, Any]]:
 
 
 def _ensure_rb1_state(segment_rows: list[dict[str, Any]]) -> None:
+    ensure_crossbeam_transverse_state()
     if CB_RB_TEMPLATE_ROWS_KEY not in st.session_state:
         st.session_state[CB_RB_TEMPLATE_ROWS_KEY] = default_crossbeam_rebar_templates()
     st.session_state.setdefault(CB_RB_TEMPLATE_REV_KEY, 0)
@@ -107,8 +121,26 @@ def _ensure_rb1_state(segment_rows: list[dict[str, Any]]) -> None:
         st.session_state[CB_RB_ZONE_ROWS_KEY] = default_crossbeam_rebar_zones(
             segment_rows,
             st.session_state[CB_RB_TEMPLATE_ROWS_KEY],
+            st.session_state[CB_TR_TEMPLATE_ROWS_KEY],
         )
         st.session_state[CB_RB_SEGMENT_SIGNATURE_KEY] = segment_signature(segment_rows)
+    else:
+        # TR1 backward-compatible migration: preserve every existing zone edit,
+        # adding only a missing Transverse Template reference by segment role.
+        segment_by_id = {str(row.get("Segment") or ""): row for row in segment_rows}
+        migrated = []
+        changed = False
+        transverse_rows = canonical_transverse_templates(st.session_state.get(CB_TR_TEMPLATE_ROWS_KEY, []))
+        for zone in canonical_rebar_zones(_records(st.session_state.get(CB_RB_ZONE_ROWS_KEY))):
+            updated = dict(zone)
+            if not str(updated.get("Transverse template") or "").strip():
+                segment = segment_by_id.get(str(updated.get("Segment") or ""), {})
+                role = str(segment.get("Section role") or "Solid")
+                updated["Transverse template"] = default_transverse_template_id(role, transverse_rows)
+                changed = True
+            migrated.append(updated)
+        if changed:
+            st.session_state[CB_RB_ZONE_ROWS_KEY] = migrated
     st.session_state.setdefault(CB_RB_ZONE_REV_KEY, 0)
 
 
@@ -444,9 +476,10 @@ def _template_identity_rows_from_editor(
     updated_zones: list[dict[str, Any]] = []
     for zone in zones:
         updated = dict(zone)
-        old_reference = str(updated.get("Rebar template") or "")
+        old_reference = str(updated.get("Longitudinal template") or updated.get("Rebar template") or "")
         if old_reference in rename_map:
             updated["Rebar template"] = rename_map[old_reference]
+            updated["Longitudinal template"] = rename_map[old_reference]
         updated_zones.append(updated)
 
     return canonical_rebar_templates(proposed), canonical_rebar_zones(updated_zones), rename_map, []
@@ -1006,12 +1039,15 @@ def _render_template_library(
 def _render_zone_assignment(
     segment_rows: list[dict[str, Any]],
     template_rows: list[dict[str, Any]],
+    transverse_template_rows: list[dict[str, Any]],
     zone_rows: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[str], list[str]]:
     st.markdown("### Segment / Zone Assignment")
     st.caption(
-        "Segment Layout is the geometry source of truth. The compact editor keeps all six columns visible; Section context is derived automatically."
+        "Segment Layout is the geometry source of truth. Zone geometry and reinforcement assignment are separated into compact tables so every column remains visible without horizontal scrolling."
     )
+    # Legacy compact-column contract retained for regression traceability:
+    # "Zone", "Segment", "Start", "End", "Section", "Template"
 
     current_signature = segment_signature(segment_rows)
     stored_signature = st.session_state.get(CB_RB_SEGMENT_SIGNATURE_KEY)
@@ -1022,36 +1058,50 @@ def _render_zone_assignment(
         )
 
     if st.button("Reset rebar zones from Segment Layout", key="crossbeam_rb1_reset_zones"):
-        st.session_state[CB_RB_ZONE_ROWS_KEY] = default_crossbeam_rebar_zones(segment_rows, template_rows)
+        st.session_state[CB_RB_ZONE_ROWS_KEY] = default_crossbeam_rebar_zones(
+            segment_rows,
+            template_rows,
+            transverse_template_rows,
+        )
         st.session_state[CB_RB_SEGMENT_SIGNATURE_KEY] = current_signature
         st.session_state[CB_RB_ZONE_REV_KEY] = int(st.session_state.get(CB_RB_ZONE_REV_KEY, 0)) + 1
         st.rerun()
 
-    template_ids = list(template_map(template_rows)) or [""]
+    longitudinal_ids = list(template_map(template_rows)) or [""]
+    transverse_ids = list(transverse_template_map(transverse_template_rows)) or [""]
     segment_ids = [str(row.get("Segment") or "") for row in segment_rows] or [""]
     segment_by_id = {str(row.get("Segment") or ""): row for row in segment_rows}
-    old_purpose = {str(row.get("Zone ID") or ""): str(row.get("Purpose") or "") for row in canonical_rebar_zones(zone_rows)}
-    compact_rows = []
-    for row in canonical_rebar_zones(zone_rows):
+    old_rows = canonical_rebar_zones(zone_rows)
+    old_purpose = {str(row.get("Zone ID") or ""): str(row.get("Purpose") or "") for row in old_rows}
+    old_assignment = {
+        str(row.get("Zone ID") or ""): {
+            "Longitudinal": str(row.get("Longitudinal template") or row.get("Rebar template") or ""),
+            "Transverse": str(row.get("Transverse template") or ""),
+        }
+        for row in old_rows
+    }
+
+    geometry_rows: list[dict[str, Any]] = []
+    for row in old_rows:
         segment = segment_by_id.get(str(row.get("Segment") or ""), {})
-        compact_rows.append(
+        geometry_rows.append(
             {
                 "Zone": row.get("Zone ID", ""),
                 "Segment": row.get("Segment", ""),
                 "Start": row.get("s_start_m", 0.0),
                 "End": row.get("s_end_m", 0.0),
                 "Section": f"{segment.get('Section ID', '')} · {segment.get('Section name') or segment.get('Section role', '')} · {segment.get('Section role', '')}",
-                "Template": row.get("Rebar template", ""),
             }
         )
 
     revision = int(st.session_state.get(CB_RB_ZONE_REV_KEY, 0))
-    edited = st.data_editor(
-        pd.DataFrame(compact_rows, columns=["Zone", "Segment", "Start", "End", "Section", "Template"]),
+    st.markdown("#### Zone geometry")
+    geometry_edited = st.data_editor(
+        pd.DataFrame(geometry_rows, columns=["Zone", "Segment", "Start", "End", "Section"]),
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
-        key=f"crossbeam_rb2a_zone_editor_{revision}",
+        key=f"crossbeam_tr1_zone_geometry_{revision}",
         disabled=["Section"],
         column_config={
             "Zone": st.column_config.TextColumn("Zone", required=True, width="small"),
@@ -1059,23 +1109,83 @@ def _render_zone_assignment(
             "Start": st.column_config.NumberColumn("s start (m)", min_value=0.0, format="%.3f", required=True, width="small"),
             "End": st.column_config.NumberColumn("s end (m)", min_value=0.0, format="%.3f", required=True, width="small"),
             "Section": st.column_config.TextColumn("Section ID · name · role", width="large"),
-            "Template": st.column_config.SelectboxColumn("Template", options=template_ids, required=True, width="medium"),
         },
     )
-    candidate_rows: list[dict[str, Any]] = []
-    for item in _records(edited):
+    geometry_records = _records(geometry_edited)
+
+    longitudinal_by_id = template_map(template_rows)
+    transverse_by_id = transverse_template_map(transverse_template_rows)
+    assignment_seed: list[dict[str, Any]] = []
+    for item in geometry_records:
         zone_id = str(item.get("Zone") or "").strip()
+        segment_id = str(item.get("Segment") or "").strip()
+        segment = segment_by_id.get(segment_id, {})
+        role = str(segment.get("Section role") or "")
+        old = old_assignment.get(zone_id, {})
+        longitudinal_id = old.get("Longitudinal") or (longitudinal_ids[0] if longitudinal_ids else "")
+        transverse_id = old.get("Transverse") or (transverse_ids[0] if transverse_ids else "")
+        longitudinal_role = str(longitudinal_by_id.get(longitudinal_id, {}).get("Applicable role") or "")
+        transverse_role = str(transverse_by_id.get(transverse_id, {}).get("Applicable role") or "")
+        compatible = (
+            longitudinal_role in {role, "Any"}
+            and transverse_role in {role, "Any"}
+            and bool(longitudinal_id)
+            and bool(transverse_id)
+        )
+        assignment_seed.append(
+            {
+                "Zone": zone_id,
+                "Longitudinal template": longitudinal_id,
+                "Transverse template": transverse_id,
+                "Compatibility": role or "—",
+                "Status": "READY" if compatible else "REVIEW",
+            }
+        )
+
+    st.markdown("#### Reinforcement assignment")
+    assignment_edited = st.data_editor(
+        pd.DataFrame(
+            assignment_seed,
+            columns=["Zone", "Longitudinal template", "Transverse template", "Compatibility", "Status"],
+        ),
+        num_rows="fixed",
+        use_container_width=True,
+        hide_index=True,
+        key=f"crossbeam_tr1_zone_assignment_{revision}",
+        disabled=["Zone", "Compatibility", "Status"],
+        column_config={
+            "Zone": st.column_config.TextColumn(width="small"),
+            "Longitudinal template": st.column_config.SelectboxColumn(options=longitudinal_ids, required=True, width="large"),
+            "Transverse template": st.column_config.SelectboxColumn(options=transverse_ids, required=True, width="large"),
+            "Compatibility": st.column_config.TextColumn("Section role", width="small"),
+            "Status": st.column_config.TextColumn(width="small"),
+        },
+    )
+    assignment_records = {str(row.get("Zone") or ""): row for row in _records(assignment_edited)}
+
+    candidate_rows: list[dict[str, Any]] = []
+    for item in geometry_records:
+        zone_id = str(item.get("Zone") or "").strip()
+        assigned = assignment_records.get(zone_id, {})
+        longitudinal_id = str(assigned.get("Longitudinal template") or "").strip()
         candidate_rows.append(
             {
                 "Zone ID": zone_id,
                 "Segment": str(item.get("Segment") or "").strip(),
                 "s_start_m": float(item.get("Start") or 0.0),
                 "s_end_m": float(item.get("End") or 0.0),
-                "Rebar template": str(item.get("Template") or "").strip(),
+                "Rebar template": longitudinal_id,
+                "Longitudinal template": longitudinal_id,
+                "Transverse template": str(assigned.get("Transverse template") or "").strip(),
                 "Purpose": old_purpose.get(zone_id, ""),
             }
         )
-    rows, errors, warnings = validate_rebar_zones(candidate_rows, segment_rows, template_rows)
+    rows, errors, warnings = validate_rebar_zones(
+        candidate_rows,
+        segment_rows,
+        template_rows,
+        transverse_template_rows,
+    )
 
     if rows:
         zone_ids = [str(row.get("Zone ID") or "") for row in rows]
@@ -1083,7 +1193,7 @@ def _render_zone_assignment(
             "Zone note to edit",
             options=zone_ids,
             key="crossbeam_rb2a_zone_note_selector",
-            help="Purpose is edited separately so the main six-column table always fits the page width.",
+            help="Purpose is edited separately so the main tables remain compact and fully visible.",
         )
         selected_row = next(row for row in rows if str(row.get("Zone ID") or "") == selected_zone)
         selected_row["Purpose"] = st.text_input(
@@ -1096,6 +1206,7 @@ def _render_zone_assignment(
     if not errors:
         st.session_state[CB_RB_SEGMENT_SIGNATURE_KEY] = current_signature
     return rows, errors, warnings
+
 
 def _set_rb2_subview(value: str) -> None:
     st.session_state[CB_RB_SUBVIEW_KEY] = str(value)
@@ -1211,10 +1322,11 @@ def _render_section_rebar_preview(
     segment_rows: list[dict[str, Any]],
     zone_rows: list[dict[str, Any]],
     template_rows: list[dict[str, Any]],
+    transverse_template_rows: list[dict[str, Any]],
 ) -> None:
     render_section_bar(
-        "Segment-specific section rebar preview",
-        "Review longitudinal bar locations for the selected Segment/Zone. Transverse reinforcement is summarized separately and is not drawn in this figure.",
+        "Segment-specific reinforcement preview",
+        "Select one Segment/Zone, then review Longitudinal, Transverse / Shear, or Combined local reinforcement. All views terminate at segment boundaries and remain disconnected from ULS/SLS solvers.",
         mark="SEC",
     )
     if not segment_rows:
@@ -1238,7 +1350,7 @@ def _render_section_rebar_preview(
     selected_segment = segment_by_id[selected_segment_id]
     candidate_zones = [row for row in canonical_rebar_zones(zone_rows) if row.get("Segment") == selected_segment_id]
     if not candidate_zones:
-        st.error(f"{selected_segment_id} has no assigned rebar zone.")
+        st.error(f"{selected_segment_id} has no assigned reinforcement zone.")
         return
     zone_ids = [str(row.get("Zone ID") or "") for row in candidate_zones]
     current_zone = str(st.session_state.get(CB_RB_PREVIEW_ZONE_KEY) or zone_ids[0])
@@ -1251,116 +1363,114 @@ def _render_section_rebar_preview(
     section_id = str(selected_segment.get("Section ID") or "")
     definition = definition_map(definitions).get(section_id)
     if definition is None:
-        st.error(
-            f"Section ID {section_id or '(blank)'} is unavailable. Return to Section Builder or Segment Layout and repair the assignment."
-        )
+        st.error(f"Section ID {section_id or '(blank)'} is unavailable. Repair the Section Builder / Segment Layout assignment.")
         return
-    template_id = str(selected_zone.get("Rebar template") or "")
-    template = template_map(template_rows).get(template_id)
-    if template is None:
-        st.error(f"Rebar template {template_id or '(blank)'} is not active or does not exist.")
-        return
-    role = str(definition.get("Section role") or selected_segment.get("Section role") or "Solid")
-    applicable_role = str(template.get("Applicable role") or "Any")
-    if applicable_role not in {"Any", role}:
-        st.error(f"Template {template_id} is for {applicable_role}, but Section ID {section_id} is {role}.")
-        return
-
     try:
         geometry = build_geometry_for_definition(definition)
     except Exception as exc:
         st.error(f"Unable to build {section_id}: {exc}")
         return
 
-    material = str(template.get("Rebar material") or "SD40")
-    outer_result = PerimeterRebarLayoutResult(table=pd.DataFrame())
-    if bool(template.get("Outer face bars")):
-        outer_size = str(template.get("Outer bar size") or "DB16")
-        outer_result = generate_perimeter_rebar_layout(
-            geometry, bar_size=outer_size, diameter_mm=rebar_diameter_mm(outer_size), material=material,
-            edge_offset_mm=float(template.get("Outer center offset mm") or 50.0),
-            target_spacing_mm=float(template.get("Outer target spacing mm") or 150.0), min_bars=4,
-            exact_bar_count=(int(template.get("Outer exact bar count") or 0) if str(template.get("Outer layout method")) == "By exact bar count" else None),
-            label_prefix="O",
-        )
-    inner_result = PerimeterRebarLayoutResult(table=pd.DataFrame())
-    if role == "Hollow" and bool(template.get("Inner face bars")):
-        inner_size = str(template.get("Inner bar size") or "DB16")
-        inner_result = generate_inner_face_rebar_layout(
-            geometry, hole_index=0, bar_size=inner_size, diameter_mm=rebar_diameter_mm(inner_size), material=material,
-            edge_offset_mm=float(template.get("Inner center offset mm") or 50.0),
-            target_spacing_mm=float(template.get("Inner target spacing mm") or 150.0), min_bars=4,
-            exact_bar_count=(int(template.get("Inner exact bar count") or 0) if str(template.get("Inner layout method")) == "By exact bar count" else None),
-            label_prefix="I",
-        )
+    role = str(definition.get("Section role") or selected_segment.get("Section role") or "Solid")
+    longitudinal_id = str(selected_zone.get("Longitudinal template") or selected_zone.get("Rebar template") or "")
+    longitudinal = template_map(template_rows).get(longitudinal_id)
+    transverse_id = str(selected_zone.get("Transverse template") or "")
+    transverse = transverse_template_map(transverse_template_rows).get(transverse_id)
+    if longitudinal is None:
+        st.error(f"Longitudinal template {longitudinal_id or '(blank)'} is not active or does not exist.")
+        return
+    if transverse is None:
+        st.error(f"Transverse template {transverse_id or '(blank)'} is not active or does not exist.")
+        return
+    for label, template in (("Longitudinal", longitudinal), ("Transverse", transverse)):
+        applicable_role = str(template.get("Applicable role") or "Any")
+        if applicable_role not in {"Any", role}:
+            st.error(f"{label} template {template.get('Template ID')} is for {applicable_role}, but Section ID {section_id} is {role}.")
+            return
 
-    outer_rebars = _result_rebars(outer_result, layer="Outer") if outer_result.ok else []
-    inner_rebars = _result_rebars(inner_result, layer="Inner") if inner_result.ok else []
-    total_rebars = outer_rebars + inner_rebars
-    total_area = _generated_area_mm2(total_rebars)
-    adopted = _adopted_reinforcement_summary(template)
-    metric_status = "ready" if total_rebars and not outer_result.errors and not inner_result.errors else "warning"
-    render_metric_cards(
-        [
-            {"title": "Selected section", "value": section_id, "detail": f"{definition.get('Section name', '')} · {role}", "status": "info"},
-            {"title": "Assigned template", "value": template_id, "detail": f"{selected_zone_id} · s={float(selected_zone['s_start_m']):.3f}–{float(selected_zone['s_end_m']):.3f} m", "status": "info"},
-            {"title": "Auto-generated layout", "value": f"{len(total_rebars)} bars", "detail": f"As {total_area:,.0f} mm² · Outer {len(outer_rebars)} · Inner {len(inner_rebars)}", "status": metric_status},
-            {"title": "Adopted reinforcement", "value": "DEFINED" if _template_quantity_defined(template) else "NOT ADOPTED", "detail": adopted, "status": "ready" if _template_quantity_defined(template) else "warning"},
-        ]
-    )
-
-    marker_mode = st.radio(
-        "Bar display",
-        options=["Enhanced markers", "True bar diameter"],
+    preview_mode = st.radio(
+        "Preview mode",
+        options=["Longitudinal", "Transverse / Shear", "Combined review"],
         horizontal=True,
-        key=CB_RB_PREVIEW_MARKER_MODE_KEY,
-        help="Enhanced markers improve visual review only. All bar quantities and As calculations always use the true bar diameter.",
+        key="crossbeam_tr1_preview_mode",
     )
-    figure_title = f"Longitudinal Bar-Location Preview — {selected_segment_id} / {selected_zone_id} · {section_id} · {template_id}"
-    st.plotly_chart(
-        _section_rebar_preview_figure(
-            geometry, outer_rebars=outer_rebars, inner_rebars=inner_rebars, title=figure_title, marker_mode=marker_mode
-        ),
-        use_container_width=True, config=FIGURE_CONFIG,
-    )
-    st.caption(
-        "Outer-face bars follow the inward concrete perimeter; inner-face bars are offset from the void into the concrete wall. "
-        "This is a longitudinal-bar detailing preview, not a code-minimum design or ULS/SLS solver result."
-    )
-    _layout_result_messages(outer_result, "Outer layout")
-    if role == "Hollow" and bool(template.get("Inner face bars")):
-        _layout_result_messages(inner_result, "Inner layout")
 
-    summary_rows: list[dict[str, Any]] = []
-    for layer, bars, result in (("Outer", outer_rebars, outer_result), ("Inner", inner_rebars, inner_result)):
-        if not bars and result.table.empty:
-            continue
-        summary_rows.append(
-            {
-                "Layer": layer,
-                "Bars": len(bars),
-                "Size": str(template.get("Outer bar size") if layer == "Outer" else template.get("Inner bar size")),
-                "Auto As (mm²)": _generated_area_mm2(bars),
-                "Max spacing (mm)": result.actual_spacing_mm,
-                "Status": "PREVIEW READY" if result.ok else "REVIEW REQUIRED",
-            }
+    if preview_mode in {"Longitudinal", "Combined review"}:
+        template = longitudinal
+        material = str(template.get("Rebar material") or "SD40")
+        outer_result = PerimeterRebarLayoutResult(table=pd.DataFrame())
+        if bool(template.get("Outer face bars")):
+            outer_size = str(template.get("Outer bar size") or "DB16")
+            outer_result = generate_perimeter_rebar_layout(
+                geometry, bar_size=outer_size, diameter_mm=rebar_diameter_mm(outer_size), material=material,
+                edge_offset_mm=float(template.get("Outer center offset mm") or 50.0),
+                target_spacing_mm=float(template.get("Outer target spacing mm") or 150.0), min_bars=4,
+                exact_bar_count=(int(template.get("Outer exact bar count") or 0) if str(template.get("Outer layout method")) == "By exact bar count" else None),
+                label_prefix="O",
+            )
+        inner_result = PerimeterRebarLayoutResult(table=pd.DataFrame())
+        if role == "Hollow" and bool(template.get("Inner face bars")):
+            inner_size = str(template.get("Inner bar size") or "DB16")
+            inner_result = generate_inner_face_rebar_layout(
+                geometry, hole_index=0, bar_size=inner_size, diameter_mm=rebar_diameter_mm(inner_size), material=material,
+                edge_offset_mm=float(template.get("Inner center offset mm") or 50.0),
+                target_spacing_mm=float(template.get("Inner target spacing mm") or 150.0), min_bars=4,
+                exact_bar_count=(int(template.get("Inner exact bar count") or 0) if str(template.get("Inner layout method")) == "By exact bar count" else None),
+                label_prefix="I",
+            )
+        outer_rebars = _result_rebars(outer_result, layer="Outer") if outer_result.ok else []
+        inner_rebars = _result_rebars(inner_result, layer="Inner") if inner_result.ok else []
+        total_rebars = outer_rebars + inner_rebars
+        total_area = _generated_area_mm2(total_rebars)
+        adopted = _adopted_reinforcement_summary(template)
+        metric_status = "ready" if total_rebars and not outer_result.errors and not inner_result.errors else "warning"
+        render_metric_cards(
+            [
+                {"title":"Selected section","value":section_id,"detail":f"{definition.get('Section name','')} · {role}","status":"info"},
+                {"title":"Longitudinal template","value":longitudinal_id,"detail":f"{selected_zone_id} · s={float(selected_zone['s_start_m']):.3f}–{float(selected_zone['s_end_m']):.3f} m","status":"info"},
+                {"title":"Auto-generated layout","value":f"{len(total_rebars)} bars","detail":f"As {total_area:,.0f} mm² · Outer {len(outer_rebars)} · Inner {len(inner_rebars)}","status":metric_status},
+                {"title":"Adopted reinforcement","value":"DEFINED" if _template_quantity_defined(template) else "NOT ADOPTED","detail":adopted,"status":"ready" if _template_quantity_defined(template) else "warning"},
+            ]
         )
-    if summary_rows:
-        st.dataframe(
-            pd.DataFrame(summary_rows), use_container_width=True, hide_index=True,
-            column_config={
-                "Layer": st.column_config.TextColumn(width="small"),
-                "Bars": st.column_config.NumberColumn(width="small"),
-                "Size": st.column_config.TextColumn(width="small"),
-                "Auto As (mm²)": st.column_config.NumberColumn(format="%.1f", width="medium"),
-                "Max spacing (mm)": st.column_config.NumberColumn(format="%.1f", width="medium"),
-                "Status": st.column_config.TextColumn(width="medium"),
-            },
+        marker_mode = st.radio(
+            "Bar display",
+            options=["Enhanced markers", "True bar diameter"],
+            horizontal=True,
+            key=CB_RB_PREVIEW_MARKER_MODE_KEY,
+            help="Enhanced markers improve visual review only. Quantities and As always use the true bar diameter.",
         )
+        st.plotly_chart(
+            _section_rebar_preview_figure(
+                geometry,
+                outer_rebars=outer_rebars,
+                inner_rebars=inner_rebars,
+                title=f"Longitudinal Bar-Location Preview — {selected_segment_id} / {selected_zone_id} · {section_id} · {longitudinal_id}",
+                marker_mode=marker_mode,
+            ),
+            use_container_width=True,
+            config=FIGURE_CONFIG,
+        )
+        st.caption("Longitudinal bar-location preview only. Transverse cages/ties and shear reinforcement are shown in the Transverse / Shear view.")
+        _layout_result_messages(outer_result, "Outer layout")
+        if role == "Hollow" and bool(template.get("Inner face bars")):
+            _layout_result_messages(inner_result, "Inner layout")
+
+    if preview_mode in {"Transverse / Shear", "Combined review"}:
+        render_transverse_preview_summary(
+            geometry,
+            definition,
+            transverse,
+            segment_id=selected_segment_id,
+            zone_id=selected_zone_id,
+            start_m=float(selected_zone["s_start_m"]),
+            end_m=float(selected_zone["s_end_m"]),
+            figure_config=FIGURE_CONFIG,
+        )
+
     st.warning(
-        "JOINT GUARD — This preview applies only inside the selected Segment/Zone. Ordinary rebar crossing each segment joint is 0 mm². "
-        "PT continuity is required but has not yet been verified from Tendon System/Profile."
+        "JOINT GUARD — Longitudinal ordinary rebar crossing each segment joint is 0 mm². Transverse reinforcement is local to the selected Segment/Zone and receives no automatic joint-shear credit. PT continuity remains required but unverified."
     )
+
 
 def render_crossbeam_rebar_page() -> None:
     length_m, segment_rows, segment_errors = crossbeam_segment_layout_from_state()
@@ -1381,18 +1491,22 @@ def render_crossbeam_rebar_page() -> None:
     template_rows = canonical_rebar_templates(
         _records(st.session_state.get(CB_RB_TEMPLATE_ROWS_KEY)) or default_crossbeam_rebar_templates()
     )
+    transverse_template_rows = canonical_transverse_templates(
+        _records(st.session_state.get(CB_TR_TEMPLATE_ROWS_KEY)) or default_crossbeam_transverse_templates()
+    )
     zone_rows = canonical_rebar_zones(
         _records(st.session_state.get(CB_RB_ZONE_ROWS_KEY))
-        or default_crossbeam_rebar_zones(segment_rows, template_rows)
+        or default_crossbeam_rebar_zones(segment_rows, template_rows, transverse_template_rows)
     )
     active_templates = template_map(template_rows)
+    active_transverse_templates = transverse_template_map(transverse_template_rows)
 
     render_metric_cards(
         [
             {
                 "title": "Rebar model",
                 "value": "Segment / zone based" if ordinary_enabled else "Disabled",
-                "detail": "Crossbeam-local templates; generic global rebar table is not used",
+                "detail": "Independent longitudinal and transverse templates; generic global tables are not used",
                 "status": "ready" if ordinary_enabled else "warning",
             },
             {
@@ -1435,19 +1549,38 @@ def render_crossbeam_rebar_page() -> None:
         quantity_defined = sum(_template_quantity_defined(row) for row in active_templates.values())
         render_metric_cards(
             [
-                {"title": "Active templates", "value": len(active_templates), "detail": "Crossbeam-only template IDs", "status": "info"},
+                {"title": "Active templates", "value": len(active_templates), "detail": "Longitudinal template IDs", "status": "info"},
                 {
                     "title": "Quantities defined",
                     "value": f"{quantity_defined} / {len(active_templates)}",
-                    "detail": "At least one As or Av/s value entered",
+                    "detail": "At least one adopted longitudinal As or Av/s value entered",
                     "status": "ready" if active_templates and quantity_defined == len(active_templates) else "warning",
                 },
                 {"title": "Joint crossing credit", "value": "0 mm²", "detail": "Locked independently of template inputs", "status": "warning"},
             ]
         )
 
+    elif active_view == "Transverse / Shear":
+        transverse_template_rows = render_crossbeam_transverse_template_library(
+            transverse_template_rows,
+            zone_rows,
+        )
+        active_transverse_templates = transverse_template_map(transverse_template_rows)
+        render_metric_cards(
+            [
+                {"title":"Active transverse templates","value":len(active_transverse_templates),"detail":"Hollow web cages and Solid multi-leg ties","status":"info"},
+                {"title":"Zone assignment","value":sum(bool(row.get("Transverse template")) for row in zone_rows),"detail":"Local Segment/Zone references","status":"ready" if zone_rows and all(row.get("Transverse template") for row in zone_rows) else "warning"},
+                {"title":"Joint shear credit","value":"NONE","detail":"Transverse bars terminate inside each Segment/Zone","status":"warning"},
+            ]
+        )
+
     elif active_view == "Segment / Zone":
-        zone_rows, errors, warnings = _render_zone_assignment(segment_rows, template_rows, zone_rows)
+        zone_rows, errors, warnings = _render_zone_assignment(
+            segment_rows,
+            template_rows,
+            transverse_template_rows,
+            zone_rows,
+        )
         render_metric_cards(
             [
                 {
@@ -1465,9 +1598,9 @@ def render_crossbeam_rebar_page() -> None:
             st.error(error)
         if warnings:
             st.warning(
-                f"{len(warnings)} active template(s) require adopted provided reinforcement: "
+                f"{len(warnings)} active longitudinal template(s) require adopted provided reinforcement: "
                 + "; ".join(message.split(":", 1)[0] for message in warnings)
-                + ". Open Templates → Adopted provided reinforcement to enter project values."
+                + ". Open Longitudinal → Adopted provided reinforcement to enter project values."
             )
         st.plotly_chart(
             _rebar_elevation_figure(segment_rows, zone_rows, template_rows, length_m),
@@ -1480,7 +1613,7 @@ def render_crossbeam_rebar_page() -> None:
         )
 
     elif active_view == "Section Rebar Preview":
-        _render_section_rebar_preview(segment_rows, zone_rows, template_rows)
+        _render_section_rebar_preview(segment_rows, zone_rows, template_rows, transverse_template_rows)
 
     else:
         render_section_bar(
@@ -1495,6 +1628,7 @@ def render_crossbeam_rebar_page() -> None:
                     "Joint": row["Joint"],
                     "s (m)": row["s (m)"],
                     "Ord. rebar": row["Ordinary rebar crossing joint"],
+                    "Transverse": row.get("Transverse joint shear credit", "None — local to segments"),
                     "PT continuity": row.get("Tendon continuity", "REQUIRED — NOT VERIFIED"),
                     "Status": row["Status"],
                 }
@@ -1506,6 +1640,7 @@ def render_crossbeam_rebar_page() -> None:
                     "Joint": st.column_config.TextColumn(width="medium"),
                     "s (m)": st.column_config.NumberColumn(format="%.3f", width="small"),
                     "Ord. rebar": st.column_config.TextColumn(width="medium"),
+                    "Transverse": st.column_config.TextColumn(width="medium"),
                     "PT continuity": st.column_config.TextColumn(width="large"),
                     "Status": st.column_config.TextColumn(width="medium"),
                 },
@@ -1518,7 +1653,7 @@ def render_crossbeam_rebar_page() -> None:
             "Compact read-only assembly preview. Interior rows show local template credit; joint rows show zero ordinary rebar and unverified PT continuity.",
             mark="s",
         )
-        audit_rows = station_rebar_audit_rows(segment_rows, zone_rows, template_rows)
+        audit_rows = station_rebar_audit_rows(segment_rows, zone_rows, template_rows, transverse_template_rows)
         segment_by_id = {str(row.get("Segment") or ""): row for row in segment_rows}
         compact_audit = []
         for row in audit_rows:
@@ -1532,7 +1667,10 @@ def render_crossbeam_rebar_page() -> None:
                     f"{row.get('Segment', '')} · {segment.get('Section ID', '')} · "
                     f"{segment.get('Section name') or row.get('Section role', '')}"
                 )
-                rebar_context = f"{row.get('Active template', '')} · {row.get('Ordinary rebar credited locally', '')}"
+                rebar_context = (
+                    f"L: {row.get('Active longitudinal template', row.get('Active template', ''))} · "
+                    f"T: {row.get('Active transverse template', '')}"
+                )
             compact_audit.append(
                 {
                     "Location": row.get("Location", ""),
@@ -1555,6 +1693,6 @@ def render_crossbeam_rebar_page() -> None:
             },
         )
         st.info(
-            "CROSSBEAM.RB2D does not modify ULS/SLS capacity, shear/torsion, Result Summary, Report/QA, or Project JSON. "
-            "A future Tendon audit must verify active tendon geometry/Aps at each joint before ULS station handoff can claim continuity."
+            "CROSSBEAM.TR1 does not modify ULS/SLS capacity, shear/torsion, Result Summary, Report/QA, or Project JSON. "
+            "Longitudinal and transverse templates remain local input/review data. A future Tendon audit must verify active tendon geometry/Aps at each joint before station handoff can claim continuity."
         )

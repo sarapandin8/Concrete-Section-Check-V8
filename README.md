@@ -1,3 +1,9 @@
+### CROSSBEAM.TR1 — Transverse / Shear Rebar Templates and Local-Zone Review
+
+Adds independent Hollow-web and Solid multi-leg transverse reinforcement templates, dual Longitudinal/Transverse Zone assignment, compact no-scroll input tables, Av/s previews, and local cross-section/elevation review while preserving zero ordinary-rebar joint crossing, no automatic joint-shear credit, and unchanged solvers.
+
+See `README_CROSSBEAM_TR1.md`.
+
 ### CROSSBEAM.RB2E — Linked Rebar Grade Dropdown Hotfix
 
 Synchronizes the Crossbeam Rebar Template `Material` and `fy` dropdowns visibly after one selection by refreshing the compact editor from the corrected canonical pair.
