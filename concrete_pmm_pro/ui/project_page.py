@@ -1,4 +1,9 @@
-"""Project save/load page."""
+"""Project save/load page.
+
+UI.SYNC1 commits the editable Active Member Workflow before Streamlit reruns
+the page, keeping the workflow card and downstream Setup context synchronized
+with the dropdown on the first selection.
+"""
 
 from __future__ import annotations
 
@@ -490,6 +495,29 @@ def _analysis_mode_label_for_member_type(member_type: str) -> str:
     return _MEMBER_TYPE_REVERSE_OPTIONS.get(member_type, _MEMBER_TYPE_REVERSE_OPTIONS["column_pier_pmm"])
 
 
+def _commit_analysis_mode_member_type(
+    widget_key: str,
+    note_key: str,
+    sync_key: str,
+) -> None:
+    """Commit the workflow selection before Streamlit renders the next run."""
+
+    raw_label = st.session_state.get(widget_key)
+    label = _LEGACY_MEMBER_TYPE_LABELS.get(str(raw_label), str(raw_label))
+    member_type = _MEMBER_TYPE_OPTIONS.get(label)
+    if member_type is None:
+        return
+
+    current = _coerce_analysis_mode_settings(
+        st.session_state.get("analysis_mode_settings", AnalysisModeSettings())
+    )
+    note = st.session_state.get(note_key, current.note or "")
+    settings = AnalysisModeSettings(member_type=member_type, note=note or None)
+    st.session_state[widget_key] = label
+    st.session_state["analysis_mode_settings"] = settings
+    st.session_state[sync_key] = settings.member_type
+
+
 def _mode_guidance_lines(settings: AnalysisModeSettings) -> list[str]:
     """Concise project-level guidance for the selected member workflow."""
     if settings.member_type == "beam_girder":
@@ -602,6 +630,8 @@ def _render_analysis_mode_selector(current: AnalysisModeSettings) -> AnalysisMod
                 "Change active member workflow",
                 labels,
                 key=widget_key,
+                on_change=_commit_analysis_mode_member_type,
+                args=(widget_key, note_key, sync_key),
                 help="Bridge Beam/Girder activates guarded AASHTO LRFD bridge girder tools. Building Beam/Girder activates guarded ACI 318 beam/girder tools. Portal Frame Crossbeam activates ACI prestressed crossbeam layout tools. Column/Pier can use ACI 318 or AASHTO LRFD with capability guards.",
                 label_visibility="visible",
             )

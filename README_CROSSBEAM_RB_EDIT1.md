@@ -24,8 +24,10 @@ reruns.
   topology, Solid ties, placement offsets, and notes.
 - Segment/Zone: Zone geometry and reinforcement assignment.
 
-All 14 editable tables now use the same single-commit pattern. Read-only
-`st.dataframe` summaries are unchanged.
+RB-EDIT1 originally covered 14 editable tables with the same single-commit
+pattern. UI.SYNC1 later split the transverse placement editor by coordinate
+direction; the current UI therefore has 15 editable tables using that pattern.
+Read-only `st.dataframe` summaries are unchanged.
 
 ## State and engineering guards
 

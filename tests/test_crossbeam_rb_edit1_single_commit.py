@@ -50,39 +50,67 @@ def test_editor_patch_reconstruction_keeps_first_edit_addition_and_deletion() ->
     ]
 
 
-def test_transverse_placement_first_edit_commits_center_offset_from_screenshot(monkeypatch) -> None:
+def test_transverse_split_placement_first_edits_commit_without_repeat(monkeypatch) -> None:
     rows = default_crossbeam_transverse_templates()
-    fallback = [
+    cross_section_fallback = [
         {
             "Template ID": row["Template ID"],
-            "Center offset (mm)": row["Center offset mm"],
-            "First offset (mm)": row["First bar offset mm"],
-            "Last offset (mm)": row["Last bar offset mm"],
-            "Status": "LOCAL ONLY",
+            "Cage centerline offset (mm)": row["Center offset mm"],
+            "Reference": "FROM CONCRETE FACE",
         }
         for row in rows
     ]
-    editor_key = "placement-editor"
+    cross_section_key = "cross-section-placement-editor"
     state: dict[str, object] = {
         CB_TR_TEMPLATE_ROWS_KEY: rows,
-        editor_key: {"edited_rows": {0: {"Center offset (mm)": 75.0}}},
+        cross_section_key: {
+            "edited_rows": {0: {"Cage centerline offset (mm)": 75.0}}
+        },
     }
     _fake_streamlit(monkeypatch, transverse_page, state)
 
     transverse_page._commit_transverse_fields_editor(
-        editor_key,
+        cross_section_key,
         rows,
-        fallback,
-        {
-            "Center offset (mm)": "Center offset mm",
-            "First offset (mm)": "First bar offset mm",
-            "Last offset (mm)": "Last bar offset mm",
-        },
+        cross_section_fallback,
+        {"Cage centerline offset (mm)": "Center offset mm"},
     )
 
     stored = state[CB_TR_TEMPLATE_ROWS_KEY]
     assert stored[0]["Center offset mm"] == 75.0
     assert stored[1]["Center offset mm"] == 50.0
+
+    longitudinal_fallback = [
+        {
+            "Template ID": row["Template ID"],
+            "First set from Zone start (mm)": row["First bar offset mm"],
+            "Minimum clearance to Zone end (mm)": row["Last bar offset mm"],
+            "Status": "LOCAL ONLY",
+        }
+        for row in stored
+    ]
+    longitudinal_key = "longitudinal-placement-editor"
+    state[longitudinal_key] = {
+        "edited_rows": {
+            0: {
+                "First set from Zone start (mm)": 100.0,
+                "Minimum clearance to Zone end (mm)": 125.0,
+            }
+        }
+    }
+    transverse_page._commit_transverse_fields_editor(
+        longitudinal_key,
+        stored,
+        longitudinal_fallback,
+        {
+            "First set from Zone start (mm)": "First bar offset mm",
+            "Minimum clearance to Zone end (mm)": "Last bar offset mm",
+        },
+    )
+
+    stored = state[CB_TR_TEMPLATE_ROWS_KEY]
+    assert stored[0]["First bar offset mm"] == 100.0
+    assert stored[0]["Last bar offset mm"] == 125.0
 
 
 def test_transverse_topology_and_linked_material_first_edits_commit(monkeypatch) -> None:
@@ -327,7 +355,7 @@ def test_every_crossbeam_rebar_data_editor_has_first_edit_callback() -> None:
     root = Path(__file__).resolve().parents[1]
     paths_and_counts = {
         root / "concrete_pmm_pro" / "ui" / "crossbeam_rebar_page.py": 8,
-        root / "concrete_pmm_pro" / "ui" / "crossbeam_transverse_page.py": 6,
+        root / "concrete_pmm_pro" / "ui" / "crossbeam_transverse_page.py": 7,
     }
     for path, expected_count in paths_and_counts.items():
         calls = _data_editor_calls(path)

@@ -1,3 +1,10 @@
+### UI.SYNC1 — Placement Clarity and Workflow Display Sync
+
+Separates Crossbeam transverse placement inputs into cross-section cage offset
+and longitudinal Zone-end controls, and commits the Setup workflow dropdown
+before rerun so the displayed Active Member Workflow and downstream context
+change together on the first selection. See `README_UI_SYNC1.md`.
+
 ### CROSSBEAM.RB-EDIT1 — Single-Commit Editable Rebar Tables
 
 Commits the first edit across all 14 Crossbeam Rebar data tables by consuming

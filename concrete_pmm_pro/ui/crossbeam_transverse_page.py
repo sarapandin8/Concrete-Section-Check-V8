@@ -9,6 +9,8 @@ web loops, four flange U-bars, and four straight chamfer bars. RB-PERSIST1 keeps
 the editable template library in the versioned Crossbeam Project-JSON model.
 RB-EDIT1 commits the first data-editor patch for identity, material, topology,
 placement, and notes tables without requiring the engineer to enter it twice.
+UI.SYNC1 separates the cross-section cage centerline offset from the longitudinal
+Zone start/end placement controls so the two coordinate directions are explicit.
 """
 
 from __future__ import annotations
@@ -473,29 +475,112 @@ def render_crossbeam_transverse_template_library(
         )
         rows = _merge_fields(rows, _records(solid_editor), solid_field_map); _store(rows)
 
-    st.markdown("#### Placement within each zone")
-    placement_editor_rows = [
-        {"Template ID": row["Template ID"], "Center offset (mm)": row["Center offset mm"], "First offset (mm)": row["First bar offset mm"], "Last offset (mm)": row["Last bar offset mm"], "Status": "LOCAL ONLY"}
+    st.markdown("#### Cross-section cage placement")
+    st.caption(
+        "Measured inward, normal to the concrete face in the cross-section. "
+        "This centerline offset controls cage/tie geometry and combined clash review."
+    )
+    cross_section_placement_rows = [
+        {
+            "Template ID": row["Template ID"],
+            "Cage centerline offset (mm)": row["Center offset mm"],
+            "Reference": "FROM CONCRETE FACE",
+        }
         for row in rows
     ]
-    placement_field_map = {"Center offset (mm)":"Center offset mm", "First offset (mm)":"First bar offset mm", "Last offset (mm)":"Last bar offset mm"}
-    placement_editor_key = f"crossbeam_tr1_placement_{revision}"
-    placement_editor = st.data_editor(
-        pd.DataFrame(placement_editor_rows),
-        use_container_width=True, hide_index=True, num_rows="fixed",
-        key=placement_editor_key,
+    cross_section_placement_field_map = {
+        "Cage centerline offset (mm)": "Center offset mm",
+    }
+    cross_section_placement_key = f"crossbeam_tr1_cross_section_placement_{revision}"
+    cross_section_placement_editor = st.data_editor(
+        pd.DataFrame(cross_section_placement_rows),
+        use_container_width=True,
+        hide_index=True,
+        num_rows="fixed",
+        key=cross_section_placement_key,
         on_change=_commit_transverse_fields_editor,
-        args=(placement_editor_key, rows, placement_editor_rows, placement_field_map),
-        disabled=["Template ID","Status"],
+        args=(
+            cross_section_placement_key,
+            rows,
+            cross_section_placement_rows,
+            cross_section_placement_field_map,
+        ),
+        disabled=["Template ID", "Reference"],
         column_config={
             "Template ID": st.column_config.TextColumn(width="medium"),
-            "Center offset (mm)": st.column_config.NumberColumn(min_value=1.0, step=5.0, format="%.0f", width="small"),
-            "First offset (mm)": st.column_config.NumberColumn(min_value=0.0, step=25.0, format="%.0f", width="small"),
-            "Last offset (mm)": st.column_config.NumberColumn(min_value=0.0, step=25.0, format="%.0f", width="small"),
+            "Cage centerline offset (mm)": st.column_config.NumberColumn(
+                min_value=1.0,
+                step=5.0,
+                format="%.0f",
+                width="medium",
+            ),
+            "Reference": st.column_config.TextColumn(width="medium"),
+        },
+    )
+    rows = _merge_fields(
+        rows,
+        _records(cross_section_placement_editor),
+        cross_section_placement_field_map,
+    )
+    _store(rows)
+
+    st.markdown("#### Longitudinal placement within each zone")
+    st.caption(
+        "The first value is measured from the Zone start. The Zone-end value is "
+        "a minimum clearance; the actual last-set clearance may be larger because "
+        "sets advance from the start using the template spacing."
+    )
+    longitudinal_placement_rows = [
+        {
+            "Template ID": row["Template ID"],
+            "First set from Zone start (mm)": row["First bar offset mm"],
+            "Minimum clearance to Zone end (mm)": row["Last bar offset mm"],
+            "Status": "LOCAL ONLY",
+        }
+        for row in rows
+    ]
+    longitudinal_placement_field_map = {
+        "First set from Zone start (mm)": "First bar offset mm",
+        "Minimum clearance to Zone end (mm)": "Last bar offset mm",
+    }
+    longitudinal_placement_key = f"crossbeam_tr1_longitudinal_placement_{revision}"
+    longitudinal_placement_editor = st.data_editor(
+        pd.DataFrame(longitudinal_placement_rows),
+        use_container_width=True,
+        hide_index=True,
+        num_rows="fixed",
+        key=longitudinal_placement_key,
+        on_change=_commit_transverse_fields_editor,
+        args=(
+            longitudinal_placement_key,
+            rows,
+            longitudinal_placement_rows,
+            longitudinal_placement_field_map,
+        ),
+        disabled=["Template ID", "Status"],
+        column_config={
+            "Template ID": st.column_config.TextColumn(width="medium"),
+            "First set from Zone start (mm)": st.column_config.NumberColumn(
+                min_value=0.0,
+                step=25.0,
+                format="%.0f",
+                width="medium",
+            ),
+            "Minimum clearance to Zone end (mm)": st.column_config.NumberColumn(
+                min_value=0.0,
+                step=25.0,
+                format="%.0f",
+                width="medium",
+            ),
             "Status": st.column_config.TextColumn(width="small"),
         },
     )
-    rows = _merge_fields(rows, _records(placement_editor), placement_field_map); _store(rows)
+    rows = _merge_fields(
+        rows,
+        _records(longitudinal_placement_editor),
+        longitudinal_placement_field_map,
+    )
+    _store(rows)
 
     st.markdown("#### Av/s input preview")
     avs = [transverse_avs_record(row) for row in rows]
