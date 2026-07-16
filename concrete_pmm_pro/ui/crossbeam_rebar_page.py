@@ -6,7 +6,9 @@ be copied or marked for guarded deletion without exposing hidden horizontal colu
 RB2D makes Template IDs engineer-editable with atomic Zone-reference updates and
 adds SD40/SD50 plus 390/490 MPa dropdowns. RB2E completes the linked-grade UX by
 refreshing the editor from canonical state whenever either dropdown changes, so a
-single material or fy selection immediately displays the matching pair. The
+single material or fy selection immediately displays the matching pair. RB2G
+adds one layer-ordered combined section figure, transverse-outside-longitudinal
+containment review, and the accepted full-length transverse elevation below it. The
 unverified PT-continuity guard and all solver ownership remain unchanged. It never
 routes template, zone, or preview state into existing PMM, Beam/Girder, SLS,
 shear, torsion, or report solvers.
@@ -51,9 +53,11 @@ from concrete_pmm_pro.crossbeam.rebar import (
     validate_rebar_zones,
 )
 from concrete_pmm_pro.crossbeam.transverse import (
+    build_transverse_cage_geometry,
     canonical_transverse_templates,
     default_crossbeam_transverse_templates,
     default_transverse_template_id,
+    review_longitudinal_bar_containment,
     transverse_template_map,
 )
 from concrete_pmm_pro.crossbeam.section_library import (
@@ -70,9 +74,11 @@ from concrete_pmm_pro.geometry.rebar_layout import (
 from concrete_pmm_pro.ui.commercial import render_metric_cards, render_page_header, render_section_bar
 from concrete_pmm_pro.ui.crossbeam_transverse_page import (
     CB_TR_TEMPLATE_ROWS_KEY,
+    add_transverse_cage_traces,
     ensure_crossbeam_transverse_state,
     render_crossbeam_transverse_template_library,
     render_transverse_preview_summary,
+    transverse_full_elevation_figure,
 )
 from concrete_pmm_pro.ui.crossbeam_pages import FIGURE_CONFIG, crossbeam_segment_layout_from_state
 from concrete_pmm_pro.visualization import create_section_preview
@@ -1309,6 +1315,185 @@ def _section_rebar_preview_figure(
     )
     return fig
 
+
+def _combined_reinforcement_preview_figure(
+    geometry: Any,
+    definition: Mapping[str, Any],
+    transverse_template: Mapping[str, Any],
+    *,
+    outer_rebars: list[Rebar],
+    inner_rebars: list[Rebar],
+    title: str,
+    marker_mode: str = "Enhanced markers",
+) -> tuple[go.Figure, Any]:
+    """Return the RB2G layer-ordered section review and its fit result."""
+
+    cages = build_transverse_cage_geometry(geometry, definition, transverse_template)
+    rebars = list(outer_rebars) + list(inner_rebars)
+    review = review_longitudinal_bar_containment(cages, rebars)
+    base = create_section_preview(geometry)
+    fig = go.Figure()
+    centroid_trace = None
+    void_added = False
+    for trace in base.data:
+        name = str(getattr(trace, "name", "") or "")
+        if name == "Centroid":
+            centroid_trace = trace
+            continue
+        if name.startswith("Hole"):
+            trace.name = "Void"
+            trace.showlegend = not void_added
+            void_added = True
+        fig.add_trace(trace)
+
+    add_transverse_cage_traces(fig, cages, legend_name="Transverse cage / tie")
+
+    enhanced = str(marker_mode) != "True bar diameter"
+    if not enhanced:
+        for bar in rebars:
+            radius = max(float(bar.diameter_mm), 0.0) / 2.0
+            fig.add_shape(
+                type="circle",
+                xref="x",
+                yref="y",
+                x0=bar.x_mm - radius,
+                x1=bar.x_mm + radius,
+                y0=bar.y_mm - radius,
+                y1=bar.y_mm + radius,
+                fillcolor="#155a9c",
+                opacity=0.88,
+                line={"color": "#ffffff", "width": 0.8},
+                layer="above",
+            )
+    if rebars:
+        fig.add_trace(
+            go.Scatter(
+                x=[bar.x_mm for bar in rebars],
+                y=[bar.y_mm for bar in rebars],
+                mode="markers",
+                marker={
+                    "size": 10 if enhanced else 4,
+                    "color": "#155a9c",
+                    "opacity": 0.95 if enhanced else 0.45,
+                    "line": {"color": "#ffffff", "width": 0.8},
+                },
+                text=[
+                    f"{bar.label or 'Longitudinal bar'}<br>x={bar.x_mm:.1f} mm<br>y={bar.y_mm:.1f} mm<br>"
+                    f"D={bar.diameter_mm:.0f} mm<br>As={bar.area_mm2:.1f} mm²"
+                    for bar in rebars
+                ],
+                hoverinfo="text",
+                name="Longitudinal bars",
+            )
+        )
+    if centroid_trace is not None:
+        centroid_trace.name = "Centroid"
+        fig.add_trace(centroid_trace)
+
+    fig.update_layout(base.layout)
+    fig.update_layout(
+        title={"text": title, "x": 0.5, "xanchor": "center", "font": {"size": 16, "color": "#071a33"}},
+        height=540,
+        margin={"l": 35, "r": 25, "t": 82, "b": 44},
+        meta={
+            "crossbeam_rb2g": {
+                "status": review.status,
+                "checked_bars": review.checked_bars,
+                "conflict_count": review.conflict_count,
+                "bend_radius_mm": cages.bend_radius_mm,
+                "cage_count": len(cages.paths),
+            }
+        },
+    )
+    if not review.ok:
+        fig.add_annotation(
+            x=0.5,
+            y=0.02,
+            xref="paper",
+            yref="paper",
+            text=f"<b>REVIEW REQUIRED</b> — {review.conflict_count} longitudinal bar conflict(s)",
+            showarrow=False,
+            font={"size": 11, "color": "#9b2929"},
+            bgcolor="rgba(255,255,255,0.94)",
+            bordercolor="rgba(155,41,41,0.45)",
+            borderwidth=1,
+            borderpad=4,
+        )
+    return fig, review
+
+
+def _render_combined_reinforcement_preview(
+    geometry: Any,
+    definition: Mapping[str, Any],
+    longitudinal: Mapping[str, Any],
+    transverse: Mapping[str, Any],
+    *,
+    section_id: str,
+    segment_id: str,
+    zone_id: str,
+    outer_rebars: list[Rebar],
+    inner_rebars: list[Rebar],
+    outer_result: PerimeterRebarLayoutResult,
+    inner_result: PerimeterRebarLayoutResult,
+    marker_mode: str,
+    segment_rows: list[dict[str, Any]],
+    zone_rows: list[dict[str, Any]],
+    transverse_template_rows: list[dict[str, Any]],
+) -> None:
+    total_rebars = outer_rebars + inner_rebars
+    total_area = _generated_area_mm2(total_rebars)
+    cages = build_transverse_cage_geometry(geometry, definition, transverse)
+    review = review_longitudinal_bar_containment(cages, total_rebars)
+    render_metric_cards(
+        [
+            {"title":"Selected section","value":section_id,"detail":f"{definition.get('Section name','')} · {definition.get('Section role','')}","status":"info"},
+            {"title":"Longitudinal template","value":str(longitudinal.get('Template ID') or ''),"detail":f"{len(total_rebars)} bars · As {total_area:,.0f} mm²","status":"ready" if total_rebars else "warning"},
+            {"title":"Transverse template","value":str(transverse.get('Template ID') or ''),"detail":f"{transverse.get('Bar size','')} @ {float(transverse.get('Spacing mm') or 0.0):.0f} mm · Rbend 25 mm","status":"info"},
+            {"title":"Geometric fit","value":review.status,"detail":f"{review.conflict_count} conflict(s) · {len(cages.paths)} cage(s)","status":"ready" if review.ok else "warning"},
+        ]
+    )
+    fig, review = _combined_reinforcement_preview_figure(
+        geometry,
+        definition,
+        transverse,
+        outer_rebars=outer_rebars,
+        inner_rebars=inner_rebars,
+        title=f"Combined Reinforcement Review — {segment_id} / {zone_id} · {section_id}",
+        marker_mode=marker_mode,
+    )
+    st.plotly_chart(fig, use_container_width=True, config=FIGURE_CONFIG)
+    st.caption(
+        "Geometric/detailing preview only. Layer order is concrete → void → transverse cage/tie → longitudinal bars → centroid. "
+        "The check includes longitudinal and transverse bar radii; engineering inputs are never moved automatically."
+    )
+    if review.ok:
+        st.success(review.messages[-1])
+    else:
+        for message in review.messages:
+            st.error(f"REVIEW REQUIRED — {message}")
+    for message in cages.warnings:
+        st.caption(message)
+    _layout_result_messages(outer_result, "Outer layout")
+    if str(definition.get("Section role")) == "Hollow" and bool(longitudinal.get("Inner face bars")):
+        _layout_result_messages(inner_result, "Inner layout")
+    st.caption(
+        "Scope guard — This preview does not certify ACI minimum transverse reinforcement, φVn, torsion, confinement, "
+        "anchorage/development, D-regions, or segment-joint shear transfer. No solver credit is created."
+    )
+    st.plotly_chart(
+        transverse_full_elevation_figure(
+            segment_rows,
+            zone_rows,
+            transverse_template_rows,
+            selected_zone_id=zone_id,
+        ),
+        use_container_width=True,
+        config=FIGURE_CONFIG,
+    )
+    st.caption(
+        "Full-length transverse reinforcement elevation retained from CROSSBEAM.TR1A. Actual Zone spacing and first/last offsets remain segment-local; the selected Zone is highlighted."
+    )
+
 def _layout_result_messages(result: PerimeterRebarLayoutResult, label: str) -> None:
     for message in result.errors:
         st.error(f"{label}: {message}")
@@ -1424,14 +1609,6 @@ def _render_section_rebar_preview(
         total_area = _generated_area_mm2(total_rebars)
         adopted = _adopted_reinforcement_summary(template)
         metric_status = "ready" if total_rebars and not outer_result.errors and not inner_result.errors else "warning"
-        render_metric_cards(
-            [
-                {"title":"Selected section","value":section_id,"detail":f"{definition.get('Section name','')} · {role}","status":"info"},
-                {"title":"Longitudinal template","value":longitudinal_id,"detail":f"{selected_zone_id} · s={float(selected_zone['s_start_m']):.3f}–{float(selected_zone['s_end_m']):.3f} m","status":"info"},
-                {"title":"Auto-generated layout","value":f"{len(total_rebars)} bars","detail":f"As {total_area:,.0f} mm² · Outer {len(outer_rebars)} · Inner {len(inner_rebars)}","status":metric_status},
-                {"title":"Adopted reinforcement","value":"DEFINED" if _template_quantity_defined(template) else "NOT ADOPTED","detail":adopted,"status":"ready" if _template_quantity_defined(template) else "warning"},
-            ]
-        )
         marker_mode = st.radio(
             "Bar display",
             options=["Enhanced markers", "True bar diameter"],
@@ -1439,23 +1616,50 @@ def _render_section_rebar_preview(
             key=CB_RB_PREVIEW_MARKER_MODE_KEY,
             help="Enhanced markers improve visual review only. Quantities and As always use the true bar diameter.",
         )
-        st.plotly_chart(
-            _section_rebar_preview_figure(
+        if preview_mode == "Longitudinal":
+            render_metric_cards(
+                [
+                    {"title":"Selected section","value":section_id,"detail":f"{definition.get('Section name','')} · {role}","status":"info"},
+                    {"title":"Longitudinal template","value":longitudinal_id,"detail":f"{selected_zone_id} · s={float(selected_zone['s_start_m']):.3f}–{float(selected_zone['s_end_m']):.3f} m","status":"info"},
+                    {"title":"Auto-generated layout","value":f"{len(total_rebars)} bars","detail":f"As {total_area:,.0f} mm² · Outer {len(outer_rebars)} · Inner {len(inner_rebars)}","status":metric_status},
+                    {"title":"Adopted reinforcement","value":"DEFINED" if _template_quantity_defined(template) else "NOT ADOPTED","detail":adopted,"status":"ready" if _template_quantity_defined(template) else "warning"},
+                ]
+            )
+            st.plotly_chart(
+                _section_rebar_preview_figure(
+                    geometry,
+                    outer_rebars=outer_rebars,
+                    inner_rebars=inner_rebars,
+                    title=f"Longitudinal Bar-Location Preview — {selected_segment_id} / {selected_zone_id} · {section_id} · {longitudinal_id}",
+                    marker_mode=marker_mode,
+                ),
+                use_container_width=True,
+                config=FIGURE_CONFIG,
+            )
+            st.caption("Longitudinal bar-location preview only. Transverse cages/ties and shear reinforcement are shown in the Transverse / Shear view.")
+            _layout_result_messages(outer_result, "Outer layout")
+            if role == "Hollow" and bool(template.get("Inner face bars")):
+                _layout_result_messages(inner_result, "Inner layout")
+        else:
+            _render_combined_reinforcement_preview(
                 geometry,
+                definition,
+                longitudinal,
+                transverse,
+                section_id=section_id,
+                segment_id=selected_segment_id,
+                zone_id=selected_zone_id,
                 outer_rebars=outer_rebars,
                 inner_rebars=inner_rebars,
-                title=f"Longitudinal Bar-Location Preview — {selected_segment_id} / {selected_zone_id} · {section_id} · {longitudinal_id}",
+                outer_result=outer_result,
+                inner_result=inner_result,
                 marker_mode=marker_mode,
-            ),
-            use_container_width=True,
-            config=FIGURE_CONFIG,
-        )
-        st.caption("Longitudinal bar-location preview only. Transverse cages/ties and shear reinforcement are shown in the Transverse / Shear view.")
-        _layout_result_messages(outer_result, "Outer layout")
-        if role == "Hollow" and bool(template.get("Inner face bars")):
-            _layout_result_messages(inner_result, "Inner layout")
+                segment_rows=segment_rows,
+                zone_rows=zone_rows,
+                transverse_template_rows=transverse_template_rows,
+            )
 
-    if preview_mode in {"Transverse / Shear", "Combined review"}:
+    if preview_mode == "Transverse / Shear":
         render_transverse_preview_summary(
             geometry,
             definition,

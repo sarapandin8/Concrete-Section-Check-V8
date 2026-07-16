@@ -1,8 +1,10 @@
-"""Crossbeam-only transverse/shear reinforcement UI for CROSSBEAM.TR1.
+"""Crossbeam-only transverse/shear reinforcement UI for TR1 through RB2G.
 
 The page intentionally remains solver-neutral.  It stores editable local
 transverse templates, computes traceable Av/s previews, and draws schematic
 cross-section/elevation reinforcement without giving segment-joint shear credit.
+RB2G shares geometry-aware 25 mm-bend centerlines between the transverse-only
+and combined section previews.
 """
 
 from __future__ import annotations
@@ -24,6 +26,8 @@ from concrete_pmm_pro.crossbeam.transverse import (
     TRANSVERSE_MATERIAL_BY_FY,
     TRANSVERSE_MATERIAL_OPTIONS,
     TRANSVERSE_ROLE_OPTIONS,
+    TransverseCageGeometry,
+    build_transverse_cage_geometry,
     canonical_transverse_templates,
     default_crossbeam_transverse_templates,
     duplicate_transverse_template,
@@ -416,40 +420,125 @@ def transverse_cross_section_figure(
     title: str,
 ) -> go.Figure:
     fig = create_section_preview(geometry)
-    row = canonical_transverse_templates([dict(template)])[0]
-    role = str(definition.get("Section role") or row.get("Applicable role") or "Solid")
-    params = dict(definition.get("Parameters") or {})
-    outer = list(getattr(geometry, "outer_polygon", []) or [])
-    min_x = min(float(pt.x) for pt in outer); max_x = max(float(pt.x) for pt in outer)
-    min_y = min(float(pt.y) for pt in outer); max_y = max(float(pt.y) for pt in outer)
-    offset = float(row.get("Center offset mm") or 50.0)
-    color = "#d97706"
-
-    def add_line(x: list[float], y: list[float], name: str, showlegend: bool = False, dash: str | None = None) -> None:
-        fig.add_trace(go.Scatter(x=x, y=y, mode="lines", line={"color":color,"width":3, **({"dash":dash} if dash else {})}, name=name, showlegend=showlegend, hoverinfo="skip"))
-
-    if role == "Hollow" and getattr(geometry, "holes", []):
-        hole = list(geometry.holes[0])
-        hmin_x = min(float(pt.x) for pt in hole); hmax_x = max(float(pt.x) for pt in hole)
-        hmin_y = min(float(pt.y) for pt in hole); hmax_y = max(float(pt.y) for pt in hole)
-        cages = [
-            (min_x+offset, hmin_x-offset, min_y+offset, max_y-offset, int(row["Left web legs"]), "Left-web cage"),
-            (hmax_x+offset, max_x-offset, min_y+offset, max_y-offset, int(row["Right web legs"]), "Right-web cage"),
-        ]
-        for x0,x1,y0,y1,legs,label in cages:
-            if x1 <= x0 or y1 <= y0: continue
-            add_line([x0,x1,x1,x0,x0],[y0,y0,y1,y1,y0], label, showlegend=(label=="Left-web cage"))
-            for index in range(max(legs,1)):
-                x = x0 if legs <= 1 else x0 + index*(x1-x0)/(legs-1)
-                add_line([x,x],[y0,y1], f"{label} effective leg")
-    else:
-        x0,x1=min_x+offset,max_x-offset; y0,y1=min_y+offset,max_y-offset
-        add_line([x0,x1,x1,x0,x0],[y0,y0,y1,y1,y0], "Closed tie", showlegend=True)
-        legs=max(int(row.get("Effective legs") or 2),2)
-        for index in range(legs):
-            x=x0 + index*(x1-x0)/(legs-1)
-            add_line([x,x],[y0,y1], "Effective leg")
+    cages = build_transverse_cage_geometry(geometry, definition, template)
+    add_transverse_cage_traces(fig, cages)
+    if cages.errors:
+        fig.add_annotation(
+            x=0.5,
+            y=0.02,
+            xref="paper",
+            yref="paper",
+            text="<b>REVIEW REQUIRED</b> — transverse cage geometry conflicts with the selected section",
+            showarrow=False,
+            font={"size": 11, "color": "#9b2929"},
+            bgcolor="rgba(255,255,255,0.92)",
+            bordercolor="rgba(155,41,41,0.45)",
+            borderwidth=1,
+            borderpad=4,
+        )
     fig.update_layout(title={"text":title,"x":0.5,"xanchor":"center"}, height=480, margin={"l":35,"r":25,"t":70,"b":40})
+    return fig
+
+
+def add_transverse_cage_traces(
+    fig: go.Figure,
+    cages: TransverseCageGeometry,
+    *,
+    legend_name: str | None = None,
+    color: str = "#d97706",
+) -> None:
+    """Add cage centerlines after concrete and before longitudinal bars."""
+
+    first_trace = True
+    for path in cages.paths:
+        x = [point[0] for point in path.points]
+        y = [point[1] for point in path.points]
+        fig.add_trace(
+            go.Scatter(
+                x=x,
+                y=y,
+                mode="lines",
+                line={"color": color, "width": 3},
+                name=(legend_name or path.label) if first_trace else path.label,
+                showlegend=first_trace,
+                hovertemplate=(
+                    f"<b>{path.label}</b><br>Center offset={cages.center_offset_mm:.1f} mm<br>"
+                    f"Preview bend radius={cages.bend_radius_mm:.1f} mm<extra></extra>"
+                ),
+            )
+        )
+        first_trace = False
+        x0, x1, y0, y1 = path.envelope
+        internal_legs = max(int(path.effective_legs) - 2, 0)
+        for index in range(internal_legs):
+            x_leg = x0 + (index + 1) * (x1 - x0) / (internal_legs + 1)
+            fig.add_trace(
+                go.Scatter(
+                    x=[x_leg, x_leg],
+                    y=[y0, y1],
+                    mode="lines",
+                    line={"color": color, "width": 2.2},
+                    name=f"{path.label} effective leg",
+                    showlegend=False,
+                    hoverinfo="skip",
+                )
+            )
+
+
+def transverse_elevation_figure(
+    template: Mapping[str, Any],
+    *,
+    start_m: float,
+    end_m: float,
+    segment_id: str,
+    zone_id: str,
+) -> go.Figure:
+    """Backward-compatible selected-Zone elevation retained from TR1."""
+
+    row = canonical_transverse_templates([dict(template)])[0]
+    stations = transverse_set_stations(row, start_m, end_m)
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=[None, None],
+            y=[None, None],
+            mode="lines",
+            line={"color": "#d97706", "width": 2},
+            name="Transverse set",
+            hoverinfo="skip",
+        )
+    )
+    for station in stations:
+        fig.add_trace(
+            go.Scatter(
+                x=[station, station],
+                y=[0.08, 0.92],
+                mode="lines",
+                line={"color": "#d97706", "width": 1.8},
+                showlegend=False,
+                hovertemplate=f"<b>{zone_id}</b><br>{row['Template ID']}<br>s={station:.3f} m<extra></extra>",
+            )
+        )
+    fig.add_shape(
+        type="rect",
+        x0=float(start_m),
+        x1=float(end_m),
+        y0=0.0,
+        y1=1.0,
+        fillcolor="rgba(120,140,160,0.18)",
+        line={"color": "#607d94", "width": 1.4},
+        layer="below",
+    )
+    fig.update_layout(
+        title={"text": f"Transverse Reinforcement Elevation — {segment_id} / {zone_id}", "x": 0.5, "xanchor": "center"},
+        height=300,
+        margin={"l": 65, "r": 30, "t": 70, "b": 55},
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        xaxis={"title": "Station s (m)", "range": [float(start_m), float(end_m)], "gridcolor": "#e7edf4"},
+        yaxis={"title": "Selected Zone", "range": [-0.1, 1.1], "showticklabels": False, "showgrid": False},
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5},
+    )
     return fig
 
 
@@ -559,6 +648,7 @@ def render_transverse_preview_summary(
     figure_config: Mapping[str, Any],
 ) -> None:
     row = canonical_transverse_templates([dict(template)])[0]
+    cages = build_transverse_cage_geometry(geometry, definition, row)
     avs = transverse_avs_record(row)
     stations = transverse_set_stations(row, start_m, end_m)
     render_metric_cards([
@@ -568,7 +658,12 @@ def render_transverse_preview_summary(
         {"title":"Sets in zone","value":len(stations),"detail":f"Offsets {row['First bar offset mm']:.0f}/{row['Last bar offset mm']:.0f} mm","status":"ready" if stations else "warning"},
     ])
     st.plotly_chart(transverse_cross_section_figure(geometry, definition, row, title=f"Transverse Cage Preview — {segment_id} / {zone_id} · {row['Template ID']}"), use_container_width=True, config=dict(figure_config))
-    st.caption("Cross-section transverse cage/tie schematic. Longitudinal bars are omitted in this view; no code-minimum, φVn, torsion, confinement, or D-region result is implied.")
+    st.caption("Cross-section transverse cage/tie schematic with 25 mm preview bend fillets. Solid ties follow the outer bottom fillets; Hollow web cages remain rectangular and do not follow inner chamfers. Longitudinal bars are omitted in this view.")
+    for message in cages.errors:
+        st.error(f"REVIEW REQUIRED — {message}")
+    for message in cages.warnings:
+        st.caption(message)
+    st.caption("No ACI minimum transverse reinforcement, φVn, torsion, confinement, anchorage/development, or D-region result is implied.")
     st.plotly_chart(
         transverse_full_elevation_figure(
             segment_rows,

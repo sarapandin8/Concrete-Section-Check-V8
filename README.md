@@ -1,3 +1,7 @@
+### CROSSBEAM.RB2G — Combined Cross-Section Reinforcement Preview
+
+Replaces the stacked Combined review with one layer-ordered Crossbeam section figure, adds 25 mm transverse bend fillets, makes Solid ties follow the outer bottom fillets, preserves rectangular Hollow web cages, validates transverse-outside-longitudinal containment using true bar radii, and retains the accepted full-length transverse elevation below. Preview-only scope and all solver/joint guards remain unchanged. See `README_CROSSBEAM_RB2G.md`.
+
 ### CROSSBEAM.TR1 — Transverse / Shear Rebar Templates and Local-Zone Review
 
 Adds independent Hollow-web and Solid multi-leg transverse reinforcement templates, dual Longitudinal/Transverse Zone assignment, compact no-scroll input tables, Av/s previews, and local cross-section/elevation review while preserving zero ordinary-rebar joint crossing, no automatic joint-shear credit, and unchanged solvers.
