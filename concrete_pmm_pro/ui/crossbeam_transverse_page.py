@@ -5,7 +5,8 @@ transverse templates, computes traceable Av/s previews, and draws schematic
 cross-section/elevation reinforcement without giving segment-joint shear credit.
 RB2G shares geometry-aware 25 mm-bend centerlines between the transverse-only
 and combined section previews. RB2G2 draws Hollow reinforcement as two closed
-web loops, four flange U-bars, and four straight chamfer bars.
+web loops, four flange U-bars, and four straight chamfer bars. RB-PERSIST1 keeps
+the editable template library in the versioned Crossbeam Project-JSON model.
 """
 
 from __future__ import annotations
@@ -19,6 +20,11 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from concrete_pmm_pro.crossbeam.rebar import canonical_rebar_zones
+from concrete_pmm_pro.crossbeam.rebar_persistence import (
+    CB_TR_PREVIEW_MODE_KEY,
+    CB_TR_TEMPLATE_REV_KEY,
+    CB_TR_TEMPLATE_ROWS_KEY,
+)
 from concrete_pmm_pro.crossbeam.transverse import (
     TRANSVERSE_BAR_SIZE_OPTIONS,
     TRANSVERSE_CONSTRUCTION_OPTIONS,
@@ -41,10 +47,7 @@ from concrete_pmm_pro.crossbeam.transverse import (
 from concrete_pmm_pro.ui.commercial import render_metric_cards, render_section_bar
 from concrete_pmm_pro.visualization import create_section_preview
 
-CB_TR_TEMPLATE_ROWS_KEY = "crossbeam_tr1_template_rows"
-CB_TR_TEMPLATE_REV_KEY = "crossbeam_tr1_template_editor_revision"
 CB_TR_ACTION_NOTICE_KEY = "crossbeam_tr1_action_notice"
-CB_TR_PREVIEW_MODE_KEY = "crossbeam_tr1_preview_mode"
 
 
 def _records(value: Any) -> list[dict[str, Any]]:

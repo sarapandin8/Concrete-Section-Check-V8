@@ -42,6 +42,12 @@ from concrete_pmm_pro.crossbeam.section_library import (
     canonical_section_definitions,
     migrate_segment_rows_to_library,
 )
+from concrete_pmm_pro.crossbeam.rebar_persistence import (
+    CROSSBEAM_REBAR_LEGACY_METADATA_KEYS,
+    CROSSBEAM_REBAR_METADATA_KEY,
+    crossbeam_rebar_metadata_from_session_state,
+    restore_crossbeam_rebar_project_state,
+)
 from concrete_pmm_pro.data.prestress_tendon_products import (
     DEFAULT_STRAND_DIAMETER_MM,
     DEFAULT_STRAND_EP_MPA,
@@ -759,6 +765,13 @@ def project_from_session_state(session_state: Any) -> ProjectModel:
         metadata[SECLIB_METADATA_KEY] = crossbeam_input_metadata
     else:
         metadata.pop(SECLIB_METADATA_KEY, None)
+    crossbeam_rebar_metadata = crossbeam_rebar_metadata_from_session_state(session_state)
+    if crossbeam_rebar_metadata:
+        metadata[CROSSBEAM_REBAR_METADATA_KEY] = crossbeam_rebar_metadata
+    else:
+        metadata.pop(CROSSBEAM_REBAR_METADATA_KEY, None)
+    for legacy_key in CROSSBEAM_REBAR_LEGACY_METADATA_KEYS:
+        metadata.pop(legacy_key, None)
     analysis_results_metadata = _analysis_results_metadata_from_session(session_state)
     if analysis_results_metadata:
         metadata[ANALYSIS_RESULTS_METADATA_KEY] = analysis_results_metadata
@@ -1179,6 +1192,12 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
             session_state[CROSSBEAM_SEGMENT_REVISION_STATE_KEY] = int(
                 session_state.get(CROSSBEAM_SEGMENT_REVISION_STATE_KEY, 0) or 0
             ) + 1
+
+    restore_crossbeam_rebar_project_state(
+        project.metadata,
+        session_state,
+        session_state.get(CROSSBEAM_SEGMENT_ROWS_STATE_KEY, []),
+    )
 
     session_state["loads_table"] = _loads_to_table(project.loads)
     workflow_load_tables = project.metadata.get("workflow_load_tables")

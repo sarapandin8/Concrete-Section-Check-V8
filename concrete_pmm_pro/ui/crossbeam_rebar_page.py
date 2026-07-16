@@ -12,9 +12,11 @@ containment review, and the accepted full-length transverse elevation below it.
 RB2G1 derives longitudinal preview coordinates from each Zone's active cage so
 different bar diameters and local bottom-fillet geometry cannot overlap. RB2G2
 adds the accepted Hollow bar-piece topology: closed web loops, flange U-bars,
-and straight chamfer bars. The unverified PT-continuity guard and all solver ownership remain unchanged. It never
-routes template, zone, or preview state into existing PMM, Beam/Girder, SLS,
-shear, torsion, or report solvers.
+and straight chamfer bars. RB-PERSIST1 stores the complete Crossbeam input model
+and stable preview selections in Project JSON with migration/reference checks.
+The unverified PT-continuity guard and all solver ownership remain unchanged. It
+never routes template, zone, or preview state into existing PMM, Beam/Girder,
+SLS, shear, torsion, or report solvers.
 """
 
 from __future__ import annotations
@@ -56,6 +58,21 @@ from concrete_pmm_pro.crossbeam.rebar import (
     rebar_diameter_mm,
     validate_rebar_zones,
 )
+from concrete_pmm_pro.crossbeam.rebar_persistence import (
+    CB_RB_ACTIVE_TEMPLATE_KEY,
+    CB_RB_PREVIEW_MARKER_MODE_KEY,
+    CB_RB_PREVIEW_SEGMENT_KEY,
+    CB_RB_PREVIEW_ZONE_KEY,
+    CB_RB_PROJECT_LOAD_VALIDATION_KEY,
+    CB_RB_SEGMENT_SIGNATURE_KEY,
+    CB_RB_SUBVIEW_KEY,
+    CB_RB_TEMPLATE_REV_KEY,
+    CB_RB_TEMPLATE_ROWS_KEY,
+    CB_RB_ZONE_REV_KEY,
+    CB_RB_ZONE_ROWS_KEY,
+    CB_TR_PREVIEW_MODE_KEY,
+    CB_TR_TEMPLATE_ROWS_KEY,
+)
 from concrete_pmm_pro.crossbeam.transverse import (
     build_transverse_cage_geometry,
     canonical_transverse_templates,
@@ -79,7 +96,6 @@ from concrete_pmm_pro.geometry.rebar_layout import (
 )
 from concrete_pmm_pro.ui.commercial import render_metric_cards, render_page_header, render_section_bar
 from concrete_pmm_pro.ui.crossbeam_transverse_page import (
-    CB_TR_TEMPLATE_ROWS_KEY,
     add_transverse_cage_traces,
     ensure_crossbeam_transverse_state,
     render_crossbeam_transverse_template_library,
@@ -90,16 +106,8 @@ from concrete_pmm_pro.ui.crossbeam_pages import FIGURE_CONFIG, crossbeam_segment
 from concrete_pmm_pro.visualization import create_section_preview
 
 
-CB_RB_TEMPLATE_ROWS_KEY = "crossbeam_rb1_template_rows"
-CB_RB_TEMPLATE_REV_KEY = "crossbeam_rb1_template_editor_revision"
-CB_RB_ZONE_ROWS_KEY = "crossbeam_rb1_zone_assignment_rows"
-CB_RB_ZONE_REV_KEY = "crossbeam_rb1_zone_editor_revision"
-CB_RB_SEGMENT_SIGNATURE_KEY = "crossbeam_rb1_segment_signature"
-CB_RB_SUBVIEW_KEY = "crossbeam_rb2_subview"
-CB_RB_PREVIEW_SEGMENT_KEY = "crossbeam_rb2_preview_segment"
-CB_RB_PREVIEW_ZONE_KEY = "crossbeam_rb2_preview_zone"
-CB_RB_ACTIVE_TEMPLATE_KEY = "crossbeam_rb2a_active_template"
-CB_RB_PREVIEW_MARKER_MODE_KEY = "crossbeam_rb2a_preview_marker_mode"
+# Project-backed input keys remain Crossbeam-scoped:
+# crossbeam_rb1_template_rows / crossbeam_rb1_zone_assignment_rows.
 CB_RB_ZONE_PURPOSE_KEY_PREFIX = "crossbeam_rb2a_zone_purpose"
 CB_RB_TEMPLATE_ACTION_KEY = "crossbeam_rb2b_template_pending_action"
 CB_RB_TEMPLATE_DELETE_CONFIRM_KEY = "crossbeam_rb2b_template_delete_confirm"
@@ -154,6 +162,32 @@ def _ensure_rb1_state(segment_rows: list[dict[str, Any]]) -> None:
         if changed:
             st.session_state[CB_RB_ZONE_ROWS_KEY] = migrated
     st.session_state.setdefault(CB_RB_ZONE_REV_KEY, 0)
+
+
+def _render_project_load_validation() -> None:
+    validation = st.session_state.get(CB_RB_PROJECT_LOAD_VALIDATION_KEY)
+    if not isinstance(validation, Mapping):
+        return
+    counts = (
+        f"{int(validation.get('longitudinal_template_count', 0))} longitudinal · "
+        f"{int(validation.get('transverse_template_count', 0))} transverse · "
+        f"{int(validation.get('zone_count', 0))} Zone assignment(s)"
+    )
+    errors = [str(message) for message in validation.get("errors", []) if str(message).strip()]
+    if validation.get("status") == "READY" and bool(validation.get("references_resolved")):
+        prefix = "LEGACY PROJECT MIGRATED" if validation.get("migrated") else "PROJECT JSON RESTORED"
+        st.success(f"{prefix} — {counts}; every Segment and active Template reference resolves.")
+    else:
+        st.error(f"PROJECT JSON RESTORED — {counts}; Crossbeam reinforcement references require review.")
+        for message in errors[:6]:
+            st.caption(message)
+        if len(errors) > 6:
+            st.caption(f"{len(errors) - 6} additional validation message(s) are available in the loaded project state.")
+    migration_notes = [
+        str(message) for message in validation.get("migration_notes", []) if str(message).strip()
+    ]
+    if migration_notes:
+        st.caption("Migration: " + " ".join(migration_notes))
 
 
 def _template_quantity_defined(template: Mapping[str, Any]) -> bool:
@@ -1610,7 +1644,7 @@ def _render_section_rebar_preview(
         "Preview mode",
         options=["Longitudinal", "Transverse / Shear", "Combined review"],
         horizontal=True,
-        key="crossbeam_tr1_preview_mode",
+        key=CB_TR_PREVIEW_MODE_KEY,
     )
 
     if preview_mode in {"Longitudinal", "Combined review"}:
@@ -1770,6 +1804,7 @@ def render_crossbeam_rebar_page() -> None:
         badge="Portal Frame Crossbeam",
         accent="green",
     )
+    _render_project_load_validation()
 
     template_rows = canonical_rebar_templates(
         _records(st.session_state.get(CB_RB_TEMPLATE_ROWS_KEY)) or default_crossbeam_rebar_templates()
@@ -1976,6 +2011,8 @@ def render_crossbeam_rebar_page() -> None:
             },
         )
         st.info(
-            "CROSSBEAM.TR1 does not modify ULS/SLS capacity, shear/torsion, Result Summary, Report/QA, or Project JSON. "
-            "Longitudinal and transverse templates remain local input/review data. A future Tendon audit must verify active tendon geometry/Aps at each joint before station handoff can claim continuity."
+            "CROSSBEAM.RB-PERSIST1 stores the longitudinal/transverse template libraries, Segment/Zone assignments, "
+            "Template references, and stable preview settings in Project JSON. It does not modify ULS/SLS capacity, "
+            "shear/torsion, Result Summary, Report/QA, or any analysis-result cache. A future Tendon audit must verify "
+            "active tendon geometry/Aps at each joint before station handoff can claim continuity."
         )

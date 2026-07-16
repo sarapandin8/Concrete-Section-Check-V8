@@ -1,3 +1,7 @@
+### CROSSBEAM.RB-PERSIST1 — Crossbeam Reinforcement Project-JSON Persistence
+
+Persists the complete Crossbeam longitudinal/transverse template libraries, Segment/Zone assignments and references, and stable preview selections in a versioned Project-JSON block with older-file migration and post-load reference validation, while keeping all solvers and analysis-result caches isolated. See `README_CROSSBEAM_RB_PERSIST1.md`.
+
 ### CROSSBEAM.RB2G2 — Hollow Transverse Bar-Piece Topology
 
 Replaces the schematic Hollow transverse layout with two complete closed web loops, four Outer/Inner Top/Bottom flange U-bars, and four straight chamfer bars. Every bar piece participates in geometric clash/coverage review, while Av/s credit remains web-leg-only and all solvers stay isolated. See `README_CROSSBEAM_RB2G2.md`.
