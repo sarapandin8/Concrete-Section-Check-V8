@@ -7,8 +7,10 @@ def test_crossbeam_ui1_module_exists_and_is_solver_free():
     assert "render_crossbeam_tendon_system_page" in source
     assert "render_crossbeam_tendon_profile_page" in source
     assert "Tendon Plan" in source
-    assert "Depth Referenced from Top" in source
-    assert "Crossbeam Tendon Isometric Review" in source
+    assert "Tendon Elevation" in source
+    assert "Tendon Cross Section" in source
+    assert "Crossbeam Tendon 3D Orthographic Review" in source
+    assert 'projection": {"type": "orthographic"}' in source
     assert "loss" in source.lower()
     assert "calculate_prestress" not in source
 

@@ -251,6 +251,75 @@ def canonical_tendon_profile_points(values: Any, length_m: float) -> list[dict[s
     return rows
 
 
+def tendon_positions_at_station(
+    profile_values: Any,
+    system_values: Any,
+    *,
+    station_m: float,
+    length_m: float,
+    active_only: bool = True,
+) -> list[dict[str, Any]]:
+    """Interpolate the shared s-x-dtop source at one review station.
+
+    PT1 uses piecewise-linear display segments between engineer-entered profile
+    points.  This helper feeds Cross Section and 3D review only; it is not a
+    tendon-curvature, friction, loss, or force solver.
+    """
+
+    length = max(_float(length_m, 20.0), 0.1)
+    station = min(max(_float(station_m, 0.0), 0.0), length)
+    system = canonical_tendon_system_rows(system_values)
+    by_id: dict[str, list[dict[str, Any]]] = {}
+    for point in canonical_tendon_profile_points(profile_values, length):
+        by_id.setdefault(point["Tendon ID"], []).append(point)
+
+    positions: list[dict[str, Any]] = []
+    tolerance = max(1.0e-9, length * 1.0e-9)
+    for tendon in system:
+        tendon_id = tendon["Tendon ID"]
+        if not tendon_id or (active_only and not tendon["Active"]):
+            continue
+        points = sorted(by_id.get(tendon_id, []), key=lambda row: row["s (m)"])
+        if not points or station < points[0]["s (m)"] - tolerance or station > points[-1]["s (m)"] + tolerance:
+            continue
+
+        left = points[0]
+        right = points[-1]
+        for point in points:
+            if abs(point["s (m)"] - station) <= tolerance:
+                left = right = point
+                break
+        else:
+            for first, second in zip(points, points[1:]):
+                if first["s (m)"] <= station <= second["s (m)"]:
+                    left, right = first, second
+                    break
+
+        span = right["s (m)"] - left["s (m)"]
+        ratio = 0.0 if abs(span) <= tolerance else (station - left["s (m)"]) / span
+        lateral = left["x lateral (mm)"] + ratio * (
+            right["x lateral (mm)"] - left["x lateral (mm)"]
+        )
+        depth = left["dtop (mm)"] + ratio * (
+            right["dtop (mm)"] - left["dtop (mm)"]
+        )
+        positions.append(
+            {
+                "Tendon ID": tendon_id,
+                "Active": bool(tendon["Active"]),
+                "Type": tendon["Type"],
+                "s (m)": station,
+                "s/L": station / length,
+                "x lateral (mm)": lateral,
+                "dtop (mm)": depth,
+                "Left point": left["Point"],
+                "Right point": right["Point"],
+                "Interpolation": "Profile point" if left is right else "Piecewise linear",
+            }
+        )
+    return positions
+
+
 def section_context_records(definitions: Any) -> dict[str, dict[str, Any]]:
     """Return dimension/property context keyed by project Section ID."""
 

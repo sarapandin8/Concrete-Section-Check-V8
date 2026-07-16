@@ -11,6 +11,7 @@ from concrete_pmm_pro.crossbeam.tendon import (
     canonical_tendon_system_rows,
     default_tendon_profile_points,
     default_tendon_system_rows,
+    tendon_positions_at_station,
     tendon_station_audit_rows,
     validate_tendon_profile,
     validate_tendon_system,
@@ -67,6 +68,30 @@ def test_pt1_profile_is_one_source_for_plan_profile_and_3d_coordinates() -> None
     assert len(normalized) == 12
     assert {row["s (m)"] for row in normalized} == {0.0, 10.0, 20.0}
     assert all("x lateral (mm)" in row and "dtop (mm)" in row for row in normalized)
+
+
+def test_pt1a_cross_section_station_uses_piecewise_linear_shared_profile() -> None:
+    system = default_tendon_system_rows(4)
+    points = default_tendon_profile_points(
+        20.0,
+        tendon_ids=[row["Tendon ID"] for row in system],
+        width_mm=2500.0,
+        height_mm=1500.0,
+    )
+
+    positions = tendon_positions_at_station(
+        points,
+        system,
+        station_m=5.0,
+        length_m=20.0,
+    )
+
+    assert len(positions) == 4
+    assert {row["Interpolation"] for row in positions} == {"Piecewise linear"}
+    assert {row["Left point"] for row in positions} == {"P1"}
+    assert {row["Right point"] for row in positions} == {"P2"}
+    assert {row["dtop (mm)"] for row in positions} == {675.0}
+    assert all(row["s (m)"] == 5.0 and row["s/L"] == 0.25 for row in positions)
 
 
 def test_pt1_internal_profile_uses_station_section_envelope_but_external_can_leave_it() -> None:

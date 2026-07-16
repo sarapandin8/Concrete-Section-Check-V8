@@ -1,7 +1,7 @@
 """Workflow-scoped section workspaces for Portal Frame PC Crossbeam.
 
 CROSSBEAM.PT1 connects longitudinal segment mapping, tendon system data, and
-three-view tendon geometry to one Project-JSON source of truth.  It intentionally
+four-view tendon geometry to one Project-JSON source of truth.  It intentionally
 contains no prestress-loss, SLS, ULS, anchorage-zone, or D-region solver.
 
 All state keys are namespaced to the crossbeam workflow.  Legacy WF1 keys are
@@ -18,8 +18,10 @@ from typing import Any
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from shapely.geometry import Point
 
 from concrete_pmm_pro.crossbeam.section_library import (
+    build_geometry_for_definition,
     canonical_section_definitions,
     definition_map as crossbeam_section_definition_map,
     migrate_segment_rows_to_library,
@@ -34,7 +36,9 @@ from concrete_pmm_pro.crossbeam.tendon import (
     default_tendon_profile_points,
     default_tendon_system_rows,
     section_context_records,
+    station_section_contexts,
     tendon_station_audit_rows,
+    tendon_positions_at_station,
     validate_tendon_profile,
     validate_tendon_system,
 )
@@ -67,9 +71,10 @@ from concrete_pmm_pro.crossbeam.workflow import (
     default_crossbeam_segment_rows,
 )
 from concrete_pmm_pro.geometry.presets import load_section_presets
-from concrete_pmm_pro.geometry.summary import summarize_geometry
+from concrete_pmm_pro.geometry.summary import summarize_geometry, to_shapely_polygon
 from concrete_pmm_pro.ui.commercial import render_metric_cards, render_page_header, render_section_bar
 from concrete_pmm_pro.ui.crossbeam_section_library import ensure_crossbeam_section_library_state
+from concrete_pmm_pro.visualization.section_plot import create_section_preview
 
 
 # Accepted WF1/WF1A keys retained for migration compatibility.
@@ -83,6 +88,8 @@ CB_LENGTH_KEY = "crossbeam_ui1_length_m"
 CB_SEGMENT_ROWS_KEY = "crossbeam_ui1_segment_layout_rows"
 CB_SEGMENT_REV_KEY = "crossbeam_ui1_segment_editor_revision"
 CB_UI1A_MIGRATION_KEY = "crossbeam_ui1a_segment_assignment_migrated"
+CB_CROSS_SECTION_STATION_KEY = "crossbeam_pt1a_cross_section_station_m"
+CB_CROSS_SECTION_FACE_KEY = "crossbeam_pt1a_cross_section_face"
 
 
 FIGURE_CONFIG = {
@@ -439,6 +446,14 @@ def _ensure_state() -> None:
     st.session_state.setdefault(CB_PROFILE_REV_KEY, 0)
     st.session_state.setdefault(CB_ACTIVE_TENDONS_KEY, tendon_ids)
     st.session_state.setdefault(CB_3D_TRANSPARENT_KEY, True)
+    if CB_CROSS_SECTION_STATION_KEY not in st.session_state:
+        st.session_state[CB_CROSS_SECTION_STATION_KEY] = 0.25 * length_m
+    else:
+        st.session_state[CB_CROSS_SECTION_STATION_KEY] = min(
+            max(_finite_float(st.session_state.get(CB_CROSS_SECTION_STATION_KEY), 0.25 * length_m), 0.0),
+            length_m,
+        )
+    st.session_state.setdefault(CB_CROSS_SECTION_FACE_KEY, "")
 
 
 def _length_input() -> float:
@@ -1016,10 +1031,126 @@ def _profile_figure(
             )
         )
     fig.add_hline(y=0.0, line={"color": "#31465a", "width": 1.4}, annotation_text="Top surface")
-    fig.update_layout(**_base_figure_layout("Tendon Profile — Depth Referenced from Top", "Station s (m)", "Depth from top dtop (mm)", height=500))
+    fig.update_layout(**_base_figure_layout("Tendon Elevation — s–dtop from Top Surface", "Station s (m)", "Depth from top dtop (mm)", height=500))
     max_height = max(heights, default=1500.0)
     fig.update_yaxes(range=[max_height * 1.08, -max_height * 0.08])
     return fig
+
+
+def _cross_section_figure(
+    definition: Mapping[str, Any],
+    tendon_positions: list[dict[str, Any]],
+    *,
+    station_m: float,
+    segment_id: str,
+    station_face: str,
+) -> tuple[go.Figure, list[dict[str, Any]]]:
+    """Return a true Section-ID cross section with interpolated tendon centers."""
+
+    geometry = build_geometry_for_definition(definition)
+    fig = create_section_preview(geometry)
+    concrete = to_shapely_polygon(geometry)
+    _min_x, _min_y, _max_x, top_y = concrete.bounds
+    fit_rows: list[dict[str, Any]] = []
+    marker_groups: dict[str, list[dict[str, Any]]] = {
+        "Internal tendon — in concrete": [],
+        "Internal tendon — outside/void": [],
+        "External tendon": [],
+    }
+
+    for position in tendon_positions:
+        section_y = top_y - _finite_float(position.get("dtop (mm)"), 0.0)
+        x_mm = _finite_float(position.get("x lateral (mm)"), 0.0)
+        inside = bool(concrete.covers(Point(x_mm, section_y)))
+        tendon_type = str(position.get("Type") or "Internal")
+        if tendon_type == "External":
+            group = "External tendon"
+            fit = "EXTERNAL — LOCATION SHOWN"
+        elif inside:
+            group = "Internal tendon — in concrete"
+            fit = "IN CONCRETE"
+        else:
+            group = "Internal tendon — outside/void"
+            fit = "OUTSIDE / VOID — REVIEW"
+        item = {
+            **position,
+            "section y (mm)": section_y,
+            "Inside concrete": inside,
+            "Cross-section fit": fit,
+        }
+        marker_groups[group].append(item)
+        fit_rows.append(item)
+
+    styles = {
+        "Internal tendon — in concrete": {"color": "#155a9c", "symbol": "circle"},
+        "Internal tendon — outside/void": {"color": "#c62828", "symbol": "x"},
+        "External tendon": {"color": "#d97706", "symbol": "diamond"},
+    }
+    for name, rows in marker_groups.items():
+        if not rows:
+            continue
+        style = styles[name]
+        fig.add_trace(
+            go.Scatter(
+                x=[row["x lateral (mm)"] for row in rows],
+                y=[row["section y (mm)"] for row in rows],
+                mode="markers+text",
+                marker={
+                    "size": 13,
+                    "color": style["color"],
+                    "symbol": style["symbol"],
+                    "line": {"color": "#ffffff", "width": 1.2},
+                },
+                text=[row["Tendon ID"] for row in rows],
+                textposition="top center",
+                customdata=[
+                    [
+                        row["Type"],
+                        row["dtop (mm)"],
+                        row["Cross-section fit"],
+                        row["Left point"],
+                        row["Right point"],
+                    ]
+                    for row in rows
+                ],
+                hovertemplate=(
+                    "%{text}<br>Type=%{customdata[0]}<br>x=%{x:.1f} mm"
+                    "<br>dtop=%{customdata[1]:.1f} mm<br>%{customdata[2]}"
+                    "<br>Interpolation=%{customdata[3]} → %{customdata[4]}<extra></extra>"
+                ),
+                name=name,
+            )
+        )
+
+    for trace in fig.data:
+        if str(getattr(trace, "name", "")).startswith("Hole"):
+            trace.name = "Void"
+    section_id = str(definition.get("Section ID") or "")
+    fig.add_annotation(
+        x=0.0,
+        y=top_y,
+        text="Top surface · dtop = 0",
+        showarrow=True,
+        arrowhead=2,
+        ax=0,
+        ay=-32,
+        bgcolor="rgba(255,255,255,0.90)",
+        bordercolor="#cbd5e1",
+        font={"size": 10, "color": "#17324d"},
+    )
+    fig.update_layout(
+        title={
+            "text": f"Tendon Cross Section — s = {station_m:.3f} m · {segment_id} / {section_id} · {station_face}",
+            "x": 0.5,
+            "xanchor": "center",
+            "font": {"size": 16, "color": "#071a33"},
+        },
+        height=610,
+        margin={"l": 50, "r": 35, "t": 90, "b": 50},
+    )
+    fig.update_xaxes(title="Lateral x (mm)")
+    fig.update_yaxes(title="Section y (mm) · tendon ordinate = top y − dtop")
+    return fig, fit_rows
 
 
 def _box_mesh(
@@ -1138,7 +1269,7 @@ def _three_d_figure(
         )
 
     fig.update_layout(
-        title={"text": "Crossbeam Tendon Isometric Review", "x": 0.5, "xanchor": "center"},
+        title={"text": "Crossbeam Tendon 3D Orthographic Review", "x": 0.5, "xanchor": "center"},
         height=650,
         margin={"l": 20, "r": 20, "t": 70, "b": 20},
         paper_bgcolor="white",
@@ -1150,7 +1281,11 @@ def _three_d_figure(
             "zaxis": {"title": "Vertical y = -dtop (mm)", "backgroundcolor": "white", "gridcolor": "#e4eaf0"},
             "aspectmode": "manual",
             "aspectratio": {"x": 3.2, "y": 1.1, "z": 0.8},
-            "camera": {"eye": {"x": 1.55, "y": 1.45, "z": 1.05}},
+            "camera": {
+                "eye": {"x": 1.55, "y": 1.45, "z": 1.05},
+                "projection": {"type": "orthographic"},
+            },
+            "dragmode": "orbit",
         },
     )
     return fig
@@ -1449,8 +1584,8 @@ def render_crossbeam_tendon_profile_page() -> None:
     _ensure_state()
     context = _section_context()
     render_page_header(
-        "Tendon Profile",
-        "Edit one shared tendon geometry source and review it consistently in Plan, Profile, and 3D without running prestress-loss or strength solvers.",
+        "Tendon Profile & Geometry Views",
+        "Edit one shared tendon geometry source and review it consistently in Plan, Elevation, Cross Section, and 3D Orthographic without running prestress-loss or strength solvers.",
         icon="3D",
         kicker="Sections workspace",
         badge="Portal Frame Crossbeam",
@@ -1551,7 +1686,7 @@ def render_crossbeam_tendon_profile_page() -> None:
             {
                 "title": "Tendon geometry source",
                 "value": "SOURCE READY" if not all_errors else "REVIEW REQUIRED",
-                "detail": "Plan/Profile/3D use one s–x–dtop table",
+                "detail": "Plan/Elevation/Cross Section/3D use one s–x–dtop table",
                 "status": "ready" if not all_errors else "warning",
             },
             {"title": "Tendons", "value": len(tendon_ids), "detail": f"Internal {internal_count} · External {external_count}", "status": "info"},
@@ -1566,7 +1701,9 @@ def render_crossbeam_tendon_profile_page() -> None:
             for warning in all_warnings:
                 st.warning(warning)
 
-    plan_tab, profile_tab, three_d_tab, audit_tab = st.tabs(["Plan", "Profile", "3D", "Calculated Audit"])
+    plan_tab, elevation_tab, cross_section_tab, three_d_tab, audit_tab = st.tabs(
+        ["Plan", "Elevation", "Cross Section", "3D Orthographic", "Calculated Audit"]
+    )
     with plan_tab:
         st.plotly_chart(
             _plan_figure(points, active_ids, segment_rows, section_definitions),
@@ -1574,13 +1711,120 @@ def render_crossbeam_tendon_profile_page() -> None:
             config=FIGURE_CONFIG,
         )
         st.caption("Plan uses station s and lateral section coordinate x. x = 0 is the crossbeam centerline.")
-    with profile_tab:
+    with elevation_tab:
         st.plotly_chart(
             _profile_figure(points, active_ids, segment_rows, section_definitions),
             use_container_width=True,
             config=FIGURE_CONFIG,
         )
-        st.caption("Profile uses dtop measured downward from the top surface; the vertical axis is intentionally inverted.")
+        st.caption(
+            "Elevation uses station s horizontally and dtop measured downward from the top surface. Bottom and centroid lines change with the Section ID assigned to each Segment."
+        )
+    with cross_section_tab:
+        st.markdown("#### Cross-section review station")
+        station_m = float(
+            st.slider(
+                "Station s (m)",
+                min_value=0.0,
+                max_value=float(length_m),
+                step=0.1,
+                format="%.3f",
+                key=CB_CROSS_SECTION_STATION_KEY,
+                help="The section and tendon centers are read from Segment Layout and the shared s–x–dtop profile at this station.",
+            )
+        )
+        section_contexts = station_section_contexts(
+            station_m,
+            segment_rows,
+            section_definitions,
+            length_m=length_m,
+        )
+        if not section_contexts:
+            st.error("The selected station has no assigned Segment/Section ID.")
+        else:
+            face_labels = [
+                f"{row.get('Segment', '')} · {row.get('Section ID', '')} · {row.get('Station face', '')}"
+                for row in section_contexts
+            ]
+            if st.session_state.get(CB_CROSS_SECTION_FACE_KEY) not in face_labels:
+                st.session_state[CB_CROSS_SECTION_FACE_KEY] = face_labels[-1]
+            selected_face = st.selectbox(
+                "Section face to display",
+                options=face_labels,
+                key=CB_CROSS_SECTION_FACE_KEY,
+                help="At a Segment joint, choose either adjacent face. Away from a joint only one face applies.",
+            )
+            selected_index = face_labels.index(selected_face)
+            selected_context = section_contexts[selected_index]
+            section_id = str(selected_context.get("Section ID") or "")
+            definition = crossbeam_section_definition_map(section_definitions).get(section_id)
+            positions = tendon_positions_at_station(
+                points,
+                system_rows,
+                station_m=station_m,
+                length_m=length_m,
+            )
+            positions = [row for row in positions if row["Tendon ID"] in active_ids]
+            if definition is None:
+                st.error(f"Section ID {section_id or '(blank)'} does not resolve to a project section definition.")
+            else:
+                try:
+                    section_figure, fit_rows = _cross_section_figure(
+                        definition,
+                        positions,
+                        station_m=station_m,
+                        segment_id=str(selected_context.get("Segment") or ""),
+                        station_face=str(selected_context.get("Station face") or ""),
+                    )
+                except Exception as exc:
+                    st.error(f"Unable to build Cross Section for {section_id}: {exc}")
+                else:
+                    internal_outside = sum(
+                        row["Type"] == "Internal" and not row["Inside concrete"]
+                        for row in fit_rows
+                    )
+                    render_metric_cards(
+                        [
+                            {"title": "Station", "value": f"{station_m:.3f} m", "detail": str(selected_context.get("Station face") or ""), "status": "info"},
+                            {"title": "Segment", "value": str(selected_context.get("Segment") or "—"), "detail": "Segment Layout source", "status": "neutral"},
+                            {"title": "Section ID", "value": section_id, "detail": str(definition.get("Section role") or ""), "status": "info"},
+                            {
+                                "title": "Internal tendon fit",
+                                "value": "IN CONCRETE" if internal_outside == 0 else "REVIEW REQUIRED",
+                                "detail": f"{internal_outside} visible internal tendon(s) outside concrete / in void",
+                                "status": "ready" if internal_outside == 0 else "warning",
+                            },
+                        ]
+                    )
+                    st.plotly_chart(
+                        section_figure,
+                        use_container_width=True,
+                        config=FIGURE_CONFIG,
+                    )
+                    st.dataframe(
+                        pd.DataFrame(
+                            [
+                                {
+                                    "Tendon ID": row["Tendon ID"],
+                                    "Type": row["Type"],
+                                    "x (mm)": round(row["x lateral (mm)"], 2),
+                                    "dtop (mm)": round(row["dtop (mm)"], 2),
+                                    "Fit": row["Cross-section fit"],
+                                    "Interpolation": row["Interpolation"],
+                                }
+                                for row in fit_rows
+                            ]
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                    if internal_outside:
+                        st.warning(
+                            "One or more visible Internal tendon centers lie outside the concrete polygon or inside a void at this station. Adjust x/dtop or classify the applicable tendon as External; no input is moved automatically."
+                        )
+                    st.caption(
+                        "Cross Section uses the exact project Section ID geometry. Tendon centers are piecewise-linearly interpolated from the same s–x–dtop table; marker size is enhanced for review and is not a duct diameter."
+                    )
     with three_d_tab:
         st.plotly_chart(
             _three_d_figure(
@@ -1594,7 +1838,7 @@ def render_crossbeam_tendon_profile_page() -> None:
             config=FIGURE_CONFIG,
         )
         st.caption(
-            "3D is a geometry review view. Hollow segments use four wall prisms so the void remains visible; fillets, chamfers, ducts, anchor hardware, and deviator hardware are schematic in UI1."
+            "3D uses orthographic projection so parallel member edges remain parallel without perspective distortion. Hollow segments use four wall prisms so the void remains visible; fillets, chamfers, ducts, anchor hardware, and deviator hardware remain schematic."
         )
     with audit_tab:
         audit_rows = tendon_station_audit_rows(
