@@ -1,3 +1,10 @@
+### CROSSBEAM.RB-EDIT1 — Single-Commit Editable Rebar Tables
+
+Commits the first edit across all 14 Crossbeam Rebar data tables by consuming
+Streamlit `edited_rows` patches in widget callbacks, while preserving linked
+material/fy values, Template/Zone references, Project-JSON persistence, and
+solver isolation. See `README_CROSSBEAM_RB_EDIT1.md`.
+
 ### CROSSBEAM.RB-PERSIST1 — Crossbeam Reinforcement Project-JSON Persistence
 
 Persists the complete Crossbeam longitudinal/transverse template libraries, Segment/Zone assignments and references, and stable preview selections in a versioned Project-JSON block with older-file migration and post-load reference validation, while keeping all solvers and analysis-result caches isolated. See `README_CROSSBEAM_RB_PERSIST1.md`.

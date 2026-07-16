@@ -7,6 +7,8 @@ RB2G shares geometry-aware 25 mm-bend centerlines between the transverse-only
 and combined section previews. RB2G2 draws Hollow reinforcement as two closed
 web loops, four flange U-bars, and four straight chamfer bars. RB-PERSIST1 keeps
 the editable template library in the versioned Crossbeam Project-JSON model.
+RB-EDIT1 commits the first data-editor patch for identity, material, topology,
+placement, and notes tables without requiring the engineer to enter it twice.
 """
 
 from __future__ import annotations
@@ -19,8 +21,11 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from concrete_pmm_pro.crossbeam.editor_commit import data_editor_payload_to_records
 from concrete_pmm_pro.crossbeam.rebar import canonical_rebar_zones
 from concrete_pmm_pro.crossbeam.rebar_persistence import (
+    CB_RB_ZONE_REV_KEY,
+    CB_RB_ZONE_ROWS_KEY,
     CB_TR_PREVIEW_MODE_KEY,
     CB_TR_TEMPLATE_REV_KEY,
     CB_TR_TEMPLATE_ROWS_KEY,
@@ -176,6 +181,85 @@ def _merge_fields(rows: list[dict[str, Any]], editor_rows: list[dict[str, Any]],
     return canonical_transverse_templates([by_id[str(row.get("Template ID") or "")] for row in canonical])
 
 
+def _transverse_source_rows(fallback_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if CB_TR_TEMPLATE_ROWS_KEY in st.session_state:
+        return canonical_transverse_templates(_records(st.session_state.get(CB_TR_TEMPLATE_ROWS_KEY)))
+    return canonical_transverse_templates(fallback_rows)
+
+
+def _commit_transverse_identity_editor(
+    editor_key: str,
+    template_rows: list[dict[str, Any]],
+    fallback_editor_rows: list[dict[str, Any]],
+    zone_rows: list[dict[str, Any]],
+) -> None:
+    """Commit the first transverse identity edit and rename Zone references."""
+
+    source = _transverse_source_rows(template_rows)
+    zones = canonical_rebar_zones(
+        _records(st.session_state.get(CB_RB_ZONE_ROWS_KEY, zone_rows))
+    )
+    editor_rows = data_editor_payload_to_records(
+        st.session_state.get(editor_key),
+        fallback_editor_rows,
+    )
+    role_by_id = {
+        str(row.get("Template ID") or ""): str(row.get("Applicable role") or "")
+        for row in source
+    }
+    updated, updated_zones, rename_map, errors = _identity_merge(source, editor_rows, zones)
+    if errors:
+        return
+    role_changed = any(
+        role_by_id.get(str(row.get("_Original ID") or "")) != str(row.get("Role") or "")
+        for row in editor_rows
+        if str(row.get("_Original ID") or "") in role_by_id
+    )
+    _store(updated)
+    if rename_map:
+        st.session_state[CB_RB_ZONE_ROWS_KEY] = updated_zones
+        st.session_state[CB_RB_ZONE_REV_KEY] = int(st.session_state.get(CB_RB_ZONE_REV_KEY, 0)) + 1
+        st.session_state[CB_TR_ACTION_NOTICE_KEY] = "Updated Transverse Template references: " + ", ".join(
+            f"{old} → {new}" for old, new in rename_map.items()
+        ) + "."
+    if rename_map or role_changed:
+        _bump_revision()
+
+
+def _commit_transverse_material_editor(
+    editor_key: str,
+    template_rows: list[dict[str, Any]],
+    fallback_editor_rows: list[dict[str, Any]],
+) -> None:
+    """Commit first transverse Material/fy, Active, and Credit edits."""
+
+    source = _transverse_source_rows(template_rows)
+    editor_rows = data_editor_payload_to_records(
+        st.session_state.get(editor_key),
+        fallback_editor_rows,
+    )
+    updated, sync_required = _material_merge(source, editor_rows)
+    _store(updated)
+    if sync_required:
+        _bump_revision()
+
+
+def _commit_transverse_fields_editor(
+    editor_key: str,
+    template_rows: list[dict[str, Any]],
+    fallback_editor_rows: list[dict[str, Any]],
+    field_map: Mapping[str, str],
+) -> None:
+    """Commit the first topology, placement, or notes-table edit."""
+
+    source = _transverse_source_rows(template_rows)
+    editor_rows = data_editor_payload_to_records(
+        st.session_state.get(editor_key),
+        fallback_editor_rows,
+    )
+    _store(_merge_fields(source, editor_rows, field_map))
+
+
 def _selected_ids(editor_rows: list[dict[str, Any]], column: str) -> list[str]:
     return [
         str(row.get("Template ID") or "")
@@ -258,9 +342,12 @@ def render_crossbeam_transverse_template_library(
         }
         for row in rows
     ]
+    identity_editor_key = f"crossbeam_tr1_identity_{revision}"
     edited = st.data_editor(
         pd.DataFrame(identity_rows), use_container_width=True, hide_index=True, num_rows="fixed",
-        key=f"crossbeam_tr1_identity_{revision}",
+        key=identity_editor_key,
+        on_change=_commit_transverse_identity_editor,
+        args=(identity_editor_key, rows, identity_rows, zone_rows),
         column_config={
             "_Original ID": None,
             "Copy": st.column_config.CheckboxColumn(width="small"),
@@ -313,9 +400,13 @@ def render_crossbeam_transverse_template_library(
         {"Template ID": row["Template ID"], "fy (MPa)": int(round(float(row["fy MPa"]))), "Material": row["Rebar material"], "Active": row["Active"], "Credit": row["Credit inside segment"]}
         for row in rows
     ]
+    material_editor_key = f"crossbeam_tr1_material_{revision}"
     material_edited = st.data_editor(
         pd.DataFrame(material_rows), use_container_width=True, hide_index=True, num_rows="fixed",
-        key=f"crossbeam_tr1_material_{revision}", disabled=["Template ID"],
+        key=material_editor_key,
+        on_change=_commit_transverse_material_editor,
+        args=(material_editor_key, rows, material_rows),
+        disabled=["Template ID"],
         column_config={
             "Template ID": st.column_config.TextColumn(width="medium"),
             "fy (MPa)": st.column_config.SelectboxColumn(options=[390,490], required=True, width="small"),
@@ -332,12 +423,19 @@ def render_crossbeam_transverse_template_library(
     hollow_rows = [row for row in rows if str(row.get("Applicable role") or "") in {"Hollow", "Any"}]
     if hollow_rows:
         st.markdown("#### Hollow web-leg credit and detailing topology")
+        hollow_editor_rows = [
+            {"Template ID": row["Template ID"], "Bar": row["Bar size"], "Spacing (mm)": row["Spacing mm"], "Left legs": row["Left web legs"], "Right legs": row["Right web legs"], "Closed cage": row["Closed cage"]}
+            for row in hollow_rows
+        ]
+        hollow_field_map = {"Bar":"Bar size", "Spacing (mm)":"Spacing mm", "Left legs":"Left web legs", "Right legs":"Right web legs", "Closed cage":"Closed cage"}
+        hollow_editor_key = f"crossbeam_tr1_hollow_{revision}"
         hollow_editor = st.data_editor(
-            pd.DataFrame([
-                {"Template ID": row["Template ID"], "Bar": row["Bar size"], "Spacing (mm)": row["Spacing mm"], "Left legs": row["Left web legs"], "Right legs": row["Right web legs"], "Closed cage": row["Closed cage"]}
-                for row in hollow_rows
-            ]),
-            use_container_width=True, hide_index=True, num_rows="fixed", key=f"crossbeam_tr1_hollow_{revision}", disabled=["Template ID"],
+            pd.DataFrame(hollow_editor_rows),
+            use_container_width=True, hide_index=True, num_rows="fixed",
+            key=hollow_editor_key,
+            on_change=_commit_transverse_fields_editor,
+            args=(hollow_editor_key, rows, hollow_editor_rows, hollow_field_map),
+            disabled=["Template ID"],
             column_config={
                 "Template ID": st.column_config.TextColumn(width="medium"),
                 "Bar": st.column_config.SelectboxColumn(options=list(TRANSVERSE_BAR_SIZE_OPTIONS), required=True, width="small"),
@@ -347,17 +445,24 @@ def render_crossbeam_transverse_template_library(
                 "Closed cage": st.column_config.CheckboxColumn(width="small"),
             },
         )
-        rows = _merge_fields(rows, _records(hollow_editor), {"Bar":"Bar size", "Spacing (mm)":"Spacing mm", "Left legs":"Left web legs", "Right legs":"Right web legs", "Closed cage":"Closed cage"}); _store(rows)
+        rows = _merge_fields(rows, _records(hollow_editor), hollow_field_map); _store(rows)
 
     solid_rows = [row for row in rows if str(row.get("Applicable role") or "") == "Solid"]
     if solid_rows:
         st.markdown("#### Solid multi-leg ties")
+        solid_editor_rows = [
+            {"Template ID": row["Template ID"], "Bar": row["Bar size"], "Spacing (mm)": row["Spacing mm"], "Effective legs": row["Effective legs"], "Closed tie": row["Closed cage"]}
+            for row in solid_rows
+        ]
+        solid_field_map = {"Bar":"Bar size", "Spacing (mm)":"Spacing mm", "Effective legs":"Effective legs", "Closed tie":"Closed cage"}
+        solid_editor_key = f"crossbeam_tr1_solid_{revision}"
         solid_editor = st.data_editor(
-            pd.DataFrame([
-                {"Template ID": row["Template ID"], "Bar": row["Bar size"], "Spacing (mm)": row["Spacing mm"], "Effective legs": row["Effective legs"], "Closed tie": row["Closed cage"]}
-                for row in solid_rows
-            ]),
-            use_container_width=True, hide_index=True, num_rows="fixed", key=f"crossbeam_tr1_solid_{revision}", disabled=["Template ID"],
+            pd.DataFrame(solid_editor_rows),
+            use_container_width=True, hide_index=True, num_rows="fixed",
+            key=solid_editor_key,
+            on_change=_commit_transverse_fields_editor,
+            args=(solid_editor_key, rows, solid_editor_rows, solid_field_map),
+            disabled=["Template ID"],
             column_config={
                 "Template ID": st.column_config.TextColumn(width="medium"),
                 "Bar": st.column_config.SelectboxColumn(options=list(TRANSVERSE_BAR_SIZE_OPTIONS), required=True, width="small"),
@@ -366,15 +471,22 @@ def render_crossbeam_transverse_template_library(
                 "Closed tie": st.column_config.CheckboxColumn(width="small"),
             },
         )
-        rows = _merge_fields(rows, _records(solid_editor), {"Bar":"Bar size", "Spacing (mm)":"Spacing mm", "Effective legs":"Effective legs", "Closed tie":"Closed cage"}); _store(rows)
+        rows = _merge_fields(rows, _records(solid_editor), solid_field_map); _store(rows)
 
     st.markdown("#### Placement within each zone")
+    placement_editor_rows = [
+        {"Template ID": row["Template ID"], "Center offset (mm)": row["Center offset mm"], "First offset (mm)": row["First bar offset mm"], "Last offset (mm)": row["Last bar offset mm"], "Status": "LOCAL ONLY"}
+        for row in rows
+    ]
+    placement_field_map = {"Center offset (mm)":"Center offset mm", "First offset (mm)":"First bar offset mm", "Last offset (mm)":"Last bar offset mm"}
+    placement_editor_key = f"crossbeam_tr1_placement_{revision}"
     placement_editor = st.data_editor(
-        pd.DataFrame([
-            {"Template ID": row["Template ID"], "Center offset (mm)": row["Center offset mm"], "First offset (mm)": row["First bar offset mm"], "Last offset (mm)": row["Last bar offset mm"], "Status": "LOCAL ONLY"}
-            for row in rows
-        ]),
-        use_container_width=True, hide_index=True, num_rows="fixed", key=f"crossbeam_tr1_placement_{revision}", disabled=["Template ID","Status"],
+        pd.DataFrame(placement_editor_rows),
+        use_container_width=True, hide_index=True, num_rows="fixed",
+        key=placement_editor_key,
+        on_change=_commit_transverse_fields_editor,
+        args=(placement_editor_key, rows, placement_editor_rows, placement_field_map),
+        disabled=["Template ID","Status"],
         column_config={
             "Template ID": st.column_config.TextColumn(width="medium"),
             "Center offset (mm)": st.column_config.NumberColumn(min_value=1.0, step=5.0, format="%.0f", width="small"),
@@ -383,7 +495,7 @@ def render_crossbeam_transverse_template_library(
             "Status": st.column_config.TextColumn(width="small"),
         },
     )
-    rows = _merge_fields(rows, _records(placement_editor), {"Center offset (mm)":"Center offset mm", "First offset (mm)":"First bar offset mm", "Last offset (mm)":"Last bar offset mm"}); _store(rows)
+    rows = _merge_fields(rows, _records(placement_editor), placement_field_map); _store(rows)
 
     st.markdown("#### Av/s input preview")
     avs = [transverse_avs_record(row) for row in rows]
@@ -403,12 +515,18 @@ def render_crossbeam_transverse_template_library(
     )
 
     with st.expander("Template notes and reset", expanded=False):
+        notes_rows = [{"Template ID":row["Template ID"], "Notes":row["Notes"]} for row in rows]
+        notes_field_map = {"Notes":"Notes"}
+        notes_editor_key = f"crossbeam_tr1_notes_{revision}"
         notes = st.data_editor(
-            pd.DataFrame([{"Template ID":row["Template ID"], "Notes":row["Notes"]} for row in rows]), use_container_width=True, hide_index=True, num_rows="fixed",
-            key=f"crossbeam_tr1_notes_{revision}", disabled=["Template ID"],
+            pd.DataFrame(notes_rows), use_container_width=True, hide_index=True, num_rows="fixed",
+            key=notes_editor_key,
+            on_change=_commit_transverse_fields_editor,
+            args=(notes_editor_key, rows, notes_rows, notes_field_map),
+            disabled=["Template ID"],
             column_config={"Template ID":st.column_config.TextColumn(width="medium"), "Notes":st.column_config.TextColumn(width="large")},
         )
-        rows = _merge_fields(rows, _records(notes), {"Notes":"Notes"}); _store(rows)
+        rows = _merge_fields(rows, _records(notes), notes_field_map); _store(rows)
         confirm_reset = st.checkbox("Confirm reset of all Transverse Templates", key=f"crossbeam_tr1_reset_confirm_{revision}")
         if st.button("Reset to Crossbeam transverse defaults", disabled=not confirm_reset, key=f"crossbeam_tr1_reset_{revision}"):
             _store(default_crossbeam_transverse_templates()); _bump_revision(); st.rerun()

@@ -14,6 +14,9 @@ different bar diameters and local bottom-fillet geometry cannot overlap. RB2G2
 adds the accepted Hollow bar-piece topology: closed web loops, flange U-bars,
 and straight chamfer bars. RB-PERSIST1 stores the complete Crossbeam input model
 and stable preview selections in Project JSON with migration/reference checks.
+RB-EDIT1 consumes each data-editor patch in an on-change callback so the first
+cell edit is committed across Template and Segment/Zone tables without a second
+entry, while Template ID changes still update Zone references atomically.
 The unverified PT-continuity guard and all solver ownership remain unchanged. It
 never routes template, zone, or preview state into existing PMM, Beam/Girder,
 SLS, shear, torsion, or report solvers.
@@ -31,6 +34,7 @@ import streamlit as st
 
 from concrete_pmm_pro.core.reinforcement_system import ordinary_rebar_enabled, prestressing_steel_enabled
 from concrete_pmm_pro.core.models import Rebar
+from concrete_pmm_pro.crossbeam.editor_commit import data_editor_payload_to_records
 from concrete_pmm_pro.crossbeam.rebar import (
     RB_HOLLOW_MIN,
     RB_SOLID_ANCHORAGE,
@@ -735,6 +739,221 @@ def _bump_template_editor_revision() -> None:
     st.session_state[CB_RB_TEMPLATE_REV_KEY] = int(st.session_state.get(CB_RB_TEMPLATE_REV_KEY, 0)) + 1
 
 
+def _editor_text(value: Any) -> str:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    return str(value).strip()
+
+
+def _editor_float(value: Any, default: float = 0.0) -> float:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return float(default)
+    return result if pd.notna(result) else float(default)
+
+
+def _template_source_rows(fallback_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if CB_RB_TEMPLATE_ROWS_KEY in st.session_state:
+        return canonical_rebar_templates(_records(st.session_state.get(CB_RB_TEMPLATE_ROWS_KEY)))
+    return canonical_rebar_templates(fallback_rows)
+
+
+def _zone_source_rows(fallback_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if CB_RB_ZONE_ROWS_KEY in st.session_state:
+        return canonical_rebar_zones(_records(st.session_state.get(CB_RB_ZONE_ROWS_KEY)))
+    return canonical_rebar_zones(fallback_rows)
+
+
+def _commit_template_identity_editor(
+    editor_key: str,
+    template_rows: list[dict[str, Any]],
+    fallback_editor_rows: list[dict[str, Any]],
+) -> None:
+    """Commit the first identity edit, including atomic Zone-reference renames."""
+
+    source = _template_source_rows(template_rows)
+    zones = _zone_source_rows([])
+    editor_rows = data_editor_payload_to_records(
+        st.session_state.get(editor_key),
+        fallback_editor_rows,
+    )
+    role_by_id = {
+        str(row.get("Template ID") or ""): str(row.get("Applicable role") or "")
+        for row in source
+    }
+    updated, updated_zones, rename_map, errors = _template_identity_rows_from_editor(
+        source,
+        editor_rows,
+        zones,
+    )
+    if errors:
+        return
+    role_changed = any(
+        role_by_id.get(_editor_text(row.get("_Original ID"))) != _editor_text(row.get("Role"))
+        for row in editor_rows
+        if _editor_text(row.get("_Original ID")) in role_by_id
+    )
+    _store_template_rows(updated)
+    if rename_map:
+        active_id = _editor_text(st.session_state.get(CB_RB_ACTIVE_TEMPLATE_KEY))
+        if active_id in rename_map:
+            st.session_state[CB_RB_ACTIVE_TEMPLATE_KEY] = rename_map[active_id]
+        st.session_state[CB_RB_ZONE_ROWS_KEY] = updated_zones
+        st.session_state[CB_RB_ZONE_REV_KEY] = int(st.session_state.get(CB_RB_ZONE_REV_KEY, 0)) + 1
+        st.session_state[CB_RB_TEMPLATE_ACTION_KEY] = {
+            "action": "notice",
+            "message": "Updated Template ID references: "
+            + ", ".join(f"{old} → {new}" for old, new in rename_map.items())
+            + ".",
+        }
+    if rename_map or role_changed:
+        _bump_template_editor_revision()
+
+
+def _commit_template_participation_editor(
+    editor_key: str,
+    template_rows: list[dict[str, Any]],
+    fallback_editor_rows: list[dict[str, Any]],
+) -> None:
+    """Commit first material/fy, basis, Active, and Credit edits."""
+
+    source = _template_source_rows(template_rows)
+    editor_rows = data_editor_payload_to_records(
+        st.session_state.get(editor_key),
+        fallback_editor_rows,
+    )
+    updated, warnings = _template_material_rows_from_editor(source, editor_rows)
+    _store_template_rows(updated)
+    if warnings:
+        st.session_state[CB_RB_TEMPLATE_ACTION_KEY] = {
+            "action": "notice",
+            "message": " ".join(warnings),
+        }
+    if _material_editor_sync_required(editor_rows, updated):
+        _bump_template_editor_revision()
+
+
+def _commit_template_face_editor(
+    editor_key: str,
+    template_rows: list[dict[str, Any]],
+    fallback_editor_rows: list[dict[str, Any]],
+    face: str,
+) -> None:
+    """Commit the first Outer/Inner bar-layout table edit."""
+
+    source = _template_source_rows(template_rows)
+    editor_rows = data_editor_payload_to_records(
+        st.session_state.get(editor_key),
+        fallback_editor_rows,
+    )
+    _store_template_rows(_template_face_layout_from_editor(source, editor_rows, face=face))
+
+
+def _commit_template_fields_editor(
+    editor_key: str,
+    template_rows: list[dict[str, Any]],
+    fallback_editor_rows: list[dict[str, Any]],
+    field_map: Mapping[str, str],
+) -> None:
+    """Commit the first adopted-reinforcement or notes-table edit."""
+
+    source = _template_source_rows(template_rows)
+    editor_rows = data_editor_payload_to_records(
+        st.session_state.get(editor_key),
+        fallback_editor_rows,
+    )
+    _store_template_rows(_template_rows_from_editor(source, editor_rows, field_map))
+
+
+def _commit_zone_geometry_editor(
+    editor_key: str,
+    zone_rows: list[dict[str, Any]],
+    fallback_editor_rows: list[dict[str, Any]],
+    segment_rows: list[dict[str, Any]],
+    template_rows: list[dict[str, Any]],
+    transverse_template_rows: list[dict[str, Any]],
+) -> None:
+    """Commit the first dynamic Zone geometry edit before Streamlit rerenders."""
+
+    source = _zone_source_rows(zone_rows)
+    source_by_id = {str(row.get("Zone ID") or ""): row for row in source}
+    segments = {str(row.get("Segment") or ""): row for row in segment_rows}
+    longitudinal = _template_source_rows(template_rows)
+    transverse = canonical_transverse_templates(
+        _records(st.session_state.get(CB_TR_TEMPLATE_ROWS_KEY, transverse_template_rows))
+    )
+    editor_rows = data_editor_payload_to_records(
+        st.session_state.get(editor_key),
+        fallback_editor_rows,
+    )
+    updated: list[dict[str, Any]] = []
+    for index, item in enumerate(editor_rows):
+        original_id = _editor_text(item.get("_Original Zone"))
+        zone_id = _editor_text(item.get("Zone"))
+        previous = source_by_id.get(original_id) or source_by_id.get(zone_id)
+        if previous is None and index < len(source):
+            previous = source[index]
+        previous = dict(previous or {})
+        segment_id = _editor_text(item.get("Segment"))
+        longitudinal_id = _editor_text(
+            previous.get("Longitudinal template") or previous.get("Rebar template")
+        )
+        transverse_id = _editor_text(previous.get("Transverse template"))
+        if (not longitudinal_id or not transverse_id) and segment_id in segments:
+            defaults = default_crossbeam_rebar_zones(
+                [segments[segment_id]],
+                longitudinal,
+                transverse,
+            )
+            if defaults:
+                longitudinal_id = longitudinal_id or _editor_text(defaults[0].get("Longitudinal template"))
+                transverse_id = transverse_id or _editor_text(defaults[0].get("Transverse template"))
+        updated.append(
+            {
+                "Zone ID": zone_id,
+                "Segment": segment_id,
+                "s_start_m": _editor_float(item.get("Start")),
+                "s_end_m": _editor_float(item.get("End")),
+                "Rebar template": longitudinal_id,
+                "Longitudinal template": longitudinal_id,
+                "Transverse template": transverse_id,
+                "Purpose": _editor_text(previous.get("Purpose")),
+            }
+        )
+    st.session_state[CB_RB_ZONE_ROWS_KEY] = canonical_rebar_zones(updated)
+    st.session_state[CB_RB_ZONE_REV_KEY] = int(st.session_state.get(CB_RB_ZONE_REV_KEY, 0)) + 1
+
+
+def _commit_zone_assignment_editor(
+    editor_key: str,
+    zone_rows: list[dict[str, Any]],
+    fallback_editor_rows: list[dict[str, Any]],
+) -> None:
+    """Commit the first longitudinal/transverse Template assignment edit."""
+
+    source = _zone_source_rows(zone_rows)
+    assignments = {
+        _editor_text(row.get("Zone")): row
+        for row in data_editor_payload_to_records(
+            st.session_state.get(editor_key),
+            fallback_editor_rows,
+        )
+    }
+    updated: list[dict[str, Any]] = []
+    for source_row in source:
+        row = dict(source_row)
+        zone_id = _editor_text(row.get("Zone ID"))
+        assignment = assignments.get(zone_id)
+        if assignment is not None:
+            longitudinal_id = _editor_text(assignment.get("Longitudinal template"))
+            row["Rebar template"] = longitudinal_id
+            row["Longitudinal template"] = longitudinal_id
+            row["Transverse template"] = _editor_text(assignment.get("Transverse template"))
+        updated.append(row)
+    st.session_state[CB_RB_ZONE_ROWS_KEY] = canonical_rebar_zones(updated)
+
+
 def _render_template_library(
     template_rows: list[dict[str, Any]],
     zone_rows: list[dict[str, Any]],
@@ -778,12 +997,15 @@ def _render_template_library(
         }
         for row in rows
     ]
+    identity_editor_key = f"crossbeam_rb2c_identity_editor_{revision}"
     identity_edited = st.data_editor(
         pd.DataFrame(identity_rows),
         use_container_width=True,
         hide_index=True,
         num_rows="fixed",
-        key=f"crossbeam_rb2c_identity_editor_{revision}",
+        key=identity_editor_key,
+        on_change=_commit_template_identity_editor,
+        args=(identity_editor_key, rows, identity_rows),
         column_config={
             "_Original ID": None,
             "Copy": st.column_config.CheckboxColumn("Copy", width="small"),
@@ -899,12 +1121,15 @@ def _render_template_library(
         }
         for row in rows
     ]
+    participation_editor_key = f"crossbeam_rb2c_participation_editor_{revision}"
     participation_edited = st.data_editor(
         pd.DataFrame(participation_rows),
         use_container_width=True,
         hide_index=True,
         num_rows="fixed",
-        key=f"crossbeam_rb2c_participation_editor_{revision}",
+        key=participation_editor_key,
+        on_change=_commit_template_participation_editor,
+        args=(participation_editor_key, rows, participation_rows),
         disabled=["Template ID"],
         column_config={
             "Template ID": st.column_config.TextColumn(width="small"),
@@ -952,12 +1177,15 @@ def _render_template_library(
                 "Target": row["Outer exact bar count"] if method == "By exact bar count" else row["Outer target spacing mm"],
             }
         )
+    outer_editor_key = f"crossbeam_rb2c_outer_editor_{revision}"
     outer_edited = st.data_editor(
         pd.DataFrame(outer_rows),
         use_container_width=True,
         hide_index=True,
         num_rows="fixed",
-        key=f"crossbeam_rb2c_outer_editor_{revision}",
+        key=outer_editor_key,
+        on_change=_commit_template_face_editor,
+        args=(outer_editor_key, rows, outer_rows, "Outer"),
         disabled=["Template ID"],
         column_config={
             "Template ID": st.column_config.TextColumn(width="small"),
@@ -987,12 +1215,15 @@ def _render_template_library(
                     "Target": row["Inner exact bar count"] if method == "By exact bar count" else row["Inner target spacing mm"],
                 }
             )
+        inner_editor_key = f"crossbeam_rb2c_inner_editor_{revision}"
         inner_edited = st.data_editor(
             pd.DataFrame(inner_rows),
             use_container_width=True,
             hide_index=True,
             num_rows="fixed",
-            key=f"crossbeam_rb2c_inner_editor_{revision}",
+            key=inner_editor_key,
+            on_change=_commit_template_face_editor,
+            args=(inner_editor_key, rows, inner_rows, "Inner"),
             disabled=["Template ID"],
             column_config={
                 "Template ID": st.column_config.TextColumn(width="small"),
@@ -1017,12 +1248,21 @@ def _render_template_library(
             }
             for row in rows
         ]
+        adopted_field_map = {
+            "Top As (mm²)": "Top As mm²",
+            "Bottom As (mm²)": "Bottom As mm²",
+            "Side As (mm²)": "Side As mm²",
+            "Av/s (mm²/mm)": "Av/s mm²/mm",
+        }
+        adopted_editor_key = f"crossbeam_rb2c_adopted_editor_{revision}"
         adopted_edited = st.data_editor(
             pd.DataFrame(adopted_rows),
             use_container_width=True,
             hide_index=True,
             num_rows="fixed",
-            key=f"crossbeam_rb2c_adopted_editor_{revision}",
+            key=adopted_editor_key,
+            on_change=_commit_template_fields_editor,
+            args=(adopted_editor_key, rows, adopted_rows, adopted_field_map),
             disabled=["Template ID"],
             column_config={
                 "Template ID": st.column_config.TextColumn(width="small"),
@@ -1035,30 +1275,29 @@ def _render_template_library(
         rows = _template_rows_from_editor(
             rows,
             _records(adopted_edited),
-            {
-                "Top As (mm²)": "Top As mm²",
-                "Bottom As (mm²)": "Bottom As mm²",
-                "Side As (mm²)": "Side As mm²",
-                "Av/s (mm²/mm)": "Av/s mm²/mm",
-            },
+            adopted_field_map,
         )
         _store_template_rows(rows)
 
     with st.expander("Template notes and library reset", expanded=False):
         notes_rows = [{"Template ID": row["Template ID"], "Notes": row["Notes"]} for row in rows]
+        notes_field_map = {"Notes": "Notes"}
+        notes_editor_key = f"crossbeam_rb2c_notes_editor_{revision}"
         notes_edited = st.data_editor(
             pd.DataFrame(notes_rows),
             use_container_width=True,
             hide_index=True,
             num_rows="fixed",
-            key=f"crossbeam_rb2c_notes_editor_{revision}",
+            key=notes_editor_key,
+            on_change=_commit_template_fields_editor,
+            args=(notes_editor_key, rows, notes_rows, notes_field_map),
             disabled=["Template ID"],
             column_config={
                 "Template ID": st.column_config.TextColumn(width="small"),
                 "Notes": st.column_config.TextColumn(width="large"),
             },
         )
-        rows = _template_rows_from_editor(rows, _records(notes_edited), {"Notes": "Notes"})
+        rows = _template_rows_from_editor(rows, _records(notes_edited), notes_field_map)
         _store_template_rows(rows)
         st.warning("Reset replaces the current project Template Library with the three editable Crossbeam defaults. Review Zone assignments afterward.")
         reset_confirmed = st.checkbox("Confirm reset of all Rebar Templates", key=f"crossbeam_rb2c_reset_confirm_{revision}")
@@ -1138,6 +1377,7 @@ def _render_zone_assignment(
         segment = segment_by_id.get(str(row.get("Segment") or ""), {})
         geometry_rows.append(
             {
+                "_Original Zone": row.get("Zone ID", ""),
                 "Zone": row.get("Zone ID", ""),
                 "Segment": row.get("Segment", ""),
                 "Start": row.get("s_start_m", 0.0),
@@ -1148,14 +1388,28 @@ def _render_zone_assignment(
 
     revision = int(st.session_state.get(CB_RB_ZONE_REV_KEY, 0))
     st.markdown("#### Zone geometry")
+    geometry_editor_key = f"crossbeam_tr1_zone_geometry_{revision}"
     geometry_edited = st.data_editor(
-        pd.DataFrame(geometry_rows, columns=["Zone", "Segment", "Start", "End", "Section"]),
+        pd.DataFrame(
+            geometry_rows,
+            columns=["_Original Zone", "Zone", "Segment", "Start", "End", "Section"],
+        ),
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
-        key=f"crossbeam_tr1_zone_geometry_{revision}",
+        key=geometry_editor_key,
+        on_change=_commit_zone_geometry_editor,
+        args=(
+            geometry_editor_key,
+            old_rows,
+            geometry_rows,
+            segment_rows,
+            template_rows,
+            transverse_template_rows,
+        ),
         disabled=["Section"],
         column_config={
+            "_Original Zone": None,
             "Zone": st.column_config.TextColumn("Zone", required=True, width="small"),
             "Segment": st.column_config.SelectboxColumn("Segment", options=segment_ids, required=True, width="small"),
             "Start": st.column_config.NumberColumn("s start (m)", min_value=0.0, format="%.3f", required=True, width="small"),
@@ -1173,7 +1427,10 @@ def _render_zone_assignment(
         segment_id = str(item.get("Segment") or "").strip()
         segment = segment_by_id.get(segment_id, {})
         role = str(segment.get("Section role") or "")
-        old = old_assignment.get(zone_id, {})
+        old = old_assignment.get(zone_id, {}) or old_assignment.get(
+            _editor_text(item.get("_Original Zone")),
+            {},
+        )
         longitudinal_id = old.get("Longitudinal") or (longitudinal_ids[0] if longitudinal_ids else "")
         transverse_id = old.get("Transverse") or (transverse_ids[0] if transverse_ids else "")
         longitudinal_role = str(longitudinal_by_id.get(longitudinal_id, {}).get("Applicable role") or "")
@@ -1195,6 +1452,7 @@ def _render_zone_assignment(
         )
 
     st.markdown("#### Reinforcement assignment")
+    assignment_editor_key = f"crossbeam_tr1_zone_assignment_{revision}"
     assignment_edited = st.data_editor(
         pd.DataFrame(
             assignment_seed,
@@ -1203,7 +1461,9 @@ def _render_zone_assignment(
         num_rows="fixed",
         use_container_width=True,
         hide_index=True,
-        key=f"crossbeam_tr1_zone_assignment_{revision}",
+        key=assignment_editor_key,
+        on_change=_commit_zone_assignment_editor,
+        args=(assignment_editor_key, old_rows, assignment_seed),
         disabled=["Zone", "Compatibility", "Status"],
         column_config={
             "Zone": st.column_config.TextColumn(width="small"),
