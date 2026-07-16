@@ -89,7 +89,7 @@ def test_tr1_cross_section_and_elevation_figures_render_for_hollow_and_solid():
         cross = transverse_cross_section_figure(geometry, definition, templates[template_id], title="TR1")
         elevation = transverse_elevation_figure(templates[template_id], start_m=0.0, end_m=3.0, segment_id="S1", zone_id="Z-S1")
         assert cross.layout.title.text == "TR1"
-        assert any(str(trace.name) in {"Closed tie", "Left-web cage"} for trace in cross.data)
+        assert any(str(trace.name) in {"Closed tie", "Left web closed loop"} for trace in cross.data)
         assert elevation.layout.title.text.startswith("Transverse Reinforcement Elevation")
         assert len(elevation.data) > 1
 
@@ -101,7 +101,9 @@ def test_tr1_ui_is_workflow_scoped_compact_and_solver_free():
     assert '("Section Rebar Preview", "Preview")' in source
     assert "Longitudinal template" in source
     assert "Transverse template" in source
-    assert "Hollow web reinforcement" in transverse_source
+    assert "Hollow web-leg credit and detailing topology" in transverse_source
+    assert "4 flange U-bars" in transverse_source
+    assert "4 straight bars" in transverse_source
     assert "Solid multi-leg ties" in transverse_source
     assert "Joint shear credit" in source
     assert "calculate_shear" not in transverse_source

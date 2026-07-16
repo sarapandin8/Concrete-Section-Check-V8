@@ -4,7 +4,8 @@ The page intentionally remains solver-neutral.  It stores editable local
 transverse templates, computes traceable Av/s previews, and draws schematic
 cross-section/elevation reinforcement without giving segment-joint shear credit.
 RB2G shares geometry-aware 25 mm-bend centerlines between the transverse-only
-and combined section previews.
+and combined section previews. RB2G2 draws Hollow reinforcement as two closed
+web loops, four flange U-bars, and four straight chamfer bars.
 """
 
 from __future__ import annotations
@@ -240,7 +241,10 @@ def render_crossbeam_transverse_template_library(
             rows.append(new_transverse_template("Solid", [str(row.get("Template ID") or "") for row in rows]))
             _store(rows); _bump_revision(); st.rerun()
     with cols[2]:
-        st.caption("Hollow templates define left/right web legs; Solid templates define effective multi-leg ties. IDs are editable and Zone references update automatically.")
+        st.caption(
+            "Hollow templates define credited left/right web legs and display the accepted closed-loop/U-bar/chamfer-bar topology; "
+            "Solid templates define effective multi-leg ties. IDs are editable and Zone references update automatically."
+        )
 
     st.markdown("#### Template identity and row actions")
     identity_rows = [
@@ -324,7 +328,7 @@ def render_crossbeam_transverse_template_library(
 
     hollow_rows = [row for row in rows if str(row.get("Applicable role") or "") in {"Hollow", "Any"}]
     if hollow_rows:
-        st.markdown("#### Hollow web reinforcement")
+        st.markdown("#### Hollow web-leg credit and detailing topology")
         hollow_editor = st.data_editor(
             pd.DataFrame([
                 {"Template ID": row["Template ID"], "Bar": row["Bar size"], "Spacing (mm)": row["Spacing mm"], "Left legs": row["Left web legs"], "Right legs": row["Right web legs"], "Closed cage": row["Closed cage"]}
@@ -447,9 +451,14 @@ def add_transverse_cage_traces(
     legend_name: str | None = None,
     color: str = "#d97706",
 ) -> None:
-    """Add cage centerlines after concrete and before longitudinal bars."""
+    """Add physical transverse-bar centerlines after concrete."""
 
     first_trace = True
+    kind_names = {
+        "closed_loop": "Closed loop",
+        "u_bar": "U-bar",
+        "straight_bar": "Straight chamfer bar",
+    }
     for path in cages.paths:
         x = [point[0] for point in path.points]
         y = [point[1] for point in path.points]
@@ -462,14 +471,15 @@ def add_transverse_cage_traces(
                 name=(legend_name or path.label) if first_trace else path.label,
                 showlegend=first_trace,
                 hovertemplate=(
-                    f"<b>{path.label}</b><br>Center offset={cages.center_offset_mm:.1f} mm<br>"
+                    f"<b>{path.label}</b><br>Type={kind_names.get(path.kind, path.kind)}<br>"
+                    f"Center offset={cages.center_offset_mm:.1f} mm<br>"
                     f"Preview bend radius={cages.bend_radius_mm:.1f} mm<extra></extra>"
                 ),
             )
         )
         first_trace = False
         x0, x1, y0, y1 = path.envelope
-        internal_legs = max(int(path.effective_legs) - 2, 0)
+        internal_legs = max(int(path.effective_legs) - 2, 0) if path.is_closed_loop else 0
         for index in range(internal_legs):
             x_leg = x0 + (index + 1) * (x1 - x0) / (internal_legs + 1)
             fig.add_trace(
@@ -651,19 +661,39 @@ def render_transverse_preview_summary(
     cages = build_transverse_cage_geometry(geometry, definition, row)
     avs = transverse_avs_record(row)
     stations = transverse_set_stations(row, start_m, end_m)
+    hollow = str(definition.get("Section role")) == "Hollow"
     render_metric_cards([
         {"title":"Transverse template","value":row["Template ID"],"detail":f"{row['Bar size']} @ {row['Spacing mm']:.0f} mm","status":"info"},
-        {"title":"Effective legs","value":f"L/R {row['Left web legs']}/{row['Right web legs']}" if str(definition.get('Section role'))=='Hollow' else row['Effective legs'],"detail":"Hollow webs" if str(definition.get('Section role'))=='Hollow' else "Solid multi-leg tie","status":"info"},
-        {"title":"Av,total / s","value":f"{avs['Av,total/s mm²/mm']:.4f} mm²/mm","detail":"Input preview — no φVn calculation","status":"warning"},
+        {
+            "title":"Hollow topology" if hollow else "Effective legs",
+            "value":f"{len(cages.closed_loops)} loops · {len(cages.u_bars)} U · {len(cages.straight_bars)} diagonal" if hollow else row["Effective legs"],
+            "detail":f"Credited web legs L/R {row['Left web legs']}/{row['Right web legs']}" if hollow else "Solid multi-leg tie",
+            "status":"info",
+        },
+        {"title":"Av,total / s","value":f"{avs['Av,total/s mm²/mm']:.4f} mm²/mm","detail":"Web-leg input only — no φVn calculation","status":"warning"},
         {"title":"Sets in zone","value":len(stations),"detail":f"Offsets {row['First bar offset mm']:.0f}/{row['Last bar offset mm']:.0f} mm","status":"ready" if stations else "warning"},
     ])
     st.plotly_chart(transverse_cross_section_figure(geometry, definition, row, title=f"Transverse Cage Preview — {segment_id} / {zone_id} · {row['Template ID']}"), use_container_width=True, config=dict(figure_config))
-    st.caption("Cross-section transverse cage/tie schematic with 25 mm preview bend fillets. Solid ties follow the outer bottom fillets; Hollow web cages remain rectangular and do not follow inner chamfers. Longitudinal bars are omitted in this view.")
+    if str(definition.get("Section role")) == "Hollow":
+        st.caption(
+            "Hollow transverse detailing topology: 2 complete closed web loops + 4 flange U-bars "
+            "(Outer/Inner, Top/Bottom) + 4 straight bars parallel to the void chamfers. "
+            "The 25 mm bend radius is a preview value; longitudinal bars are omitted in this view."
+        )
+    else:
+        st.caption(
+            "Solid transverse closed-tie schematic with 25 mm preview bend fillets following the outer bottom fillets. "
+            "Longitudinal bars are omitted in this view."
+        )
     for message in cages.errors:
         st.error(f"REVIEW REQUIRED — {message}")
     for message in cages.warnings:
         st.caption(message)
-    st.caption("No ACI minimum transverse reinforcement, φVn, torsion, confinement, anchorage/development, or D-region result is implied.")
+    st.caption(
+        "Av/s remains based only on the template's effective web legs. The flange U-bars and chamfer bars receive no "
+        "automatic capacity credit. No ACI minimum transverse reinforcement, φVn, torsion, confinement, "
+        "anchorage/development, or D-region result is implied."
+    )
     st.plotly_chart(
         transverse_full_elevation_figure(
             segment_rows,

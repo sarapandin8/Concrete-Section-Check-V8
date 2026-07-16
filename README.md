@@ -1,3 +1,7 @@
+### CROSSBEAM.RB2G2 — Hollow Transverse Bar-Piece Topology
+
+Replaces the schematic Hollow transverse layout with two complete closed web loops, four Outer/Inner Top/Bottom flange U-bars, and four straight chamfer bars. Every bar piece participates in geometric clash/coverage review, while Av/s credit remains web-leg-only and all solvers stay isolated. See `README_CROSSBEAM_RB2G2.md`.
+
 ### CROSSBEAM.RB2G1 — Cage-Relative Longitudinal Offset Correction
 
 Derives active-Zone longitudinal preview centers from the transverse cage offset plus both bar radii, fits web/corner bars to the actual cage path, preserves Hollow flange-face bars between independent web cages, and removes the default reinforcement overlap without changing adopted quantities or solver inputs. See `README_CROSSBEAM_RB2G1.md`.

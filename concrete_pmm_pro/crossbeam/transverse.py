@@ -12,13 +12,16 @@ review: 25 mm preview bends, bottom-fillet-following Solid ties, rectangular
 Hollow web cages, and conservative longitudinal-bar containment checks.
 CROSSBEAM.RB2G1 adds cage-relative placement so web/corner longitudinal bars
 sit exactly one transverse-plus-longitudinal radius sum inside the actual path.
+CROSSBEAM.RB2G2 replaces the two schematic Hollow rectangles with the accepted
+piece-by-piece transverse topology: two closed web loops, four flange U-bars,
+and four straight chamfer bars.  These added detailing paths remain solver-free.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from math import cos, isfinite, pi, sin
+from math import cos, isfinite, pi, sin, sqrt
 from typing import Any
 
 from shapely.geometry import LineString, Point, Polygon
@@ -45,16 +48,24 @@ TRANSVERSE_DIAMETER_BY_SIZE = {
 }
 
 TRANSVERSE_PREVIEW_BEND_RADIUS_MM = 25.0
+TRANSVERSE_PATH_CLOSED_LOOP = "closed_loop"
+TRANSVERSE_PATH_U_BAR = "u_bar"
+TRANSVERSE_PATH_STRAIGHT_BAR = "straight_bar"
 
 
 @dataclass(frozen=True)
 class TransverseCagePath:
-    """One closed transverse centerline used by the Crossbeam previews."""
+    """One physical transverse-bar centerline used by the previews."""
 
     label: str
     points: tuple[tuple[float, float], ...]
     envelope: tuple[float, float, float, float]
     effective_legs: int
+    kind: str = TRANSVERSE_PATH_CLOSED_LOOP
+
+    @property
+    def is_closed_loop(self) -> bool:
+        return self.kind == TRANSVERSE_PATH_CLOSED_LOOP
 
 
 @dataclass(frozen=True)
@@ -73,6 +84,18 @@ class TransverseCageGeometry:
     def ok(self) -> bool:
         return bool(self.paths) and not self.errors
 
+    @property
+    def closed_loops(self) -> tuple[TransverseCagePath, ...]:
+        return tuple(path for path in self.paths if path.kind == TRANSVERSE_PATH_CLOSED_LOOP)
+
+    @property
+    def u_bars(self) -> tuple[TransverseCagePath, ...]:
+        return tuple(path for path in self.paths if path.kind == TRANSVERSE_PATH_U_BAR)
+
+    @property
+    def straight_bars(self) -> tuple[TransverseCagePath, ...]:
+        return tuple(path for path in self.paths if path.kind == TRANSVERSE_PATH_STRAIGHT_BAR)
+
 
 @dataclass(frozen=True)
 class LongitudinalContainmentReview:
@@ -85,7 +108,7 @@ class LongitudinalContainmentReview:
 
     @property
     def ok(self) -> bool:
-        return self.status == "READY FOR DETAILING REVIEW"
+        return self.status in {"READY FOR DETAILING REVIEW", "NO GEOMETRIC CLASH — PREVIEW"}
 
 
 @dataclass(frozen=True)
@@ -156,7 +179,7 @@ def default_crossbeam_transverse_templates() -> list[dict[str, Any]]:
             "Construction": "Factory precast",
             "Credit inside segment": True,
             **_template_defaults("Hollow", TR_HOLLOW_MIN),
-            "Notes": "Local web reinforcement only; no automatic segment-joint shear-transfer credit.",
+            "Notes": "Hollow detailing set: 2 closed web loops, 4 flange U-bars, and 4 chamfer bars; Av/s credit remains web-leg-only and no segment-joint shear credit is created.",
         },
         {
             "Active": True,
@@ -166,7 +189,7 @@ def default_crossbeam_transverse_templates() -> list[dict[str, Any]]:
             "Construction": "Factory precast",
             "Credit inside segment": True,
             **_template_defaults("Hollow", TR_HOLLOW_END),
-            "Notes": "Dense local reinforcement near segment ends; joint shear remains a separate check.",
+            "Notes": "Dense Hollow detailing set near segment ends; Av/s credit remains web-leg-only and joint shear remains a separate check.",
         },
         {
             "Active": True,
@@ -406,6 +429,189 @@ def _rounded_rectangle_centerline(
     return tuple(points)
 
 
+def _path_envelope(points: tuple[tuple[float, float], ...]) -> tuple[float, float, float, float]:
+    if not points:
+        return (0.0, 0.0, 0.0, 0.0)
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    return (min(xs), max(xs), min(ys), max(ys))
+
+
+def _rounded_u_centerline(
+    left_leg_x: float,
+    right_leg_x: float,
+    face_y: float,
+    tip_y: float,
+    radius: float,
+) -> tuple[tuple[float, float], ...]:
+    """Return one open U-bar with a horizontal face and two return legs."""
+
+    if right_leg_x <= left_leg_x or face_y == tip_y:
+        return ()
+    r = min(float(radius), 0.5 * (right_leg_x - left_leg_x), abs(face_y - tip_y))
+    if r <= 0.0:
+        return ()
+    points: list[tuple[float, float]] = [(left_leg_x, tip_y)]
+    if tip_y < face_y:
+        # Horizontal face is above both open leg tips: ∩ orientation.
+        points.append((left_leg_x, face_y - r))
+        points.extend(_arc_points(left_leg_x + r, face_y - r, r, pi, pi / 2.0)[1:])
+        points.append((right_leg_x - r, face_y))
+        points.extend(_arc_points(right_leg_x - r, face_y - r, r, pi / 2.0, 0.0)[1:])
+    else:
+        # Horizontal face is below both open leg tips: ∪ orientation.
+        points.append((left_leg_x, face_y + r))
+        points.extend(_arc_points(left_leg_x + r, face_y + r, r, pi, 3.0 * pi / 2.0)[1:])
+        points.append((right_leg_x - r, face_y))
+        points.extend(_arc_points(right_leg_x - r, face_y + r, r, -pi / 2.0, 0.0)[1:])
+    points.append((right_leg_x, tip_y))
+    return tuple(points)
+
+
+def _hollow_web_closed_loop_centerline(
+    *,
+    side: str,
+    outer_x: float,
+    inner_x: float,
+    min_x: float,
+    max_x: float,
+    min_y: float,
+    max_y: float,
+    center_offset_mm: float,
+    concrete_bottom_fillet_mm: float,
+    bend_radius_mm: float,
+) -> tuple[tuple[float, float], ...]:
+    """Return one full-height closed web loop following the outer bottom fillet."""
+
+    x0, x1 = sorted((float(outer_x), float(inner_x)))
+    y0 = float(min_y) + float(center_offset_mm)
+    y1 = float(max_y) - float(center_offset_mm)
+    r = min(float(bend_radius_mm), 0.5 * (x1 - x0), 0.5 * (y1 - y0))
+    if x1 <= x0 or y1 <= y0 or r <= 0.0:
+        return ()
+
+    outer_radius = max(float(concrete_bottom_fillet_mm), 0.0)
+    tie_radius = outer_radius - float(center_offset_mm)
+    if outer_radius <= 0.0 or tie_radius <= 0.0:
+        return _rounded_rectangle_centerline(x0, x1, y0, y1, r)
+
+    bottom_center_y = float(min_y) + outer_radius
+    side_text = str(side).strip().casefold()
+    if side_text == "left":
+        fillet_center_x = float(min_x) + outer_radius
+        if x1 - r < fillet_center_x - 1.0e-9:
+            return ()
+        points: list[tuple[float, float]] = [(x0, y1 - r)]
+        points.extend(_arc_points(x0 + r, y1 - r, r, pi, pi / 2.0)[1:])
+        points.append((x1 - r, y1))
+        points.extend(_arc_points(x1 - r, y1 - r, r, pi / 2.0, 0.0)[1:])
+        points.append((x1, y0 + r))
+        points.extend(_arc_points(x1 - r, y0 + r, r, 0.0, -pi / 2.0)[1:])
+        points.append((fillet_center_x, y0))
+        points.extend(
+            _arc_points(
+                fillet_center_x,
+                bottom_center_y,
+                tie_radius,
+                -pi / 2.0,
+                -pi,
+                segments=12,
+            )[1:]
+        )
+        points.append(points[0])
+        return tuple(points)
+
+    if side_text == "right":
+        fillet_center_x = float(max_x) - outer_radius
+        if x0 + r > fillet_center_x + 1.0e-9:
+            return ()
+        points = [(x0, y1 - r)]
+        points.extend(_arc_points(x0 + r, y1 - r, r, pi, pi / 2.0)[1:])
+        points.append((x1 - r, y1))
+        points.extend(_arc_points(x1 - r, y1 - r, r, pi / 2.0, 0.0)[1:])
+        points.append((x1, bottom_center_y))
+        points.extend(
+            _arc_points(
+                fillet_center_x,
+                bottom_center_y,
+                tie_radius,
+                0.0,
+                -pi / 2.0,
+                segments=12,
+            )[1:]
+        )
+        points.append((x0 + r, y0))
+        points.extend(_arc_points(x0 + r, y0 + r, r, -pi / 2.0, -pi)[1:])
+        points.append(points[0])
+        return tuple(points)
+    return ()
+
+
+def _hollow_chamfer_straight_paths(
+    *,
+    min_x: float,
+    max_x: float,
+    min_y: float,
+    max_y: float,
+    hole_min_x: float,
+    hole_max_x: float,
+    hole_min_y: float,
+    hole_max_y: float,
+    chamfer_mm: float,
+    center_offset_mm: float,
+) -> tuple[tuple[str, tuple[tuple[float, float], ...]], ...]:
+    """Return four long straight bars parallel to the four void chamfers."""
+
+    chamfer = float(chamfer_mm)
+    if chamfer <= 0.0:
+        return ()
+    offset_projection = float(center_offset_mm) * sqrt(2.0)
+    # The sketch terminates each diagonal inside the outer longitudinal layer,
+    # rather than extending it into the 50 mm face bar.  Two offsets reproduce
+    # that explicit end location while the line itself remains 50 mm normal to
+    # the void chamfer.
+    termination_inset = 2.0 * float(center_offset_mm)
+    outer_left = float(min_x) + termination_inset
+    outer_right = float(max_x) - termination_inset
+    outer_bottom = float(min_y) + termination_inset
+    outer_top = float(max_y) - termination_inset
+
+    top_left_constant = hole_min_x - hole_max_y + chamfer - offset_projection
+    top_right_constant = hole_max_x + hole_max_y - chamfer + offset_projection
+    bottom_left_constant = hole_min_x + hole_min_y + chamfer - offset_projection
+    bottom_right_constant = hole_max_x - hole_min_y - chamfer + offset_projection
+    return (
+        (
+            "Top-left chamfer straight bar",
+            (
+                (outer_left, outer_left - top_left_constant),
+                (outer_top + top_left_constant, outer_top),
+            ),
+        ),
+        (
+            "Top-right chamfer straight bar",
+            (
+                (top_right_constant - outer_top, outer_top),
+                (outer_right, top_right_constant - outer_right),
+            ),
+        ),
+        (
+            "Bottom-left chamfer straight bar",
+            (
+                (outer_left, bottom_left_constant - outer_left),
+                (bottom_left_constant - outer_bottom, outer_bottom),
+            ),
+        ),
+        (
+            "Bottom-right chamfer straight bar",
+            (
+                (outer_bottom + bottom_right_constant, outer_bottom),
+                (outer_right, outer_right - bottom_right_constant),
+            ),
+        ),
+    )
+
+
 def _solid_filleted_tie_centerline(
     min_x: float,
     max_x: float,
@@ -456,46 +662,6 @@ def _section_polygon(geometry: Any) -> Polygon:
     return Polygon(outer, holes)
 
 
-def _fit_rectangular_cage_bottom_to_outer_boundary(
-    outer_polygon: Polygon,
-    *,
-    x0: float,
-    x1: float,
-    y0: float,
-    y1: float,
-    bend_radius_mm: float,
-    transverse_radius_mm: float,
-) -> tuple[tuple[tuple[float, float], ...], float]:
-    """Raise a rectangular cage only as needed to clear an outer bottom fillet."""
-
-    def candidate(bottom: float) -> tuple[tuple[float, float], ...]:
-        return _rounded_rectangle_centerline(x0, x1, bottom, y1, bend_radius_mm)
-
-    def fits(points: tuple[tuple[float, float], ...]) -> bool:
-        if not points:
-            return False
-        steel = LineString(points).buffer(transverse_radius_mm, cap_style=1, join_style=1)
-        return outer_polygon.buffer(1e-7).covers(steel)
-
-    initial = candidate(y0)
-    if fits(initial):
-        return initial, y0
-    upper = y1 - 2.0 * bend_radius_mm
-    if upper <= y0:
-        return initial, y0
-    upper_candidate = candidate(upper)
-    if not fits(upper_candidate):
-        return initial, y0
-    low, high = y0, upper
-    for _index in range(48):
-        mid = 0.5 * (low + high)
-        if fits(candidate(mid)):
-            high = mid
-        else:
-            low = mid
-    return candidate(high), high
-
-
 def build_transverse_cage_geometry(
     geometry: Any,
     definition: Mapping[str, Any],
@@ -506,8 +672,9 @@ def build_transverse_cage_geometry(
     """Build Crossbeam-only transverse centerlines without changing inputs.
 
     Solid ties are true inward offsets of the bottom-filleted outer profile.
-    Hollow cages deliberately remain rectangular and web-controlled; invalid
-    cages are reported for review instead of being reshaped around a chamfer.
+    Hollow sections use the accepted physical bar-piece topology: left/right
+    closed web loops, outer/inner top and bottom U-bars, and four straight bars
+    parallel to the inner chamfers.
     """
 
     row = canonical_transverse_templates([dict(template)])[0]
@@ -540,31 +707,169 @@ def build_transverse_cage_geometry(
             hole = list(holes[0])
             hole_min_x = min(float(point.x) for point in hole)
             hole_max_x = max(float(point.x) for point in hole)
-            outer_only = Polygon([(float(point.x), float(point.y)) for point in outer])
-            envelopes = (
-                ("Left-web cage", min_x + offset, hole_min_x - offset, min_y + offset, max_y - offset, int(row["Left web legs"])),
-                ("Right-web cage", hole_max_x + offset, max_x - offset, min_y + offset, max_y - offset, int(row["Right web legs"])),
+            hole_min_y = min(float(point.y) for point in hole)
+            hole_max_y = max(float(point.y) for point in hole)
+            metadata = dict(getattr(geometry, "metadata", {}) or {})
+            parameters = dict(definition.get("Parameters") or {})
+            concrete_fillet = float(
+                metadata.get(
+                    "bottom_fillet_radius_mm",
+                    parameters.get("bottom_fillet_radius_mm", 0.0),
+                )
+                or 0.0
             )
-            for label, x0, x1, y0, y1, effective_legs in envelopes:
-                if x1 - x0 < 2.0 * bend_radius or y1 - y0 < 2.0 * bend_radius:
+            chamfer = float(
+                metadata.get(
+                    "inner_chamfer_mm",
+                    parameters.get("inner_chamfer_mm", 0.0),
+                )
+                or 0.0
+            )
+            left_outer = min_x + offset
+            left_inner = hole_min_x - offset
+            right_inner = hole_max_x + offset
+            right_outer = max_x - offset
+            y_bottom_outer = min_y + offset
+            y_bottom_inner = hole_min_y - offset
+            y_top_inner = hole_max_y + offset
+            y_top_outer = max_y - offset
+
+            web_specs = (
+                (
+                    "Left web closed loop",
+                    "left",
+                    left_outer,
+                    left_inner,
+                    int(row["Left web legs"]),
+                ),
+                (
+                    "Right web closed loop",
+                    "right",
+                    right_outer,
+                    right_inner,
+                    int(row["Right web legs"]),
+                ),
+            )
+            for label, side, outer_x, inner_x, effective_legs in web_specs:
+                x0, x1 = sorted((outer_x, inner_x))
+                if x1 - x0 < 2.0 * bend_radius or y_top_outer - y_bottom_outer < 2.0 * bend_radius:
                     errors.append(
-                        f"{label}: available cage width/height cannot accommodate the {bend_radius:.0f} mm corner bend."
+                        f"{label}: available loop width/height cannot accommodate the {bend_radius:.0f} mm corner bend."
                     )
                     continue
-                points, fitted_y0 = _fit_rectangular_cage_bottom_to_outer_boundary(
-                    outer_only,
-                    x0=x0,
-                    x1=x1,
-                    y0=y0,
-                    y1=y1,
+                points = _hollow_web_closed_loop_centerline(
+                    side=side,
+                    outer_x=outer_x,
+                    inner_x=inner_x,
+                    min_x=min_x,
+                    max_x=max_x,
+                    min_y=min_y,
+                    max_y=max_y,
+                    center_offset_mm=offset,
+                    concrete_bottom_fillet_mm=concrete_fillet,
                     bend_radius_mm=bend_radius,
-                    transverse_radius_mm=0.5 * bar_diameter,
                 )
-                if fitted_y0 > y0 + 0.5:
-                    warnings.append(
-                        f"{label}: rectangular bottom centerline raised {fitted_y0 - y0:.1f} mm to clear the outer concrete fillet."
+                if not points:
+                    errors.append(
+                        f"{label}: full closed loop cannot follow the outer bottom fillet with the {bend_radius:.0f} mm bend."
                     )
-                paths.append(TransverseCagePath(label, points, (x0, x1, fitted_y0, y1), max(effective_legs, 2)))
+                    continue
+                paths.append(
+                    TransverseCagePath(
+                        label,
+                        points,
+                        _path_envelope(points),
+                        max(effective_legs, 2),
+                        TRANSVERSE_PATH_CLOSED_LOOP,
+                    )
+                )
+
+            left_web_width = left_inner - left_outer
+            right_web_width = right_outer - right_inner
+            if min(left_web_width, right_web_width) > 2.0 * bend_radius:
+                outer_left_leg = left_outer + 0.50 * left_web_width
+                outer_right_leg = right_outer - 0.50 * right_web_width
+                inner_left_leg = left_outer + 0.68 * left_web_width
+                inner_right_leg = right_outer - 0.68 * right_web_width
+                u_specs = (
+                    (
+                        "Top outer flange U-bar",
+                        outer_left_leg,
+                        outer_right_leg,
+                        y_top_outer,
+                        y_top_inner,
+                    ),
+                    (
+                        "Top inner flange U-bar",
+                        inner_left_leg,
+                        inner_right_leg,
+                        y_top_inner,
+                        y_top_outer,
+                    ),
+                    (
+                        "Bottom outer flange U-bar",
+                        outer_left_leg,
+                        outer_right_leg,
+                        y_bottom_outer,
+                        y_bottom_inner,
+                    ),
+                    (
+                        "Bottom inner flange U-bar",
+                        inner_left_leg,
+                        inner_right_leg,
+                        y_bottom_inner,
+                        y_bottom_outer,
+                    ),
+                )
+                for label, left_leg, right_leg, face_y, tip_y in u_specs:
+                    points = _rounded_u_centerline(
+                        left_leg,
+                        right_leg,
+                        face_y,
+                        tip_y,
+                        bend_radius,
+                    )
+                    if not points:
+                        errors.append(f"{label}: available flange depth/width cannot accommodate the preview bends.")
+                        continue
+                    paths.append(
+                        TransverseCagePath(
+                            label,
+                            points,
+                            _path_envelope(points),
+                            0,
+                            TRANSVERSE_PATH_U_BAR,
+                        )
+                    )
+            else:
+                errors.append(
+                    f"Hollow flange U-bars: available web width cannot accommodate the {bend_radius:.0f} mm return bends."
+                )
+
+            chamfer_specs = _hollow_chamfer_straight_paths(
+                min_x=min_x,
+                max_x=max_x,
+                min_y=min_y,
+                max_y=max_y,
+                hole_min_x=hole_min_x,
+                hole_max_x=hole_max_x,
+                hole_min_y=hole_min_y,
+                hole_max_y=hole_max_y,
+                chamfer_mm=chamfer,
+                center_offset_mm=offset,
+            )
+            for label, points in chamfer_specs:
+                paths.append(
+                    TransverseCagePath(
+                        label,
+                        points,
+                        _path_envelope(points),
+                        0,
+                        TRANSVERSE_PATH_STRAIGHT_BAR,
+                    )
+                )
+            if chamfer <= 0.0:
+                warnings.append("Selected Hollow opening has no chamfer; no diagonal transverse bars were generated.")
     else:
         x0, x1 = min_x + offset, max_x - offset
         y0, y1 = min_y + offset, max_y - offset
@@ -603,14 +908,18 @@ def build_transverse_cage_geometry(
     transverse_radius = 0.5 * bar_diameter
     for path in paths:
         line = LineString(path.points)
-        cage_polygon = Polygon(path.points)
-        if not line.is_simple or not cage_polygon.is_valid or cage_polygon.area <= 0.0:
+        if not line.is_simple or line.length <= 0.0:
             errors.append(f"{path.label}: generated centerline is self-intersecting or invalid.")
             continue
+        if path.is_closed_loop:
+            cage_polygon = Polygon(path.points)
+            if not cage_polygon.is_valid or cage_polygon.area <= 0.0:
+                errors.append(f"{path.label}: generated closed-loop centerline is invalid.")
+                continue
         steel_envelope = line.buffer(transverse_radius, cap_style=1, join_style=1)
         if not concrete.buffer(1e-7).covers(steel_envelope):
             errors.append(
-                f"{path.label}: rectangular/offset cage intrudes outside the concrete or into the void/chamfer."
+                f"{path.label}: bar envelope intrudes outside the concrete or into the void/chamfer."
             )
     if not bool(row.get("Closed cage")):
         warnings.append("Template is not flagged as a closed cage/tie; the preview does not certify confinement or torsion detailing.")
@@ -634,11 +943,10 @@ def place_longitudinal_bars_relative_to_cages(
 ) -> CageRelativeLongitudinalPlacement:
     """Place cage-associated longitudinal centers one radius-sum inside.
 
-    Solid ties govern every generated perimeter bar.  Hollow sections retain
-    independent left/right rectangular web cages, so only bars whose centers
-    fall within a web-cage envelope (or already touch its line) are snapped to
-    that cage.  Top/bottom flange-face bars between the web cages are not
-    incorrectly pulled sideways into a web cage.
+    Solid ties govern every generated perimeter bar.  Hollow sections use only
+    their two closed web loops for coordinate fitting; flange U-bars and
+    chamfer straight bars remain open detailing pieces and must never be
+    converted into containment polygons.
     """
 
     bars = list(rebars or [])
@@ -647,7 +955,7 @@ def place_longitudinal_bars_relative_to_cages(
     path_data = [
         (path, LineString(path.points), Polygon(path.points))
         for path in cages.paths
-        if len(path.points) >= 4
+        if path.is_closed_loop and len(path.points) >= 4
     ]
     adjusted: list[Any] = []
     adjusted_count = 0
@@ -698,42 +1006,51 @@ def review_longitudinal_bar_containment(
     cages: TransverseCageGeometry,
     rebars: list[Any] | tuple[Any, ...],
 ) -> LongitudinalContainmentReview:
-    """Check cage containment for Solid and cage clash/web fit for Hollow."""
+    """Check closed-loop fit plus clash/coverage against every bar piece."""
 
     bars = list(rebars or [])
     messages: list[str] = list(cages.errors)
     if not bars:
         messages.append("No generated longitudinal bars are available for the transverse-outside-longitudinal check.")
         return LongitudinalContainmentReview("REVIEW REQUIRED", 0, 0, tuple(dict.fromkeys(messages)))
-    cage_polygons = [Polygon(path.points) for path in cages.paths if len(path.points) >= 4]
-    cage_lines = [LineString(path.points) for path in cages.paths if len(path.points) >= 4]
-    if not cage_polygons:
-        messages.append("No valid transverse cage/tie envelope is available for containment review.")
+    closed_path_data = [
+        (path, Polygon(path.points), LineString(path.points))
+        for path in cages.paths
+        if path.is_closed_loop and len(path.points) >= 4
+    ]
+    cage_lines = [LineString(path.points) for path in cages.paths if len(path.points) >= 2]
+    if not closed_path_data or not cage_lines:
+        messages.append("No valid transverse closed-loop envelope is available for containment review.")
         return LongitudinalContainmentReview("REVIEW REQUIRED", len(bars), len(bars), tuple(dict.fromkeys(messages)))
 
     conflicts: dict[str, int] = {}
+    coverage_tolerance = max(0.5, 0.05 * cages.bar_diameter_mm)
     for bar in bars:
         bar_diameter = max(float(getattr(bar, "diameter_mm", 0.0) or 0.0), 0.0)
         clearance = 0.5 * (bar_diameter + cages.bar_diameter_mm)
         point = Point(float(getattr(bar, "x_mm", 0.0)), float(getattr(bar, "y_mm", 0.0)))
-        if any(line.distance(point) < clearance - 1.0e-3 for line in cage_lines):
+        line_distances = [line.distance(point) for line in cage_lines]
+        nearest_distance = min(line_distances)
+        if nearest_distance < clearance - 1.0e-3:
             contained = False
         elif cages.role == "Hollow":
             relevant = [
                 (path, polygon)
-                for path, polygon in zip(cages.paths, cage_polygons)
+                for path, polygon, _line in closed_path_data
                 if path.envelope[0] - 1.0e-3 <= point.x <= path.envelope[1] + 1.0e-3
             ]
-            contained = not relevant or any(
+            closed_loop_fit = not relevant or any(
                 not (available := polygon.buffer(-(clearance - 1.0e-3), join_style=1)).is_empty
                 and available.covers(point)
                 for _path, polygon in relevant
             )
+            topology_covered = nearest_distance <= clearance + coverage_tolerance
+            contained = closed_loop_fit and topology_covered
         else:
             contained = any(
                 not (available := polygon.buffer(-(clearance - 1.0e-3), join_style=1)).is_empty
                 and available.covers(point)
-                for polygon in cage_polygons
+                for _path, polygon, _line in closed_path_data
             )
         if contained:
             continue
@@ -755,14 +1072,16 @@ def review_longitudinal_bar_containment(
         )
     if cages.role == "Hollow":
         messages.append(
-            "Geometric ordering confirmed: web-associated bars fit inside the rectangular cages; flange-face bars between cages do not clash with transverse steel."
+            "Hollow transverse topology confirmed in the preview: two closed web loops, four flange U-bars, and four straight chamfer bars cover the generated longitudinal perimeter without a geometric clash."
         )
+        status = "NO GEOMETRIC CLASH — PREVIEW"
     else:
         messages.append(
             "Geometric ordering confirmed for the generated preview: concrete surface → transverse centerline → longitudinal bar circle."
         )
+        status = "READY FOR DETAILING REVIEW"
     return LongitudinalContainmentReview(
-        "READY FOR DETAILING REVIEW",
+        status,
         len(bars),
         0,
         tuple(dict.fromkeys(messages)),

@@ -16,6 +16,9 @@ from concrete_pmm_pro.crossbeam.section_library import (
     definition_map,
 )
 from concrete_pmm_pro.crossbeam.transverse import (
+    TRANSVERSE_PATH_CLOSED_LOOP,
+    TRANSVERSE_PATH_STRAIGHT_BAR,
+    TRANSVERSE_PATH_U_BAR,
     TRANSVERSE_PREVIEW_BEND_RADIUS_MM,
     build_transverse_cage_geometry,
     default_crossbeam_transverse_templates,
@@ -58,21 +61,51 @@ def test_rb2g_solid_tie_follows_bottom_concrete_fillets_and_uses_25_mm_top_bends
     assert max(x for x, _y in path.points) == x1
 
 
-def test_rb2g_hollow_keeps_two_rectangular_web_cages_and_does_not_follow_void_chamfers():
+def test_rb2g2_hollow_builds_two_closed_web_loops_four_flange_u_bars_and_four_chamfer_bars():
     definition = _definitions()["CB-H01"]
     geometry = build_geometry_for_definition(definition)
     cages = build_transverse_cage_geometry(geometry, definition, _transverse("Hollow"))
-    assert not cages.errors
-    assert [path.label for path in cages.paths] == ["Left-web cage", "Right-web cage"]
+    assert cages.ok, cages.errors
+    assert [path.label for path in cages.paths] == [
+        "Left web closed loop",
+        "Right web closed loop",
+        "Top outer flange U-bar",
+        "Top inner flange U-bar",
+        "Bottom outer flange U-bar",
+        "Bottom inner flange U-bar",
+        "Top-left chamfer straight bar",
+        "Top-right chamfer straight bar",
+        "Bottom-left chamfer straight bar",
+        "Bottom-right chamfer straight bar",
+    ]
+    assert [path.kind for path in cages.paths].count(TRANSVERSE_PATH_CLOSED_LOOP) == 2
+    assert [path.kind for path in cages.paths].count(TRANSVERSE_PATH_U_BAR) == 4
+    assert [path.kind for path in cages.paths].count(TRANSVERSE_PATH_STRAIGHT_BAR) == 4
+    assert all(path.points[0] == path.points[-1] for path in cages.closed_loops)
+    assert all(path.points[0] != path.points[-1] for path in cages.u_bars)
+    assert all(len(path.points) == 2 for path in cages.straight_bars)
     hole = geometry.holes[0]
+    hole_chamfers = [
+        LineString(((start.x, start.y), (end.x, end.y)))
+        for start, end in zip(hole, hole[1:] + hole[:1])
+        if abs(start.x - end.x) > 1.0e-9 and abs(start.y - end.y) > 1.0e-9
+    ]
+    assert len(hole_chamfers) == 4
+    assert all(
+        min(LineString(path.points).distance(chamfer) for chamfer in hole_chamfers)
+        == pytest.approx(cages.center_offset_mm, abs=1.0e-6)
+        for path in cages.straight_bars
+    )
     hole_min_x = min(point.x for point in hole)
     hole_max_x = max(point.x for point in hole)
-    left, right = cages.paths
+    left, right = cages.closed_loops
     assert left.envelope[1] == hole_min_x - cages.center_offset_mm
     assert right.envelope[0] == hole_max_x + cages.center_offset_mm
     assert left.envelope[1] - left.envelope[0] == 200.0
     assert right.envelope[1] - right.envelope[0] == 200.0
-    assert any("raised" in warning for warning in cages.warnings)
+    left_bottom_curve = [(x, y) for x, y in left.points if y <= left.envelope[2] + 160.0]
+    assert len({round(y, 3) for _x, y in left_bottom_curve}) > 6
+    assert not any("raised" in warning for warning in cages.warnings)
 
 
 def test_rb2g_hollow_reports_review_when_web_cannot_fit_25_mm_corner_bend():
@@ -81,7 +114,7 @@ def test_rb2g_hollow_reports_review_when_web_cannot_fit_25_mm_corner_bend():
     geometry = build_geometry_for_definition(definition)
     cages = build_transverse_cage_geometry(geometry, definition, _transverse("Hollow"))
     assert not cages.ok
-    assert any("Left-web cage" in message and "25 mm" in message for message in cages.errors)
+    assert any("Left web closed loop" in message and "25 mm" in message for message in cages.errors)
 
 
 def test_rb2g_cage_relative_offset_uses_transverse_and_longitudinal_radii():
@@ -167,13 +200,16 @@ def test_rb2g_hollow_web_bars_follow_cages_while_flange_bars_remain_between_webs
     inner_placement = place_longitudinal_bars_relative_to_cages(cages, _result_rebars(inner, layer="Inner"))
     bars = outer_placement.rebars + inner_placement.rebars
     assert outer_placement.adjusted_count + inner_placement.adjusted_count > 0
-    assert review_longitudinal_bar_containment(cages, bars).ok
-    cage_lines = [LineString(path.points) for path in cages.paths]
+    review = review_longitudinal_bar_containment(cages, bars)
+    assert review.ok, review.messages
+    assert review.status == "NO GEOMETRIC CLASH — PREVIEW"
+    cage_lines = [LineString(path.points) for path in cages.closed_loops]
+    all_transverse_lines = [LineString(path.points) for path in cages.paths]
     required = 0.5 * (transverse_diameter + longitudinal_diameter)
     associated = [
         bar
         for bar in bars
-        if any(path.envelope[0] <= bar.x_mm <= path.envelope[1] for path in cages.paths)
+        if any(path.envelope[0] <= bar.x_mm <= path.envelope[1] for path in cages.closed_loops)
     ]
     flange_only = [bar for bar in bars if bar not in associated]
     assert associated and flange_only
@@ -182,6 +218,32 @@ def test_rb2g_hollow_web_bars_follow_cages_while_flange_bars_remain_between_webs
         == pytest.approx(required, abs=1.0e-6)
         for bar in associated
     )
+    assert all(
+        min(line.distance(Point(bar.x_mm, bar.y_mm)) for line in all_transverse_lines)
+        == pytest.approx(required, abs=0.6)
+        for bar in bars
+    )
+
+
+def test_rb2g2_hollow_combined_figure_reports_the_full_piece_topology():
+    definition = _definitions()["CB-H01"]
+    geometry = build_geometry_for_definition(definition)
+    fig, _review = _combined_reinforcement_preview_figure(
+        geometry,
+        definition,
+        _transverse("Hollow"),
+        outer_rebars=[],
+        inner_rebars=[],
+        title="RB2G2",
+    )
+    meta = fig.layout.meta["crossbeam_rb2g"]
+    assert meta["closed_loop_count"] == 2
+    assert meta["u_bar_count"] == 4
+    assert meta["straight_bar_count"] == 4
+    transverse_names = [str(trace.name) for trace in fig.data]
+    assert "Transverse cage / tie" in transverse_names
+    assert "Top outer flange U-bar" in transverse_names
+    assert "Top-left chamfer straight bar" in transverse_names
 
 
 def test_rb2g_combined_figure_uses_required_layer_and_legend_order():

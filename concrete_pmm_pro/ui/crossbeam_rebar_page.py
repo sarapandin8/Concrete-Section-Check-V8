@@ -10,8 +10,9 @@ single material or fy selection immediately displays the matching pair. RB2G
 adds one layer-ordered combined section figure, transverse-outside-longitudinal
 containment review, and the accepted full-length transverse elevation below it.
 RB2G1 derives longitudinal preview coordinates from each Zone's active cage so
-different bar diameters and local bottom-fillet geometry cannot overlap. The
-unverified PT-continuity guard and all solver ownership remain unchanged. It never
+different bar diameters and local bottom-fillet geometry cannot overlap. RB2G2
+adds the accepted Hollow bar-piece topology: closed web loops, flange U-bars,
+and straight chamfer bars. The unverified PT-continuity guard and all solver ownership remain unchanged. It never
 routes template, zone, or preview state into existing PMM, Beam/Girder, SLS,
 shear, torsion, or report solvers.
 """
@@ -1413,6 +1414,9 @@ def _combined_reinforcement_preview_figure(
                 "conflict_count": review.conflict_count,
                 "bend_radius_mm": cages.bend_radius_mm,
                 "cage_count": len(cages.paths),
+                "closed_loop_count": len(cages.closed_loops),
+                "u_bar_count": len(cages.u_bars),
+                "straight_bar_count": len(cages.straight_bars),
             }
         },
     )
@@ -1463,7 +1467,17 @@ def _render_combined_reinforcement_preview(
             {"title":"Selected section","value":section_id,"detail":f"{definition.get('Section name','')} · {definition.get('Section role','')}","status":"info"},
             {"title":"Longitudinal template","value":str(longitudinal.get('Template ID') or ''),"detail":f"{len(total_rebars)} bars · Auto O {outer_effective_offset_mm:.1f} mm" + (f" / I {inner_effective_offset_mm:.1f} mm" if inner_effective_offset_mm > 0.0 else ""),"status":"ready" if total_rebars else "warning"},
             {"title":"Transverse template","value":str(transverse.get('Template ID') or ''),"detail":f"{transverse.get('Bar size','')} @ {float(transverse.get('Spacing mm') or 0.0):.0f} mm · offset {float(transverse.get('Center offset mm') or 0.0):.0f} mm","status":"info"},
-            {"title":"Geometric fit","value":review.status,"detail":f"{review.conflict_count} conflict(s) · {len(cages.paths)} cage(s)","status":"ready" if review.ok else "warning"},
+            {
+                "title":"Geometric fit",
+                "value":review.status,
+                "detail":(
+                    f"{review.conflict_count} conflict(s) · "
+                    f"{len(cages.closed_loops)} loops / {len(cages.u_bars)} U / {len(cages.straight_bars)} diagonal"
+                    if str(definition.get("Section role")) == "Hollow"
+                    else f"{review.conflict_count} conflict(s) · {len(cages.closed_loops)} closed tie(s)"
+                ),
+                "status":("info" if str(definition.get("Section role")) == "Hollow" else "ready") if review.ok else "warning",
+            },
         ]
     )
     fig, review = _combined_reinforcement_preview_figure(
@@ -1478,11 +1492,14 @@ def _render_combined_reinforcement_preview(
     st.plotly_chart(fig, use_container_width=True, config=FIGURE_CONFIG)
     st.caption(
         "Geometric/detailing preview only. Layer order is concrete → void → transverse cage/tie → longitudinal bars → centroid. "
-        f"Longitudinal preview centers are derived from the active cage using Dt/2 + Dl/2; {cage_adjusted_count} web/corner coordinate(s) follow the actual cage path. "
+        f"Longitudinal preview centers are derived from the active transverse path using Dt/2 + Dl/2; {cage_adjusted_count} closed-loop-associated coordinate(s) follow the actual path. "
         "Template quantities and solver inputs are not changed."
     )
     if review.ok:
-        st.success(review.messages[-1])
+        if str(definition.get("Section role")) == "Hollow":
+            st.info(review.messages[-1])
+        else:
+            st.success(review.messages[-1])
     else:
         for message in review.messages:
             st.error(f"REVIEW REQUIRED — {message}")
@@ -1493,7 +1510,8 @@ def _render_combined_reinforcement_preview(
         _layout_result_messages(inner_result, "Inner layout")
     st.caption(
         "Scope guard — This preview does not certify ACI minimum transverse reinforcement, φVn, torsion, confinement, "
-        "anchorage/development, D-regions, or segment-joint shear transfer. No solver credit is created."
+        "anchorage/development, D-regions, or segment-joint shear transfer. Hollow flange U-bars and chamfer bars are "
+        "detailing geometry only. No solver credit is created."
     )
     st.plotly_chart(
         transverse_full_elevation_figure(
@@ -1603,6 +1621,8 @@ def _render_section_rebar_preview(
         transverse_offset = float(transverse.get("Center offset mm") or 50.0)
         outer_effective_offset = 0.0
         inner_effective_offset = 0.0
+        outer_diameter = 0.0
+        inner_diameter = 0.0
         outer_result = PerimeterRebarLayoutResult(table=pd.DataFrame())
         if bool(template.get("Outer face bars")):
             outer_size = str(template.get("Outer bar size") or "DB16")
@@ -1653,11 +1673,21 @@ def _render_section_rebar_preview(
             key=CB_RB_PREVIEW_MARKER_MODE_KEY,
             help="Enhanced markers improve visual review only. Quantities and As always use the true bar diameter.",
         )
+        offset_rules = []
+        if outer_effective_offset > 0.0:
+            offset_rules.append(
+                f"Outer: {transverse_offset:.0f} + {transverse_diameter / 2.0:.1f} + "
+                f"{outer_diameter / 2.0:.1f} = {outer_effective_offset:.1f} mm"
+            )
+        if inner_effective_offset > 0.0:
+            offset_rules.append(
+                f"Inner: {transverse_offset:.0f} + {transverse_diameter / 2.0:.1f} + "
+                f"{inner_diameter / 2.0:.1f} = {inner_effective_offset:.1f} mm"
+            )
         st.caption(
-            f"Cage-relative center rule — Transverse offset {transverse_offset:.0f} mm + Dt/2 {transverse_diameter / 2.0:.1f} mm "
-            f"+ Dl/2. Effective concrete-edge offset: Outer {outer_effective_offset:.1f} mm"
-            + (f" · Inner {inner_effective_offset:.1f} mm" if inner_effective_offset > 0.0 else "")
-            + f". {cage_adjusted_count} web/corner bar coordinate(s) were fitted to the actual cage path."
+            "Transverse-outside-longitudinal center rule — "
+            + " · ".join(offset_rules)
+            + f". {cage_adjusted_count} closed-loop-associated coordinate(s) were fitted to the actual transverse path."
         )
         if preview_mode == "Longitudinal":
             render_metric_cards(
@@ -1821,7 +1851,7 @@ def render_crossbeam_rebar_page() -> None:
         active_transverse_templates = transverse_template_map(transverse_template_rows)
         render_metric_cards(
             [
-                {"title":"Active transverse templates","value":len(active_transverse_templates),"detail":"Hollow web cages and Solid multi-leg ties","status":"info"},
+                {"title":"Active transverse templates","value":len(active_transverse_templates),"detail":"Hollow loops/U-bars/chamfer bars and Solid multi-leg ties","status":"info"},
                 {"title":"Zone assignment","value":sum(bool(row.get("Transverse template")) for row in zone_rows),"detail":"Local Segment/Zone references","status":"ready" if zone_rows and all(row.get("Transverse template") for row in zone_rows) else "warning"},
                 {"title":"Joint shear credit","value":"NONE","detail":"Transverse bars terminate inside each Segment/Zone","status":"warning"},
             ]
