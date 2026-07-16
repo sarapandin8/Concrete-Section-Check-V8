@@ -48,6 +48,12 @@ from concrete_pmm_pro.crossbeam.rebar_persistence import (
     crossbeam_rebar_metadata_from_session_state,
     restore_crossbeam_rebar_project_state,
 )
+from concrete_pmm_pro.crossbeam.tendon_persistence import (
+    CROSSBEAM_TENDON_LEGACY_METADATA_KEYS,
+    CROSSBEAM_TENDON_METADATA_KEY,
+    crossbeam_tendon_metadata_from_session_state,
+    restore_crossbeam_tendon_project_state,
+)
 from concrete_pmm_pro.data.prestress_tendon_products import (
     DEFAULT_STRAND_DIAMETER_MM,
     DEFAULT_STRAND_EP_MPA,
@@ -772,6 +778,13 @@ def project_from_session_state(session_state: Any) -> ProjectModel:
         metadata.pop(CROSSBEAM_REBAR_METADATA_KEY, None)
     for legacy_key in CROSSBEAM_REBAR_LEGACY_METADATA_KEYS:
         metadata.pop(legacy_key, None)
+    crossbeam_tendon_metadata = crossbeam_tendon_metadata_from_session_state(session_state)
+    if crossbeam_tendon_metadata:
+        metadata[CROSSBEAM_TENDON_METADATA_KEY] = crossbeam_tendon_metadata
+    else:
+        metadata.pop(CROSSBEAM_TENDON_METADATA_KEY, None)
+    for legacy_key in CROSSBEAM_TENDON_LEGACY_METADATA_KEYS:
+        metadata.pop(legacy_key, None)
     analysis_results_metadata = _analysis_results_metadata_from_session(session_state)
     if analysis_results_metadata:
         metadata[ANALYSIS_RESULTS_METADATA_KEY] = analysis_results_metadata
@@ -1197,6 +1210,13 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
         project.metadata,
         session_state,
         session_state.get(CROSSBEAM_SEGMENT_ROWS_STATE_KEY, []),
+    )
+    restore_crossbeam_tendon_project_state(
+        project.metadata,
+        session_state,
+        length_m=session_state.get(CROSSBEAM_LENGTH_STATE_KEY, 20.0),
+        segment_rows=session_state.get(CROSSBEAM_SEGMENT_ROWS_STATE_KEY, []),
+        section_definitions=session_state.get(CB_SECLIB_DEFINITIONS_KEY, []),
     )
 
     session_state["loads_table"] = _loads_to_table(project.loads)

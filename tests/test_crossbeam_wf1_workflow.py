@@ -78,7 +78,7 @@ def test_crossbeam_tendon_defaults_and_top_reference_eccentricity() -> None:
     assert tendon_eccentricity_from_top_mm(900, total_depth_mm=1500, centroid_y_from_bottom_mm=650) == 50
     rows = default_crossbeam_tendon_rows(30.0, tendon_count=3, section_depth_mm=1500)
     assert len(rows) == 9
-    assert {row["Jacking end"] for row in rows} == {"both"}
+    assert {row["Jacking end"] for row in rows} == {"Both"}
     assert {row["Type"] for row in rows} == {"Internal"}
 
 

@@ -1,3 +1,11 @@
+### CROSSBEAM.PT1 — Tendon System and Tendon Profile Source of Truth
+
+Promotes the Crossbeam tendon system and top-referenced Plan/Profile/3D
+geometry to a versioned Project-JSON source of truth with compact first-edit
+tables and station-specific Section ID centroid audit, while keeping PT
+continuity required but unverified and leaving all solvers isolated. See
+`README_CROSSBEAM_PT1.md`.
+
 ### UI.SYNC1 — Placement Clarity and Workflow Display Sync
 
 Separates Crossbeam transverse placement inputs into cross-section cage offset

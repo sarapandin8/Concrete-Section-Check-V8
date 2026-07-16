@@ -1,7 +1,7 @@
 """Workflow-scoped section workspaces for Portal Frame PC Crossbeam.
 
-CROSSBEAM.UI1 separates longitudinal segment mapping, tendon system data, and
-three-view tendon geometry from the shared Section Builder.  It intentionally
+CROSSBEAM.PT1 connects longitudinal segment mapping, tendon system data, and
+three-view tendon geometry to one Project-JSON source of truth.  It intentionally
 contains no prestress-loss, SLS, ULS, anchorage-zone, or D-region solver.
 
 All state keys are namespaced to the crossbeam workflow.  Legacy WF1 keys are
@@ -25,6 +25,28 @@ from concrete_pmm_pro.crossbeam.section_library import (
     migrate_segment_rows_to_library,
     section_property_records,
 )
+from concrete_pmm_pro.crossbeam.editor_commit import data_editor_payload_to_records
+from concrete_pmm_pro.crossbeam.tendon import (
+    DEFAULT_STRAND_SYSTEM,
+    PROFILE_ROLE_OPTIONS,
+    canonical_tendon_profile_points,
+    canonical_tendon_system_rows,
+    default_tendon_profile_points,
+    default_tendon_system_rows,
+    section_context_records,
+    tendon_station_audit_rows,
+    validate_tendon_profile,
+    validate_tendon_system,
+)
+from concrete_pmm_pro.crossbeam.tendon_persistence import (
+    CB_3D_TRANSPARENT_KEY,
+    CB_ACTIVE_TENDONS_KEY,
+    CB_PROFILE_REV_KEY,
+    CB_PROFILE_ROWS_KEY,
+    CB_TENDON_COUNT_KEY,
+    CB_TENDON_SYSTEM_REV_KEY,
+    CB_TENDON_SYSTEM_ROWS_KEY,
+)
 from concrete_pmm_pro.crossbeam.workflow import (
     DEFAULT_CROSSBEAM_LENGTH_M,
     DEFAULT_FPJ_RATIO,
@@ -43,7 +65,6 @@ from concrete_pmm_pro.crossbeam.workflow import (
     TENDON_TYPE_OPTIONS,
     calculated_fpj_mpa,
     default_crossbeam_segment_rows,
-    default_crossbeam_tendon_rows,
 )
 from concrete_pmm_pro.geometry.presets import load_section_presets
 from concrete_pmm_pro.geometry.summary import summarize_geometry
@@ -61,13 +82,6 @@ LEGACY_PROFILE_ROWS_KEY = "crossbeam_wf1_tendon_profile_rows"
 CB_LENGTH_KEY = "crossbeam_ui1_length_m"
 CB_SEGMENT_ROWS_KEY = "crossbeam_ui1_segment_layout_rows"
 CB_SEGMENT_REV_KEY = "crossbeam_ui1_segment_editor_revision"
-CB_TENDON_COUNT_KEY = "crossbeam_ui1_tendon_count"
-CB_TENDON_SYSTEM_ROWS_KEY = "crossbeam_ui1_tendon_system_rows"
-CB_TENDON_SYSTEM_REV_KEY = "crossbeam_ui1_tendon_system_editor_revision"
-CB_PROFILE_ROWS_KEY = "crossbeam_ui1_tendon_profile_points"
-CB_PROFILE_REV_KEY = "crossbeam_ui1_tendon_profile_editor_revision"
-CB_ACTIVE_TENDONS_KEY = "crossbeam_ui1_active_tendon_ids"
-CB_3D_TRANSPARENT_KEY = "crossbeam_ui1_3d_transparent"
 CB_UI1A_MIGRATION_KEY = "crossbeam_ui1a_segment_assignment_migrated"
 
 
@@ -157,8 +171,15 @@ def _system_rows_from_legacy(profile_rows: list[dict[str, Any]], tendon_count: i
             first_by_id[tendon_id] = row
 
     ids = sorted(first_by_id, key=lambda text: (_finite_int(text.removeprefix("T"), 9999), text))
+    target_count = max(tendon_count, 3)
     if not ids:
-        ids = [f"T{index + 1}" for index in range(max(tendon_count, 2))]
+        return default_tendon_system_rows(target_count)
+    next_index = 1
+    while len(ids) < target_count:
+        candidate = f"T{next_index}"
+        next_index += 1
+        if candidate not in ids:
+            ids.append(candidate)
 
     rows: list[dict[str, Any]] = []
     for tendon_id in ids:
@@ -166,17 +187,19 @@ def _system_rows_from_legacy(profile_rows: list[dict[str, Any]], tendon_count: i
         rows.append(
             {
                 "Tendon ID": tendon_id,
+                "Active": source.get("Active", True),
                 "Type": str(source.get("Type") or DEFAULT_TENDON_TYPE),
                 "Strands": max(_finite_int(source.get("Strands"), DEFAULT_STRANDS_PER_TENDON), 1),
+                "Strand system": str(source.get("Strand system") or DEFAULT_STRAND_SYSTEM),
                 "Aps/strand mm²": _finite_float(source.get("Aps/strand mm²"), DEFAULT_STRAND_APS_MM2),
                 "fpu MPa": _finite_float(source.get("fpu MPa"), DEFAULT_STRAND_FPU_MPA),
                 "fpj/fpu": _finite_float(source.get("fpj/fpu"), DEFAULT_FPJ_RATIO),
-                "Jacking end": str(source.get("Jacking end") or DEFAULT_JACKING_END).lower(),
+                "Jacking end": str(source.get("Jacking end") or DEFAULT_JACKING_END),
                 "Left anchorage": "s = 0",
                 "Right anchorage": "s = L",
             }
         )
-    return rows
+    return canonical_tendon_system_rows(rows)
 
 
 def _profile_points_from_legacy(
@@ -189,10 +212,11 @@ def _profile_points_from_legacy(
 ) -> list[dict[str, Any]]:
     offsets = _default_lateral_offsets(tendon_ids, width_mm)
     if not profile_rows:
-        profile_rows = default_crossbeam_tendon_rows(
+        return default_tendon_profile_points(
             length_m,
-            tendon_count=max(len(tendon_ids), 2),
-            section_depth_mm=height_mm,
+            tendon_ids=tendon_ids,
+            width_mm=width_mm,
+            height_mm=height_mm,
         )
 
     points: list[dict[str, Any]] = []
@@ -212,7 +236,19 @@ def _profile_points_from_legacy(
                 "Curve role": str(row.get("Curve role") or ("Anchorage" if abs(s_ratio) < 1e-9 or abs(s_ratio - 1.0) < 1e-9 else "Profile point")),
             }
         )
-    return points
+    canonical = canonical_tendon_profile_points(points, length_m)
+    represented = {row["Tendon ID"] for row in canonical}
+    missing_ids = [tendon_id for tendon_id in tendon_ids if tendon_id not in represented]
+    if missing_ids:
+        canonical.extend(
+            default_tendon_profile_points(
+                length_m,
+                tendon_ids=missing_ids,
+                width_mm=width_mm,
+                height_mm=height_mm,
+            )
+        )
+    return canonical_tendon_profile_points(canonical, length_m)
 
 
 def _crossbeam_preset_catalog() -> list[dict[str, str]]:
@@ -362,16 +398,27 @@ def _ensure_state() -> None:
 
     if CB_TENDON_COUNT_KEY not in st.session_state:
         st.session_state[CB_TENDON_COUNT_KEY] = max(
-            _finite_int(st.session_state.get(LEGACY_TENDON_COUNT_KEY), DEFAULT_TENDON_COUNT), 2
+            _finite_int(st.session_state.get(LEGACY_TENDON_COUNT_KEY), DEFAULT_TENDON_COUNT), 3
         )
-    tendon_count = max(_finite_int(st.session_state.get(CB_TENDON_COUNT_KEY), DEFAULT_TENDON_COUNT), 2)
+    tendon_count = max(_finite_int(st.session_state.get(CB_TENDON_COUNT_KEY), DEFAULT_TENDON_COUNT), 3)
 
     legacy_profile = _legacy_profile_rows()
     if CB_TENDON_SYSTEM_ROWS_KEY not in st.session_state:
         st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = _system_rows_from_legacy(legacy_profile, tendon_count)
     st.session_state.setdefault(CB_TENDON_SYSTEM_REV_KEY, 0)
 
-    system_rows = _records(st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
+    system_rows = canonical_tendon_system_rows(
+        _records(st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
+    )
+    if len(system_rows) < tendon_count:
+        existing_ids = {row["Tendon ID"] for row in system_rows if row["Tendon ID"]}
+        for candidate in default_tendon_system_rows(tendon_count * 2):
+            if len(system_rows) >= tendon_count:
+                break
+            if candidate["Tendon ID"] not in existing_ids:
+                system_rows.append(candidate)
+                existing_ids.add(candidate["Tendon ID"])
+    st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = system_rows
     tendon_ids = [str(row.get("Tendon ID") or "").strip() for row in system_rows]
     tendon_ids = [item for item in tendon_ids if item]
     if not tendon_ids:
@@ -384,6 +431,10 @@ def _ensure_state() -> None:
             tendon_ids=tendon_ids,
             width_mm=context["width_mm"],
             height_mm=context["height_mm"],
+        )
+    else:
+        st.session_state[CB_PROFILE_ROWS_KEY] = canonical_tendon_profile_points(
+            _records(st.session_state.get(CB_PROFILE_ROWS_KEY)), length_m
         )
     st.session_state.setdefault(CB_PROFILE_REV_KEY, 0)
     st.session_state.setdefault(CB_ACTIVE_TENDONS_KEY, tendon_ids)
@@ -645,63 +696,185 @@ def _system_by_id(system_rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]
     return {str(row.get("Tendon ID") or "").strip(): row for row in system_rows if str(row.get("Tendon ID") or "").strip()}
 
 
-def _normalize_profile_points(rows: list[dict[str, Any]], length_m: float) -> list[dict[str, Any]]:
-    normalized: list[dict[str, Any]] = []
-    for index, row in enumerate(rows):
-        tendon_id = str(row.get("Tendon ID") or "").strip()
-        ratio = _finite_float(row.get("s/L"), 0.0)
-        station = _finite_float(row.get("s (m)"), ratio * length_m)
-        if abs(station - ratio * length_m) > max(1e-6, length_m * 1e-6):
-            ratio = station / length_m if length_m > 0 else 0.0
-        normalized.append(
+def _editor_text(value: Any) -> str:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    return str(value).strip()
+
+
+def _tendon_system_source_rows(fallback_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if CB_TENDON_SYSTEM_ROWS_KEY in st.session_state:
+        return canonical_tendon_system_rows(
+            _records(st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
+        )
+    return canonical_tendon_system_rows(fallback_rows)
+
+
+def _tendon_identity_editor_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "_Original ID": row["Tendon ID"],
+            "Tendon ID": row["Tendon ID"],
+            "Active": bool(row.get("Active", True)),
+            "Type": row["Type"],
+            "Strands": row["Strands"],
+            "Jacking end": row["Jacking end"],
+        }
+        for row in canonical_tendon_system_rows(rows)
+    ]
+
+
+def _tendon_system_from_identity_editor(
+    source_rows: list[dict[str, Any]],
+    editor_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """Merge the compact identity table and return safe atomic ID renames."""
+
+    source = canonical_tendon_system_rows(source_rows)
+    source_by_id = {row["Tendon ID"]: row for row in source if row["Tendon ID"]}
+    updated: list[dict[str, Any]] = []
+    original_ids: list[str] = []
+    for index, item in enumerate(editor_rows):
+        original_id = _editor_text(item.get("_Original ID"))
+        previous = source_by_id.get(original_id)
+        if previous is None and index < len(source):
+            previous = source[index]
+            original_id = previous["Tendon ID"]
+        row = dict(previous or default_tendon_system_rows(3)[0])
+        row.update(
             {
-                "Tendon ID": tendon_id,
-                "Point": str(row.get("Point") or f"P{index + 1}"),
-                "s/L": ratio,
-                "s (m)": station,
-                "x lateral (mm)": _finite_float(row.get("x lateral (mm)"), 0.0),
-                "dtop (mm)": _finite_float(row.get("dtop (mm)"), 0.0),
-                "Curve role": str(row.get("Curve role") or "Profile point"),
+                "Tendon ID": _editor_text(item.get("Tendon ID")),
+                "Active": bool(item.get("Active", True)),
+                "Type": _editor_text(item.get("Type")) or DEFAULT_TENDON_TYPE,
+                "Strands": _finite_int(item.get("Strands"), DEFAULT_STRANDS_PER_TENDON),
+                "Jacking end": _editor_text(item.get("Jacking end")) or DEFAULT_JACKING_END,
             }
         )
-    normalized.sort(key=lambda row: (row["Tendon ID"], row["s (m)"], row["Point"]))
-    return normalized
+        updated.append(row)
+        original_ids.append(original_id)
+    canonical = canonical_tendon_system_rows(updated)
+    new_ids = [row["Tendon ID"] for row in canonical]
+    rename_map = {
+        original: new
+        for original, new in zip(original_ids, new_ids)
+        if original and new and original != new and new_ids.count(new) == 1
+    }
+    return canonical, rename_map
 
 
-def _validate_profile_points(
-    rows: list[dict[str, Any]],
-    *,
-    tendon_ids: list[str],
-    length_m: float,
-    width_mm: float,
-    height_mm: float,
-) -> list[str]:
-    errors: list[str] = []
-    by_id: dict[str, list[dict[str, Any]]] = {tendon_id: [] for tendon_id in tendon_ids}
-    for row in rows:
-        tendon_id = row["Tendon ID"]
-        if tendon_id not in by_id:
-            errors.append(f"Profile point references unknown Tendon ID '{tendon_id}'.")
-            continue
-        by_id[tendon_id].append(row)
-        if not (0.0 <= row["s (m)"] <= length_m):
-            errors.append(f"{tendon_id} {row['Point']}: station s must lie between 0 and L.")
-        if abs(row["x lateral (mm)"]) > width_mm / 2.0:
-            errors.append(f"{tendon_id} {row['Point']}: lateral x lies outside the section width.")
-        if not (0.0 <= row["dtop (mm)"] <= height_mm):
-            errors.append(f"{tendon_id} {row['Point']}: dtop must lie between the top and bottom surfaces.")
+def _tendon_material_editor_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "Tendon ID": row["Tendon ID"],
+            "Strand system": row["Strand system"],
+            "Aps/strand mm²": row["Aps/strand mm²"],
+            "fpu MPa": row["fpu MPa"],
+            "fpj/fpu": row["fpj/fpu"],
+            "fpj MPa": calculated_fpj_mpa(row["fpu MPa"], row["fpj/fpu"]),
+        }
+        for row in canonical_tendon_system_rows(rows)
+    ]
 
-    tolerance = max(1e-6, length_m * 1e-6)
-    for tendon_id in tendon_ids:
-        points = sorted(by_id.get(tendon_id, []), key=lambda row: row["s (m)"])
-        if len(points) < 2:
-            errors.append(f"{tendon_id}: at least two geometry points are required.")
-            continue
-        if abs(points[0]["s (m)"]) > tolerance:
-            errors.append(f"{tendon_id}: first point must be at the left anchorage s = 0.")
-        if abs(points[-1]["s (m)"] - length_m) > tolerance:
-            errors.append(f"{tendon_id}: final point must be at the right anchorage s = L.")
-    return list(dict.fromkeys(errors))
+
+def _tendon_system_from_material_editor(
+    source_rows: list[dict[str, Any]],
+    editor_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    by_id = {
+        _editor_text(row.get("Tendon ID")): row
+        for row in editor_rows
+        if _editor_text(row.get("Tendon ID"))
+    }
+    updated: list[dict[str, Any]] = []
+    for source in canonical_tendon_system_rows(source_rows):
+        row = dict(source)
+        edited = by_id.get(row["Tendon ID"])
+        if edited is not None:
+            row.update(
+                {
+                    "Aps/strand mm²": _finite_float(
+                        edited.get("Aps/strand mm²"), DEFAULT_STRAND_APS_MM2
+                    ),
+                    "fpu MPa": _finite_float(
+                        edited.get("fpu MPa"), DEFAULT_STRAND_FPU_MPA
+                    ),
+                    "fpj/fpu": _finite_float(
+                        edited.get("fpj/fpu"), DEFAULT_FPJ_RATIO
+                    ),
+                }
+            )
+        updated.append(row)
+    return canonical_tendon_system_rows(updated)
+
+
+def _rename_tendon_profile_references(rename_map: Mapping[str, str]) -> None:
+    if not rename_map:
+        return
+    length_m = max(
+        _finite_float(st.session_state.get(CB_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M),
+        0.1,
+    )
+    points = canonical_tendon_profile_points(
+        _records(st.session_state.get(CB_PROFILE_ROWS_KEY)), length_m
+    )
+    for point in points:
+        if point["Tendon ID"] in rename_map:
+            point["Tendon ID"] = rename_map[point["Tendon ID"]]
+    st.session_state[CB_PROFILE_ROWS_KEY] = canonical_tendon_profile_points(points, length_m)
+    visible = [
+        rename_map.get(str(value), str(value))
+        for value in st.session_state.get(CB_ACTIVE_TENDONS_KEY, [])
+    ]
+    st.session_state[CB_ACTIVE_TENDONS_KEY] = list(dict.fromkeys(visible))
+    st.session_state[CB_PROFILE_REV_KEY] = int(st.session_state.get(CB_PROFILE_REV_KEY, 0)) + 1
+
+
+def _commit_tendon_identity_editor(
+    editor_key: str,
+    system_rows: list[dict[str, Any]],
+    fallback_editor_rows: list[dict[str, Any]],
+) -> None:
+    source = _tendon_system_source_rows(system_rows)
+    editor_rows = data_editor_payload_to_records(
+        st.session_state.get(editor_key), fallback_editor_rows
+    )
+    updated, rename_map = _tendon_system_from_identity_editor(source, editor_rows)
+    st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = updated
+    if rename_map:
+        _rename_tendon_profile_references(rename_map)
+        st.session_state[CB_TENDON_SYSTEM_REV_KEY] = int(
+            st.session_state.get(CB_TENDON_SYSTEM_REV_KEY, 0)
+        ) + 1
+
+
+def _commit_tendon_material_editor(
+    editor_key: str,
+    system_rows: list[dict[str, Any]],
+    fallback_editor_rows: list[dict[str, Any]],
+) -> None:
+    source = _tendon_system_source_rows(system_rows)
+    editor_rows = data_editor_payload_to_records(
+        st.session_state.get(editor_key), fallback_editor_rows
+    )
+    st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = _tendon_system_from_material_editor(
+        source, editor_rows
+    )
+
+
+def _commit_tendon_profile_editor(
+    editor_key: str,
+    fallback_editor_rows: list[dict[str, Any]],
+) -> None:
+    length_m = max(
+        _finite_float(st.session_state.get(CB_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M),
+        0.1,
+    )
+    editor_rows = data_editor_payload_to_records(
+        st.session_state.get(editor_key), fallback_editor_rows
+    )
+    st.session_state[CB_PROFILE_ROWS_KEY] = canonical_tendon_profile_points(
+        editor_rows, length_m
+    )
 
 
 def _segment_bands(fig: go.Figure, segment_rows: list[dict[str, Any]]) -> None:
@@ -719,9 +892,48 @@ def _segment_bands(fig: go.Figure, segment_rows: list[dict[str, Any]]) -> None:
         )
 
 
-def _plan_figure(points: list[dict[str, Any]], active_ids: list[str], segment_rows: list[dict[str, Any]], width_mm: float) -> go.Figure:
+def _section_parameters_by_id(
+    section_definitions: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    return {
+        str(row.get("Section ID") or ""): dict(
+            row.get("Parameters") if isinstance(row.get("Parameters"), Mapping) else {}
+        )
+        for row in canonical_section_definitions(section_definitions)
+    }
+
+
+def _plan_figure(
+    points: list[dict[str, Any]],
+    active_ids: list[str],
+    segment_rows: list[dict[str, Any]],
+    section_definitions: list[dict[str, Any]],
+) -> go.Figure:
     fig = go.Figure()
-    _segment_bands(fig, segment_rows)
+    params_by_id = _section_parameters_by_id(section_definitions)
+    widths: list[float] = []
+    for row in segment_rows:
+        params = params_by_id.get(str(row.get("Section ID") or ""), {})
+        width = max(_finite_float(params.get("width_mm"), 2500.0), 1.0)
+        widths.append(width)
+        fig.add_shape(
+            type="rect",
+            x0=row["x_start_m"],
+            x1=row["x_end_m"],
+            y0=-0.5 * width,
+            y1=0.5 * width,
+            fillcolor="rgba(49,70,90,0.035)",
+            line={"color": "#708396", "width": 1},
+            layer="below",
+        )
+        fig.add_annotation(
+            x=0.5 * (row["x_start_m"] + row["x_end_m"]),
+            y=0.5 * width,
+            text=f"{row['Segment']} · {row.get('Section ID', '')}",
+            showarrow=False,
+            yshift=10,
+            font={"size": 9, "color": "#526577"},
+        )
     for tendon_id in active_ids:
         rows = [row for row in points if row["Tendon ID"] == tendon_id]
         rows.sort(key=lambda row: row["s (m)"])
@@ -739,13 +951,55 @@ def _plan_figure(points: list[dict[str, Any]], active_ids: list[str], segment_ro
         )
     fig.add_hline(y=0.0, line={"color": "#7b8794", "dash": "dot"}, annotation_text="Crossbeam CL")
     fig.update_layout(**_base_figure_layout("Tendon Plan", "Station s (m)", "Lateral position x (mm)", height=470))
-    fig.update_yaxes(range=[-0.58 * width_mm, 0.58 * width_mm])
+    max_width = max(widths, default=2500.0)
+    fig.update_yaxes(range=[-0.58 * max_width, 0.58 * max_width])
     return fig
 
 
-def _profile_figure(points: list[dict[str, Any]], active_ids: list[str], segment_rows: list[dict[str, Any]], height_mm: float) -> go.Figure:
+def _profile_figure(
+    points: list[dict[str, Any]],
+    active_ids: list[str],
+    segment_rows: list[dict[str, Any]],
+    section_definitions: list[dict[str, Any]],
+) -> go.Figure:
     fig = go.Figure()
     _segment_bands(fig, segment_rows)
+    params_by_id = _section_parameters_by_id(section_definitions)
+    centroid_by_id = {
+        section_id: _finite_float(context.get("Centroid from top mm"), 0.0)
+        for section_id, context in section_context_records(section_definitions).items()
+    }
+    heights: list[float] = []
+    for index, segment in enumerate(segment_rows):
+        section_id = str(segment.get("Section ID") or "")
+        params = params_by_id.get(section_id, {})
+        height = max(_finite_float(params.get("height_mm"), 1500.0), 1.0)
+        centroid = _finite_float(centroid_by_id.get(section_id), 0.5 * height)
+        heights.append(height)
+        fig.add_trace(
+            go.Scatter(
+                x=[segment["x_start_m"], segment["x_end_m"]],
+                y=[height, height],
+                mode="lines",
+                line={"color": "#31465a", "width": 1.4},
+                name="Bottom surface by Section ID",
+                legendgroup="section-bottom",
+                showlegend=index == 0,
+                hovertemplate=f"{segment['Segment']} · {section_id}<br>Bottom dtop={height:.1f} mm<extra></extra>",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=[segment["x_start_m"], segment["x_end_m"]],
+                y=[centroid, centroid],
+                mode="lines",
+                line={"color": "#9b1c31", "width": 1.2, "dash": "dot"},
+                name="Section centroid by Section ID",
+                legendgroup="section-centroid",
+                showlegend=index == 0,
+                hovertemplate=f"{segment['Segment']} · {section_id}<br>Centroid dtop={centroid:.1f} mm<extra></extra>",
+            )
+        )
     for tendon_id in active_ids:
         rows = [row for row in points if row["Tendon ID"] == tendon_id]
         rows.sort(key=lambda row: row["s (m)"])
@@ -762,9 +1016,9 @@ def _profile_figure(points: list[dict[str, Any]], active_ids: list[str], segment
             )
         )
     fig.add_hline(y=0.0, line={"color": "#31465a", "width": 1.4}, annotation_text="Top surface")
-    fig.add_hline(y=height_mm, line={"color": "#31465a", "width": 1.4}, annotation_text="Bottom surface")
     fig.update_layout(**_base_figure_layout("Tendon Profile — Depth Referenced from Top", "Station s (m)", "Depth from top dtop (mm)", height=500))
-    fig.update_yaxes(range=[height_mm * 1.08, -height_mm * 0.08])
+    max_height = max(heights, default=1500.0)
+    fig.update_yaxes(range=[max_height * 1.08, -max_height * 0.08])
     return fig
 
 
@@ -807,29 +1061,31 @@ def _three_d_figure(
     active_ids: list[str],
     segment_rows: list[dict[str, Any]],
     *,
-    width_mm: float,
-    height_mm: float,
-    context: Mapping[str, float],
+    section_definitions: list[dict[str, Any]],
     transparent: bool,
 ) -> go.Figure:
     fig = go.Figure()
     opacity = 0.13 if transparent else 0.42
     role_legend: set[str] = set()
+    params_by_id = _section_parameters_by_id(section_definitions)
     for row in segment_rows:
         role = row["Section role"]
         start = row["x_start_m"]
         end = row["x_end_m"]
+        params = params_by_id.get(str(row.get("Section ID") or ""), {})
+        width_mm = max(_finite_float(params.get("width_mm"), 2500.0), 1.0)
+        height_mm = max(_finite_float(params.get("height_mm"), 1500.0), 1.0)
         if role == "Hollow":
-            tt = min(context["t_top_mm"], 0.45 * height_mm)
-            tb = min(context["t_bottom_mm"], 0.45 * height_mm)
-            tl = min(context["t_left_mm"], 0.45 * width_mm)
-            tr = min(context["t_right_mm"], 0.45 * width_mm)
+            tt = min(max(_finite_float(params.get("t_top_mm"), 300.0), 1.0), 0.45 * height_mm)
+            tb = min(max(_finite_float(params.get("t_bottom_mm"), 300.0), 1.0), 0.45 * height_mm)
+            tl = min(max(_finite_float(params.get("t_left_mm"), 300.0), 1.0), 0.45 * width_mm)
+            tr = min(max(_finite_float(params.get("t_right_mm"), 300.0), 1.0), 0.45 * width_mm)
             # Four wall prisms make the void visible without boolean 3D geometry.
             wall_specs = [
-                (-width_mm / 2.0, width_mm / 2.0, height_mm / 2.0 - tt, height_mm / 2.0),
-                (-width_mm / 2.0, width_mm / 2.0, -height_mm / 2.0, -height_mm / 2.0 + tb),
-                (-width_mm / 2.0, -width_mm / 2.0 + tl, -height_mm / 2.0 + tb, height_mm / 2.0 - tt),
-                (width_mm / 2.0 - tr, width_mm / 2.0, -height_mm / 2.0 + tb, height_mm / 2.0 - tt),
+                (-width_mm / 2.0, width_mm / 2.0, -tt, 0.0),
+                (-width_mm / 2.0, width_mm / 2.0, -height_mm, -height_mm + tb),
+                (-width_mm / 2.0, -width_mm / 2.0 + tl, -height_mm + tb, -tt),
+                (width_mm / 2.0 - tr, width_mm / 2.0, -height_mm + tb, -tt),
             ]
             for wall_index, (x0, x1, y0, y1) in enumerate(wall_specs):
                 fig.add_trace(
@@ -853,8 +1109,8 @@ def _three_d_figure(
                     s1=end,
                     x0=-width_mm / 2.0,
                     x1=width_mm / 2.0,
-                    y0=-height_mm / 2.0,
-                    y1=height_mm / 2.0,
+                    y0=-height_mm,
+                    y1=0.0,
                     name="Solid segment",
                     opacity=opacity,
                     showlegend="Solid" not in role_legend,
@@ -871,7 +1127,7 @@ def _three_d_figure(
             go.Scatter3d(
                 x=[row["s (m)"] for row in rows],
                 y=[row["x lateral (mm)"] for row in rows],
-                z=[height_mm / 2.0 - row["dtop (mm)"] for row in rows],
+                z=[-row["dtop (mm)"] for row in rows],
                 mode="lines+markers",
                 line={"width": 6},
                 marker={"size": 4},
@@ -891,7 +1147,7 @@ def _three_d_figure(
         scene={
             "xaxis": {"title": "Station s (m)", "backgroundcolor": "white", "gridcolor": "#e4eaf0"},
             "yaxis": {"title": "Lateral x (mm)", "backgroundcolor": "white", "gridcolor": "#e4eaf0"},
-            "zaxis": {"title": "Vertical y (mm)", "backgroundcolor": "white", "gridcolor": "#e4eaf0"},
+            "zaxis": {"title": "Vertical y = -dtop (mm)", "backgroundcolor": "white", "gridcolor": "#e4eaf0"},
             "aspectmode": "manual",
             "aspectratio": {"x": 3.2, "y": 1.1, "z": 0.8},
             "camera": {"eye": {"x": 1.55, "y": 1.45, "z": 1.05}},
@@ -912,18 +1168,18 @@ def render_crossbeam_tendon_system_page() -> None:
     )
     render_section_bar(
         "Tendon source-of-truth",
-        "One row represents one complete tendon. Plan/Profile/3D geometry is edited separately in Tendon Profile.",
+        "One row represents one complete tendon. Compact linked tables avoid duplicate material or stressing inputs; geometry is edited only in Tendon Profile.",
         mark="T",
     )
 
-    existing_system = _records(st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
-    current_count = max(len(existing_system), 2)
+    existing_system = canonical_tendon_system_rows(
+        _records(st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
+    )
     tendon_count = int(
         st.number_input(
             "Number of tendons",
-            min_value=2,
+            min_value=3,
             max_value=64,
-            value=current_count,
             step=1,
             key=CB_TENDON_COUNT_KEY,
             help="The crossbeam may contain more than two tendons. Anchorage heads remain at both crossbeam ends.",
@@ -931,95 +1187,172 @@ def render_crossbeam_tendon_system_page() -> None:
     )
 
     if st.button("Reset tendon system to default", key="crossbeam_ui1_reset_tendon_system"):
-        seed_profile = default_crossbeam_tendon_rows(
-            float(st.session_state.get(CB_LENGTH_KEY, DEFAULT_CROSSBEAM_LENGTH_M)),
-            tendon_count=tendon_count,
-            section_depth_mm=_section_context()["height_mm"],
-        )
-        st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = _system_rows_from_legacy(seed_profile, tendon_count)
+        length_m = float(st.session_state.get(CB_LENGTH_KEY, DEFAULT_CROSSBEAM_LENGTH_M))
+        context = _section_context()
+        system_rows = default_tendon_system_rows(tendon_count)
+        tendon_ids = [row["Tendon ID"] for row in system_rows]
+        st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = system_rows
         st.session_state[CB_TENDON_SYSTEM_REV_KEY] = int(st.session_state.get(CB_TENDON_SYSTEM_REV_KEY, 0)) + 1
-        st.session_state[CB_PROFILE_ROWS_KEY] = _profile_points_from_legacy(
-            seed_profile,
-            length_m=float(st.session_state.get(CB_LENGTH_KEY, DEFAULT_CROSSBEAM_LENGTH_M)),
-            tendon_ids=[f"T{index + 1}" for index in range(tendon_count)],
-            width_mm=_section_context()["width_mm"],
-            height_mm=_section_context()["height_mm"],
+        st.session_state[CB_PROFILE_ROWS_KEY] = default_tendon_profile_points(
+            length_m,
+            tendon_ids=tendon_ids,
+            width_mm=context["width_mm"],
+            height_mm=context["height_mm"],
         )
+        st.session_state[CB_ACTIVE_TENDONS_KEY] = tendon_ids
         st.session_state[CB_PROFILE_REV_KEY] = int(st.session_state.get(CB_PROFILE_REV_KEY, 0)) + 1
         st.rerun()
 
-    # Reconcile row count before the widget exists; never mutate its bound key afterward.
-    rows = existing_system
-    if tendon_count != len(rows):
-        current_by_id = _system_by_id(rows)
-        reconciled: list[dict[str, Any]] = []
-        for index in range(tendon_count):
-            tendon_id = f"T{index + 1}"
-            reconciled.append(
-                current_by_id.get(
-                    tendon_id,
-                    {
-                        "Tendon ID": tendon_id,
-                        "Type": DEFAULT_TENDON_TYPE,
-                        "Strands": DEFAULT_STRANDS_PER_TENDON,
-                        "Aps/strand mm²": DEFAULT_STRAND_APS_MM2,
-                        "fpu MPa": DEFAULT_STRAND_FPU_MPA,
-                        "fpj/fpu": DEFAULT_FPJ_RATIO,
-                        "Jacking end": DEFAULT_JACKING_END,
-                        "Left anchorage": "s = 0",
-                        "Right anchorage": "s = L",
-                    },
+    # Reconcile count while preserving custom IDs and their linked profile rows.
+    rows = list(existing_system[:tendon_count])
+    removed_ids = {
+        row["Tendon ID"] for row in existing_system[tendon_count:] if row["Tendon ID"]
+    }
+    existing_ids = {row["Tendon ID"] for row in rows if row["Tendon ID"]}
+    for candidate in default_tendon_system_rows(max(tendon_count * 2, 3)):
+        if len(rows) >= tendon_count:
+            break
+        if candidate["Tendon ID"] not in existing_ids:
+            rows.append(candidate)
+            existing_ids.add(candidate["Tendon ID"])
+    rows = canonical_tendon_system_rows(rows)
+    if rows != existing_system:
+        length_m = max(
+            _finite_float(st.session_state.get(CB_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M),
+            0.1,
+        )
+        context = _section_context()
+        profile = canonical_tendon_profile_points(
+            _records(st.session_state.get(CB_PROFILE_ROWS_KEY)), length_m
+        )
+        if removed_ids:
+            profile = [row for row in profile if row["Tendon ID"] not in removed_ids]
+        represented = {row["Tendon ID"] for row in profile}
+        missing_ids = [row["Tendon ID"] for row in rows if row["Tendon ID"] not in represented]
+        if missing_ids:
+            profile.extend(
+                default_tendon_profile_points(
+                    length_m,
+                    tendon_ids=missing_ids,
+                    width_mm=context["width_mm"],
+                    height_mm=context["height_mm"],
                 )
             )
-        rows = reconciled
         st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = rows
+        st.session_state[CB_PROFILE_ROWS_KEY] = canonical_tendon_profile_points(profile, length_m)
+        st.session_state[CB_TENDON_SYSTEM_REV_KEY] = int(
+            st.session_state.get(CB_TENDON_SYSTEM_REV_KEY, 0)
+        ) + 1
+        st.session_state[CB_PROFILE_REV_KEY] = int(st.session_state.get(CB_PROFILE_REV_KEY, 0)) + 1
+        st.session_state[CB_ACTIVE_TENDONS_KEY] = [
+            row["Tendon ID"] for row in rows if row["Active"] and row["Tendon ID"]
+        ]
 
     revision = int(st.session_state.get(CB_TENDON_SYSTEM_REV_KEY, 0))
-    edited = st.data_editor(
-        pd.DataFrame(rows),
+    st.markdown("#### Tendon identity and stressing")
+    identity_rows = _tendon_identity_editor_rows(rows)
+    identity_editor_key = f"crossbeam_pt1_tendon_identity_editor_{revision}"
+    identity_edited = st.data_editor(
+        pd.DataFrame(identity_rows),
         num_rows="fixed",
         use_container_width=True,
         hide_index=True,
-        key=f"crossbeam_ui1_tendon_system_editor_{revision}",
+        key=identity_editor_key,
+        on_change=_commit_tendon_identity_editor,
+        args=(identity_editor_key, rows, identity_rows),
         column_config={
+            "_Original ID": None,
             "Tendon ID": st.column_config.TextColumn("Tendon ID", required=True),
+            "Active": st.column_config.CheckboxColumn("Active"),
             "Type": st.column_config.SelectboxColumn("Type", options=list(TENDON_TYPE_OPTIONS), required=True),
             "Strands": st.column_config.NumberColumn("Strands", min_value=1, step=1, required=True),
-            "Aps/strand mm²": st.column_config.NumberColumn("Aps/strand (mm²)", min_value=1.0, format="%.1f"),
-            "fpu MPa": st.column_config.NumberColumn("fpu (MPa)", min_value=1.0, format="%.1f"),
-            "fpj/fpu": st.column_config.NumberColumn("fpj/fpu", min_value=0.0, max_value=1.0, format="%.3f"),
             "Jacking end": st.column_config.SelectboxColumn("Jacking end", options=list(JACKING_END_OPTIONS), required=True),
-            "Left anchorage": st.column_config.TextColumn("Left anchorage", disabled=True),
-            "Right anchorage": st.column_config.TextColumn("Right anchorage", disabled=True),
         },
-        disabled=["Left anchorage", "Right anchorage"],
     )
-    system_rows = _records(edited)
+    system_rows, rename_map = _tendon_system_from_identity_editor(
+        rows, _records(identity_edited)
+    )
+    st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = system_rows
+    if rename_map:
+        _rename_tendon_profile_references(rename_map)
+        st.session_state[CB_TENDON_SYSTEM_REV_KEY] = revision + 1
+
+    st.markdown("#### Prestressing steel")
+    material_rows = _tendon_material_editor_rows(system_rows)
+    material_editor_key = f"crossbeam_pt1_tendon_material_editor_{revision}"
+    material_edited = st.data_editor(
+        pd.DataFrame(material_rows),
+        num_rows="fixed",
+        use_container_width=True,
+        hide_index=True,
+        key=material_editor_key,
+        on_change=_commit_tendon_material_editor,
+        args=(material_editor_key, system_rows, material_rows),
+        disabled=["Tendon ID", "Strand system", "fpj MPa"],
+        column_config={
+            "Tendon ID": st.column_config.TextColumn("Tendon ID"),
+            "Strand system": st.column_config.TextColumn("Strand system"),
+            "Aps/strand mm²": st.column_config.NumberColumn(
+                "Aps/strand (mm²)", min_value=1.0, format="%.1f", required=True
+            ),
+            "fpu MPa": st.column_config.NumberColumn(
+                "fpu (MPa)", min_value=1.0, format="%.1f", required=True
+            ),
+            "fpj/fpu": st.column_config.NumberColumn(
+                "fpj/fpu", min_value=0.001, max_value=1.0, format="%.3f", required=True
+            ),
+            "fpj MPa": st.column_config.NumberColumn("Calculated fpj (MPa)", format="%.1f"),
+        },
+    )
+    system_rows = _tendon_system_from_material_editor(
+        system_rows, _records(material_edited)
+    )
     st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = system_rows
 
-    valid_ids = [item for item in _tendon_ids(system_rows) if item]
-    duplicate_ids = sorted({item for item in valid_ids if valid_ids.count(item) > 1})
-    invalid_rows = [row for row in system_rows if not str(row.get("Tendon ID") or "").strip()]
-    status = "READY" if not duplicate_ids and not invalid_rows else "REVIEW REQUIRED"
-    status_kind = "ready" if status == "READY" else "warning"
-    total_aps = sum(max(_finite_int(row.get("Strands"), 0), 0) * max(_finite_float(row.get("Aps/strand mm²"), 0.0), 0.0) for row in system_rows)
+    st.markdown("#### End anchorages")
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Tendon ID": row["Tendon ID"],
+                    "Left anchorage": row["Left anchorage"],
+                    "Right anchorage": row["Right anchorage"],
+                    "Status": "Both ends defined",
+                }
+                for row in system_rows
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    system_rows, system_errors, system_warnings = validate_tendon_system(system_rows)
+    st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = system_rows
+    status = "SOURCE READY" if not system_errors else "REVIEW REQUIRED"
+    status_kind = "ready" if not system_errors else "warning"
+    active_rows = [row for row in system_rows if row["Active"]]
+    total_aps = sum(
+        max(_finite_int(row.get("Strands"), 0), 0)
+        * max(_finite_float(row.get("Aps/strand mm²"), 0.0), 0.0)
+        for row in active_rows
+    )
     render_metric_cards(
         [
-            {"title": "Tendon system", "value": status, "detail": "Unique Tendon IDs required", "status": status_kind},
-            {"title": "Tendons", "value": len(system_rows), "detail": "Complete tendon rows", "status": "info"},
-            {"title": "Total Aps", "value": f"{total_aps:,.0f} mm²", "detail": "Sum of strands × Aps/strand", "status": "neutral"},
-            {"title": "Default fpj", "value": f"{calculated_fpj_mpa():,.0f} MPa", "detail": "0.75 fpu; editable per tendon", "status": "info"},
+            {"title": "Tendon source", "value": status, "detail": "Input model only; not a design result", "status": status_kind},
+            {"title": "Active tendons", "value": len(active_rows), "detail": f"{len(system_rows)} stored tendon rows", "status": "info"},
+            {"title": "Active total Aps", "value": f"{total_aps:,.0f} mm²", "detail": "Strands × Aps/strand", "status": "neutral"},
+            {"title": "PT continuity", "value": "NOT VERIFIED", "detail": "Required at every segment joint · PTQA1", "status": "warning"},
         ]
     )
-    if duplicate_ids:
-        st.warning("Duplicate Tendon IDs: " + ", ".join(duplicate_ids))
-    if invalid_rows:
-        st.warning("Every tendon row requires a Tendon ID.")
+    for message in system_errors:
+        st.error(message)
+    for message in system_warnings:
+        st.warning(message)
     st.info(
-        "Anchorage heads are modeled at both ends (s = 0 and s = L). Jacking end Left/Right/Both controls future loss distribution; both-end jacking does not double total Pj."
+        "Each tendon uses seven-wire low-relaxation strand. Anchorage heads are defined at s = 0 and s = L. Jacking end Left/Right/Both is stored for future loss distribution; both-end jacking will not double total Pj."
     )
     st.caption(
-        "CROSSBEAM.UI1 geometry workspace only. ACI 423.10R loss calculations, friction parameters, anchor set, elastic shortening, time-dependent losses, and FEA handoff remain future milestones."
+        "CROSSBEAM.PT1 input source only. ACI 423.10R loss calculations, friction parameters, anchor set, elastic shortening, time-dependent losses, and FEA handoff remain future milestones."
     )
 
 
@@ -1136,14 +1469,8 @@ def render_crossbeam_tendon_profile_page() -> None:
         return
 
     if st.button("Reset tendon geometry to three-point profiles", key="crossbeam_ui1_reset_profile"):
-        seed = default_crossbeam_tendon_rows(
+        st.session_state[CB_PROFILE_ROWS_KEY] = default_tendon_profile_points(
             length_m,
-            tendon_count=len(tendon_ids),
-            section_depth_mm=context["height_mm"],
-        )
-        st.session_state[CB_PROFILE_ROWS_KEY] = _profile_points_from_legacy(
-            seed,
-            length_m=length_m,
             tendon_ids=tendon_ids,
             width_mm=context["width_mm"],
             height_mm=context["height_mm"],
@@ -1152,49 +1479,68 @@ def render_crossbeam_tendon_profile_page() -> None:
         st.rerun()
 
     revision = int(st.session_state.get(CB_PROFILE_REV_KEY, 0))
-    source_rows = _records(st.session_state.get(CB_PROFILE_ROWS_KEY))
+    source_rows = canonical_tendon_profile_points(
+        _records(st.session_state.get(CB_PROFILE_ROWS_KEY)), length_m
+    )
+    profile_editor_rows = [
+        {
+            "Tendon ID": row["Tendon ID"],
+            "Point": row["Point"],
+            "s (m)": row["s (m)"],
+            "x lateral (mm)": row["x lateral (mm)"],
+            "dtop (mm)": row["dtop (mm)"],
+            "Curve role": row["Curve role"],
+        }
+        for row in source_rows
+    ]
+    profile_editor_key = f"crossbeam_pt1_profile_editor_{revision}"
     edited = st.data_editor(
-        pd.DataFrame(source_rows),
+        pd.DataFrame(profile_editor_rows),
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
-        key=f"crossbeam_ui1_profile_editor_{revision}",
+        key=profile_editor_key,
+        on_change=_commit_tendon_profile_editor,
+        args=(profile_editor_key, profile_editor_rows),
         column_config={
             "Tendon ID": st.column_config.SelectboxColumn("Tendon ID", options=tendon_ids, required=True),
             "Point": st.column_config.TextColumn("Point", required=True),
-            "s/L": st.column_config.NumberColumn("s/L", min_value=0.0, max_value=1.0, format="%.4f"),
             "s (m)": st.column_config.NumberColumn("s (m)", min_value=0.0, max_value=length_m, format="%.3f", required=True),
             "x lateral (mm)": st.column_config.NumberColumn("x lateral (mm)", format="%.1f", required=True),
-            "dtop (mm)": st.column_config.NumberColumn("dtop (mm)", min_value=0.0, max_value=context["height_mm"], format="%.1f", required=True),
-            "Curve role": st.column_config.SelectboxColumn("Curve role", options=["Anchorage", "Profile point", "High point", "Low point", "Deviator"], required=True),
+            "dtop (mm)": st.column_config.NumberColumn("dtop (mm)", format="%.1f", required=True),
+            "Curve role": st.column_config.SelectboxColumn("Curve role", options=list(PROFILE_ROLE_OPTIONS), required=True),
         },
     )
-    raw_points = _records(edited)
-    st.session_state[CB_PROFILE_ROWS_KEY] = raw_points
-    points = _normalize_profile_points(raw_points, length_m)
+    points = canonical_tendon_profile_points(_records(edited), length_m)
+    st.session_state[CB_PROFILE_ROWS_KEY] = points
 
     segment_rows, segment_errors = _validate_segments(_records(st.session_state.get(CB_SEGMENT_ROWS_KEY)), length_m)
-    profile_errors = _validate_profile_points(
+    section_definitions = _crossbeam_section_definitions()
+    system_rows, system_errors, system_warnings = validate_tendon_system(system_rows)
+    points, profile_errors, profile_warnings = validate_tendon_profile(
         points,
-        tendon_ids=tendon_ids,
+        system_rows,
         length_m=length_m,
-        width_mm=context["width_mm"],
-        height_mm=context["height_mm"],
+        segment_rows=segment_rows,
+        section_definitions=section_definitions,
     )
-    all_errors = segment_errors + profile_errors
+    st.session_state[CB_PROFILE_ROWS_KEY] = points
+    all_errors = list(dict.fromkeys(segment_errors + system_errors + profile_errors))
+    all_warnings = list(dict.fromkeys(system_warnings + profile_warnings))
 
-    active_default = [item for item in _records(st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY)) if item]
-    _ = active_default
+    st.session_state[CB_ACTIVE_TENDONS_KEY] = [
+        item
+        for item in st.session_state.get(CB_ACTIVE_TENDONS_KEY, tendon_ids)
+        if item in tendon_ids
+    ]
     active_ids = st.multiselect(
         "Visible tendons",
         options=tendon_ids,
-        default=[item for item in st.session_state.get(CB_ACTIVE_TENDONS_KEY, tendon_ids) if item in tendon_ids],
         key=CB_ACTIVE_TENDONS_KEY,
         help="Visibility changes review figures only; it does not exclude a tendon from the model.",
     )
     transparent = st.toggle(
         "Transparent 3D concrete",
-        value=bool(st.session_state.get(CB_3D_TRANSPARENT_KEY, True)),
         key=CB_3D_TRANSPARENT_KEY,
     )
 
@@ -1203,32 +1549,34 @@ def render_crossbeam_tendon_profile_page() -> None:
     render_metric_cards(
         [
             {
-                "title": "Geometry status",
-                "value": "LAYOUT READY" if not all_errors else "LAYOUT REQUIRED",
-                "detail": "Plan/Profile/3D use the same point table",
+                "title": "Tendon geometry source",
+                "value": "SOURCE READY" if not all_errors else "REVIEW REQUIRED",
+                "detail": "Plan/Profile/3D use one s–x–dtop table",
                 "status": "ready" if not all_errors else "warning",
             },
             {"title": "Tendons", "value": len(tendon_ids), "detail": f"Internal {internal_count} · External {external_count}", "status": "info"},
-            {"title": "Profile points", "value": len(points), "detail": "Editable control points", "status": "neutral"},
-            {"title": "Vertical reference", "value": "dtop", "detail": "Measured downward from top surface", "status": "info"},
+            {"title": "Profile points", "value": len(points), "detail": "dtop measured downward from top", "status": "neutral"},
+            {"title": "PT continuity", "value": "NOT VERIFIED", "detail": "Required at every segment joint · PTQA1", "status": "warning"},
         ]
     )
-    if all_errors:
+    if all_errors or all_warnings:
         with st.expander("Geometry validation issues", expanded=True):
             for error in all_errors:
                 st.error(error)
+            for warning in all_warnings:
+                st.warning(warning)
 
     plan_tab, profile_tab, three_d_tab, audit_tab = st.tabs(["Plan", "Profile", "3D", "Calculated Audit"])
     with plan_tab:
         st.plotly_chart(
-            _plan_figure(points, active_ids, segment_rows, context["width_mm"]),
+            _plan_figure(points, active_ids, segment_rows, section_definitions),
             use_container_width=True,
             config=FIGURE_CONFIG,
         )
         st.caption("Plan uses station s and lateral section coordinate x. x = 0 is the crossbeam centerline.")
     with profile_tab:
         st.plotly_chart(
-            _profile_figure(points, active_ids, segment_rows, context["height_mm"]),
+            _profile_figure(points, active_ids, segment_rows, section_definitions),
             use_container_width=True,
             config=FIGURE_CONFIG,
         )
@@ -1239,9 +1587,7 @@ def render_crossbeam_tendon_profile_page() -> None:
                 points,
                 active_ids,
                 segment_rows,
-                width_mm=context["width_mm"],
-                height_mm=context["height_mm"],
-                context=context,
+                section_definitions=section_definitions,
                 transparent=transparent,
             ),
             use_container_width=True,
@@ -1251,36 +1597,71 @@ def render_crossbeam_tendon_profile_page() -> None:
             "3D is a geometry review view. Hollow segments use four wall prisms so the void remains visible; fillets, chamfers, ducts, anchor hardware, and deviator hardware are schematic in UI1."
         )
     with audit_tab:
-        system_map = _system_by_id(system_rows)
-        audit_rows: list[dict[str, Any]] = []
-        centroid_top = context["centroid_from_top_mm"]
-        for row in points:
-            tendon = system_map.get(row["Tendon ID"], {})
-            fpu = _finite_float(tendon.get("fpu MPa"), DEFAULT_STRAND_FPU_MPA)
-            fpj_ratio = _finite_float(tendon.get("fpj/fpu"), DEFAULT_FPJ_RATIO)
-            strands = _finite_int(tendon.get("Strands"), DEFAULT_STRANDS_PER_TENDON)
-            aps = _finite_float(tendon.get("Aps/strand mm²"), DEFAULT_STRAND_APS_MM2)
-            audit_rows.append(
-                {
-                    "Tendon ID": row["Tendon ID"],
-                    "Point": row["Point"],
-                    "s/L": round(row["s/L"], 5),
-                    "s (m)": round(row["s (m)"], 4),
-                    "x (mm)": round(row["x lateral (mm)"], 2),
-                    "dtop (mm)": round(row["dtop (mm)"], 2),
-                    "centroid from top (mm)": round(centroid_top, 2),
-                    "e(s) (mm)": round(row["dtop (mm)"] - centroid_top, 2),
-                    "Type": tendon.get("Type", DEFAULT_TENDON_TYPE),
-                    "Jacking end": tendon.get("Jacking end", DEFAULT_JACKING_END),
-                    "fpj (MPa)": round(calculated_fpj_mpa(fpu, fpj_ratio), 2),
-                    "Aps total (mm²)": round(strands * aps, 2),
-                }
-            )
-        st.dataframe(pd.DataFrame(audit_rows), use_container_width=True, hide_index=True)
+        audit_rows = tendon_station_audit_rows(
+            points,
+            system_rows,
+            length_m=length_m,
+            segment_rows=segment_rows,
+            section_definitions=section_definitions,
+        )
+        st.markdown("#### Station and assigned section")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Tendon ID": row["Tendon ID"],
+                        "Point": row["Point"],
+                        "s (m)": round(row["s (m)"], 4),
+                        "Segment": row["Segment"],
+                        "Section ID": row["Section ID"],
+                        "Station face": row["Station face"],
+                    }
+                    for row in audit_rows
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.markdown("#### Top-referenced geometry and eccentricity")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Tendon ID": row["Tendon ID"],
+                        "Point": row["Point"],
+                        "x (mm)": round(row["x (mm)"], 2),
+                        "dtop (mm)": round(row["dtop (mm)"], 2),
+                        "Centroid dtop (mm)": round(row["centroid from top (mm)"], 2),
+                        "e(s) (mm)": round(row["e(s) (mm)"], 2),
+                    }
+                    for row in audit_rows
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.markdown("#### Tendon stressing source")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Tendon ID": row["Tendon ID"],
+                        "Active": row["Active"],
+                        "Type": row["Type"],
+                        "Jacking end": row["Jacking end"],
+                        "fpj (MPa)": round(row["fpj (MPa)"], 2),
+                        "Aps total (mm²)": round(row["Aps total (mm²)"], 2),
+                    }
+                    for row in audit_rows
+                ]
+            ).drop_duplicates(),
+            use_container_width=True,
+            hide_index=True,
+        )
         st.caption(
-            "e(s) is positive when the tendon lies below the active section centroid. UI1 uses the currently selected section centroid as a preview; station-specific Section ID properties are implemented in a later station-analysis milestone."
+            "e(s) is positive when the tendon lies below the centroid. Each row uses the Section ID assigned at that station; a point on a segment joint expands to both adjacent section faces."
         )
 
     st.warning(
-        "Scope guard: these figures do not calculate friction, wobble, anchorage set, elastic shortening, creep, shrinkage, relaxation, SLS stress, ULS strength, anchorage zones, deviator forces, or solid/hollow transition D-regions."
+        "PT continuity across segment joints is REQUIRED — NOT VERIFIED until PTQA1. These figures do not calculate friction, wobble, anchorage set, elastic shortening, creep, shrinkage, relaxation, SLS stress, ULS strength, anchorage zones, deviator forces, or solid/hollow transition D-regions."
     )

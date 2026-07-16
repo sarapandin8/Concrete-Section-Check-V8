@@ -15,7 +15,7 @@ DEFAULT_STRAND_APS_MM2 = 140.0
 DEFAULT_FPJ_RATIO = 0.75
 DEFAULT_TENDON_COUNT = 4
 DEFAULT_STRANDS_PER_TENDON = 19
-DEFAULT_JACKING_END = "both"
+DEFAULT_JACKING_END = "Both"
 DEFAULT_TENDON_TYPE = "Internal"
 
 CROSSBEAM_SOLID_PRESET_KEY = "crossbeam_rectangular_solid_bottom_fillets"
@@ -28,7 +28,7 @@ CROSSBEAM_SECTION_PRESETS = (
 )
 
 TENDON_TYPE_OPTIONS = ("Internal", "External")
-JACKING_END_OPTIONS = ("left", "right", "both")
+JACKING_END_OPTIONS = ("Left", "Right", "Both")
 
 
 def calculated_fpj_mpa(fpu_mpa: float = DEFAULT_STRAND_FPU_MPA, fpj_ratio: float = DEFAULT_FPJ_RATIO) -> float:
@@ -68,8 +68,9 @@ def normalize_tendon_type(value: Any) -> str:
 
 def normalize_jacking_end(value: Any) -> str:
     text = str(value or "").strip().casefold()
-    if text in JACKING_END_OPTIONS:
-        return text
+    normalized = {option.casefold(): option for option in JACKING_END_OPTIONS}
+    if text in normalized:
+        return normalized[text]
     return DEFAULT_JACKING_END
 
 
@@ -113,7 +114,7 @@ def default_crossbeam_tendon_rows(
 ) -> list[dict[str, Any]]:
     """Return seed tendon rows using top-surface profile coordinates."""
 
-    count = max(int(tendon_count), 2)
+    count = max(int(tendon_count), 3)
     L = max(float(length_m), 1.0)
     top_zone = max(120.0, 0.18 * float(section_depth_mm))
     low_zone = max(top_zone + 100.0, 0.72 * float(section_depth_mm))
