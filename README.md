@@ -1,3 +1,7 @@
+### CROSSBEAM.RB2G1 — Cage-Relative Longitudinal Offset Correction
+
+Derives active-Zone longitudinal preview centers from the transverse cage offset plus both bar radii, fits web/corner bars to the actual cage path, preserves Hollow flange-face bars between independent web cages, and removes the default reinforcement overlap without changing adopted quantities or solver inputs. See `README_CROSSBEAM_RB2G1.md`.
+
 ### CROSSBEAM.RB2G — Combined Cross-Section Reinforcement Preview
 
 Replaces the stacked Combined review with one layer-ordered Crossbeam section figure, adds 25 mm transverse bend fillets, makes Solid ties follow the outer bottom fillets, preserves rectangular Hollow web cages, validates transverse-outside-longitudinal containment using true bar radii, and retains the accepted full-length transverse elevation below. Preview-only scope and all solver/joint guards remain unchanged. See `README_CROSSBEAM_RB2G.md`.

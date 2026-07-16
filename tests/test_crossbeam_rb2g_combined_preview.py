@@ -1,8 +1,15 @@
 from copy import deepcopy
 from pathlib import Path
 
+import pytest
+from shapely.geometry import LineString, Point
+
 from concrete_pmm_pro.core.models import Rebar
-from concrete_pmm_pro.crossbeam.rebar import default_crossbeam_rebar_templates
+from concrete_pmm_pro.crossbeam.rebar import (
+    cage_relative_longitudinal_center_offset_mm,
+    default_crossbeam_rebar_templates,
+    rebar_diameter_mm,
+)
 from concrete_pmm_pro.crossbeam.section_library import (
     build_geometry_for_definition,
     default_section_definitions,
@@ -12,9 +19,14 @@ from concrete_pmm_pro.crossbeam.transverse import (
     TRANSVERSE_PREVIEW_BEND_RADIUS_MM,
     build_transverse_cage_geometry,
     default_crossbeam_transverse_templates,
+    place_longitudinal_bars_relative_to_cages,
     review_longitudinal_bar_containment,
+    transverse_bar_diameter_mm,
 )
-from concrete_pmm_pro.geometry.rebar_layout import generate_perimeter_rebar_layout
+from concrete_pmm_pro.geometry.rebar_layout import (
+    generate_inner_face_rebar_layout,
+    generate_perimeter_rebar_layout,
+)
 from concrete_pmm_pro.ui.crossbeam_rebar_page import (
     _combined_reinforcement_preview_figure,
     _result_rebars,
@@ -72,43 +84,104 @@ def test_rb2g_hollow_reports_review_when_web_cannot_fit_25_mm_corner_bend():
     assert any("Left-web cage" in message and "25 mm" in message for message in cages.errors)
 
 
-def test_rb2g_containment_includes_bar_radii_and_never_moves_longitudinal_inputs():
+def test_rb2g_cage_relative_offset_uses_transverse_and_longitudinal_radii():
+    assert cage_relative_longitudinal_center_offset_mm(50.0, 12.0, 16.0) == 64.0
+    assert cage_relative_longitudinal_center_offset_mm(50.0, 16.0, 20.0) == 68.0
+
+
+def test_rb2g_solid_places_longitudinal_centers_exactly_one_radius_sum_inside_tie():
     definition = _definitions()["CB-S01"]
     geometry = build_geometry_for_definition(definition)
     template = next(row for row in default_crossbeam_rebar_templates() if row["Applicable role"] == "Solid")
-    cages = build_transverse_cage_geometry(geometry, definition, _transverse("Solid"))
+    transverse = _transverse("Solid")
+    cages = build_transverse_cage_geometry(geometry, definition, transverse)
+    longitudinal_diameter = rebar_diameter_mm(template["Outer bar size"])
+    transverse_diameter = transverse_bar_diameter_mm(transverse["Bar size"])
+    effective_offset = cage_relative_longitudinal_center_offset_mm(
+        transverse["Center offset mm"],
+        transverse_diameter,
+        longitudinal_diameter,
+    )
 
-    default_layout = generate_perimeter_rebar_layout(
+    layout = generate_perimeter_rebar_layout(
         geometry,
         bar_size=template["Outer bar size"],
-        diameter_mm=20.0,
+        diameter_mm=longitudinal_diameter,
         material="SD40",
-        edge_offset_mm=50.0,
+        edge_offset_mm=effective_offset,
         target_spacing_mm=200.0,
         min_bars=4,
         label_prefix="O",
     )
-    default_bars = _result_rebars(default_layout, layer="Outer")
-    default_coordinates = [(bar.x_mm, bar.y_mm) for bar in default_bars]
-    review = review_longitudinal_bar_containment(cages, default_bars)
-    assert review.status == "REVIEW REQUIRED"
-    assert review.conflict_count > 0
-    assert any("Outer face/layer" in message for message in review.messages)
-    assert [(bar.x_mm, bar.y_mm) for bar in default_bars] == default_coordinates
+    source_bars = _result_rebars(layout, layer="Outer")
+    source_coordinates = [(bar.x_mm, bar.y_mm) for bar in source_bars]
+    placement = place_longitudinal_bars_relative_to_cages(cages, source_bars)
+    assert placement.adjusted_count > 0
+    assert [(bar.x_mm, bar.y_mm) for bar in source_bars] == source_coordinates
+    review = review_longitudinal_bar_containment(cages, placement.rebars)
+    assert review.status == "READY FOR DETAILING REVIEW"
+    assert review.conflict_count == 0
+    tie_line = LineString(cages.paths[0].points)
+    required = 0.5 * (transverse_diameter + longitudinal_diameter)
+    assert all(
+        tie_line.distance(Point(bar.x_mm, bar.y_mm)) == pytest.approx(required, abs=1.0e-6)
+        for bar in placement.rebars
+    )
 
-    inset_layout = generate_perimeter_rebar_layout(
+
+def test_rb2g_hollow_web_bars_follow_cages_while_flange_bars_remain_between_webs():
+    definition = _definitions()["CB-H01"]
+    geometry = build_geometry_for_definition(definition)
+    template = next(row for row in default_crossbeam_rebar_templates() if row["Applicable role"] == "Hollow")
+    transverse = _transverse("Hollow")
+    cages = build_transverse_cage_geometry(geometry, definition, transverse)
+    transverse_diameter = transverse_bar_diameter_mm(transverse["Bar size"])
+    longitudinal_diameter = rebar_diameter_mm(template["Outer bar size"])
+    effective_offset = cage_relative_longitudinal_center_offset_mm(
+        transverse["Center offset mm"],
+        transverse_diameter,
+        longitudinal_diameter,
+    )
+    outer = generate_perimeter_rebar_layout(
         geometry,
         bar_size=template["Outer bar size"],
-        diameter_mm=20.0,
+        diameter_mm=longitudinal_diameter,
         material="SD40",
-        edge_offset_mm=80.0,
-        target_spacing_mm=200.0,
+        edge_offset_mm=effective_offset,
+        target_spacing_mm=150.0,
         min_bars=4,
         label_prefix="O",
     )
-    inset_review = review_longitudinal_bar_containment(cages, _result_rebars(inset_layout, layer="Outer"))
-    assert inset_review.status == "READY FOR DETAILING REVIEW"
-    assert inset_review.conflict_count == 0
+    inner = generate_inner_face_rebar_layout(
+        geometry,
+        hole_index=0,
+        bar_size=template["Inner bar size"],
+        diameter_mm=rebar_diameter_mm(template["Inner bar size"]),
+        material="SD40",
+        edge_offset_mm=effective_offset,
+        target_spacing_mm=150.0,
+        min_bars=4,
+        label_prefix="I",
+    )
+    outer_placement = place_longitudinal_bars_relative_to_cages(cages, _result_rebars(outer, layer="Outer"))
+    inner_placement = place_longitudinal_bars_relative_to_cages(cages, _result_rebars(inner, layer="Inner"))
+    bars = outer_placement.rebars + inner_placement.rebars
+    assert outer_placement.adjusted_count + inner_placement.adjusted_count > 0
+    assert review_longitudinal_bar_containment(cages, bars).ok
+    cage_lines = [LineString(path.points) for path in cages.paths]
+    required = 0.5 * (transverse_diameter + longitudinal_diameter)
+    associated = [
+        bar
+        for bar in bars
+        if any(path.envelope[0] <= bar.x_mm <= path.envelope[1] for path in cages.paths)
+    ]
+    flange_only = [bar for bar in bars if bar not in associated]
+    assert associated and flange_only
+    assert all(
+        min(line.distance(Point(bar.x_mm, bar.y_mm)) for line in cage_lines)
+        == pytest.approx(required, abs=1.0e-6)
+        for bar in associated
+    )
 
 
 def test_rb2g_combined_figure_uses_required_layer_and_legend_order():
@@ -146,5 +219,7 @@ def test_rb2g_combined_mode_is_one_section_figure_plus_retained_full_length_elev
     assert 'if preview_mode == "Transverse / Shear"' in source
     assert "Scope guard" in source
     assert "No solver credit is created" in source
+    assert "cage_relative_longitudinal_center_offset_mm" in source
+    assert "place_longitudinal_bars_relative_to_cages" in source
     assert "calculate_shear" not in source
     assert "calculate_torsion" not in source

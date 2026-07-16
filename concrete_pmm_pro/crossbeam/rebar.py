@@ -14,6 +14,8 @@ atomic Zone-reference updates, plus linked SD40/SD50 and 390/490 MPa dropdown
 pairs. CROSSBEAM.TR1 extends the same segment/zone map with an independent
 Transverse / Shear Template reference while retaining ``Rebar template`` as a
 backward-compatible longitudinal alias. Solver ownership remains unchanged.
+CROSSBEAM.RB2G1 derives active-Zone longitudinal preview centers from the
+transverse cage offset plus the transverse and longitudinal bar radii.
 """
 
 from __future__ import annotations
@@ -78,6 +80,29 @@ def rebar_diameter_mm(bar_size: Any, default: float = 16.0) -> float:
     """Return the nominal diameter for a supported deformed-bar label."""
 
     return float(REBAR_DIAMETER_BY_SIZE.get(str(bar_size or "").strip().upper(), default))
+
+
+def cage_relative_longitudinal_center_offset_mm(
+    transverse_center_offset_mm: float,
+    transverse_diameter_mm: float,
+    longitudinal_diameter_mm: float,
+) -> float:
+    """Return the longitudinal center offset required behind a transverse bar.
+
+    In section view, a longitudinal bar tied directly inside a transverse cage
+    has center-to-center distance ``Dt/2 + Dl/2`` from the cage centerline.
+    The concrete-edge offset is therefore the transverse center offset plus the
+    two radii.  This preview rule is zone-dependent because bar sizes may vary.
+    """
+
+    transverse_offset = float(transverse_center_offset_mm)
+    transverse_diameter = float(transverse_diameter_mm)
+    longitudinal_diameter = float(longitudinal_diameter_mm)
+    if transverse_offset <= 0.0:
+        raise ValueError("Transverse center offset must be positive.")
+    if transverse_diameter <= 0.0 or longitudinal_diameter <= 0.0:
+        raise ValueError("Transverse and longitudinal bar diameters must be positive.")
+    return transverse_offset + 0.5 * transverse_diameter + 0.5 * longitudinal_diameter
 
 
 def _layout_defaults(role: str, template_id: str) -> dict[str, Any]:

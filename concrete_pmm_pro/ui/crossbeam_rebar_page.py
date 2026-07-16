@@ -8,7 +8,9 @@ adds SD40/SD50 plus 390/490 MPa dropdowns. RB2E completes the linked-grade UX by
 refreshing the editor from canonical state whenever either dropdown changes, so a
 single material or fy selection immediately displays the matching pair. RB2G
 adds one layer-ordered combined section figure, transverse-outside-longitudinal
-containment review, and the accepted full-length transverse elevation below it. The
+containment review, and the accepted full-length transverse elevation below it.
+RB2G1 derives longitudinal preview coordinates from each Zone's active cage so
+different bar diameters and local bottom-fillet geometry cannot overlap. The
 unverified PT-continuity guard and all solver ownership remain unchanged. It never
 routes template, zone, or preview state into existing PMM, Beam/Girder, SLS,
 shear, torsion, or report solvers.
@@ -41,6 +43,7 @@ from concrete_pmm_pro.crossbeam.rebar import (
     REBAR_MATERIAL_BY_FY,
     canonical_rebar_templates,
     duplicate_rebar_template,
+    cage_relative_longitudinal_center_offset_mm,
     canonical_rebar_zones,
     default_crossbeam_rebar_templates,
     default_crossbeam_rebar_zones,
@@ -57,7 +60,9 @@ from concrete_pmm_pro.crossbeam.transverse import (
     canonical_transverse_templates,
     default_crossbeam_transverse_templates,
     default_transverse_template_id,
+    place_longitudinal_bars_relative_to_cages,
     review_longitudinal_bar_containment,
+    transverse_bar_diameter_mm,
     transverse_template_map,
 )
 from concrete_pmm_pro.crossbeam.section_library import (
@@ -615,7 +620,10 @@ def _template_face_layout_from_editor(
         target[f"{prefix} face bars"] = bool(item.get("Use"))
         target[f"{prefix} bar size"] = str(item.get("Bar") or target.get(f"{prefix} bar size") or "DB16")
         target[f"{prefix} layout method"] = method
-        target[f"{prefix} center offset mm"] = float(item.get("Offset (mm)") or 1.0)
+        fallback_offset = item.get("Fallback offset (mm)", item.get("Offset (mm)"))
+        target[f"{prefix} center offset mm"] = float(
+            fallback_offset if fallback_offset is not None else target.get(f"{prefix} center offset mm") or 50.0
+        )
         value = float(item.get("Target") or 0.0)
         if method == "By exact bar count":
             target[f"{prefix} exact bar count"] = max(int(round(value)), 4)
@@ -892,7 +900,10 @@ def _render_template_library(
         st.warning(message)
 
     st.markdown("#### Outer-face auto layout")
-    st.caption("Target means spacing in mm for **By target spacing**, or total perimeter bar count for **By exact bar count**.")
+    st.caption(
+        "Target means spacing in mm for **By target spacing**, or total perimeter bar count for **By exact bar count**. "
+        "The active Zone preview derives the actual longitudinal center from its transverse cage; fallback offset is retained only for backward compatibility."
+    )
     outer_rows = []
     for row in rows:
         method = str(row.get("Outer layout method") or "By target spacing")
@@ -902,7 +913,7 @@ def _render_template_library(
                 "Use": row["Outer face bars"],
                 "Bar": row["Outer bar size"],
                 "Method": method,
-                "Offset (mm)": row["Outer center offset mm"],
+                "Fallback offset (mm)": row["Outer center offset mm"],
                 "Target": row["Outer exact bar count"] if method == "By exact bar count" else row["Outer target spacing mm"],
             }
         )
@@ -918,7 +929,7 @@ def _render_template_library(
             "Use": st.column_config.CheckboxColumn(width="small"),
             "Bar": st.column_config.SelectboxColumn(options=list(TEMPLATE_BAR_SIZE_OPTIONS), required=True, width="small"),
             "Method": st.column_config.SelectboxColumn(options=list(TEMPLATE_LAYOUT_METHOD_OPTIONS), required=True, width="medium"),
-            "Offset (mm)": st.column_config.NumberColumn(min_value=1.0, step=5.0, format="%.0f", width="small"),
+            "Fallback offset (mm)": st.column_config.NumberColumn(min_value=1.0, step=5.0, format="%.0f", width="small"),
             "Target": st.column_config.NumberColumn(min_value=1.0, step=1.0, format="%.0f", width="small"),
         },
     )
@@ -937,7 +948,7 @@ def _render_template_library(
                     "Use": row["Inner face bars"],
                     "Bar": row["Inner bar size"],
                     "Method": method,
-                    "Offset (mm)": row["Inner center offset mm"],
+                    "Fallback offset (mm)": row["Inner center offset mm"],
                     "Target": row["Inner exact bar count"] if method == "By exact bar count" else row["Inner target spacing mm"],
                 }
             )
@@ -953,7 +964,7 @@ def _render_template_library(
                 "Use": st.column_config.CheckboxColumn(width="small"),
                 "Bar": st.column_config.SelectboxColumn(options=list(TEMPLATE_BAR_SIZE_OPTIONS), required=True, width="small"),
                 "Method": st.column_config.SelectboxColumn(options=list(TEMPLATE_LAYOUT_METHOD_OPTIONS), required=True, width="medium"),
-                "Offset (mm)": st.column_config.NumberColumn(min_value=1.0, step=5.0, format="%.0f", width="small"),
+                "Fallback offset (mm)": st.column_config.NumberColumn(min_value=1.0, step=5.0, format="%.0f", width="small"),
                 "Target": st.column_config.NumberColumn(min_value=1.0, step=1.0, format="%.0f", width="small"),
             },
         )
@@ -1439,6 +1450,9 @@ def _render_combined_reinforcement_preview(
     segment_rows: list[dict[str, Any]],
     zone_rows: list[dict[str, Any]],
     transverse_template_rows: list[dict[str, Any]],
+    outer_effective_offset_mm: float,
+    inner_effective_offset_mm: float,
+    cage_adjusted_count: int,
 ) -> None:
     total_rebars = outer_rebars + inner_rebars
     total_area = _generated_area_mm2(total_rebars)
@@ -1447,8 +1461,8 @@ def _render_combined_reinforcement_preview(
     render_metric_cards(
         [
             {"title":"Selected section","value":section_id,"detail":f"{definition.get('Section name','')} · {definition.get('Section role','')}","status":"info"},
-            {"title":"Longitudinal template","value":str(longitudinal.get('Template ID') or ''),"detail":f"{len(total_rebars)} bars · As {total_area:,.0f} mm²","status":"ready" if total_rebars else "warning"},
-            {"title":"Transverse template","value":str(transverse.get('Template ID') or ''),"detail":f"{transverse.get('Bar size','')} @ {float(transverse.get('Spacing mm') or 0.0):.0f} mm · Rbend 25 mm","status":"info"},
+            {"title":"Longitudinal template","value":str(longitudinal.get('Template ID') or ''),"detail":f"{len(total_rebars)} bars · Auto O {outer_effective_offset_mm:.1f} mm" + (f" / I {inner_effective_offset_mm:.1f} mm" if inner_effective_offset_mm > 0.0 else ""),"status":"ready" if total_rebars else "warning"},
+            {"title":"Transverse template","value":str(transverse.get('Template ID') or ''),"detail":f"{transverse.get('Bar size','')} @ {float(transverse.get('Spacing mm') or 0.0):.0f} mm · offset {float(transverse.get('Center offset mm') or 0.0):.0f} mm","status":"info"},
             {"title":"Geometric fit","value":review.status,"detail":f"{review.conflict_count} conflict(s) · {len(cages.paths)} cage(s)","status":"ready" if review.ok else "warning"},
         ]
     )
@@ -1464,7 +1478,8 @@ def _render_combined_reinforcement_preview(
     st.plotly_chart(fig, use_container_width=True, config=FIGURE_CONFIG)
     st.caption(
         "Geometric/detailing preview only. Layer order is concrete → void → transverse cage/tie → longitudinal bars → centroid. "
-        "The check includes longitudinal and transverse bar radii; engineering inputs are never moved automatically."
+        f"Longitudinal preview centers are derived from the active cage using Dt/2 + Dl/2; {cage_adjusted_count} web/corner coordinate(s) follow the actual cage path. "
+        "Template quantities and solver inputs are not changed."
     )
     if review.ok:
         st.success(review.messages[-1])
@@ -1583,12 +1598,23 @@ def _render_section_rebar_preview(
     if preview_mode in {"Longitudinal", "Combined review"}:
         template = longitudinal
         material = str(template.get("Rebar material") or "SD40")
+        cages = build_transverse_cage_geometry(geometry, definition, transverse)
+        transverse_diameter = transverse_bar_diameter_mm(transverse.get("Bar size"))
+        transverse_offset = float(transverse.get("Center offset mm") or 50.0)
+        outer_effective_offset = 0.0
+        inner_effective_offset = 0.0
         outer_result = PerimeterRebarLayoutResult(table=pd.DataFrame())
         if bool(template.get("Outer face bars")):
             outer_size = str(template.get("Outer bar size") or "DB16")
+            outer_diameter = rebar_diameter_mm(outer_size)
+            outer_effective_offset = cage_relative_longitudinal_center_offset_mm(
+                transverse_offset,
+                transverse_diameter,
+                outer_diameter,
+            )
             outer_result = generate_perimeter_rebar_layout(
-                geometry, bar_size=outer_size, diameter_mm=rebar_diameter_mm(outer_size), material=material,
-                edge_offset_mm=float(template.get("Outer center offset mm") or 50.0),
+                geometry, bar_size=outer_size, diameter_mm=outer_diameter, material=material,
+                edge_offset_mm=outer_effective_offset,
                 target_spacing_mm=float(template.get("Outer target spacing mm") or 150.0), min_bars=4,
                 exact_bar_count=(int(template.get("Outer exact bar count") or 0) if str(template.get("Outer layout method")) == "By exact bar count" else None),
                 label_prefix="O",
@@ -1596,15 +1622,26 @@ def _render_section_rebar_preview(
         inner_result = PerimeterRebarLayoutResult(table=pd.DataFrame())
         if role == "Hollow" and bool(template.get("Inner face bars")):
             inner_size = str(template.get("Inner bar size") or "DB16")
+            inner_diameter = rebar_diameter_mm(inner_size)
+            inner_effective_offset = cage_relative_longitudinal_center_offset_mm(
+                transverse_offset,
+                transverse_diameter,
+                inner_diameter,
+            )
             inner_result = generate_inner_face_rebar_layout(
-                geometry, hole_index=0, bar_size=inner_size, diameter_mm=rebar_diameter_mm(inner_size), material=material,
-                edge_offset_mm=float(template.get("Inner center offset mm") or 50.0),
+                geometry, hole_index=0, bar_size=inner_size, diameter_mm=inner_diameter, material=material,
+                edge_offset_mm=inner_effective_offset,
                 target_spacing_mm=float(template.get("Inner target spacing mm") or 150.0), min_bars=4,
                 exact_bar_count=(int(template.get("Inner exact bar count") or 0) if str(template.get("Inner layout method")) == "By exact bar count" else None),
                 label_prefix="I",
             )
         outer_rebars = _result_rebars(outer_result, layer="Outer") if outer_result.ok else []
         inner_rebars = _result_rebars(inner_result, layer="Inner") if inner_result.ok else []
+        outer_placement = place_longitudinal_bars_relative_to_cages(cages, outer_rebars)
+        inner_placement = place_longitudinal_bars_relative_to_cages(cages, inner_rebars)
+        outer_rebars = list(outer_placement.rebars)
+        inner_rebars = list(inner_placement.rebars)
+        cage_adjusted_count = outer_placement.adjusted_count + inner_placement.adjusted_count
         total_rebars = outer_rebars + inner_rebars
         total_area = _generated_area_mm2(total_rebars)
         adopted = _adopted_reinforcement_summary(template)
@@ -1616,12 +1653,18 @@ def _render_section_rebar_preview(
             key=CB_RB_PREVIEW_MARKER_MODE_KEY,
             help="Enhanced markers improve visual review only. Quantities and As always use the true bar diameter.",
         )
+        st.caption(
+            f"Cage-relative center rule — Transverse offset {transverse_offset:.0f} mm + Dt/2 {transverse_diameter / 2.0:.1f} mm "
+            f"+ Dl/2. Effective concrete-edge offset: Outer {outer_effective_offset:.1f} mm"
+            + (f" · Inner {inner_effective_offset:.1f} mm" if inner_effective_offset > 0.0 else "")
+            + f". {cage_adjusted_count} web/corner bar coordinate(s) were fitted to the actual cage path."
+        )
         if preview_mode == "Longitudinal":
             render_metric_cards(
                 [
                     {"title":"Selected section","value":section_id,"detail":f"{definition.get('Section name','')} · {role}","status":"info"},
                     {"title":"Longitudinal template","value":longitudinal_id,"detail":f"{selected_zone_id} · s={float(selected_zone['s_start_m']):.3f}–{float(selected_zone['s_end_m']):.3f} m","status":"info"},
-                    {"title":"Auto-generated layout","value":f"{len(total_rebars)} bars","detail":f"As {total_area:,.0f} mm² · Outer {len(outer_rebars)} · Inner {len(inner_rebars)}","status":metric_status},
+                    {"title":"Auto-generated layout","value":f"{len(total_rebars)} bars","detail":f"As {total_area:,.0f} mm² · Cage-relative O {outer_effective_offset:.1f} mm" + (f" / I {inner_effective_offset:.1f} mm" if inner_effective_offset > 0.0 else ""),"status":metric_status},
                     {"title":"Adopted reinforcement","value":"DEFINED" if _template_quantity_defined(template) else "NOT ADOPTED","detail":adopted,"status":"ready" if _template_quantity_defined(template) else "warning"},
                 ]
             )
@@ -1657,6 +1700,9 @@ def _render_section_rebar_preview(
                 segment_rows=segment_rows,
                 zone_rows=zone_rows,
                 transverse_template_rows=transverse_template_rows,
+                outer_effective_offset_mm=outer_effective_offset,
+                inner_effective_offset_mm=inner_effective_offset,
+                cage_adjusted_count=cage_adjusted_count,
             )
 
     if preview_mode == "Transverse / Shear":
