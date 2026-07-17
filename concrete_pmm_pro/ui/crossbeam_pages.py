@@ -107,6 +107,12 @@ CB_LENGTH_POLICY_KEEP = "Keep existing stations — review required"
 CB_LENGTH_POLICY_SCALE = "Scale longitudinal stations proportionally"
 CB_LENGTH_CHANGE_POLICIES = (CB_LENGTH_POLICY_KEEP, CB_LENGTH_POLICY_SCALE)
 
+CB_TENDON_REMOVE_SELECTION_KEY = "crossbeam_pt1d_remove_tendon_id"
+CB_TENDON_REMOVE_PENDING_KEY = "crossbeam_pt1d_remove_pending_id"
+CB_TENDON_MUTATION_NOTICE_KEY = "crossbeam_pt1d_tendon_mutation_notice"
+CB_TENDON_MIN_COUNT = 3
+CB_TENDON_MAX_COUNT = 64
+
 
 FIGURE_CONFIG = {
     "displaylogo": False,
@@ -510,33 +516,28 @@ def _ensure_state() -> None:
         st.session_state[CB_UI1A_MIGRATION_KEY] = True
     st.session_state.setdefault(CB_SEGMENT_REV_KEY, 0)
 
-    if CB_TENDON_COUNT_KEY not in st.session_state:
-        st.session_state[CB_TENDON_COUNT_KEY] = max(
-            _finite_int(st.session_state.get(LEGACY_TENDON_COUNT_KEY), DEFAULT_TENDON_COUNT), 3
-        )
-    tendon_count = max(_finite_int(st.session_state.get(CB_TENDON_COUNT_KEY), DEFAULT_TENDON_COUNT), 3)
-
     legacy_profile = _legacy_profile_rows()
     if CB_TENDON_SYSTEM_ROWS_KEY not in st.session_state:
-        st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = _system_rows_from_legacy(legacy_profile, tendon_count)
+        legacy_count = max(
+            _finite_int(
+                st.session_state.get(LEGACY_TENDON_COUNT_KEY),
+                DEFAULT_TENDON_COUNT,
+            ),
+            CB_TENDON_MIN_COUNT,
+        )
+        st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = _system_rows_from_legacy(
+            legacy_profile, legacy_count
+        )
     st.session_state.setdefault(CB_TENDON_SYSTEM_REV_KEY, 0)
 
     system_rows = canonical_tendon_system_rows(
         _records(st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
     )
-    if len(system_rows) < tendon_count:
-        existing_ids = {row["Tendon ID"] for row in system_rows if row["Tendon ID"]}
-        for candidate in default_tendon_system_rows(tendon_count * 2):
-            if len(system_rows) >= tendon_count:
-                break
-            if candidate["Tendon ID"] not in existing_ids:
-                system_rows.append(candidate)
-                existing_ids.add(candidate["Tendon ID"])
     st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = system_rows
+    # Compatibility mirror only: the table is the sole tendon-count source.
+    st.session_state[CB_TENDON_COUNT_KEY] = len(system_rows)
     tendon_ids = [str(row.get("Tendon ID") or "").strip() for row in system_rows]
     tendon_ids = [item for item in tendon_ids if item]
-    if not tendon_ids:
-        tendon_ids = [f"T{index + 1}" for index in range(tendon_count)]
 
     if CB_PROFILE_ROWS_KEY not in st.session_state:
         st.session_state[CB_PROFILE_ROWS_KEY] = _profile_points_from_legacy(
@@ -1242,6 +1243,221 @@ def _commit_tendon_profile_editor(
     )
 
 
+def _next_crossbeam_tendon_id(
+    system_rows: list[dict[str, Any]],
+    profile_rows: list[dict[str, Any]],
+) -> str:
+    """Return the first unused stable T-number across system and profile rows."""
+
+    used = {
+        str(row.get("Tendon ID") or "").strip()
+        for row in [*system_rows, *profile_rows]
+        if str(row.get("Tendon ID") or "").strip()
+    }
+    for index in range(1, CB_TENDON_MAX_COUNT + 1):
+        candidate = f"T{index}"
+        if candidate not in used:
+            return candidate
+    raise ValueError("No unused Tendon ID is available within the 64-tendon limit.")
+
+
+def _add_crossbeam_tendon(
+    session_state: MutableMapping[str, Any],
+    *,
+    length_m: float,
+    width_mm: float,
+    height_mm: float,
+) -> dict[str, Any]:
+    """Append one complete tendon and its three default profile points."""
+
+    system_rows = canonical_tendon_system_rows(
+        _records(session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
+    )
+    if len(system_rows) >= CB_TENDON_MAX_COUNT:
+        raise ValueError(
+            f"Crossbeam Tendon System is limited to {CB_TENDON_MAX_COUNT} stored tendons."
+        )
+
+    length = max(_finite_float(length_m, DEFAULT_CROSSBEAM_LENGTH_M), 0.1)
+    profile_rows = canonical_tendon_profile_points(
+        _records(session_state.get(CB_PROFILE_ROWS_KEY)), length
+    )
+    tendon_id = _next_crossbeam_tendon_id(system_rows, profile_rows)
+    new_row = dict(default_tendon_system_rows(CB_TENDON_MIN_COUNT)[0])
+    new_row["Tendon ID"] = tendon_id
+    system_rows = canonical_tendon_system_rows([*system_rows, new_row])
+
+    new_points = default_tendon_profile_points(
+        length,
+        tendon_ids=[tendon_id],
+        width_mm=max(_finite_float(width_mm, 2500.0), 1.0),
+        height_mm=max(_finite_float(height_mm, 1500.0), 1.0),
+    )
+    profile_rows = canonical_tendon_profile_points(
+        [*profile_rows, *new_points], length
+    )
+    valid_ids = {row["Tendon ID"] for row in system_rows if row["Tendon ID"]}
+    visible_ids = [
+        str(value)
+        for value in session_state.get(CB_ACTIVE_TENDONS_KEY, [])
+        if str(value) in valid_ids
+    ]
+    if tendon_id not in visible_ids:
+        visible_ids.append(tendon_id)
+
+    session_state[CB_TENDON_SYSTEM_ROWS_KEY] = system_rows
+    session_state[CB_PROFILE_ROWS_KEY] = profile_rows
+    session_state[CB_TENDON_COUNT_KEY] = len(system_rows)
+    session_state[CB_ACTIVE_TENDONS_KEY] = visible_ids
+    session_state[CB_TENDON_SYSTEM_REV_KEY] = int(
+        session_state.get(CB_TENDON_SYSTEM_REV_KEY, 0)
+    ) + 1
+    session_state[CB_PROFILE_REV_KEY] = int(
+        session_state.get(CB_PROFILE_REV_KEY, 0)
+    ) + 1
+    notice = {
+        "action": "added",
+        "tendon_id": tendon_id,
+        "stored_count": len(system_rows),
+        "profile_points": len(new_points),
+    }
+    session_state[CB_TENDON_MUTATION_NOTICE_KEY] = notice
+    return dict(notice)
+
+
+def _remove_crossbeam_tendon(
+    session_state: MutableMapping[str, Any],
+    tendon_id: str,
+) -> dict[str, Any]:
+    """Remove exactly one stored tendon and every linked profile point."""
+
+    system_rows = canonical_tendon_system_rows(
+        _records(session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
+    )
+    if len(system_rows) <= CB_TENDON_MIN_COUNT:
+        raise ValueError(
+            f"At least {CB_TENDON_MIN_COUNT} stored tendons are required."
+        )
+    target = str(tendon_id or "").strip()
+    matches = [row for row in system_rows if row["Tendon ID"] == target]
+    if len(matches) != 1:
+        raise ValueError(
+            f"Removal requires one unique stored Tendon ID; found {len(matches)} row(s) for {target or 'blank ID'}."
+        )
+
+    remaining = [row for row in system_rows if row["Tendon ID"] != target]
+    length = max(
+        _finite_float(
+            session_state.get(CB_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M
+        ),
+        0.1,
+    )
+    profile_before = canonical_tendon_profile_points(
+        _records(session_state.get(CB_PROFILE_ROWS_KEY)), length
+    )
+    profile_after = [
+        row for row in profile_before if row["Tendon ID"] != target
+    ]
+    valid_ids = {row["Tendon ID"] for row in remaining if row["Tendon ID"]}
+    visible_ids = [
+        str(value)
+        for value in session_state.get(CB_ACTIVE_TENDONS_KEY, [])
+        if str(value) in valid_ids
+    ]
+
+    session_state[CB_TENDON_SYSTEM_ROWS_KEY] = remaining
+    session_state[CB_PROFILE_ROWS_KEY] = profile_after
+    session_state[CB_TENDON_COUNT_KEY] = len(remaining)
+    session_state[CB_ACTIVE_TENDONS_KEY] = visible_ids
+    session_state[CB_TENDON_SYSTEM_REV_KEY] = int(
+        session_state.get(CB_TENDON_SYSTEM_REV_KEY, 0)
+    ) + 1
+    session_state[CB_PROFILE_REV_KEY] = int(
+        session_state.get(CB_PROFILE_REV_KEY, 0)
+    ) + 1
+    notice = {
+        "action": "removed",
+        "tendon_id": target,
+        "stored_count": len(remaining),
+        "profile_points": len(profile_before) - len(profile_after),
+    }
+    session_state[CB_TENDON_MUTATION_NOTICE_KEY] = notice
+    return dict(notice)
+
+
+def _add_crossbeam_tendon_from_ui() -> None:
+    context = _section_context()
+    _add_crossbeam_tendon(
+        st.session_state,
+        length_m=_finite_float(
+            st.session_state.get(CB_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M
+        ),
+        width_mm=context["width_mm"],
+        height_mm=context["height_mm"],
+    )
+
+
+def _request_crossbeam_tendon_removal() -> None:
+    selected = str(
+        st.session_state.get(CB_TENDON_REMOVE_SELECTION_KEY) or ""
+    ).strip()
+    if selected:
+        st.session_state[CB_TENDON_REMOVE_PENDING_KEY] = selected
+
+
+def _cancel_crossbeam_tendon_removal() -> None:
+    st.session_state.pop(CB_TENDON_REMOVE_PENDING_KEY, None)
+
+
+def _confirm_crossbeam_tendon_removal() -> None:
+    target = str(
+        st.session_state.get(CB_TENDON_REMOVE_PENDING_KEY) or ""
+    ).strip()
+    _remove_crossbeam_tendon(st.session_state, target)
+    remaining_ids = _tendon_ids(
+        _records(st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
+    )
+    if remaining_ids:
+        st.session_state[CB_TENDON_REMOVE_SELECTION_KEY] = remaining_ids[-1]
+    else:
+        st.session_state.pop(CB_TENDON_REMOVE_SELECTION_KEY, None)
+    st.session_state.pop(CB_TENDON_REMOVE_PENDING_KEY, None)
+
+
+def _reset_crossbeam_tendon_system_from_ui() -> None:
+    length_m = max(
+        _finite_float(
+            st.session_state.get(CB_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M
+        ),
+        0.1,
+    )
+    context = _section_context()
+    system_rows = default_tendon_system_rows()
+    tendon_ids = [row["Tendon ID"] for row in system_rows]
+    st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = system_rows
+    st.session_state[CB_PROFILE_ROWS_KEY] = default_tendon_profile_points(
+        length_m,
+        tendon_ids=tendon_ids,
+        width_mm=context["width_mm"],
+        height_mm=context["height_mm"],
+    )
+    st.session_state[CB_TENDON_COUNT_KEY] = len(system_rows)
+    st.session_state[CB_ACTIVE_TENDONS_KEY] = tendon_ids
+    st.session_state[CB_TENDON_SYSTEM_REV_KEY] = int(
+        st.session_state.get(CB_TENDON_SYSTEM_REV_KEY, 0)
+    ) + 1
+    st.session_state[CB_PROFILE_REV_KEY] = int(
+        st.session_state.get(CB_PROFILE_REV_KEY, 0)
+    ) + 1
+    st.session_state[CB_TENDON_REMOVE_SELECTION_KEY] = tendon_ids[-1]
+    st.session_state.pop(CB_TENDON_REMOVE_PENDING_KEY, None)
+    st.session_state[CB_TENDON_MUTATION_NOTICE_KEY] = {
+        "action": "reset",
+        "stored_count": len(system_rows),
+        "profile_points": len(tendon_ids) * 3,
+    }
+
+
 def _segment_bands(fig: go.Figure, segment_rows: list[dict[str, Any]]) -> None:
     fills = {"Solid": "rgba(31,119,180,0.055)", "Hollow": "rgba(255,127,14,0.055)"}
     for row in segment_rows:
@@ -1660,78 +1876,163 @@ def render_crossbeam_tendon_system_page() -> None:
     existing_system = canonical_tendon_system_rows(
         _records(st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
     )
-    tendon_count = int(
-        st.number_input(
-            "Number of tendons",
-            min_value=3,
-            max_value=64,
-            step=1,
-            key=CB_TENDON_COUNT_KEY,
-            help="The crossbeam may contain more than two tendons. Anchorage heads remain at both crossbeam ends.",
-        )
+    rows = list(existing_system)
+    st.session_state[CB_TENDON_COUNT_KEY] = len(rows)
+    active_count = sum(bool(row.get("Active")) for row in rows)
+    minimum_status = "ready" if len(rows) >= CB_TENDON_MIN_COUNT else "warning"
+    render_metric_cards(
+        [
+            {
+                "title": "Stored tendons",
+                "value": len(rows),
+                "detail": "Tendon identity table rows · source of truth",
+                "status": "info",
+            },
+            {
+                "title": "Active tendons",
+                "value": active_count,
+                "detail": "Rows marked Active in the source table",
+                "status": "ready" if active_count >= CB_TENDON_MIN_COUNT else "warning",
+            },
+            {
+                "title": "Minimum required",
+                "value": f"≥ {CB_TENDON_MIN_COUNT}",
+                "detail": f"{len(rows)} currently stored",
+                "status": minimum_status,
+            },
+            {
+                "title": "Inventory limit",
+                "value": CB_TENDON_MAX_COUNT,
+                "detail": "Maximum stored tendon rows",
+                "status": "neutral",
+            },
+        ]
+    )
+    st.caption(
+        "Tendon count is derived from the Tendon identity and stressing table below; "
+        "it is not an independent engineering input. Use the controlled actions to "
+        "add or remove a complete tendon together with its linked Tendon Profile points."
     )
 
-    if st.button("Reset tendon system to default", key="crossbeam_ui1_reset_tendon_system"):
-        length_m = float(st.session_state.get(CB_LENGTH_KEY, DEFAULT_CROSSBEAM_LENGTH_M))
-        context = _section_context()
-        system_rows = default_tendon_system_rows(tendon_count)
-        tendon_ids = [row["Tendon ID"] for row in system_rows]
-        st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = system_rows
-        st.session_state[CB_TENDON_SYSTEM_REV_KEY] = int(st.session_state.get(CB_TENDON_SYSTEM_REV_KEY, 0)) + 1
-        st.session_state[CB_PROFILE_ROWS_KEY] = default_tendon_profile_points(
-            length_m,
-            tendon_ids=tendon_ids,
-            width_mm=context["width_mm"],
-            height_mm=context["height_mm"],
-        )
-        st.session_state[CB_ACTIVE_TENDONS_KEY] = tendon_ids
-        st.session_state[CB_PROFILE_REV_KEY] = int(st.session_state.get(CB_PROFILE_REV_KEY, 0)) + 1
-        st.rerun()
-
-    # Reconcile count while preserving custom IDs and their linked profile rows.
-    rows = list(existing_system[:tendon_count])
-    removed_ids = {
-        row["Tendon ID"] for row in existing_system[tendon_count:] if row["Tendon ID"]
-    }
-    existing_ids = {row["Tendon ID"] for row in rows if row["Tendon ID"]}
-    for candidate in default_tendon_system_rows(max(tendon_count * 2, 3)):
-        if len(rows) >= tendon_count:
-            break
-        if candidate["Tendon ID"] not in existing_ids:
-            rows.append(candidate)
-            existing_ids.add(candidate["Tendon ID"])
-    rows = canonical_tendon_system_rows(rows)
-    if rows != existing_system:
-        length_m = max(
-            _finite_float(st.session_state.get(CB_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M),
-            0.1,
-        )
-        context = _section_context()
-        profile = canonical_tendon_profile_points(
-            _records(st.session_state.get(CB_PROFILE_ROWS_KEY)), length_m
-        )
-        if removed_ids:
-            profile = [row for row in profile if row["Tendon ID"] not in removed_ids]
-        represented = {row["Tendon ID"] for row in profile}
-        missing_ids = [row["Tendon ID"] for row in rows if row["Tendon ID"] not in represented]
-        if missing_ids:
-            profile.extend(
-                default_tendon_profile_points(
-                    length_m,
-                    tendon_ids=missing_ids,
-                    width_mm=context["width_mm"],
-                    height_mm=context["height_mm"],
-                )
+    notice = st.session_state.pop(CB_TENDON_MUTATION_NOTICE_KEY, None)
+    if isinstance(notice, Mapping):
+        action = str(notice.get("action") or "")
+        stored_count = _finite_int(notice.get("stored_count"), len(rows))
+        profile_points = _finite_int(notice.get("profile_points"), 0)
+        tendon_id = str(notice.get("tendon_id") or "")
+        if action == "added":
+            st.success(
+                f"Added {tendon_id} with {profile_points} default profile points. "
+                f"{stored_count} tendons are now stored; review its geometry in Tendon Profile."
             )
-        st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = rows
-        st.session_state[CB_PROFILE_ROWS_KEY] = canonical_tendon_profile_points(profile, length_m)
-        st.session_state[CB_TENDON_SYSTEM_REV_KEY] = int(
-            st.session_state.get(CB_TENDON_SYSTEM_REV_KEY, 0)
-        ) + 1
-        st.session_state[CB_PROFILE_REV_KEY] = int(st.session_state.get(CB_PROFILE_REV_KEY, 0)) + 1
-        st.session_state[CB_ACTIVE_TENDONS_KEY] = [
-            row["Tendon ID"] for row in rows if row["Active"] and row["Tendon ID"]
-        ]
+        elif action == "removed":
+            st.success(
+                f"Removed {tendon_id} and {profile_points} linked profile points. "
+                f"{stored_count} tendons remain stored."
+            )
+        elif action == "reset":
+            st.success(
+                f"Reset Tendon System to {stored_count} default tendons and "
+                f"{profile_points} linked profile points."
+            )
+
+    stored_ids = [str(row.get("Tendon ID") or "").strip() for row in rows]
+    unique_ids = list(dict.fromkeys(tendon_id for tendon_id in stored_ids if tendon_id))
+    ids_are_removable = (
+        len(unique_ids) == len(stored_ids)
+        and len(rows) > CB_TENDON_MIN_COUNT
+    )
+    pending_id = str(
+        st.session_state.get(CB_TENDON_REMOVE_PENDING_KEY) or ""
+    ).strip()
+
+    add_col, remove_select_col, remove_action_col, reset_col = st.columns(
+        [1.0, 1.35, 0.95, 1.25]
+    )
+    with add_col:
+        st.button(
+            "Add tendon",
+            key="crossbeam_pt1d_add_tendon",
+            on_click=_add_crossbeam_tendon_from_ui,
+            disabled=len(rows) >= CB_TENDON_MAX_COUNT or bool(pending_id),
+            use_container_width=True,
+            help="Adds one active tendon and three default Tendon Profile points.",
+        )
+    with remove_select_col:
+        if unique_ids:
+            current_selection = str(
+                st.session_state.get(CB_TENDON_REMOVE_SELECTION_KEY) or ""
+            )
+            if current_selection not in unique_ids:
+                st.session_state[CB_TENDON_REMOVE_SELECTION_KEY] = unique_ids[-1]
+            st.selectbox(
+                "Tendon to remove",
+                options=unique_ids,
+                key=CB_TENDON_REMOVE_SELECTION_KEY,
+                disabled=not ids_are_removable or bool(pending_id),
+                label_visibility="collapsed",
+            )
+        else:
+            st.caption("No valid Tendon ID is available for removal.")
+    with remove_action_col:
+        st.button(
+            "Review removal",
+            key="crossbeam_pt1d_review_remove_tendon",
+            on_click=_request_crossbeam_tendon_removal,
+            disabled=not ids_are_removable or bool(pending_id),
+            use_container_width=True,
+        )
+    with reset_col:
+        st.button(
+            "Reset to default (4)",
+            key="crossbeam_ui1_reset_tendon_system",
+            on_click=_reset_crossbeam_tendon_system_from_ui,
+            disabled=bool(pending_id),
+            use_container_width=True,
+            help="Restores T1–T4 and their default profile geometry.",
+        )
+
+    if len(rows) <= CB_TENDON_MIN_COUNT:
+        st.info(
+            f"Removal is locked because at least {CB_TENDON_MIN_COUNT} stored tendons are required."
+        )
+    elif not ids_are_removable:
+        st.warning(
+            "Removal is locked until every stored row has one nonblank, unique Tendon ID."
+        )
+
+    if pending_id:
+        if pending_id in unique_ids and ids_are_removable:
+            st.warning(
+                f"Confirm removal of {pending_id}. This will delete its Tendon System row "
+                "and every linked Tendon Profile point."
+            )
+            confirm_col, cancel_col, _ = st.columns([1.0, 1.0, 2.5])
+            with confirm_col:
+                st.button(
+                    f"Confirm remove {pending_id}",
+                    key="crossbeam_pt1d_confirm_remove_tendon",
+                    on_click=_confirm_crossbeam_tendon_removal,
+                    type="primary",
+                    use_container_width=True,
+                )
+            with cancel_col:
+                st.button(
+                    "Cancel",
+                    key="crossbeam_pt1d_cancel_remove_tendon",
+                    on_click=_cancel_crossbeam_tendon_removal,
+                    use_container_width=True,
+                )
+        else:
+            st.error(
+                "The pending tendon can no longer be removed because the Tendon ID table changed. "
+                "Cancel the removal and review the IDs."
+            )
+            st.button(
+                "Cancel removal",
+                key="crossbeam_pt1d_cancel_invalid_removal",
+                on_click=_cancel_crossbeam_tendon_removal,
+            )
 
     revision = int(st.session_state.get(CB_TENDON_SYSTEM_REV_KEY, 0))
     st.markdown("#### Tendon identity and stressing")
@@ -1758,6 +2059,7 @@ def render_crossbeam_tendon_system_page() -> None:
         rows, _records(identity_edited)
     )
     st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = system_rows
+    st.session_state[CB_TENDON_COUNT_KEY] = len(system_rows)
     if rename_map:
         _rename_tendon_profile_references(rename_map)
         st.session_state[CB_TENDON_SYSTEM_REV_KEY] = revision + 1
@@ -1793,6 +2095,7 @@ def render_crossbeam_tendon_system_page() -> None:
         system_rows, _records(material_edited)
     )
     st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = system_rows
+    st.session_state[CB_TENDON_COUNT_KEY] = len(system_rows)
 
     st.markdown("#### End anchorages")
     st.dataframe(
@@ -1813,6 +2116,7 @@ def render_crossbeam_tendon_system_page() -> None:
 
     system_rows, system_errors, system_warnings = validate_tendon_system(system_rows)
     st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = system_rows
+    st.session_state[CB_TENDON_COUNT_KEY] = len(system_rows)
     status = "SOURCE READY" if not system_errors else "REVIEW REQUIRED"
     status_kind = "ready" if not system_errors else "warning"
     active_rows = [row for row in system_rows if row["Active"]]

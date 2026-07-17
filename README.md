@@ -1,3 +1,12 @@
+### CROSSBEAM.PT1D — Tendon Inventory Source of Truth
+
+Removes the independent `Number of tendons` input and derives Stored/Active
+counts from the Tendon System rows. Controlled Add and confirmed Remove
+actions keep each complete tendon, its three default profile points, visible
+Tendon IDs, and Project-JSON restore state synchronized while preserving the
+minimum three-tendon guard and leaving all solvers unchanged. See
+`README_CROSSBEAM_PT1D.md`.
+
 ### CROSSBEAM.PT1C — Crossbeam Member-Length Source of Truth
 
 Moves the sole editable Crossbeam total length `L` to a member-level card in

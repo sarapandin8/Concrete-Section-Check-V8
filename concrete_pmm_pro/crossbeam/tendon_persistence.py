@@ -315,7 +315,9 @@ def restore_crossbeam_tendon_project_state(
 
     session_state[CB_TENDON_SYSTEM_ROWS_KEY] = system
     session_state[CB_PROFILE_ROWS_KEY] = points
-    session_state[CB_TENDON_COUNT_KEY] = max(len(system), 3)
+    # Compatibility mirror only. The stored tendon-system rows are the source
+    # of truth, including for incomplete projects that require review.
+    session_state[CB_TENDON_COUNT_KEY] = len(system)
     session_state[CB_TENDON_SYSTEM_REV_KEY] = int(
         session_state.get(CB_TENDON_SYSTEM_REV_KEY, 0) or 0
     ) + 1
