@@ -67,7 +67,9 @@ def test_ui_active_tabs2_uses_compact_commercial_nav_and_styles_streamlit_tabs()
     assert ".cpmm-deterministic-nav-row--compact" in source
     assert "min-height: 1.64rem" in source
     assert "0 1px 1px var(--cpmm-active-tab-shadow)" in source
-    assert 'div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]' in source
+    assert 'div[data-testid="stTabs"] [role="tab"][aria-selected="true"]' in source
+    assert 'div[data-testid="stTabs"] div[data-testid="stTab"]' in source
+    assert ".react-aria-SelectionIndicator" in source
     assert "--cpmm-active-tab-accent" in source
 
 

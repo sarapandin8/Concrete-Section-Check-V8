@@ -209,38 +209,53 @@ button[data-testid="stBaseButton-segmentedControlActive"] span {
 }
 
 
-/* Streamlit st.tabs used inside detail workspaces, e.g. Longitudinal/Transverse Rebar.
-   Keep them in the same dark-blue active-tab language instead of the theme red underline. */
-div[data-testid="stTabs"] div[role="tablist"] {
-  gap: 0.12rem !important;
-  border-bottom: 1px solid #d8e2ee !important;
+/* Streamlit st.tabs used inside detail workspaces, e.g. Tendon Profile.
+   Streamlit 1.5x renders React-Aria tabs as div[data-testid="stTab"], while
+   older builds use buttons.  Role selectors keep both DOM variants on-theme. */
+div[data-testid="stTabs"] [role="tablist"] {
+  gap: 0.38rem !important;
+  padding: 0.34rem 0.42rem !important;
+  margin: 0.28rem 0 0.68rem 0 !important;
+  border: 1px solid #c8d8e9 !important;
+  border-radius: 9px !important;
+  background: #eef4fb !important;
+  overflow-x: auto !important;
 }
-div[data-testid="stTabs"] button[role="tab"] {
+div[data-testid="stTabs"] [role="tab"],
+div[data-testid="stTabs"] div[data-testid="stTab"] {
   color: var(--cpmm-ink-blue) !important;
   font-size: 0.91rem !important;
   font-weight: 800 !important;
+  min-height: 2.18rem !important;
   padding: 0.42rem 0.86rem !important;
-  border-radius: 7px 7px 0 0 !important;
-  border: 1px solid transparent !important;
-  background: transparent !important;
+  border-radius: 7px !important;
+  border: 1px solid #b8cbe0 !important;
+  background: #ffffff !important;
+  box-shadow: 0 1px 2px rgba(11, 58, 102, 0.07) !important;
+  white-space: nowrap !important;
 }
-div[data-testid="stTabs"] button[role="tab"] p,
-div[data-testid="stTabs"] button[role="tab"] span {
+div[data-testid="stTabs"] [role="tab"] p,
+div[data-testid="stTabs"] [role="tab"] span {
   color: var(--cpmm-ink-blue) !important;
   font-size: 0.91rem !important;
   font-weight: 800 !important;
 }
-div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
+div[data-testid="stTabs"] [role="tab"][aria-selected="true"],
+div[data-testid="stTabs"] [role="tab"][data-selected="true"] {
   background: var(--cpmm-active-tab-fill) !important;
-  border-color: var(--cpmm-blue-border) !important;
-  border-bottom-color: var(--cpmm-active-tab-accent) !important;
-  box-shadow: inset 0 -3px 0 var(--cpmm-active-tab-accent) !important;
+  border-color: var(--cpmm-active-tab-border) !important;
+  box-shadow: inset 0 -3px 0 var(--cpmm-active-tab-accent), 0 1px 3px var(--cpmm-active-tab-shadow) !important;
 }
-div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] p,
-div[data-testid="stTabs"] button[role="tab"][aria-selected="true"] span {
+div[data-testid="stTabs"] [role="tab"][aria-selected="true"] p,
+div[data-testid="stTabs"] [role="tab"][aria-selected="true"] span,
+div[data-testid="stTabs"] [role="tab"][data-selected="true"] p,
+div[data-testid="stTabs"] [role="tab"][data-selected="true"] span {
   color: var(--cpmm-ink-blue) !important;
   font-weight: 850 !important;
   overflow: visible !important;
+}
+div[data-testid="stTabs"] [role="tab"] .react-aria-SelectionIndicator {
+  display: none !important;
 }
 
 /* Radio fallback navigation styled as app tabs, not as ordinary radio text. */

@@ -11,7 +11,7 @@ seed data without changing Project JSON or existing workflow behavior.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, MutableMapping
 from math import isfinite
 from typing import Any
 
@@ -88,6 +88,10 @@ CB_LENGTH_KEY = "crossbeam_ui1_length_m"
 CB_SEGMENT_ROWS_KEY = "crossbeam_ui1_segment_layout_rows"
 CB_SEGMENT_REV_KEY = "crossbeam_ui1_segment_editor_revision"
 CB_UI1A_MIGRATION_KEY = "crossbeam_ui1a_segment_assignment_migrated"
+CB_LENGTH_WIDGET_KEY = "crossbeam_pt1b_length_widget_m"
+CB_LENGTH_WIDGET_SYNC_KEY = "crossbeam_pt1b_length_widget_synced_m"
+CB_LENGTH_REPAIR_CHECK_KEY = "crossbeam_pt1b_length_repair_checked"
+CB_LENGTH_REPAIR_NOTICE_KEY = "crossbeam_pt1b_length_repair_notice"
 CB_CROSS_SECTION_STATION_KEY = "crossbeam_pt1a_cross_section_station_m"
 CB_CROSS_SECTION_FACE_KEY = "crossbeam_pt1a_cross_section_face"
 
@@ -367,6 +371,95 @@ def _rows_match_old_30m_seed(rows: list[dict[str, Any]]) -> bool:
     return all(abs(a - b) <= 1e-6 for a, b in zip(actual, expected))
 
 
+def _coherent_geometry_extent_m(
+    segment_rows: list[dict[str, Any]],
+    profile_rows: list[dict[str, Any]],
+) -> float | None:
+    """Return the shared model extent when stored station geometry is coherent.
+
+    This intentionally reads only station coordinates.  It does not migrate,
+    scale, clamp, or otherwise modify any engineering row.
+    """
+
+    segments = sorted(
+        [
+            (
+                _finite_float(row.get("x_start_m", row.get("s_start (m)")), 0.0),
+                _finite_float(row.get("x_end_m", row.get("s_end (m)")), 0.0),
+            )
+            for row in segment_rows
+        ],
+        key=lambda pair: (pair[0], pair[1]),
+    )
+    if not segments:
+        return None
+
+    extent_m = segments[-1][1]
+    tolerance = max(1e-6, abs(extent_m) * 1e-6)
+    if extent_m <= 0.1 + tolerance or abs(segments[0][0]) > tolerance:
+        return None
+    for index, (start_m, end_m) in enumerate(segments):
+        if end_m <= start_m:
+            return None
+        if index and abs(start_m - segments[index - 1][1]) > tolerance:
+            return None
+
+    grouped_stations: dict[str, list[float]] = {}
+    for row in profile_rows:
+        tendon_id = str(row.get("Tendon ID") or "").strip()
+        if not tendon_id:
+            return None
+        station_m = _finite_float(
+            row.get("s (m)", row.get("x_m")),
+            _finite_float(row.get("s/L", row.get("x/L")), 0.0) * extent_m,
+        )
+        grouped_stations.setdefault(tendon_id, []).append(station_m)
+
+    # Existing segment-only projects may not yet have a PT1 profile.  The
+    # continuous segment range is still an unambiguous station source.
+    for stations in grouped_stations.values():
+        if not stations:
+            return None
+        if abs(min(stations)) > tolerance or abs(max(stations) - extent_m) > tolerance:
+            return None
+    return float(extent_m)
+
+
+def _repair_stale_crossbeam_length_state(
+    session_state: MutableMapping[str, Any],
+) -> float | None:
+    """Repair the one known 0.100 m widget sentinel from stored coordinates.
+
+    The guard runs once per session and only when the segment/profile endpoints
+    agree on a longer extent.  Coordinates and solver inputs are never moved.
+    """
+
+    if session_state.get(CB_LENGTH_REPAIR_CHECK_KEY):
+        return None
+    session_state[CB_LENGTH_REPAIR_CHECK_KEY] = True
+
+    current_length_m = _finite_float(
+        session_state.get(CB_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M
+    )
+    if abs(current_length_m - 0.1) > 1e-9:
+        return None
+
+    extent_m = _coherent_geometry_extent_m(
+        _records(session_state.get(CB_SEGMENT_ROWS_KEY)),
+        _records(session_state.get(CB_PROFILE_ROWS_KEY)),
+    )
+    if extent_m is None:
+        return None
+
+    session_state[CB_LENGTH_KEY] = extent_m
+    session_state[CB_LENGTH_REPAIR_NOTICE_KEY] = (
+        f"Recovered Crossbeam length L = {extent_m:.3f} m from matching stored "
+        "segment/profile endpoints after a stale 0.100 m widget value. "
+        "No geometry coordinates were changed."
+    )
+    return extent_m
+
+
 def _ensure_state() -> None:
     context = _section_context()
     definitions = ensure_crossbeam_section_library_state(st.session_state)
@@ -382,6 +475,8 @@ def _ensure_state() -> None:
             legacy_length = DEFAULT_CROSSBEAM_LENGTH_M
             legacy_segments = []
         st.session_state[CB_LENGTH_KEY] = legacy_length
+
+    _repair_stale_crossbeam_length_state(st.session_state)
 
     length_m = max(_finite_float(st.session_state.get(CB_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M), 0.1)
 
@@ -458,17 +553,45 @@ def _ensure_state() -> None:
 
 def _length_input() -> float:
     _ensure_state()
-    return float(
+    model_length_m = max(
+        _finite_float(st.session_state.get(CB_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M),
+        0.1,
+    )
+    widget_length_m = _finite_float(
+        st.session_state.get(CB_LENGTH_WIDGET_KEY), model_length_m
+    )
+    synced_length_m = _finite_float(
+        st.session_state.get(CB_LENGTH_WIDGET_SYNC_KEY), model_length_m
+    )
+    if (
+        CB_LENGTH_WIDGET_KEY not in st.session_state
+        or abs(model_length_m - synced_length_m) > 1e-9
+    ):
+        widget_length_m = model_length_m
+        st.session_state[CB_LENGTH_WIDGET_KEY] = model_length_m
+
+    length_m = float(
         st.number_input(
             "Crossbeam total length L (m)",
             min_value=0.1,
             max_value=500.0,
             step=0.5,
             format="%.3f",
-            key=CB_LENGTH_KEY,
+            key=CB_LENGTH_WIDGET_KEY,
             help="Station s is measured from the left anchorage at s = 0 to the right anchorage at s = L.",
         )
     )
+    # The widget key is intentionally transient; only CB_LENGTH_KEY is the
+    # durable Project-JSON engineering input.  This prevents Streamlit widget
+    # cleanup and display-only reruns from deleting or resetting the model.
+    if abs(length_m - widget_length_m) > 1e-9 or abs(length_m - model_length_m) > 1e-9:
+        st.session_state[CB_LENGTH_KEY] = length_m
+    st.session_state[CB_LENGTH_WIDGET_SYNC_KEY] = length_m
+
+    repair_notice = st.session_state.pop(CB_LENGTH_REPAIR_NOTICE_KEY, None)
+    if repair_notice:
+        st.info(str(repair_notice))
+    return length_m
 
 
 def _validate_segments(rows: list[dict[str, Any]], length_m: float) -> tuple[list[dict[str, Any]], list[str]]:
@@ -1677,6 +1800,14 @@ def render_crossbeam_tendon_profile_page() -> None:
     transparent = st.toggle(
         "Transparent 3D concrete",
         key=CB_3D_TRANSPARENT_KEY,
+        help=(
+            "Display only. ON uses 13% concrete opacity so internal tendons and "
+            "segment boundaries remain visible; OFF uses 42% opacity. This does "
+            "not change geometry, tendon inputs, validation, or analysis."
+        ),
+    )
+    st.caption(
+        "3D display only — transparency changes the concrete mesh appearance; it does not edit L, segment stations, or tendon coordinates."
     )
 
     internal_count = sum(str(row.get("Type") or "").casefold() == "internal" for row in system_rows)

@@ -1,3 +1,12 @@
+### CROSSBEAM.PT1B — Transparent-3D State Isolation and Visible Sub-tabs
+
+Keeps `Transparent 3D concrete` display-only by separating the durable
+Crossbeam length from Streamlit widget lifecycle state, safely recovers the
+known stale 0.100 m sentinel from matching stored station endpoints, and
+restyles React-Aria sub-tabs to the current blue app theme without changing
+geometry coordinates, Project-JSON inputs, solvers, or other workflows. See
+`README_CROSSBEAM_PT1B.md`.
+
 ### CROSSBEAM.PT1 — Tendon System and Tendon Profile Source of Truth
 
 Promotes the Crossbeam tendon system and top-referenced Plan/Profile/3D
