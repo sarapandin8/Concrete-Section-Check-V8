@@ -1,3 +1,13 @@
+### CROSSBEAM.PT1C — Crossbeam Member-Length Source of Truth
+
+Moves the sole editable Crossbeam total length `L` to a member-level card in
+Section Builder, makes Segment Layout and Tendon Profile read-only consumers,
+and requires an explicit Keep-or-Scale decision before any length change is
+committed. Proportional scaling updates Segment, Tendon, and existing Rebar
+Zone longitudinal stations together without changing section geometry,
+reinforcement quantities, materials, or solvers. See
+`README_CROSSBEAM_PT1C.md`.
+
 ### CROSSBEAM.PT1B — Transparent-3D State Isolation and Visible Sub-tabs
 
 Keeps `Transparent 3D concrete` display-only by separating the durable

@@ -28,6 +28,12 @@ from concrete_pmm_pro.crossbeam.section_library import (
     section_property_records,
 )
 from concrete_pmm_pro.crossbeam.editor_commit import data_editor_payload_to_records
+from concrete_pmm_pro.crossbeam.rebar import canonical_rebar_zones, segment_signature
+from concrete_pmm_pro.crossbeam.rebar_persistence import (
+    CB_RB_SEGMENT_SIGNATURE_KEY,
+    CB_RB_ZONE_REV_KEY,
+    CB_RB_ZONE_ROWS_KEY,
+)
 from concrete_pmm_pro.crossbeam.tendon import (
     DEFAULT_STRAND_SYSTEM,
     PROFILE_ROLE_OPTIONS,
@@ -92,8 +98,14 @@ CB_LENGTH_WIDGET_KEY = "crossbeam_pt1b_length_widget_m"
 CB_LENGTH_WIDGET_SYNC_KEY = "crossbeam_pt1b_length_widget_synced_m"
 CB_LENGTH_REPAIR_CHECK_KEY = "crossbeam_pt1b_length_repair_checked"
 CB_LENGTH_REPAIR_NOTICE_KEY = "crossbeam_pt1b_length_repair_notice"
+CB_LENGTH_CHANGE_POLICY_KEY = "crossbeam_pt1c_length_change_policy"
+CB_LENGTH_CHANGE_NOTICE_KEY = "crossbeam_pt1c_length_change_notice"
 CB_CROSS_SECTION_STATION_KEY = "crossbeam_pt1a_cross_section_station_m"
 CB_CROSS_SECTION_FACE_KEY = "crossbeam_pt1a_cross_section_face"
+
+CB_LENGTH_POLICY_KEEP = "Keep existing stations — review required"
+CB_LENGTH_POLICY_SCALE = "Scale longitudinal stations proportionally"
+CB_LENGTH_CHANGE_POLICIES = (CB_LENGTH_POLICY_KEEP, CB_LENGTH_POLICY_SCALE)
 
 
 FIGURE_CONFIG = {
@@ -551,15 +563,160 @@ def _ensure_state() -> None:
     st.session_state.setdefault(CB_CROSS_SECTION_FACE_KEY, "")
 
 
-def _length_input() -> float:
+def _crossbeam_member_length_m() -> float:
     _ensure_state()
+    return max(
+        _finite_float(st.session_state.get(CB_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M),
+        0.1,
+    )
+
+
+def _apply_crossbeam_member_length_change(
+    session_state: MutableMapping[str, Any],
+    new_length_m: float,
+    policy: str,
+) -> dict[str, Any]:
+    """Apply one explicit member-length change without touching any solver.
+
+    ``Keep`` preserves every absolute station and lets the existing validation
+    gates report mismatches. ``Scale`` changes only longitudinal station
+    coordinates by ``L_new / L_old``; section geometry, tendon lateral/depth
+    coordinates, material inputs, and reinforcement quantities remain intact.
+    """
+
+    old_length_m = max(
+        _finite_float(session_state.get(CB_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M),
+        0.1,
+    )
+    target_length_m = max(_finite_float(new_length_m, old_length_m), 0.1)
+    if policy not in CB_LENGTH_CHANGE_POLICIES:
+        raise ValueError(f"Unsupported Crossbeam length-change policy: {policy}")
+
+    segment_rows = _records(session_state.get(CB_SEGMENT_ROWS_KEY))
+    profile_rows = _records(session_state.get(CB_PROFILE_ROWS_KEY))
+    zone_state_exists = CB_RB_ZONE_ROWS_KEY in session_state
+    zone_rows = (
+        canonical_rebar_zones(_records(session_state.get(CB_RB_ZONE_ROWS_KEY)))
+        if zone_state_exists
+        else []
+    )
+    ratio = target_length_m / old_length_m
+
+    if policy == CB_LENGTH_POLICY_SCALE and abs(ratio - 1.0) > 1e-12:
+        scaled_segments: list[dict[str, Any]] = []
+        for source in segment_rows:
+            row = dict(source)
+            for key in ("x_start_m", "x_end_m", "s_start (m)", "s_end (m)"):
+                if key in row:
+                    row[key] = _finite_float(row.get(key), 0.0) * ratio
+            scaled_segments.append(row)
+        segment_rows = scaled_segments
+
+        scaled_profile: list[dict[str, Any]] = []
+        for source in profile_rows:
+            row = dict(source)
+            fallback_station_m = (
+                _finite_float(row.get("s/L", row.get("x/L")), 0.0) * old_length_m
+            )
+            station_m = _finite_float(
+                row.get("s (m)", row.get("x_m")), fallback_station_m
+            )
+            row["s (m)"] = station_m * ratio
+            if "x_m" in row:
+                row["x_m"] = station_m * ratio
+            scaled_profile.append(row)
+        profile_rows = scaled_profile
+
+        scaled_zones: list[dict[str, Any]] = []
+        for source in zone_rows:
+            row = dict(source)
+            row["s_start_m"] = _finite_float(row.get("s_start_m"), 0.0) * ratio
+            row["s_end_m"] = _finite_float(row.get("s_end_m"), 0.0) * ratio
+            scaled_zones.append(row)
+        zone_rows = canonical_rebar_zones(scaled_zones)
+
+    session_state[CB_LENGTH_KEY] = target_length_m
+    session_state[CB_SEGMENT_ROWS_KEY] = segment_rows
+    session_state[CB_PROFILE_ROWS_KEY] = canonical_tendon_profile_points(
+        profile_rows, target_length_m
+    )
+    if (
+        zone_state_exists
+        and policy == CB_LENGTH_POLICY_SCALE
+        and abs(ratio - 1.0) > 1e-12
+    ):
+        session_state[CB_RB_ZONE_ROWS_KEY] = zone_rows
+        session_state[CB_RB_ZONE_REV_KEY] = int(
+            session_state.get(CB_RB_ZONE_REV_KEY, 0)
+        ) + 1
+        if CB_RB_SEGMENT_SIGNATURE_KEY in session_state:
+            session_state[CB_RB_SEGMENT_SIGNATURE_KEY] = segment_signature(
+                segment_rows
+            )
+
+    current_station_m = _finite_float(
+        session_state.get(CB_CROSS_SECTION_STATION_KEY),
+        0.25 * old_length_m,
+    )
+    if policy == CB_LENGTH_POLICY_SCALE:
+        current_station_m *= ratio
+    session_state[CB_CROSS_SECTION_STATION_KEY] = min(
+        max(current_station_m, 0.0), target_length_m
+    )
+
+    session_state[CB_SEGMENT_REV_KEY] = int(
+        session_state.get(CB_SEGMENT_REV_KEY, 0)
+    ) + 1
+    session_state[CB_PROFILE_REV_KEY] = int(
+        session_state.get(CB_PROFILE_REV_KEY, 0)
+    ) + 1
+    session_state[CB_LENGTH_WIDGET_SYNC_KEY] = target_length_m
+
+    scaled = policy == CB_LENGTH_POLICY_SCALE and abs(ratio - 1.0) > 1e-12
+    session_state[CB_LENGTH_CHANGE_NOTICE_KEY] = {
+        "old_length_m": old_length_m,
+        "new_length_m": target_length_m,
+        "policy": policy,
+        "scaled": scaled,
+        "segment_rows": len(segment_rows),
+        "profile_rows": len(profile_rows),
+        "zone_rows": len(zone_rows),
+    }
+    return dict(session_state[CB_LENGTH_CHANGE_NOTICE_KEY])
+
+
+def _commit_crossbeam_member_length_change() -> None:
+    _apply_crossbeam_member_length_change(
+        st.session_state,
+        _finite_float(
+            st.session_state.get(CB_LENGTH_WIDGET_KEY),
+            st.session_state.get(CB_LENGTH_KEY, DEFAULT_CROSSBEAM_LENGTH_M),
+        ),
+        str(
+            st.session_state.get(
+                CB_LENGTH_CHANGE_POLICY_KEY, CB_LENGTH_POLICY_KEEP
+            )
+        ),
+    )
+
+
+def _cancel_crossbeam_member_length_change() -> None:
     model_length_m = max(
         _finite_float(st.session_state.get(CB_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M),
         0.1,
     )
-    widget_length_m = _finite_float(
-        st.session_state.get(CB_LENGTH_WIDGET_KEY), model_length_m
-    )
+    st.session_state[CB_LENGTH_WIDGET_KEY] = model_length_m
+    st.session_state[CB_LENGTH_WIDGET_SYNC_KEY] = model_length_m
+
+
+def render_crossbeam_member_length_control() -> float:
+    """Render the sole editable Crossbeam member-length control.
+
+    Section Builder owns this control. Segment Layout and Tendon Profile only
+    render the read-only reference returned by ``_crossbeam_member_length_m``.
+    """
+
+    model_length_m = _crossbeam_member_length_m()
     synced_length_m = _finite_float(
         st.session_state.get(CB_LENGTH_WIDGET_SYNC_KEY), model_length_m
     )
@@ -567,10 +724,31 @@ def _length_input() -> float:
         CB_LENGTH_WIDGET_KEY not in st.session_state
         or abs(model_length_m - synced_length_m) > 1e-9
     ):
-        widget_length_m = model_length_m
         st.session_state[CB_LENGTH_WIDGET_KEY] = model_length_m
 
-    length_m = float(
+    repair_notice = st.session_state.pop(CB_LENGTH_REPAIR_NOTICE_KEY, None)
+    if repair_notice:
+        st.info(str(repair_notice))
+
+    notice = st.session_state.pop(CB_LENGTH_CHANGE_NOTICE_KEY, None)
+    if isinstance(notice, Mapping):
+        old_length_m = _finite_float(notice.get("old_length_m"), model_length_m)
+        new_length_m = _finite_float(notice.get("new_length_m"), model_length_m)
+        if bool(notice.get("scaled")):
+            st.success(
+                f"Crossbeam member length changed from {old_length_m:.3f} m to "
+                f"{new_length_m:.3f} m. Segment, tendon, and any existing "
+                "Rebar Zone longitudinal stations were scaled proportionally "
+                "by explicit selection."
+            )
+        else:
+            st.warning(
+                f"Crossbeam member length changed from {old_length_m:.3f} m to "
+                f"{new_length_m:.3f} m. Existing absolute stations were kept; "
+                "review Segment Layout and Tendon Profile before downstream use."
+            )
+
+    draft_length_m = float(
         st.number_input(
             "Crossbeam total length L (m)",
             min_value=0.1,
@@ -581,13 +759,62 @@ def _length_input() -> float:
             help="Station s is measured from the left anchorage at s = 0 to the right anchorage at s = L.",
         )
     )
-    # The widget key is intentionally transient; only CB_LENGTH_KEY is the
-    # durable Project-JSON engineering input.  This prevents Streamlit widget
-    # cleanup and display-only reruns from deleting or resetting the model.
-    if abs(length_m - widget_length_m) > 1e-9 or abs(length_m - model_length_m) > 1e-9:
-        st.session_state[CB_LENGTH_KEY] = length_m
-    st.session_state[CB_LENGTH_WIDGET_SYNC_KEY] = length_m
+    st.caption(
+        "Member-level source of truth. This value is not owned by the selected Section ID; B, H, wall thicknesses, chamfers, and fillets remain section-specific."
+    )
 
+    if abs(draft_length_m - model_length_m) <= 1e-9:
+        st.caption(
+            "No pending change. Segment Layout and Tendon Profile read this value and cannot edit it."
+        )
+        return model_length_m
+
+    st.warning(
+        f"Pending member-length change: {model_length_m:.3f} m → "
+        f"{draft_length_m:.3f} m. Choose how existing longitudinal stations "
+        "must be handled, then apply explicitly."
+    )
+    st.radio(
+        "Existing station coordinates",
+        CB_LENGTH_CHANGE_POLICIES,
+        key=CB_LENGTH_CHANGE_POLICY_KEY,
+        help=(
+            "Keep preserves absolute s coordinates and activates existing review gates. "
+            "Scale multiplies Segment, Tendon, and existing Rebar Zone longitudinal "
+            "stations by L_new/L_old."
+        ),
+    )
+    apply_col, cancel_col = st.columns(2)
+    with apply_col:
+        st.button(
+            f"Apply L = {draft_length_m:.3f} m",
+            key="crossbeam_pt1c_apply_member_length",
+            type="primary",
+            use_container_width=True,
+            on_click=_commit_crossbeam_member_length_change,
+        )
+    with cancel_col:
+        st.button(
+            "Cancel pending change",
+            key="crossbeam_pt1c_cancel_member_length",
+            use_container_width=True,
+            on_click=_cancel_crossbeam_member_length_change,
+        )
+    return model_length_m
+
+
+def _render_crossbeam_member_length_reference() -> float:
+    length_m = _crossbeam_member_length_m()
+    render_metric_cards(
+        [
+            {
+                "title": "Crossbeam member length",
+                "value": f"L = {length_m:.3f} m",
+                "detail": "Read-only here · edit only in Section Builder / Member Geometry",
+                "status": "info",
+            }
+        ]
+    )
     repair_notice = st.session_state.pop(CB_LENGTH_REPAIR_NOTICE_KEY, None)
     if repair_notice:
         st.info(str(repair_notice))
@@ -1629,7 +1856,7 @@ def render_crossbeam_segment_layout_page() -> None:
         "The layout must cover s = 0 to s = L continuously without gaps or overlaps.",
         mark="S",
     )
-    length_m = _length_input()
+    length_m = _render_crossbeam_member_length_reference()
 
     definitions = _crossbeam_section_definitions()
     definition_by_id = crossbeam_section_definition_map(definitions)
@@ -1719,7 +1946,7 @@ def render_crossbeam_tendon_profile_page() -> None:
         "Cross-section axes remain x–y; longitudinal geometry uses station s. Tendon vertical input is always dtop measured downward from the top surface.",
         mark="P",
     )
-    length_m = _length_input()
+    length_m = _render_crossbeam_member_length_reference()
     system_rows = _records(st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
     tendon_ids = _tendon_ids(system_rows)
     if not tendon_ids:

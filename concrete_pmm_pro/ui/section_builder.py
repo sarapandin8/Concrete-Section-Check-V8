@@ -3013,7 +3013,39 @@ def _render_geometry_parameters_workspace(
         if _is_parametric_plank_girder(preset):
             _render_parametric_plank_girder_dimension_qa(preset, params)
 
-    return label_mode, params
+        return label_mode, params
+
+
+def _render_crossbeam_member_geometry_workspace(
+    settings: AnalysisModeSettings,
+) -> None:
+    """Render the Crossbeam member-level length source above section inputs."""
+
+    if not is_portal_frame_crossbeam_workflow(settings):
+        return
+
+    # Local import keeps the generic Section Builder module independent from
+    # Crossbeam page initialization for every other member workflow.
+    from concrete_pmm_pro.ui.crossbeam_pages import (
+        render_crossbeam_member_length_control,
+    )
+
+    with st.container(border=True):
+        st.markdown(
+            _commercial_panel_title_html(
+                "Crossbeam Member Geometry",
+                "Member Input",
+                "Length",
+                "Source of Truth",
+            ),
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            '<div class="cpmm-section-note">Crossbeam length L belongs to the complete member and is shared by Segment Layout, Tendon Profile, and Rebar Zone stationing. Section dimensions below remain owned by the selected Section ID.</div>',
+            unsafe_allow_html=True,
+        )
+        render_crossbeam_member_length_control()
+
 
 def _build_geometry(
     preset: dict[str, Any],
@@ -3397,6 +3429,7 @@ def render_section_builder() -> None:
 
     parameter_col, preview_col = st.columns([0.47, 0.53], gap="medium")
     with parameter_col:
+        _render_crossbeam_member_geometry_workspace(settings)
         label_mode, params = _render_geometry_parameters_workspace(preset, material_assignment)
 
     geometry, dimensions, validation = _build_geometry(preset, params)

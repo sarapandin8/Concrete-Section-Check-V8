@@ -82,7 +82,7 @@ def test_pt1b_uses_separate_transient_length_widget_and_react_aria_tab_theme() -
 
     assert f"key={CB_LENGTH_WIDGET_KEY}" not in page_source
     assert "key=CB_LENGTH_WIDGET_KEY" in page_source
-    assert "only CB_LENGTH_KEY is the" in page_source
+    assert "the sole editable Crossbeam member-length control" in page_source
     assert "3D display only" in page_source
     assert '"not change geometry, tendon inputs, validation, or analysis."' in page_source
     assert 'div[data-testid="stTabs"] [role="tab"]' in app_source
