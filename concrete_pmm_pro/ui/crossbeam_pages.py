@@ -122,6 +122,33 @@ FIGURE_CONFIG = {
     "toImageButtonOptions": {"format": "png", "scale": 2},
 }
 
+# CROSSBEAM.PT1E engineering-view palette.  Concrete stays deliberately
+# neutral so saturated color is reserved for the tendon source-of-truth.
+CROSSBEAM_3D_CONCRETE_STYLES = {
+    "Solid": {
+        "color": "#8EA0B2",
+        "transparent_opacity": 0.14,
+        "muted_opacity": 0.34,
+    },
+    "Hollow": {
+        "color": "#C8D3DE",
+        "transparent_opacity": 0.09,
+        "muted_opacity": 0.22,
+    },
+}
+CROSSBEAM_3D_OUTER_BOUNDARY_COLOR = "#334E68"
+CROSSBEAM_3D_VOID_BOUNDARY_COLOR = "#6B7F93"
+CROSSBEAM_3D_TENDON_COLORS = (
+    "#0057B8",
+    "#D95F02",
+    "#00876C",
+    "#7B3FC6",
+    "#C2185B",
+    "#8C6D1F",
+    "#2F6B7C",
+    "#6B4F3A",
+)
+
 
 def _records(value: Any) -> list[dict[str, Any]]:
     """Return a defensive list-of-records from Streamlit editor state."""
@@ -1728,6 +1755,7 @@ def _box_mesh(
     y0: float,
     y1: float,
     name: str,
+    color: str,
     opacity: float,
     showlegend: bool,
 ) -> go.Mesh3d:
@@ -1745,12 +1773,73 @@ def _box_mesh(
         i=i,
         j=j,
         k=k,
+        color=color,
         opacity=opacity,
         name=name,
         showlegend=showlegend,
-        hoverinfo="name",
+        hovertemplate=f"{name}<extra></extra>",
         flatshading=True,
+        lighting={
+            "ambient": 0.92,
+            "diffuse": 0.24,
+            "specular": 0.02,
+            "roughness": 1.0,
+            "fresnel": 0.01,
+        },
+        lightposition={"x": 1000, "y": -1000, "z": 1800},
     )
+
+
+def _append_3d_section_loop(
+    x_values: list[float | None],
+    y_values: list[float | None],
+    z_values: list[float | None],
+    *,
+    station_m: float,
+    lateral_left_mm: float,
+    lateral_right_mm: float,
+    vertical_bottom_mm: float,
+    vertical_top_mm: float,
+) -> None:
+    """Append one closed section loop separated from the next by ``None``."""
+
+    lateral = [
+        lateral_left_mm,
+        lateral_right_mm,
+        lateral_right_mm,
+        lateral_left_mm,
+        lateral_left_mm,
+    ]
+    vertical = [
+        vertical_top_mm,
+        vertical_top_mm,
+        vertical_bottom_mm,
+        vertical_bottom_mm,
+        vertical_top_mm,
+    ]
+    x_values.extend([station_m] * len(lateral) + [None])
+    y_values.extend(lateral + [None])
+    z_values.extend(vertical + [None])
+
+
+def _stable_3d_tendon_color_map(
+    points: list[dict[str, Any]],
+) -> dict[str, str]:
+    """Assign stable colors from the complete profile, not the visible subset."""
+
+    tendon_ids = list(
+        dict.fromkeys(
+            str(row.get("Tendon ID") or "").strip()
+            for row in points
+            if str(row.get("Tendon ID") or "").strip()
+        )
+    )
+    return {
+        tendon_id: CROSSBEAM_3D_TENDON_COLORS[
+            index % len(CROSSBEAM_3D_TENDON_COLORS)
+        ]
+        for index, tendon_id in enumerate(tendon_ids)
+    }
 
 
 def _three_d_figure(
@@ -1762,8 +1851,17 @@ def _three_d_figure(
     transparent: bool,
 ) -> go.Figure:
     fig = go.Figure()
-    opacity = 0.13 if transparent else 0.42
     role_legend: set[str] = set()
+    outer_boundary_x: list[float | None] = []
+    outer_boundary_y: list[float | None] = []
+    outer_boundary_z: list[float | None] = []
+    void_boundary_x: list[float | None] = []
+    void_boundary_y: list[float | None] = []
+    void_boundary_z: list[float | None] = []
+    outer_boundary_keys: set[tuple[float, float, float]] = set()
+    void_boundary_keys: set[
+        tuple[float, float, float, float, float, float, float]
+    ] = set()
     params_by_id = _section_parameters_by_id(section_definitions)
     for row in segment_rows:
         role = row["Section role"]
@@ -1772,11 +1870,66 @@ def _three_d_figure(
         params = params_by_id.get(str(row.get("Section ID") or ""), {})
         width_mm = max(_finite_float(params.get("width_mm"), 2500.0), 1.0)
         height_mm = max(_finite_float(params.get("height_mm"), 1500.0), 1.0)
+        style = CROSSBEAM_3D_CONCRETE_STYLES.get(
+            role, CROSSBEAM_3D_CONCRETE_STYLES["Solid"]
+        )
+        opacity_key = "transparent_opacity" if transparent else "muted_opacity"
+        opacity = float(style[opacity_key])
+
+        for station_m in (start, end):
+            outer_key = (round(station_m, 9), width_mm, height_mm)
+            if outer_key not in outer_boundary_keys:
+                _append_3d_section_loop(
+                    outer_boundary_x,
+                    outer_boundary_y,
+                    outer_boundary_z,
+                    station_m=station_m,
+                    lateral_left_mm=-width_mm / 2.0,
+                    lateral_right_mm=width_mm / 2.0,
+                    vertical_bottom_mm=-height_mm,
+                    vertical_top_mm=0.0,
+                )
+                outer_boundary_keys.add(outer_key)
+
         if role == "Hollow":
-            tt = min(max(_finite_float(params.get("t_top_mm"), 300.0), 1.0), 0.45 * height_mm)
-            tb = min(max(_finite_float(params.get("t_bottom_mm"), 300.0), 1.0), 0.45 * height_mm)
-            tl = min(max(_finite_float(params.get("t_left_mm"), 300.0), 1.0), 0.45 * width_mm)
-            tr = min(max(_finite_float(params.get("t_right_mm"), 300.0), 1.0), 0.45 * width_mm)
+            tt = min(
+                max(_finite_float(params.get("t_top_mm"), 300.0), 1.0),
+                0.45 * height_mm,
+            )
+            tb = min(
+                max(_finite_float(params.get("t_bottom_mm"), 300.0), 1.0),
+                0.45 * height_mm,
+            )
+            tl = min(
+                max(_finite_float(params.get("t_left_mm"), 300.0), 1.0),
+                0.45 * width_mm,
+            )
+            tr = min(
+                max(_finite_float(params.get("t_right_mm"), 300.0), 1.0),
+                0.45 * width_mm,
+            )
+            for station_m in (start, end):
+                void_key = (
+                    round(station_m, 9),
+                    width_mm,
+                    height_mm,
+                    tt,
+                    tb,
+                    tl,
+                    tr,
+                )
+                if void_key not in void_boundary_keys:
+                    _append_3d_section_loop(
+                        void_boundary_x,
+                        void_boundary_y,
+                        void_boundary_z,
+                        station_m=station_m,
+                        lateral_left_mm=-width_mm / 2.0 + tl,
+                        lateral_right_mm=width_mm / 2.0 - tr,
+                        vertical_bottom_mm=-height_mm + tb,
+                        vertical_top_mm=-tt,
+                    )
+                    void_boundary_keys.add(void_key)
             # Four wall prisms make the void visible without boolean 3D geometry.
             wall_specs = [
                 (-width_mm / 2.0, width_mm / 2.0, -tt, 0.0),
@@ -1794,6 +1947,7 @@ def _three_d_figure(
                         y0=y0,
                         y1=y1,
                         name="Hollow segment",
+                        color=str(style["color"]),
                         opacity=opacity,
                         showlegend="Hollow" not in role_legend and wall_index == 0,
                     )
@@ -1809,25 +1963,69 @@ def _three_d_figure(
                     y0=-height_mm,
                     y1=0.0,
                     name="Solid segment",
+                    color=str(style["color"]),
                     opacity=opacity,
                     showlegend="Solid" not in role_legend,
                 )
             )
             role_legend.add("Solid")
 
+    if outer_boundary_x:
+        fig.add_trace(
+            go.Scatter3d(
+                x=outer_boundary_x,
+                y=outer_boundary_y,
+                z=outer_boundary_z,
+                mode="lines",
+                line={"color": CROSSBEAM_3D_OUTER_BOUNDARY_COLOR, "width": 3},
+                opacity=0.82,
+                name="Section boundaries",
+                showlegend=False,
+                hoverinfo="skip",
+                connectgaps=False,
+            )
+        )
+    if void_boundary_x:
+        fig.add_trace(
+            go.Scatter3d(
+                x=void_boundary_x,
+                y=void_boundary_y,
+                z=void_boundary_z,
+                mode="lines",
+                line={
+                    "color": CROSSBEAM_3D_VOID_BOUNDARY_COLOR,
+                    "width": 2,
+                    "dash": "dash",
+                },
+                opacity=0.78,
+                name="Void boundaries",
+                showlegend=False,
+                hoverinfo="skip",
+                connectgaps=False,
+            )
+        )
+
+    tendon_colors = _stable_3d_tendon_color_map(points)
     for tendon_id in active_ids:
         rows = [row for row in points if row["Tendon ID"] == tendon_id]
         rows.sort(key=lambda row: row["s (m)"])
         if not rows:
             continue
+        tendon_color = tendon_colors.get(
+            tendon_id, CROSSBEAM_3D_TENDON_COLORS[0]
+        )
         fig.add_trace(
             go.Scatter3d(
                 x=[row["s (m)"] for row in rows],
                 y=[row["x lateral (mm)"] for row in rows],
                 z=[-row["dtop (mm)"] for row in rows],
                 mode="lines+markers",
-                line={"width": 6},
-                marker={"size": 4},
+                line={"width": 8, "color": tendon_color},
+                marker={
+                    "size": 5,
+                    "color": tendon_color,
+                    "line": {"color": "#FFFFFF", "width": 1},
+                },
                 name=tendon_id,
                 customdata=[[row["Point"], row["dtop (mm)"]] for row in rows],
                 hovertemplate="%{fullData.name}<br>s=%{x:.3f} m<br>x=%{y:.1f} mm<br>dtop=%{customdata[1]:.1f} mm<br>%{customdata[0]}<extra></extra>",
@@ -1835,16 +2033,57 @@ def _three_d_figure(
         )
 
     fig.update_layout(
-        title={"text": "Crossbeam Tendon 3D Orthographic Review", "x": 0.5, "xanchor": "center"},
+        title={
+            "text": "Crossbeam Tendon 3D Orthographic Review",
+            "x": 0.5,
+            "xanchor": "center",
+            "y": 0.985,
+            "yanchor": "top",
+            "font": {"size": 17, "color": "#071A33"},
+        },
         height=650,
-        margin={"l": 20, "r": 20, "t": 70, "b": 20},
+        margin={"l": 20, "r": 20, "t": 110, "b": 20},
         paper_bgcolor="white",
+        plot_bgcolor="white",
         font={"family": "Arial, sans-serif", "size": 12},
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.01, "xanchor": "center", "x": 0.5},
+        legend={
+            "orientation": "h",
+            "yanchor": "top",
+            "y": 0.94,
+            "xanchor": "center",
+            "x": 0.5,
+            "bgcolor": "rgba(255,255,255,0.92)",
+            "bordercolor": "#D7E0EA",
+            "borderwidth": 1,
+            "font": {"color": "#20364D", "size": 12},
+        },
+        uirevision="crossbeam-pt1e-3d-view",
         scene={
-            "xaxis": {"title": "Station s (m)", "backgroundcolor": "white", "gridcolor": "#e4eaf0"},
-            "yaxis": {"title": "Lateral x (mm)", "backgroundcolor": "white", "gridcolor": "#e4eaf0"},
-            "zaxis": {"title": "Vertical y = -dtop (mm)", "backgroundcolor": "white", "gridcolor": "#e4eaf0"},
+            "bgcolor": "#FBFCFE",
+            "xaxis": {
+                "title": "Station s (m)",
+                "backgroundcolor": "#FBFCFE",
+                "gridcolor": "#DCE4ED",
+                "linecolor": "#8EA0B2",
+                "zerolinecolor": "#B9C6D2",
+                "showspikes": False,
+            },
+            "yaxis": {
+                "title": "Lateral x (mm)",
+                "backgroundcolor": "#FBFCFE",
+                "gridcolor": "#DCE4ED",
+                "linecolor": "#8EA0B2",
+                "zerolinecolor": "#B9C6D2",
+                "showspikes": False,
+            },
+            "zaxis": {
+                "title": "Vertical y = -dtop (mm)",
+                "backgroundcolor": "#FBFCFE",
+                "gridcolor": "#DCE4ED",
+                "linecolor": "#8EA0B2",
+                "zerolinecolor": "#B9C6D2",
+                "showspikes": False,
+            },
             "aspectmode": "manual",
             "aspectratio": {"x": 3.2, "y": 1.1, "z": 0.8},
             "camera": {
@@ -2332,13 +2571,15 @@ def render_crossbeam_tendon_profile_page() -> None:
         "Transparent 3D concrete",
         key=CB_3D_TRANSPARENT_KEY,
         help=(
-            "Display only. ON uses 13% concrete opacity so internal tendons and "
-            "segment boundaries remain visible; OFF uses 42% opacity. This does "
+            "Display only. ON uses a light X-ray view (Solid 14%, Hollow 9%); "
+            "OFF uses muted concrete surfaces (Solid 34%, Hollow 22%). This does "
             "not change geometry, tendon inputs, validation, or analysis."
         ),
     )
     st.caption(
-        "3D display only — transparency changes the concrete mesh appearance; it does not edit L, segment stations, or tendon coordinates."
+        "3D display only — neutral concrete colors keep the tendon paths legible. "
+        "Transparency changes appearance only; it does not edit L, segment stations, "
+        "or tendon coordinates."
     )
 
     internal_count = sum(str(row.get("Type") or "").casefold() == "internal" for row in system_rows)
@@ -2500,7 +2741,10 @@ def render_crossbeam_tendon_profile_page() -> None:
             config=FIGURE_CONFIG,
         )
         st.caption(
-            "3D uses orthographic projection so parallel member edges remain parallel without perspective distortion. Hollow segments use four wall prisms so the void remains visible; fillets, chamfers, ducts, anchor hardware, and deviator hardware remain schematic."
+            "3D uses orthographic projection so parallel member edges remain parallel. "
+            "Concrete is intentionally neutral; saturated colors identify tendons, "
+            "dark loops mark section boundaries, and dashed loops mark Hollow voids. "
+            "Fillets, chamfers, ducts, anchor hardware, and deviator hardware remain schematic."
         )
     with audit_tab:
         audit_rows = tendon_station_audit_rows(

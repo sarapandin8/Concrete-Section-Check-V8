@@ -1,3 +1,11 @@
+### CROSSBEAM.PT1E — 3D Visual Hierarchy and Neutral Concrete Palette
+
+Replaces Plotly's per-trace rainbow Mesh3d colors with role-based neutral
+Solid/Hollow concrete colors, stable high-contrast tendon colors, and explicit
+section/void boundary loops. Both muted and transparent display modes keep the
+orthographic geometry legible without changing section, segment, tendon,
+Project-JSON, or solver data. See `README_CROSSBEAM_PT1E.md`.
+
 ### CROSSBEAM.PT1D — Tendon Inventory Source of Truth
 
 Removes the independent `Number of tendons` input and derives Stored/Active
