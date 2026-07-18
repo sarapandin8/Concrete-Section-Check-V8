@@ -1,3 +1,13 @@
+### CROSSBEAM.PT1I - Curated 2-Span Tendon Profile Gallery
+
+Curates the Crossbeam Tendon Profile quick-start catalog to three unnumbered
+patterns - Straight Tendon, Straight Tendon With Bends, and Parabolic Tendon -
+and replaces ambiguous Multiple Span behavior with explicit 2 Span profiles that
+repeat the simple-span shape across the middle support. Legacy numbered preset
+names and Multiple Span state are normalized into the new options; Project JSON,
+review figures, member length ownership, and solvers remain unchanged. See
+`README_CROSSBEAM_PT1I.md`.
+
 ### CROSSBEAM.PT1H — Quick-Start Tendon Profile Gallery
 
 Adds a reference-style Crossbeam Tendon Profile quick-start gallery with

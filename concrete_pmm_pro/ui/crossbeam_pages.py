@@ -42,6 +42,8 @@ from concrete_pmm_pro.crossbeam.tendon import (
     canonical_tendon_profile_points,
     canonical_tendon_system_rows,
     default_tendon_profile_points,
+    normalize_tendon_profile_preset,
+    normalize_tendon_profile_span_mode,
     profile_preset_point_count,
     default_tendon_system_rows,
     tendon_profile_points_for_preset,
@@ -1354,6 +1356,8 @@ def _html_escape(value: Any) -> str:
 
 
 def _profile_preset_svg(preset: str, span_mode: str) -> str:
+    preset = normalize_tendon_profile_preset(preset)
+    span_mode = normalize_tendon_profile_span_mode(span_mode)
     points = tendon_profile_preset_shape_preview(preset, span_mode)
     max_offset = max([abs(offset) for _ratio, offset, _role in points] + [1.0])
     svg_points: list[tuple[float, float, str]] = []
@@ -1367,11 +1371,9 @@ def _profile_preset_svg(preset: str, span_mode: str) -> str:
         for x_value, y_value, _role in svg_points
     )
     support_lines = ""
-    if span_mode == "Multiple Span":
+    if span_mode == "2 Span":
         support_lines = (
             '<line x1="60" y1="7" x2="60" y2="37" stroke="#b7c3cf" stroke-width="1" />'
-            '<line x1="34" y1="7" x2="34" y2="37" stroke="#d4dde7" stroke-width="0.8" />'
-            '<line x1="86" y1="7" x2="86" y2="37" stroke="#d4dde7" stroke-width="0.8" />'
         )
     return (
         '<svg viewBox="0 0 120 44" role="img" aria-label="'
@@ -1387,6 +1389,9 @@ def _profile_preset_svg(preset: str, span_mode: str) -> str:
 
 
 def _profile_quick_start_gallery_html(selected_preset: str) -> str:
+    selected_preset = normalize_tendon_profile_preset(selected_preset)
+    single_span = TENDON_PROFILE_SPAN_MODE_OPTIONS[0]
+    two_span = TENDON_PROFILE_SPAN_MODE_OPTIONS[1]
     rows = []
     for preset in TENDON_PROFILE_PRESET_OPTIONS:
         selected = preset == selected_preset
@@ -1398,8 +1403,8 @@ def _profile_quick_start_gallery_html(selected_preset: str) -> str:
             f'<span class="pt1h-radio">{"&#9679;" if selected else "&#9675;"}</span>'
             f'<span>{_html_escape(preset)}</span>'
             '</div>'
-            f'<div>{_profile_preset_svg(preset, "Single Span")}</div>'
-            f'<div>{_profile_preset_svg(preset, "Multiple Span")}</div>'
+            f'<div>{_profile_preset_svg(preset, single_span)}</div>'
+            f'<div>{_profile_preset_svg(preset, two_span)}</div>'
             '</div>'
         )
     return (
@@ -1417,7 +1422,7 @@ def _profile_quick_start_gallery_html(selected_preset: str) -> str:
         '</style>'
         '<div class="pt1h-profile-gallery">'
         '<div class="pt1h-profile-title">Select A Quick Start Option</div>'
-        '<div class="pt1h-profile-header"><div></div><div>Single Span</div><div>Multiple Span</div></div>'
+        f'<div class="pt1h-profile-header"><div></div><div>{_html_escape(single_span)}</div><div>{_html_escape(two_span)}</div></div>'
         + "".join(rows)
         + '</div>'
     )
@@ -1453,6 +1458,8 @@ def _apply_tendon_profile_preset(
     span_mode: str = "Single Span",
     bend_offset_mm: float = 200.0,
 ) -> dict[str, Any]:
+    preset = normalize_tendon_profile_preset(preset)
+    span_mode = normalize_tendon_profile_span_mode(span_mode)
     valid_ids = [tendon_id for tendon_id in tendon_ids if tendon_id]
     valid_set = set(valid_ids)
     targets = [
@@ -1513,6 +1520,16 @@ def _apply_selected_tendon_profile_preset_from_ui() -> None:
         if tendon_id in tendon_ids
     ] or list(tendon_ids)
     st.session_state[CB_PROFILE_PRESET_TARGETS_KEY] = targets
+    preset = normalize_tendon_profile_preset(
+        st.session_state.get(CB_PROFILE_PRESET_KEY)
+        or TENDON_PROFILE_PRESET_OPTIONS[0]
+    )
+    span_mode = normalize_tendon_profile_span_mode(
+        st.session_state.get(CB_PROFILE_PRESET_SPAN_KEY)
+        or TENDON_PROFILE_SPAN_MODE_OPTIONS[0]
+    )
+    st.session_state[CB_PROFILE_PRESET_KEY] = preset
+    st.session_state[CB_PROFILE_PRESET_SPAN_KEY] = span_mode
     notice = _apply_tendon_profile_preset(
         st.session_state,
         length_m=_finite_float(
@@ -1524,8 +1541,8 @@ def _apply_selected_tendon_profile_preset_from_ui() -> None:
         height_mm=context["height_mm"],
         t_left_mm=context["t_left_mm"],
         t_right_mm=context["t_right_mm"],
-        preset=str(st.session_state.get(CB_PROFILE_PRESET_KEY) or TENDON_PROFILE_PRESET_OPTIONS[0]),
-        span_mode=str(st.session_state.get(CB_PROFILE_PRESET_SPAN_KEY) or TENDON_PROFILE_SPAN_MODE_OPTIONS[0]),
+        preset=preset,
+        span_mode=span_mode,
         bend_offset_mm=_finite_float(
             st.session_state.get(CB_PROFILE_PRESET_OFFSET_KEY), 200.0
         ),
@@ -2768,10 +2785,14 @@ def render_crossbeam_tendon_profile_page() -> None:
         st.warning("Define the Tendon System before editing profile geometry.")
         return
 
-    if st.session_state.get(CB_PROFILE_PRESET_KEY) not in TENDON_PROFILE_PRESET_OPTIONS:
-        st.session_state[CB_PROFILE_PRESET_KEY] = TENDON_PROFILE_PRESET_OPTIONS[0]
-    if st.session_state.get(CB_PROFILE_PRESET_SPAN_KEY) not in TENDON_PROFILE_SPAN_MODE_OPTIONS:
-        st.session_state[CB_PROFILE_PRESET_SPAN_KEY] = TENDON_PROFILE_SPAN_MODE_OPTIONS[0]
+    st.session_state[CB_PROFILE_PRESET_KEY] = normalize_tendon_profile_preset(
+        st.session_state.get(CB_PROFILE_PRESET_KEY)
+        or TENDON_PROFILE_PRESET_OPTIONS[0]
+    )
+    st.session_state[CB_PROFILE_PRESET_SPAN_KEY] = normalize_tendon_profile_span_mode(
+        st.session_state.get(CB_PROFILE_PRESET_SPAN_KEY)
+        or TENDON_PROFILE_SPAN_MODE_OPTIONS[0]
+    )
     current_targets = [
         tendon_id
         for tendon_id in st.session_state.get(CB_PROFILE_PRESET_TARGETS_KEY, tendon_ids)
@@ -2797,7 +2818,7 @@ def render_crossbeam_tendon_profile_page() -> None:
             options=list(TENDON_PROFILE_SPAN_MODE_OPTIONS),
             key=CB_PROFILE_PRESET_SPAN_KEY,
             on_change=_apply_selected_tendon_profile_preset_from_ui,
-            help="Single Span and Multiple Span use different control-point patterns for the same quick-start option.",
+            help="Single Span and 2 Span use different control-point patterns for the same quick-start option. 2 Span repeats the simple-span profile across the middle support.",
         )
     with offset_col:
         default_offset = min(200.0, 0.20 * context["height_mm"])

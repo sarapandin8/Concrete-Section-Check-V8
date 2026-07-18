@@ -262,7 +262,17 @@ def test_profile_quick_start_selection_callback_rewrites_table(monkeypatch) -> N
     t1_rows = [row for row in state[CB_PROFILE_ROWS_KEY] if row["Tendon ID"] == "T1"]
     t2_rows = [row for row in state[CB_PROFILE_ROWS_KEY] if row["Tendon ID"] == "T2"]
 
-    assert [row["s (m)"] for row in t1_rows] == [0.0, 5.0, 10.0, 15.0, 20.0]
+    assert state[crossbeam_pages.CB_PROFILE_PRESET_KEY] == "Straight Tendon With Bends"
+    assert state[crossbeam_pages.CB_PROFILE_PRESET_SPAN_KEY] == "2 Span"
+    assert [row["s (m)"] for row in t1_rows] == [
+        0.0,
+        2.5,
+        7.5,
+        10.0,
+        12.5,
+        17.5,
+        20.0,
+    ]
     assert any(row["Curve role"] == "High point" for row in t1_rows)
     assert len(t2_rows) == 3
     assert state[CB_PROFILE_REV_KEY] == 1

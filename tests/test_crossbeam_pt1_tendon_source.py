@@ -10,9 +10,13 @@ from concrete_pmm_pro.crossbeam.section_library import (
     migrate_segment_rows_to_library,
 )
 from concrete_pmm_pro.crossbeam.tendon import (
+    TENDON_PROFILE_PRESET_OPTIONS,
+    TENDON_PROFILE_SPAN_MODE_OPTIONS,
     canonical_tendon_system_rows,
     default_tendon_profile_points,
     default_tendon_system_rows,
+    normalize_tendon_profile_preset,
+    normalize_tendon_profile_span_mode,
     profile_preset_point_count,
     tendon_profile_points_for_preset,
     tendon_positions_at_station,
@@ -173,6 +177,22 @@ def test_pt1g_parabolic_preset_seeds_multiple_editable_points_per_tendon() -> No
     assert t1_rows[2]["dtop (mm)"] == pytest.approx(700.0)
 
 
+def test_pt1i_quick_start_catalog_is_curated_and_renamed_without_numbers() -> None:
+    assert TENDON_PROFILE_PRESET_OPTIONS == (
+        "Straight Tendon",
+        "Straight Tendon With Bends",
+        "Parabolic Tendon",
+    )
+    assert TENDON_PROFILE_SPAN_MODE_OPTIONS == ("Single Span", "2 Span")
+    assert normalize_tendon_profile_preset("Straight Tendon 2") == "Straight Tendon"
+    assert (
+        normalize_tendon_profile_preset("Straight Tendon With Bends 4")
+        == "Straight Tendon With Bends"
+    )
+    assert normalize_tendon_profile_preset("Parabolic Tendon 3") == "Parabolic Tendon"
+    assert normalize_tendon_profile_span_mode("Multiple Span") == "2 Span"
+
+
 def test_pt1h_reference_quick_start_catalog_supports_single_and_multiple_span_shapes() -> None:
     system = default_tendon_system_rows()
     tendon_ids = [row["Tendon ID"] for row in system]
@@ -185,7 +205,7 @@ def test_pt1h_reference_quick_start_catalog_supports_single_and_multiple_span_sh
         height_mm=1500.0,
         t_left_mm=300.0,
         t_right_mm=300.0,
-        preset="Straight Tendon With Bends 3",
+        preset="Straight Tendon With Bends",
         span_mode="Single Span",
         bend_offset_mm=200.0,
     )
@@ -197,16 +217,61 @@ def test_pt1h_reference_quick_start_catalog_supports_single_and_multiple_span_sh
         height_mm=1500.0,
         t_left_mm=300.0,
         t_right_mm=300.0,
-        preset="Straight Tendon With Bends 3",
-        span_mode="Multiple Span",
+        preset="Straight Tendon With Bends",
+        span_mode="2 Span",
         bend_offset_mm=200.0,
     )
 
     assert [row["s (m)"] for row in single] == [0.0, 5.0, 15.0, 20.0]
-    assert [row["s (m)"] for row in multiple] == [0.0, 4.0, 9.0, 10.0, 11.0, 16.0, 20.0]
+    assert [row["s (m)"] for row in multiple] == [
+        0.0,
+        2.5,
+        7.5,
+        10.0,
+        12.5,
+        17.5,
+        20.0,
+    ]
     assert {row["x lateral (mm)"] for row in multiple} == {-1100.0}
-    assert any(row["Curve role"] == "High point" for row in multiple)
-    assert profile_preset_point_count("Straight Tendon With Bends 3", "Multiple Span") == 7
+    assert any(
+        row["Curve role"] == "High point" and row["s (m)"] == 10.0
+        for row in multiple
+    )
+    assert profile_preset_point_count("Straight Tendon With Bends", "2 Span") == 7
+
+
+def test_pt1i_parabolic_two_span_repeats_simple_span_across_middle_support() -> None:
+    system = default_tendon_system_rows()
+    tendon_ids = [row["Tendon ID"] for row in system]
+
+    rows = tendon_profile_points_for_preset(
+        20.0,
+        tendon_ids=["T1"],
+        coordinate_tendon_ids=tendon_ids,
+        width_mm=2500.0,
+        height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
+        preset="Parabolic Tendon",
+        span_mode="2 Span",
+        bend_offset_mm=200.0,
+    )
+
+    assert [row["s (m)"] for row in rows] == [
+        0.0,
+        2.5,
+        5.0,
+        7.5,
+        10.0,
+        12.5,
+        15.0,
+        17.5,
+        20.0,
+    ]
+    assert rows[4]["Curve role"] == "High point"
+    assert rows[4]["dtop (mm)"] == pytest.approx(500.0)
+    assert [rows[2]["Curve role"], rows[6]["Curve role"]] == ["Low point", "Low point"]
+    assert [rows[2]["dtop (mm)"], rows[6]["dtop (mm)"]] == pytest.approx([700.0, 700.0])
 
 
 def test_pt1_internal_profile_uses_station_section_envelope_but_external_can_leave_it() -> None:
