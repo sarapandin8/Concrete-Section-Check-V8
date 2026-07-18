@@ -1,3 +1,12 @@
+### CROSSBEAM.PT1G — Editable Tendon Profile Points and Presets
+
+Adds Crossbeam Tendon Profile quick-start presets for straight, bent,
+parabolic, and multi-span draped geometry, plus explicit dynamic row add/delete
+handling in the editable `s-x-dtop` table. Presets replace only selected
+tendons, keep full-inventory web-centered coordinates as the reference, and
+leave Project JSON, member length ownership, review figures, and all solvers
+unchanged. See `README_CROSSBEAM_PT1G.md`.
+
 ### CROSSBEAM.PT1F — Web-Centered Tendon Default Placement
 
 Seeds the Portal Frame Crossbeam default tendon system as eight web-centered

@@ -37,10 +37,13 @@ from concrete_pmm_pro.crossbeam.rebar_persistence import (
 from concrete_pmm_pro.crossbeam.tendon import (
     DEFAULT_STRAND_SYSTEM,
     PROFILE_ROLE_OPTIONS,
+    TENDON_PROFILE_PRESET_OPTIONS,
     canonical_tendon_profile_points,
     canonical_tendon_system_rows,
     default_tendon_profile_points,
+    profile_preset_point_count,
     default_tendon_system_rows,
+    tendon_profile_points_for_preset,
     section_context_records,
     station_section_contexts,
     tendon_station_audit_rows,
@@ -102,6 +105,9 @@ CB_LENGTH_CHANGE_POLICY_KEY = "crossbeam_pt1c_length_change_policy"
 CB_LENGTH_CHANGE_NOTICE_KEY = "crossbeam_pt1c_length_change_notice"
 CB_CROSS_SECTION_STATION_KEY = "crossbeam_pt1a_cross_section_station_m"
 CB_CROSS_SECTION_FACE_KEY = "crossbeam_pt1a_cross_section_face"
+CB_PROFILE_PRESET_KEY = "crossbeam_pt1g_profile_preset"
+CB_PROFILE_PRESET_OFFSET_KEY = "crossbeam_pt1g_profile_preset_offset_mm"
+CB_PROFILE_PRESET_TARGETS_KEY = "crossbeam_pt1g_profile_preset_tendon_ids"
 
 CB_LENGTH_POLICY_KEEP = "Keep existing stations — review required"
 CB_LENGTH_POLICY_SCALE = "Scale longitudinal stations proportionally"
@@ -1284,6 +1290,55 @@ def _commit_tendon_material_editor(
     )
 
 
+def _editor_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    text = str(value).strip().casefold()
+    return text in {"true", "yes", "1", "on", "checked"}
+
+
+def _editor_value_is_blank(value: Any) -> bool:
+    if value is None:
+        return True
+    try:
+        missing = pd.isna(value)
+        if isinstance(missing, bool):
+            return missing
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, str):
+        return not value.strip()
+    return False
+
+
+def _profile_rows_from_editor_rows(
+    editor_rows: list[dict[str, Any]],
+    length_m: float,
+) -> list[dict[str, Any]]:
+    """Return profile rows after honoring blank dynamic rows and Delete flags."""
+
+    usable: list[dict[str, Any]] = []
+    for row in editor_rows:
+        if _editor_bool(row.get("Delete row")):
+            continue
+        if all(
+            _editor_value_is_blank(row.get(key))
+            for key in (
+                "Tendon ID",
+                "Point",
+                "s (m)",
+                "x lateral (mm)",
+                "dtop (mm)",
+                "Curve role",
+            )
+        ):
+            continue
+        usable.append({key: value for key, value in row.items() if key != "Delete row"})
+    return canonical_tendon_profile_points(usable, length_m)
+
+
 def _commit_tendon_profile_editor(
     editor_key: str,
     fallback_editor_rows: list[dict[str, Any]],
@@ -1295,9 +1350,63 @@ def _commit_tendon_profile_editor(
     editor_rows = data_editor_payload_to_records(
         st.session_state.get(editor_key), fallback_editor_rows
     )
-    st.session_state[CB_PROFILE_ROWS_KEY] = canonical_tendon_profile_points(
+    st.session_state[CB_PROFILE_ROWS_KEY] = _profile_rows_from_editor_rows(
         editor_rows, length_m
     )
+
+
+def _apply_tendon_profile_preset(
+    session_state: MutableMapping[str, Any],
+    *,
+    length_m: float,
+    tendon_ids: list[str],
+    target_tendon_ids: list[str],
+    width_mm: float,
+    height_mm: float,
+    t_left_mm: float | None,
+    t_right_mm: float | None,
+    preset: str,
+    bend_offset_mm: float,
+) -> dict[str, Any]:
+    valid_ids = [tendon_id for tendon_id in tendon_ids if tendon_id]
+    valid_set = set(valid_ids)
+    targets = [
+        tendon_id
+        for tendon_id in target_tendon_ids
+        if tendon_id in valid_set
+    ]
+    if not targets:
+        return {"action": "skipped", "profile_points": 0, "tendon_count": 0}
+
+    length = max(_finite_float(length_m, DEFAULT_CROSSBEAM_LENGTH_M), 0.1)
+    existing = canonical_tendon_profile_points(
+        _records(session_state.get(CB_PROFILE_ROWS_KEY)), length
+    )
+    target_set = set(targets)
+    preset_rows = tendon_profile_points_for_preset(
+        length,
+        tendon_ids=targets,
+        coordinate_tendon_ids=valid_ids,
+        width_mm=width_mm,
+        height_mm=height_mm,
+        t_left_mm=t_left_mm,
+        t_right_mm=t_right_mm,
+        preset=preset,
+        bend_offset_mm=bend_offset_mm,
+    )
+    session_state[CB_PROFILE_ROWS_KEY] = canonical_tendon_profile_points(
+        [row for row in existing if row["Tendon ID"] not in target_set] + preset_rows,
+        length,
+    )
+    session_state[CB_PROFILE_REV_KEY] = int(
+        session_state.get(CB_PROFILE_REV_KEY, 0)
+    ) + 1
+    return {
+        "action": "applied",
+        "preset": preset,
+        "profile_points": len(preset_rows),
+        "tendon_count": len(targets),
+    }
 
 
 def _next_crossbeam_tendon_id(
@@ -2262,12 +2371,12 @@ def render_crossbeam_tendon_system_page() -> None:
         )
     with reset_col:
         st.button(
-            "Reset to default (4)",
+            "Reset to default (8)",
             key="crossbeam_ui1_reset_tendon_system",
             on_click=_reset_crossbeam_tendon_system_from_ui,
             disabled=bool(pending_id),
             use_container_width=True,
-            help="Restores T1–T4 and their default profile geometry.",
+            help="Restores T1-T8 and their default web-centered profile geometry.",
         )
 
     if len(rows) <= CB_TENDON_MIN_COUNT:
@@ -2535,7 +2644,79 @@ def render_crossbeam_tendon_profile_page() -> None:
         st.warning("Define the Tendon System before editing profile geometry.")
         return
 
-    if st.button("Reset tendon geometry to three-point profiles", key="crossbeam_ui1_reset_profile"):
+    preset_col, offset_col, target_col, action_col = st.columns([1.35, 0.9, 1.45, 0.9])
+    with preset_col:
+        selected_preset = st.selectbox(
+            "Quick profile preset",
+            options=list(TENDON_PROFILE_PRESET_OPTIONS),
+            key=CB_PROFILE_PRESET_KEY,
+            help=(
+                "Creates editable s-x-dtop rows for the selected shape. "
+                "Presets are geometry quick-starts only; they do not run PT loss or strength checks."
+            ),
+        )
+    with offset_col:
+        default_offset = min(200.0, 0.20 * context["height_mm"])
+        bend_offset = st.slider(
+            "Preset bend offset (mm)",
+            min_value=0.0,
+            max_value=float(context["height_mm"]),
+            value=float(st.session_state.get(CB_PROFILE_PRESET_OFFSET_KEY, default_offset)),
+            step=25.0,
+            key=CB_PROFILE_PRESET_OFFSET_KEY,
+            help=(
+                "Depth delta applied to bend/parabolic presets. Positive offsets move low points downward because dtop is measured from the top."
+            ),
+        )
+    current_targets = [
+        tendon_id
+        for tendon_id in st.session_state.get(CB_PROFILE_PRESET_TARGETS_KEY, tendon_ids)
+        if tendon_id in tendon_ids
+    ] or list(tendon_ids)
+    st.session_state[CB_PROFILE_PRESET_TARGETS_KEY] = current_targets
+    with target_col:
+        preset_targets = st.multiselect(
+            "Apply preset to tendons",
+            options=tendon_ids,
+            key=CB_PROFILE_PRESET_TARGETS_KEY,
+            help="Only selected tendons are replaced by the preset; other tendon profile rows are preserved.",
+        )
+    with action_col:
+        st.write("")
+        st.write("")
+        apply_preset = st.button(
+            "Apply preset",
+            key="crossbeam_pt1g_apply_profile_preset",
+            use_container_width=True,
+        )
+    if apply_preset:
+        notice = _apply_tendon_profile_preset(
+            st.session_state,
+            length_m=length_m,
+            tendon_ids=tendon_ids,
+            target_tendon_ids=preset_targets,
+            width_mm=context["width_mm"],
+            height_mm=context["height_mm"],
+            t_left_mm=context["t_left_mm"],
+            t_right_mm=context["t_right_mm"],
+            preset=selected_preset,
+            bend_offset_mm=bend_offset,
+        )
+        if notice["action"] == "applied":
+            st.success(
+                f"Applied {selected_preset} to {notice['tendon_count']} tendon(s), "
+                f"creating {notice['profile_points']} editable profile point row(s)."
+            )
+        else:
+            st.warning("Select at least one tendon before applying a profile preset.")
+
+    preset_point_count = profile_preset_point_count(selected_preset)
+    st.caption(
+        f"Preset `{selected_preset}` creates {preset_point_count} point(s) per selected tendon. "
+        "The profile table below stays editable: add rows for extra control points, or tick Delete row to remove selected points."
+    )
+
+    if st.button("Reset tendon geometry to straight web-centered profiles", key="crossbeam_ui1_reset_profile"):
         st.session_state[CB_PROFILE_ROWS_KEY] = default_tendon_profile_points(
             length_m,
             tendon_ids=tendon_ids,
@@ -2553,6 +2734,7 @@ def render_crossbeam_tendon_profile_page() -> None:
     )
     profile_editor_rows = [
         {
+            "Delete row": False,
             "Tendon ID": row["Tendon ID"],
             "Point": row["Point"],
             "s (m)": row["s (m)"],
@@ -2572,6 +2754,10 @@ def render_crossbeam_tendon_profile_page() -> None:
         on_change=_commit_tendon_profile_editor,
         args=(profile_editor_key, profile_editor_rows),
         column_config={
+            "Delete row": st.column_config.CheckboxColumn(
+                "Delete row",
+                help="Tick to remove this profile point on the next edit commit.",
+            ),
             "Tendon ID": st.column_config.SelectboxColumn("Tendon ID", options=tendon_ids, required=True),
             "Point": st.column_config.TextColumn("Point", required=True),
             "s (m)": st.column_config.NumberColumn("s (m)", min_value=0.0, max_value=length_m, format="%.3f", required=True),
@@ -2580,7 +2766,7 @@ def render_crossbeam_tendon_profile_page() -> None:
             "Curve role": st.column_config.SelectboxColumn("Curve role", options=list(PROFILE_ROLE_OPTIONS), required=True),
         },
     )
-    points = canonical_tendon_profile_points(_records(edited), length_m)
+    points = _profile_rows_from_editor_rows(_records(edited), length_m)
     st.session_state[CB_PROFILE_ROWS_KEY] = points
 
     segment_rows, segment_errors = _validate_segments(_records(st.session_state.get(CB_SEGMENT_ROWS_KEY)), length_m)

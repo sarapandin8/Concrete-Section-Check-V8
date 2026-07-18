@@ -13,6 +13,8 @@ from concrete_pmm_pro.crossbeam.tendon import (
     canonical_tendon_system_rows,
     default_tendon_profile_points,
     default_tendon_system_rows,
+    profile_preset_point_count,
+    tendon_profile_points_for_preset,
     tendon_positions_at_station,
     tendon_station_audit_rows,
     validate_tendon_profile,
@@ -134,6 +136,41 @@ def test_pt1a_cross_section_station_uses_piecewise_linear_shared_profile() -> No
     )
     assert {row["x lateral (mm)"] for row in positions} == {-1100.0, 1100.0}
     assert all(row["s (m)"] == 5.0 and row["s/L"] == 0.25 for row in positions)
+
+
+def test_pt1g_parabolic_preset_seeds_multiple_editable_points_per_tendon() -> None:
+    system = default_tendon_system_rows()
+    tendon_ids = [row["Tendon ID"] for row in system[:2]]
+
+    points = tendon_profile_points_for_preset(
+        20.0,
+        tendon_ids=tendon_ids,
+        coordinate_tendon_ids=[row["Tendon ID"] for row in system],
+        width_mm=2500.0,
+        height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
+        preset="Parabolic low-point",
+        bend_offset_mm=200.0,
+    )
+    definitions, segments = _geometry_context()
+    normalized, errors, warnings = validate_tendon_profile(
+        points,
+        system[:2],
+        length_m=20.0,
+        segment_rows=segments,
+        section_definitions=definitions,
+    )
+    t1_rows = [row for row in normalized if row["Tendon ID"] == "T1"]
+
+    assert not errors
+    assert not warnings
+    assert profile_preset_point_count("Parabolic low-point") == 5
+    assert len(normalized) == 10
+    assert [row["s (m)"] for row in t1_rows] == [0.0, 5.0, 10.0, 15.0, 20.0]
+    assert [row["Point"] for row in t1_rows] == ["P1", "P2", "P3", "P4", "P5"]
+    assert t1_rows[2]["Curve role"] == "Low point"
+    assert t1_rows[2]["dtop (mm)"] == pytest.approx(700.0)
 
 
 def test_pt1_internal_profile_uses_station_section_envelope_but_external_can_leave_it() -> None:

@@ -115,3 +115,116 @@ def test_identity_material_and_profile_first_edits_commit_once(monkeypatch) -> N
     }
     crossbeam_pages._commit_tendon_profile_editor(profile_key, profile_fallback)
     assert state[CB_PROFILE_ROWS_KEY][0]["dtop (mm)"] == 333.0
+
+
+def test_profile_dynamic_editor_can_add_and_delete_rows_on_first_commit(monkeypatch) -> None:
+    system = default_tendon_system_rows()
+    profile = default_tendon_profile_points(
+        20.0,
+        tendon_ids=[row["Tendon ID"] for row in system],
+        width_mm=2500.0,
+        height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
+    )
+    state = {
+        "crossbeam_ui1_length_m": 20.0,
+        CB_TENDON_SYSTEM_ROWS_KEY: system,
+        CB_PROFILE_ROWS_KEY: profile,
+        CB_ACTIVE_TENDONS_KEY: [row["Tendon ID"] for row in system],
+        CB_TENDON_SYSTEM_REV_KEY: 0,
+        CB_PROFILE_REV_KEY: 0,
+    }
+    monkeypatch.setattr(crossbeam_pages, "st", SimpleNamespace(session_state=state))
+
+    fallback = [
+        {
+            "Delete row": False,
+            **{key: value for key, value in row.items() if key != "s/L"},
+        }
+        for row in profile
+    ]
+    profile_key = "profile_add_first_commit"
+    state[profile_key] = {
+        "edited_rows": {},
+        "added_rows": [
+            {
+                "Delete row": False,
+                "Tendon ID": "T1",
+                "Point": "P4",
+                "s (m)": 5.0,
+                "x lateral (mm)": -1100.0,
+                "dtop (mm)": 650.0,
+                "Curve role": "Low point",
+            }
+        ],
+        "deleted_rows": [],
+    }
+    crossbeam_pages._commit_tendon_profile_editor(profile_key, fallback)
+    assert any(
+        row["Tendon ID"] == "T1" and row["Point"] == "P4" and row["s (m)"] == 5.0
+        for row in state[CB_PROFILE_ROWS_KEY]
+    )
+
+    delete_fallback = [
+        {
+            "Delete row": False,
+            **{key: value for key, value in row.items() if key != "s/L"},
+        }
+        for row in state[CB_PROFILE_ROWS_KEY]
+    ]
+    delete_index = next(
+        index
+        for index, row in enumerate(delete_fallback)
+        if row["Tendon ID"] == "T1" and row["Point"] == "P4"
+    )
+    delete_key = "profile_delete_first_commit"
+    state[delete_key] = {
+        "edited_rows": {delete_index: {"Delete row": True}},
+        "added_rows": [],
+        "deleted_rows": [],
+    }
+    crossbeam_pages._commit_tendon_profile_editor(delete_key, delete_fallback)
+    assert not any(
+        row["Tendon ID"] == "T1" and row["Point"] == "P4"
+        for row in state[CB_PROFILE_ROWS_KEY]
+    )
+
+
+def test_profile_preset_apply_replaces_only_selected_tendons(monkeypatch) -> None:
+    system = default_tendon_system_rows()
+    profile = default_tendon_profile_points(
+        20.0,
+        tendon_ids=[row["Tendon ID"] for row in system],
+        width_mm=2500.0,
+        height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
+    )
+    state = {
+        CB_TENDON_SYSTEM_ROWS_KEY: system,
+        CB_PROFILE_ROWS_KEY: profile,
+        CB_PROFILE_REV_KEY: 0,
+    }
+    monkeypatch.setattr(crossbeam_pages, "st", SimpleNamespace(session_state=state))
+
+    notice = crossbeam_pages._apply_tendon_profile_preset(
+        state,
+        length_m=20.0,
+        tendon_ids=[row["Tendon ID"] for row in system],
+        target_tendon_ids=["T1"],
+        width_mm=2500.0,
+        height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
+        preset="Parabolic low-point",
+        bend_offset_mm=200.0,
+    )
+    t1_rows = [row for row in state[CB_PROFILE_ROWS_KEY] if row["Tendon ID"] == "T1"]
+    t2_rows = [row for row in state[CB_PROFILE_ROWS_KEY] if row["Tendon ID"] == "T2"]
+
+    assert notice["profile_points"] == 5
+    assert len(t1_rows) == 5
+    assert len(t2_rows) == 3
+    assert t1_rows[2]["dtop (mm)"] == 700.0
+    assert state[CB_PROFILE_REV_KEY] == 1

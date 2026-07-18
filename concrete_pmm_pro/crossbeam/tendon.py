@@ -39,6 +39,15 @@ PROFILE_ROLE_OPTIONS = (
     "Low point",
     "Deviator",
 )
+TENDON_PROFILE_PRESET_OPTIONS = (
+    "Straight constant-depth",
+    "Straight low-point bend",
+    "Straight low-zone bends",
+    "Parabolic low-point",
+    "Parabolic high-point",
+    "Multi-span draped",
+)
+DEFAULT_TENDON_PROFILE_PRESET = TENDON_PROFILE_PRESET_OPTIONS[0]
 DEFAULT_STRAND_SYSTEM = "Seven-wire low-relaxation strand"
 DEFAULT_WEB_TENDONS_PER_SIDE = 4
 DEFAULT_TENDON_TOP_OFFSET_MM = 500.0
@@ -227,6 +236,136 @@ def _web_tendon_coordinates(
     return coordinates
 
 
+def normalize_tendon_profile_preset(value: Any) -> str:
+    text = str(value or "").strip()
+    if text in TENDON_PROFILE_PRESET_OPTIONS:
+        return text
+    aliases = {
+        "straight": "Straight constant-depth",
+        "straight tendon": "Straight constant-depth",
+        "constant": "Straight constant-depth",
+        "line": "Straight constant-depth",
+        "low": "Straight low-point bend",
+        "low point": "Straight low-point bend",
+        "bent": "Straight low-point bend",
+        "bend": "Straight low-point bend",
+        "low zone": "Straight low-zone bends",
+        "parabolic": "Parabolic low-point",
+        "parabola": "Parabolic low-point",
+        "hog": "Parabolic high-point",
+        "high": "Parabolic high-point",
+        "multi": "Multi-span draped",
+        "multiple": "Multi-span draped",
+    }
+    return aliases.get(text.casefold(), DEFAULT_TENDON_PROFILE_PRESET)
+
+
+def _clip_depth(depth_mm: float, height_mm: float) -> float:
+    height = max(_float(height_mm, 1500.0), 1.0)
+    return round(min(max(_float(depth_mm, 0.0), 0.0), height), 3)
+
+
+def _preset_shape(
+    preset: str,
+    *,
+    bend_offset_mm: float,
+) -> list[tuple[str, float, float, str]]:
+    """Return point-name, s/L, dtop-offset, and role tuples for a profile preset."""
+
+    offset = max(_float(bend_offset_mm, 0.0), 0.0)
+    preset = normalize_tendon_profile_preset(preset)
+    if preset == "Straight low-point bend":
+        return [
+            ("P1", 0.0, 0.0, "Anchorage"),
+            ("P2", 0.5, offset, "Low point"),
+            ("P3", 1.0, 0.0, "Anchorage"),
+        ]
+    if preset == "Straight low-zone bends":
+        return [
+            ("P1", 0.0, 0.0, "Anchorage"),
+            ("P2", 0.25, offset, "Low point"),
+            ("P3", 0.75, offset, "Low point"),
+            ("P4", 1.0, 0.0, "Anchorage"),
+        ]
+    if preset == "Parabolic low-point":
+        return [
+            ("P1", 0.0, 0.0, "Anchorage"),
+            ("P2", 0.25, 0.75 * offset, "Profile point"),
+            ("P3", 0.5, offset, "Low point"),
+            ("P4", 0.75, 0.75 * offset, "Profile point"),
+            ("P5", 1.0, 0.0, "Anchorage"),
+        ]
+    if preset == "Parabolic high-point":
+        return [
+            ("P1", 0.0, 0.0, "Anchorage"),
+            ("P2", 0.25, -0.75 * offset, "Profile point"),
+            ("P3", 0.5, -offset, "High point"),
+            ("P4", 0.75, -0.75 * offset, "Profile point"),
+            ("P5", 1.0, 0.0, "Anchorage"),
+        ]
+    if preset == "Multi-span draped":
+        return [
+            ("P1", 0.0, 0.0, "Anchorage"),
+            ("P2", 0.25, offset, "Low point"),
+            ("P3", 0.5, -0.45 * offset, "High point"),
+            ("P4", 0.75, offset, "Low point"),
+            ("P5", 1.0, 0.0, "Anchorage"),
+        ]
+    return [
+        ("P1", 0.0, 0.0, "Anchorage"),
+        ("P2", 0.5, 0.0, "Profile point"),
+        ("P3", 1.0, 0.0, "Anchorage"),
+    ]
+
+
+def tendon_profile_points_for_preset(
+    length_m: float,
+    *,
+    tendon_ids: list[str],
+    coordinate_tendon_ids: list[str] | None = None,
+    width_mm: float,
+    height_mm: float,
+    t_left_mm: float | None = None,
+    t_right_mm: float | None = None,
+    preset: str = DEFAULT_TENDON_PROFILE_PRESET,
+    bend_offset_mm: float = 200.0,
+) -> list[dict[str, Any]]:
+    """Return web-centered control points for a selected tendon profile preset.
+
+    Presets are geometry quick-starts only.  The returned rows remain ordinary
+    ``s-x-dtop`` profile points so downstream interpolation, Project JSON, and
+    review figures do not need a new schema or solver.
+    """
+
+    length = max(_float(length_m, 20.0), 0.1)
+    height = max(_float(height_mm, 1500.0), 1.0)
+    coordinate_ids = list(coordinate_tendon_ids or tendon_ids)
+    coordinates = _web_tendon_coordinates(
+        coordinate_ids,
+        width_mm=max(_float(width_mm, 2500.0), 1.0),
+        height_mm=height,
+        t_left_mm=t_left_mm,
+        t_right_mm=t_right_mm,
+    )
+    shape = _preset_shape(preset, bend_offset_mm=bend_offset_mm)
+    rows: list[dict[str, Any]] = []
+    for tendon_id in tendon_ids:
+        lateral, base_depth = coordinates.get(tendon_id, (0.0, 0.5 * height))
+        for point, ratio, depth_offset, role in shape:
+            rows.append(
+                {
+                    "Tendon ID": tendon_id,
+                    "Point": point,
+                    "s/L": ratio,
+                    "s (m)": round(ratio * length, 6),
+                    "x lateral (mm)": round(lateral, 3),
+                    "dtop (mm)": _clip_depth(base_depth + depth_offset, height),
+                    "Curve role": role,
+                }
+            )
+    return rows
+
+
 def default_tendon_profile_points(
     length_m: float,
     *,
@@ -238,34 +377,20 @@ def default_tendon_profile_points(
 ) -> list[dict[str, Any]]:
     """Return three constant-depth web-centered control points for each tendon."""
 
-    length = max(_float(length_m, 20.0), 0.1)
-    coordinates = _web_tendon_coordinates(
-        tendon_ids,
-        width_mm=max(_float(width_mm, 2500.0), 1.0),
-        height_mm=max(_float(height_mm, 1500.0), 1.0),
+    return tendon_profile_points_for_preset(
+        length_m,
+        tendon_ids=tendon_ids,
+        width_mm=width_mm,
+        height_mm=height_mm,
         t_left_mm=t_left_mm,
         t_right_mm=t_right_mm,
+        preset=DEFAULT_TENDON_PROFILE_PRESET,
+        bend_offset_mm=0.0,
     )
-    rows: list[dict[str, Any]] = []
-    for tendon_id in tendon_ids:
-        lateral, default_depth = coordinates.get(tendon_id, (0.0, 0.5 * max(_float(height_mm, 1500.0), 1.0)))
-        for point, ratio, depth, role in (
-            ("P1", 0.0, default_depth, "Anchorage"),
-            ("P2", 0.5, default_depth, "Profile point"),
-            ("P3", 1.0, default_depth, "Anchorage"),
-        ):
-            rows.append(
-                {
-                    "Tendon ID": tendon_id,
-                    "Point": point,
-                    "s/L": ratio,
-                    "s (m)": round(ratio * length, 6),
-                    "x lateral (mm)": round(lateral, 3),
-                    "dtop (mm)": round(depth, 3),
-                    "Curve role": role,
-                }
-            )
-    return rows
+
+
+def profile_preset_point_count(preset: str) -> int:
+    return len(_preset_shape(preset, bend_offset_mm=1.0))
 
 
 def canonical_tendon_profile_points(values: Any, length_m: float) -> list[dict[str, Any]]:
