@@ -1,3 +1,12 @@
+### CROSSBEAM.PT1K - Interior-Support Parabolic Crown
+
+Refines `Parabolic Tendon / 2 Span` so the middle-support zone uses its own
+inverted parabolic crown across `2 x support width`, giving a smoother tangent
+through the interior column instead of a sharp high-point kink. The generated
+geometry remains ordinary editable `s-x-dtop` rows and does not change Project
+JSON shape, member length ownership, review routing, or solvers. See
+`README_CROSSBEAM_PT1K.md`.
+
 ### CROSSBEAM.PT1J - Support-Width Tendon Profile Sampling
 
 Adds support-width-aware Crossbeam Tendon Profile quick-start generation so

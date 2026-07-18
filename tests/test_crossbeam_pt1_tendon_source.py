@@ -313,6 +313,42 @@ def test_pt1i_parabolic_two_span_repeats_simple_span_across_middle_support() -> 
     assert [rows[3]["dtop (mm)"], rows[15]["dtop (mm)"]] == pytest.approx([700.0, 700.0])
 
 
+def test_pt1k_parabolic_two_span_uses_inverted_crown_over_middle_support() -> None:
+    system = default_tendon_system_rows()
+    tendon_ids = [row["Tendon ID"] for row in system]
+
+    rows = tendon_profile_points_for_preset(
+        20.0,
+        tendon_ids=["T1"],
+        coordinate_tendon_ids=tendon_ids,
+        width_mm=2500.0,
+        height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
+        preset="Parabolic Tendon",
+        span_mode="2 Span",
+        bend_offset_mm=200.0,
+        support_width_m=1.0,
+    )
+    crown_rows = [row for row in rows if 9.0 <= row["s (m)"] <= 11.0]
+
+    assert [row["s (m)"] for row in crown_rows] == pytest.approx(
+        [9.0, 9.333333, 9.666667, 10.0, 10.333333, 10.666667, 11.0]
+    )
+    assert [row["dtop (mm)"] for row in crown_rows] == pytest.approx(
+        [572.0, 532.0, 508.0, 500.0, 508.0, 532.0, 572.0]
+    )
+    assert [row["Curve role"] for row in crown_rows] == [
+        "Profile point",
+        "Profile point",
+        "Profile point",
+        "High point",
+        "Profile point",
+        "Profile point",
+        "Profile point",
+    ]
+
+
 def test_pt1_internal_profile_uses_station_section_envelope_but_external_can_leave_it() -> None:
     definitions, segments = _geometry_context()
     system = default_tendon_system_rows(3)

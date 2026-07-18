@@ -366,6 +366,25 @@ def _two_span_parabolic_offset(ratio: float, offset: float) -> float:
     return _parabolic_offset((ratio - 0.5) / 0.5, offset)
 
 
+def _parabolic_crown_points(
+    center_ratio: float,
+    half_width_ratio: float,
+    *,
+    edge_offset: float,
+) -> list[tuple[float, float, str]]:
+    """Return an inverted support parabola with a smooth crown at center."""
+
+    half_width = max(_float(half_width_ratio, 0.0), 0.0)
+    if half_width <= 0.0:
+        return [(center_ratio, 0.0, "High point")]
+    points: list[tuple[float, float, str]] = []
+    for step in (-1.0, -2.0 / 3.0, -1.0 / 3.0, 0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0):
+        ratio = center_ratio + step * half_width
+        role = "High point" if abs(step) < 1.0e-9 else "Profile point"
+        points.append((ratio, edge_offset * step * step, role))
+    return points
+
+
 def _preset_shape(
     preset: str,
     *,
@@ -442,10 +461,14 @@ def _preset_shape(
                 support_width_m,
                 multiplier=1.0,
             )
-            for step in (-1.0, -2.0 / 3.0, -1.0 / 3.0, 0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0):
-                ratio = 0.5 + step * half_support
-                role = "High point" if abs(step) < 1.0e-9 else "Profile point"
-                points.append((ratio, _two_span_parabolic_offset(ratio, offset), role))
+            crown_edge_offset = _two_span_parabolic_offset(0.5 - half_support, offset)
+            points.extend(
+                _parabolic_crown_points(
+                    0.5,
+                    half_support,
+                    edge_offset=crown_edge_offset,
+                )
+            )
             return _renumber_shape(points)
         return _renumber_shape(
             _parabolic_span_points(
