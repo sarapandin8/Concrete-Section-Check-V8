@@ -1,3 +1,13 @@
+### CROSSBEAM.PT1J - Support-Width Tendon Profile Sampling
+
+Adds support-width-aware Crossbeam Tendon Profile quick-start generation so
+2 Span bent profiles use a three-point high zone across the column width, and
+Parabolic Tendon profiles use denser sampled control points for smoother
+single-span, midspan, and interior-support geometry. The new support-width
+slider only affects generated editable `s-x-dtop` seed rows; Project JSON shape,
+member length ownership, review routing, and solvers remain unchanged. See
+`README_CROSSBEAM_PT1J.md`.
+
 ### CROSSBEAM.PT1I - Curated 2-Span Tendon Profile Gallery
 
 Curates the Crossbeam Tendon Profile quick-start catalog to three unnumbered

@@ -169,12 +169,14 @@ def test_pt1g_parabolic_preset_seeds_multiple_editable_points_per_tendon() -> No
 
     assert not errors
     assert not warnings
-    assert profile_preset_point_count("Parabolic low-point") == 5
-    assert len(normalized) == 10
-    assert [row["s (m)"] for row in t1_rows] == [0.0, 5.0, 10.0, 15.0, 20.0]
-    assert [row["Point"] for row in t1_rows] == ["P1", "P2", "P3", "P4", "P5"]
-    assert t1_rows[2]["Curve role"] == "Low point"
-    assert t1_rows[2]["dtop (mm)"] == pytest.approx(700.0)
+    assert profile_preset_point_count("Parabolic low-point") == 7
+    assert len(normalized) == 14
+    assert [row["s (m)"] for row in t1_rows] == pytest.approx(
+        [0.0, 3.333333, 6.666667, 10.0, 13.333333, 16.666667, 20.0]
+    )
+    assert [row["Point"] for row in t1_rows] == ["P1", "P2", "P3", "P4", "P5", "P6", "P7"]
+    assert t1_rows[3]["Curve role"] == "Low point"
+    assert t1_rows[3]["dtop (mm)"] == pytest.approx(700.0)
 
 
 def test_pt1i_quick_start_catalog_is_curated_and_renamed_without_numbers() -> None:
@@ -227,7 +229,9 @@ def test_pt1h_reference_quick_start_catalog_supports_single_and_multiple_span_sh
         0.0,
         2.5,
         7.5,
+        9.5,
         10.0,
+        10.5,
         12.5,
         17.5,
         20.0,
@@ -237,7 +241,29 @@ def test_pt1h_reference_quick_start_catalog_supports_single_and_multiple_span_sh
         row["Curve role"] == "High point" and row["s (m)"] == 10.0
         for row in multiple
     )
-    assert profile_preset_point_count("Straight Tendon With Bends", "2 Span") == 7
+    assert profile_preset_point_count("Straight Tendon With Bends", "2 Span") == 9
+
+
+def test_pt1j_support_width_controls_two_span_bent_high_zone() -> None:
+    system = default_tendon_system_rows()
+    tendon_ids = [row["Tendon ID"] for row in system]
+
+    rows = tendon_profile_points_for_preset(
+        20.0,
+        tendon_ids=["T1"],
+        coordinate_tendon_ids=tendon_ids,
+        width_mm=2500.0,
+        height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
+        preset="Straight Tendon With Bends",
+        span_mode="2 Span",
+        bend_offset_mm=200.0,
+        support_width_m=2.0,
+    )
+
+    high_rows = [row for row in rows if row["Curve role"] == "High point"]
+    assert [row["s (m)"] for row in high_rows] == [9.0, 10.0, 11.0]
 
 
 def test_pt1i_parabolic_two_span_repeats_simple_span_across_middle_support() -> None:
@@ -257,21 +283,34 @@ def test_pt1i_parabolic_two_span_repeats_simple_span_across_middle_support() -> 
         bend_offset_mm=200.0,
     )
 
-    assert [row["s (m)"] for row in rows] == [
-        0.0,
-        2.5,
-        5.0,
-        7.5,
-        10.0,
-        12.5,
-        15.0,
-        17.5,
-        20.0,
-    ]
-    assert rows[4]["Curve role"] == "High point"
-    assert rows[4]["dtop (mm)"] == pytest.approx(500.0)
-    assert [rows[2]["Curve role"], rows[6]["Curve role"]] == ["Low point", "Low point"]
-    assert [rows[2]["dtop (mm)"], rows[6]["dtop (mm)"]] == pytest.approx([700.0, 700.0])
+    assert [row["s (m)"] for row in rows] == pytest.approx(
+        [
+            0.0,
+            1.666667,
+            3.333333,
+            5.0,
+            6.666667,
+            8.333333,
+            9.0,
+            9.333333,
+            9.666667,
+            10.0,
+            10.333333,
+            10.666667,
+            11.0,
+            11.666667,
+            13.333333,
+            15.0,
+            16.666667,
+            18.333333,
+            20.0,
+        ]
+    )
+    assert profile_preset_point_count("Parabolic Tendon", "2 Span") == 19
+    assert rows[9]["Curve role"] == "High point"
+    assert rows[9]["dtop (mm)"] == pytest.approx(500.0)
+    assert [rows[3]["Curve role"], rows[15]["Curve role"]] == ["Low point", "Low point"]
+    assert [rows[3]["dtop (mm)"], rows[15]["dtop (mm)"]] == pytest.approx([700.0, 700.0])
 
 
 def test_pt1_internal_profile_uses_station_section_envelope_but_external_can_leave_it() -> None:

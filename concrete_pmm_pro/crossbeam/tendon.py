@@ -51,6 +51,7 @@ DEFAULT_STRAND_SYSTEM = "Seven-wire low-relaxation strand"
 DEFAULT_WEB_TENDONS_PER_SIDE = 4
 DEFAULT_TENDON_TOP_OFFSET_MM = 500.0
 DEFAULT_TENDON_BOTTOM_OFFSET_MM = 300.0
+DEFAULT_TENDON_PROFILE_SUPPORT_WIDTH_M = 1.0
 
 
 def _float(value: Any, default: float = 0.0) -> float:
@@ -299,15 +300,84 @@ def _clip_depth(depth_mm: float, height_mm: float) -> float:
     return round(min(max(_float(depth_mm, 0.0), 0.0), height), 3)
 
 
+def _support_half_ratio(
+    length_m: float,
+    support_width_m: float,
+    *,
+    multiplier: float,
+) -> float:
+    length = max(_float(length_m, 20.0), 0.1)
+    width = max(_float(support_width_m, DEFAULT_TENDON_PROFILE_SUPPORT_WIDTH_M), 0.0)
+    return min(max(multiplier * width / length, 0.0), 0.10)
+
+
+def _renumber_shape(points: list[tuple[float, float, str]]) -> list[tuple[str, float, float, str]]:
+    priority = {"Anchorage": 4, "High point": 3, "Low point": 3, "Deviator": 2, "Profile point": 1}
+    merged: dict[float, tuple[float, str]] = {}
+    for ratio, offset, role in points:
+        key = round(min(max(_float(ratio, 0.0), 0.0), 1.0), 9)
+        if key not in merged:
+            merged[key] = (offset, role)
+            continue
+        existing_offset, existing_role = merged[key]
+        if priority.get(role, 0) > priority.get(existing_role, 0):
+            merged[key] = (offset, role)
+        else:
+            merged[key] = (min(existing_offset, offset), existing_role)
+    return [
+        (f"P{index + 1}", ratio, offset, role)
+        for index, (ratio, (offset, role)) in enumerate(sorted(merged.items()))
+    ]
+
+
+def _parabolic_offset(local_ratio: float, offset: float) -> float:
+    local = min(max(_float(local_ratio, 0.0), 0.0), 1.0)
+    return offset * 4.0 * local * (1.0 - local)
+
+
+def _parabolic_span_points(
+    start_ratio: float,
+    end_ratio: float,
+    *,
+    offset: float,
+    start_role: str,
+    end_role: str,
+) -> list[tuple[float, float, str]]:
+    points: list[tuple[float, float, str]] = []
+    span = end_ratio - start_ratio
+    for index in range(7):
+        local = index / 6.0
+        ratio = start_ratio + span * local
+        if index == 0:
+            role = start_role
+        elif index == 6:
+            role = end_role
+        elif index == 3:
+            role = "Low point"
+        else:
+            role = "Profile point"
+        points.append((ratio, _parabolic_offset(local, offset), role))
+    return points
+
+
+def _two_span_parabolic_offset(ratio: float, offset: float) -> float:
+    if ratio <= 0.5:
+        return _parabolic_offset(ratio / 0.5, offset)
+    return _parabolic_offset((ratio - 0.5) / 0.5, offset)
+
+
 def _preset_shape(
     preset: str,
     *,
     span_mode: str = DEFAULT_TENDON_PROFILE_SPAN_MODE,
     bend_offset_mm: float,
+    length_m: float = 20.0,
+    support_width_m: float = DEFAULT_TENDON_PROFILE_SUPPORT_WIDTH_M,
 ) -> list[tuple[str, float, float, str]]:
     """Return point-name, s/L, dtop-offset, and role tuples for a profile preset."""
 
     offset = max(_float(bend_offset_mm, 0.0), 0.0)
+    length = max(_float(length_m, 20.0), 0.1)
     preset = normalize_tendon_profile_preset(preset)
     span_mode = normalize_tendon_profile_span_mode(span_mode)
     is_two_span = span_mode == "2 Span"
@@ -325,15 +395,24 @@ def _preset_shape(
         ]
     if preset == "Straight Tendon With Bends":
         if is_two_span:
-            return [
-                ("P1", 0.0, 0.0, "Anchorage"),
-                ("P2", 0.125, offset, "Low point"),
-                ("P3", 0.375, offset, "Low point"),
-                ("P4", 0.5, 0.0, "High point"),
-                ("P5", 0.625, offset, "Low point"),
-                ("P6", 0.875, offset, "Low point"),
-                ("P7", 1.0, 0.0, "Anchorage"),
-            ]
+            half_support = _support_half_ratio(
+                length,
+                support_width_m,
+                multiplier=0.5,
+            )
+            return _renumber_shape(
+                [
+                    (0.0, 0.0, "Anchorage"),
+                    (0.125, offset, "Low point"),
+                    (0.375, offset, "Low point"),
+                    (0.5 - half_support, 0.0, "High point"),
+                    (0.5, 0.0, "High point"),
+                    (0.5 + half_support, 0.0, "High point"),
+                    (0.625, offset, "Low point"),
+                    (0.875, offset, "Low point"),
+                    (1.0, 0.0, "Anchorage"),
+                ]
+            )
         return [
             ("P1", 0.0, 0.0, "Anchorage"),
             ("P2", 0.25, offset, "Low point"),
@@ -342,24 +421,41 @@ def _preset_shape(
         ]
     if preset == "Parabolic Tendon":
         if is_two_span:
-            return [
-                ("P1", 0.0, 0.0, "Anchorage"),
-                ("P2", 0.125, 0.75 * offset, "Profile point"),
-                ("P3", 0.25, offset, "Low point"),
-                ("P4", 0.375, 0.75 * offset, "Profile point"),
-                ("P5", 0.5, 0.0, "High point"),
-                ("P6", 0.625, 0.75 * offset, "Profile point"),
-                ("P7", 0.75, offset, "Low point"),
-                ("P8", 0.875, 0.75 * offset, "Profile point"),
-                ("P9", 1.0, 0.0, "Anchorage"),
+            points = [
+                *_parabolic_span_points(
+                    0.0,
+                    0.5,
+                    offset=offset,
+                    start_role="Anchorage",
+                    end_role="High point",
+                ),
+                *_parabolic_span_points(
+                    0.5,
+                    1.0,
+                    offset=offset,
+                    start_role="High point",
+                    end_role="Anchorage",
+                ),
             ]
-        return [
-            ("P1", 0.0, 0.0, "Anchorage"),
-            ("P2", 0.25, 0.75 * offset, "Profile point"),
-            ("P3", 0.5, offset, "Low point"),
-            ("P4", 0.75, 0.75 * offset, "Profile point"),
-            ("P5", 1.0, 0.0, "Anchorage"),
-        ]
+            half_support = _support_half_ratio(
+                length,
+                support_width_m,
+                multiplier=1.0,
+            )
+            for step in (-1.0, -2.0 / 3.0, -1.0 / 3.0, 0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0):
+                ratio = 0.5 + step * half_support
+                role = "High point" if abs(step) < 1.0e-9 else "Profile point"
+                points.append((ratio, _two_span_parabolic_offset(ratio, offset), role))
+            return _renumber_shape(points)
+        return _renumber_shape(
+            _parabolic_span_points(
+                0.0,
+                1.0,
+                offset=offset,
+                start_role="Anchorage",
+                end_role="Anchorage",
+            )
+        )
     return [
         ("P1", 0.0, 0.0, "Anchorage"),
         ("P2", 0.5, 0.0, "Profile point"),
@@ -379,6 +475,7 @@ def tendon_profile_points_for_preset(
     preset: str = DEFAULT_TENDON_PROFILE_PRESET,
     span_mode: str = DEFAULT_TENDON_PROFILE_SPAN_MODE,
     bend_offset_mm: float = 200.0,
+    support_width_m: float = DEFAULT_TENDON_PROFILE_SUPPORT_WIDTH_M,
 ) -> list[dict[str, Any]]:
     """Return web-centered control points for a selected tendon profile preset.
 
@@ -401,6 +498,8 @@ def tendon_profile_points_for_preset(
         preset,
         span_mode=span_mode,
         bend_offset_mm=bend_offset_mm,
+        length_m=length,
+        support_width_m=support_width_m,
     )
     rows: list[dict[str, Any]] = []
     for tendon_id in tendon_ids:
@@ -447,13 +546,27 @@ def default_tendon_profile_points(
 def profile_preset_point_count(
     preset: str,
     span_mode: str = DEFAULT_TENDON_PROFILE_SPAN_MODE,
+    *,
+    length_m: float = 20.0,
+    support_width_m: float = DEFAULT_TENDON_PROFILE_SUPPORT_WIDTH_M,
 ) -> int:
-    return len(_preset_shape(preset, span_mode=span_mode, bend_offset_mm=1.0))
+    return len(
+        _preset_shape(
+            preset,
+            span_mode=span_mode,
+            bend_offset_mm=1.0,
+            length_m=length_m,
+            support_width_m=support_width_m,
+        )
+    )
 
 
 def tendon_profile_preset_shape_preview(
     preset: str,
     span_mode: str,
+    *,
+    length_m: float = 20.0,
+    support_width_m: float = DEFAULT_TENDON_PROFILE_SUPPORT_WIDTH_M,
 ) -> list[tuple[float, float, str]]:
     """Return normalized preview coordinates for quick-start diagrams."""
 
@@ -463,6 +576,8 @@ def tendon_profile_preset_shape_preview(
             preset,
             span_mode=span_mode,
             bend_offset_mm=1.0,
+            length_m=length_m,
+            support_width_m=support_width_m,
         )
     ]
 

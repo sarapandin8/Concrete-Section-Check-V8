@@ -36,6 +36,7 @@ from concrete_pmm_pro.crossbeam.rebar_persistence import (
 )
 from concrete_pmm_pro.crossbeam.tendon import (
     DEFAULT_STRAND_SYSTEM,
+    DEFAULT_TENDON_PROFILE_SUPPORT_WIDTH_M,
     PROFILE_ROLE_OPTIONS,
     TENDON_PROFILE_SPAN_MODE_OPTIONS,
     TENDON_PROFILE_PRESET_OPTIONS,
@@ -112,6 +113,7 @@ CB_CROSS_SECTION_FACE_KEY = "crossbeam_pt1a_cross_section_face"
 CB_PROFILE_PRESET_KEY = "crossbeam_pt1g_profile_preset"
 CB_PROFILE_PRESET_SPAN_KEY = "crossbeam_pt1h_profile_preset_span_mode"
 CB_PROFILE_PRESET_OFFSET_KEY = "crossbeam_pt1g_profile_preset_offset_mm"
+CB_PROFILE_PRESET_SUPPORT_WIDTH_KEY = "crossbeam_pt1j_profile_preset_support_width_m"
 CB_PROFILE_PRESET_TARGETS_KEY = "crossbeam_pt1g_profile_preset_tendon_ids"
 CB_PROFILE_PRESET_NOTICE_KEY = "crossbeam_pt1h_profile_preset_notice"
 
@@ -1355,10 +1357,21 @@ def _html_escape(value: Any) -> str:
     )
 
 
-def _profile_preset_svg(preset: str, span_mode: str) -> str:
+def _profile_preset_svg(
+    preset: str,
+    span_mode: str,
+    *,
+    length_m: float = DEFAULT_CROSSBEAM_LENGTH_M,
+    support_width_m: float = DEFAULT_TENDON_PROFILE_SUPPORT_WIDTH_M,
+) -> str:
     preset = normalize_tendon_profile_preset(preset)
     span_mode = normalize_tendon_profile_span_mode(span_mode)
-    points = tendon_profile_preset_shape_preview(preset, span_mode)
+    points = tendon_profile_preset_shape_preview(
+        preset,
+        span_mode,
+        length_m=length_m,
+        support_width_m=support_width_m,
+    )
     max_offset = max([abs(offset) for _ratio, offset, _role in points] + [1.0])
     svg_points: list[tuple[float, float, str]] = []
     for ratio, offset, role in points:
@@ -1388,7 +1401,12 @@ def _profile_preset_svg(preset: str, span_mode: str) -> str:
     )
 
 
-def _profile_quick_start_gallery_html(selected_preset: str) -> str:
+def _profile_quick_start_gallery_html(
+    selected_preset: str,
+    *,
+    length_m: float = DEFAULT_CROSSBEAM_LENGTH_M,
+    support_width_m: float = DEFAULT_TENDON_PROFILE_SUPPORT_WIDTH_M,
+) -> str:
     selected_preset = normalize_tendon_profile_preset(selected_preset)
     single_span = TENDON_PROFILE_SPAN_MODE_OPTIONS[0]
     two_span = TENDON_PROFILE_SPAN_MODE_OPTIONS[1]
@@ -1403,8 +1421,8 @@ def _profile_quick_start_gallery_html(selected_preset: str) -> str:
             f'<span class="pt1h-radio">{"&#9679;" if selected else "&#9675;"}</span>'
             f'<span>{_html_escape(preset)}</span>'
             '</div>'
-            f'<div>{_profile_preset_svg(preset, single_span)}</div>'
-            f'<div>{_profile_preset_svg(preset, two_span)}</div>'
+            f'<div>{_profile_preset_svg(preset, single_span, length_m=length_m, support_width_m=support_width_m)}</div>'
+            f'<div>{_profile_preset_svg(preset, two_span, length_m=length_m, support_width_m=support_width_m)}</div>'
             '</div>'
         )
     return (
@@ -1457,6 +1475,7 @@ def _apply_tendon_profile_preset(
     preset: str,
     span_mode: str = "Single Span",
     bend_offset_mm: float = 200.0,
+    support_width_m: float = DEFAULT_TENDON_PROFILE_SUPPORT_WIDTH_M,
 ) -> dict[str, Any]:
     preset = normalize_tendon_profile_preset(preset)
     span_mode = normalize_tendon_profile_span_mode(span_mode)
@@ -1486,6 +1505,7 @@ def _apply_tendon_profile_preset(
         preset=preset,
         span_mode=span_mode,
         bend_offset_mm=bend_offset_mm,
+        support_width_m=support_width_m,
     )
     session_state[CB_PROFILE_ROWS_KEY] = canonical_tendon_profile_points(
         [row for row in existing if row["Tendon ID"] not in target_set] + preset_rows,
@@ -1545,6 +1565,10 @@ def _apply_selected_tendon_profile_preset_from_ui() -> None:
         span_mode=span_mode,
         bend_offset_mm=_finite_float(
             st.session_state.get(CB_PROFILE_PRESET_OFFSET_KEY), 200.0
+        ),
+        support_width_m=_finite_float(
+            st.session_state.get(CB_PROFILE_PRESET_SUPPORT_WIDTH_KEY),
+            DEFAULT_TENDON_PROFILE_SUPPORT_WIDTH_M,
         ),
     )
     st.session_state[CB_PROFILE_PRESET_NOTICE_KEY] = notice
@@ -2800,7 +2824,20 @@ def render_crossbeam_tendon_profile_page() -> None:
     ] or list(tendon_ids)
     st.session_state[CB_PROFILE_PRESET_TARGETS_KEY] = current_targets
 
-    quick_col, span_col, offset_col, target_col, action_col = st.columns([1.45, 0.95, 0.95, 1.35, 0.9])
+    support_width_max = max(min(0.20 * length_m, 5.0), 0.10)
+    support_width_value = min(
+        max(
+            _finite_float(
+                st.session_state.get(CB_PROFILE_PRESET_SUPPORT_WIDTH_KEY),
+                DEFAULT_TENDON_PROFILE_SUPPORT_WIDTH_M,
+            ),
+            0.10,
+        ),
+        support_width_max,
+    )
+    quick_col, span_col, offset_col, support_col, target_col, action_col = st.columns(
+        [1.35, 0.85, 0.85, 0.9, 1.25, 0.8]
+    )
     with quick_col:
         selected_preset = st.radio(
             "Select A Quick Start Option",
@@ -2833,6 +2870,20 @@ def render_crossbeam_tendon_profile_page() -> None:
                 "Depth delta applied to bend/parabolic presets. Positive offsets move low points downward because dtop is measured from the top."
             ),
         )
+    with support_col:
+        support_width = st.slider(
+            "Support width (m)",
+            min_value=0.10,
+            max_value=float(support_width_max),
+            value=float(support_width_value),
+            step=0.10,
+            key=CB_PROFILE_PRESET_SUPPORT_WIDTH_KEY,
+            help=(
+                "Longitudinal column/support width used by 2 Span quick-starts. "
+                "Bent profiles place three high control points across this width; "
+                "parabolic profiles add dense control points across twice this width."
+            ),
+        )
     with target_col:
         preset_targets = st.multiselect(
             "Apply preset to tendons",
@@ -2849,7 +2900,14 @@ def render_crossbeam_tendon_profile_page() -> None:
             use_container_width=True,
             help="Use after changing target tendons or bend offset. Option and Span type changes are applied immediately.",
         )
-    st.markdown(_profile_quick_start_gallery_html(selected_preset), unsafe_allow_html=True)
+    st.markdown(
+        _profile_quick_start_gallery_html(
+            selected_preset,
+            length_m=length_m,
+            support_width_m=support_width,
+        ),
+        unsafe_allow_html=True,
+    )
     if apply_preset:
         notice = _apply_tendon_profile_preset(
             st.session_state,
@@ -2863,6 +2921,7 @@ def render_crossbeam_tendon_profile_page() -> None:
             preset=selected_preset,
             span_mode=selected_span_mode,
             bend_offset_mm=bend_offset,
+            support_width_m=support_width,
         )
         st.session_state[CB_PROFILE_PRESET_NOTICE_KEY] = notice
 
@@ -2877,10 +2936,15 @@ def render_crossbeam_tendon_profile_page() -> None:
         elif notice.get("action") == "skipped":
             st.warning("Select at least one tendon before applying a profile preset.")
 
-    preset_point_count = profile_preset_point_count(selected_preset, selected_span_mode)
+    preset_point_count = profile_preset_point_count(
+        selected_preset,
+        selected_span_mode,
+        length_m=length_m,
+        support_width_m=support_width,
+    )
     st.caption(
         f"Preset `{selected_preset}` / `{selected_span_mode}` creates {preset_point_count} point(s) per selected tendon. "
-        "Option and Span type changes rewrite the selected tendon rows immediately; target or offset changes use Re-apply. "
+        "Option and Span type changes rewrite the selected tendon rows immediately; target, offset, or support-width changes use Re-apply. "
         "The profile table below stays editable: add rows for extra control points, or tick Delete row to remove selected points."
     )
 

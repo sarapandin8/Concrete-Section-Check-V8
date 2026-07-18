@@ -223,10 +223,10 @@ def test_profile_preset_apply_replaces_only_selected_tendons(monkeypatch) -> Non
     t1_rows = [row for row in state[CB_PROFILE_ROWS_KEY] if row["Tendon ID"] == "T1"]
     t2_rows = [row for row in state[CB_PROFILE_ROWS_KEY] if row["Tendon ID"] == "T2"]
 
-    assert notice["profile_points"] == 5
-    assert len(t1_rows) == 5
+    assert notice["profile_points"] == 7
+    assert len(t1_rows) == 7
     assert len(t2_rows) == 3
-    assert t1_rows[2]["dtop (mm)"] == 700.0
+    assert t1_rows[3]["dtop (mm)"] == 700.0
     assert state[CB_PROFILE_REV_KEY] == 1
 
 
@@ -268,7 +268,9 @@ def test_profile_quick_start_selection_callback_rewrites_table(monkeypatch) -> N
         0.0,
         2.5,
         7.5,
+        9.5,
         10.0,
+        10.5,
         12.5,
         17.5,
         20.0,
