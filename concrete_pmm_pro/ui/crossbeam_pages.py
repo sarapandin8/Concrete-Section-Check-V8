@@ -209,14 +209,28 @@ def _legacy_profile_rows() -> list[dict[str, Any]]:
     return _records(st.session_state.get(LEGACY_PROFILE_ROWS_KEY))
 
 
-def _default_lateral_offsets(tendon_ids: list[str], width_mm: float) -> dict[str, float]:
-    count = max(len(tendon_ids), 1)
-    if count == 1:
-        return {tendon_ids[0]: 0.0}
-    usable = max(0.55 * width_mm, 0.0)
-    start = -usable / 2.0
-    step = usable / float(count - 1)
-    return {tendon_id: start + index * step for index, tendon_id in enumerate(tendon_ids)}
+def _default_profile_coordinates(
+    *,
+    length_m: float,
+    tendon_ids: list[str],
+    width_mm: float,
+    height_mm: float,
+    t_left_mm: float | None = None,
+    t_right_mm: float | None = None,
+) -> dict[str, dict[str, Any]]:
+    defaults = default_tendon_profile_points(
+        length_m,
+        tendon_ids=tendon_ids,
+        width_mm=width_mm,
+        height_mm=height_mm,
+        t_left_mm=t_left_mm,
+        t_right_mm=t_right_mm,
+    )
+    return {
+        row["Tendon ID"]: row
+        for row in defaults
+        if row.get("Point") == "P1" and row.get("Tendon ID")
+    }
 
 
 def _system_rows_from_legacy(profile_rows: list[dict[str, Any]], tendon_count: int) -> list[dict[str, Any]]:
@@ -265,14 +279,25 @@ def _profile_points_from_legacy(
     tendon_ids: list[str],
     width_mm: float,
     height_mm: float,
+    t_left_mm: float | None = None,
+    t_right_mm: float | None = None,
 ) -> list[dict[str, Any]]:
-    offsets = _default_lateral_offsets(tendon_ids, width_mm)
+    default_by_id = _default_profile_coordinates(
+        length_m=length_m,
+        tendon_ids=tendon_ids,
+        width_mm=width_mm,
+        height_mm=height_mm,
+        t_left_mm=t_left_mm,
+        t_right_mm=t_right_mm,
+    )
     if not profile_rows:
         return default_tendon_profile_points(
             length_m,
             tendon_ids=tendon_ids,
             width_mm=width_mm,
             height_mm=height_mm,
+            t_left_mm=t_left_mm,
+            t_right_mm=t_right_mm,
         )
 
     points: list[dict[str, Any]] = []
@@ -281,13 +306,14 @@ def _profile_points_from_legacy(
         s_ratio = _finite_float(row.get("s/L", row.get("x/L")), 0.0)
         s_m = _finite_float(row.get("s (m)", row.get("x_m")), s_ratio * length_m)
         dtop = _finite_float(row.get("dtop (mm)", row.get("Depth from top mm")), 0.18 * height_mm)
+        default_coordinate = default_by_id.get(tendon_id, {})
         points.append(
             {
                 "Tendon ID": tendon_id,
                 "Point": str(row.get("Point") or f"P{index + 1}"),
                 "s/L": s_ratio,
                 "s (m)": s_m,
-                "x lateral (mm)": _finite_float(row.get("x lateral (mm)"), offsets.get(tendon_id, 0.0)),
+                "x lateral (mm)": _finite_float(row.get("x lateral (mm)"), _finite_float(default_coordinate.get("x lateral (mm)"), 0.0)),
                 "dtop (mm)": dtop,
                 "Curve role": str(row.get("Curve role") or ("Anchorage" if abs(s_ratio) < 1e-9 or abs(s_ratio - 1.0) < 1e-9 else "Profile point")),
             }
@@ -302,6 +328,8 @@ def _profile_points_from_legacy(
                 tendon_ids=missing_ids,
                 width_mm=width_mm,
                 height_mm=height_mm,
+                t_left_mm=t_left_mm,
+                t_right_mm=t_right_mm,
             )
         )
     return canonical_tendon_profile_points(canonical, length_m)
@@ -573,6 +601,8 @@ def _ensure_state() -> None:
             tendon_ids=tendon_ids,
             width_mm=context["width_mm"],
             height_mm=context["height_mm"],
+            t_left_mm=context["t_left_mm"],
+            t_right_mm=context["t_right_mm"],
         )
     else:
         st.session_state[CB_PROFILE_ROWS_KEY] = canonical_tendon_profile_points(
@@ -1294,6 +1324,8 @@ def _add_crossbeam_tendon(
     length_m: float,
     width_mm: float,
     height_mm: float,
+    t_left_mm: float | None = None,
+    t_right_mm: float | None = None,
 ) -> dict[str, Any]:
     """Append one complete tendon and its three default profile points."""
 
@@ -1314,12 +1346,15 @@ def _add_crossbeam_tendon(
     new_row["Tendon ID"] = tendon_id
     system_rows = canonical_tendon_system_rows([*system_rows, new_row])
 
-    new_points = default_tendon_profile_points(
+    default_points = default_tendon_profile_points(
         length,
-        tendon_ids=[tendon_id],
+        tendon_ids=[row["Tendon ID"] for row in system_rows if row["Tendon ID"]],
         width_mm=max(_finite_float(width_mm, 2500.0), 1.0),
         height_mm=max(_finite_float(height_mm, 1500.0), 1.0),
+        t_left_mm=t_left_mm,
+        t_right_mm=t_right_mm,
     )
+    new_points = [row for row in default_points if row["Tendon ID"] == tendon_id]
     profile_rows = canonical_tendon_profile_points(
         [*profile_rows, *new_points], length
     )
@@ -1421,6 +1456,8 @@ def _add_crossbeam_tendon_from_ui() -> None:
         ),
         width_mm=context["width_mm"],
         height_mm=context["height_mm"],
+        t_left_mm=context["t_left_mm"],
+        t_right_mm=context["t_right_mm"],
     )
 
 
@@ -1467,6 +1504,8 @@ def _reset_crossbeam_tendon_system_from_ui() -> None:
         tendon_ids=tendon_ids,
         width_mm=context["width_mm"],
         height_mm=context["height_mm"],
+        t_left_mm=context["t_left_mm"],
+        t_right_mm=context["t_right_mm"],
     )
     st.session_state[CB_TENDON_COUNT_KEY] = len(system_rows)
     st.session_state[CB_ACTIVE_TENDONS_KEY] = tendon_ids
@@ -2502,6 +2541,8 @@ def render_crossbeam_tendon_profile_page() -> None:
             tendon_ids=tendon_ids,
             width_mm=context["width_mm"],
             height_mm=context["height_mm"],
+            t_left_mm=context["t_left_mm"],
+            t_right_mm=context["t_right_mm"],
         )
         st.session_state[CB_PROFILE_REV_KEY] = int(st.session_state.get(CB_PROFILE_REV_KEY, 0)) + 1
         st.rerun()

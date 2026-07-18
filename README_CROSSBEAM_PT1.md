@@ -6,7 +6,8 @@
 
 ## Canonical tendon input model
 
-- Crossbeam projects start with four complete tendons and require at least
+- Crossbeam projects now start with eight complete web-centered tendons
+  (`CROSSBEAM.PT1F`) and require at least
   three active tendons. Each stable Tendon ID owns Active, Internal/External,
   strand count, seven-wire low-relaxation strand, Aps/strand, fpu, fpj/fpu,
   calculated fpj, Left/Right/Both jacking, and both end anchorages.
@@ -38,9 +39,10 @@
 
 - A versioned `crossbeam_tendon_input_model` stores only tendon-system rows,
   profile points, and stable review selections.
-- Older Crossbeam projects without the block receive a four-tendon system and
-  three-point top-referenced profiles. Recognized legacy flat/nested data is
-  migrated, while unresolved Tendon IDs remain visible as `REVIEW REQUIRED`.
+- Older Crossbeam projects without the block receive the current eight-tendon
+  web-centered system and three-point top-referenced profiles. Recognized
+  legacy flat/nested data is migrated, while unresolved Tendon IDs remain
+  visible as `REVIEW REQUIRED`.
 - Editor revisions, generated figures, solver results, and analysis caches are
   excluded from the persisted input block.
 

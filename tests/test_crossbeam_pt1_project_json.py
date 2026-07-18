@@ -98,7 +98,7 @@ def test_project_json_round_trip_preserves_complete_pt1_input_model() -> None:
 
     assert restored[CB_TENDON_SYSTEM_ROWS_KEY] == system
     assert restored[CB_PROFILE_ROWS_KEY] == profile
-    assert restored[CB_TENDON_COUNT_KEY] == 4
+    assert restored[CB_TENDON_COUNT_KEY] == 8
     assert restored[CB_ACTIVE_TENDONS_KEY] == ["PT-A", "T3"]
     assert restored[CB_3D_TRANSPARENT_KEY] is False
     assert restored[CB_TENDON_SYSTEM_REV_KEY] == 1
@@ -117,7 +117,7 @@ def test_project_json_round_trip_preserves_complete_pt1_input_model() -> None:
     assert validation["migrated"] is False
 
 
-def test_older_crossbeam_project_without_pt1_block_seeds_four_tendons_and_profiles() -> None:
+def test_older_crossbeam_project_without_pt1_block_seeds_eight_web_tendons_and_profiles() -> None:
     source, _segments, _definitions = _crossbeam_geometry_state()
     older_project = project_from_session_state(source)
     assert CROSSBEAM_TENDON_METADATA_KEY not in older_project.metadata
@@ -129,7 +129,14 @@ def test_older_crossbeam_project_without_pt1_block_seeds_four_tendons_and_profil
     apply_project_to_session_state(project_from_json(project_to_json(older_project)), restored)
 
     assert restored[CB_TENDON_SYSTEM_ROWS_KEY] == default_tendon_system_rows()
-    assert len(restored[CB_PROFILE_ROWS_KEY]) == 12
+    assert len(restored[CB_PROFILE_ROWS_KEY]) == 24
+    p1_by_id = {
+        row["Tendon ID"]: row
+        for row in restored[CB_PROFILE_ROWS_KEY]
+        if row["Point"] == "P1"
+    }
+    assert {p1_by_id[f"T{index}"]["x lateral (mm)"] for index in range(1, 5)} == {-1100.0}
+    assert {p1_by_id[f"T{index}"]["x lateral (mm)"] for index in range(5, 9)} == {1100.0}
     validation = restored[CB_TENDON_PROJECT_LOAD_VALIDATION_KEY]
     assert validation["status"] == "SOURCE READY"
     assert validation["migrated"] is True

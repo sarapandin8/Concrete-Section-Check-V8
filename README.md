@@ -1,3 +1,12 @@
+### CROSSBEAM.PT1F — Web-Centered Tendon Default Placement
+
+Seeds the Portal Frame Crossbeam default tendon system as eight web-centered
+tendons, four per side. T1-T4 start on the left web centerline and T5-T8 on
+the right web centerline; their default P1/P2/P3 points keep x and dtop
+constant, with vertical levels from 500 mm below the top to 300 mm above the
+bottom. Existing edited tendon inputs, Project-JSON schema, solvers, and other
+workflows remain unchanged. See `README_CROSSBEAM_PT1F.md`.
+
 ### CROSSBEAM.PT1E — 3D Visual Hierarchy and Neutral Concrete Palette
 
 Replaces Plotly's per-trace rainbow Mesh3d colors with role-based neutral

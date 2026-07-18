@@ -40,6 +40,9 @@ PROFILE_ROLE_OPTIONS = (
     "Deviator",
 )
 DEFAULT_STRAND_SYSTEM = "Seven-wire low-relaxation strand"
+DEFAULT_WEB_TENDONS_PER_SIDE = 4
+DEFAULT_TENDON_TOP_OFFSET_MM = 500.0
+DEFAULT_TENDON_BOTTOM_OFFSET_MM = 300.0
 
 
 def _float(value: Any, default: float = 0.0) -> float:
@@ -173,18 +176,55 @@ def validate_tendon_system(
     return rows, list(dict.fromkeys(errors)), list(dict.fromkeys(warnings))
 
 
-def _lateral_offsets(tendon_ids: list[str], width_mm: float) -> dict[str, float]:
+def _default_web_thickness(value: Any, width_mm: float) -> float:
+    fallback = max(0.12 * float(width_mm), 1.0)
+    thickness = _float(value, fallback)
+    return min(max(thickness, 1.0), max(0.5 * float(width_mm), 1.0))
+
+
+def _default_tendon_depths(height_mm: float, tendon_count_per_side: int) -> list[float]:
+    count = max(_int(tendon_count_per_side, DEFAULT_WEB_TENDONS_PER_SIDE), 1)
+    height = max(_float(height_mm, 1500.0), 1.0)
+    top_depth = min(max(DEFAULT_TENDON_TOP_OFFSET_MM, 0.0), height)
+    bottom_depth = min(max(height - DEFAULT_TENDON_BOTTOM_OFFSET_MM, 0.0), height)
+    if bottom_depth <= top_depth:
+        top_depth = height / float(count + 1)
+        bottom_depth = height * float(count) / float(count + 1)
+    if count == 1:
+        return [round(0.5 * (top_depth + bottom_depth), 3)]
+    step = (bottom_depth - top_depth) / float(count - 1)
+    return [round(top_depth + index * step, 3) for index in range(count)]
+
+
+def _web_tendon_coordinates(
+    tendon_ids: list[str],
+    *,
+    width_mm: float,
+    height_mm: float,
+    t_left_mm: float | None = None,
+    t_right_mm: float | None = None,
+) -> dict[str, tuple[float, float]]:
     if not tendon_ids:
         return {}
-    if len(tendon_ids) == 1:
-        return {tendon_ids[0]: 0.0}
-    usable = max(0.55 * float(width_mm), 0.0)
-    start = -usable / 2.0
-    step = usable / float(len(tendon_ids) - 1)
-    return {
-        tendon_id: start + index * step
-        for index, tendon_id in enumerate(tendon_ids)
-    }
+    width = max(_float(width_mm, 2500.0), 1.0)
+    left_thickness = _default_web_thickness(t_left_mm, width)
+    right_thickness = _default_web_thickness(t_right_mm, width)
+    left_x = -0.5 * width + 0.5 * left_thickness
+    right_x = 0.5 * width - 0.5 * right_thickness
+    tendon_count_per_side = max((len(tendon_ids) + 1) // 2, 1)
+    depths = _default_tendon_depths(height_mm, tendon_count_per_side)
+
+    coordinates: dict[str, tuple[float, float]] = {}
+    for index, tendon_id in enumerate(tendon_ids):
+        if index < tendon_count_per_side:
+            x_value = left_x
+            depth_index = index
+        else:
+            x_value = right_x
+            depth_index = index - tendon_count_per_side
+        depth = depths[min(depth_index, len(depths) - 1)]
+        coordinates[tendon_id] = (round(x_value, 3), depth)
+    return coordinates
 
 
 def default_tendon_profile_points(
@@ -193,21 +233,26 @@ def default_tendon_profile_points(
     tendon_ids: list[str],
     width_mm: float,
     height_mm: float,
+    t_left_mm: float | None = None,
+    t_right_mm: float | None = None,
 ) -> list[dict[str, Any]]:
-    """Return three top-referenced control points for every tendon."""
+    """Return three constant-depth web-centered control points for each tendon."""
 
     length = max(_float(length_m, 20.0), 0.1)
-    height = max(_float(height_mm, 1500.0), 1.0)
-    top_depth = min(max(120.0, 0.18 * height), 0.80 * height)
-    low_depth = min(max(top_depth + 100.0, 0.72 * height), 0.95 * height)
-    offsets = _lateral_offsets(tendon_ids, max(_float(width_mm, 2500.0), 1.0))
+    coordinates = _web_tendon_coordinates(
+        tendon_ids,
+        width_mm=max(_float(width_mm, 2500.0), 1.0),
+        height_mm=max(_float(height_mm, 1500.0), 1.0),
+        t_left_mm=t_left_mm,
+        t_right_mm=t_right_mm,
+    )
     rows: list[dict[str, Any]] = []
     for tendon_id in tendon_ids:
-        lateral = offsets.get(tendon_id, 0.0)
+        lateral, default_depth = coordinates.get(tendon_id, (0.0, 0.5 * max(_float(height_mm, 1500.0), 1.0)))
         for point, ratio, depth, role in (
-            ("P1", 0.0, top_depth, "Anchorage"),
-            ("P2", 0.5, low_depth, "Low point"),
-            ("P3", 1.0, top_depth, "Anchorage"),
+            ("P1", 0.0, default_depth, "Anchorage"),
+            ("P2", 0.5, default_depth, "Profile point"),
+            ("P3", 1.0, default_depth, "Anchorage"),
         ):
             rows.append(
                 {

@@ -20,7 +20,7 @@
   uniquely identified Tendon System row and every profile point linked to that
   Tendon ID.
 - Locks removal at the minimum of three stored tendons and when IDs are blank
-  or duplicated. Reset explicitly restores the default four-tendon system.
+  or duplicated. Reset explicitly restores the current default tendon system.
 - Keeps Tendon System revisions, Tendon Profile revisions, visible Tendon IDs,
   and Project-JSON restore state synchronized after inventory changes.
 
@@ -50,7 +50,7 @@
 - All Crossbeam regression tests: **138 passed**.
 - Full repository regression: **1,970 passed**; the same **6 unrelated
   baseline failures** remain in Railway U-Girder and legacy source-audit tests.
-- Live-browser QA verified 4 → Add T5 → 5 → confirmed Remove T5 → 4,
+- Historical live-browser QA verified 4 → Add T5 → 5 → confirmed Remove T5 → 4,
   confirmed 12 linked profile points after removal, found no independent
   count input, and reported **0 browser errors**.
 

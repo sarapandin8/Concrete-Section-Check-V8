@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+import pytest
+
 from concrete_pmm_pro.crossbeam.section_library import (
     DEFAULT_HOLLOW_SECTION_ID,
     default_section_definitions,
@@ -32,7 +34,7 @@ def test_pt1_default_system_has_more_than_two_complete_tendons() -> None:
 
     assert not errors
     assert not warnings
-    assert len(rows) == 4
+    assert len(rows) == 8
     assert all(row["Active"] for row in rows)
     assert {row["Type"] for row in rows} == {"Internal"}
     assert {row["Jacking end"] for row in rows} == {"Both"}
@@ -45,13 +47,15 @@ def test_pt1_default_system_has_more_than_two_complete_tendons() -> None:
 
 
 def test_pt1_profile_is_one_source_for_plan_profile_and_3d_coordinates() -> None:
-    system = default_tendon_system_rows(4)
+    system = default_tendon_system_rows()
     ids = [row["Tendon ID"] for row in system]
     points = default_tendon_profile_points(
         20.0,
         tendon_ids=ids,
         width_mm=2500.0,
         height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
     )
     definitions, segments = _geometry_context()
 
@@ -65,18 +69,53 @@ def test_pt1_profile_is_one_source_for_plan_profile_and_3d_coordinates() -> None
 
     assert not errors
     assert not warnings
-    assert len(normalized) == 12
+    assert len(normalized) == 24
     assert {row["s (m)"] for row in normalized} == {0.0, 10.0, 20.0}
     assert all("x lateral (mm)" in row and "dtop (mm)" in row for row in normalized)
 
 
+def test_pt1f_default_profile_places_four_tendons_in_each_web_at_constant_depths() -> None:
+    system = default_tendon_system_rows()
+    tendon_ids = [row["Tendon ID"] for row in system]
+
+    points = default_tendon_profile_points(
+        20.0,
+        tendon_ids=tendon_ids,
+        width_mm=2500.0,
+        height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
+    )
+    p1_by_id = {
+        row["Tendon ID"]: row
+        for row in points
+        if row["Point"] == "P1"
+    }
+
+    assert tendon_ids == [f"T{index}" for index in range(1, 9)]
+    assert {p1_by_id[f"T{index}"]["x lateral (mm)"] for index in range(1, 5)} == {-1100.0}
+    assert {p1_by_id[f"T{index}"]["x lateral (mm)"] for index in range(5, 9)} == {1100.0}
+    assert [p1_by_id[f"T{index}"]["dtop (mm)"] for index in range(1, 5)] == pytest.approx(
+        [500.0, 733.333, 966.667, 1200.0]
+    )
+    assert [p1_by_id[f"T{index}"]["dtop (mm)"] for index in range(5, 9)] == pytest.approx(
+        [500.0, 733.333, 966.667, 1200.0]
+    )
+    for tendon_id in tendon_ids:
+        rows = [row for row in points if row["Tendon ID"] == tendon_id]
+        assert {row["x lateral (mm)"] for row in rows} == {p1_by_id[tendon_id]["x lateral (mm)"]}
+        assert {row["dtop (mm)"] for row in rows} == {p1_by_id[tendon_id]["dtop (mm)"]}
+
+
 def test_pt1a_cross_section_station_uses_piecewise_linear_shared_profile() -> None:
-    system = default_tendon_system_rows(4)
+    system = default_tendon_system_rows()
     points = default_tendon_profile_points(
         20.0,
         tendon_ids=[row["Tendon ID"] for row in system],
         width_mm=2500.0,
         height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
     )
 
     positions = tendon_positions_at_station(
@@ -86,11 +125,14 @@ def test_pt1a_cross_section_station_uses_piecewise_linear_shared_profile() -> No
         length_m=20.0,
     )
 
-    assert len(positions) == 4
+    assert len(positions) == 8
     assert {row["Interpolation"] for row in positions} == {"Piecewise linear"}
     assert {row["Left point"] for row in positions} == {"P1"}
     assert {row["Right point"] for row in positions} == {"P2"}
-    assert {row["dtop (mm)"] for row in positions} == {675.0}
+    assert sorted({round(row["dtop (mm)"], 3) for row in positions}) == pytest.approx(
+        [500.0, 733.333, 966.667, 1200.0]
+    )
+    assert {row["x lateral (mm)"] for row in positions} == {-1100.0, 1100.0}
     assert all(row["s (m)"] == 5.0 and row["s/L"] == 0.25 for row in positions)
 
 

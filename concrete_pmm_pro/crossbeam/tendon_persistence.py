@@ -109,6 +109,29 @@ def _deduplicated(messages: list[str]) -> list[str]:
     return list(dict.fromkeys(str(message).strip() for message in messages if str(message).strip()))
 
 
+def _default_profile_context(section_definitions: Any) -> dict[str, float | None]:
+    definitions = _records(section_definitions)
+    preferred = next(
+        (
+            row
+            for row in definitions
+            if str(row.get("Section role") or row.get("section_role") or "").strip().casefold() == "hollow"
+        ),
+        definitions[0] if definitions else {},
+    )
+    params = preferred.get("Parameters") or preferred.get("parameters")
+    params = params if isinstance(params, Mapping) else {}
+    contexts = list(section_context_records(definitions).values())
+    width = _float(params.get("width_mm"), max((_float(row.get("Width mm"), 0.0) for row in contexts), default=2500.0))
+    height = _float(params.get("height_mm"), max((_float(row.get("Height mm"), 0.0) for row in contexts), default=1500.0))
+    return {
+        "width_mm": width or 2500.0,
+        "height_mm": height or 1500.0,
+        "t_left_mm": _float(params.get("t_left_mm"), 0.0) or None,
+        "t_right_mm": _float(params.get("t_right_mm"), 0.0) or None,
+    }
+
+
 def crossbeam_tendon_metadata_from_session_state(session_state: Any) -> dict[str, Any]:
     """Return a JSON-safe, input-only PT1 block."""
 
@@ -295,23 +318,23 @@ def restore_crossbeam_tendon_project_state(
     else:
         system = default_tendon_system_rows()
         migrated = True
-        migration_notes.append("Added the default four-tendon system.")
+        migration_notes.append("Added the default eight-tendon web system.")
 
     tendon_ids = [row["Tendon ID"] for row in system if row.get("Tendon ID")]
     if "profile_points" in block:
         points = canonical_tendon_profile_points(block.get("profile_points"), length)
     else:
-        contexts = list(section_context_records(definitions).values())
-        width = max((_float(row.get("Width mm"), 0.0) for row in contexts), default=2500.0)
-        height = max((_float(row.get("Height mm"), 0.0) for row in contexts), default=1500.0)
+        context = _default_profile_context(definitions)
         points = default_tendon_profile_points(
             length,
             tendon_ids=tendon_ids,
-            width_mm=width or 2500.0,
-            height_mm=height or 1500.0,
+            width_mm=float(context["width_mm"] or 2500.0),
+            height_mm=float(context["height_mm"] or 1500.0),
+            t_left_mm=context["t_left_mm"],
+            t_right_mm=context["t_right_mm"],
         )
         migrated = True
-        migration_notes.append("Added default three-point top-referenced profiles for every tendon.")
+        migration_notes.append("Added default three-point web-centered top-referenced profiles for every tendon.")
 
     session_state[CB_TENDON_SYSTEM_ROWS_KEY] = system
     session_state[CB_PROFILE_ROWS_KEY] = points

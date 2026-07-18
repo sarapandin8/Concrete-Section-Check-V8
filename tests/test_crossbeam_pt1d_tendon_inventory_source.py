@@ -36,7 +36,7 @@ from concrete_pmm_pro.ui.crossbeam_pages import (
 )
 
 
-def _state(tendon_count: int = 4) -> dict[str, object]:
+def _state(tendon_count: int = 8) -> dict[str, object]:
     system = default_tendon_system_rows(tendon_count)
     tendon_ids = [str(row["Tendon ID"]) for row in system]
     return {
@@ -69,20 +69,20 @@ def test_pt1d_add_appends_one_complete_tendon_and_three_linked_points() -> None:
 
     assert notice == {
         "action": "added",
-        "tendon_id": "T5",
-        "stored_count": 5,
+        "tendon_id": "T9",
+        "stored_count": 9,
         "profile_points": 3,
     }
-    assert state[CB_TENDON_COUNT_KEY] == 5
-    assert len(state[CB_TENDON_SYSTEM_ROWS_KEY]) == 5
-    assert state[CB_TENDON_SYSTEM_ROWS_KEY][:4] == original_system
-    assert state[CB_TENDON_SYSTEM_ROWS_KEY][-1]["Tendon ID"] == "T5"
+    assert state[CB_TENDON_COUNT_KEY] == 9
+    assert len(state[CB_TENDON_SYSTEM_ROWS_KEY]) == 9
+    assert state[CB_TENDON_SYSTEM_ROWS_KEY][:8] == original_system
+    assert state[CB_TENDON_SYSTEM_ROWS_KEY][-1]["Tendon ID"] == "T9"
     assert state[CB_TENDON_SYSTEM_ROWS_KEY][-1]["Active"] is True
     assert len(state[CB_PROFILE_ROWS_KEY]) == len(original_profile) + 3
     assert len(
-        [row for row in state[CB_PROFILE_ROWS_KEY] if row["Tendon ID"] == "T5"]
+        [row for row in state[CB_PROFILE_ROWS_KEY] if row["Tendon ID"] == "T9"]
     ) == 3
-    assert "T5" in state[CB_ACTIVE_TENDONS_KEY]
+    assert "T9" in state[CB_ACTIVE_TENDONS_KEY]
     assert state[CB_TENDON_SYSTEM_REV_KEY] == 3
     assert state[CB_PROFILE_REV_KEY] == 8
 
@@ -93,7 +93,7 @@ def test_pt1d_add_does_not_reuse_an_orphaned_profile_tendon_id() -> None:
         *state[CB_PROFILE_ROWS_KEY],
         *default_tendon_profile_points(
             20.0,
-            tendon_ids=["T5"],
+            tendon_ids=["T9"],
             width_mm=2500.0,
             height_mm=1500.0,
         ),
@@ -106,12 +106,12 @@ def test_pt1d_add_does_not_reuse_an_orphaned_profile_tendon_id() -> None:
         height_mm=1500.0,
     )
 
-    assert notice["tendon_id"] == "T6"
-    assert state[CB_TENDON_SYSTEM_ROWS_KEY][-1]["Tendon ID"] == "T6"
+    assert notice["tendon_id"] == "T10"
+    assert state[CB_TENDON_SYSTEM_ROWS_KEY][-1]["Tendon ID"] == "T10"
 
 
 def test_pt1d_remove_deletes_one_tendon_and_all_linked_profile_points() -> None:
-    state = _state()
+    state = _state(4)
 
     notice = _remove_crossbeam_tendon(state, "T4")
 

@@ -74,13 +74,15 @@ def test_pt1a_cross_section_uses_exact_hollow_geometry_for_fit_review() -> None:
 
 def test_pt1a_3d_review_is_orthographic_and_uses_shared_profile_source() -> None:
     definitions, segments = _geometry_context()
-    system = default_tendon_system_rows(4)
+    system = default_tendon_system_rows()
     active_ids = [row["Tendon ID"] for row in system]
     points = default_tendon_profile_points(
         20.0,
         tendon_ids=active_ids,
         width_mm=2500.0,
         height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
     )
 
     figure = _three_d_figure(
@@ -95,5 +97,5 @@ def test_pt1a_3d_review_is_orthographic_and_uses_shared_profile_source() -> None
     assert figure.layout.scene.dragmode == "orbit"
     assert "3D Orthographic" in figure.layout.title.text
     tendon_traces = [trace for trace in figure.data if trace.name in active_ids]
-    assert len(tendon_traces) == 4
+    assert len(tendon_traces) == len(active_ids)
     assert all(len(trace.x) == 3 for trace in tendon_traces)
