@@ -40,14 +40,19 @@ PROFILE_ROLE_OPTIONS = (
     "Deviator",
 )
 TENDON_PROFILE_PRESET_OPTIONS = (
-    "Straight constant-depth",
-    "Straight low-point bend",
-    "Straight low-zone bends",
-    "Parabolic low-point",
-    "Parabolic high-point",
-    "Multi-span draped",
+    "Straight Tendon 1",
+    "Straight Tendon 2",
+    "Straight Tendon With Bends 1",
+    "Straight Tendon With Bends 2",
+    "Straight Tendon With Bends 3",
+    "Straight Tendon With Bends 4",
+    "Parabolic Tendon 1",
+    "Parabolic Tendon 2",
+    "Parabolic Tendon 3",
 )
+TENDON_PROFILE_SPAN_MODE_OPTIONS = ("Single Span", "Multiple Span")
 DEFAULT_TENDON_PROFILE_PRESET = TENDON_PROFILE_PRESET_OPTIONS[0]
+DEFAULT_TENDON_PROFILE_SPAN_MODE = TENDON_PROFILE_SPAN_MODE_OPTIONS[0]
 DEFAULT_STRAND_SYSTEM = "Seven-wire low-relaxation strand"
 DEFAULT_WEB_TENDONS_PER_SIDE = 4
 DEFAULT_TENDON_TOP_OFFSET_MM = 500.0
@@ -241,23 +246,48 @@ def normalize_tendon_profile_preset(value: Any) -> str:
     if text in TENDON_PROFILE_PRESET_OPTIONS:
         return text
     aliases = {
-        "straight": "Straight constant-depth",
-        "straight tendon": "Straight constant-depth",
-        "constant": "Straight constant-depth",
-        "line": "Straight constant-depth",
-        "low": "Straight low-point bend",
-        "low point": "Straight low-point bend",
-        "bent": "Straight low-point bend",
-        "bend": "Straight low-point bend",
-        "low zone": "Straight low-zone bends",
-        "parabolic": "Parabolic low-point",
-        "parabola": "Parabolic low-point",
-        "hog": "Parabolic high-point",
-        "high": "Parabolic high-point",
-        "multi": "Multi-span draped",
-        "multiple": "Multi-span draped",
+        "straight": "Straight Tendon 1",
+        "straight tendon": "Straight Tendon 1",
+        "straight constant-depth": "Straight Tendon 1",
+        "constant": "Straight Tendon 1",
+        "line": "Straight Tendon 1",
+        "linear": "Straight Tendon 2",
+        "straight tendon 1": "Straight Tendon 1",
+        "straight tendon 2": "Straight Tendon 2",
+        "low": "Straight Tendon With Bends 1",
+        "low point": "Straight Tendon With Bends 1",
+        "bent": "Straight Tendon With Bends 1",
+        "bend": "Straight Tendon With Bends 1",
+        "straight low-point bend": "Straight Tendon With Bends 1",
+        "straight low-zone bends": "Straight Tendon With Bends 4",
+        "parabolic": "Parabolic Tendon 1",
+        "parabola": "Parabolic Tendon 1",
+        "parabolic low-point": "Parabolic Tendon 1",
+        "parabolic high-point": "Parabolic Tendon 3",
+        "hog": "Parabolic Tendon 3",
+        "high": "Parabolic Tendon 3",
+        "multi": "Straight Tendon With Bends 3",
+        "multiple": "Straight Tendon With Bends 3",
+        "multi-span draped": "Straight Tendon With Bends 3",
     }
     return aliases.get(text.casefold(), DEFAULT_TENDON_PROFILE_PRESET)
+
+
+def normalize_tendon_profile_span_mode(value: Any) -> str:
+    text = str(value or "").strip()
+    if text in TENDON_PROFILE_SPAN_MODE_OPTIONS:
+        return text
+    aliases = {
+        "single": "Single Span",
+        "single span": "Single Span",
+        "1": "Single Span",
+        "multiple": "Multiple Span",
+        "multi": "Multiple Span",
+        "multi span": "Multiple Span",
+        "multiple span": "Multiple Span",
+        "2": "Multiple Span",
+    }
+    return aliases.get(text.casefold(), DEFAULT_TENDON_PROFILE_SPAN_MODE)
 
 
 def _clip_depth(depth_mm: float, height_mm: float) -> float:
@@ -268,26 +298,100 @@ def _clip_depth(depth_mm: float, height_mm: float) -> float:
 def _preset_shape(
     preset: str,
     *,
+    span_mode: str = DEFAULT_TENDON_PROFILE_SPAN_MODE,
     bend_offset_mm: float,
 ) -> list[tuple[str, float, float, str]]:
     """Return point-name, s/L, dtop-offset, and role tuples for a profile preset."""
 
     offset = max(_float(bend_offset_mm, 0.0), 0.0)
     preset = normalize_tendon_profile_preset(preset)
-    if preset == "Straight low-point bend":
+    span_mode = normalize_tendon_profile_span_mode(span_mode)
+    is_multiple = span_mode == "Multiple Span"
+    if preset == "Straight Tendon 2":
+        if is_multiple:
+            return [
+                ("P1", 0.0, -0.20 * offset, "Anchorage"),
+                ("P2", 0.25, -0.10 * offset, "Profile point"),
+                ("P3", 0.5, 0.0, "Profile point"),
+                ("P4", 0.75, 0.10 * offset, "Profile point"),
+                ("P5", 1.0, 0.20 * offset, "Anchorage"),
+            ]
+        return [
+            ("P1", 0.0, -0.25 * offset, "Anchorage"),
+            ("P2", 0.5, 0.0, "Profile point"),
+            ("P3", 1.0, 0.25 * offset, "Anchorage"),
+        ]
+    if preset == "Straight Tendon With Bends 1":
+        if is_multiple:
+            return [
+                ("P1", 0.0, 0.0, "Anchorage"),
+                ("P2", 0.25, offset, "Low point"),
+                ("P3", 0.5, -0.45 * offset, "High point"),
+                ("P4", 0.75, offset, "Low point"),
+                ("P5", 1.0, 0.0, "Anchorage"),
+            ]
         return [
             ("P1", 0.0, 0.0, "Anchorage"),
             ("P2", 0.5, offset, "Low point"),
             ("P3", 1.0, 0.0, "Anchorage"),
         ]
-    if preset == "Straight low-zone bends":
+    if preset == "Straight Tendon With Bends 2":
+        if is_multiple:
+            return [
+                ("P1", 0.0, -0.15 * offset, "Anchorage"),
+                ("P2", 0.33, 0.65 * offset, "Low point"),
+                ("P3", 0.67, 0.65 * offset, "Low point"),
+                ("P4", 1.0, -0.15 * offset, "Anchorage"),
+            ]
+        return [
+            ("P1", 0.0, -0.20 * offset, "Anchorage"),
+            ("P2", 0.5, offset, "Low point"),
+            ("P3", 1.0, -0.20 * offset, "Anchorage"),
+        ]
+    if preset == "Straight Tendon With Bends 3":
+        if is_multiple:
+            return [
+                ("P1", 0.0, 0.0, "Anchorage"),
+                ("P2", 0.2, 0.85 * offset, "Low point"),
+                ("P3", 0.45, 0.85 * offset, "Profile point"),
+                ("P4", 0.5, -0.35 * offset, "High point"),
+                ("P5", 0.55, 0.85 * offset, "Profile point"),
+                ("P6", 0.8, 0.85 * offset, "Low point"),
+                ("P7", 1.0, 0.0, "Anchorage"),
+            ]
         return [
             ("P1", 0.0, 0.0, "Anchorage"),
-            ("P2", 0.25, offset, "Low point"),
-            ("P3", 0.75, offset, "Low point"),
+            ("P2", 0.25, 0.75 * offset, "Low point"),
+            ("P3", 0.75, 0.75 * offset, "Low point"),
             ("P4", 1.0, 0.0, "Anchorage"),
         ]
-    if preset == "Parabolic low-point":
+    if preset == "Straight Tendon With Bends 4":
+        if is_multiple:
+            return [
+                ("P1", 0.0, 0.0, "Anchorage"),
+                ("P2", 0.2, 0.75 * offset, "Low point"),
+                ("P3", 0.4, 0.75 * offset, "Profile point"),
+                ("P4", 0.6, 0.75 * offset, "Profile point"),
+                ("P5", 0.8, 0.75 * offset, "Low point"),
+                ("P6", 1.0, 0.0, "Anchorage"),
+            ]
+        return [
+            ("P1", 0.0, 0.0, "Anchorage"),
+            ("P2", 0.25, 0.70 * offset, "Low point"),
+            ("P3", 0.75, 0.70 * offset, "Low point"),
+            ("P4", 1.0, 0.0, "Anchorage"),
+        ]
+    if preset == "Parabolic Tendon 1":
+        if is_multiple:
+            return [
+                ("P1", 0.0, 0.0, "Anchorage"),
+                ("P2", 0.125, 0.55 * offset, "Profile point"),
+                ("P3", 0.25, offset, "Low point"),
+                ("P4", 0.5, -0.45 * offset, "High point"),
+                ("P5", 0.75, offset, "Low point"),
+                ("P6", 0.875, 0.55 * offset, "Profile point"),
+                ("P7", 1.0, 0.0, "Anchorage"),
+            ]
         return [
             ("P1", 0.0, 0.0, "Anchorage"),
             ("P2", 0.25, 0.75 * offset, "Profile point"),
@@ -295,7 +399,31 @@ def _preset_shape(
             ("P4", 0.75, 0.75 * offset, "Profile point"),
             ("P5", 1.0, 0.0, "Anchorage"),
         ]
-    if preset == "Parabolic high-point":
+    if preset == "Parabolic Tendon 2":
+        if is_multiple:
+            return [
+                ("P1", 0.0, -0.10 * offset, "Anchorage"),
+                ("P2", 0.25, 0.40 * offset, "Profile point"),
+                ("P3", 0.5, 0.70 * offset, "Low point"),
+                ("P4", 0.75, 0.40 * offset, "Profile point"),
+                ("P5", 1.0, -0.10 * offset, "Anchorage"),
+            ]
+        return [
+            ("P1", 0.0, -0.10 * offset, "Anchorage"),
+            ("P2", 0.25, 0.45 * offset, "Profile point"),
+            ("P3", 0.5, 0.70 * offset, "Low point"),
+            ("P4", 0.75, 0.45 * offset, "Profile point"),
+            ("P5", 1.0, -0.10 * offset, "Anchorage"),
+        ]
+    if preset == "Parabolic Tendon 3":
+        if is_multiple:
+            return [
+                ("P1", 0.0, 0.10 * offset, "Anchorage"),
+                ("P2", 0.25, 0.35 * offset, "Profile point"),
+                ("P3", 0.5, -offset, "High point"),
+                ("P4", 0.75, 0.35 * offset, "Profile point"),
+                ("P5", 1.0, 0.10 * offset, "Anchorage"),
+            ]
         return [
             ("P1", 0.0, 0.0, "Anchorage"),
             ("P2", 0.25, -0.75 * offset, "Profile point"),
@@ -303,12 +431,12 @@ def _preset_shape(
             ("P4", 0.75, -0.75 * offset, "Profile point"),
             ("P5", 1.0, 0.0, "Anchorage"),
         ]
-    if preset == "Multi-span draped":
+    if is_multiple:
         return [
             ("P1", 0.0, 0.0, "Anchorage"),
-            ("P2", 0.25, offset, "Low point"),
-            ("P3", 0.5, -0.45 * offset, "High point"),
-            ("P4", 0.75, offset, "Low point"),
+            ("P2", 0.25, 0.0, "Profile point"),
+            ("P3", 0.5, 0.0, "Profile point"),
+            ("P4", 0.75, 0.0, "Profile point"),
             ("P5", 1.0, 0.0, "Anchorage"),
         ]
     return [
@@ -328,6 +456,7 @@ def tendon_profile_points_for_preset(
     t_left_mm: float | None = None,
     t_right_mm: float | None = None,
     preset: str = DEFAULT_TENDON_PROFILE_PRESET,
+    span_mode: str = DEFAULT_TENDON_PROFILE_SPAN_MODE,
     bend_offset_mm: float = 200.0,
 ) -> list[dict[str, Any]]:
     """Return web-centered control points for a selected tendon profile preset.
@@ -347,7 +476,11 @@ def tendon_profile_points_for_preset(
         t_left_mm=t_left_mm,
         t_right_mm=t_right_mm,
     )
-    shape = _preset_shape(preset, bend_offset_mm=bend_offset_mm)
+    shape = _preset_shape(
+        preset,
+        span_mode=span_mode,
+        bend_offset_mm=bend_offset_mm,
+    )
     rows: list[dict[str, Any]] = []
     for tendon_id in tendon_ids:
         lateral, base_depth = coordinates.get(tendon_id, (0.0, 0.5 * height))
@@ -385,12 +518,32 @@ def default_tendon_profile_points(
         t_left_mm=t_left_mm,
         t_right_mm=t_right_mm,
         preset=DEFAULT_TENDON_PROFILE_PRESET,
+        span_mode=DEFAULT_TENDON_PROFILE_SPAN_MODE,
         bend_offset_mm=0.0,
     )
 
 
-def profile_preset_point_count(preset: str) -> int:
-    return len(_preset_shape(preset, bend_offset_mm=1.0))
+def profile_preset_point_count(
+    preset: str,
+    span_mode: str = DEFAULT_TENDON_PROFILE_SPAN_MODE,
+) -> int:
+    return len(_preset_shape(preset, span_mode=span_mode, bend_offset_mm=1.0))
+
+
+def tendon_profile_preset_shape_preview(
+    preset: str,
+    span_mode: str,
+) -> list[tuple[float, float, str]]:
+    """Return normalized preview coordinates for quick-start diagrams."""
+
+    return [
+        (ratio, offset, role)
+        for _point, ratio, offset, role in _preset_shape(
+            preset,
+            span_mode=span_mode,
+            bend_offset_mm=1.0,
+        )
+    ]
 
 
 def canonical_tendon_profile_points(values: Any, length_m: float) -> list[dict[str, Any]]:

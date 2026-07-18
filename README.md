@@ -1,3 +1,12 @@
+### CROSSBEAM.PT1H — Quick-Start Tendon Profile Gallery
+
+Adds a reference-style Crossbeam Tendon Profile quick-start gallery with
+Straight, Bent, and Parabolic tendon families plus Single Span and Multiple
+Span schematics. Changing the active quick-start option rewrites the selected
+tendons' editable `s-x-dtop` rows, while target/offset changes can be re-applied
+explicitly; Project JSON, member length ownership, review figures, and all
+solvers remain unchanged. See `README_CROSSBEAM_PT1H.md`.
+
 ### CROSSBEAM.PT1G — Editable Tendon Profile Points and Presets
 
 Adds Crossbeam Tendon Profile quick-start presets for straight, bent,

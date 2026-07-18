@@ -173,6 +173,42 @@ def test_pt1g_parabolic_preset_seeds_multiple_editable_points_per_tendon() -> No
     assert t1_rows[2]["dtop (mm)"] == pytest.approx(700.0)
 
 
+def test_pt1h_reference_quick_start_catalog_supports_single_and_multiple_span_shapes() -> None:
+    system = default_tendon_system_rows()
+    tendon_ids = [row["Tendon ID"] for row in system]
+
+    single = tendon_profile_points_for_preset(
+        20.0,
+        tendon_ids=["T1"],
+        coordinate_tendon_ids=tendon_ids,
+        width_mm=2500.0,
+        height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
+        preset="Straight Tendon With Bends 3",
+        span_mode="Single Span",
+        bend_offset_mm=200.0,
+    )
+    multiple = tendon_profile_points_for_preset(
+        20.0,
+        tendon_ids=["T1"],
+        coordinate_tendon_ids=tendon_ids,
+        width_mm=2500.0,
+        height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
+        preset="Straight Tendon With Bends 3",
+        span_mode="Multiple Span",
+        bend_offset_mm=200.0,
+    )
+
+    assert [row["s (m)"] for row in single] == [0.0, 5.0, 15.0, 20.0]
+    assert [row["s (m)"] for row in multiple] == [0.0, 4.0, 9.0, 10.0, 11.0, 16.0, 20.0]
+    assert {row["x lateral (mm)"] for row in multiple} == {-1100.0}
+    assert any(row["Curve role"] == "High point" for row in multiple)
+    assert profile_preset_point_count("Straight Tendon With Bends 3", "Multiple Span") == 7
+
+
 def test_pt1_internal_profile_uses_station_section_envelope_but_external_can_leave_it() -> None:
     definitions, segments = _geometry_context()
     system = default_tendon_system_rows(3)

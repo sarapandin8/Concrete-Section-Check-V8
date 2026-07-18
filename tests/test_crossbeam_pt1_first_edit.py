@@ -228,3 +228,42 @@ def test_profile_preset_apply_replaces_only_selected_tendons(monkeypatch) -> Non
     assert len(t2_rows) == 3
     assert t1_rows[2]["dtop (mm)"] == 700.0
     assert state[CB_PROFILE_REV_KEY] == 1
+
+
+def test_profile_quick_start_selection_callback_rewrites_table(monkeypatch) -> None:
+    system = default_tendon_system_rows()
+    profile = default_tendon_profile_points(
+        20.0,
+        tendon_ids=[row["Tendon ID"] for row in system],
+        width_mm=2500.0,
+        height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
+    )
+    state = {
+        "crossbeam_ui1_length_m": 20.0,
+        "section_parameters": {
+            "width_mm": 2500.0,
+            "height_mm": 1500.0,
+            "t_left_mm": 300.0,
+            "t_right_mm": 300.0,
+        },
+        crossbeam_pages.CB_PROFILE_PRESET_KEY: "Straight Tendon With Bends 1",
+        crossbeam_pages.CB_PROFILE_PRESET_SPAN_KEY: "Multiple Span",
+        crossbeam_pages.CB_PROFILE_PRESET_OFFSET_KEY: 200.0,
+        crossbeam_pages.CB_PROFILE_PRESET_TARGETS_KEY: ["T1"],
+        CB_TENDON_SYSTEM_ROWS_KEY: system,
+        CB_PROFILE_ROWS_KEY: profile,
+        CB_PROFILE_REV_KEY: 0,
+    }
+    monkeypatch.setattr(crossbeam_pages, "st", SimpleNamespace(session_state=state))
+
+    crossbeam_pages._apply_selected_tendon_profile_preset_from_ui()
+    t1_rows = [row for row in state[CB_PROFILE_ROWS_KEY] if row["Tendon ID"] == "T1"]
+    t2_rows = [row for row in state[CB_PROFILE_ROWS_KEY] if row["Tendon ID"] == "T2"]
+
+    assert [row["s (m)"] for row in t1_rows] == [0.0, 5.0, 10.0, 15.0, 20.0]
+    assert any(row["Curve role"] == "High point" for row in t1_rows)
+    assert len(t2_rows) == 3
+    assert state[CB_PROFILE_REV_KEY] == 1
+    assert state[crossbeam_pages.CB_PROFILE_PRESET_NOTICE_KEY]["action"] == "applied"

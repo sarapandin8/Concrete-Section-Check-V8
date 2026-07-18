@@ -37,6 +37,7 @@ from concrete_pmm_pro.crossbeam.rebar_persistence import (
 from concrete_pmm_pro.crossbeam.tendon import (
     DEFAULT_STRAND_SYSTEM,
     PROFILE_ROLE_OPTIONS,
+    TENDON_PROFILE_SPAN_MODE_OPTIONS,
     TENDON_PROFILE_PRESET_OPTIONS,
     canonical_tendon_profile_points,
     canonical_tendon_system_rows,
@@ -44,6 +45,7 @@ from concrete_pmm_pro.crossbeam.tendon import (
     profile_preset_point_count,
     default_tendon_system_rows,
     tendon_profile_points_for_preset,
+    tendon_profile_preset_shape_preview,
     section_context_records,
     station_section_contexts,
     tendon_station_audit_rows,
@@ -106,8 +108,10 @@ CB_LENGTH_CHANGE_NOTICE_KEY = "crossbeam_pt1c_length_change_notice"
 CB_CROSS_SECTION_STATION_KEY = "crossbeam_pt1a_cross_section_station_m"
 CB_CROSS_SECTION_FACE_KEY = "crossbeam_pt1a_cross_section_face"
 CB_PROFILE_PRESET_KEY = "crossbeam_pt1g_profile_preset"
+CB_PROFILE_PRESET_SPAN_KEY = "crossbeam_pt1h_profile_preset_span_mode"
 CB_PROFILE_PRESET_OFFSET_KEY = "crossbeam_pt1g_profile_preset_offset_mm"
 CB_PROFILE_PRESET_TARGETS_KEY = "crossbeam_pt1g_profile_preset_tendon_ids"
+CB_PROFILE_PRESET_NOTICE_KEY = "crossbeam_pt1h_profile_preset_notice"
 
 CB_LENGTH_POLICY_KEEP = "Keep existing stations — review required"
 CB_LENGTH_POLICY_SCALE = "Scale longitudinal stations proportionally"
@@ -1339,6 +1343,86 @@ def _profile_rows_from_editor_rows(
     return canonical_tendon_profile_points(usable, length_m)
 
 
+def _html_escape(value: Any) -> str:
+    text = str(value)
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _profile_preset_svg(preset: str, span_mode: str) -> str:
+    points = tendon_profile_preset_shape_preview(preset, span_mode)
+    max_offset = max([abs(offset) for _ratio, offset, _role in points] + [1.0])
+    svg_points: list[tuple[float, float, str]] = []
+    for ratio, offset, role in points:
+        x_value = 8.0 + 104.0 * ratio
+        y_value = 22.0 + 15.0 * (offset / max_offset)
+        svg_points.append((x_value, y_value, role))
+    polyline = " ".join(f"{x_value:.1f},{y_value:.1f}" for x_value, y_value, _role in svg_points)
+    point_nodes = "".join(
+        f'<circle cx="{x_value:.1f}" cy="{y_value:.1f}" r="2.1" fill="#111827" />'
+        for x_value, y_value, _role in svg_points
+    )
+    support_lines = ""
+    if span_mode == "Multiple Span":
+        support_lines = (
+            '<line x1="60" y1="7" x2="60" y2="37" stroke="#b7c3cf" stroke-width="1" />'
+            '<line x1="34" y1="7" x2="34" y2="37" stroke="#d4dde7" stroke-width="0.8" />'
+            '<line x1="86" y1="7" x2="86" y2="37" stroke="#d4dde7" stroke-width="0.8" />'
+        )
+    return (
+        '<svg viewBox="0 0 120 44" role="img" aria-label="'
+        + _html_escape(f"{preset} {span_mode}")
+        + '" class="pt1h-profile-svg">'
+        '<rect x="4" y="6" width="112" height="32" rx="1.5" fill="#ffffff" stroke="#8fa3b7" stroke-width="1" />'
+        f'{support_lines}'
+        '<line x1="8" y1="22" x2="112" y2="22" stroke="#dbe3eb" stroke-width="0.8" />'
+        f'<polyline points="{polyline}" fill="none" stroke="#111827" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />'
+        f'{point_nodes}'
+        '</svg>'
+    )
+
+
+def _profile_quick_start_gallery_html(selected_preset: str) -> str:
+    rows = []
+    for preset in TENDON_PROFILE_PRESET_OPTIONS:
+        selected = preset == selected_preset
+        rows.append(
+            '<div class="pt1h-profile-row'
+            + (" is-selected" if selected else "")
+            + '">'
+            '<div class="pt1h-profile-name">'
+            f'<span class="pt1h-radio">{"&#9679;" if selected else "&#9675;"}</span>'
+            f'<span>{_html_escape(preset)}</span>'
+            '</div>'
+            f'<div>{_profile_preset_svg(preset, "Single Span")}</div>'
+            f'<div>{_profile_preset_svg(preset, "Multiple Span")}</div>'
+            '</div>'
+        )
+    return (
+        '<style>'
+        '.pt1h-profile-gallery{border:1px solid #bfd3ea;border-radius:8px;background:#f8fbff;padding:10px 12px;margin:4px 0 12px 0;}'
+        '.pt1h-profile-title{font-size:12px;font-weight:800;color:#16477d;margin-bottom:8px;}'
+        '.pt1h-profile-header,.pt1h-profile-row{display:grid;grid-template-columns:minmax(190px,1.25fr) 132px 132px;gap:12px;align-items:center;}'
+        '.pt1h-profile-header{font-size:12px;font-weight:800;color:#334155;margin-bottom:5px;padding:0 6px;}'
+        '.pt1h-profile-row{border:1px solid transparent;border-radius:7px;padding:5px 6px;margin:2px 0;}'
+        '.pt1h-profile-row.is-selected{background:#e8f2ff;border-color:#2d7df0;box-shadow:inset 3px 0 0 #2d7df0;}'
+        '.pt1h-profile-name{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:#0f2742;}'
+        '.pt1h-radio{font-size:17px;color:#2d7df0;line-height:1;}'
+        '.pt1h-profile-svg{width:124px;height:46px;display:block;}'
+        '@media(max-width:760px){.pt1h-profile-header,.pt1h-profile-row{grid-template-columns:1fr;}.pt1h-profile-header div:nth-child(n+2){display:none;}.pt1h-profile-svg{width:100%;max-width:210px;}}'
+        '</style>'
+        '<div class="pt1h-profile-gallery">'
+        '<div class="pt1h-profile-title">Select A Quick Start Option</div>'
+        '<div class="pt1h-profile-header"><div></div><div>Single Span</div><div>Multiple Span</div></div>'
+        + "".join(rows)
+        + '</div>'
+    )
+
+
 def _commit_tendon_profile_editor(
     editor_key: str,
     fallback_editor_rows: list[dict[str, Any]],
@@ -1366,7 +1450,8 @@ def _apply_tendon_profile_preset(
     t_left_mm: float | None,
     t_right_mm: float | None,
     preset: str,
-    bend_offset_mm: float,
+    span_mode: str = "Single Span",
+    bend_offset_mm: float = 200.0,
 ) -> dict[str, Any]:
     valid_ids = [tendon_id for tendon_id in tendon_ids if tendon_id]
     valid_set = set(valid_ids)
@@ -1392,6 +1477,7 @@ def _apply_tendon_profile_preset(
         t_left_mm=t_left_mm,
         t_right_mm=t_right_mm,
         preset=preset,
+        span_mode=span_mode,
         bend_offset_mm=bend_offset_mm,
     )
     session_state[CB_PROFILE_ROWS_KEY] = canonical_tendon_profile_points(
@@ -1404,9 +1490,47 @@ def _apply_tendon_profile_preset(
     return {
         "action": "applied",
         "preset": preset,
+        "span_mode": span_mode,
         "profile_points": len(preset_rows),
         "tendon_count": len(targets),
     }
+
+
+def _apply_selected_tendon_profile_preset_from_ui() -> None:
+    context = _section_context()
+    system_rows = _records(st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
+    tendon_ids = _tendon_ids(system_rows)
+    if not tendon_ids:
+        st.session_state[CB_PROFILE_PRESET_NOTICE_KEY] = {
+            "action": "skipped",
+            "profile_points": 0,
+            "tendon_count": 0,
+        }
+        return
+    targets = [
+        tendon_id
+        for tendon_id in st.session_state.get(CB_PROFILE_PRESET_TARGETS_KEY, tendon_ids)
+        if tendon_id in tendon_ids
+    ] or list(tendon_ids)
+    st.session_state[CB_PROFILE_PRESET_TARGETS_KEY] = targets
+    notice = _apply_tendon_profile_preset(
+        st.session_state,
+        length_m=_finite_float(
+            st.session_state.get(CB_LENGTH_KEY), DEFAULT_CROSSBEAM_LENGTH_M
+        ),
+        tendon_ids=tendon_ids,
+        target_tendon_ids=targets,
+        width_mm=context["width_mm"],
+        height_mm=context["height_mm"],
+        t_left_mm=context["t_left_mm"],
+        t_right_mm=context["t_right_mm"],
+        preset=str(st.session_state.get(CB_PROFILE_PRESET_KEY) or TENDON_PROFILE_PRESET_OPTIONS[0]),
+        span_mode=str(st.session_state.get(CB_PROFILE_PRESET_SPAN_KEY) or TENDON_PROFILE_SPAN_MODE_OPTIONS[0]),
+        bend_offset_mm=_finite_float(
+            st.session_state.get(CB_PROFILE_PRESET_OFFSET_KEY), 200.0
+        ),
+    )
+    st.session_state[CB_PROFILE_PRESET_NOTICE_KEY] = notice
 
 
 def _next_crossbeam_tendon_id(
@@ -2644,16 +2768,36 @@ def render_crossbeam_tendon_profile_page() -> None:
         st.warning("Define the Tendon System before editing profile geometry.")
         return
 
-    preset_col, offset_col, target_col, action_col = st.columns([1.35, 0.9, 1.45, 0.9])
-    with preset_col:
-        selected_preset = st.selectbox(
-            "Quick profile preset",
+    if st.session_state.get(CB_PROFILE_PRESET_KEY) not in TENDON_PROFILE_PRESET_OPTIONS:
+        st.session_state[CB_PROFILE_PRESET_KEY] = TENDON_PROFILE_PRESET_OPTIONS[0]
+    if st.session_state.get(CB_PROFILE_PRESET_SPAN_KEY) not in TENDON_PROFILE_SPAN_MODE_OPTIONS:
+        st.session_state[CB_PROFILE_PRESET_SPAN_KEY] = TENDON_PROFILE_SPAN_MODE_OPTIONS[0]
+    current_targets = [
+        tendon_id
+        for tendon_id in st.session_state.get(CB_PROFILE_PRESET_TARGETS_KEY, tendon_ids)
+        if tendon_id in tendon_ids
+    ] or list(tendon_ids)
+    st.session_state[CB_PROFILE_PRESET_TARGETS_KEY] = current_targets
+
+    quick_col, span_col, offset_col, target_col, action_col = st.columns([1.45, 0.95, 0.95, 1.35, 0.9])
+    with quick_col:
+        selected_preset = st.radio(
+            "Select A Quick Start Option",
             options=list(TENDON_PROFILE_PRESET_OPTIONS),
             key=CB_PROFILE_PRESET_KEY,
+            on_change=_apply_selected_tendon_profile_preset_from_ui,
             help=(
-                "Creates editable s-x-dtop rows for the selected shape. "
-                "Presets are geometry quick-starts only; they do not run PT loss or strength checks."
+                "Changing this selection immediately rewrites the selected tendon profile rows. "
+                "The generated rows remain editable s-x-dtop control points."
             ),
+        )
+    with span_col:
+        selected_span_mode = st.radio(
+            "Span type",
+            options=list(TENDON_PROFILE_SPAN_MODE_OPTIONS),
+            key=CB_PROFILE_PRESET_SPAN_KEY,
+            on_change=_apply_selected_tendon_profile_preset_from_ui,
+            help="Single Span and Multiple Span use different control-point patterns for the same quick-start option.",
         )
     with offset_col:
         default_offset = min(200.0, 0.20 * context["height_mm"])
@@ -2668,12 +2812,6 @@ def render_crossbeam_tendon_profile_page() -> None:
                 "Depth delta applied to bend/parabolic presets. Positive offsets move low points downward because dtop is measured from the top."
             ),
         )
-    current_targets = [
-        tendon_id
-        for tendon_id in st.session_state.get(CB_PROFILE_PRESET_TARGETS_KEY, tendon_ids)
-        if tendon_id in tendon_ids
-    ] or list(tendon_ids)
-    st.session_state[CB_PROFILE_PRESET_TARGETS_KEY] = current_targets
     with target_col:
         preset_targets = st.multiselect(
             "Apply preset to tendons",
@@ -2685,10 +2823,12 @@ def render_crossbeam_tendon_profile_page() -> None:
         st.write("")
         st.write("")
         apply_preset = st.button(
-            "Apply preset",
+            "Re-apply",
             key="crossbeam_pt1g_apply_profile_preset",
             use_container_width=True,
+            help="Use after changing target tendons or bend offset. Option and Span type changes are applied immediately.",
         )
+    st.markdown(_profile_quick_start_gallery_html(selected_preset), unsafe_allow_html=True)
     if apply_preset:
         notice = _apply_tendon_profile_preset(
             st.session_state,
@@ -2700,19 +2840,26 @@ def render_crossbeam_tendon_profile_page() -> None:
             t_left_mm=context["t_left_mm"],
             t_right_mm=context["t_right_mm"],
             preset=selected_preset,
+            span_mode=selected_span_mode,
             bend_offset_mm=bend_offset,
         )
-        if notice["action"] == "applied":
+        st.session_state[CB_PROFILE_PRESET_NOTICE_KEY] = notice
+
+    notice = st.session_state.pop(CB_PROFILE_PRESET_NOTICE_KEY, None)
+    if isinstance(notice, Mapping):
+        if notice.get("action") == "applied":
             st.success(
-                f"Applied {selected_preset} to {notice['tendon_count']} tendon(s), "
-                f"creating {notice['profile_points']} editable profile point row(s)."
+                f"Applied {notice.get('preset', selected_preset)} / {notice.get('span_mode', selected_span_mode)} "
+                f"to {notice.get('tendon_count', 0)} tendon(s), creating "
+                f"{notice.get('profile_points', 0)} editable profile point row(s)."
             )
-        else:
+        elif notice.get("action") == "skipped":
             st.warning("Select at least one tendon before applying a profile preset.")
 
-    preset_point_count = profile_preset_point_count(selected_preset)
+    preset_point_count = profile_preset_point_count(selected_preset, selected_span_mode)
     st.caption(
-        f"Preset `{selected_preset}` creates {preset_point_count} point(s) per selected tendon. "
+        f"Preset `{selected_preset}` / `{selected_span_mode}` creates {preset_point_count} point(s) per selected tendon. "
+        "Option and Span type changes rewrite the selected tendon rows immediately; target or offset changes use Re-apply. "
         "The profile table below stays editable: add rows for extra control points, or tick Delete row to remove selected points."
     )
 
