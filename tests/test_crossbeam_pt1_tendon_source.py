@@ -18,6 +18,8 @@ from concrete_pmm_pro.crossbeam.tendon import (
     normalize_tendon_profile_preset,
     normalize_tendon_profile_span_mode,
     profile_preset_point_count,
+    tendon_continuity_audit_rows,
+    tendon_continuity_summary,
     tendon_profile_points_for_preset,
     tendon_positions_at_station,
     tendon_station_audit_rows,
@@ -466,3 +468,80 @@ def test_pt1_station_audit_uses_both_assigned_section_centroids_at_joint() -> No
     assert {row["Segment"] for row in joint_rows} == {"S3", "S4"}
     assert len({round(row["centroid from top (mm)"], 3) for row in joint_rows}) == 2
     assert all(row["e(s) (mm)"] == row["dtop (mm)"] - row["centroid from top (mm)"] for row in joint_rows)
+
+
+def test_ptqa1_default_tendon_continuity_is_geometry_verified() -> None:
+    definitions, segments = _geometry_context()
+    system = canonical_tendon_system_rows(default_tendon_system_rows())
+    points = default_tendon_profile_points(
+        20.0,
+        tendon_ids=[row["Tendon ID"] for row in system],
+        width_mm=2500.0,
+        height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
+    )
+
+    rows = tendon_continuity_audit_rows(
+        points,
+        system,
+        length_m=20.0,
+        segment_rows=segments,
+        section_definitions=definitions,
+    )
+    summary = tendon_continuity_summary(rows)
+
+    assert summary["value"] == "GEOMETRY VERIFIED"
+    assert summary["joint_count"] == 5
+    assert summary["tendon_count"] == 8
+    assert len(rows) == 80
+    assert {row["Continuity status"] for row in rows} == {"PASS"}
+    assert {row["Fit"] for row in rows} == {"IN CONCRETE"}
+
+
+def test_ptqa1_internal_tendon_in_void_requires_joint_review() -> None:
+    definitions, segments = _geometry_context()
+    system = canonical_tendon_system_rows(default_tendon_system_rows(3))
+    for row in system:
+        row["Active"] = row["Tendon ID"] == "T1"
+    points = [
+        {
+            "Tendon ID": "T1",
+            "Point": "P1",
+            "s (m)": 0.0,
+            "x lateral (mm)": 0.0,
+            "dtop (mm)": 750.0,
+            "Curve role": "Anchorage",
+        },
+        {
+            "Tendon ID": "T1",
+            "Point": "P2",
+            "s (m)": 10.0,
+            "x lateral (mm)": 0.0,
+            "dtop (mm)": 750.0,
+            "Curve role": "Profile point",
+        },
+        {
+            "Tendon ID": "T1",
+            "Point": "P3",
+            "s (m)": 20.0,
+            "x lateral (mm)": 0.0,
+            "dtop (mm)": 750.0,
+            "Curve role": "Anchorage",
+        },
+    ]
+
+    rows = tendon_continuity_audit_rows(
+        points,
+        system,
+        length_m=20.0,
+        segment_rows=segments,
+        section_definitions=definitions,
+    )
+    summary = tendon_continuity_summary(rows)
+    review_rows = [row for row in rows if row["Continuity status"] == "REVIEW REQUIRED"]
+
+    assert summary["value"] == "REVIEW REQUIRED"
+    assert review_rows
+    assert {row["Fit"] for row in review_rows} == {"OUTSIDE / VOID - REVIEW"}
+    assert all("outside concrete or inside a void" in row["Issue"] for row in review_rows)

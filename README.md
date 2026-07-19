@@ -1,3 +1,13 @@
+### CROSSBEAM.PTQA1 - Tendon Geometry Continuity Audit
+
+Adds a Crossbeam Tendon Profile `Calculated Audit` check for active tendon
+geometry continuity at every internal segment joint, verifying interpolated
+profile coverage, positive Aps/fpj source values, and internal tendon
+Section-ID polygon fit on both adjacent joint faces. The PT continuity card now
+reports live geometry status instead of hard-coded `NOT VERIFIED`; Project JSON
+shape, tendon presets, rebar workflows, reports, and solvers remain unchanged.
+See `README_CROSSBEAM_PTQA1.md`.
+
 ### CROSSBEAM.PT1L - Parabolic Preset Parameter Reactivity
 
 Makes the Crossbeam Tendon Profile `Preset bend offset (mm)` and

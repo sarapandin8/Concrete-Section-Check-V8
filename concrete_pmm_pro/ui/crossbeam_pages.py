@@ -49,6 +49,8 @@ from concrete_pmm_pro.crossbeam.tendon import (
     default_tendon_system_rows,
     tendon_profile_points_for_preset,
     tendon_profile_preset_shape_preview,
+    tendon_continuity_audit_rows,
+    tendon_continuity_summary,
     section_context_records,
     station_section_contexts,
     tendon_station_audit_rows,
@@ -2682,7 +2684,7 @@ def render_crossbeam_tendon_system_page() -> None:
             {"title": "Tendon source", "value": status, "detail": "Input model only; not a design result", "status": status_kind},
             {"title": "Active tendons", "value": len(active_rows), "detail": f"{len(system_rows)} stored tendon rows", "status": "info"},
             {"title": "Active total Aps", "value": f"{total_aps:,.0f} mm²", "detail": "Strands × Aps/strand", "status": "neutral"},
-            {"title": "PT continuity", "value": "NOT VERIFIED", "detail": "Required at every segment joint · PTQA1", "status": "warning"},
+            {"title": "PT continuity", "value": "CHECK IN PROFILE", "detail": "Tendon Profile · Calculated Audit", "status": "info"},
         ]
     )
     for message in system_errors:
@@ -3016,6 +3018,18 @@ def render_crossbeam_tendon_profile_page() -> None:
     st.session_state[CB_PROFILE_ROWS_KEY] = points
     all_errors = list(dict.fromkeys(segment_errors + system_errors + profile_errors))
     all_warnings = list(dict.fromkeys(system_warnings + profile_warnings))
+    continuity_rows = tendon_continuity_audit_rows(
+        points,
+        system_rows,
+        length_m=length_m,
+        segment_rows=segment_rows,
+        section_definitions=section_definitions,
+    )
+    continuity_summary = tendon_continuity_summary(
+        continuity_rows,
+        profile_errors=all_errors,
+        profile_warnings=all_warnings,
+    )
 
     st.session_state[CB_ACTIVE_TENDONS_KEY] = [
         item
@@ -3055,7 +3069,12 @@ def render_crossbeam_tendon_profile_page() -> None:
             },
             {"title": "Tendons", "value": len(tendon_ids), "detail": f"Internal {internal_count} · External {external_count}", "status": "info"},
             {"title": "Profile points", "value": len(points), "detail": "dtop measured downward from top", "status": "neutral"},
-            {"title": "PT continuity", "value": "NOT VERIFIED", "detail": "Required at every segment joint · PTQA1", "status": "warning"},
+            {
+                "title": "PT continuity",
+                "value": str(continuity_summary["value"]),
+                "detail": str(continuity_summary["detail"]),
+                "status": str(continuity_summary["status"]),
+            },
         ]
     )
     if all_errors or all_warnings:
@@ -3215,6 +3234,34 @@ def render_crossbeam_tendon_profile_page() -> None:
             segment_rows=segment_rows,
             section_definitions=section_definitions,
         )
+        st.markdown("#### Segment joint PT continuity")
+        if continuity_rows:
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "Joint s (m)": round(row["Joint s (m)"], 4),
+                            "Segment": row["Segment"],
+                            "Section ID": row["Section ID"],
+                            "Station face": row["Station face"],
+                            "Tendon ID": row["Tendon ID"],
+                            "Type": row["Type"],
+                            "x (mm)": None if row["x (mm)"] is None else round(row["x (mm)"], 2),
+                            "dtop (mm)": None if row["dtop (mm)"] is None else round(row["dtop (mm)"], 2),
+                            "Fit": row["Fit"],
+                            "Aps total (mm²)": round(row["Aps total (mm²)"], 2),
+                            "fpj (MPa)": round(row["fpj (MPa)"], 2),
+                            "Continuity status": row["Continuity status"],
+                            "Issue": row["Issue"],
+                        }
+                        for row in continuity_rows
+                    ]
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+        else:
+            st.info("No internal segment joint stations were found for PT continuity review.")
         st.markdown("#### Station and assigned section")
         st.dataframe(
             pd.DataFrame(
@@ -3273,6 +3320,20 @@ def render_crossbeam_tendon_profile_page() -> None:
             "e(s) is positive when the tendon lies below the centroid. Each row uses the Section ID assigned at that station; a point on a segment joint expands to both adjacent section faces."
         )
 
-    st.warning(
-        "PT continuity across segment joints is REQUIRED — NOT VERIFIED until PTQA1. These figures do not calculate friction, wobble, anchorage set, elastic shortening, creep, shrinkage, relaxation, SLS stress, ULS strength, anchorage zones, deviator forces, or solid/hollow transition D-regions."
+    continuity_note = (
+        "These figures do not calculate friction, wobble, anchorage set, elastic shortening, "
+        "creep, shrinkage, relaxation, SLS stress, ULS strength, anchorage zones, deviator "
+        "forces, or solid/hollow transition D-regions."
     )
+    if continuity_summary["value"] == "GEOMETRY VERIFIED":
+        st.success(
+            "PT geometry continuity across segment joints is verified for the active tendon input rows. "
+            + continuity_note
+        )
+    elif continuity_summary["value"] == "NO JOINTS":
+        st.info("PT geometry continuity has no internal segment joints to check. " + continuity_note)
+    else:
+        st.warning(
+            "PT geometry continuity across segment joints requires review before relying on this tendon layout. "
+            + continuity_note
+        )

@@ -2,8 +2,9 @@
 
 ``CROSSBEAM.PT1`` promotes the accepted UI1 tendon tables into one canonical
 source of truth shared by Tendon System, Tendon Profile, Project JSON, and the
-station audit.  It deliberately performs no loss, stress, strength, joint, or
-anchorage-zone calculation.
+station audit.  It deliberately performs no loss, stress, strength, or
+anchorage-zone calculation; PTQA1 adds only segment-joint geometry continuity
+review.
 """
 
 from __future__ import annotations
@@ -12,7 +13,10 @@ from collections.abc import Mapping
 from math import isfinite
 from typing import Any
 
+from shapely.geometry import Point
+
 from concrete_pmm_pro.crossbeam.section_library import (
+    build_geometry_for_definition,
     canonical_section_definitions,
     section_property_records,
 )
@@ -30,6 +34,7 @@ from concrete_pmm_pro.crossbeam.workflow import (
     normalize_jacking_end,
     normalize_tendon_type,
 )
+from concrete_pmm_pro.geometry.summary import to_shapely_polygon
 
 
 PROFILE_ROLE_OPTIONS = (
@@ -898,3 +903,194 @@ def tendon_station_audit_rows(
                 }
             )
     return rows
+
+
+def segment_joint_stations(segment_rows: Any, *, length_m: float) -> list[float]:
+    """Return unique internal segment-joint stations for continuity review."""
+
+    length = max(_float(length_m, 20.0), 0.1)
+    tolerance = max(1.0e-6, length * 1.0e-8)
+    stations: set[float] = set()
+    for segment in _records(segment_rows):
+        for key in ("x_start_m", "x_end_m", "s_start (m)", "s_end (m)"):
+            if key not in segment:
+                continue
+            station = _float(segment.get(key), 0.0)
+            if tolerance < station < length - tolerance:
+                stations.add(round(station, 6))
+    return sorted(stations)
+
+
+def _definition_by_section_id(section_definitions: Any) -> dict[str, dict[str, Any]]:
+    return {
+        str(definition.get("Section ID") or ""): definition
+        for definition in canonical_section_definitions(section_definitions)
+    }
+
+
+def _continuity_fit_status(
+    position: Mapping[str, Any],
+    tendon: Mapping[str, Any],
+    context: Mapping[str, Any],
+    definitions: Mapping[str, Mapping[str, Any]],
+) -> tuple[str, str]:
+    tendon_type = str(tendon.get("Type") or DEFAULT_TENDON_TYPE)
+    if tendon_type == "External":
+        return "EXTERNAL - LOCATION SHOWN", ""
+
+    section_id = str(context.get("Section ID") or "")
+    definition = definitions.get(section_id)
+    if not definition:
+        return "SECTION MISSING", f"Section ID {section_id or '(blank)'} is not defined."
+    try:
+        concrete = to_shapely_polygon(build_geometry_for_definition(definition))
+    except Exception as exc:
+        return "SECTION REVIEW", f"Section ID {section_id} geometry could not be built: {exc}"
+
+    _min_x, _min_y, _max_x, top_y = concrete.bounds
+    x_mm = _float(position.get("x lateral (mm)"), 0.0)
+    section_y = top_y - _float(position.get("dtop (mm)"), 0.0)
+    if concrete.covers(Point(x_mm, section_y)):
+        return "IN CONCRETE", ""
+    return "OUTSIDE / VOID - REVIEW", "Internal tendon center is outside concrete or inside a void."
+
+
+def tendon_continuity_audit_rows(
+    profile_values: Any,
+    system_values: Any,
+    *,
+    length_m: float,
+    segment_rows: Any,
+    section_definitions: Any,
+) -> list[dict[str, Any]]:
+    """Return segment-joint PT geometry continuity rows.
+
+    This is a geometry/input audit only.  It verifies that active tendons have
+    interpolated s-x-dtop positions, positive tendon material/stressing source,
+    and acceptable internal-tendon fit at every internal segment joint face.
+    """
+
+    length = max(_float(length_m, 20.0), 0.1)
+    system = canonical_tendon_system_rows(system_values)
+    active = [row for row in system if row["Tendon ID"] and row["Active"]]
+    definitions = _definition_by_section_id(section_definitions)
+    joints = segment_joint_stations(segment_rows, length_m=length)
+    rows: list[dict[str, Any]] = []
+    for station in joints:
+        contexts = station_section_contexts(
+            station,
+            segment_rows,
+            section_definitions,
+            length_m=length,
+        )
+        positions = {
+            row["Tendon ID"]: row
+            for row in tendon_positions_at_station(
+                profile_values,
+                system,
+                station_m=station,
+                length_m=length,
+                active_only=False,
+            )
+        }
+        for tendon in active:
+            tendon_id = tendon["Tendon ID"]
+            position = positions.get(tendon_id)
+            strands = _int(tendon.get("Strands"), DEFAULT_STRANDS_PER_TENDON)
+            aps = _float(tendon.get("Aps/strand mm²"), DEFAULT_STRAND_APS_MM2)
+            fpu = _float(tendon.get("fpu MPa"), DEFAULT_STRAND_FPU_MPA)
+            ratio = _float(tendon.get("fpj/fpu"), DEFAULT_FPJ_RATIO)
+            aps_total = strands * aps
+            fpj = calculated_fpj_mpa(fpu, ratio)
+            source_issues: list[str] = []
+            if aps_total <= 0.0:
+                source_issues.append("Aps total is not positive.")
+            if fpj <= 0.0:
+                source_issues.append("fpj is not positive.")
+            if position is None:
+                rows.append(
+                    {
+                        "Joint s (m)": station,
+                        "Segment": "",
+                        "Section ID": "",
+                        "Station face": "",
+                        "Tendon ID": tendon_id,
+                        "Type": tendon["Type"],
+                        "x (mm)": None,
+                        "dtop (mm)": None,
+                        "Fit": "MISSING PROFILE",
+                        "Aps total (mm²)": aps_total,
+                        "fpj (MPa)": fpj,
+                        "Continuity status": "REVIEW REQUIRED",
+                        "Issue": "No tendon profile segment covers this joint station.",
+                    }
+                )
+                continue
+            for context in contexts or [{}]:
+                fit, fit_issue = _continuity_fit_status(position, tendon, context, definitions)
+                issues = [issue for issue in [fit_issue, *source_issues] if issue]
+                rows.append(
+                    {
+                        "Joint s (m)": station,
+                        "Segment": str(context.get("Segment") or ""),
+                        "Section ID": str(context.get("Section ID") or ""),
+                        "Station face": str(context.get("Station face") or ""),
+                        "Tendon ID": tendon_id,
+                        "Type": tendon["Type"],
+                        "x (mm)": position["x lateral (mm)"],
+                        "dtop (mm)": position["dtop (mm)"],
+                        "Fit": fit,
+                        "Aps total (mm²)": aps_total,
+                        "fpj (MPa)": fpj,
+                        "Continuity status": "PASS" if not issues else "REVIEW REQUIRED",
+                        "Issue": "OK" if not issues else " ".join(issues),
+                    }
+                )
+    return rows
+
+
+def tendon_continuity_summary(
+    continuity_rows: Any,
+    *,
+    profile_errors: list[str] | None = None,
+    profile_warnings: list[str] | None = None,
+) -> dict[str, Any]:
+    rows = _records(continuity_rows)
+    errors = list(profile_errors or [])
+    warnings = list(profile_warnings or [])
+    issue_rows = [
+        row
+        for row in rows
+        if str(row.get("Continuity status") or "").upper() != "PASS"
+    ]
+    joint_count = len({round(_float(row.get("Joint s (m)"), 0.0), 6) for row in rows})
+    tendon_count = len({str(row.get("Tendon ID") or "") for row in rows if row.get("Tendon ID")})
+    issue_count = len(issue_rows) + len(errors)
+
+    if issue_count:
+        return {
+            "value": "REVIEW REQUIRED",
+            "detail": f"{issue_count} issue(s) across {joint_count} joint(s)",
+            "status": "warning",
+            "issue_count": issue_count,
+            "joint_count": joint_count,
+            "tendon_count": tendon_count,
+        }
+    if not rows:
+        return {
+            "value": "NO JOINTS",
+            "detail": "0 internal segment joint(s) to check",
+            "status": "neutral",
+            "issue_count": 0,
+            "joint_count": 0,
+            "tendon_count": tendon_count,
+        }
+    return {
+        "value": "GEOMETRY VERIFIED",
+        "detail": f"{tendon_count} tendon(s) across {joint_count} joint(s)"
+        + (f" - {len(warnings)} note(s)" if warnings else ""),
+        "status": "ready",
+        "issue_count": 0,
+        "joint_count": joint_count,
+        "tendon_count": tendon_count,
+    }
