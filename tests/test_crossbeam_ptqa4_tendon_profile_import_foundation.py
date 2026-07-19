@@ -186,7 +186,8 @@ def test_ptqa5_apply_import_replaces_profile_rows_and_keeps_one_step_undo() -> N
     assert state[crossbeam_pages.CB_PROFILE_ROWS_KEY][0]["dtop (mm)"] == 525.0
     assert state[crossbeam_pages.CB_PROFILE_IMPORT_UNDO_ROWS_KEY] == profile
     assert state[crossbeam_pages.CB_PROFILE_REV_KEY] == 4
-    assert state[crossbeam_pages.CB_PROFILE_IMPORT_CONFIRM_KEY] is False
+    assert state[crossbeam_pages.CB_PROFILE_IMPORT_CONFIRM_REV_KEY] == 1
+    assert crossbeam_pages.CB_PROFILE_IMPORT_CONFIRM_KEY not in state
 
 
 def test_ptqa5_undo_import_restores_previous_profile_rows() -> None:
@@ -205,3 +206,14 @@ def test_ptqa5_undo_import_restores_previous_profile_rows() -> None:
     assert state[crossbeam_pages.CB_PROFILE_ROWS_KEY] == profile
     assert crossbeam_pages.CB_PROFILE_IMPORT_UNDO_ROWS_KEY not in state
     assert state[crossbeam_pages.CB_PROFILE_REV_KEY] == 5
+    assert state[crossbeam_pages.CB_PROFILE_IMPORT_CONFIRM_REV_KEY] == 1
+
+
+def test_ptqa5a_import_helpers_do_not_mutate_streamlit_checkbox_widget_key() -> None:
+    apply_source = inspect.getsource(crossbeam_pages._apply_tendon_profile_import_preview)
+    undo_source = inspect.getsource(crossbeam_pages._undo_tendon_profile_import)
+    render_source = inspect.getsource(crossbeam_pages._render_tendon_profile_import_foundation)
+
+    assert "CB_PROFILE_IMPORT_CONFIRM_KEY] =" not in apply_source
+    assert "CB_PROFILE_IMPORT_CONFIRM_KEY] =" not in undo_source
+    assert 'key=f"{CB_PROFILE_IMPORT_CONFIRM_KEY}_{confirm_revision}"' in render_source

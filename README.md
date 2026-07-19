@@ -1,3 +1,11 @@
+### CROSSBEAM.PTQA5A - Import Apply Streamlit State Hotfix
+
+Fixes the Tendon Profile import apply crash by resetting confirmation through a
+separate revision key instead of writing to the Streamlit checkbox widget key
+after it has been instantiated. Apply/Undo behavior, row validation, Project
+JSON export shape, reports, rebar workflows, and solvers remain unchanged. See
+`README_CROSSBEAM_PTQA5A.md`.
+
 ### CROSSBEAM.PTQA5 - Tendon Profile Import Apply Guard
 
 Adds a guarded Crossbeam Tendon Profile import apply flow: the import panel is

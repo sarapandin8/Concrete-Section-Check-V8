@@ -125,6 +125,7 @@ CB_PROFILE_PRESET_TARGETS_KEY = "crossbeam_pt1g_profile_preset_tendon_ids"
 CB_PROFILE_PRESET_NOTICE_KEY = "crossbeam_pt1h_profile_preset_notice"
 CB_PROFILE_IMPORT_UPLOAD_KEY = "crossbeam_ptqa4_profile_import_upload"
 CB_PROFILE_IMPORT_CONFIRM_KEY = "crossbeam_ptqa5_profile_import_confirm"
+CB_PROFILE_IMPORT_CONFIRM_REV_KEY = "crossbeam_ptqa5_profile_import_confirm_revision"
 CB_PROFILE_IMPORT_UNDO_ROWS_KEY = "crossbeam_ptqa5_profile_import_undo_rows"
 CB_PROFILE_IMPORT_NOTICE_KEY = "crossbeam_ptqa5_profile_import_notice"
 
@@ -1498,7 +1499,9 @@ def _apply_tendon_profile_import_preview(
     )
     session_state[CB_PROFILE_ROWS_KEY] = imported
     session_state[CB_PROFILE_REV_KEY] = int(session_state.get(CB_PROFILE_REV_KEY, 0)) + 1
-    session_state[CB_PROFILE_IMPORT_CONFIRM_KEY] = False
+    session_state[CB_PROFILE_IMPORT_CONFIRM_REV_KEY] = int(
+        session_state.get(CB_PROFILE_IMPORT_CONFIRM_REV_KEY, 0)
+    ) + 1
     session_state[CB_PROFILE_IMPORT_NOTICE_KEY] = {
         "action": "applied",
         "rows": len(imported),
@@ -1519,7 +1522,9 @@ def _undo_tendon_profile_import(
     session_state[CB_PROFILE_ROWS_KEY] = undo_rows
     session_state.pop(CB_PROFILE_IMPORT_UNDO_ROWS_KEY, None)
     session_state[CB_PROFILE_REV_KEY] = int(session_state.get(CB_PROFILE_REV_KEY, 0)) + 1
-    session_state[CB_PROFILE_IMPORT_CONFIRM_KEY] = False
+    session_state[CB_PROFILE_IMPORT_CONFIRM_REV_KEY] = int(
+        session_state.get(CB_PROFILE_IMPORT_CONFIRM_REV_KEY, 0)
+    ) + 1
     session_state[CB_PROFILE_IMPORT_NOTICE_KEY] = {
         "action": "undone",
         "rows": len(undo_rows),
@@ -1660,9 +1665,10 @@ def _render_tendon_profile_import_foundation(
             st.warning(warning)
         if not import_errors:
             st.success("Import preview passed geometry validation.")
+            confirm_revision = int(st.session_state.get(CB_PROFILE_IMPORT_CONFIRM_REV_KEY, 0))
             confirmed = st.checkbox(
                 "I understand this will replace the active Tendon Profile table.",
-                key=CB_PROFILE_IMPORT_CONFIRM_KEY,
+                key=f"{CB_PROFILE_IMPORT_CONFIRM_KEY}_{confirm_revision}",
             )
             apply_col, note_col = st.columns([0.28, 0.72])
             with apply_col:
