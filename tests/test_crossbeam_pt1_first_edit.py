@@ -19,6 +19,10 @@ from concrete_pmm_pro.ui import crossbeam_pages
 
 
 def _data_editor_calls(function_name: str) -> list[ast.Call]:
+    return _streamlit_calls(function_name, "data_editor")
+
+
+def _streamlit_calls(function_name: str, attr_name: str) -> list[ast.Call]:
     source_path = Path(crossbeam_pages.__file__)
     tree = ast.parse(source_path.read_text(encoding="utf-8"))
     function = next(
@@ -31,7 +35,7 @@ def _data_editor_calls(function_name: str) -> list[ast.Call]:
         for node in ast.walk(function)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "data_editor"
+        and node.func.attr == attr_name
     ]
 
 
@@ -45,6 +49,21 @@ def test_every_pt1_editable_table_has_first_edit_callback_and_args() -> None:
         keywords = {item.arg for item in call.keywords}
         assert "on_change" in keywords
         assert "args" in keywords
+
+
+def test_profile_offset_and_support_sliders_reapply_selected_preset_immediately() -> None:
+    sliders = _streamlit_calls("render_crossbeam_tendon_profile_page", "slider")
+    sliders_by_label = {
+        call.args[0].value: call
+        for call in sliders
+        if call.args and isinstance(call.args[0], ast.Constant)
+    }
+
+    for label in ("Preset bend offset (mm)", "Support width (m)"):
+        keywords = {item.arg: item.value for item in sliders_by_label[label].keywords}
+        on_change = keywords.get("on_change")
+        assert isinstance(on_change, ast.Name)
+        assert on_change.id == "_apply_selected_tendon_profile_preset_from_ui"
 
 
 def test_identity_material_and_profile_first_edits_commit_once(monkeypatch) -> None:
@@ -279,3 +298,70 @@ def test_profile_quick_start_selection_callback_rewrites_table(monkeypatch) -> N
     assert len(t2_rows) == 3
     assert state[CB_PROFILE_REV_KEY] == 1
     assert state[crossbeam_pages.CB_PROFILE_PRESET_NOTICE_KEY]["action"] == "applied"
+
+
+def test_profile_preset_callback_uses_current_parabolic_offset_and_support_width(
+    monkeypatch,
+) -> None:
+    system = default_tendon_system_rows()
+    profile = default_tendon_profile_points(
+        20.0,
+        tendon_ids=[row["Tendon ID"] for row in system],
+        width_mm=2500.0,
+        height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
+    )
+    state = {
+        "crossbeam_ui1_length_m": 20.0,
+        "section_parameters": {
+            "width_mm": 2500.0,
+            "height_mm": 1500.0,
+            "t_left_mm": 300.0,
+            "t_right_mm": 300.0,
+        },
+        crossbeam_pages.CB_PROFILE_PRESET_KEY: "Parabolic Tendon",
+        crossbeam_pages.CB_PROFILE_PRESET_SPAN_KEY: "2 Span",
+        crossbeam_pages.CB_PROFILE_PRESET_OFFSET_KEY: 400.0,
+        crossbeam_pages.CB_PROFILE_PRESET_SUPPORT_WIDTH_KEY: 2.0,
+        crossbeam_pages.CB_PROFILE_PRESET_TARGETS_KEY: ["T1"],
+        CB_TENDON_SYSTEM_ROWS_KEY: system,
+        CB_PROFILE_ROWS_KEY: profile,
+        CB_PROFILE_REV_KEY: 0,
+    }
+    monkeypatch.setattr(crossbeam_pages, "st", SimpleNamespace(session_state=state))
+
+    crossbeam_pages._apply_selected_tendon_profile_preset_from_ui()
+    t1_rows = [row for row in state[CB_PROFILE_ROWS_KEY] if row["Tendon ID"] == "T1"]
+    t2_rows = [row for row in state[CB_PROFILE_ROWS_KEY] if row["Tendon ID"] == "T2"]
+    crown_rows = [row for row in t1_rows if 8.0 <= row["s (m)"] <= 12.0]
+
+    assert len(t1_rows) == 19
+    assert len(t2_rows) == 3
+    assert [row["s (m)"] for row in crown_rows] == [
+        8.0,
+        8.333333,
+        8.666667,
+        9.333333,
+        10.0,
+        10.666667,
+        11.333333,
+        11.666667,
+        12.0,
+    ]
+    assert [row["dtop (mm)"] for row in crown_rows] == [
+        756.0,
+        722.222,
+        613.778,
+        528.444,
+        500.0,
+        528.444,
+        613.778,
+        722.222,
+        756.0,
+    ]
+    assert [row["dtop (mm)"] for row in t1_rows if row["Curve role"] == "Low point"] == [
+        900.0,
+        900.0,
+    ]
+    assert state[CB_PROFILE_REV_KEY] == 1

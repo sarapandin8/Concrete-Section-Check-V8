@@ -349,6 +349,59 @@ def test_pt1k_parabolic_two_span_uses_inverted_crown_over_middle_support() -> No
     ]
 
 
+def test_pt1l_parabolic_two_span_reacts_to_offset_and_support_width() -> None:
+    system = default_tendon_system_rows()
+    tendon_ids = [row["Tendon ID"] for row in system]
+
+    default_rows = tendon_profile_points_for_preset(
+        20.0,
+        tendon_ids=["T1"],
+        coordinate_tendon_ids=tendon_ids,
+        width_mm=2500.0,
+        height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
+        preset="Parabolic Tendon",
+        span_mode="2 Span",
+        bend_offset_mm=200.0,
+        support_width_m=1.0,
+    )
+    wider_deeper_rows = tendon_profile_points_for_preset(
+        20.0,
+        tendon_ids=["T1"],
+        coordinate_tendon_ids=tendon_ids,
+        width_mm=2500.0,
+        height_mm=1500.0,
+        t_left_mm=300.0,
+        t_right_mm=300.0,
+        preset="Parabolic Tendon",
+        span_mode="2 Span",
+        bend_offset_mm=400.0,
+        support_width_m=2.0,
+    )
+
+    assert [row["dtop (mm)"] for row in default_rows if row["Curve role"] == "Low point"] == [
+        700.0,
+        700.0,
+    ]
+    assert [row["dtop (mm)"] for row in wider_deeper_rows if row["Curve role"] == "Low point"] == [
+        900.0,
+        900.0,
+    ]
+    assert [
+        row["s (m)"]
+        for row in default_rows
+        if 9.0 <= row["s (m)"] <= 11.0
+    ] == pytest.approx([9.0, 9.333333, 9.666667, 10.0, 10.333333, 10.666667, 11.0])
+    assert [
+        row["s (m)"]
+        for row in wider_deeper_rows
+        if 8.0 <= row["s (m)"] <= 12.0
+    ] == pytest.approx(
+        [8.0, 8.333333, 8.666667, 9.333333, 10.0, 10.666667, 11.333333, 11.666667, 12.0]
+    )
+
+
 def test_pt1_internal_profile_uses_station_section_envelope_but_external_can_leave_it() -> None:
     definitions, segments = _geometry_context()
     system = default_tendon_system_rows(3)

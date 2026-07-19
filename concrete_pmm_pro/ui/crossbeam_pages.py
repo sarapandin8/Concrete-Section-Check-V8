@@ -2866,6 +2866,7 @@ def render_crossbeam_tendon_profile_page() -> None:
             value=float(st.session_state.get(CB_PROFILE_PRESET_OFFSET_KEY, default_offset)),
             step=25.0,
             key=CB_PROFILE_PRESET_OFFSET_KEY,
+            on_change=_apply_selected_tendon_profile_preset_from_ui,
             help=(
                 "Depth delta applied to bend/parabolic presets. Positive offsets move low points downward because dtop is measured from the top."
             ),
@@ -2878,6 +2879,7 @@ def render_crossbeam_tendon_profile_page() -> None:
             value=float(support_width_value),
             step=0.10,
             key=CB_PROFILE_PRESET_SUPPORT_WIDTH_KEY,
+            on_change=_apply_selected_tendon_profile_preset_from_ui,
             help=(
                 "Longitudinal column/support width used by 2 Span quick-starts. "
                 "Bent profiles place three high control points across this width; "
@@ -2898,7 +2900,7 @@ def render_crossbeam_tendon_profile_page() -> None:
             "Re-apply",
             key="crossbeam_pt1g_apply_profile_preset",
             use_container_width=True,
-            help="Use after changing target tendons or bend offset. Option and Span type changes are applied immediately.",
+            help="Use after changing target tendons or when you want to apply the current preset again. Preset, span, offset, and support-width changes are applied immediately.",
         )
     st.markdown(
         _profile_quick_start_gallery_html(
@@ -2944,7 +2946,7 @@ def render_crossbeam_tendon_profile_page() -> None:
     )
     st.caption(
         f"Preset `{selected_preset}` / `{selected_span_mode}` creates {preset_point_count} point(s) per selected tendon. "
-        "Option and Span type changes rewrite the selected tendon rows immediately; target, offset, or support-width changes use Re-apply. "
+        "Option, Span type, offset, and support-width changes rewrite the selected tendon rows immediately; target changes use Re-apply. "
         "The profile table below stays editable: add rows for extra control points, or tick Delete row to remove selected points."
     )
 

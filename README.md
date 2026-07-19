@@ -1,3 +1,13 @@
+### CROSSBEAM.PT1L - Parabolic Preset Parameter Reactivity
+
+Makes the Crossbeam Tendon Profile `Preset bend offset (mm)` and
+`Support width (m)` sliders immediately regenerate the selected tendon profile
+rows, so Parabolic Tendon 2 Span low-point depth and middle-support crown width
+change visibly when those controls change. `Re-apply` remains available for
+target-tendon changes; Project JSON shape, member length ownership, review
+routing, rebar workflows, reports, and solvers remain unchanged. See
+`README_CROSSBEAM_PT1L.md`.
+
 ### CROSSBEAM.PT1K - Interior-Support Parabolic Crown
 
 Refines `Parabolic Tendon / 2 Span` so the middle-support zone uses its own
