@@ -371,3 +371,84 @@ def test_ptqa7_import_ui_exposes_view_coverage_apply_guard() -> None:
     assert "coverage_summary[\"issue_count\"]" in render_source
     assert "full active-tendon view coverage" in render_source
     assert "coverage_summary" in apply_source
+
+
+def test_ptqa8_apply_import_confirms_writeback_to_project_json_and_audit_context() -> None:
+    system, profile, definitions, segments = _context()
+    imported = tendon_profile_import_template_rows(profile, length_m=20.0)
+    imported[0]["dtop (mm)"] = 525.0
+    summary = tendon_profile_import_change_summary(profile, imported, length_m=20.0)
+    coverage_summary = tendon_profile_import_view_coverage_summary(
+        imported,
+        system,
+        length_m=20.0,
+    )
+    state = {
+        "crossbeam_ui1_length_m": 20.0,
+        crossbeam_pages.CB_TENDON_SYSTEM_ROWS_KEY: system,
+        crossbeam_pages.CB_PROFILE_ROWS_KEY: profile,
+        crossbeam_pages.CB_PROFILE_REV_KEY: 11,
+    }
+
+    crossbeam_pages._apply_tendon_profile_import_preview(
+        state,
+        preview_rows=imported,
+        current_rows=profile,
+        length_m=20.0,
+        source_name="profile.csv",
+        summary=summary,
+        coverage_summary=coverage_summary,
+        system_rows=system,
+        segment_rows=segments,
+        section_definitions=definitions,
+    )
+
+    qa = state[crossbeam_pages.CB_PROFILE_IMPORT_WRITEBACK_QA_KEY]
+    qa_summary = qa["summary"]
+    audit = state[crossbeam_pages.CB_PROFILE_IMPORT_AUDIT_KEY]
+    assert qa_summary["value"] == "CONFIRMED"
+    assert qa_summary["issue_count"] == 0
+    assert qa_summary["project_json_rows"] == len(imported)
+    assert qa_summary["calculated_audit_rows"] >= len(imported)
+    assert {row["Status"] for row in qa["rows"]} == {"PASS"}
+    assert audit["Writeback QA"] == "CONFIRMED"
+    assert audit["Writeback issues"] == 0
+    assert audit["Project JSON rows"] == len(imported)
+
+
+def test_ptqa8_writeback_qa_reports_state_signature_mismatch() -> None:
+    system, profile, definitions, segments = _context()
+    imported = tendon_profile_import_template_rows(profile, length_m=20.0)
+    imported[0]["dtop (mm)"] = 525.0
+    state = {
+        "crossbeam_ui1_length_m": 20.0,
+        crossbeam_pages.CB_TENDON_SYSTEM_ROWS_KEY: system,
+        crossbeam_pages.CB_PROFILE_ROWS_KEY: profile,
+    }
+
+    qa = crossbeam_pages._tendon_profile_import_writeback_qa(
+        state,
+        expected_rows=imported,
+        system_rows=system,
+        length_m=20.0,
+        segment_rows=segments,
+        section_definitions=definitions,
+    )
+
+    assert qa["summary"]["value"] == "REVIEW REQUIRED"
+    assert qa["summary"]["issue_count"] >= 1
+    active_state = next(row for row in qa["rows"] if row["Check"] == "Active profile state")
+    assert active_state["Status"] == "REVIEW REQUIRED"
+    assert "does not match" in active_state["Issue"]
+
+
+def test_ptqa8_import_ui_exposes_writeback_qa_trace() -> None:
+    render_source = inspect.getsource(crossbeam_pages._render_tendon_profile_import_foundation)
+    apply_source = inspect.getsource(crossbeam_pages._apply_tendon_profile_import_preview)
+    qa_source = inspect.getsource(crossbeam_pages._tendon_profile_import_writeback_qa)
+
+    assert "Last import writeback QA" in render_source
+    assert "Project JSON tendon metadata" in render_source
+    assert "CB_PROFILE_IMPORT_WRITEBACK_QA_KEY" in apply_source
+    assert "crossbeam_tendon_metadata_from_session_state" in qa_source
+    assert "Calculated Audit context" in qa_source

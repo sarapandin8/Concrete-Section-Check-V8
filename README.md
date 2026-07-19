@@ -1,3 +1,11 @@
+### CROSSBEAM.PTQA8 - Tendon Profile Import Writeback QA
+
+Adds Crossbeam Tendon Profile post-apply writeback QA that confirms imported
+rows match active profile state, Project JSON tendon metadata, Calculated Audit
+context, and Elevation/Cross Section/3D view coverage while leaving Project
+JSON shape, reports, rebar workflows, and solvers unchanged. See
+`README_CROSSBEAM_PTQA8.md`.
+
 ### CROSSBEAM.PTQA7 - Tendon Profile Import Apply Verification Polish
 
 Adds Crossbeam Tendon Profile import view-coverage verification so active

@@ -75,6 +75,7 @@ from concrete_pmm_pro.crossbeam.tendon_persistence import (
     CB_TENDON_COUNT_KEY,
     CB_TENDON_SYSTEM_REV_KEY,
     CB_TENDON_SYSTEM_ROWS_KEY,
+    crossbeam_tendon_metadata_from_session_state,
 )
 from concrete_pmm_pro.crossbeam.workflow import (
     DEFAULT_CROSSBEAM_LENGTH_M,
@@ -134,6 +135,7 @@ CB_PROFILE_IMPORT_UNDO_ROWS_KEY = "crossbeam_ptqa5_profile_import_undo_rows"
 CB_PROFILE_IMPORT_NOTICE_KEY = "crossbeam_ptqa5_profile_import_notice"
 CB_PROFILE_IMPORT_SHEET_KEY = "crossbeam_ptqa6_profile_import_sheet"
 CB_PROFILE_IMPORT_AUDIT_KEY = "crossbeam_ptqa6_profile_import_audit"
+CB_PROFILE_IMPORT_WRITEBACK_QA_KEY = "crossbeam_ptqa8_profile_import_writeback_qa"
 
 CB_LENGTH_POLICY_KEEP = "Keep existing stations — review required"
 CB_LENGTH_POLICY_SCALE = "Scale longitudinal stations proportionally"
@@ -1565,9 +1567,11 @@ def _tendon_profile_import_audit_record(
     row_count: int,
     summary: Mapping[str, Any] | None,
     coverage_summary: Mapping[str, Any] | None = None,
+    writeback_summary: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     change_summary = dict(summary or {})
     view_summary = dict(coverage_summary or {})
+    qa_summary = dict(writeback_summary or {})
     sheet_label = sheet_name or (
         "CSV" if not source_name.casefold().endswith((".xlsx", ".xls")) else "First sheet"
     )
@@ -1584,7 +1588,129 @@ def _tendon_profile_import_audit_record(
         "View coverage": str(view_summary.get("value") or "UNKNOWN"),
         "View issues": int(view_summary.get("issue_count", 0) or 0),
         "Active tendons checked": int(view_summary.get("active_tendons", 0) or 0),
+        "Writeback QA": str(qa_summary.get("value") or "NOT CHECKED"),
+        "Writeback issues": int(qa_summary.get("issue_count", 0) or 0),
+        "Project JSON rows": int(qa_summary.get("project_json_rows", 0) or 0),
+        "Calculated audit rows": int(qa_summary.get("calculated_audit_rows", 0) or 0),
         "Status": "Applied",
+    }
+
+
+def _profile_writeback_signature(rows: Any, *, length_m: float) -> tuple[tuple[Any, ...], ...]:
+    return tuple(
+        (
+            row["Tendon ID"],
+            row["Point"],
+            round(float(row["s (m)"]), 6),
+            round(float(row["x lateral (mm)"]), 3),
+            round(float(row["dtop (mm)"]), 3),
+            row["Curve role"],
+        )
+        for row in canonical_tendon_profile_points(rows, length_m)
+    )
+
+
+def _writeback_qa_row(
+    check: str,
+    status: str,
+    *,
+    detail: str,
+    issue: str = "",
+) -> dict[str, Any]:
+    return {
+        "Check": check,
+        "Status": status,
+        "Detail": detail,
+        "Issue": issue or "OK",
+    }
+
+
+def _tendon_profile_import_writeback_qa(
+    session_state: MutableMapping[str, Any],
+    *,
+    expected_rows: list[dict[str, Any]],
+    system_rows: list[dict[str, Any]] | None,
+    length_m: float,
+    segment_rows: list[dict[str, Any]] | None,
+    section_definitions: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    expected = canonical_tendon_profile_points(expected_rows, length_m)
+    active = canonical_tendon_profile_points(
+        _records(session_state.get(CB_PROFILE_ROWS_KEY)), length_m
+    )
+    metadata = crossbeam_tendon_metadata_from_session_state(session_state)
+    project_rows = canonical_tendon_profile_points(
+        _records(metadata.get("profile_points") if isinstance(metadata, Mapping) else []),
+        length_m,
+    )
+    system = _records(system_rows) or _records(session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
+    segments = _records(segment_rows)
+    definitions = _records(section_definitions)
+    active_signature = _profile_writeback_signature(active, length_m=length_m)
+    expected_signature = _profile_writeback_signature(expected, length_m=length_m)
+    project_signature = _profile_writeback_signature(project_rows, length_m=length_m)
+
+    rows: list[dict[str, Any]] = []
+    active_match = active_signature == expected_signature
+    rows.append(
+        _writeback_qa_row(
+            "Active profile state",
+            "PASS" if active_match else "REVIEW REQUIRED",
+            detail=f"{len(active)} active row(s) vs {len(expected)} imported row(s)",
+            issue="" if active_match else "CB_PROFILE_ROWS_KEY does not match the imported profile signature.",
+        )
+    )
+    project_match = project_signature == expected_signature
+    rows.append(
+        _writeback_qa_row(
+            "Project JSON profile_points",
+            "PASS" if project_match else "REVIEW REQUIRED",
+            detail=f"{len(project_rows)} Project JSON row(s) from live metadata",
+            issue="" if project_match else "Project JSON metadata would not export the imported profile signature.",
+        )
+    )
+    audit_rows = tendon_station_audit_rows(
+        active,
+        system,
+        length_m=length_m,
+        segment_rows=segments,
+        section_definitions=definitions,
+    )
+    audit_ready = bool(audit_rows) and active_match
+    rows.append(
+        _writeback_qa_row(
+            "Calculated Audit context",
+            "PASS" if audit_ready else "REVIEW REQUIRED",
+            detail=f"{len(audit_rows)} station audit row(s) generated from active profile state",
+            issue="" if audit_ready else "Calculated Audit context could not be generated from the active imported rows.",
+        )
+    )
+    coverage_summary = tendon_profile_import_view_coverage_summary(
+        active,
+        system,
+        length_m=length_m,
+    )
+    coverage_ready = str(coverage_summary.get("value") or "") == "READY"
+    rows.append(
+        _writeback_qa_row(
+            "Elevation / Cross Section / 3D context",
+            "PASS" if coverage_ready else "REVIEW REQUIRED",
+            detail=str(coverage_summary.get("detail") or ""),
+            issue="" if coverage_ready else "Active tendon view coverage is incomplete after writeback.",
+        )
+    )
+    issue_count = sum(1 for row in rows if row["Status"] != "PASS")
+    return {
+        "summary": {
+            "value": "CONFIRMED" if issue_count == 0 else "REVIEW REQUIRED",
+            "detail": f"{len(rows) - issue_count}/{len(rows)} writeback check(s) passed",
+            "status": "ready" if issue_count == 0 else "warning",
+            "issue_count": issue_count,
+            "active_rows": len(active),
+            "project_json_rows": len(project_rows),
+            "calculated_audit_rows": len(audit_rows),
+        },
+        "rows": rows,
     }
 
 
@@ -1598,6 +1724,9 @@ def _apply_tendon_profile_import_preview(
     sheet_name: str | None = None,
     summary: Mapping[str, Any] | None = None,
     coverage_summary: Mapping[str, Any] | None = None,
+    system_rows: list[dict[str, Any]] | None = None,
+    segment_rows: list[dict[str, Any]] | None = None,
+    section_definitions: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     imported = canonical_tendon_profile_points(preview_rows, length_m)
     if not imported:
@@ -1614,12 +1743,22 @@ def _apply_tendon_profile_import_preview(
         "action": "applied",
         "rows": len(imported),
     }
+    writeback_qa = _tendon_profile_import_writeback_qa(
+        session_state,
+        expected_rows=imported,
+        system_rows=system_rows,
+        length_m=length_m,
+        segment_rows=segment_rows,
+        section_definitions=section_definitions,
+    )
+    session_state[CB_PROFILE_IMPORT_WRITEBACK_QA_KEY] = writeback_qa
     session_state[CB_PROFILE_IMPORT_AUDIT_KEY] = _tendon_profile_import_audit_record(
         source_name=source_name,
         sheet_name=sheet_name,
         row_count=len(imported),
         summary=summary,
         coverage_summary=coverage_summary,
+        writeback_summary=writeback_qa.get("summary"),
     )
     return {"action": "applied", "rows": len(imported)}
 
@@ -1650,6 +1789,15 @@ def _undo_tendon_profile_import(
         updated_audit["Status"] = "Undone"
         updated_audit["Undo rows restored"] = len(undo_rows)
         session_state[CB_PROFILE_IMPORT_AUDIT_KEY] = updated_audit
+    writeback = session_state.get(CB_PROFILE_IMPORT_WRITEBACK_QA_KEY)
+    if isinstance(writeback, Mapping):
+        updated_writeback = dict(writeback)
+        summary = dict(updated_writeback.get("summary") or {})
+        summary["value"] = "UNDONE"
+        summary["detail"] = "Previous import writeback QA no longer applies after undo."
+        summary["status"] = "neutral"
+        updated_writeback["summary"] = summary
+        session_state[CB_PROFILE_IMPORT_WRITEBACK_QA_KEY] = updated_writeback
     return {"action": "undone", "rows": len(undo_rows)}
 
 
@@ -1678,6 +1826,18 @@ def _render_tendon_profile_import_foundation(
         with st.expander("Last applied import audit", expanded=False):
             st.dataframe(
                 pd.DataFrame([dict(audit)]),
+                use_container_width=True,
+                hide_index=True,
+            )
+    writeback_qa = st.session_state.get(CB_PROFILE_IMPORT_WRITEBACK_QA_KEY)
+    if isinstance(writeback_qa, Mapping):
+        writeback_summary = dict(writeback_qa.get("summary") or {})
+        with st.expander("Last import writeback QA", expanded=False):
+            st.caption(
+                f"{writeback_summary.get('value', 'NOT CHECKED')} - {writeback_summary.get('detail', '')}"
+            )
+            st.dataframe(
+                pd.DataFrame(_records(writeback_qa.get("rows"))),
                 use_container_width=True,
                 hide_index=True,
             )
@@ -1908,11 +2068,15 @@ def _render_tendon_profile_import_foundation(
                         sheet_name=selected_sheet,
                         summary=summary,
                         coverage_summary=coverage_summary,
+                        system_rows=system_rows,
+                        segment_rows=segment_rows,
+                        section_definitions=section_definitions,
                     )
                     st.rerun()
             with note_col:
                 st.caption(
                     "Apply rewrites only the Tendon Profile s-x-dtop rows and increments the profile editor revision. "
+                    "A post-apply QA check confirms the active profile rows match the Project JSON tendon metadata and calculated audit/view contexts. "
                     "Tendon System, Segment Layout, Project JSON export shape, reports, and solvers are not changed here."
                 )
 
