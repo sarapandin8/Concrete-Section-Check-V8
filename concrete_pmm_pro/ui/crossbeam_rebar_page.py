@@ -17,8 +17,10 @@ and stable preview selections in Project JSON with migration/reference checks.
 RB-EDIT1 consumes each data-editor patch in an on-change callback so the first
 cell edit is committed across Template and Segment/Zone tables without a second
 entry, while Template ID changes still update Zone references atomically.
-The unverified PT-continuity guard and all solver ownership remain unchanged. It
-never routes template, zone, or preview state into existing PMM, Beam/Girder,
+PTQA3 reads the Tendon Profile geometry-continuity audit back into this Rebar
+workspace so joint guard labels no longer claim PT is unverified after the
+profile audit has passed. All solver ownership remains unchanged. It never
+routes template, zone, tendon, or preview state into existing PMM, Beam/Girder,
 SLS, shear, torsion, or report solvers.
 """
 
@@ -77,6 +79,16 @@ from concrete_pmm_pro.crossbeam.rebar_persistence import (
     CB_TR_PREVIEW_MODE_KEY,
     CB_TR_TEMPLATE_ROWS_KEY,
 )
+from concrete_pmm_pro.crossbeam.tendon import (
+    tendon_continuity_audit_rows,
+    tendon_continuity_summary,
+    validate_tendon_profile,
+    validate_tendon_system,
+)
+from concrete_pmm_pro.crossbeam.tendon_persistence import (
+    CB_PROFILE_ROWS_KEY,
+    CB_TENDON_SYSTEM_ROWS_KEY,
+)
 from concrete_pmm_pro.crossbeam.transverse import (
     build_transverse_cage_geometry,
     canonical_transverse_templates,
@@ -91,6 +103,7 @@ from concrete_pmm_pro.crossbeam.section_library import (
     CB_SECLIB_DEFINITIONS_KEY,
     build_geometry_for_definition,
     canonical_section_definitions,
+    default_section_definitions,
     definition_map,
 )
 from concrete_pmm_pro.geometry.rebar_layout import (
@@ -133,6 +146,133 @@ def _records(value: Any) -> list[dict[str, Any]]:
     if isinstance(value, tuple):
         return [dict(row) for row in value if isinstance(row, Mapping)]
     return []
+
+
+def _number(value: Any, default: float = 0.0) -> float:
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return float(default)
+    return result if pd.notna(result) else float(default)
+
+
+def _pt_joint_key(station_m: Any) -> float:
+    return round(_number(station_m, 0.0), 6)
+
+
+def _pt_continuity_review_from_state(
+    *,
+    length_m: float,
+    segment_rows: list[dict[str, Any]],
+    section_definitions: list[dict[str, Any]],
+    tendon_enabled: bool,
+) -> dict[str, Any]:
+    if not tendon_enabled:
+        return {
+            "value": "BLOCKED — PRESTRESS DISABLED",
+            "detail": "Prestressing steel is disabled in Section Builder",
+            "status": "danger",
+            "joint_label": "BLOCKED — PRESTRESS DISABLED",
+            "joint_status": "REVIEW REQUIRED",
+            "compact_label": "PT blocked",
+            "continuity_rows": [],
+            "joint_by_station": {},
+        }
+
+    definitions = canonical_section_definitions(section_definitions) or default_section_definitions()
+    system_source = _records(st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
+    profile_source = _records(st.session_state.get(CB_PROFILE_ROWS_KEY))
+    try:
+        system_rows, system_errors, system_warnings = validate_tendon_system(system_source)
+        profile_rows, profile_errors, profile_warnings = validate_tendon_profile(
+            profile_source,
+            system_rows,
+            length_m=length_m,
+            segment_rows=segment_rows,
+            section_definitions=definitions,
+        )
+        continuity_rows = tendon_continuity_audit_rows(
+            profile_rows,
+            system_rows,
+            length_m=length_m,
+            segment_rows=segment_rows,
+            section_definitions=definitions,
+        )
+        summary = tendon_continuity_summary(
+            continuity_rows,
+            profile_errors=[*system_errors, *profile_errors],
+            profile_warnings=[*system_warnings, *profile_warnings],
+        )
+    except Exception as exc:
+        return {
+            "value": "REVIEW REQUIRED",
+            "detail": f"Tendon Profile audit is unavailable: {exc}",
+            "status": "warning",
+            "joint_label": "REVIEW REQUIRED — Tendon Profile audit unavailable",
+            "joint_status": "REVIEW REQUIRED",
+            "compact_label": "PT audit unavailable",
+            "continuity_rows": [],
+            "joint_by_station": {},
+        }
+
+    value = str(summary.get("value") or "REVIEW REQUIRED")
+    detail = str(summary.get("detail") or "")
+    joint_by_station: dict[float, dict[str, str]] = {}
+    rows_by_station: dict[float, list[dict[str, Any]]] = {}
+    for row in continuity_rows:
+        rows_by_station.setdefault(_pt_joint_key(row.get("Joint s (m)")), []).append(row)
+
+    global_review = value == "REVIEW REQUIRED"
+    for station, rows in rows_by_station.items():
+        issue_rows = [
+            row
+            for row in rows
+            if str(row.get("Continuity status") or "").upper() != "PASS"
+        ]
+        tendon_count = len(
+            {str(row.get("Tendon ID") or "") for row in rows if row.get("Tendon ID")}
+        )
+        if issue_rows or global_review:
+            label = (
+                f"REVIEW REQUIRED — {len(issue_rows)} issue row(s)"
+                if issue_rows
+                else f"REVIEW REQUIRED — {detail}"
+            )
+            joint_by_station[station] = {
+                "label": label,
+                "status": "REVIEW REQUIRED",
+                "compact": "PT review required",
+            }
+        else:
+            joint_by_station[station] = {
+                "label": f"GEOMETRY VERIFIED — {tendon_count} tendon(s)",
+                "status": "PT GEOMETRY VERIFIED",
+                "compact": "PT geometry verified",
+            }
+
+    if value == "GEOMETRY VERIFIED":
+        joint_label = f"GEOMETRY VERIFIED — {detail}"
+        joint_status = "PT GEOMETRY VERIFIED"
+        compact_label = "PT geometry verified"
+    elif value == "NO JOINTS":
+        joint_label = "NO JOINTS — current Segment Layout has no internal joint"
+        joint_status = "NO JOINTS"
+        compact_label = "PT not required by layout"
+    else:
+        joint_label = f"REVIEW REQUIRED — {detail}"
+        joint_status = "REVIEW REQUIRED"
+        compact_label = "PT review required"
+
+    return {
+        "value": value,
+        "detail": detail,
+        "status": str(summary.get("status") or "warning"),
+        "joint_label": joint_label,
+        "joint_status": joint_status,
+        "compact_label": compact_label,
+        "continuity_rows": continuity_rows,
+        "joint_by_station": joint_by_station,
+    }
 
 
 def _ensure_rb1_state(segment_rows: list[dict[str, Any]]) -> None:
@@ -206,6 +346,7 @@ def _rebar_elevation_figure(
     zone_rows: list[dict[str, Any]],
     template_rows: list[dict[str, Any]],
     length_m: float,
+    pt_review: Mapping[str, Any] | None = None,
 ) -> go.Figure:
     """Return a schematic rebar continuity review figure.
 
@@ -321,13 +462,27 @@ def _rebar_elevation_figure(
             )
 
     ordered = sorted(segment_rows, key=lambda row: float(row.get("x_start_m", 0.0)))
+    pt_by_station = (
+        pt_review.get("joint_by_station", {}) if isinstance(pt_review, Mapping) else {}
+    )
+    fallback_pt = (
+        str(pt_review.get("compact_label") or "PT audit in Tendon Profile")
+        if isinstance(pt_review, Mapping)
+        else "PT audit in Tendon Profile"
+    )
     for left, right in zip(ordered, ordered[1:]):
         station = float(left.get("x_end_m", 0.0))
+        station_pt = (
+            pt_by_station.get(_pt_joint_key(station), {})
+            if isinstance(pt_by_station, Mapping)
+            else {}
+        )
+        pt_label = str(station_pt.get("compact") or fallback_pt)
         fig.add_vline(x=station, line={"color": "#b44444", "width": 1.5, "dash": "dash"})
         fig.add_annotation(
             x=station,
             y=1.08,
-            text="<b>Ord. rebar = 0</b><br>PT not verified",
+            text=f"<b>Ord. rebar = 0</b><br>{pt_label}",
             showarrow=False,
             font={"size": 9, "color": "#9b2929"},
             bgcolor="rgba(255,255,255,0.85)",
@@ -363,20 +518,26 @@ def _rebar_elevation_figure(
     return fig
 
 
-def _render_locked_joint_rule() -> None:
+def _render_locked_joint_rule(pt_review: Mapping[str, Any]) -> None:
     render_section_bar(
         "Locked segment-joint participation rule",
-        "Ordinary reinforcement is locked to zero across every segment joint. Post-tensioning continuity is required but remains unverified until Tendon System/Profile audit is connected.",
+        "Ordinary reinforcement is locked to zero across every segment joint. Post-tensioning continuity is read from the Tendon Profile Calculated Audit.",
         mark="J",
     )
-    st.warning(
+    rule_message = (
         "LOCKED WORKFLOW RULE — Ordinary rebar crossing every segment joint = 0 mm². "
-        "Rebar may be credited only inside its assigned segment/zone. PT continuity across each joint is REQUIRED, "
-        "but CROSSBEAM.RB2D does not yet verify active tendon geometry or Aps at the joint plane."
+        "Rebar may be credited only inside its assigned segment/zone. "
+        f"PT continuity status from Tendon Profile audit: {pt_review['value']} — {pt_review['detail']}."
     )
+    if str(pt_review.get("status")) == "ready":
+        st.success(rule_message)
+    elif str(pt_review.get("status")) == "danger":
+        st.error(rule_message)
+    else:
+        st.warning(rule_message)
     st.caption(
         "Joint shear transfer, interface behavior, opening/decompression, shear keys, anchorage zones, solid–hollow transitions, "
-        "column D-regions, and tendon-continuity verification remain separate checks."
+        "column D-regions, and strength certification remain separate checks."
     )
 
 def _queue_template_action(action: str, template_id: str = "") -> None:
@@ -2044,8 +2205,10 @@ def _render_section_rebar_preview(
             figure_config=FIGURE_CONFIG,
         )
 
-    st.warning(
-        "JOINT GUARD — Longitudinal ordinary rebar crossing each segment joint is 0 mm². Transverse reinforcement is local to the selected Segment/Zone and receives no automatic joint-shear credit. PT continuity remains required but unverified."
+    st.info(
+        "JOINT GUARD — Longitudinal ordinary rebar crossing each segment joint is 0 mm². "
+        "Transverse reinforcement is local to the selected Segment/Zone and receives no automatic joint-shear credit. "
+        "PT continuity status is reported by the Tendon Profile Calculated Audit."
     )
 
 
@@ -2078,6 +2241,16 @@ def render_crossbeam_rebar_page() -> None:
     )
     active_templates = template_map(template_rows)
     active_transverse_templates = transverse_template_map(transverse_template_rows)
+    section_definitions = (
+        canonical_section_definitions(_records(st.session_state.get(CB_SECLIB_DEFINITIONS_KEY)))
+        or default_section_definitions()
+    )
+    pt_review = _pt_continuity_review_from_state(
+        length_m=length_m,
+        segment_rows=segment_rows,
+        section_definitions=section_definitions,
+        tendon_enabled=tendon_enabled,
+    )
 
     render_metric_cards(
         [
@@ -2095,9 +2268,9 @@ def render_crossbeam_rebar_page() -> None:
             },
             {
                 "title": "PT continuity",
-                "value": "REQUIRED — NOT VERIFIED" if tendon_enabled else "BLOCKED — PRESTRESS DISABLED",
-                "detail": "Future Tendon System/Profile audit must verify active tendon geometry and Aps at each joint",
-                "status": "warning",
+                "value": pt_review["value"],
+                "detail": pt_review["detail"],
+                "status": pt_review["status"],
             },
             {
                 "title": "Solver handoff",
@@ -2117,7 +2290,7 @@ def render_crossbeam_rebar_page() -> None:
     if not ordinary_enabled:
         st.warning("Ordinary rebar is disabled in Section Builder. Stored RB1 templates/zones are excluded from future analysis until re-enabled.")
 
-    _render_locked_joint_rule()
+    _render_locked_joint_rule(pt_review)
 
     active_view = _render_rb2_subnavigation()
 
@@ -2181,13 +2354,13 @@ def render_crossbeam_rebar_page() -> None:
                 + ". Open Longitudinal → Adopted provided reinforcement to enter project values."
             )
         st.plotly_chart(
-            _rebar_elevation_figure(segment_rows, zone_rows, template_rows, length_m),
+            _rebar_elevation_figure(segment_rows, zone_rows, template_rows, length_m, pt_review),
             use_container_width=True,
             config=FIGURE_CONFIG,
         )
         st.caption(
             "The rebar lines are schematic template extents only. They intentionally terminate within their assigned segment/zone. "
-            "No ordinary rebar is shown or credited across a segment joint. PT continuity is required but remains unverified until Tendon Profile audit is connected."
+            "No ordinary rebar is shown or credited across a segment joint. PT continuity status is read from Tendon Profile audit."
         )
 
     elif active_view == "Section Rebar Preview":
@@ -2201,14 +2374,25 @@ def render_crossbeam_rebar_page() -> None:
         )
         joints = segment_joint_audit_rows(segment_rows)
         if joints:
+            pt_by_station = pt_review.get("joint_by_station", {})
             joint_table = [
                 {
                     "Joint": row["Joint"],
                     "s (m)": row["s (m)"],
                     "Ord. rebar": row["Ordinary rebar crossing joint"],
                     "Transverse": row.get("Transverse joint shear credit", "None — local to segments"),
-                    "PT continuity": row.get("Tendon continuity", "REQUIRED — NOT VERIFIED"),
-                    "Status": row["Status"],
+                    "PT continuity": (
+                        (pt_by_station.get(_pt_joint_key(row["s (m)"])) or {}).get("label")
+                        if isinstance(pt_by_station, Mapping)
+                        else None
+                    )
+                    or pt_review["joint_label"],
+                    "Status": (
+                        (pt_by_station.get(_pt_joint_key(row["s (m)"])) or {}).get("status")
+                        if isinstance(pt_by_station, Mapping)
+                        else None
+                    )
+                    or pt_review["joint_status"],
                 }
                 for row in joints
             ]
@@ -2228,7 +2412,7 @@ def render_crossbeam_rebar_page() -> None:
 
         render_section_bar(
             "Calculated active rebar by station",
-            "Compact read-only assembly preview. Interior rows show local template credit; joint rows show zero ordinary rebar and unverified PT continuity.",
+            "Compact read-only assembly preview. Interior rows show local template credit; joint rows show zero ordinary rebar plus Tendon Profile audit status.",
             mark="s",
         )
         audit_rows = station_rebar_audit_rows(segment_rows, zone_rows, template_rows, transverse_template_rows)
@@ -2239,7 +2423,15 @@ def render_crossbeam_rebar_page() -> None:
             segment = segment_by_id.get(str(row.get("Segment") or ""), {})
             if is_joint:
                 section_context = f"{row.get('Segment', '')} · Joint plane"
-                rebar_context = "Ord. rebar 0 mm² · PT required/not verified"
+                station_pt = {}
+                pt_by_station = pt_review.get("joint_by_station", {})
+                if isinstance(pt_by_station, Mapping):
+                    station_pt = pt_by_station.get(_pt_joint_key(row.get("s (m)")), {}) or {}
+                rebar_context = (
+                    f"Ord. rebar 0 mm² · "
+                    f"{station_pt.get('compact') or pt_review['compact_label']}"
+                )
+                status = station_pt.get("status") or pt_review["joint_status"]
             else:
                 section_context = (
                     f"{row.get('Segment', '')} · {segment.get('Section ID', '')} · "
@@ -2249,6 +2441,7 @@ def render_crossbeam_rebar_page() -> None:
                     f"L: {row.get('Active longitudinal template', row.get('Active template', ''))} · "
                     f"T: {row.get('Active transverse template', '')}"
                 )
+                status = row.get("Status", "")
             compact_audit.append(
                 {
                     "Location": row.get("Location", ""),
@@ -2256,7 +2449,7 @@ def render_crossbeam_rebar_page() -> None:
                     "s (m)": row.get("s (m)", 0.0),
                     "Section / segment": section_context,
                     "Rebar / continuity": rebar_context,
-                    "Status": row.get("Status", ""),
+                    "Status": status,
                 }
             )
         st.dataframe(
@@ -2273,6 +2466,6 @@ def render_crossbeam_rebar_page() -> None:
         st.info(
             "CROSSBEAM.RB-PERSIST1 stores the longitudinal/transverse template libraries, Segment/Zone assignments, "
             "Template references, and stable preview settings in Project JSON. It does not modify ULS/SLS capacity, "
-            "shear/torsion, Result Summary, Report/QA, or any analysis-result cache. A future Tendon audit must verify "
-            "active tendon geometry/Aps at each joint before station handoff can claim continuity."
+            "shear/torsion, Result Summary, Report/QA, or any analysis-result cache. Tendon Profile Calculated Audit "
+            "verifies geometry/Aps/fpj source readiness only; station handoff strength checks remain future scope."
         )

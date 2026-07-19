@@ -16,6 +16,7 @@ from concrete_pmm_pro.ui.crossbeam_pages import (
     CROSSBEAM_3D_OUTER_BOUNDARY_COLOR,
     CROSSBEAM_3D_TENDON_COLORS,
     CROSSBEAM_3D_VOID_BOUNDARY_COLOR,
+    _profile_figure,
     _three_d_figure,
     render_crossbeam_tendon_profile_page,
 )
@@ -126,6 +127,26 @@ def test_pt1e_3d_layout_and_caption_explain_the_visual_hierarchy() -> None:
     assert figure.layout.scene.bgcolor == "#FBFCFE"
     assert figure.layout.scene.camera.projection.type == "orthographic"
     assert figure.layout.uirevision == "crossbeam-pt1e-3d-view"
+    assert figure.layout.scene.domain.y[1] <= 0.78
+    assert figure.layout.legend.y >= 0.86
+    assert figure.layout.margin.t >= 120
     assert "Concrete is intentionally neutral" in source
     assert "dashed loops mark Hollow voids" in source
     assert "not change geometry, tendon inputs, validation, or analysis" in source
+
+
+def test_pt1e_elevation_reserves_header_band_for_legend_and_top_surface_label() -> None:
+    definitions, segments, tendon_ids, points = _source()
+    figure = _profile_figure(points, tendon_ids, segments, definitions)
+    top_surface_labels = [
+        annotation
+        for annotation in figure.layout.annotations
+        if "Top surface" in str(annotation.text)
+    ]
+
+    assert figure.layout.yaxis.domain[1] <= 0.8
+    assert figure.layout.legend.y >= 0.86
+    assert figure.layout.margin.t >= 110
+    assert top_surface_labels
+    assert top_surface_labels[0].yref == "paper"
+    assert float(top_surface_labels[0].y) > float(figure.layout.yaxis.domain[1])

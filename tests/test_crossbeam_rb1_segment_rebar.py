@@ -71,7 +71,7 @@ def test_rb1_elevation_stops_rebar_traces_at_zone_boundaries_and_marks_joints():
     zones = default_crossbeam_rebar_zones(segments)
     fig = _rebar_elevation_figure(segments, zones, templates, 20.0)
     annotations = [str(item.text) for item in fig.layout.annotations]
-    assert annotations.count("<b>Ord. rebar = 0</b><br>PT not verified") == len(segments) - 1
+    assert annotations.count("<b>Ord. rebar = 0</b><br>PT audit in Tendon Profile") == len(segments) - 1
     zone_traces = [trace for trace in fig.data if str(trace.name).endswith(" rebar") and trace.showlegend is False]
     assert zone_traces
     joint_stations = {float(row["x_end_m"]) for row in segments[:-1]}

@@ -1,3 +1,21 @@
+### CROSSBEAM.PTQA3 - Rebar Joint PT Continuity Status Sync
+
+Syncs the Crossbeam Rebar workspace with the Tendon Profile continuity audit so
+the PT continuity card, locked-joint message, rebar elevation annotations,
+joint table, and compact station audit no longer say PT is unverified after the
+profile audit has passed. Ordinary rebar crossing remains locked to `0 mm²`,
+and rebar templates, tendon coordinates, Project JSON shape, reports, and all
+solvers remain unchanged. See `README_CROSSBEAM_PTQA3.md`.
+
+### CROSSBEAM.PTQA2 - Tendon Review Figure Layout Polish
+
+Polishes the Crossbeam Tendon Profile review experience by adding a compact
+joint-level PT continuity summary above the detailed audit rows and moving the
+Elevation/3D Orthographic legends into reserved figure header bands so labels
+and models no longer overlap. This is presentation and audit-readability polish
+only; tendon coordinates, continuity rules, Project JSON shape, reports, rebar
+workflows, and solvers remain unchanged. See `README_CROSSBEAM_PTQA2.md`.
+
 ### CROSSBEAM.PTQA1 - Tendon Geometry Continuity Audit
 
 Adds a Crossbeam Tendon Profile `Calculated Audit` check for active tendon

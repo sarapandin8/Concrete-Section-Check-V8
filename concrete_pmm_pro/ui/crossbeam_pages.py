@@ -1938,11 +1938,94 @@ def _profile_figure(
                 hovertemplate="%{fullData.name}<br>s=%{x:.3f} m<br>dtop=%{y:.1f} mm<br>%{customdata[0]} · %{customdata[1]}<extra></extra>",
             )
         )
-    fig.add_hline(y=0.0, line={"color": "#31465a", "width": 1.4}, annotation_text="Top surface")
-    fig.update_layout(**_base_figure_layout("Tendon Elevation — s–dtop from Top Surface", "Station s (m)", "Depth from top dtop (mm)", height=500))
+    fig.add_hline(y=0.0, line={"color": "#31465a", "width": 1.4})
+    fig.update_layout(
+        **_base_figure_layout(
+            "Tendon Elevation — s–dtop from Top Surface",
+            "Station s (m)",
+            "Depth from top dtop (mm)",
+            height=560,
+        )
+    )
+    fig.update_layout(
+        title={
+            "text": "Tendon Elevation — s–dtop from Top Surface",
+            "x": 0.5,
+            "xanchor": "center",
+            "y": 0.985,
+            "yanchor": "top",
+            "font": {"size": 17, "color": "#071A33"},
+        },
+        margin={"l": 72, "r": 44, "t": 118, "b": 70},
+        legend={
+            "orientation": "h",
+            "yanchor": "middle",
+            "y": 0.875,
+            "xanchor": "center",
+            "x": 0.5,
+            "bgcolor": "rgba(255,255,255,0.94)",
+            "bordercolor": "#D7E0EA",
+            "borderwidth": 1,
+            "font": {"color": "#20364D", "size": 12},
+        },
+    )
+    fig.add_annotation(
+        x=1.0,
+        y=0.805,
+        xref="paper",
+        yref="paper",
+        text="Top surface · dtop = 0",
+        showarrow=False,
+        xanchor="right",
+        yanchor="bottom",
+        bgcolor="rgba(255,255,255,0.92)",
+        bordercolor="#D7E0EA",
+        borderwidth=1,
+        font={"size": 10, "color": "#31465A"},
+    )
     max_height = max(heights, default=1500.0)
-    fig.update_yaxes(range=[max_height * 1.08, -max_height * 0.08])
+    fig.update_yaxes(range=[max_height * 1.08, -max_height * 0.08], domain=[0.0, 0.78])
     return fig
+
+
+def _joint_continuity_summary_rows(
+    continuity_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    joint_rows: dict[float, list[dict[str, Any]]] = {}
+    for row in continuity_rows:
+        joint = round(_finite_float(row.get("Joint s (m)"), 0.0), 6)
+        joint_rows.setdefault(joint, []).append(row)
+
+    summary_rows: list[dict[str, Any]] = []
+    for joint, rows in sorted(joint_rows.items()):
+        tendon_ids = sorted({str(row.get("Tendon ID") or "") for row in rows if row.get("Tendon ID")})
+        segments = sorted({str(row.get("Segment") or "") for row in rows if row.get("Segment")})
+        section_ids = sorted({str(row.get("Section ID") or "") for row in rows if row.get("Section ID")})
+        review_rows = [
+            row
+            for row in rows
+            if str(row.get("Continuity status") or "").upper() != "PASS"
+        ]
+        issues = sorted(
+            {
+                str(row.get("Issue") or "").strip()
+                for row in review_rows
+                if str(row.get("Issue") or "").strip()
+                and str(row.get("Issue") or "").strip().upper() != "OK"
+            }
+        )
+        summary_rows.append(
+            {
+                "Joint s (m)": joint,
+                "Adjacent segments": " / ".join(segments),
+                "Section IDs": " / ".join(section_ids),
+                "Tendons checked": len(tendon_ids),
+                "Review rows": len(review_rows),
+                "Status": "PASS" if not review_rows else "REVIEW REQUIRED",
+                "Issue summary": "OK" if not issues else "; ".join(issues),
+            }
+        )
+    return summary_rows
 
 
 def _cross_section_figure(
@@ -2356,15 +2439,15 @@ def _three_d_figure(
             "yanchor": "top",
             "font": {"size": 17, "color": "#071A33"},
         },
-        height=650,
-        margin={"l": 20, "r": 20, "t": 110, "b": 20},
+        height=700,
+        margin={"l": 20, "r": 20, "t": 130, "b": 24},
         paper_bgcolor="white",
         plot_bgcolor="white",
         font={"family": "Arial, sans-serif", "size": 12},
         legend={
             "orientation": "h",
-            "yanchor": "top",
-            "y": 0.94,
+            "yanchor": "middle",
+            "y": 0.885,
             "xanchor": "center",
             "x": 0.5,
             "bgcolor": "rgba(255,255,255,0.92)",
@@ -2374,6 +2457,7 @@ def _three_d_figure(
         },
         uirevision="crossbeam-pt1e-3d-view",
         scene={
+            "domain": {"x": [0.0, 1.0], "y": [0.0, 0.76]},
             "bgcolor": "#FBFCFE",
             "xaxis": {
                 "title": "Station s (m)",
@@ -3236,6 +3320,25 @@ def render_crossbeam_tendon_profile_page() -> None:
         )
         st.markdown("#### Segment joint PT continuity")
         if continuity_rows:
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "Joint s (m)": round(row["Joint s (m)"], 4),
+                            "Adjacent segments": row["Adjacent segments"],
+                            "Section IDs": row["Section IDs"],
+                            "Tendons checked": row["Tendons checked"],
+                            "Review rows": row["Review rows"],
+                            "Status": row["Status"],
+                            "Issue summary": row["Issue summary"],
+                        }
+                        for row in _joint_continuity_summary_rows(continuity_rows)
+                    ]
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.markdown("#### Segment joint PT continuity details")
             st.dataframe(
                 pd.DataFrame(
                     [

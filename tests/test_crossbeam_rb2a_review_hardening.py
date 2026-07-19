@@ -81,12 +81,13 @@ def test_rb2a_hollow_preview_supports_enhanced_markers_and_true_diameter_modes()
     assert enhanced.layout.height == 500
 
 
-def test_rb2a_page_uses_compact_table_columns_and_unverified_tendon_guard():
+def test_rb2a_page_uses_compact_table_columns_and_tendon_profile_audit_guard():
     source = Path("concrete_pmm_pro/ui/crossbeam_rebar_page.py").read_text()
     assert '"Zone", "Segment", "Start", "End", "Section", "Template"' in source
     for label in ("Template ID", "Template name", "Role", "Construction", "Method", "Target"):
         assert f'"{label}"' in source
-    assert "REQUIRED — NOT VERIFIED" in source
+    assert "Tendon Profile Calculated Audit" in source
+    assert "PT not verified" not in source
     assert "TENDONS ONLY" not in source
     assert "Enhanced markers" in source
     assert "True bar diameter" in source
