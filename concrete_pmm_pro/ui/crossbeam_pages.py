@@ -55,6 +55,8 @@ from concrete_pmm_pro.crossbeam.tendon import (
     tendon_profile_import_diff_rows,
     tendon_profile_import_schema_rows,
     tendon_profile_import_template_rows,
+    tendon_profile_import_view_coverage_rows,
+    tendon_profile_import_view_coverage_summary,
     tendon_profile_preset_shape_preview,
     tendon_continuity_audit_rows,
     tendon_continuity_summary,
@@ -1537,6 +1539,10 @@ def _friendly_tendon_import_issue(message: Any) -> str:
     hints: list[str] = []
     if "missing required column" in lowered:
         hints.append("Download the active-profile CSV and keep the required column names or accepted aliases.")
+    if "at least two geometry points" in lowered or "profile points are required" in lowered:
+        hints.append("Each active Tendon ID needs at least two rows so Elevation, Cross Section, and 3D can interpolate it.")
+    if "left anchorage" in lowered or "right anchorage" in lowered or "s = 0" in lowered or "s = l" in lowered:
+        hints.append("Each active tendon should include anchorage rows at s = 0 and s = L.")
     if "tendon id" in lowered and ("not found" in lowered or "unknown" in lowered or "defined" in lowered):
         hints.append("Match Tendon ID to rows already defined in Tendon System.")
     if "s (m)" in lowered or "station" in lowered:
@@ -1558,8 +1564,10 @@ def _tendon_profile_import_audit_record(
     sheet_name: str | None,
     row_count: int,
     summary: Mapping[str, Any] | None,
+    coverage_summary: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     change_summary = dict(summary or {})
+    view_summary = dict(coverage_summary or {})
     sheet_label = sheet_name or (
         "CSV" if not source_name.casefold().endswith((".xlsx", ".xls")) else "First sheet"
     )
@@ -1573,6 +1581,9 @@ def _tendon_profile_import_audit_record(
         "Removed rows": int(change_summary.get("removed_rows", 0) or 0),
         "Unchanged rows": int(change_summary.get("unchanged_rows", 0) or 0),
         "Affected tendons": int(change_summary.get("affected_tendons", 0) or 0),
+        "View coverage": str(view_summary.get("value") or "UNKNOWN"),
+        "View issues": int(view_summary.get("issue_count", 0) or 0),
+        "Active tendons checked": int(view_summary.get("active_tendons", 0) or 0),
         "Status": "Applied",
     }
 
@@ -1586,6 +1597,7 @@ def _apply_tendon_profile_import_preview(
     source_name: str = "",
     sheet_name: str | None = None,
     summary: Mapping[str, Any] | None = None,
+    coverage_summary: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     imported = canonical_tendon_profile_points(preview_rows, length_m)
     if not imported:
@@ -1607,6 +1619,7 @@ def _apply_tendon_profile_import_preview(
         sheet_name=sheet_name,
         row_count=len(imported),
         summary=summary,
+        coverage_summary=coverage_summary,
     )
     return {"action": "applied", "rows": len(imported)}
 
@@ -1770,6 +1783,16 @@ def _render_tendon_profile_import_foundation(
             preview_rows,
             length_m=length_m,
         )
+        coverage_rows = tendon_profile_import_view_coverage_rows(
+            preview_rows,
+            system_rows,
+            length_m=length_m,
+        )
+        coverage_summary = tendon_profile_import_view_coverage_summary(
+            preview_rows,
+            system_rows,
+            length_m=length_m,
+        )
         render_metric_cards(
             [
                 {
@@ -1791,13 +1814,39 @@ def _render_tendon_profile_import_foundation(
                     "status": "neutral",
                 },
                 {
+                    "title": "View coverage",
+                    "value": coverage_summary["value"],
+                    "detail": coverage_summary["detail"],
+                    "status": coverage_summary["status"],
+                },
+                {
                     "title": "Apply guard",
-                    "value": "CONFIRM REQUIRED" if not import_errors else "LOCKED",
+                    "value": (
+                        "CONFIRM REQUIRED"
+                        if not import_errors and not coverage_summary["issue_count"]
+                        else "LOCKED"
+                    ),
                     "detail": "Valid import only",
-                    "status": "warning" if not import_errors else "neutral",
+                    "status": (
+                        "warning"
+                        if not import_errors and not coverage_summary["issue_count"]
+                        else "neutral"
+                    ),
                 },
             ]
         )
+        if coverage_rows:
+            coverage_has_issues = bool(coverage_summary["issue_count"])
+            with st.expander("View coverage check", expanded=coverage_has_issues):
+                st.caption(
+                    "Elevation, Cross Section, and 3D require every active tendon to cover the full member length from s=0 to s=L."
+                )
+                st.dataframe(
+                    pd.DataFrame(coverage_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                    height=min(300, 38 * (min(len(coverage_rows), 6) + 1)),
+                )
         if diff_rows:
             with st.expander("Profile row diff", expanded=not import_errors):
                 st.dataframe(
@@ -1830,7 +1879,12 @@ def _render_tendon_profile_import_foundation(
         for warning in import_warnings:
             st.warning(_friendly_tendon_import_issue(warning))
         if not import_errors:
-            st.success("Import preview passed geometry validation.")
+            if coverage_summary["issue_count"]:
+                st.warning(
+                    "Import preview passed row validation but view coverage still needs review before apply."
+                )
+            else:
+                st.success("Import preview passed geometry and view-coverage validation.")
             confirm_revision = int(st.session_state.get(CB_PROFILE_IMPORT_CONFIRM_REV_KEY, 0))
             confirmed = st.checkbox(
                 "I understand this will replace the active Tendon Profile table.",
@@ -1841,9 +1895,9 @@ def _render_tendon_profile_import_foundation(
                 if st.button(
                     "Apply imported profile",
                     key="crossbeam_ptqa5_profile_import_apply",
-                    disabled=not confirmed,
+                    disabled=not confirmed or bool(coverage_summary["issue_count"]),
                     use_container_width=True,
-                    help="Requires a valid import preview and explicit confirmation.",
+                    help="Requires a valid import preview, full active-tendon view coverage, and explicit confirmation.",
                 ):
                     _apply_tendon_profile_import_preview(
                         st.session_state,
@@ -1853,6 +1907,7 @@ def _render_tendon_profile_import_foundation(
                         source_name=_profile_import_upload_name(uploaded_file),
                         sheet_name=selected_sheet,
                         summary=summary,
+                        coverage_summary=coverage_summary,
                     )
                     st.rerun()
             with note_col:

@@ -12,6 +12,8 @@ from concrete_pmm_pro.crossbeam.tendon import (
     tendon_profile_import_diff_rows,
     tendon_profile_import_schema_rows,
     tendon_profile_import_template_rows,
+    tendon_profile_import_view_coverage_rows,
+    tendon_profile_import_view_coverage_summary,
 )
 from concrete_pmm_pro.crossbeam.workflow import default_crossbeam_segment_rows
 from concrete_pmm_pro.ui import crossbeam_pages
@@ -292,3 +294,80 @@ def test_ptqa6_import_issue_guidance_adds_actionable_hints() -> None:
     )
 
     assert "between 0 and the Crossbeam member length L" in message
+
+
+def test_ptqa7_view_coverage_reports_active_tendon_import_gaps() -> None:
+    system, profile, _definitions, _segments = _context()
+    imported = [row for row in profile if row["Tendon ID"] != "T2"]
+
+    coverage_rows = tendon_profile_import_view_coverage_rows(
+        imported,
+        system,
+        length_m=20.0,
+    )
+    summary = tendon_profile_import_view_coverage_summary(
+        imported,
+        system,
+        length_m=20.0,
+    )
+
+    t2_row = next(row for row in coverage_rows if row["Tendon ID"] == "T2")
+    assert t2_row["View coverage"] == "REVIEW REQUIRED"
+    assert "Missing active tendon rows" in t2_row["Issue"]
+    assert summary["value"] == "REVIEW REQUIRED"
+    assert summary["issue_count"] == 1
+
+
+def test_ptqa7_complete_import_has_ready_view_coverage() -> None:
+    system, profile, _definitions, _segments = _context()
+
+    summary = tendon_profile_import_view_coverage_summary(
+        profile,
+        system,
+        length_m=20.0,
+    )
+
+    assert summary["value"] == "READY"
+    assert summary["issue_count"] == 0
+    assert summary["active_tendons"] == len([row for row in system if row["Active"]])
+
+
+def test_ptqa7_apply_import_audit_records_view_coverage() -> None:
+    system, profile, _definitions, _segments = _context()
+    imported = tendon_profile_import_template_rows(profile, length_m=20.0)
+    summary = tendon_profile_import_change_summary(profile, imported, length_m=20.0)
+    coverage_summary = tendon_profile_import_view_coverage_summary(
+        imported,
+        system,
+        length_m=20.0,
+    )
+    state = {
+        crossbeam_pages.CB_PROFILE_ROWS_KEY: profile,
+        crossbeam_pages.CB_PROFILE_REV_KEY: 9,
+    }
+
+    crossbeam_pages._apply_tendon_profile_import_preview(
+        state,
+        preview_rows=imported,
+        current_rows=profile,
+        length_m=20.0,
+        source_name="profile.csv",
+        summary=summary,
+        coverage_summary=coverage_summary,
+    )
+
+    audit = state[crossbeam_pages.CB_PROFILE_IMPORT_AUDIT_KEY]
+    assert audit["View coverage"] == "READY"
+    assert audit["View issues"] == 0
+    assert audit["Active tendons checked"] == coverage_summary["active_tendons"]
+
+
+def test_ptqa7_import_ui_exposes_view_coverage_apply_guard() -> None:
+    render_source = inspect.getsource(crossbeam_pages._render_tendon_profile_import_foundation)
+    apply_source = inspect.getsource(crossbeam_pages._apply_tendon_profile_import_preview)
+
+    assert "View coverage check" in render_source
+    assert "tendon_profile_import_view_coverage_rows" in render_source
+    assert "coverage_summary[\"issue_count\"]" in render_source
+    assert "full active-tendon view coverage" in render_source
+    assert "coverage_summary" in apply_source

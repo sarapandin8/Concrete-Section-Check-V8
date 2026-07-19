@@ -1,3 +1,11 @@
+### CROSSBEAM.PTQA7 - Tendon Profile Import Apply Verification Polish
+
+Adds Crossbeam Tendon Profile import view-coverage verification so active
+tendons must cover `s=0..L` with enough points for Elevation, Cross Section,
+and 3D review before guarded apply is enabled, while leaving Project JSON
+shape, reports, rebar workflows, and solvers unchanged. See
+`README_CROSSBEAM_PTQA7.md`.
+
 ### CROSSBEAM.PTQA6 - Tendon Profile Import UX Audit Trace
 
 Adds Crossbeam Tendon Profile import audit trace with Excel sheet selection,

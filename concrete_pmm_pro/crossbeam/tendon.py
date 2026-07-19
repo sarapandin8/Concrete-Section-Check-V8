@@ -1003,6 +1003,97 @@ def tendon_profile_import_diff_rows(
     return rows
 
 
+def tendon_profile_import_view_coverage_rows(
+    profile_values: Any,
+    system_values: Any,
+    *,
+    length_m: float,
+) -> list[dict[str, Any]]:
+    """Return active-tendon coverage rows for import apply/view readiness."""
+
+    length = max(_float(length_m, 20.0), 0.1)
+    tolerance = max(1.0e-6, length * 1.0e-6)
+    system = canonical_tendon_system_rows(system_values)
+    points_by_id: dict[str, list[dict[str, Any]]] = {}
+    for point in canonical_tendon_profile_points(profile_values, length):
+        points_by_id.setdefault(point["Tendon ID"], []).append(point)
+
+    rows: list[dict[str, Any]] = []
+    for tendon in system:
+        tendon_id = tendon["Tendon ID"]
+        if not tendon_id or not tendon["Active"]:
+            continue
+        points = sorted(points_by_id.get(tendon_id, []), key=lambda row: row["s (m)"])
+        stations = [round(point["s (m)"], 9) for point in points]
+        first_station = points[0]["s (m)"] if points else None
+        last_station = points[-1]["s (m)"] if points else None
+        left_anchor = first_station is not None and abs(first_station) <= tolerance
+        right_anchor = (
+            last_station is not None and abs(last_station - length) <= tolerance
+        )
+        issues: list[str] = []
+        if not points:
+            issues.append("Missing active tendon rows.")
+        elif len(points) < 2:
+            issues.append("At least two profile points are required.")
+        if points and len(stations) != len(set(stations)):
+            issues.append("Duplicate station(s) prevent reliable interpolation.")
+        if not left_anchor:
+            issues.append("Missing left anchorage at s = 0.")
+        if not right_anchor:
+            issues.append("Missing right anchorage at s = L.")
+        rows.append(
+            {
+                "Tendon ID": tendon_id,
+                "Profile points": len(points),
+                "Unique stations": len(set(stations)),
+                "First s (m)": first_station,
+                "Last s (m)": last_station,
+                "Left anchor s=0": "YES" if left_anchor else "NO",
+                "Right anchor s=L": "YES" if right_anchor else "NO",
+                "View coverage": "READY" if not issues else "REVIEW REQUIRED",
+                "Issue": "OK" if not issues else " ".join(issues),
+            }
+        )
+    return rows
+
+
+def tendon_profile_import_view_coverage_summary(
+    profile_values: Any,
+    system_values: Any,
+    *,
+    length_m: float,
+) -> dict[str, Any]:
+    """Return compact import readiness for Elevation/Cross Section/3D views."""
+
+    rows = tendon_profile_import_view_coverage_rows(
+        profile_values,
+        system_values,
+        length_m=length_m,
+    )
+    issue_count = sum(
+        1 for row in rows if str(row.get("View coverage") or "") != "READY"
+    )
+    ready_count = len(rows) - issue_count
+    if not rows:
+        return {
+            "value": "NO ACTIVE TENDONS",
+            "detail": "0 active tendons to check",
+            "status": "neutral",
+            "issue_count": 0,
+            "ready_tendons": 0,
+            "active_tendons": 0,
+        }
+    return {
+        "value": "READY" if issue_count == 0 else "REVIEW REQUIRED",
+        "detail": f"{ready_count}/{len(rows)} active tendon(s) cover s=0..L",
+        "status": "ready" if issue_count == 0 else "warning",
+        "issue_count": issue_count,
+        "ready_tendons": ready_count,
+        "active_tendons": len(rows),
+    }
+
+
 def tendon_profile_import_change_summary(
     current_values: Any,
     import_values: Any,
