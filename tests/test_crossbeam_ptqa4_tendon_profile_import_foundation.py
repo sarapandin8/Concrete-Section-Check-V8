@@ -9,6 +9,7 @@ from concrete_pmm_pro.crossbeam.tendon import (
     default_tendon_system_rows,
     normalize_tendon_profile_import_rows,
     tendon_profile_import_change_summary,
+    tendon_profile_import_diff_rows,
     tendon_profile_import_schema_rows,
     tendon_profile_import_template_rows,
 )
@@ -217,3 +218,77 @@ def test_ptqa5a_import_helpers_do_not_mutate_streamlit_checkbox_widget_key() -> 
     assert "CB_PROFILE_IMPORT_CONFIRM_KEY] =" not in apply_source
     assert "CB_PROFILE_IMPORT_CONFIRM_KEY] =" not in undo_source
     assert 'key=f"{CB_PROFILE_IMPORT_CONFIRM_KEY}_{confirm_revision}"' in render_source
+
+
+def test_ptqa6_import_diff_rows_exposes_added_changed_removed_values() -> None:
+    _system, profile, _definitions, _segments = _context()
+    imported = tendon_profile_import_template_rows(profile, length_m=20.0)
+    imported[0]["dtop (mm)"] = 525.0
+    imported.append(
+        {
+            "Tendon ID": "T1",
+            "Point": "P4",
+            "s (m)": 5.0,
+            "x lateral (mm)": -1100.0,
+            "dtop (mm)": 650.0,
+            "Curve role": "Low point",
+        }
+    )
+    imported = [row for row in imported if not (row["Tendon ID"] == "T2" and row["Point"] == "P2")]
+
+    diff_rows = tendon_profile_import_diff_rows(profile, imported, length_m=20.0)
+    changes = {(row["Change"], row["Tendon ID"], row["Point"]) for row in diff_rows}
+
+    assert ("Changed", "T1", "P1") in changes
+    assert ("Added", "T1", "P4") in changes
+    assert ("Removed", "T2", "P2") in changes
+    changed = next(row for row in diff_rows if row["Change"] == "Changed")
+    assert changed["Current dtop (mm)"] != changed["Import dtop (mm)"]
+
+
+def test_ptqa6_apply_import_records_source_sheet_and_change_audit() -> None:
+    _system, profile, _definitions, _segments = _context()
+    imported = tendon_profile_import_template_rows(profile, length_m=20.0)
+    imported[0]["dtop (mm)"] = 525.0
+    summary = tendon_profile_import_change_summary(profile, imported, length_m=20.0)
+    state = {
+        crossbeam_pages.CB_PROFILE_ROWS_KEY: profile,
+        crossbeam_pages.CB_PROFILE_REV_KEY: 7,
+    }
+
+    result = crossbeam_pages._apply_tendon_profile_import_preview(
+        state,
+        preview_rows=imported,
+        current_rows=profile,
+        length_m=20.0,
+        source_name="profile.xlsx",
+        sheet_name="Tendon Profile",
+        summary=summary,
+    )
+
+    audit = state[crossbeam_pages.CB_PROFILE_IMPORT_AUDIT_KEY]
+    assert result == {"action": "applied", "rows": len(imported)}
+    assert audit["File"] == "profile.xlsx"
+    assert audit["Sheet"] == "Tendon Profile"
+    assert audit["Rows applied"] == len(imported)
+    assert audit["Changed rows"] == 1
+    assert audit["Status"] == "Applied"
+
+
+def test_ptqa6_import_ui_exposes_sheet_picker_active_download_diff_and_audit() -> None:
+    render_source = inspect.getsource(crossbeam_pages._render_tendon_profile_import_foundation)
+    read_source = inspect.getsource(crossbeam_pages._read_tendon_profile_import_upload)
+
+    assert "Download active profile CSV" in render_source
+    assert "Excel sheet to preview" in render_source
+    assert "Profile row diff" in render_source
+    assert "Last applied import audit" in render_source
+    assert "sheet_name=sheet_name or 0" in read_source
+
+
+def test_ptqa6_import_issue_guidance_adds_actionable_hints() -> None:
+    message = crossbeam_pages._friendly_tendon_import_issue(
+        "Row 4: s (m) must lie between 0 and L."
+    )
+
+    assert "between 0 and the Crossbeam member length L" in message

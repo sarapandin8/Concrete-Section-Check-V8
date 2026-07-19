@@ -888,6 +888,121 @@ def _profile_import_row_signature(row: Mapping[str, Any]) -> tuple[Any, ...]:
     )
 
 
+def _profile_import_diff_record(
+    change: str,
+    *,
+    current: Mapping[str, Any] | None = None,
+    imported: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    basis = imported if imported is not None else current or {}
+
+    def _value(row: Mapping[str, Any] | None, column: str) -> Any:
+        return None if row is None else row.get(column)
+
+    return {
+        "Change": change,
+        "Tendon ID": str(basis.get("Tendon ID") or ""),
+        "Point": str(basis.get("Point") or ""),
+        "Current s (m)": _value(current, "s (m)"),
+        "Import s (m)": _value(imported, "s (m)"),
+        "Current x (mm)": _value(current, "x lateral (mm)"),
+        "Import x (mm)": _value(imported, "x lateral (mm)"),
+        "Current dtop (mm)": _value(current, "dtop (mm)"),
+        "Import dtop (mm)": _value(imported, "dtop (mm)"),
+        "Current role": _value(current, "Curve role"),
+        "Import role": _value(imported, "Curve role"),
+    }
+
+
+def tendon_profile_import_diff_rows(
+    current_values: Any,
+    import_values: Any,
+    *,
+    length_m: float,
+) -> list[dict[str, Any]]:
+    """Return row-level import differences for preview and audit tables."""
+
+    current = canonical_tendon_profile_points(current_values, length_m)
+    imported = canonical_tendon_profile_points(import_values, length_m)
+    current_keys = [_profile_import_row_key(row) for row in current]
+    imported_keys = [_profile_import_row_key(row) for row in imported]
+    duplicate_keys = (
+        len(current_keys) != len(set(current_keys))
+        or len(imported_keys) != len(set(imported_keys))
+    )
+
+    if duplicate_keys:
+        current_remaining = list(current)
+        imported_remaining = list(imported)
+        for signature in {
+            _profile_import_row_signature(row)
+            for row in current_remaining
+        } & {
+            _profile_import_row_signature(row)
+            for row in imported_remaining
+        }:
+            current_matches = [
+                row
+                for row in current_remaining
+                if _profile_import_row_signature(row) == signature
+            ]
+            imported_matches = [
+                row
+                for row in imported_remaining
+                if _profile_import_row_signature(row) == signature
+            ]
+            match_count = min(len(current_matches), len(imported_matches))
+            for _index in range(match_count):
+                current_remaining.remove(current_matches[_index])
+                imported_remaining.remove(imported_matches[_index])
+
+        rows = [
+            _profile_import_diff_record("Added", imported=row)
+            for row in imported_remaining
+        ]
+        rows.extend(
+            _profile_import_diff_record("Removed", current=row)
+            for row in current_remaining
+        )
+        return sorted(
+            rows,
+            key=lambda row: (
+                str(row.get("Tendon ID") or ""),
+                str(row.get("Point") or ""),
+                str(row.get("Change") or ""),
+            ),
+        )
+
+    current_by_key = {_profile_import_row_key(row): row for row in current}
+    imported_by_key = {_profile_import_row_key(row): row for row in imported}
+    current_key_set = set(current_by_key)
+    imported_key_set = set(imported_by_key)
+    added_keys = imported_key_set - current_key_set
+    removed_keys = current_key_set - imported_key_set
+    shared_keys = current_key_set & imported_key_set
+    changed_keys = {
+        key
+        for key in shared_keys
+        if _profile_import_row_signature(current_by_key[key])
+        != _profile_import_row_signature(imported_by_key[key])
+    }
+
+    rows: list[dict[str, Any]] = []
+    for key in sorted(changed_keys):
+        rows.append(
+            _profile_import_diff_record(
+                "Changed",
+                current=current_by_key[key],
+                imported=imported_by_key[key],
+            )
+        )
+    for key in sorted(added_keys):
+        rows.append(_profile_import_diff_record("Added", imported=imported_by_key[key]))
+    for key in sorted(removed_keys):
+        rows.append(_profile_import_diff_record("Removed", current=current_by_key[key]))
+    return rows
+
+
 def tendon_profile_import_change_summary(
     current_values: Any,
     import_values: Any,

@@ -1,3 +1,10 @@
+### CROSSBEAM.PTQA6 - Tendon Profile Import UX Audit Trace
+
+Adds Crossbeam Tendon Profile import audit trace with Excel sheet selection,
+active-profile CSV download, row-level diff preview, guarded apply metadata,
+and friendlier validation hints while leaving Project JSON shape, reports,
+rebar workflows, and solvers unchanged. See `README_CROSSBEAM_PTQA6.md`.
+
 ### CROSSBEAM.PTQA5A - Import Apply Streamlit State Hotfix
 
 Fixes the Tendon Profile import apply crash by resetting confirmation through a

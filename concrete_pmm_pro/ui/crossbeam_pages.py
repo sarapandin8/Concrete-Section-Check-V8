@@ -12,6 +12,7 @@ seed data without changing Project JSON or existing workflow behavior.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, MutableMapping
+from datetime import datetime
 from math import isfinite
 from typing import Any
 
@@ -51,6 +52,7 @@ from concrete_pmm_pro.crossbeam.tendon import (
     default_tendon_system_rows,
     tendon_profile_points_for_preset,
     tendon_profile_import_change_summary,
+    tendon_profile_import_diff_rows,
     tendon_profile_import_schema_rows,
     tendon_profile_import_template_rows,
     tendon_profile_preset_shape_preview,
@@ -128,6 +130,8 @@ CB_PROFILE_IMPORT_CONFIRM_KEY = "crossbeam_ptqa5_profile_import_confirm"
 CB_PROFILE_IMPORT_CONFIRM_REV_KEY = "crossbeam_ptqa5_profile_import_confirm_revision"
 CB_PROFILE_IMPORT_UNDO_ROWS_KEY = "crossbeam_ptqa5_profile_import_undo_rows"
 CB_PROFILE_IMPORT_NOTICE_KEY = "crossbeam_ptqa5_profile_import_notice"
+CB_PROFILE_IMPORT_SHEET_KEY = "crossbeam_ptqa6_profile_import_sheet"
+CB_PROFILE_IMPORT_AUDIT_KEY = "crossbeam_ptqa6_profile_import_audit"
 
 CB_LENGTH_POLICY_KEEP = "Keep existing stations — review required"
 CB_LENGTH_POLICY_SCALE = "Scale longitudinal stations proportionally"
@@ -1474,14 +1478,103 @@ def _commit_tendon_profile_editor(
     )
 
 
-def _read_tendon_profile_import_upload(uploaded_file: Any) -> tuple[pd.DataFrame, str | None]:
+def _profile_import_upload_name(uploaded_file: Any) -> str:
+    return str(getattr(uploaded_file, "name", "") or "").strip()
+
+
+def _profile_import_upload_is_excel(uploaded_file: Any) -> bool:
+    return _profile_import_upload_name(uploaded_file).casefold().endswith(
+        (".xlsx", ".xls")
+    )
+
+
+def _rewind_profile_import_upload(uploaded_file: Any) -> None:
+    if hasattr(uploaded_file, "seek"):
+        try:
+            uploaded_file.seek(0)
+        except (OSError, ValueError):
+            pass
+
+
+def _tendon_profile_import_sheet_names(
+    uploaded_file: Any,
+) -> tuple[list[str], str | None]:
+    if not _profile_import_upload_is_excel(uploaded_file):
+        return [], None
+    excel_file = None
+    try:
+        _rewind_profile_import_upload(uploaded_file)
+        excel_file = pd.ExcelFile(uploaded_file)
+        return list(excel_file.sheet_names), None
+    except Exception as exc:
+        return [], f"Unable to inspect Excel sheets for tendon profile import: {exc}"
+    finally:
+        if excel_file is not None and hasattr(excel_file, "close"):
+            excel_file.close()
+        _rewind_profile_import_upload(uploaded_file)
+
+
+def _read_tendon_profile_import_upload(
+    uploaded_file: Any,
+    *,
+    sheet_name: str | None = None,
+) -> tuple[pd.DataFrame, str | None]:
     name = str(getattr(uploaded_file, "name", "") or "").casefold()
     try:
+        _rewind_profile_import_upload(uploaded_file)
         if name.endswith((".xlsx", ".xls")):
-            return pd.read_excel(uploaded_file), None
+            return pd.read_excel(uploaded_file, sheet_name=sheet_name or 0), None
         return pd.read_csv(uploaded_file), None
     except Exception as exc:
         return pd.DataFrame(), f"Unable to read tendon profile import file: {exc}"
+    finally:
+        _rewind_profile_import_upload(uploaded_file)
+
+
+def _friendly_tendon_import_issue(message: Any) -> str:
+    text = str(message)
+    lowered = text.casefold()
+    hints: list[str] = []
+    if "missing required column" in lowered:
+        hints.append("Download the active-profile CSV and keep the required column names or accepted aliases.")
+    if "tendon id" in lowered and ("not found" in lowered or "unknown" in lowered or "defined" in lowered):
+        hints.append("Match Tendon ID to rows already defined in Tendon System.")
+    if "s (m)" in lowered or "station" in lowered:
+        hints.append("Keep s (m) between 0 and the Crossbeam member length L.")
+    if "x lateral" in lowered:
+        hints.append("Use cross-section x in mm; x = 0 is the member centerline.")
+    if "dtop" in lowered or "depth" in lowered:
+        hints.append("Use dtop in mm measured downward from the top surface.")
+    if "curve role" in lowered or "role" in lowered:
+        hints.append("Curve role must match the allowed import roles exactly.")
+    if not hints:
+        return text
+    return text + " Check: " + " ".join(dict.fromkeys(hints))
+
+
+def _tendon_profile_import_audit_record(
+    *,
+    source_name: str,
+    sheet_name: str | None,
+    row_count: int,
+    summary: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    change_summary = dict(summary or {})
+    sheet_label = sheet_name or (
+        "CSV" if not source_name.casefold().endswith((".xlsx", ".xls")) else "First sheet"
+    )
+    return {
+        "Applied at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "File": source_name or "(uploaded file)",
+        "Sheet": sheet_label,
+        "Rows applied": int(row_count),
+        "Added rows": int(change_summary.get("added_rows", 0) or 0),
+        "Changed rows": int(change_summary.get("changed_rows", 0) or 0),
+        "Removed rows": int(change_summary.get("removed_rows", 0) or 0),
+        "Unchanged rows": int(change_summary.get("unchanged_rows", 0) or 0),
+        "Affected tendons": int(change_summary.get("affected_tendons", 0) or 0),
+        "Status": "Applied",
+    }
 
 
 def _apply_tendon_profile_import_preview(
@@ -1490,6 +1583,9 @@ def _apply_tendon_profile_import_preview(
     preview_rows: list[dict[str, Any]],
     current_rows: list[dict[str, Any]],
     length_m: float,
+    source_name: str = "",
+    sheet_name: str | None = None,
+    summary: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     imported = canonical_tendon_profile_points(preview_rows, length_m)
     if not imported:
@@ -1506,6 +1602,12 @@ def _apply_tendon_profile_import_preview(
         "action": "applied",
         "rows": len(imported),
     }
+    session_state[CB_PROFILE_IMPORT_AUDIT_KEY] = _tendon_profile_import_audit_record(
+        source_name=source_name,
+        sheet_name=sheet_name,
+        row_count=len(imported),
+        summary=summary,
+    )
     return {"action": "applied", "rows": len(imported)}
 
 
@@ -1529,6 +1631,12 @@ def _undo_tendon_profile_import(
         "action": "undone",
         "rows": len(undo_rows),
     }
+    audit = session_state.get(CB_PROFILE_IMPORT_AUDIT_KEY)
+    if isinstance(audit, Mapping):
+        updated_audit = dict(audit)
+        updated_audit["Status"] = "Undone"
+        updated_audit["Undo rows restored"] = len(undo_rows)
+        session_state[CB_PROFILE_IMPORT_AUDIT_KEY] = updated_audit
     return {"action": "undone", "rows": len(undo_rows)}
 
 
@@ -1552,19 +1660,37 @@ def _render_tendon_profile_import_foundation(
         elif notice.get("action") == "undone":
             st.info(f"Restored the previous Tendon Profile rows: {notice.get('rows', 0)} row(s).")
 
+    audit = st.session_state.get(CB_PROFILE_IMPORT_AUDIT_KEY)
+    if isinstance(audit, Mapping):
+        with st.expander("Last applied import audit", expanded=False):
+            st.dataframe(
+                pd.DataFrame([dict(audit)]),
+                use_container_width=True,
+                hide_index=True,
+            )
+
     with st.expander("Import preview (not applied until confirmed)", expanded=False):
         st.caption(
             "Upload rows are normalized and validated first. Applying a valid file replaces the active Tendon Profile table and keeps one-step undo available."
         )
         tool_col, upload_col = st.columns([0.36, 0.64])
         with tool_col:
-            template = pd.DataFrame(
+            active_profile = pd.DataFrame(
                 tendon_profile_import_template_rows(source_rows, length_m=length_m),
                 columns=list(TENDON_PROFILE_IMPORT_REQUIRED_COLUMNS),
             )
             st.download_button(
+                "Download active profile CSV",
+                data=active_profile.to_csv(index=False).encode("utf-8-sig"),
+                file_name="crossbeam_tendon_profile_active.csv",
+                mime="text/csv",
+                key="crossbeam_ptqa6_profile_active_download",
+                use_container_width=True,
+                help="Exports the active Tendon Profile table exactly as import preview expects it.",
+            )
+            st.download_button(
                 "Download CSV template",
-                data=template.to_csv(index=False).encode("utf-8-sig"),
+                data=active_profile.to_csv(index=False).encode("utf-8-sig"),
                 file_name="crossbeam_tendon_profile_template.csv",
                 mime="text/csv",
                 key="crossbeam_ptqa4_profile_import_template_download",
@@ -1587,6 +1713,24 @@ def _render_tendon_profile_import_foundation(
                 key=CB_PROFILE_IMPORT_UPLOAD_KEY,
                 help="Validates rows first. A separate confirmation is required before the active profile table is replaced.",
             )
+            selected_sheet: str | None = None
+            sheet_error: str | None = None
+            if uploaded_file is not None:
+                sheet_names, sheet_error = _tendon_profile_import_sheet_names(uploaded_file)
+                if sheet_names:
+                    current_sheet = st.session_state.get(CB_PROFILE_IMPORT_SHEET_KEY)
+                    if current_sheet not in sheet_names:
+                        st.session_state[CB_PROFILE_IMPORT_SHEET_KEY] = sheet_names[0]
+                    if len(sheet_names) == 1:
+                        selected_sheet = sheet_names[0]
+                        st.caption(f"Excel sheet: {selected_sheet}")
+                    else:
+                        selected_sheet = st.selectbox(
+                            "Excel sheet to preview",
+                            options=sheet_names,
+                            key=CB_PROFILE_IMPORT_SHEET_KEY,
+                            help="Choose which worksheet contains the Tendon Profile import table.",
+                        )
         with st.expander("Column requirements", expanded=False):
             st.dataframe(
                 pd.DataFrame(tendon_profile_import_schema_rows()),
@@ -1597,9 +1741,16 @@ def _render_tendon_profile_import_foundation(
         if uploaded_file is None:
             return
 
-        import_frame, load_error = _read_tendon_profile_import_upload(uploaded_file)
+        if sheet_error:
+            st.error(sheet_error)
+            return
+
+        import_frame, load_error = _read_tendon_profile_import_upload(
+            uploaded_file,
+            sheet_name=selected_sheet,
+        )
         if load_error:
-            st.error(load_error)
+            st.error(_friendly_tendon_import_issue(load_error))
             return
 
         preview_rows, import_errors, import_warnings = normalize_tendon_profile_import_rows(
@@ -1610,6 +1761,11 @@ def _render_tendon_profile_import_foundation(
             section_definitions=section_definitions,
         )
         summary = tendon_profile_import_change_summary(
+            source_rows,
+            preview_rows,
+            length_m=length_m,
+        )
+        diff_rows = tendon_profile_import_diff_rows(
             source_rows,
             preview_rows,
             length_m=length_m,
@@ -1642,6 +1798,16 @@ def _render_tendon_profile_import_foundation(
                 },
             ]
         )
+        if diff_rows:
+            with st.expander("Profile row diff", expanded=not import_errors):
+                st.dataframe(
+                    pd.DataFrame(diff_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                    height=min(320, 38 * (min(len(diff_rows), 7) + 1)),
+                )
+        elif not import_errors:
+            st.caption("No row-level profile changes detected in this import preview.")
         if preview_rows:
             st.dataframe(
                 pd.DataFrame(
@@ -1660,9 +1826,9 @@ def _render_tendon_profile_import_foundation(
                 height=min(280, 38 * (min(len(preview_rows), 6) + 1)),
             )
         for error in import_errors:
-            st.error(error)
+            st.error(_friendly_tendon_import_issue(error))
         for warning in import_warnings:
-            st.warning(warning)
+            st.warning(_friendly_tendon_import_issue(warning))
         if not import_errors:
             st.success("Import preview passed geometry validation.")
             confirm_revision = int(st.session_state.get(CB_PROFILE_IMPORT_CONFIRM_REV_KEY, 0))
@@ -1684,6 +1850,9 @@ def _render_tendon_profile_import_foundation(
                         preview_rows=preview_rows,
                         current_rows=source_rows,
                         length_m=length_m,
+                        source_name=_profile_import_upload_name(uploaded_file),
+                        sheet_name=selected_sheet,
+                        summary=summary,
                     )
                     st.rerun()
             with note_col:
