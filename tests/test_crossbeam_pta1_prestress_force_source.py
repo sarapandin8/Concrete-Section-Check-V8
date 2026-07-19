@@ -110,10 +110,13 @@ def test_pta1_ui_exposes_force_source_without_claiming_losses_or_solver_results(
     system_source = inspect.getsource(render_crossbeam_tendon_system_page)
     profile_source = inspect.getsource(render_crossbeam_tendon_profile_page)
 
-    assert "Prestress force source audit" in system_source
+    assert "Jacking Force Source Audit (Pj)" in system_source
     assert "Pj = Aps total x fpj / 1000" in system_source
     assert "tendon_force_source_rows" in system_source
-    assert "Prestress force station trace" in profile_source
+    assert "Jacking force station trace (do not sum station rows)" in profile_source
+    assert "Pj source per tendon (kN)" in profile_source
+    assert "Do not sum `Pj source per tendon` from this table" in profile_source
+    assert '"Active Pj credit (kN)"' not in profile_source
     assert "tendon_force_trace_rows" in profile_source
     assert "Both-end jacking does not double Pj" in profile_source
     assert "loss calculations" in system_source

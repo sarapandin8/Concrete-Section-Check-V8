@@ -1,3 +1,11 @@
+### CROSSBEAM.PTA1A - Jacking Force Trace Wording Hotfix
+
+Polishes the Crossbeam PTA1 jacking-force source wording, removes repeated
+`Active Pj credit` from station trace rows, and labels station `Pj` as a
+per-tendon source value that must not be summed across geometry stations while
+leaving force arithmetic, Project JSON shape, reports, rebar workflows, and
+solvers unchanged. See `README_CROSSBEAM_PTA1A.md`.
+
 ### CROSSBEAM.PTA1 - Prestress Force Source Foundation
 
 Adds a Crossbeam prestress-force source audit that derives each tendon's

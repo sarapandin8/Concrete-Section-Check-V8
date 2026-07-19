@@ -25,10 +25,10 @@ handoff.
   - `Pj`.
 - Uses `Pj (kN) = Aps total (mm2) x fpj (MPa) / 1000`.
 - Keeps both-end jacking as one tendon force source; it does not double `Pj`.
-- Adds a Tendon System `Prestress force source audit` table and active total
+- Adds a Tendon System `Jacking Force Source Audit (Pj)` table and active total
   `Pj` metric.
-- Adds a Tendon Profile `Prestress force station trace` table that joins
-  force source rows to each station/profile row and assigned section face.
+- Adds a Tendon Profile jacking-force station trace that joins force source
+  rows to each station/profile row and assigned section face.
 - Flags invalid or duplicate Tendon IDs as `REVIEW REQUIRED` so total active
   `Pj` is not credited from ambiguous source rows.
 

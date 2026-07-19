@@ -3395,13 +3395,13 @@ def render_crossbeam_tendon_system_page() -> None:
             {
                 "title": "Active total Pj",
                 "value": f"{float(force_summary['active_pj_total_kN']):,.1f} kN",
-                "detail": "Source jacking force before losses",
+                "detail": "Jacking force source before losses",
                 "status": str(force_summary["status"]),
             },
             {"title": "PT continuity", "value": "CHECK IN PROFILE", "detail": "Tendon Profile · Calculated Audit", "status": "info"},
         ]
     )
-    st.markdown("#### Prestress force source audit")
+    st.markdown("#### Jacking Force Source Audit (Pj)")
     st.dataframe(
         pd.DataFrame(
             [
@@ -4078,7 +4078,7 @@ def render_crossbeam_tendon_profile_page() -> None:
             use_container_width=True,
             hide_index=True,
         )
-        st.markdown("#### Prestress force station trace")
+        st.markdown("#### Jacking force station trace (do not sum station rows)")
         st.dataframe(
             pd.DataFrame(
                 [
@@ -4094,8 +4094,7 @@ def render_crossbeam_tendon_profile_page() -> None:
                         "e(s) (mm)": round(row["e(s) (mm)"], 2),
                         "Aps total (mm²)": round(row["Aps total (mm²)"], 2),
                         "fpj (MPa)": round(row["fpj (MPa)"], 2),
-                        "Pj (kN)": round(row["Pj (kN)"], 3),
-                        "Active Pj credit (kN)": round(row["Active Pj credit (kN)"], 3),
+                        "Pj source per tendon (kN)": round(row["Pj (kN)"], 3),
                         "Force source status": row["Force source status"],
                         "Issue": row["Issue"],
                     }
@@ -4105,7 +4104,11 @@ def render_crossbeam_tendon_profile_page() -> None:
             use_container_width=True,
             hide_index=True,
         )
-        st.markdown("#### Prestress force source by tendon")
+        st.caption(
+            "Station trace rows repeat the same per-tendon jacking force source at each geometry station. "
+            "Do not sum `Pj source per tendon` from this table; use the by-tendon summary below for total active Pj."
+        )
+        st.markdown("#### Jacking force source by tendon")
         render_metric_cards(
             [
                 {
