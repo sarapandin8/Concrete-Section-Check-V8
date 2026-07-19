@@ -67,6 +67,11 @@ from concrete_pmm_pro.crossbeam.tendon import (
     validate_tendon_profile,
     validate_tendon_system,
 )
+from concrete_pmm_pro.crossbeam.tendon_analysis import (
+    tendon_force_source_rows,
+    tendon_force_source_summary,
+    tendon_force_trace_rows,
+)
 from concrete_pmm_pro.crossbeam.tendon_persistence import (
     CB_3D_TRANSPARENT_KEY,
     CB_ACTIVE_TENDONS_KEY,
@@ -3372,22 +3377,59 @@ def render_crossbeam_tendon_system_page() -> None:
     system_rows, system_errors, system_warnings = validate_tendon_system(system_rows)
     st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = system_rows
     st.session_state[CB_TENDON_COUNT_KEY] = len(system_rows)
+    force_rows = tendon_force_source_rows(system_rows)
+    force_summary = tendon_force_source_summary(force_rows)
     status = "SOURCE READY" if not system_errors else "REVIEW REQUIRED"
     status_kind = "ready" if not system_errors else "warning"
     active_rows = [row for row in system_rows if row["Active"]]
-    total_aps = sum(
-        max(_finite_int(row.get("Strands"), 0), 0)
-        * max(_finite_float(row.get("Aps/strand mm²"), 0.0), 0.0)
-        for row in active_rows
-    )
     render_metric_cards(
         [
             {"title": "Tendon source", "value": status, "detail": "Input model only; not a design result", "status": status_kind},
             {"title": "Active tendons", "value": len(active_rows), "detail": f"{len(system_rows)} stored tendon rows", "status": "info"},
-            {"title": "Active total Aps", "value": f"{total_aps:,.0f} mm²", "detail": "Strands × Aps/strand", "status": "neutral"},
+            {
+                "title": "Active total Aps",
+                "value": f"{float(force_summary['active_aps_total_mm2']):,.0f} mm²",
+                "detail": "Strands x Aps/strand",
+                "status": "neutral",
+            },
+            {
+                "title": "Active total Pj",
+                "value": f"{float(force_summary['active_pj_total_kN']):,.1f} kN",
+                "detail": "Source jacking force before losses",
+                "status": str(force_summary["status"]),
+            },
             {"title": "PT continuity", "value": "CHECK IN PROFILE", "detail": "Tendon Profile · Calculated Audit", "status": "info"},
         ]
     )
+    st.markdown("#### Prestress force source audit")
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Tendon ID": row["Tendon ID"],
+                    "Active": row["Active"],
+                    "Type": row["Type"],
+                    "Jacking end": row["Jacking end"],
+                    "Strands": row["Strands"],
+                    "Area source": row["Area source"],
+                    "Aps/strand (mm²)": round(row["Aps/strand (mm²)"], 2),
+                    "Aps total (mm²)": round(row["Aps total (mm²)"], 2),
+                    "fpu (MPa)": round(row["fpu (MPa)"], 2),
+                    "fpj/fpu": round(row["fpj/fpu"], 4),
+                    "fpj (MPa)": round(row["fpj (MPa)"], 2),
+                    "Pj (kN)": round(row["Pj (kN)"], 3),
+                    "Active Pj credit (kN)": round(row["Active Pj credit (kN)"], 3),
+                    "Status": row["Force source status"],
+                    "Issue": row["Issue"],
+                }
+                for row in force_rows
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+    for message in force_summary["issues"]:
+        st.warning(message)
     for message in system_errors:
         st.error(message)
     for message in system_warnings:
@@ -3396,7 +3438,7 @@ def render_crossbeam_tendon_system_page() -> None:
         "Each tendon uses seven-wire low-relaxation strand. Anchorage heads are defined at s = 0 and s = L. Jacking end Left/Right/Both is stored for future loss distribution; both-end jacking will not double total Pj."
     )
     st.caption(
-        "CROSSBEAM.PT1 input source only. ACI 423.10R loss calculations, friction parameters, anchor set, elastic shortening, time-dependent losses, and FEA handoff remain future milestones."
+        "CROSSBEAM.PTA1 force source only. Pj = Aps total x fpj / 1000 in kN. ACI 423.10R loss calculations, friction parameters, anchor set, elastic shortening, time-dependent losses, SLS/ULS checks, and FEA handoff remain future milestones."
     )
 
 
@@ -3944,6 +3986,15 @@ def render_crossbeam_tendon_profile_page() -> None:
             segment_rows=segment_rows,
             section_definitions=section_definitions,
         )
+        force_rows = tendon_force_source_rows(system_rows)
+        force_summary = tendon_force_source_summary(force_rows)
+        force_trace_rows = tendon_force_trace_rows(
+            points,
+            system_rows,
+            length_m=length_m,
+            segment_rows=segment_rows,
+            section_definitions=section_definitions,
+        )
         st.markdown("#### Segment joint PT continuity")
         if continuity_rows:
             st.dataframe(
@@ -4027,7 +4078,56 @@ def render_crossbeam_tendon_profile_page() -> None:
             use_container_width=True,
             hide_index=True,
         )
-        st.markdown("#### Tendon stressing source")
+        st.markdown("#### Prestress force station trace")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Tendon ID": row["Tendon ID"],
+                        "Point": row["Point"],
+                        "s (m)": round(row["s (m)"], 4),
+                        "Segment": row["Segment"],
+                        "Section ID": row["Section ID"],
+                        "Station face": row["Station face"],
+                        "x (mm)": round(row["x (mm)"], 2),
+                        "dtop (mm)": round(row["dtop (mm)"], 2),
+                        "e(s) (mm)": round(row["e(s) (mm)"], 2),
+                        "Aps total (mm²)": round(row["Aps total (mm²)"], 2),
+                        "fpj (MPa)": round(row["fpj (MPa)"], 2),
+                        "Pj (kN)": round(row["Pj (kN)"], 3),
+                        "Active Pj credit (kN)": round(row["Active Pj credit (kN)"], 3),
+                        "Force source status": row["Force source status"],
+                        "Issue": row["Issue"],
+                    }
+                    for row in force_trace_rows
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.markdown("#### Prestress force source by tendon")
+        render_metric_cards(
+            [
+                {
+                    "title": "Force source",
+                    "value": str(force_summary["value"]),
+                    "detail": str(force_summary["detail"]),
+                    "status": str(force_summary["status"]),
+                },
+                {
+                    "title": "Active total Pj",
+                    "value": f"{float(force_summary['active_pj_total_kN']):,.1f} kN",
+                    "detail": "Not reduced by losses",
+                    "status": str(force_summary["status"]),
+                },
+                {
+                    "title": "Review rows",
+                    "value": int(force_summary["review_count"]),
+                    "detail": f"{int(force_summary['stored_count'])} stored tendon row(s)",
+                    "status": "ready" if int(force_summary["review_count"]) == 0 else "warning",
+                },
+            ]
+        )
         st.dataframe(
             pd.DataFrame(
                 [
@@ -4036,14 +4136,21 @@ def render_crossbeam_tendon_profile_page() -> None:
                         "Active": row["Active"],
                         "Type": row["Type"],
                         "Jacking end": row["Jacking end"],
-                        "fpj (MPa)": round(row["fpj (MPa)"], 2),
                         "Aps total (mm²)": round(row["Aps total (mm²)"], 2),
+                        "fpj/fpu": round(row["fpj/fpu"], 4),
+                        "fpj (MPa)": round(row["fpj (MPa)"], 2),
+                        "Pj (kN)": round(row["Pj (kN)"], 3),
+                        "Status": row["Force source status"],
                     }
-                    for row in audit_rows
+                    for row in force_rows
                 ]
-            ).drop_duplicates(),
+            ),
             use_container_width=True,
             hide_index=True,
+        )
+        st.caption(
+            "Pj is the Tendon System jacking-force source only: Aps total x fpj / 1000 in kN. "
+            "Both-end jacking does not double Pj; losses, effective force, stress, strength, anchorage-zone, deviator-force, and D-region checks are outside PTA1."
         )
         st.caption(
             "e(s) is positive when the tendon lies below the centroid. Each row uses the Section ID assigned at that station; a point on a segment joint expands to both adjacent section faces."

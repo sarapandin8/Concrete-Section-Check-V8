@@ -1,3 +1,11 @@
+### CROSSBEAM.PTA1 - Prestress Force Source Foundation
+
+Adds a Crossbeam prestress-force source audit that derives each tendon's
+`Aps total`, `fpj`, and source `Pj` from the Tendon System, summarizes active
+total jacking force, and traces that source to Tendon Profile station rows
+without changing Project JSON shape, reports, rebar workflows, or solvers. See
+`README_CROSSBEAM_PTA1.md`.
+
 ### CROSSBEAM.PTQA8 - Tendon Profile Import Writeback QA
 
 Adds Crossbeam Tendon Profile post-apply writeback QA that confirms imported
