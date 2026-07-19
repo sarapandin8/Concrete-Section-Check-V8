@@ -786,10 +786,9 @@ def normalize_tendon_profile_import_rows(
 ) -> tuple[list[dict[str, Any]], list[str], list[str]]:
     """Preview-normalize imported tendon profile rows without mutating state.
 
-    PTQA4 intentionally stops at a read-only import foundation.  The returned
-    rows are canonical and validated against the live Tendon System, Segment
-    Layout, and Section Builder context, but callers decide whether a future
-    explicit apply/writeback action is available.
+    The returned rows are canonical and validated against the live Tendon
+    System, Segment Layout, and Section Builder context.  Callers decide whether
+    an explicit guarded apply/writeback action is available.
     """
 
     raw_rows = _records(import_values)
@@ -872,6 +871,99 @@ def normalize_tendon_profile_import_rows(
         segment_rows=segment_rows,
         section_definitions=section_definitions,
     )
+
+
+def _profile_import_row_key(row: Mapping[str, Any]) -> tuple[str, str]:
+    return (str(row.get("Tendon ID") or ""), str(row.get("Point") or ""))
+
+
+def _profile_import_row_signature(row: Mapping[str, Any]) -> tuple[Any, ...]:
+    return (
+        str(row.get("Tendon ID") or ""),
+        str(row.get("Point") or ""),
+        round(_float(row.get("s (m)"), 0.0), 6),
+        round(_float(row.get("x lateral (mm)"), 0.0), 3),
+        round(_float(row.get("dtop (mm)"), 0.0), 3),
+        str(row.get("Curve role") or ""),
+    )
+
+
+def tendon_profile_import_change_summary(
+    current_values: Any,
+    import_values: Any,
+    *,
+    length_m: float,
+) -> dict[str, Any]:
+    """Return compact row-diff counts for a validated import preview."""
+
+    current = canonical_tendon_profile_points(current_values, length_m)
+    imported = canonical_tendon_profile_points(import_values, length_m)
+    current_keys = [_profile_import_row_key(row) for row in current]
+    imported_keys = [_profile_import_row_key(row) for row in imported]
+    duplicate_keys = (
+        len(current_keys) != len(set(current_keys))
+        or len(imported_keys) != len(set(imported_keys))
+    )
+    if duplicate_keys:
+        current_signatures = [_profile_import_row_signature(row) for row in current]
+        imported_signatures = [_profile_import_row_signature(row) for row in imported]
+        unchanged = sum(
+            min(current_signatures.count(signature), imported_signatures.count(signature))
+            for signature in set(current_signatures) | set(imported_signatures)
+        )
+        added = max(len(imported) - unchanged, 0)
+        removed = max(len(current) - unchanged, 0)
+        changed = 0
+        affected = {
+            signature[0]
+            for signature in set(current_signatures).symmetric_difference(set(imported_signatures))
+            if signature[0]
+        }
+        return {
+            "current_rows": len(current),
+            "imported_rows": len(imported),
+            "added_rows": added,
+            "removed_rows": removed,
+            "changed_rows": changed,
+            "unchanged_rows": unchanged,
+            "affected_tendons": len(affected),
+            "key_mode": "signature",
+        }
+
+    current_by_key = {
+        _profile_import_row_key(row): _profile_import_row_signature(row)
+        for row in current
+    }
+    imported_by_key = {
+        _profile_import_row_key(row): _profile_import_row_signature(row)
+        for row in imported
+    }
+    current_key_set = set(current_by_key)
+    imported_key_set = set(imported_by_key)
+    added_keys = imported_key_set - current_key_set
+    removed_keys = current_key_set - imported_key_set
+    shared_keys = current_key_set & imported_key_set
+    changed_keys = {
+        key
+        for key in shared_keys
+        if current_by_key[key] != imported_by_key[key]
+    }
+    unchanged_keys = shared_keys - changed_keys
+    affected = {
+        key[0]
+        for key in added_keys | removed_keys | changed_keys
+        if key[0]
+    }
+    return {
+        "current_rows": len(current),
+        "imported_rows": len(imported),
+        "added_rows": len(added_keys),
+        "removed_rows": len(removed_keys),
+        "changed_rows": len(changed_keys),
+        "unchanged_rows": len(unchanged_keys),
+        "affected_tendons": len(affected),
+        "key_mode": "tendon-point",
+    }
 
 
 def tendon_positions_at_station(

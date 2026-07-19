@@ -1,3 +1,12 @@
+### CROSSBEAM.PTQA5 - Tendon Profile Import Apply Guard
+
+Adds a guarded Crossbeam Tendon Profile import apply flow: the import panel is
+more compact, valid CSV/XLSX previews show row-change counts, and replacing the
+active `s-x-dtop` table now requires explicit confirmation with one-step undo.
+The action is limited to Tendon Profile geometry rows and does not change
+Tendon System, Segment Layout, Section Builder, Project JSON export shape,
+reports, rebar workflows, or solvers. See `README_CROSSBEAM_PTQA5.md`.
+
 ### CROSSBEAM.PTQA4 - Tendon Profile Import Foundation
 
 Adds a Crossbeam Tendon Profile import foundation with a live CSV template

@@ -50,6 +50,7 @@ from concrete_pmm_pro.crossbeam.tendon import (
     profile_preset_point_count,
     default_tendon_system_rows,
     tendon_profile_points_for_preset,
+    tendon_profile_import_change_summary,
     tendon_profile_import_schema_rows,
     tendon_profile_import_template_rows,
     tendon_profile_preset_shape_preview,
@@ -123,6 +124,9 @@ CB_PROFILE_PRESET_SUPPORT_WIDTH_KEY = "crossbeam_pt1j_profile_preset_support_wid
 CB_PROFILE_PRESET_TARGETS_KEY = "crossbeam_pt1g_profile_preset_tendon_ids"
 CB_PROFILE_PRESET_NOTICE_KEY = "crossbeam_pt1h_profile_preset_notice"
 CB_PROFILE_IMPORT_UPLOAD_KEY = "crossbeam_ptqa4_profile_import_upload"
+CB_PROFILE_IMPORT_CONFIRM_KEY = "crossbeam_ptqa5_profile_import_confirm"
+CB_PROFILE_IMPORT_UNDO_ROWS_KEY = "crossbeam_ptqa5_profile_import_undo_rows"
+CB_PROFILE_IMPORT_NOTICE_KEY = "crossbeam_ptqa5_profile_import_notice"
 
 CB_LENGTH_POLICY_KEEP = "Keep existing stations — review required"
 CB_LENGTH_POLICY_SCALE = "Scale longitudinal stations proportionally"
@@ -1479,6 +1483,50 @@ def _read_tendon_profile_import_upload(uploaded_file: Any) -> tuple[pd.DataFrame
         return pd.DataFrame(), f"Unable to read tendon profile import file: {exc}"
 
 
+def _apply_tendon_profile_import_preview(
+    session_state: MutableMapping[str, Any],
+    *,
+    preview_rows: list[dict[str, Any]],
+    current_rows: list[dict[str, Any]],
+    length_m: float,
+) -> dict[str, Any]:
+    imported = canonical_tendon_profile_points(preview_rows, length_m)
+    if not imported:
+        return {"action": "skipped", "rows": 0}
+    session_state[CB_PROFILE_IMPORT_UNDO_ROWS_KEY] = canonical_tendon_profile_points(
+        current_rows, length_m
+    )
+    session_state[CB_PROFILE_ROWS_KEY] = imported
+    session_state[CB_PROFILE_REV_KEY] = int(session_state.get(CB_PROFILE_REV_KEY, 0)) + 1
+    session_state[CB_PROFILE_IMPORT_CONFIRM_KEY] = False
+    session_state[CB_PROFILE_IMPORT_NOTICE_KEY] = {
+        "action": "applied",
+        "rows": len(imported),
+    }
+    return {"action": "applied", "rows": len(imported)}
+
+
+def _undo_tendon_profile_import(
+    session_state: MutableMapping[str, Any],
+    *,
+    length_m: float,
+) -> dict[str, Any]:
+    undo_rows = canonical_tendon_profile_points(
+        session_state.get(CB_PROFILE_IMPORT_UNDO_ROWS_KEY), length_m
+    )
+    if not undo_rows:
+        return {"action": "skipped", "rows": 0}
+    session_state[CB_PROFILE_ROWS_KEY] = undo_rows
+    session_state.pop(CB_PROFILE_IMPORT_UNDO_ROWS_KEY, None)
+    session_state[CB_PROFILE_REV_KEY] = int(session_state.get(CB_PROFILE_REV_KEY, 0)) + 1
+    session_state[CB_PROFILE_IMPORT_CONFIRM_KEY] = False
+    session_state[CB_PROFILE_IMPORT_NOTICE_KEY] = {
+        "action": "undone",
+        "rows": len(undo_rows),
+    }
+    return {"action": "undone", "rows": len(undo_rows)}
+
+
 def _render_tendon_profile_import_foundation(
     *,
     source_rows: list[dict[str, Any]],
@@ -1488,22 +1536,23 @@ def _render_tendon_profile_import_foundation(
     section_definitions: list[dict[str, Any]],
 ) -> None:
     render_section_bar(
-        "Tendon profile import foundation",
-        "Download the live-row template or preview CSV/XLSX rows against the current Tendon System, Segment Layout, and Section Builder context.",
+        "Tendon profile import",
+        "Download a live template, preview CSV/XLSX rows, then apply only after validation and explicit confirmation.",
         mark="CSV",
     )
-    with st.expander("Preview CSV/XLSX import rows", expanded=False):
+    notice = st.session_state.pop(CB_PROFILE_IMPORT_NOTICE_KEY, None)
+    if isinstance(notice, Mapping):
+        if notice.get("action") == "applied":
+            st.success(f"Applied imported Tendon Profile rows: {notice.get('rows', 0)} row(s).")
+        elif notice.get("action") == "undone":
+            st.info(f"Restored the previous Tendon Profile rows: {notice.get('rows', 0)} row(s).")
+
+    with st.expander("Import preview (not applied until confirmed)", expanded=False):
         st.caption(
-            "Preview only: uploaded rows are normalized and validated here, but PTQA4 does not write imported rows back to the active project state."
+            "Upload rows are normalized and validated first. Applying a valid file replaces the active Tendon Profile table and keeps one-step undo available."
         )
-        schema_col, action_col = st.columns([1.4, 1.0])
-        with schema_col:
-            st.dataframe(
-                pd.DataFrame(tendon_profile_import_schema_rows()),
-                use_container_width=True,
-                hide_index=True,
-            )
-        with action_col:
+        tool_col, upload_col = st.columns([0.36, 0.64])
+        with tool_col:
             template = pd.DataFrame(
                 tendon_profile_import_template_rows(source_rows, length_m=length_m),
                 columns=list(TENDON_PROFILE_IMPORT_REQUIRED_COLUMNS),
@@ -1517,11 +1566,27 @@ def _render_tendon_profile_import_foundation(
                 use_container_width=True,
                 help="Exports the current profile table using the exact import-preview column order.",
             )
+            if st.session_state.get(CB_PROFILE_IMPORT_UNDO_ROWS_KEY):
+                if st.button(
+                    "Undo last import",
+                    key="crossbeam_ptqa5_profile_import_undo",
+                    use_container_width=True,
+                    help="Restore the Tendon Profile rows that were active immediately before the last import apply.",
+                ):
+                    _undo_tendon_profile_import(st.session_state, length_m=length_m)
+                    st.rerun()
+        with upload_col:
             uploaded_file = st.file_uploader(
                 "Preview CSV/XLSX tendon profile import",
                 type=["csv", "xlsx", "xls"],
                 key=CB_PROFILE_IMPORT_UPLOAD_KEY,
-                help="Validates rows only. It does not replace the editable profile table in this milestone.",
+                help="Validates rows first. A separate confirmation is required before the active profile table is replaced.",
+            )
+        with st.expander("Column requirements", expanded=False):
+            st.dataframe(
+                pd.DataFrame(tendon_profile_import_schema_rows()),
+                use_container_width=True,
+                hide_index=True,
             )
 
         if uploaded_file is None:
@@ -1539,6 +1604,11 @@ def _render_tendon_profile_import_foundation(
             segment_rows=segment_rows,
             section_definitions=section_definitions,
         )
+        summary = tendon_profile_import_change_summary(
+            source_rows,
+            preview_rows,
+            length_m=length_m,
+        )
         render_metric_cards(
             [
                 {
@@ -1548,10 +1618,22 @@ def _render_tendon_profile_import_foundation(
                     "status": "ready" if not import_errors else "warning",
                 },
                 {
-                    "title": "Writeback",
-                    "value": "PREVIEW ONLY",
-                    "detail": "No project state mutation in PTQA4",
+                    "title": "Row changes",
+                    "value": f"+{summary['added_rows']} / Δ{summary['changed_rows']} / -{summary['removed_rows']}",
+                    "detail": f"{summary['unchanged_rows']} unchanged row(s)",
+                    "status": "info" if not import_errors else "neutral",
+                },
+                {
+                    "title": "Affected tendons",
+                    "value": summary["affected_tendons"],
+                    "detail": f"{summary['current_rows']} current → {summary['imported_rows']} imported",
                     "status": "neutral",
+                },
+                {
+                    "title": "Apply guard",
+                    "value": "CONFIRM REQUIRED" if not import_errors else "LOCKED",
+                    "detail": "Valid import only",
+                    "status": "warning" if not import_errors else "neutral",
                 },
             ]
         )
@@ -1570,15 +1652,39 @@ def _render_tendon_profile_import_foundation(
                 ),
                 use_container_width=True,
                 hide_index=True,
+                height=min(280, 38 * (min(len(preview_rows), 6) + 1)),
             )
         for error in import_errors:
             st.error(error)
         for warning in import_warnings:
             st.warning(warning)
         if not import_errors:
-            st.success(
-                "Import preview passed geometry validation. Future apply/writeback can reuse these normalized rows."
+            st.success("Import preview passed geometry validation.")
+            confirmed = st.checkbox(
+                "I understand this will replace the active Tendon Profile table.",
+                key=CB_PROFILE_IMPORT_CONFIRM_KEY,
             )
+            apply_col, note_col = st.columns([0.28, 0.72])
+            with apply_col:
+                if st.button(
+                    "Apply imported profile",
+                    key="crossbeam_ptqa5_profile_import_apply",
+                    disabled=not confirmed,
+                    use_container_width=True,
+                    help="Requires a valid import preview and explicit confirmation.",
+                ):
+                    _apply_tendon_profile_import_preview(
+                        st.session_state,
+                        preview_rows=preview_rows,
+                        current_rows=source_rows,
+                        length_m=length_m,
+                    )
+                    st.rerun()
+            with note_col:
+                st.caption(
+                    "Apply rewrites only the Tendon Profile s-x-dtop rows and increments the profile editor revision. "
+                    "Tendon System, Segment Layout, Project JSON export shape, reports, and solvers are not changed here."
+                )
 
 
 def _apply_tendon_profile_preset(

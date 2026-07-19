@@ -8,6 +8,7 @@ from concrete_pmm_pro.crossbeam.tendon import (
     default_tendon_profile_points,
     default_tendon_system_rows,
     normalize_tendon_profile_import_rows,
+    tendon_profile_import_change_summary,
     tendon_profile_import_schema_rows,
     tendon_profile_import_template_rows,
 )
@@ -128,12 +129,79 @@ def test_ptqa4_import_preview_accepts_common_excel_column_aliases() -> None:
     assert [row["Point"] for row in preview_rows] == ["P1", "P2", "P3"]
 
 
-def test_ptqa4_tendon_profile_page_exposes_preview_only_import_ui() -> None:
+def test_ptqa4_tendon_profile_page_exposes_guarded_import_ui() -> None:
     source = inspect.getsource(crossbeam_pages.render_crossbeam_tendon_profile_page)
     helper_source = inspect.getsource(crossbeam_pages._render_tendon_profile_import_foundation)
 
     assert "_render_tendon_profile_import_foundation" in source
     assert "st.download_button" in helper_source
     assert "st.file_uploader" in helper_source
-    assert "Preview only" in helper_source
+    assert "not applied until confirmed" in helper_source
     assert "CB_PROFILE_ROWS_KEY" not in helper_source
+
+
+def test_ptqa5_import_change_summary_reports_add_change_remove_counts() -> None:
+    _system, profile, _definitions, _segments = _context()
+    imported = tendon_profile_import_template_rows(profile, length_m=20.0)
+    imported[0]["dtop (mm)"] = 525.0
+    imported.append(
+        {
+            "Tendon ID": "T1",
+            "Point": "P4",
+            "s (m)": 5.0,
+            "x lateral (mm)": -1100.0,
+            "dtop (mm)": 650.0,
+            "Curve role": "Low point",
+        }
+    )
+    imported = [row for row in imported if not (row["Tendon ID"] == "T2" and row["Point"] == "P2")]
+
+    summary = tendon_profile_import_change_summary(profile, imported, length_m=20.0)
+
+    assert summary["current_rows"] == len(profile)
+    assert summary["imported_rows"] == len(imported)
+    assert summary["added_rows"] == 1
+    assert summary["changed_rows"] == 1
+    assert summary["removed_rows"] == 1
+    assert summary["affected_tendons"] == 2
+
+
+def test_ptqa5_apply_import_replaces_profile_rows_and_keeps_one_step_undo() -> None:
+    _system, profile, _definitions, _segments = _context()
+    imported = tendon_profile_import_template_rows(profile, length_m=20.0)
+    imported[0]["dtop (mm)"] = 525.0
+    state = {
+        crossbeam_pages.CB_PROFILE_ROWS_KEY: profile,
+        crossbeam_pages.CB_PROFILE_REV_KEY: 3,
+    }
+
+    result = crossbeam_pages._apply_tendon_profile_import_preview(
+        state,
+        preview_rows=imported,
+        current_rows=profile,
+        length_m=20.0,
+    )
+
+    assert result == {"action": "applied", "rows": len(imported)}
+    assert state[crossbeam_pages.CB_PROFILE_ROWS_KEY][0]["dtop (mm)"] == 525.0
+    assert state[crossbeam_pages.CB_PROFILE_IMPORT_UNDO_ROWS_KEY] == profile
+    assert state[crossbeam_pages.CB_PROFILE_REV_KEY] == 4
+    assert state[crossbeam_pages.CB_PROFILE_IMPORT_CONFIRM_KEY] is False
+
+
+def test_ptqa5_undo_import_restores_previous_profile_rows() -> None:
+    _system, profile, _definitions, _segments = _context()
+    imported = tendon_profile_import_template_rows(profile, length_m=20.0)
+    imported[0]["dtop (mm)"] = 525.0
+    state = {
+        crossbeam_pages.CB_PROFILE_ROWS_KEY: imported,
+        crossbeam_pages.CB_PROFILE_IMPORT_UNDO_ROWS_KEY: profile,
+        crossbeam_pages.CB_PROFILE_REV_KEY: 4,
+    }
+
+    result = crossbeam_pages._undo_tendon_profile_import(state, length_m=20.0)
+
+    assert result == {"action": "undone", "rows": len(profile)}
+    assert state[crossbeam_pages.CB_PROFILE_ROWS_KEY] == profile
+    assert crossbeam_pages.CB_PROFILE_IMPORT_UNDO_ROWS_KEY not in state
+    assert state[crossbeam_pages.CB_PROFILE_REV_KEY] == 5
