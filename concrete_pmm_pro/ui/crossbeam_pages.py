@@ -38,16 +38,20 @@ from concrete_pmm_pro.crossbeam.tendon import (
     DEFAULT_STRAND_SYSTEM,
     DEFAULT_TENDON_PROFILE_SUPPORT_WIDTH_M,
     PROFILE_ROLE_OPTIONS,
+    TENDON_PROFILE_IMPORT_REQUIRED_COLUMNS,
     TENDON_PROFILE_SPAN_MODE_OPTIONS,
     TENDON_PROFILE_PRESET_OPTIONS,
     canonical_tendon_profile_points,
     canonical_tendon_system_rows,
     default_tendon_profile_points,
+    normalize_tendon_profile_import_rows,
     normalize_tendon_profile_preset,
     normalize_tendon_profile_span_mode,
     profile_preset_point_count,
     default_tendon_system_rows,
     tendon_profile_points_for_preset,
+    tendon_profile_import_schema_rows,
+    tendon_profile_import_template_rows,
     tendon_profile_preset_shape_preview,
     tendon_continuity_audit_rows,
     tendon_continuity_summary,
@@ -118,6 +122,7 @@ CB_PROFILE_PRESET_OFFSET_KEY = "crossbeam_pt1g_profile_preset_offset_mm"
 CB_PROFILE_PRESET_SUPPORT_WIDTH_KEY = "crossbeam_pt1j_profile_preset_support_width_m"
 CB_PROFILE_PRESET_TARGETS_KEY = "crossbeam_pt1g_profile_preset_tendon_ids"
 CB_PROFILE_PRESET_NOTICE_KEY = "crossbeam_pt1h_profile_preset_notice"
+CB_PROFILE_IMPORT_UPLOAD_KEY = "crossbeam_ptqa4_profile_import_upload"
 
 CB_LENGTH_POLICY_KEEP = "Keep existing stations — review required"
 CB_LENGTH_POLICY_SCALE = "Scale longitudinal stations proportionally"
@@ -1462,6 +1467,118 @@ def _commit_tendon_profile_editor(
     st.session_state[CB_PROFILE_ROWS_KEY] = _profile_rows_from_editor_rows(
         editor_rows, length_m
     )
+
+
+def _read_tendon_profile_import_upload(uploaded_file: Any) -> tuple[pd.DataFrame, str | None]:
+    name = str(getattr(uploaded_file, "name", "") or "").casefold()
+    try:
+        if name.endswith((".xlsx", ".xls")):
+            return pd.read_excel(uploaded_file), None
+        return pd.read_csv(uploaded_file), None
+    except Exception as exc:
+        return pd.DataFrame(), f"Unable to read tendon profile import file: {exc}"
+
+
+def _render_tendon_profile_import_foundation(
+    *,
+    source_rows: list[dict[str, Any]],
+    system_rows: list[dict[str, Any]],
+    length_m: float,
+    segment_rows: list[dict[str, Any]],
+    section_definitions: list[dict[str, Any]],
+) -> None:
+    render_section_bar(
+        "Tendon profile import foundation",
+        "Download the live-row template or preview CSV/XLSX rows against the current Tendon System, Segment Layout, and Section Builder context.",
+        mark="CSV",
+    )
+    with st.expander("Preview CSV/XLSX import rows", expanded=False):
+        st.caption(
+            "Preview only: uploaded rows are normalized and validated here, but PTQA4 does not write imported rows back to the active project state."
+        )
+        schema_col, action_col = st.columns([1.4, 1.0])
+        with schema_col:
+            st.dataframe(
+                pd.DataFrame(tendon_profile_import_schema_rows()),
+                use_container_width=True,
+                hide_index=True,
+            )
+        with action_col:
+            template = pd.DataFrame(
+                tendon_profile_import_template_rows(source_rows, length_m=length_m),
+                columns=list(TENDON_PROFILE_IMPORT_REQUIRED_COLUMNS),
+            )
+            st.download_button(
+                "Download CSV template",
+                data=template.to_csv(index=False).encode("utf-8-sig"),
+                file_name="crossbeam_tendon_profile_template.csv",
+                mime="text/csv",
+                key="crossbeam_ptqa4_profile_import_template_download",
+                use_container_width=True,
+                help="Exports the current profile table using the exact import-preview column order.",
+            )
+            uploaded_file = st.file_uploader(
+                "Preview CSV/XLSX tendon profile import",
+                type=["csv", "xlsx", "xls"],
+                key=CB_PROFILE_IMPORT_UPLOAD_KEY,
+                help="Validates rows only. It does not replace the editable profile table in this milestone.",
+            )
+
+        if uploaded_file is None:
+            return
+
+        import_frame, load_error = _read_tendon_profile_import_upload(uploaded_file)
+        if load_error:
+            st.error(load_error)
+            return
+
+        preview_rows, import_errors, import_warnings = normalize_tendon_profile_import_rows(
+            import_frame,
+            system_rows,
+            length_m=length_m,
+            segment_rows=segment_rows,
+            section_definitions=section_definitions,
+        )
+        render_metric_cards(
+            [
+                {
+                    "title": "Import preview",
+                    "value": "READY" if not import_errors else "REVIEW REQUIRED",
+                    "detail": f"{len(preview_rows)} normalized row(s)",
+                    "status": "ready" if not import_errors else "warning",
+                },
+                {
+                    "title": "Writeback",
+                    "value": "PREVIEW ONLY",
+                    "detail": "No project state mutation in PTQA4",
+                    "status": "neutral",
+                },
+            ]
+        )
+        if preview_rows:
+            st.dataframe(
+                pd.DataFrame(
+                    preview_rows,
+                    columns=[
+                        "Tendon ID",
+                        "Point",
+                        "s (m)",
+                        "x lateral (mm)",
+                        "dtop (mm)",
+                        "Curve role",
+                    ],
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+        for error in import_errors:
+            st.error(error)
+        for warning in import_warnings:
+            st.warning(warning)
+        if not import_errors:
+            st.success(
+                "Import preview passed geometry validation. Future apply/writeback can reuse these normalized rows."
+            )
 
 
 def _apply_tendon_profile_preset(
@@ -3048,9 +3165,20 @@ def render_crossbeam_tendon_profile_page() -> None:
         st.session_state[CB_PROFILE_REV_KEY] = int(st.session_state.get(CB_PROFILE_REV_KEY, 0)) + 1
         st.rerun()
 
+    segment_rows, segment_errors = _validate_segments(
+        _records(st.session_state.get(CB_SEGMENT_ROWS_KEY)), length_m
+    )
+    section_definitions = _crossbeam_section_definitions()
     revision = int(st.session_state.get(CB_PROFILE_REV_KEY, 0))
     source_rows = canonical_tendon_profile_points(
         _records(st.session_state.get(CB_PROFILE_ROWS_KEY)), length_m
+    )
+    _render_tendon_profile_import_foundation(
+        source_rows=source_rows,
+        system_rows=system_rows,
+        length_m=length_m,
+        segment_rows=segment_rows,
+        section_definitions=section_definitions,
     )
     profile_editor_rows = [
         {
@@ -3089,8 +3217,6 @@ def render_crossbeam_tendon_profile_page() -> None:
     points = _profile_rows_from_editor_rows(_records(edited), length_m)
     st.session_state[CB_PROFILE_ROWS_KEY] = points
 
-    segment_rows, segment_errors = _validate_segments(_records(st.session_state.get(CB_SEGMENT_ROWS_KEY)), length_m)
-    section_definitions = _crossbeam_section_definitions()
     system_rows, system_errors, system_warnings = validate_tendon_system(system_rows)
     points, profile_errors, profile_warnings = validate_tendon_profile(
         points,

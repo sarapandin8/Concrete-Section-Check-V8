@@ -1,3 +1,11 @@
+### CROSSBEAM.PTQA4 - Tendon Profile Import Foundation
+
+Adds a Crossbeam Tendon Profile import foundation with a live CSV template
+download and preview-only CSV/XLSX validation against the current Tendon System,
+Segment Layout, and Section Builder context. Uploaded rows are normalized for
+review but are not applied to the active profile table, Project JSON, reports,
+or solvers in this milestone. See `README_CROSSBEAM_PTQA4.md`.
+
 ### CROSSBEAM.PTQA3 - Rebar Joint PT Continuity Status Sync
 
 Syncs the Crossbeam Rebar workspace with the Tendon Profile continuity audit so

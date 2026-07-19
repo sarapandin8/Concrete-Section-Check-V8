@@ -57,6 +57,67 @@ DEFAULT_WEB_TENDONS_PER_SIDE = 4
 DEFAULT_TENDON_TOP_OFFSET_MM = 500.0
 DEFAULT_TENDON_BOTTOM_OFFSET_MM = 300.0
 DEFAULT_TENDON_PROFILE_SUPPORT_WIDTH_M = 1.0
+TENDON_PROFILE_IMPORT_REQUIRED_COLUMNS = (
+    "Tendon ID",
+    "Point",
+    "s (m)",
+    "x lateral (mm)",
+    "dtop (mm)",
+    "Curve role",
+)
+TENDON_PROFILE_IMPORT_SCHEMA = (
+    {
+        "Column": "Tendon ID",
+        "Required": True,
+        "Description": "Tendon identifier already defined in Tendon System, for example T1.",
+    },
+    {
+        "Column": "Point",
+        "Required": True,
+        "Description": "Profile point label within that tendon, for example P1, P2, P3.",
+    },
+    {
+        "Column": "s (m)",
+        "Required": True,
+        "Description": "Longitudinal station measured from the left anchorage; must be between 0 and L.",
+    },
+    {
+        "Column": "x lateral (mm)",
+        "Required": True,
+        "Description": "Cross-section lateral x coordinate; x = 0 is the member centerline.",
+    },
+    {
+        "Column": "dtop (mm)",
+        "Required": True,
+        "Description": "Vertical depth measured downward from the top surface.",
+    },
+    {
+        "Column": "Curve role",
+        "Required": True,
+        "Description": "One of Anchorage, Profile point, High point, Low point, or Deviator.",
+    },
+)
+_TENDON_PROFILE_IMPORT_COLUMN_ALIASES = {
+    "tendon": "Tendon ID",
+    "tendonid": "Tendon ID",
+    "tendonname": "Tendon ID",
+    "point": "Point",
+    "pointid": "Point",
+    "station": "s (m)",
+    "stationm": "s (m)",
+    "sm": "s (m)",
+    "s": "s (m)",
+    "xlateral": "x lateral (mm)",
+    "xlateralmm": "x lateral (mm)",
+    "xmm": "x lateral (mm)",
+    "x": "x lateral (mm)",
+    "dtop": "dtop (mm)",
+    "dtopmm": "dtop (mm)",
+    "depthfromtopmm": "dtop (mm)",
+    "depthfromtop": "dtop (mm)",
+    "curverole": "Curve role",
+    "role": "Curve role",
+}
 
 
 def _float(value: Any, default: float = 0.0) -> float:
@@ -636,6 +697,181 @@ def canonical_tendon_profile_points(values: Any, length_m: float) -> list[dict[s
         )
     rows.sort(key=lambda row: (row["Tendon ID"], row["s (m)"], row["Point"]))
     return rows
+
+
+def tendon_profile_import_schema_rows() -> list[dict[str, Any]]:
+    """Return the public tendon-profile import contract for UI display."""
+
+    return [dict(row) for row in TENDON_PROFILE_IMPORT_SCHEMA]
+
+
+def tendon_profile_import_template_rows(
+    profile_values: Any,
+    *,
+    length_m: float,
+) -> list[dict[str, Any]]:
+    """Return current profile rows in the exact import-template column order."""
+
+    return [
+        {column: row[column] for column in TENDON_PROFILE_IMPORT_REQUIRED_COLUMNS}
+        for row in canonical_tendon_profile_points(profile_values, length_m)
+    ]
+
+
+def _import_column_token(value: Any) -> str:
+    return "".join(
+        character
+        for character in str(value or "").strip().casefold()
+        if character.isalnum()
+    )
+
+
+def _import_column_map(rows: list[dict[str, Any]]) -> dict[str, str]:
+    columns = list(dict.fromkeys(key for row in rows for key in row))
+    aliases = {
+        _import_column_token(column): column
+        for column in TENDON_PROFILE_IMPORT_REQUIRED_COLUMNS
+    }
+    aliases.update(_TENDON_PROFILE_IMPORT_COLUMN_ALIASES)
+    mapped: dict[str, str] = {}
+    for column in columns:
+        canonical = aliases.get(_import_column_token(column))
+        if canonical in TENDON_PROFILE_IMPORT_REQUIRED_COLUMNS and canonical not in mapped:
+            mapped[canonical] = column
+    return mapped
+
+
+def _import_value_is_blank(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, float) and not isfinite(value):
+        return True
+    return not str(value).strip()
+
+
+def _import_text(value: Any) -> str:
+    if _import_value_is_blank(value):
+        return ""
+    return str(value).strip()
+
+
+def _import_required_float(
+    value: Any,
+    *,
+    column: str,
+    row_number: int,
+    errors: list[str],
+) -> float | None:
+    if _import_value_is_blank(value):
+        errors.append(f"Row {row_number}: {column} is required.")
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        errors.append(f"Row {row_number}: {column} must be numeric.")
+        return None
+    if not isfinite(number):
+        errors.append(f"Row {row_number}: {column} must be finite.")
+        return None
+    return number
+
+
+def normalize_tendon_profile_import_rows(
+    import_values: Any,
+    system_values: Any,
+    *,
+    length_m: float,
+    segment_rows: Any,
+    section_definitions: Any,
+) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+    """Preview-normalize imported tendon profile rows without mutating state.
+
+    PTQA4 intentionally stops at a read-only import foundation.  The returned
+    rows are canonical and validated against the live Tendon System, Segment
+    Layout, and Section Builder context, but callers decide whether a future
+    explicit apply/writeback action is available.
+    """
+
+    raw_rows = _records(import_values)
+    if not raw_rows:
+        return [], ["Import file contains no tendon profile rows."], []
+
+    column_map = _import_column_map(raw_rows)
+    missing = [
+        column
+        for column in TENDON_PROFILE_IMPORT_REQUIRED_COLUMNS
+        if column not in column_map
+    ]
+    if missing:
+        return [], ["Import file is missing required column(s): " + ", ".join(missing) + "."], []
+
+    cleaned: list[dict[str, Any]] = []
+    row_errors: list[str] = []
+    for row_number, source in enumerate(raw_rows, start=2):
+        if all(
+            _import_value_is_blank(source.get(column_map[column]))
+            for column in TENDON_PROFILE_IMPORT_REQUIRED_COLUMNS
+        ):
+            continue
+
+        tendon_id = _import_text(source.get(column_map["Tendon ID"]))
+        point = _import_text(source.get(column_map["Point"]))
+        role = _import_text(source.get(column_map["Curve role"]))
+        if not tendon_id:
+            row_errors.append(f"Row {row_number}: Tendon ID is required.")
+        if not point:
+            row_errors.append(f"Row {row_number}: Point is required.")
+        if not role:
+            row_errors.append(f"Row {row_number}: Curve role is required.")
+        elif role not in PROFILE_ROLE_OPTIONS:
+            row_errors.append(
+                f"Row {row_number}: Curve role must be one of "
+                + ", ".join(PROFILE_ROLE_OPTIONS)
+                + "."
+            )
+
+        station = _import_required_float(
+            source.get(column_map["s (m)"]),
+            column="s (m)",
+            row_number=row_number,
+            errors=row_errors,
+        )
+        lateral = _import_required_float(
+            source.get(column_map["x lateral (mm)"]),
+            column="x lateral (mm)",
+            row_number=row_number,
+            errors=row_errors,
+        )
+        depth = _import_required_float(
+            source.get(column_map["dtop (mm)"]),
+            column="dtop (mm)",
+            row_number=row_number,
+            errors=row_errors,
+        )
+        if tendon_id and point and role in PROFILE_ROLE_OPTIONS and station is not None and lateral is not None and depth is not None:
+            cleaned.append(
+                {
+                    "Tendon ID": tendon_id,
+                    "Point": point,
+                    "s (m)": station,
+                    "x lateral (mm)": lateral,
+                    "dtop (mm)": depth,
+                    "Curve role": role,
+                }
+            )
+
+    normalized = canonical_tendon_profile_points(cleaned, length_m)
+    if row_errors:
+        return normalized, list(dict.fromkeys(row_errors)), []
+    if not normalized:
+        return [], ["Import file contains no usable tendon profile rows."], []
+    return validate_tendon_profile(
+        normalized,
+        system_values,
+        length_m=length_m,
+        segment_rows=segment_rows,
+        section_definitions=section_definitions,
+    )
 
 
 def tendon_positions_at_station(
