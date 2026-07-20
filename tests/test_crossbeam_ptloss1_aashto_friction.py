@@ -17,6 +17,8 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU,
     DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD,
     DEFAULT_INTERNAL_WOBBLE_K_PER_M,
+    EXTERNAL_HDPE_REVIEW_NOTE,
+    EXTERNAL_NO_DEVIATOR_ISSUE,
     FT_PER_M,
     aashto_friction_wobble_station_rows,
     aashto_friction_wobble_summary,
@@ -130,6 +132,7 @@ def test_ptloss1_external_hdpe_lined_uses_conservative_mu_without_kx() -> None:
     assert "HDPE-lined" in midpoint["Equation"]
     assert midpoint["mu basis"] == "HDPE-lined: adopted 0.25"
     assert midpoint["Status"] == "LOSS READY + NOTE"
+    assert midpoint["Issue"] == EXTERNAL_HDPE_REVIEW_NOTE
     assert midpoint["P/Pj after friction"] == pytest.approx(expected_ratio)
 
 
@@ -151,7 +154,7 @@ def test_ptloss1_external_without_deviator_requires_review_but_still_reports_cal
     summary = aashto_friction_wobble_summary(rows)
 
     assert midpoint["Status"] == "REVIEW REQUIRED"
-    assert "no Deviator point" in midpoint["Blocking issue"]
+    assert midpoint["Blocking issue"] == EXTERNAL_NO_DEVIATOR_ISSUE
     assert midpoint["P/Pj after friction"] == pytest.approx(expected_ratio)
     assert summary["value"] == "REVIEW REQUIRED"
     assert summary["review_station_row_count"] == 3
@@ -176,9 +179,11 @@ def test_ptloss1_summary_includes_external_review_note_rows_in_metrics() -> None
     assert summary["value"] == "LOSS READY + NOTES"
     assert summary["review_station_row_count"] == 0
     assert summary["review_note_station_row_count"] == 3
+    assert summary["review_notes"] == [EXTERNAL_HDPE_REVIEW_NOTE]
     assert summary["worst_loss_percent"] == pytest.approx(100.0 * (1.0 - expected_ratio))
     assert summary["minimum_p_over_pj"] == pytest.approx(expected_ratio)
     assert tendon_rows[0]["Status"] == "LOSS READY + NOTE"
+    assert tendon_rows[0]["Issue"] == EXTERNAL_HDPE_REVIEW_NOTE
 
 
 def test_ptloss1_summary_reports_worst_traced_station_without_final_pe_claim() -> None:

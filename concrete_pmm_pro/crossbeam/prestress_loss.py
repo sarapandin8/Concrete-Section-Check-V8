@@ -34,6 +34,8 @@ DEFAULT_INTERNAL_FRICTION_MU = 0.20
 DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU = AASHTO_EXTERNAL_RIGID_STEEL_PIPE_DEVIATOR_MU
 DEFAULT_EXTERNAL_DEVIATOR_MU = DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU
 DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD = 0.04
+EXTERNAL_HDPE_REVIEW_NOTE = "HDPE note: verify PT supplier, angle tolerances, sequence."
+EXTERNAL_NO_DEVIATOR_ISSUE = "No Deviator point: +0.04 rad not applied."
 
 
 def _float(value: Any, default: float = 0.0) -> float:
@@ -350,13 +352,9 @@ def aashto_friction_wobble_station_rows(
                 equation = "AASHTO 5.9.3.2.2b-2 external HDPE-lined deviator preview"
                 k_basis = "External: N/A, no Kx"
                 mu_basis = "HDPE-lined: adopted 0.25"
-                review_notes.append(
-                    "External tendon friction is an HDPE-lined deviator preview; verify PT supplier data, angle tolerances, and stressing sequence."
-                )
+                review_notes.append(EXTERNAL_HDPE_REVIEW_NOTE)
                 if tendon_deviator_count <= 0:
-                    blocking_issues.append(
-                        "External tendon has no Deviator point; AASHTO 0.04 rad/deviator is not applied."
-                    )
+                    blocking_issues.append(EXTERNAL_NO_DEVIATOR_ISSUE)
             else:
                 k_used = k_internal
                 mu_used = mu_internal

@@ -1,3 +1,10 @@
+### CROSSBEAM.PTLOSS1D - External Note Table Compactness Polish
+
+Polishes the Crossbeam `Prestress Loss` external tendon table notes with
+compact HDPE review and no-deviator wording so PDF/export tables stay readable,
+while preserving the PTLOSS1C calculation behavior and summary metrics. See
+`README_CROSSBEAM_PTLOSS1D.md`.
+
 ### CROSSBEAM.PTLOSS1C - External Summary And Review Note Fix
 
 Fixes Crossbeam `Prestress Loss` summary cards so calculated external
