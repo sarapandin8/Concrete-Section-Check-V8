@@ -26,10 +26,13 @@ CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY = "crossbeam_ptloss1_external_inadvertent
 
 AASHTO_PTL_FRICTION_BASIS = "AASHTO LRFD 5.9.3.2.2b"
 AASHTO_INTERNAL_WOBBLE_K_PER_FT = 0.0002
+AASHTO_POLYETHYLENE_DUCT_MU = 0.23
+AASHTO_EXTERNAL_RIGID_STEEL_PIPE_DEVIATOR_MU = 0.25
 FT_PER_M = 3.280839895013123
 DEFAULT_INTERNAL_WOBBLE_K_PER_M = AASHTO_INTERNAL_WOBBLE_K_PER_FT * FT_PER_M
 DEFAULT_INTERNAL_FRICTION_MU = 0.20
-DEFAULT_EXTERNAL_DEVIATOR_MU = 0.25
+DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU = AASHTO_EXTERNAL_RIGID_STEEL_PIPE_DEVIATOR_MU
+DEFAULT_EXTERNAL_DEVIATOR_MU = DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU
 DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD = 0.04
 
 
@@ -335,18 +338,22 @@ def aashto_friction_wobble_station_rows(
                 issues.append("Positive Aps, fpj, and Pj are required.")
 
             if tendon_type == "External":
-                k_used = 0.0
+                k_used = None
                 mu_used = mu_external
                 exponent = mu_used * (alpha_total + inadvertent * deviator_count)
-                equation = "AASHTO 5.9.3.2.2b-2 external deviator preview"
+                equation = "AASHTO 5.9.3.2.2b-2 external HDPE-lined deviator preview"
+                k_basis = "N/A - external deviator equation uses mu(alpha + angle add), not Kx"
+                mu_basis = "Adopted conservative HDPE-lined external tendon value"
                 issues.append(
-                    "External tendon friction is a deviator-pipe preview; verify deviator hardware, angle tolerances, and stressing sequence."
+                    "External tendon friction is an HDPE-lined deviator preview; verify PT supplier data, angle tolerances, and stressing sequence."
                 )
             else:
                 k_used = k_internal
                 mu_used = mu_internal
                 exponent = k_used * x_from_jack_m + mu_used * alpha_total
                 equation = "AASHTO 5.9.3.2.2b-1 internal duct friction/wobble"
+                k_basis = "AASHTO table internal duct wobble K"
+                mu_basis = "Internal duct friction coefficient"
 
             exponent = max(exponent, 0.0)
             remaining_ratio = exp(-exponent) if exponent < 80.0 else 0.0
@@ -378,7 +385,9 @@ def aashto_friction_wobble_station_rows(
                     "alpha total (rad)": alpha_total,
                     "Deviators counted": deviator_count,
                     "K (/m)": k_used,
+                    "K basis": k_basis,
                     "mu": mu_used,
+                    "mu basis": mu_basis,
                     "Exponent": exponent,
                     "Aps total (mm²)": aps_total,
                     "fpj (MPa)": fpj_mpa,

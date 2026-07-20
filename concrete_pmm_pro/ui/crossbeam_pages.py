@@ -74,12 +74,14 @@ from concrete_pmm_pro.crossbeam.tendon_analysis import (
     tendon_force_trace_rows,
 )
 from concrete_pmm_pro.crossbeam.prestress_loss import (
+    AASHTO_POLYETHYLENE_DUCT_MU,
     AASHTO_PTL_FRICTION_BASIS,
     CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY,
     CB_LOSS_EXTERNAL_MU_KEY,
     CB_LOSS_INTERNAL_K_PER_M_KEY,
     CB_LOSS_INTERNAL_MU_KEY,
     DEFAULT_EXTERNAL_DEVIATOR_MU,
+    DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU,
     DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD,
     DEFAULT_INTERNAL_FRICTION_MU,
     DEFAULT_INTERNAL_WOBBLE_K_PER_M,
@@ -4217,6 +4219,13 @@ def _loss_setting_defaults_from_state() -> dict[str, float | int | str]:
     )
 
 
+def _loss_k_display(row: Mapping[str, Any]) -> str:
+    value = row.get("K (/m)")
+    if value is None or str(value).strip().upper() in {"", "N/A", "NONE"}:
+        return "N/A"
+    return f"{_finite_float(value):.6f}"
+
+
 def _render_crossbeam_loss_assumptions() -> dict[str, float]:
     settings = _loss_setting_defaults_from_state()
     st.session_state[CB_LOSS_INTERNAL_MU_KEY] = float(settings["internal_mu"])
@@ -4255,13 +4264,17 @@ def _render_crossbeam_loss_assumptions() -> dict[str, float]:
     with external_mu_col:
         external_mu = float(
             st.number_input(
-                "External deviator mu",
+                "External HDPE-lined mu",
                 min_value=0.0,
                 max_value=1.0,
                 step=0.01,
                 format="%.3f",
                 key=CB_LOSS_EXTERNAL_MU_KEY,
-                help="AASHTO lists mu = 0.25 for rigid steel pipe deviators for external tendons.",
+                help=(
+                    "Adopted conservative value for the HDPE-lined external tendon. "
+                    f"AASHTO lists mu = {AASHTO_POLYETHYLENE_DUCT_MU:.2f} for polyethylene "
+                    f"and {DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU:.2f} is kept for conservative design preview."
+                ),
             )
         )
     with external_angle_col:
@@ -4280,7 +4293,9 @@ def _render_crossbeam_loss_assumptions() -> dict[str, float]:
     st.caption(
         "Calculation basis: AASHTO LRFD 5.9.3.2.2b. Internal tendons use "
         "Delta fpF = fpj x (1 - exp(-(Kx + mu alpha))). Both-end jacking uses "
-        "the nearest jacking end for equally tensioned tendons and never doubles Pj."
+        "the nearest jacking end for equally tensioned tendons and never doubles Pj. "
+        "External HDPE-lined tendons use Delta fpF = fpj x (1 - exp(-mu(alpha + angle add))); "
+        "the external K term is N/A in this calculation mode."
     )
     return {
         "internal_mu": internal_mu,
@@ -4380,8 +4395,10 @@ def render_crossbeam_prestress_loss_page() -> None:
                     "s (m)": round(row["s (m)"], 4),
                     "x from jack (m)": round(row["x from jack (m)"], 4),
                     "alpha total (rad)": round(row["alpha total (rad)"], 6),
-                    "K (/m)": round(row["K (/m)"], 6),
+                    "K (/m)": _loss_k_display(row),
+                    "K use": row.get("K basis", ""),
                     "mu": round(row["mu"], 4),
+                    "mu basis": row.get("mu basis", ""),
                     "Exponent": round(row["Exponent"], 6),
                     "Pj (kN)": round(row["Pj (kN)"], 3),
                     "P after friction (kN)": round(row["P after friction (kN)"], 3),

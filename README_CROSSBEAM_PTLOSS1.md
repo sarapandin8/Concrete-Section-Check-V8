@@ -12,6 +12,11 @@ AASHTO LRFD 5.9.3.2.2b friction/wobble loss at each tendon profile point.
   `Tendon Profile`.
 - Adds editable assumptions for internal duct `mu`, internal wobble `K (/m)`,
   external deviator `mu`, and external inadvertent angle.
+- For the current HDPE-lined external tendon assumption, use `mu = 0.25` as the
+  conservative adopted value; AASHTO polyethylene `mu = 0.23` remains a typical
+  reference value.
+- External tendon station rows treat `K (/m)` as not applicable because the
+  AASHTO external deviator expression uses `mu(alpha + angle add)`, not `Kx`.
 - Uses the AASHTO internal PT expression
   `Delta fpF = fpj x (1 - exp(-(Kx + mu alpha)))`.
 - Converts the AASHTO table default `K = 0.0002 /ft` to about `0.000656 /m`.

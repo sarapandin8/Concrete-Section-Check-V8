@@ -1,3 +1,11 @@
+### CROSSBEAM.PTLOSS1A - HDPE External Loss Assumption Polish
+
+Polishes the Crossbeam `Prestress Loss` assumptions for HDPE-lined external
+tendons by keeping `mu = 0.25` as a conservative adopted value, documenting the
+AASHTO polyethylene reference value `mu = 0.23`, displaying external `K (/m)` as
+`N/A`, and adding regression coverage that prevents the internal `Kx` term from
+affecting external deviator loss. See `README_CROSSBEAM_PTLOSS1A.md`.
+
 ### CROSSBEAM.PTLOSS1 - AASHTO Friction/Wobble Loss Foundation
 
 Adds a Crossbeam `Prestress Loss` page after `Tendon Profile` that calculates

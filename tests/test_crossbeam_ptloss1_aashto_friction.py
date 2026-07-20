@@ -7,11 +7,15 @@ import pytest
 
 from concrete_pmm_pro.crossbeam.prestress_loss import (
     AASHTO_INTERNAL_WOBBLE_K_PER_FT,
+    AASHTO_POLYETHYLENE_DUCT_MU,
     CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY,
     CB_LOSS_EXTERNAL_MU_KEY,
     CB_LOSS_INTERNAL_K_PER_M_KEY,
     CB_LOSS_INTERNAL_MU_KEY,
     CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY,
+    DEFAULT_EXTERNAL_DEVIATOR_MU,
+    DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU,
+    DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD,
     DEFAULT_INTERNAL_WOBBLE_K_PER_M,
     FT_PER_M,
     aashto_friction_wobble_station_rows,
@@ -96,6 +100,33 @@ def test_ptloss1_internal_3d_curve_accumulates_vector_angular_change() -> None:
 
     assert midpoint["Source end"] == "Left"
     assert midpoint["alpha total (rad)"] == pytest.approx(expected_alpha)
+    assert midpoint["P/Pj after friction"] == pytest.approx(expected_ratio)
+
+
+def test_ptloss1_external_hdpe_lined_uses_conservative_mu_without_kx() -> None:
+    rows = aashto_friction_wobble_station_rows(
+        _bent_3d_profile(),
+        _system_row(jacking_end="Left", tendon_type="External"),
+        length_m=20.0,
+        internal_mu=0.20,
+        internal_k_per_m=0.50,
+        external_deviator_mu=DEFAULT_EXTERNAL_DEVIATOR_MU,
+        external_inadvertent_angle_rad=DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD,
+    )
+    midpoint = next(row for row in rows if row["Point"] == "P2")
+    vertical_change = abs(atan(-0.1) - atan(0.1))
+    horizontal_change = abs(atan(-0.1) - atan(0.1))
+    expected_alpha = hypot(vertical_change, horizontal_change)
+    expected_ratio = exp(
+        -DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU
+        * (expected_alpha + DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD)
+    )
+
+    assert DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU > AASHTO_POLYETHYLENE_DUCT_MU
+    assert midpoint["K (/m)"] is None
+    assert "N/A" in midpoint["K basis"]
+    assert "HDPE-lined" in midpoint["Equation"]
+    assert "HDPE-lined" in midpoint["mu basis"]
     assert midpoint["P/Pj after friction"] == pytest.approx(expected_ratio)
 
 
