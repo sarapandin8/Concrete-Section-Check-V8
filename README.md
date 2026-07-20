@@ -1,3 +1,11 @@
+### CROSSBEAM.PTLOSS1E - Prestress Loss Table Export Layout Polish
+
+Polishes the Crossbeam `Prestress Loss` table layout by moving repeated
+blocking issues/review notes out of the wide station trace into a compact
+review table, placing `Status` near the left side, and using engineering
+display symbols `μ` and `α` while preserving calculation behavior. See
+`README_CROSSBEAM_PTLOSS1E.md`.
+
 ### CROSSBEAM.PTLOSS1D - External Note Table Compactness Polish
 
 Polishes the Crossbeam `Prestress Loss` external tendon table notes with

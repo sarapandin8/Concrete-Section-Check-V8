@@ -4240,13 +4240,13 @@ def _render_crossbeam_loss_assumptions() -> dict[str, float]:
     with internal_mu_col:
         internal_mu = float(
             st.number_input(
-                "Internal duct mu",
+                "Internal duct μ",
                 min_value=0.0,
                 max_value=1.0,
                 step=0.01,
                 format="%.3f",
                 key=CB_LOSS_INTERNAL_MU_KEY,
-                help="AASHTO Table 5.9.3.2.2b-1 gives mu = 0.15-0.25 for wire/strand in galvanized metal sheathing. Default uses the midrange value.",
+                help="AASHTO Table 5.9.3.2.2b-1 gives μ = 0.15-0.25 for wire/strand in galvanized metal sheathing. Default uses the midrange value.",
             )
         )
     with internal_k_col:
@@ -4264,7 +4264,7 @@ def _render_crossbeam_loss_assumptions() -> dict[str, float]:
     with external_mu_col:
         external_mu = float(
             st.number_input(
-                "External HDPE-lined mu",
+                "External HDPE-lined μ",
                 min_value=0.0,
                 max_value=1.0,
                 step=0.01,
@@ -4272,7 +4272,7 @@ def _render_crossbeam_loss_assumptions() -> dict[str, float]:
                 key=CB_LOSS_EXTERNAL_MU_KEY,
                 help=(
                     "Adopted conservative value for the HDPE-lined external tendon. "
-                    f"AASHTO lists mu = {AASHTO_POLYETHYLENE_DUCT_MU:.2f} for polyethylene "
+                    f"AASHTO lists μ = {AASHTO_POLYETHYLENE_DUCT_MU:.2f} for polyethylene "
                     f"and {DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU:.2f} is kept for conservative design preview."
                 ),
             )
@@ -4291,13 +4291,13 @@ def _render_crossbeam_loss_assumptions() -> dict[str, float]:
         )
 
     st.caption(
-        "AASHTO LRFD 5.9.3.2.2b. Internal: fpj x (1 - exp(-(Kx + mu alpha))). "
-        "External HDPE-lined: fpj x (1 - exp(-mu(alpha + angle add))); K = N/A."
+        "AASHTO LRFD 5.9.3.2.2b. Internal: fpj x (1 - exp(-(Kx + μα))). "
+        "External HDPE-lined: fpj x (1 - exp(-μ(α + angle add))); K = N/A."
     )
     st.caption(
         "Both-end jacking uses the nearest jacking end and never doubles Pj. "
-        f"External mu = {DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU:.2f} is adopted conservative; "
-        f"AASHTO polyethylene reference mu = {AASHTO_POLYETHYLENE_DUCT_MU:.2f}."
+        f"External μ = {DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU:.2f} is adopted conservative; "
+        f"AASHTO polyethylene reference μ = {AASHTO_POLYETHYLENE_DUCT_MU:.2f}."
     )
     return {
         "internal_mu": internal_mu,
@@ -4396,63 +4396,101 @@ def render_crossbeam_prestress_loss_page() -> None:
         pd.DataFrame(
             [
                 {
-                    "Tendon ID": row["Tendon ID"],
-                    "Active": row["Active"],
+                    "Tendon": row["Tendon ID"],
+                    "Status": row["Status"],
                     "Type": row["Type"],
-                    "Jacking end": row["Jacking end"],
-                    "Source end": row["Source end"],
+                    "End": row["Source end"],
                     "Point": row["Point"],
                     "Role": row["Curve role"],
                     "s (m)": round(row["s (m)"], 4),
-                    "x from jack (m)": round(row["x from jack (m)"], 4),
-                    "alpha total (rad)": round(row["alpha total (rad)"], 6),
+                    "xj (m)": round(row["x from jack (m)"], 4),
+                    "α (rad)": round(row["alpha total (rad)"], 6),
+                    "Dev": int(row["Deviators counted"]),
                     "K (/m)": _loss_k_display(row),
-                    "K use": row.get("K basis", ""),
-                    "mu": round(row["mu"], 4),
-                    "mu basis": row.get("mu basis", ""),
-                    "Exponent": round(row["Exponent"], 6),
+                    "μ": round(row["mu"], 4),
+                    "Exp": round(row["Exponent"], 6),
                     "Pj (kN)": round(row["Pj (kN)"], 3),
-                    "P after friction (kN)": round(row["P after friction (kN)"], 3),
-                    "Friction loss (kN)": round(row["Friction loss (kN)"], 3),
+                    "P(x) (kN)": round(row["P after friction (kN)"], 3),
+                    "Loss (kN)": round(row["Friction loss (kN)"], 3),
                     "P/Pj": round(row["P/Pj after friction"], 5),
-                    "Status": row["Status"],
-                    "Issue": row["Issue"],
                 }
                 for row in loss_rows
             ]
         ),
         use_container_width=True,
         hide_index=True,
+        column_config={
+            "Tendon": st.column_config.TextColumn(width="small"),
+            "Status": st.column_config.TextColumn(width="medium"),
+            "Type": st.column_config.TextColumn(width="small"),
+            "End": st.column_config.TextColumn(width="medium"),
+            "Point": st.column_config.TextColumn(width="small"),
+            "Role": st.column_config.TextColumn(width="medium"),
+        },
     )
     st.caption(
         "Do not sum station rows. Each row is the force at one traced point of one tendon after friction/wobble only; "
         "it is not final effective prestress and does not include anchorage set, elastic shortening, or time-dependent losses."
     )
 
+    review_rows = [
+        {
+            "Tendon": row["Tendon ID"],
+            "Point": row["Point"],
+            "Role": row["Curve role"],
+            "Status": row["Status"],
+            "Required issue": row.get("Blocking issue", "") or "-",
+            "Review note": row.get("Review note", "") or "-",
+        }
+        for row in loss_rows
+        if str(row.get("Blocking issue") or "").strip()
+        or str(row.get("Review note") or "").strip()
+    ]
+    if review_rows:
+        st.markdown("#### Station review / notes")
+        st.dataframe(
+            pd.DataFrame(review_rows),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Tendon": st.column_config.TextColumn(width="small"),
+                "Point": st.column_config.TextColumn(width="small"),
+                "Role": st.column_config.TextColumn(width="medium"),
+                "Status": st.column_config.TextColumn(width="medium"),
+                "Required issue": st.column_config.TextColumn(width="large"),
+                "Review note": st.column_config.TextColumn(width="large"),
+            },
+        )
+
     st.markdown("#### Per-tendon worst traced station")
     st.dataframe(
         pd.DataFrame(
             [
                 {
-                    "Tendon ID": row["Tendon ID"],
-                    "Active": row["Active"],
+                    "Tendon": row["Tendon ID"],
+                    "Status": row["Status"],
                     "Type": row["Type"],
-                    "Jacking end": row["Jacking end"],
+                    "End": row["Jacking end"],
                     "Worst point": row["Worst point"],
                     "Worst s (m)": round(row["Worst s (m)"], 4),
                     "Pj (kN)": round(row["Pj (kN)"], 3),
-                    "Min P after friction (kN)": round(row["Min P after friction (kN)"], 3),
-                    "Max friction loss (kN)": round(row["Max friction loss (kN)"], 3),
-                    "Max friction loss (%)": round(row["Max friction loss (%)"], 3),
-                    "Max alpha (rad)": round(row["Max alpha (rad)"], 6),
-                    "Status": row["Status"],
-                    "Issue": row["Issue"],
+                    "Min P(x) (kN)": round(row["Min P after friction (kN)"], 3),
+                    "Max loss (kN)": round(row["Max friction loss (kN)"], 3),
+                    "Max loss (%)": round(row["Max friction loss (%)"], 3),
+                    "Max α (rad)": round(row["Max alpha (rad)"], 6),
+                    "Max Exp": round(row["Max exponent"], 6),
                 }
                 for row in tendon_summary_rows
             ]
         ),
         use_container_width=True,
         hide_index=True,
+        column_config={
+            "Tendon": st.column_config.TextColumn(width="small"),
+            "Status": st.column_config.TextColumn(width="medium"),
+            "Type": st.column_config.TextColumn(width="small"),
+            "End": st.column_config.TextColumn(width="small"),
+        },
     )
 
     st.markdown("#### Loss component roadmap")

@@ -235,3 +235,21 @@ def test_ptloss1_crossbeam_navigation_adds_prestress_loss_after_profile() -> Non
         '"Tendon Profile", "Prestress Loss"]'
     ) in app_source
     assert "render_crossbeam_prestress_loss_page()" in app_source
+
+
+def test_ptloss1_ui_uses_greek_symbols_and_separate_review_notes_table() -> None:
+    source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
+    ptloss_table_source = source.split(
+        'st.markdown("#### AASHTO friction/wobble station trace")',
+        maxsplit=1,
+    )[1].split(
+        'st.markdown("#### Loss component roadmap")',
+        maxsplit=1,
+    )[0]
+
+    assert '"Internal duct μ"' in source
+    assert '"External HDPE-lined μ"' in source
+    assert '"α (rad)"' in source
+    assert '"μ": round(row["mu"], 4)' in source
+    assert 'st.markdown("#### Station review / notes")' in source
+    assert '"Issue": row["Issue"]' not in ptloss_table_source
