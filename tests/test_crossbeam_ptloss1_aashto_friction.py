@@ -49,10 +49,10 @@ def _straight_profile() -> list[dict[str, object]]:
     ]
 
 
-def _bent_3d_profile() -> list[dict[str, object]]:
+def _bent_3d_profile(*, middle_role: str = "Profile point") -> list[dict[str, object]]:
     return [
         {"Tendon ID": "T1", "Point": "P1", "s (m)": 0.0, "x lateral (mm)": 0.0, "dtop (mm)": 500.0, "Curve role": "Anchorage"},
-        {"Tendon ID": "T1", "Point": "P2", "s (m)": 10.0, "x lateral (mm)": 1000.0, "dtop (mm)": 1500.0, "Curve role": "Profile point"},
+        {"Tendon ID": "T1", "Point": "P2", "s (m)": 10.0, "x lateral (mm)": 1000.0, "dtop (mm)": 1500.0, "Curve role": middle_role},
         {"Tendon ID": "T1", "Point": "P3", "s (m)": 20.0, "x lateral (mm)": 0.0, "dtop (mm)": 500.0, "Curve role": "Anchorage"},
     ]
 
@@ -107,7 +107,7 @@ def test_ptloss1_internal_3d_curve_accumulates_vector_angular_change() -> None:
 
 def test_ptloss1_external_hdpe_lined_uses_conservative_mu_without_kx() -> None:
     rows = aashto_friction_wobble_station_rows(
-        _bent_3d_profile(),
+        _bent_3d_profile(middle_role="Deviator"),
         _system_row(jacking_end="Left", tendon_type="External"),
         length_m=20.0,
         internal_mu=0.20,
@@ -129,7 +129,56 @@ def test_ptloss1_external_hdpe_lined_uses_conservative_mu_without_kx() -> None:
     assert midpoint["K basis"] == "External: N/A, no Kx"
     assert "HDPE-lined" in midpoint["Equation"]
     assert midpoint["mu basis"] == "HDPE-lined: adopted 0.25"
+    assert midpoint["Status"] == "LOSS READY + NOTE"
     assert midpoint["P/Pj after friction"] == pytest.approx(expected_ratio)
+
+
+def test_ptloss1_external_without_deviator_requires_review_but_still_reports_calculated_loss() -> None:
+    rows = aashto_friction_wobble_station_rows(
+        _bent_3d_profile(),
+        _system_row(jacking_end="Left", tendon_type="External"),
+        length_m=20.0,
+        internal_mu=0.20,
+        internal_k_per_m=0.50,
+        external_deviator_mu=DEFAULT_EXTERNAL_DEVIATOR_MU,
+        external_inadvertent_angle_rad=DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD,
+    )
+    midpoint = next(row for row in rows if row["Point"] == "P2")
+    vertical_change = abs(atan(-0.1) - atan(0.1))
+    horizontal_change = abs(atan(-0.1) - atan(0.1))
+    expected_alpha = hypot(vertical_change, horizontal_change)
+    expected_ratio = exp(-DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU * expected_alpha)
+    summary = aashto_friction_wobble_summary(rows)
+
+    assert midpoint["Status"] == "REVIEW REQUIRED"
+    assert "no Deviator point" in midpoint["Blocking issue"]
+    assert midpoint["P/Pj after friction"] == pytest.approx(expected_ratio)
+    assert summary["value"] == "REVIEW REQUIRED"
+    assert summary["review_station_row_count"] == 3
+    assert summary["worst_loss_percent"] == pytest.approx(100.0 * (1.0 - expected_ratio))
+
+
+def test_ptloss1_summary_includes_external_review_note_rows_in_metrics() -> None:
+    rows = aashto_friction_wobble_station_rows(
+        _bent_3d_profile(middle_role="Deviator"),
+        _system_row(jacking_end="Left", tendon_type="External"),
+        length_m=20.0,
+        internal_mu=0.20,
+        internal_k_per_m=0.50,
+        external_deviator_mu=DEFAULT_EXTERNAL_DEVIATOR_MU,
+        external_inadvertent_angle_rad=DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD,
+    )
+    midpoint = next(row for row in rows if row["Point"] == "P2")
+    expected_ratio = midpoint["P/Pj after friction"]
+    summary = aashto_friction_wobble_summary(rows)
+    tendon_rows = aashto_friction_wobble_tendon_summary_rows(rows)
+
+    assert summary["value"] == "LOSS READY + NOTES"
+    assert summary["review_station_row_count"] == 0
+    assert summary["review_note_station_row_count"] == 3
+    assert summary["worst_loss_percent"] == pytest.approx(100.0 * (1.0 - expected_ratio))
+    assert summary["minimum_p_over_pj"] == pytest.approx(expected_ratio)
+    assert tendon_rows[0]["Status"] == "LOSS READY + NOTE"
 
 
 def test_ptloss1_summary_reports_worst_traced_station_without_final_pe_claim() -> None:

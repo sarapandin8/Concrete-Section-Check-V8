@@ -4319,7 +4319,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "AASHTO LRFD 5.9.3 loss foundation",
-        "This page calculates friction/wobble only. Anchorage set, elastic shortening, creep, shrinkage, relaxation, SLS, ULS, anchorage zones, deviators, and D-regions remain guarded future components.",
+        "This page calculates friction/wobble only. Anchorage set, elastic shortening, creep, shrinkage, relaxation, SLS, ULS, anchorage zones, deviator-force/hardware checks, and D-regions remain guarded future components.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -4362,25 +4362,34 @@ def render_crossbeam_prestress_loss_page() -> None:
             {
                 "title": "Worst traced loss",
                 "value": f"{float(summary['worst_loss_percent']):.2f}%",
-                "detail": "friction/wobble only",
+                "detail": "calculated rows; friction/wobble only",
                 "status": "neutral",
             },
             {
                 "title": "Minimum P/Pj",
                 "value": f"{float(summary['minimum_p_over_pj']):.4f}",
-                "detail": "station trace; not Pe final",
+                "detail": "calculated rows; not Pe final",
                 "status": "neutral",
             },
             {
                 "title": "Review rows",
-                "value": int(summary["review_station_row_count"]),
-                "detail": "active rows requiring attention",
-                "status": "ready" if int(summary["review_station_row_count"]) == 0 else "warning",
+                "value": int(summary["review_station_row_count"])
+                + int(summary["review_note_station_row_count"]),
+                "detail": (
+                    f"{int(summary['review_station_row_count'])} required / "
+                    f"{int(summary['review_note_station_row_count'])} note"
+                ),
+                "status": "ready"
+                if int(summary["review_station_row_count"]) == 0
+                and int(summary["review_note_station_row_count"]) == 0
+                else "warning",
             },
         ]
     )
-    for issue in summary["issues"]:
+    for issue in summary["blocking_issues"]:
         st.warning(issue)
+    for note in summary["review_notes"]:
+        st.info(note)
 
     st.markdown("#### AASHTO friction/wobble station trace")
     st.dataframe(
@@ -4481,5 +4490,5 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     st.info(
         "PTLOSS1 is a transparent engineering preview for AASHTO friction/wobble. "
-        "Use it to audit Pj-to-P(x) distribution before relying on later Pe final, SLS, ULS, anchorage-zone, or D-region checks."
+        "Use it to audit Pj-to-P(x) distribution before relying on later Pe final, SLS, ULS, anchorage-zone, deviator-force/hardware, or D-region checks."
     )

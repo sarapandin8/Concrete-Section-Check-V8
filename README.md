@@ -1,3 +1,10 @@
+### CROSSBEAM.PTLOSS1C - External Summary And Review Note Fix
+
+Fixes Crossbeam `Prestress Loss` summary cards so calculated external
+HDPE-lined review-note rows govern `Worst traced loss` and `Minimum P/Pj`,
+separates blocking issues from nonblocking notes, and requires review only when
+external tendons lack `Deviator` points. See `README_CROSSBEAM_PTLOSS1C.md`.
+
 ### CROSSBEAM.PTLOSS1B - Loss Table Readability Polish
 
 Polishes the Crossbeam `Prestress Loss` station trace by shortening `K use` and

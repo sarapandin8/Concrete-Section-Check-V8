@@ -310,6 +310,9 @@ def aashto_friction_wobble_station_rows(
         right_lookup = _angle_lookup_from_right(points)
         tendon_type = str(force.get("Type") or "Internal")
         jacking_end = str(force.get("Jacking end") or "Both")
+        tendon_deviator_count = sum(
+            1 for point in points if str(point.get("Curve role") or "").strip() == "Deviator"
+        )
         for point in points:
             station_m = min(max(_float(point.get("s (m)"), 0.0), 0.0), length)
             key = (str(point.get("Point") or ""), round(station_m, 9))
@@ -328,14 +331,17 @@ def aashto_friction_wobble_station_rows(
             fpj_mpa = _float(force.get("fpj (MPa)"), 0.0)
             aps_total = _float(force.get("Aps total (mm²)"), 0.0)
             pj_kn = _float(force.get("Pj (kN)"), 0.0)
-            issues: list[str] = []
+            blocking_issues: list[str] = []
+            review_notes: list[str] = []
             force_status = str(force.get("Force source status") or "REVIEW REQUIRED")
             if force_status == "REVIEW REQUIRED":
-                issues.append(str(force.get("Issue") or "Tendon force source requires review."))
+                blocking_issues.append(
+                    str(force.get("Issue") or "Tendon force source requires review.")
+                )
             if len(points) < 2:
-                issues.append("At least two profile points are required for friction loss.")
+                blocking_issues.append("At least two profile points are required for friction loss.")
             if aps_total <= 0.0 or fpj_mpa <= 0.0 or pj_kn <= 0.0:
-                issues.append("Positive Aps, fpj, and Pj are required.")
+                blocking_issues.append("Positive Aps, fpj, and Pj are required.")
 
             if tendon_type == "External":
                 k_used = None
@@ -344,9 +350,13 @@ def aashto_friction_wobble_station_rows(
                 equation = "AASHTO 5.9.3.2.2b-2 external HDPE-lined deviator preview"
                 k_basis = "External: N/A, no Kx"
                 mu_basis = "HDPE-lined: adopted 0.25"
-                issues.append(
+                review_notes.append(
                     "External tendon friction is an HDPE-lined deviator preview; verify PT supplier data, angle tolerances, and stressing sequence."
                 )
+                if tendon_deviator_count <= 0:
+                    blocking_issues.append(
+                        "External tendon has no Deviator point; AASHTO 0.04 rad/deviator is not applied."
+                    )
             else:
                 k_used = k_internal
                 mu_used = mu_internal
@@ -364,10 +374,15 @@ def aashto_friction_wobble_station_rows(
             active = bool(force.get("Active"))
             if not active:
                 status = "STORED ONLY"
-            elif issues:
+            elif blocking_issues:
                 status = "REVIEW REQUIRED"
+            elif review_notes:
+                status = "LOSS READY + NOTE"
             else:
                 status = "LOSS READY"
+            issue_text = " ".join(dict.fromkeys(blocking_issues + review_notes))
+            blocking_issue_text = " ".join(dict.fromkeys(blocking_issues))
+            review_note_text = " ".join(dict.fromkeys(review_notes))
 
             rows.append(
                 {
@@ -399,7 +414,9 @@ def aashto_friction_wobble_station_rows(
                     "P/Pj after friction": 0.0 if pj_kn <= 0.0 else p_after_kn / pj_kn,
                     "Equation": equation,
                     "Status": status,
-                    "Issue": "OK" if not issues else " ".join(dict.fromkeys(issues)),
+                    "Issue": "OK" if not issue_text else issue_text,
+                    "Blocking issue": blocking_issue_text,
+                    "Review note": review_note_text,
                 }
             )
     return rows
@@ -418,9 +435,32 @@ def aashto_friction_wobble_tendon_summary_rows(loss_rows: Any) -> list[dict[str,
             continue
         active = any(bool(row.get("Active")) for row in rows)
         review = any(str(row.get("Status") or "") == "REVIEW REQUIRED" for row in rows)
+        note = any(str(row.get("Status") or "") == "LOSS READY + NOTE" for row in rows)
         stored_only = all(str(row.get("Status") or "") == "STORED ONLY" for row in rows)
         worst = max(rows, key=lambda row: _float(row.get("Friction loss (kN)"), 0.0))
-        status = "STORED ONLY" if stored_only else "REVIEW REQUIRED" if review else "LOSS READY"
+        status = (
+            "STORED ONLY"
+            if stored_only
+            else "REVIEW REQUIRED"
+            if review
+            else "LOSS READY + NOTE"
+            if note
+            else "LOSS READY"
+        )
+        blocking_issues = list(
+            dict.fromkeys(
+                str(row.get("Blocking issue") or "")
+                for row in rows
+                if str(row.get("Blocking issue") or "")
+            )
+        )
+        review_notes = list(
+            dict.fromkeys(
+                str(row.get("Review note") or "")
+                for row in rows
+                if str(row.get("Review note") or "")
+            )
+        )
         summaries.append(
             {
                 "Tendon ID": tendon_id,
@@ -442,18 +482,20 @@ def aashto_friction_wobble_tendon_summary_rows(loss_rows: Any) -> list[dict[str,
                 "Max alpha (rad)": max(_float(row.get("alpha total (rad)"), 0.0) for row in rows),
                 "Max exponent": max(_float(row.get("Exponent"), 0.0) for row in rows),
                 "Status": status,
-                "Issue": "OK"
-                if not review
-                else " ".join(
-                    dict.fromkeys(
-                        str(row.get("Issue") or "")
-                        for row in rows
-                        if str(row.get("Status") or "") == "REVIEW REQUIRED"
-                    )
-                ),
+                "Issue": "OK" if not blocking_issues and not review_notes else " ".join(blocking_issues + review_notes),
             }
         )
     return summaries
+
+
+def _is_calculated_loss_row(row: Mapping[str, Any]) -> bool:
+    if not bool(row.get("Active")):
+        return False
+    if str(row.get("Status") or "") == "STORED ONLY":
+        return False
+    pj_kn = _float(row.get("Pj (kN)"), 0.0)
+    ratio = _float(row.get("P/Pj after friction"), 1.0)
+    return pj_kn > 0.0 and 0.0 <= ratio <= 1.0
 
 
 def aashto_friction_wobble_summary(loss_rows: Any) -> dict[str, Any]:
@@ -461,43 +503,69 @@ def aashto_friction_wobble_summary(loss_rows: Any) -> dict[str, Any]:
 
     rows = _records(loss_rows)
     active_rows = [row for row in rows if bool(row.get("Active"))]
-    review_rows = [
+    required_review_rows = [
         row
         for row in active_rows
         if str(row.get("Status") or "") == "REVIEW REQUIRED"
     ]
+    review_note_rows = [
+        row
+        for row in active_rows
+        if str(row.get("Status") or "") == "LOSS READY + NOTE"
+    ]
     ready_rows = [
         row
         for row in active_rows
-        if str(row.get("Status") or "") == "LOSS READY"
+        if str(row.get("Status") or "") in {"LOSS READY", "LOSS READY + NOTE"}
     ]
+    calculated_rows = [row for row in active_rows if _is_calculated_loss_row(row)]
     active_tendons = {str(row.get("Tendon ID") or "") for row in active_rows if str(row.get("Tendon ID") or "")}
     worst_loss_percent = max(
-        (100.0 * (1.0 - _float(row.get("P/Pj after friction"), 0.0)) for row in ready_rows),
+        (100.0 * (1.0 - _float(row.get("P/Pj after friction"), 0.0)) for row in calculated_rows),
         default=0.0,
     )
     min_ratio = min(
-        (_float(row.get("P/Pj after friction"), 1.0) for row in ready_rows),
+        (_float(row.get("P/Pj after friction"), 1.0) for row in calculated_rows),
         default=1.0,
     )
-    issues = list(
+    blocking_issues = list(
         dict.fromkeys(
-            str(row.get("Issue") or "")
-            for row in review_rows
-            if str(row.get("Issue") or "") and str(row.get("Issue") or "") != "OK"
+            str(row.get("Blocking issue") or "")
+            for row in required_review_rows
+            if str(row.get("Blocking issue") or "")
+        )
+    )
+    review_notes = list(
+        dict.fromkeys(
+            str(row.get("Review note") or "")
+            for row in review_note_rows
+            if str(row.get("Review note") or "")
         )
     )
     if not rows:
-        issues.append("No tendon profile rows are available for loss calculation.")
+        blocking_issues.append("No tendon profile rows are available for loss calculation.")
+    if not rows or required_review_rows:
+        value = "REVIEW REQUIRED"
+        status = "warning"
+    elif review_note_rows:
+        value = "LOSS READY + NOTES"
+        status = "warning"
+    else:
+        value = "LOSS READY"
+        status = "ready"
     return {
-        "value": "LOSS READY" if rows and not review_rows else "REVIEW REQUIRED",
-        "status": "ready" if rows and not review_rows else "warning",
+        "value": value,
+        "status": status,
         "basis": AASHTO_PTL_FRICTION_BASIS,
         "active_tendon_count": len(active_tendons),
         "station_row_count": len(rows),
         "ready_station_row_count": len(ready_rows),
-        "review_station_row_count": len(review_rows),
+        "review_station_row_count": len(required_review_rows),
+        "review_note_station_row_count": len(review_note_rows),
+        "calculated_station_row_count": len(calculated_rows),
         "worst_loss_percent": worst_loss_percent,
         "minimum_p_over_pj": min_ratio,
-        "issues": issues,
+        "issues": blocking_issues + review_notes,
+        "blocking_issues": blocking_issues,
+        "review_notes": review_notes,
     }

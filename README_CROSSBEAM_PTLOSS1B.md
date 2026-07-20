@@ -23,6 +23,8 @@ calculation unchanged.
   is changed.
 - External tendon loss remains a deviator-preview calculation until a detailed
   deviator table is implemented.
+- PTLOSS1C later fixes external review-note rows so summary metrics include
+  calculated external losses and only missing `Deviator` points are blocking.
 
 #### Repo summary
 
