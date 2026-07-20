@@ -1,3 +1,7 @@
+### CROSSBEAM.PTLOSS1G - Prestress Loss Subtab Architecture
+
+Reorganizes the Crossbeam `Prestress Loss` workspace into `Overview`, `Friction & Wobble`, `Anchorage Set / Draw-in`, `Elastic Shortening`, `Time-Dependent`, and `Audit` subtabs while preserving accepted friction/wobble calculations and keeping future loss components plus `Pe / Pe_eff` assembly explicitly guarded. See `README_CROSSBEAM_PTLOSS1G.md`.
+
 ### CROSSBEAM.PTLOSS1F - Regression Baseline Lock
 
 Repairs stale regression assertions for the tendon-profile import schema, current Crossbeam navigation, and Railway U-Girder historical README closeout evidence without changing production code, solver equations, prestress logic, Project JSON, reports, rebar, or member-workflow runtime behavior. See `README_CROSSBEAM_PTLOSS1F.md`.

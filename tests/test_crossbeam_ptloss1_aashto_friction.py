@@ -243,7 +243,7 @@ def test_ptloss1_ui_uses_greek_symbols_and_separate_review_notes_table() -> None
         'st.markdown("#### AASHTO friction/wobble station trace")',
         maxsplit=1,
     )[1].split(
-        'st.markdown("#### Loss component roadmap")',
+        'with anchorage_set_tab:',
         maxsplit=1,
     )[0]
 
@@ -253,3 +253,20 @@ def test_ptloss1_ui_uses_greek_symbols_and_separate_review_notes_table() -> None
     assert '"μ": round(row["mu"], 4)' in source
     assert 'st.markdown("#### Station review / notes")' in source
     assert '"Issue": row["Issue"]' not in ptloss_table_source
+
+
+def test_ptloss1g_component_subtabs_are_scoped_and_future_losses_are_guarded() -> None:
+    source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
+
+    assert '"Overview",' in source
+    assert '"Friction & Wobble",' in source
+    assert '"Anchorage Set / Draw-in",' in source
+    assert '"Elastic Shortening",' in source
+    assert '"Time-Dependent",' in source
+    assert '"Audit",' in source
+    assert "Guarded future component — no anchorage-set loss is calculated in PTLOSS1G." in source
+    assert "Guarded future component — no elastic-shortening loss is calculated in PTLOSS1G." in source
+    assert "Guarded future component — creep, shrinkage, and relaxation are not calculated in PTLOSS1G." in source
+    assert '"Pe / Pe_eff assembly"' in source
+    assert '"Current state": "LOCKED — not certified"' in source
+    assert "PTLOSS1G changes workspace organization only." in source

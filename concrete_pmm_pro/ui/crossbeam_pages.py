@@ -2,8 +2,9 @@
 
 CROSSBEAM.PT1 connects longitudinal segment mapping, tendon system data, and
 four-view tendon geometry to one Project-JSON source of truth.  PTLOSS1 adds a
-guarded AASHTO friction/wobble loss foundation while SLS, ULS, anchorage-zone,
-and D-region solvers remain outside this module.
+guarded AASHTO friction/wobble loss foundation, and PTLOSS1G organizes the loss
+workspace into component-scoped subtabs while future loss, SLS, ULS, anchorage-zone,
+and D-region solvers remain explicitly guarded.
 
 All state keys are namespaced to the crossbeam workflow.  Legacy WF1 keys are
 read for one-way in-session migration so accepted WF1/WF1A projects keep their
@@ -4311,15 +4312,15 @@ def render_crossbeam_prestress_loss_page() -> None:
     _ensure_state()
     render_page_header(
         "Prestress Loss",
-        "Calculate the AASHTO LRFD 5.9.3 post-tensioning friction/wobble distribution from Tendon System Pj and Tendon Profile geometry.",
+        "Review prestress-loss components by stage while keeping each calculation source auditable and isolated before final effective prestress is assembled.",
         icon="PL",
         kicker="Sections workspace",
         badge="Portal Frame Crossbeam",
         accent="purple",
     )
     render_section_bar(
-        "AASHTO LRFD 5.9.3 loss foundation",
-        "This page calculates friction/wobble only. Anchorage set, elastic shortening, creep, shrinkage, relaxation, SLS, ULS, anchorage zones, deviator-force/hardware checks, and D-regions remain guarded future components.",
+        "Prestress-loss component workspace",
+        "PTLOSS1G organizes loss components into guarded subtabs. Only AASHTO friction/wobble is calculated at this milestone; later components remain explicitly inactive until their own validated solver milestones are completed.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -4332,201 +4333,352 @@ def render_crossbeam_prestress_loss_page() -> None:
         st.warning("Define Tendon Profile geometry before calculating prestress losses.")
         return
 
-    assumptions = _render_crossbeam_loss_assumptions()
-    loss_rows = aashto_friction_wobble_station_rows(
+    current_assumptions = _loss_setting_defaults_from_state()
+    current_loss_rows = aashto_friction_wobble_station_rows(
         profile_rows,
         system_rows,
         length_m=length_m,
-        internal_mu=assumptions["internal_mu"],
-        internal_k_per_m=assumptions["internal_k_per_m"],
-        external_deviator_mu=assumptions["external_deviator_mu"],
-        external_inadvertent_angle_rad=assumptions["external_inadvertent_angle_rad"],
+        internal_mu=float(current_assumptions["internal_mu"]),
+        internal_k_per_m=float(current_assumptions["internal_k_per_m"]),
+        external_deviator_mu=float(current_assumptions["external_deviator_mu"]),
+        external_inadvertent_angle_rad=float(
+            current_assumptions["external_inadvertent_angle_rad"]
+        ),
     )
-    summary = aashto_friction_wobble_summary(loss_rows)
-    tendon_summary_rows = aashto_friction_wobble_tendon_summary_rows(loss_rows)
+    current_summary = aashto_friction_wobble_summary(current_loss_rows)
 
-    render_metric_cards(
+    (
+        overview_tab,
+        friction_tab,
+        anchorage_set_tab,
+        elastic_shortening_tab,
+        time_dependent_tab,
+        audit_tab,
+    ) = st.tabs(
         [
-            {
-                "title": "Loss basis",
-                "value": str(summary["value"]),
-                "detail": AASHTO_PTL_FRICTION_BASIS + " friction/wobble",
-                "status": str(summary["status"]),
-            },
-            {
-                "title": "Active tendons",
-                "value": int(summary["active_tendon_count"]),
-                "detail": f"{int(summary['station_row_count'])} station row(s)",
-                "status": "info",
-            },
-            {
-                "title": "Worst traced loss",
-                "value": f"{float(summary['worst_loss_percent']):.2f}%",
-                "detail": "calculated rows; friction/wobble only",
-                "status": "neutral",
-            },
-            {
-                "title": "Minimum P/Pj",
-                "value": f"{float(summary['minimum_p_over_pj']):.4f}",
-                "detail": "calculated rows; not Pe final",
-                "status": "neutral",
-            },
-            {
-                "title": "Review rows",
-                "value": int(summary["review_station_row_count"])
-                + int(summary["review_note_station_row_count"]),
-                "detail": (
-                    f"{int(summary['review_station_row_count'])} required / "
-                    f"{int(summary['review_note_station_row_count'])} note"
-                ),
-                "status": "ready"
-                if int(summary["review_station_row_count"]) == 0
-                and int(summary["review_note_station_row_count"]) == 0
-                else "warning",
-            },
+            "Overview",
+            "Friction & Wobble",
+            "Anchorage Set / Draw-in",
+            "Elastic Shortening",
+            "Time-Dependent",
+            "Audit",
         ]
     )
-    for issue in summary["blocking_issues"]:
-        st.warning(issue)
-    for note in summary["review_notes"]:
-        st.info(note)
 
-    st.markdown("#### AASHTO friction/wobble station trace")
-    st.dataframe(
-        pd.DataFrame(
+    with overview_tab:
+        st.markdown("#### Current loss status")
+        render_metric_cards(
             [
                 {
-                    "Tendon": row["Tendon ID"],
-                    "Status": row["Status"],
-                    "Type": row["Type"],
-                    "End": row["Source end"],
-                    "Point": row["Point"],
-                    "Role": row["Curve role"],
-                    "s (m)": round(row["s (m)"], 4),
-                    "xj (m)": round(row["x from jack (m)"], 4),
-                    "α (rad)": round(row["alpha total (rad)"], 6),
-                    "Dev": int(row["Deviators counted"]),
-                    "K (/m)": _loss_k_display(row),
-                    "μ": round(row["mu"], 4),
-                    "Exp": round(row["Exponent"], 6),
-                    "Pj (kN)": round(row["Pj (kN)"], 3),
-                    "P(x) (kN)": round(row["P after friction (kN)"], 3),
-                    "Loss (kN)": round(row["Friction loss (kN)"], 3),
-                    "P/Pj": round(row["P/Pj after friction"], 5),
-                }
-                for row in loss_rows
+                    "title": "Active calculation",
+                    "value": "Friction + wobble",
+                    "detail": AASHTO_PTL_FRICTION_BASIS,
+                    "status": str(current_summary["status"]),
+                },
+                {
+                    "title": "Active tendons",
+                    "value": int(current_summary["active_tendon_count"]),
+                    "detail": f"{int(current_summary['station_row_count'])} traced station row(s)",
+                    "status": "info",
+                },
+                {
+                    "title": "Worst traced loss",
+                    "value": f"{float(current_summary['worst_loss_percent']):.2f}%",
+                    "detail": "friction/wobble preview only",
+                    "status": "neutral",
+                },
+                {
+                    "title": "Minimum P/Pj",
+                    "value": f"{float(current_summary['minimum_p_over_pj']):.4f}",
+                    "detail": "not final Pe or Pe_eff",
+                    "status": "neutral",
+                },
+                {
+                    "title": "Overall loss status",
+                    "value": "INCOMPLETE",
+                    "detail": "later loss components not yet calculated",
+                    "status": "warning",
+                },
             ]
-        ),
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Tendon": st.column_config.TextColumn(width="small"),
-            "Status": st.column_config.TextColumn(width="medium"),
-            "Type": st.column_config.TextColumn(width="small"),
-            "End": st.column_config.TextColumn(width="medium"),
-            "Point": st.column_config.TextColumn(width="small"),
-            "Role": st.column_config.TextColumn(width="medium"),
-        },
-    )
-    st.caption(
-        "Do not sum station rows. Each row is the force at one traced point of one tendon after friction/wobble only; "
-        "it is not final effective prestress and does not include anchorage set, elastic shortening, or time-dependent losses."
-    )
+        )
+        for issue in current_summary["blocking_issues"]:
+            st.warning(issue)
+        for note in current_summary["review_notes"]:
+            st.info(note)
 
-    review_rows = [
-        {
-            "Tendon": row["Tendon ID"],
-            "Point": row["Point"],
-            "Role": row["Curve role"],
-            "Status": row["Status"],
-            "Required issue": row.get("Blocking issue", "") or "-",
-            "Review note": row.get("Review note", "") or "-",
-        }
-        for row in loss_rows
-        if str(row.get("Blocking issue") or "").strip()
-        or str(row.get("Review note") or "").strip()
-    ]
-    if review_rows:
-        st.markdown("#### Station review / notes")
+        st.markdown("#### Loss component roadmap")
         st.dataframe(
-            pd.DataFrame(review_rows),
+            pd.DataFrame(
+                [
+                    {
+                        "Component": "Friction + wobble",
+                        "AASHTO article": "5.9.3.2.2b",
+                        "Current status": "Calculated preview",
+                        "Dependency": "Pj + tendon profile geometry",
+                    },
+                    {
+                        "Component": "Anchorage set / draw-in",
+                        "AASHTO article": "5.9.3.2.1",
+                        "Current status": "Guarded future component",
+                        "Dependency": "Friction profile + seating/set + recovery length",
+                    },
+                    {
+                        "Component": "Elastic shortening",
+                        "AASHTO article": "5.9.3.2.3b",
+                        "Current status": "Guarded future component",
+                        "Dependency": "Concrete stress at tendon CG + stressing sequence",
+                    },
+                    {
+                        "Component": "Creep + shrinkage + relaxation",
+                        "AASHTO article": "5.9.3.3 / 5.9.3.4",
+                        "Current status": "Guarded future component",
+                        "Dependency": "Age/stage/material/environment + prior losses",
+                    },
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.warning(
+            "Do not interpret the current friction/wobble result as final effective prestress. "
+            "PTLOSS1G deliberately keeps Pe and Pe_eff assembly locked until the required loss "
+            "components and stage logic are validated in named solver milestones."
+        )
+
+    with friction_tab:
+        st.markdown("#### Friction & Wobble — active calculation")
+        st.caption(
+            "This subtab preserves the accepted PTLOSS1A–PTLOSS1E calculation behavior. "
+            "PTLOSS1G changes workspace organization only."
+        )
+        _render_crossbeam_loss_assumptions()
+        loss_rows = current_loss_rows
+        summary = current_summary
+        tendon_summary_rows = aashto_friction_wobble_tendon_summary_rows(loss_rows)
+
+        render_metric_cards(
+            [
+                {
+                    "title": "Loss basis",
+                    "value": str(summary["value"]),
+                    "detail": AASHTO_PTL_FRICTION_BASIS + " friction/wobble",
+                    "status": str(summary["status"]),
+                },
+                {
+                    "title": "Active tendons",
+                    "value": int(summary["active_tendon_count"]),
+                    "detail": f"{int(summary['station_row_count'])} station row(s)",
+                    "status": "info",
+                },
+                {
+                    "title": "Worst traced loss",
+                    "value": f"{float(summary['worst_loss_percent']):.2f}%",
+                    "detail": "calculated rows; friction/wobble only",
+                    "status": "neutral",
+                },
+                {
+                    "title": "Minimum P/Pj",
+                    "value": f"{float(summary['minimum_p_over_pj']):.4f}",
+                    "detail": "calculated rows; not Pe final",
+                    "status": "neutral",
+                },
+                {
+                    "title": "Review rows",
+                    "value": int(summary["review_station_row_count"])
+                    + int(summary["review_note_station_row_count"]),
+                    "detail": (
+                        f"{int(summary['review_station_row_count'])} required / "
+                        f"{int(summary['review_note_station_row_count'])} note"
+                    ),
+                    "status": "ready"
+                    if int(summary["review_station_row_count"]) == 0
+                    and int(summary["review_note_station_row_count"]) == 0
+                    else "warning",
+                },
+            ]
+        )
+        for issue in summary["blocking_issues"]:
+            st.warning(issue)
+        for note in summary["review_notes"]:
+            st.info(note)
+
+        st.markdown("#### AASHTO friction/wobble station trace")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Tendon": row["Tendon ID"],
+                        "Status": row["Status"],
+                        "Type": row["Type"],
+                        "End": row["Source end"],
+                        "Point": row["Point"],
+                        "Role": row["Curve role"],
+                        "s (m)": round(row["s (m)"], 4),
+                        "xj (m)": round(row["x from jack (m)"], 4),
+                        "α (rad)": round(row["alpha total (rad)"], 6),
+                        "Dev": int(row["Deviators counted"]),
+                        "K (/m)": _loss_k_display(row),
+                        "μ": round(row["mu"], 4),
+                        "Exp": round(row["Exponent"], 6),
+                        "Pj (kN)": round(row["Pj (kN)"], 3),
+                        "P(x) (kN)": round(row["P after friction (kN)"], 3),
+                        "Loss (kN)": round(row["Friction loss (kN)"], 3),
+                        "P/Pj": round(row["P/Pj after friction"], 5),
+                    }
+                    for row in loss_rows
+                ]
+            ),
             use_container_width=True,
             hide_index=True,
             column_config={
                 "Tendon": st.column_config.TextColumn(width="small"),
+                "Status": st.column_config.TextColumn(width="medium"),
+                "Type": st.column_config.TextColumn(width="small"),
+                "End": st.column_config.TextColumn(width="medium"),
                 "Point": st.column_config.TextColumn(width="small"),
                 "Role": st.column_config.TextColumn(width="medium"),
-                "Status": st.column_config.TextColumn(width="medium"),
-                "Required issue": st.column_config.TextColumn(width="large"),
-                "Review note": st.column_config.TextColumn(width="large"),
             },
         )
+        st.caption(
+            "Do not sum station rows. Each row is the force at one traced point of one tendon after friction/wobble only; "
+            "it is not final effective prestress and does not include anchorage set, elastic shortening, or time-dependent losses."
+        )
 
-    st.markdown("#### Per-tendon worst traced station")
-    st.dataframe(
-        pd.DataFrame(
-            [
-                {
-                    "Tendon": row["Tendon ID"],
-                    "Status": row["Status"],
-                    "Type": row["Type"],
-                    "End": row["Jacking end"],
-                    "Worst point": row["Worst point"],
-                    "Worst s (m)": round(row["Worst s (m)"], 4),
-                    "Pj (kN)": round(row["Pj (kN)"], 3),
-                    "Min P(x) (kN)": round(row["Min P after friction (kN)"], 3),
-                    "Max loss (kN)": round(row["Max friction loss (kN)"], 3),
-                    "Max loss (%)": round(row["Max friction loss (%)"], 3),
-                    "Max α (rad)": round(row["Max alpha (rad)"], 6),
-                    "Max Exp": round(row["Max exponent"], 6),
-                }
-                for row in tendon_summary_rows
-            ]
-        ),
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Tendon": st.column_config.TextColumn(width="small"),
-            "Status": st.column_config.TextColumn(width="medium"),
-            "Type": st.column_config.TextColumn(width="small"),
-            "End": st.column_config.TextColumn(width="small"),
-        },
-    )
+        review_rows = [
+            {
+                "Tendon": row["Tendon ID"],
+                "Point": row["Point"],
+                "Role": row["Curve role"],
+                "Status": row["Status"],
+                "Required issue": row.get("Blocking issue", "") or "-",
+                "Review note": row.get("Review note", "") or "-",
+            }
+            for row in loss_rows
+            if str(row.get("Blocking issue") or "").strip()
+            or str(row.get("Review note") or "").strip()
+        ]
+        if review_rows:
+            st.markdown("#### Station review / notes")
+            st.dataframe(
+                pd.DataFrame(review_rows),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Tendon": st.column_config.TextColumn(width="small"),
+                    "Point": st.column_config.TextColumn(width="small"),
+                    "Role": st.column_config.TextColumn(width="medium"),
+                    "Status": st.column_config.TextColumn(width="medium"),
+                    "Required issue": st.column_config.TextColumn(width="large"),
+                    "Review note": st.column_config.TextColumn(width="large"),
+                },
+            )
 
-    st.markdown("#### Loss component roadmap")
-    st.dataframe(
-        pd.DataFrame(
-            [
-                {
-                    "Component": "Friction + wobble",
-                    "AASHTO article": "5.9.3.2.2b",
-                    "Current status": "Calculated in PTLOSS1",
-                    "Design note": "Station trace only; not Pe final.",
-                },
-                {
-                    "Component": "Anchorage set",
-                    "AASHTO article": "5.9.3.2.1",
-                    "Current status": "Future component",
-                    "Design note": "Requires wedge seating/set and force recovery length.",
-                },
-                {
-                    "Component": "Elastic shortening",
-                    "AASHTO article": "5.9.3.2.3b",
-                    "Current status": "Future component",
-                    "Design note": "Requires concrete stress at tendon CG and stressing sequence.",
-                },
-                {
-                    "Component": "Creep + shrinkage + relaxation",
-                    "AASHTO article": "5.9.3.3 / 5.9.3.4",
-                    "Current status": "Future component",
-                    "Design note": "Requires age, humidity, material, section, and stage assumptions.",
-                },
-            ]
-        ),
-        use_container_width=True,
-        hide_index=True,
-    )
-    st.info(
-        "PTLOSS1 is a transparent engineering preview for AASHTO friction/wobble. "
-        "Use it to audit Pj-to-P(x) distribution before relying on later Pe final, SLS, ULS, anchorage-zone, deviator-force/hardware, or D-region checks."
-    )
+        st.markdown("#### Per-tendon worst traced station")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Tendon": row["Tendon ID"],
+                        "Status": row["Status"],
+                        "Type": row["Type"],
+                        "End": row["Jacking end"],
+                        "Worst point": row["Worst point"],
+                        "Worst s (m)": round(row["Worst s (m)"], 4),
+                        "Pj (kN)": round(row["Pj (kN)"], 3),
+                        "Min P(x) (kN)": round(row["Min P after friction (kN)"], 3),
+                        "Max loss (kN)": round(row["Max friction loss (kN)"], 3),
+                        "Max loss (%)": round(row["Max friction loss (%)"], 3),
+                        "Max α (rad)": round(row["Max alpha (rad)"], 6),
+                        "Max Exp": round(row["Max exponent"], 6),
+                    }
+                    for row in tendon_summary_rows
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Tendon": st.column_config.TextColumn(width="small"),
+                "Status": st.column_config.TextColumn(width="medium"),
+                "Type": st.column_config.TextColumn(width="small"),
+                "End": st.column_config.TextColumn(width="small"),
+            },
+        )
+        st.info(
+            "This is a transparent engineering preview for AASHTO friction/wobble only. "
+            "Use it to audit Pj-to-P(x) distribution before later loss components are assembled."
+        )
+
+    with anchorage_set_tab:
+        st.markdown("#### Anchorage Set / Draw-in")
+        st.info(
+            "Guarded future component — no anchorage-set loss is calculated in PTLOSS1G. "
+            "PTLOSS2 will establish wedge seating/draw-in input, affected recovery length, and force-profile interaction with the accepted friction/wobble result before any Pe_eff integration."
+        )
+        st.caption(
+            "Engineering dependency: this component cannot be treated as an independent percentage deduction; its force recovery depends on the post-jacking friction profile and anchorage movement."
+        )
+
+    with elastic_shortening_tab:
+        st.markdown("#### Elastic Shortening")
+        st.info(
+            "Guarded future component — no elastic-shortening loss is calculated in PTLOSS1G. "
+            "A later named solver milestone must define concrete stress at tendon level, stressing/transfer sequence, modulus basis, and tendon-group interaction before this component becomes active."
+        )
+
+    with time_dependent_tab:
+        st.markdown("#### Time-Dependent Losses")
+        st.info(
+            "Guarded future component — creep, shrinkage, and relaxation are not calculated in PTLOSS1G. "
+            "These effects require explicit age/stage, material, environmental, section, and prior-loss assumptions and will not be represented by a generic lump-sum percentage."
+        )
+
+    with audit_tab:
+        st.markdown("#### Prestress-loss dependency audit")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Order": 1,
+                        "Source / component": "Tendon System force source",
+                        "Current state": "Available",
+                        "Feeds": "Pj per active tendon",
+                    },
+                    {
+                        "Order": 2,
+                        "Source / component": "Friction + wobble",
+                        "Current state": "Calculated preview",
+                        "Feeds": "P(x) profile",
+                    },
+                    {
+                        "Order": 3,
+                        "Source / component": "Anchorage set / draw-in",
+                        "Current state": "Locked",
+                        "Feeds": "Future recovered force profile",
+                    },
+                    {
+                        "Order": 4,
+                        "Source / component": "Elastic shortening",
+                        "Current state": "Locked",
+                        "Feeds": "Future transfer-stage force state",
+                    },
+                    {
+                        "Order": 5,
+                        "Source / component": "Time-dependent losses",
+                        "Current state": "Locked",
+                        "Feeds": "Future final-stage force state",
+                    },
+                    {
+                        "Order": 6,
+                        "Source / component": "Pe / Pe_eff assembly",
+                        "Current state": "LOCKED — not certified",
+                        "Feeds": "Future SLS/ULS staged checks",
+                    },
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.warning(
+            "QA gate: subtab separation is a UI architecture choice only. It does not make the loss components independent mathematically. "
+            "Solver dependencies, sign conventions, stressing sequence, and stage definitions must remain explicit before final effective prestress is released to downstream checks."
+        )
