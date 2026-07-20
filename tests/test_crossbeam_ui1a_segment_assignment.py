@@ -13,7 +13,11 @@ from concrete_pmm_pro.ui.crossbeam_pages import _canonical_segment_rows, _valida
 
 def test_crossbeam_ui1a_navigation_places_layout_after_builder():
     source = Path("app.py").read_text()
-    assert 'return ["Section Builder", "Segment Layout", "Rebar", "Tendon System", "Tendon Profile"]' in source
+    assert (
+        'return ["Section Builder", "Segment Layout", "Rebar", "Tendon System", '
+        '"Tendon Profile", "Prestress Loss"]'
+        in source
+    )
     assert '"Sections": ["Section Builder", "Rebar", "Prestress"]' in source
 
 

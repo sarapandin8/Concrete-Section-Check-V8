@@ -67,7 +67,7 @@ def test_closeout_rail_ugirder1_docs_and_readme_lock_closeout_boundary() -> None
     module_source = Path("concrete_pmm_pro/reporting/railway_u_girder_report.py").read_text(encoding="utf-8")
     word_source = Path("concrete_pmm_pro/reporting/word_export.py").read_text(encoding="utf-8")
 
-    assert readme.startswith("### CLOSEOUT.RAIL.UGIRDER1")
+    assert "### CLOSEOUT.RAIL.UGIRDER1" in readme
     assert "does **not** mean final code-certified design" in doc
     assert "No solver equations" in doc
     assert "railway_u_girder_closeout_status_dataframe" in module_source

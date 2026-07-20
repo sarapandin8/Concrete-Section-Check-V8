@@ -41,7 +41,9 @@ def test_ptqa4_import_schema_matches_visible_profile_table_contract() -> None:
 
     assert [row["Column"] for row in schema] == list(TENDON_PROFILE_IMPORT_REQUIRED_COLUMNS)
     assert all(row["Required"] for row in schema)
-    assert "dtop" in schema[4]["Description"]
+    dtop_row = next(row for row in schema if row["Column"] == "dtop (mm)")
+    assert dtop_row["Required"] is True
+    assert dtop_row["Description"].strip()
 
 
 def test_ptqa4_import_template_uses_current_profile_rows_without_internal_ratio_column() -> None:

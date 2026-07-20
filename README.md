@@ -1,3 +1,7 @@
+### CROSSBEAM.PTLOSS1F - Regression Baseline Lock
+
+Repairs stale regression assertions for the tendon-profile import schema, current Crossbeam navigation, and Railway U-Girder historical README closeout evidence without changing production code, solver equations, prestress logic, Project JSON, reports, rebar, or member-workflow runtime behavior. See `README_CROSSBEAM_PTLOSS1F.md`.
+
 ### CROSSBEAM.PTLOSS1E - Prestress Loss Table Export Layout Polish
 
 Polishes the Crossbeam `Prestress Loss` table layout by moving repeated
