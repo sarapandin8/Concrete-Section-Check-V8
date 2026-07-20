@@ -97,7 +97,7 @@ def workflow_code_policy_message(member_type: object | None) -> str:
     if member == "building_beam_girder":
         return "Building Beam/Girder workflow uses ACI 318 design basis only."
     if member == "portal_frame_crossbeam":
-        return "Portal Frame Crossbeam workflow uses ACI 318 design basis; prestress-loss basis is selected separately in future loss modules."
+        return "Portal Frame Crossbeam workflow uses ACI 318 design basis; prestress-loss basis is selected separately in the Crossbeam Prestress Loss module."
     return "Column / Pier / Wall / Pylon workflow may use ACI 318 or AASHTO LRFD, with capability guards where engines are not yet implemented."
 
 
@@ -279,8 +279,8 @@ def project_code_capability_cards(code: object | None, member_type: str | None =
         workflow_note = "Active Portal Frame Crossbeam workflow"
         pmm_status = "NOT APPLICABLE"
         pmm_note = "Column/Pier PMM is hidden in the Portal Frame Crossbeam workflow."
-        girder_status = "LAYOUT READY"
-        girder_note = "Portal Frame Crossbeam uses ACI 318 for member-design routing. WF1 establishes segmented solid/hollow geometry and top-referenced tendon profile source-of-truth only; SLS, ULS, losses, anchorage, and D-region certification remain future guarded scope."
+        girder_status = "LAYOUT / LOSS PREVIEW"
+        girder_note = "Portal Frame Crossbeam uses ACI 318 for member-design routing. Current Crossbeam tools establish segmented solid/hollow geometry, top-referenced tendon profile source-of-truth, and AASHTO friction/wobble loss preview; SLS, ULS, anchorage-set, elastic-shortening, time-dependent loss, anchorage, and D-region certification remain future guarded scope."
     elif canonical == PROJECT_CODE_AASHTO_LRFD:
         workflow_note = "Active Column/Pier/Wall/Pylon workflow"
         pmm_status = "AVAILABLE / REVIEW"

@@ -1,8 +1,9 @@
 """Workflow-scoped section workspaces for Portal Frame PC Crossbeam.
 
 CROSSBEAM.PT1 connects longitudinal segment mapping, tendon system data, and
-four-view tendon geometry to one Project-JSON source of truth.  It intentionally
-contains no prestress-loss, SLS, ULS, anchorage-zone, or D-region solver.
+four-view tendon geometry to one Project-JSON source of truth.  PTLOSS1 adds a
+guarded AASHTO friction/wobble loss foundation while SLS, ULS, anchorage-zone,
+and D-region solvers remain outside this module.
 
 All state keys are namespaced to the crossbeam workflow.  Legacy WF1 keys are
 read for one-way in-session migration so accepted WF1/WF1A projects keep their
@@ -71,6 +72,21 @@ from concrete_pmm_pro.crossbeam.tendon_analysis import (
     tendon_force_source_rows,
     tendon_force_source_summary,
     tendon_force_trace_rows,
+)
+from concrete_pmm_pro.crossbeam.prestress_loss import (
+    AASHTO_PTL_FRICTION_BASIS,
+    CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY,
+    CB_LOSS_EXTERNAL_MU_KEY,
+    CB_LOSS_INTERNAL_K_PER_M_KEY,
+    CB_LOSS_INTERNAL_MU_KEY,
+    DEFAULT_EXTERNAL_DEVIATOR_MU,
+    DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD,
+    DEFAULT_INTERNAL_FRICTION_MU,
+    DEFAULT_INTERNAL_WOBBLE_K_PER_M,
+    aashto_friction_wobble_station_rows,
+    aashto_friction_wobble_summary,
+    aashto_friction_wobble_tendon_summary_rows,
+    normalize_crossbeam_prestress_loss_settings,
 )
 from concrete_pmm_pro.crossbeam.tendon_persistence import (
     CB_3D_TRANSPARENT_KEY,
@@ -4176,3 +4192,275 @@ def render_crossbeam_tendon_profile_page() -> None:
             "PT geometry continuity across segment joints requires review before relying on this tendon layout. "
             + continuity_note
         )
+
+
+def _loss_setting_defaults_from_state() -> dict[str, float | int | str]:
+    return normalize_crossbeam_prestress_loss_settings(
+        {
+            "internal_mu": st.session_state.get(
+                CB_LOSS_INTERNAL_MU_KEY,
+                DEFAULT_INTERNAL_FRICTION_MU,
+            ),
+            "internal_k_per_m": st.session_state.get(
+                CB_LOSS_INTERNAL_K_PER_M_KEY,
+                DEFAULT_INTERNAL_WOBBLE_K_PER_M,
+            ),
+            "external_deviator_mu": st.session_state.get(
+                CB_LOSS_EXTERNAL_MU_KEY,
+                DEFAULT_EXTERNAL_DEVIATOR_MU,
+            ),
+            "external_inadvertent_angle_rad": st.session_state.get(
+                CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY,
+                DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD,
+            ),
+        }
+    )
+
+
+def _render_crossbeam_loss_assumptions() -> dict[str, float]:
+    settings = _loss_setting_defaults_from_state()
+    st.session_state[CB_LOSS_INTERNAL_MU_KEY] = float(settings["internal_mu"])
+    st.session_state[CB_LOSS_INTERNAL_K_PER_M_KEY] = float(settings["internal_k_per_m"])
+    st.session_state[CB_LOSS_EXTERNAL_MU_KEY] = float(settings["external_deviator_mu"])
+    st.session_state[CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY] = float(
+        settings["external_inadvertent_angle_rad"]
+    )
+
+    st.markdown("#### AASHTO friction/wobble assumptions")
+    internal_mu_col, internal_k_col, external_mu_col, external_angle_col = st.columns(4)
+    with internal_mu_col:
+        internal_mu = float(
+            st.number_input(
+                "Internal duct mu",
+                min_value=0.0,
+                max_value=1.0,
+                step=0.01,
+                format="%.3f",
+                key=CB_LOSS_INTERNAL_MU_KEY,
+                help="AASHTO Table 5.9.3.2.2b-1 gives mu = 0.15-0.25 for wire/strand in galvanized metal sheathing. Default uses the midrange value.",
+            )
+        )
+    with internal_k_col:
+        internal_k = float(
+            st.number_input(
+                "Internal K (/m)",
+                min_value=0.0,
+                max_value=0.02,
+                step=0.0001,
+                format="%.6f",
+                key=CB_LOSS_INTERNAL_K_PER_M_KEY,
+                help="AASHTO table K = 0.0002 /ft converted to SI: about 0.000656 /m.",
+            )
+        )
+    with external_mu_col:
+        external_mu = float(
+            st.number_input(
+                "External deviator mu",
+                min_value=0.0,
+                max_value=1.0,
+                step=0.01,
+                format="%.3f",
+                key=CB_LOSS_EXTERNAL_MU_KEY,
+                help="AASHTO lists mu = 0.25 for rigid steel pipe deviators for external tendons.",
+            )
+        )
+    with external_angle_col:
+        external_angle = float(
+            st.number_input(
+                "External angle add (rad)",
+                min_value=0.0,
+                max_value=0.25,
+                step=0.005,
+                format="%.3f",
+                key=CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY,
+                help="AASHTO Eq. 5.9.3.2.2b-2 commentary uses 0.04 rad inadvertent angle at a deviator unless tolerances are strictly controlled.",
+            )
+        )
+
+    st.caption(
+        "Calculation basis: AASHTO LRFD 5.9.3.2.2b. Internal tendons use "
+        "Delta fpF = fpj x (1 - exp(-(Kx + mu alpha))). Both-end jacking uses "
+        "the nearest jacking end for equally tensioned tendons and never doubles Pj."
+    )
+    return {
+        "internal_mu": internal_mu,
+        "internal_k_per_m": internal_k,
+        "external_deviator_mu": external_mu,
+        "external_inadvertent_angle_rad": external_angle,
+    }
+
+
+def render_crossbeam_prestress_loss_page() -> None:
+    _ensure_state()
+    render_page_header(
+        "Prestress Loss",
+        "Calculate the AASHTO LRFD 5.9.3 post-tensioning friction/wobble distribution from Tendon System Pj and Tendon Profile geometry.",
+        icon="PL",
+        kicker="Sections workspace",
+        badge="Portal Frame Crossbeam",
+        accent="purple",
+    )
+    render_section_bar(
+        "AASHTO LRFD 5.9.3 loss foundation",
+        "This page calculates friction/wobble only. Anchorage set, elastic shortening, creep, shrinkage, relaxation, SLS, ULS, anchorage zones, deviators, and D-regions remain guarded future components.",
+        mark="L",
+    )
+    length_m = _render_crossbeam_member_length_reference()
+    system_rows = _records(st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
+    profile_rows = _records(st.session_state.get(CB_PROFILE_ROWS_KEY))
+    if not system_rows:
+        st.warning("Define Tendon System rows before calculating prestress losses.")
+        return
+    if not profile_rows:
+        st.warning("Define Tendon Profile geometry before calculating prestress losses.")
+        return
+
+    assumptions = _render_crossbeam_loss_assumptions()
+    loss_rows = aashto_friction_wobble_station_rows(
+        profile_rows,
+        system_rows,
+        length_m=length_m,
+        internal_mu=assumptions["internal_mu"],
+        internal_k_per_m=assumptions["internal_k_per_m"],
+        external_deviator_mu=assumptions["external_deviator_mu"],
+        external_inadvertent_angle_rad=assumptions["external_inadvertent_angle_rad"],
+    )
+    summary = aashto_friction_wobble_summary(loss_rows)
+    tendon_summary_rows = aashto_friction_wobble_tendon_summary_rows(loss_rows)
+
+    render_metric_cards(
+        [
+            {
+                "title": "Loss basis",
+                "value": str(summary["value"]),
+                "detail": AASHTO_PTL_FRICTION_BASIS + " friction/wobble",
+                "status": str(summary["status"]),
+            },
+            {
+                "title": "Active tendons",
+                "value": int(summary["active_tendon_count"]),
+                "detail": f"{int(summary['station_row_count'])} station row(s)",
+                "status": "info",
+            },
+            {
+                "title": "Worst traced loss",
+                "value": f"{float(summary['worst_loss_percent']):.2f}%",
+                "detail": "friction/wobble only",
+                "status": "neutral",
+            },
+            {
+                "title": "Minimum P/Pj",
+                "value": f"{float(summary['minimum_p_over_pj']):.4f}",
+                "detail": "station trace; not Pe final",
+                "status": "neutral",
+            },
+            {
+                "title": "Review rows",
+                "value": int(summary["review_station_row_count"]),
+                "detail": "active rows requiring attention",
+                "status": "ready" if int(summary["review_station_row_count"]) == 0 else "warning",
+            },
+        ]
+    )
+    for issue in summary["issues"]:
+        st.warning(issue)
+
+    st.markdown("#### AASHTO friction/wobble station trace")
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Tendon ID": row["Tendon ID"],
+                    "Active": row["Active"],
+                    "Type": row["Type"],
+                    "Jacking end": row["Jacking end"],
+                    "Source end": row["Source end"],
+                    "Point": row["Point"],
+                    "Role": row["Curve role"],
+                    "s (m)": round(row["s (m)"], 4),
+                    "x from jack (m)": round(row["x from jack (m)"], 4),
+                    "alpha total (rad)": round(row["alpha total (rad)"], 6),
+                    "K (/m)": round(row["K (/m)"], 6),
+                    "mu": round(row["mu"], 4),
+                    "Exponent": round(row["Exponent"], 6),
+                    "Pj (kN)": round(row["Pj (kN)"], 3),
+                    "P after friction (kN)": round(row["P after friction (kN)"], 3),
+                    "Friction loss (kN)": round(row["Friction loss (kN)"], 3),
+                    "P/Pj": round(row["P/Pj after friction"], 5),
+                    "Status": row["Status"],
+                    "Issue": row["Issue"],
+                }
+                for row in loss_rows
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+    st.caption(
+        "Do not sum station rows. Each row is the force at one traced point of one tendon after friction/wobble only; "
+        "it is not final effective prestress and does not include anchorage set, elastic shortening, or time-dependent losses."
+    )
+
+    st.markdown("#### Per-tendon worst traced station")
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Tendon ID": row["Tendon ID"],
+                    "Active": row["Active"],
+                    "Type": row["Type"],
+                    "Jacking end": row["Jacking end"],
+                    "Worst point": row["Worst point"],
+                    "Worst s (m)": round(row["Worst s (m)"], 4),
+                    "Pj (kN)": round(row["Pj (kN)"], 3),
+                    "Min P after friction (kN)": round(row["Min P after friction (kN)"], 3),
+                    "Max friction loss (kN)": round(row["Max friction loss (kN)"], 3),
+                    "Max friction loss (%)": round(row["Max friction loss (%)"], 3),
+                    "Max alpha (rad)": round(row["Max alpha (rad)"], 6),
+                    "Status": row["Status"],
+                    "Issue": row["Issue"],
+                }
+                for row in tendon_summary_rows
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.markdown("#### Loss component roadmap")
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Component": "Friction + wobble",
+                    "AASHTO article": "5.9.3.2.2b",
+                    "Current status": "Calculated in PTLOSS1",
+                    "Design note": "Station trace only; not Pe final.",
+                },
+                {
+                    "Component": "Anchorage set",
+                    "AASHTO article": "5.9.3.2.1",
+                    "Current status": "Future component",
+                    "Design note": "Requires wedge seating/set and force recovery length.",
+                },
+                {
+                    "Component": "Elastic shortening",
+                    "AASHTO article": "5.9.3.2.3b",
+                    "Current status": "Future component",
+                    "Design note": "Requires concrete stress at tendon CG and stressing sequence.",
+                },
+                {
+                    "Component": "Creep + shrinkage + relaxation",
+                    "AASHTO article": "5.9.3.3 / 5.9.3.4",
+                    "Current status": "Future component",
+                    "Design note": "Requires age, humidity, material, section, and stage assumptions.",
+                },
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+    st.info(
+        "PTLOSS1 is a transparent engineering preview for AASHTO friction/wobble. "
+        "Use it to audit Pj-to-P(x) distribution before relying on later Pe final, SLS, ULS, anchorage-zone, or D-region checks."
+    )

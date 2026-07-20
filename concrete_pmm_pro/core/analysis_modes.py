@@ -103,8 +103,8 @@ def analysis_mode_warnings(settings: AnalysisModeSettings) -> list[str]:
     elif settings.member_type == PORTAL_FRAME_CROSSBEAM_WORKFLOW:
         warnings.extend(
             [
-                "Portal Frame Crossbeam uses ACI 318 project design-code routing, while prestress-loss basis remains an explicit engineer-selected method in later PSLOSS milestones.",
-                "WF1 does not certify SLS stress, prestress losses, ULS strength, anchorage zones, solid/hollow transition zones, column joint regions, or local D-regions.",
+                "Portal Frame Crossbeam uses ACI 318 project design-code routing, while the Crossbeam Prestress Loss page uses an explicit AASHTO friction/wobble basis.",
+                "Current Crossbeam tools do not certify SLS stress, final effective prestress, ULS strength, anchorage zones, solid/hollow transition zones, column joint regions, or local D-regions.",
             ]
         )
     elif settings.member_type == "general_section":

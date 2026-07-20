@@ -1,3 +1,11 @@
+### CROSSBEAM.PTLOSS1 - AASHTO Friction/Wobble Loss Foundation
+
+Adds a Crossbeam `Prestress Loss` page after `Tendon Profile` that calculates
+AASHTO LRFD 5.9.3.2.2b friction/wobble station traces from Tendon System `Pj`
+and Tendon Profile geometry, persists editable loss assumptions in a separate
+Project JSON metadata block, and clearly guards that `P after friction` is not
+final effective prestress. See `README_CROSSBEAM_PTLOSS1.md`.
+
 ### CROSSBEAM.PTA1A - Jacking Force Trace Wording Hotfix
 
 Polishes the Crossbeam PTA1 jacking-force source wording, removes repeated

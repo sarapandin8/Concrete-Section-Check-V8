@@ -40,6 +40,7 @@ from concrete_pmm_pro.visualization.plot_readability import apply_global_plot_re
 from concrete_pmm_pro.ui.rebar_page import render_rebar_page
 from concrete_pmm_pro.ui.section_builder import render_section_builder
 from concrete_pmm_pro.ui.crossbeam_pages import (
+    render_crossbeam_prestress_loss_page,
     render_crossbeam_segment_layout_page,
     render_crossbeam_tendon_profile_page,
     render_crossbeam_tendon_system_page,
@@ -68,7 +69,7 @@ def _sections_navigation_options() -> list[str]:
 
     mode = _analysis_mode_from_session_for_chrome()
     if is_portal_frame_crossbeam_workflow(mode):
-        return ["Section Builder", "Segment Layout", "Rebar", "Tendon System", "Tendon Profile"]
+        return ["Section Builder", "Segment Layout", "Rebar", "Tendon System", "Tendon Profile", "Prestress Loss"]
     return list(WORKSPACE_NAVIGATION["Sections"])
 
 
@@ -1454,6 +1455,8 @@ def render_sections_workspace() -> None:
         render_crossbeam_segment_layout_page()
     elif active == "Tendon Profile":
         render_crossbeam_tendon_profile_page()
+    elif active == "Prestress Loss":
+        render_crossbeam_prestress_loss_page()
 
 
 def render_loads_workspace() -> None:
