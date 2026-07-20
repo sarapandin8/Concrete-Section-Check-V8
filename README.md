@@ -1,3 +1,10 @@
+### CROSSBEAM.PTLOSS1B - Loss Table Readability Polish
+
+Polishes the Crossbeam `Prestress Loss` station trace by shortening `K use` and
+`mu basis` wording plus splitting long assumptions captions, while preserving
+the PTLOSS1A AASHTO friction/wobble calculations and HDPE-lined external tendon
+defaults. See `README_CROSSBEAM_PTLOSS1B.md`.
+
 ### CROSSBEAM.PTLOSS1A - HDPE External Loss Assumption Polish
 
 Polishes the Crossbeam `Prestress Loss` assumptions for HDPE-lined external

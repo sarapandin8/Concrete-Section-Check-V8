@@ -4291,11 +4291,13 @@ def _render_crossbeam_loss_assumptions() -> dict[str, float]:
         )
 
     st.caption(
-        "Calculation basis: AASHTO LRFD 5.9.3.2.2b. Internal tendons use "
-        "Delta fpF = fpj x (1 - exp(-(Kx + mu alpha))). Both-end jacking uses "
-        "the nearest jacking end for equally tensioned tendons and never doubles Pj. "
-        "External HDPE-lined tendons use Delta fpF = fpj x (1 - exp(-mu(alpha + angle add))); "
-        "the external K term is N/A in this calculation mode."
+        "AASHTO LRFD 5.9.3.2.2b. Internal: fpj x (1 - exp(-(Kx + mu alpha))). "
+        "External HDPE-lined: fpj x (1 - exp(-mu(alpha + angle add))); K = N/A."
+    )
+    st.caption(
+        "Both-end jacking uses the nearest jacking end and never doubles Pj. "
+        f"External mu = {DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU:.2f} is adopted conservative; "
+        f"AASHTO polyethylene reference mu = {AASHTO_POLYETHYLENE_DUCT_MU:.2f}."
     )
     return {
         "internal_mu": internal_mu,

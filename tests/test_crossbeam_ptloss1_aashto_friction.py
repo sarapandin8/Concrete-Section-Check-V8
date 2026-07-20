@@ -78,6 +78,8 @@ def test_ptloss1_internal_both_end_uses_nearest_jacking_end_without_doubling_pj(
     assert midpoint["Source end"] == "Left (nearest)"
     assert midpoint["x from jack (m)"] == pytest.approx(10.0)
     assert midpoint["alpha total (rad)"] == pytest.approx(0.0)
+    assert midpoint["K basis"] == "Internal: AASHTO K"
+    assert midpoint["mu basis"] == "Internal duct mu"
     assert midpoint["P/Pj after friction"] == pytest.approx(expected_ratio)
     assert midpoint["P after friction (kN)"] == pytest.approx(midpoint["Pj (kN)"] * expected_ratio)
     assert end["Source end"] == "Right (nearest)"
@@ -124,9 +126,9 @@ def test_ptloss1_external_hdpe_lined_uses_conservative_mu_without_kx() -> None:
 
     assert DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU > AASHTO_POLYETHYLENE_DUCT_MU
     assert midpoint["K (/m)"] is None
-    assert "N/A" in midpoint["K basis"]
+    assert midpoint["K basis"] == "External: N/A, no Kx"
     assert "HDPE-lined" in midpoint["Equation"]
-    assert "HDPE-lined" in midpoint["mu basis"]
+    assert midpoint["mu basis"] == "HDPE-lined: adopted 0.25"
     assert midpoint["P/Pj after friction"] == pytest.approx(expected_ratio)
 
 

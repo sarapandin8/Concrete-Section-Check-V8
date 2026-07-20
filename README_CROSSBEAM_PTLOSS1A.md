@@ -17,6 +17,8 @@ the deviator contact path.
   assumption was applied to each row.
 - Adds regression coverage proving that external tendon loss ignores the
   internal `Kx` term even if the internal `K` input is changed.
+- PTLOSS1B later shortens the `K use`, `mu basis`, and assumptions caption
+  wording for better PDF/browser readability without changing this calculation.
 
 #### Scope guard
 
