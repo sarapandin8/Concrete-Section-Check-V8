@@ -1,3 +1,7 @@
+### CROSSBEAM.PTLOSS2R1 - Single-End Anchor-Set Revalidation + Both-End Safety Lock
+
+Revalidates single-end anchorage seating with a full-path friction-coupled reverse-slip compatibility solver that reproduces Caltrans anchor-set benchmarks, permits full-tendon influence when required, and locks both-end anchor seating until an explicit sequence-aware method is validated. `Pe / Pe_eff` remain locked. See `README_CROSSBEAM_PTLOSS2R1.md`.
+
 ### CROSSBEAM.PTLOSS2D - Anchorage Seating Visualization & Semantics Lock
 
 Adds a component-scoped tendon-force profile comparing reference Pj, accepted post-friction force, and post-anchorage-set preview; marks coupled neutral stations; and clarifies preview/procedure-review plus AASHTO/FHWA method semantics without changing PTLOSS2C solver equations or releasing `Pe / Pe_eff`. See `README_CROSSBEAM_PTLOSS2D.md`.

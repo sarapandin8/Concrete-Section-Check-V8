@@ -1,18 +1,21 @@
-"""Crossbeam post-tensioned anchorage-set / draw-in interaction preview.
+"""Crossbeam post-tensioned anchorage-set / draw-in calculation foundation.
 
-PTLOSS2C keeps anchorage seating isolated from final effective prestress. The
-calculation consumes the accepted PTLOSS1 friction/wobble force diagram and
-first attempts the local force-diagram compatibility (area) method at each
-stressing anchorage. For both-end jacking, when the adopted seating movement
-exceeds the independent half-length branch capacity, a guarded full-length
-coupled compatibility extension solves a common neutral/meeting station from
-the accepted left- and right-jacking branch traces.
+PTLOSS2R1 revalidates the design-use anchorage-set route against the accepted
+PTLOSS1 friction/wobble diagram and published force-diagram compatibility
+methods. Single-end stressing uses a friction-coupled reverse-slip distribution
+over the full available tendon path:
 
-The coupled solution is an engineering implementation extension of the FHWA
-graphical mirror-image/area compatibility concept, not a verbatim numbered
-AASHTO equation and not an explicit first-end/second-end stressing-sequence
-simulation. This module intentionally does *not* assemble Pe/Pe_eff, elastic
-shortening, time-dependent losses, or dead-end anchorage history.
+    Delta_fpA(x) = max(Delta_fpA0 - 2*Delta_fpF(x), 0)
+
+and Delta_fpA0 is solved so the integrated strain reduction equals the adopted
+anchorage draw-in. This formulation naturally permits either a partial affected
+length or full-tendon influence with nonzero loss at the dead end.
+
+Both-end anchorage seating is intentionally locked from design use until an
+explicit stressing/seating sequence is provided and validated. The historical
+PTLOSS2C final-state coupled solver remains private only for regression/history
+and is not routed into current design-use output. Pe/Pe_eff, elastic shortening,
+and time-dependent losses remain locked.
 """
 
 from __future__ import annotations
@@ -25,7 +28,13 @@ from concrete_pmm_pro.crossbeam.prestress_loss import DEFAULT_PRESTRESS_STEEL_EP
 
 
 ANCHORAGE_SET_METHOD_BASIS = (
-    "AASHTO anchorage-set component; FHWA force-diagram area compatibility preview"
+    "Single-end friction-coupled reverse-slip / force-diagram compatibility"
+)
+
+BOTH_END_REVALIDATION_ISSUE = (
+    "Both-end anchorage-set calculation is locked pending an explicit validated "
+    "stressing/seating sequence (simultaneous/equal, Left->Right, or Right->Left). "
+    "The historical PTLOSS2C final-state coupled solution is not design-use."
 )
 
 def _float(value: Any, default: float = 0.0) -> float:
@@ -272,6 +281,224 @@ def _solve_influence_length_m(
     return influence, max_set, achieved - target
 
 
+
+
+def _friction_loss_from_anchor_mpa(branch_rows: list[dict[str, float]], x_m: float) -> float:
+    """Return cumulative friction loss from the active anchorage to ``x_m``.
+
+    The active-end post-friction stress is the reference. For a physically valid
+    one-end trace the cumulative loss must be nonnegative and nondecreasing.
+    """
+
+    if not branch_rows:
+        return 0.0
+    f_anchor = _diagram_stress_mpa(branch_rows, 0.0)
+    return max(f_anchor - _diagram_stress_mpa(branch_rows, x_m), 0.0)
+
+
+def _single_end_anchor_loss_mpa(
+    branch_rows: list[dict[str, float]],
+    *,
+    x_m: float,
+    anchor_loss_mpa: float,
+) -> float:
+    """Return the reverse-slip anchorage-set loss at distance ``x_m``.
+
+    This is the generalized form of the Caltrans/FHWA similar-triangle method:
+    the reverse-slip friction slope is equal and opposite to the stressing
+    friction slope, hence the ``2*Delta_fpF`` term.
+    """
+
+    return max(
+        max(_float(anchor_loss_mpa, 0.0), 0.0)
+        - 2.0 * _friction_loss_from_anchor_mpa(branch_rows, x_m),
+        0.0,
+    )
+
+
+def _single_end_compatibility_mm(
+    branch_rows: list[dict[str, float]],
+    *,
+    anchor_loss_mpa: float,
+    ep_mpa: float,
+) -> float:
+    """Integrate the single-end anchor-set strain reduction over the full path."""
+
+    if len(branch_rows) < 2:
+        return 0.0
+    ep = max(_float(ep_mpa, 0.0), 0.0)
+    if ep <= 0.0:
+        return 0.0
+    area = 0.0
+    for left, right in zip(branch_rows, branch_rows[1:]):
+        x0 = left["x_m"]
+        x1 = right["x_m"]
+        dx = x1 - x0
+        if dx <= 0.0:
+            continue
+        y0 = _single_end_anchor_loss_mpa(
+            branch_rows, x_m=x0, anchor_loss_mpa=anchor_loss_mpa
+        )
+        y1 = _single_end_anchor_loss_mpa(
+            branch_rows, x_m=x1, anchor_loss_mpa=anchor_loss_mpa
+        )
+        # Delta_fpF is linearly interpolated between accepted friction stations,
+        # so Delta_fpA is also linear until it clips to zero. Handle a zero
+        # crossing exactly rather than relying on coarse numerical integration.
+        if y0 > 0.0 and y1 <= 0.0:
+            loss0 = _friction_loss_from_anchor_mpa(branch_rows, x0)
+            loss1 = _friction_loss_from_anchor_mpa(branch_rows, x1)
+            denom = 2.0 * (loss1 - loss0)
+            if denom > 1.0e-15:
+                frac = min(max((anchor_loss_mpa - 2.0 * loss0) / denom, 0.0), 1.0)
+                x_zero = x0 + frac * dx
+                area += 0.5 * y0 * (x_zero - x0)
+                continue
+        area += 0.5 * (y0 + y1) * dx
+    return 1000.0 * area / ep
+
+
+def _single_end_affected_length_m(
+    branch_rows: list[dict[str, float]],
+    *,
+    anchor_loss_mpa: float,
+) -> tuple[float, bool]:
+    """Return affected length and whether the full tendon remains affected."""
+
+    if not branch_rows:
+        return 0.0, False
+    limit = branch_rows[-1]["x_m"]
+    if _single_end_anchor_loss_mpa(
+        branch_rows, x_m=limit, anchor_loss_mpa=anchor_loss_mpa
+    ) > 1.0e-9:
+        return limit, True
+    for left, right in zip(branch_rows, branch_rows[1:]):
+        x0, x1 = left["x_m"], right["x_m"]
+        y0 = _single_end_anchor_loss_mpa(
+            branch_rows, x_m=x0, anchor_loss_mpa=anchor_loss_mpa
+        )
+        y1 = _single_end_anchor_loss_mpa(
+            branch_rows, x_m=x1, anchor_loss_mpa=anchor_loss_mpa
+        )
+        if y0 > 0.0 and y1 <= 1.0e-9:
+            loss0 = _friction_loss_from_anchor_mpa(branch_rows, x0)
+            loss1 = _friction_loss_from_anchor_mpa(branch_rows, x1)
+            denom = 2.0 * (loss1 - loss0)
+            if denom <= 1.0e-15:
+                return x1, False
+            frac = min(max((anchor_loss_mpa - 2.0 * loss0) / denom, 0.0), 1.0)
+            return x0 + frac * (x1 - x0), False
+    return limit, False
+
+
+def _solve_single_end_friction_coupled(
+    branch_rows: list[dict[str, float]],
+    *,
+    anchor_set_mm: float,
+    ep_mpa: float,
+) -> dict[str, Any]:
+    """Solve the design-use single-end anchorage-set distribution.
+
+    ``Delta_fpA0`` is solved from full-path compatibility. The method reproduces
+    the published linear/similar-triangle anchor-set equations as a special case
+    but also works on a piecewise-linear accepted friction profile.
+    """
+
+    target = max(_float(anchor_set_mm, 0.0), 0.0)
+    ep = max(_float(ep_mpa, 0.0), 0.0)
+    result: dict[str, Any] = {
+        "status": "REVIEW REQUIRED",
+        "issue": "",
+        "anchor_loss_mpa": None,
+        "lockoff_stress_mpa": None,
+        "affected_length_m": None,
+        "full_tendon_affected": False,
+        "dead_end_loss_mpa": None,
+        "set_check_mm": None,
+        "residual_mm": None,
+        "max_nonnegative_set_mm": None,
+    }
+    if target <= 0.0 or ep <= 0.0 or len(branch_rows) < 2:
+        result["issue"] = "Positive anchorage set, Ep, and a complete one-end friction trace are required."
+        return result
+    if branch_rows[0]["x_m"] > 1.0e-8:
+        result["issue"] = "The accepted one-end friction trace must start at the active anchorage (x = 0)."
+        return result
+
+    # Friction loss from one active jack should not decrease with distance. A
+    # decrease would invalidate the reverse-slip/similar-triangle assumption.
+    cumulative = [
+        _friction_loss_from_anchor_mpa(branch_rows, row["x_m"]) for row in branch_rows
+    ]
+    if any(right + 1.0e-7 < left for left, right in zip(cumulative, cumulative[1:])):
+        result["issue"] = (
+            "The accepted one-end friction-loss trace is not monotone with distance from "
+            "the active jack; reverse-slip compatibility requires engineering review."
+        )
+        return result
+
+    f_anchor = max(_diagram_stress_mpa(branch_rows, 0.0), 0.0)
+    if f_anchor <= 0.0:
+        result["issue"] = "Positive post-friction stress at the active anchorage is required."
+        return result
+
+    max_set = _single_end_compatibility_mm(
+        branch_rows, anchor_loss_mpa=f_anchor, ep_mpa=ep
+    )
+    result["max_nonnegative_set_mm"] = max_set
+    tolerance = max(1.0e-6, target * 1.0e-6)
+    if max_set + tolerance < target:
+        result["issue"] = (
+            "The adopted anchorage draw-in would require negative lock-off stress at the "
+            "active anchorage under the current friction profile."
+        )
+        return result
+
+    low, high = 0.0, f_anchor
+    for _ in range(120):
+        mid = 0.5 * (low + high)
+        movement = _single_end_compatibility_mm(
+            branch_rows, anchor_loss_mpa=mid, ep_mpa=ep
+        )
+        if movement < target:
+            low = mid
+        else:
+            high = mid
+    anchor_loss = 0.5 * (low + high)
+    set_check = _single_end_compatibility_mm(
+        branch_rows, anchor_loss_mpa=anchor_loss, ep_mpa=ep
+    )
+    affected_length, full_affected = _single_end_affected_length_m(
+        branch_rows, anchor_loss_mpa=anchor_loss
+    )
+    dead_end_loss = _single_end_anchor_loss_mpa(
+        branch_rows,
+        x_m=branch_rows[-1]["x_m"],
+        anchor_loss_mpa=anchor_loss,
+    )
+    lockoff = f_anchor - anchor_loss
+    residual = set_check - target
+    if lockoff < -1.0e-7:
+        result["issue"] = "Solved anchor seating would require negative lock-off stress."
+        return result
+    if abs(residual) > tolerance:
+        result["issue"] = "Single-end anchor-set compatibility residual exceeds tolerance."
+        return result
+
+    result.update(
+        {
+            "status": "PREVIEW READY + NOTE",
+            "issue": "",
+            "anchor_loss_mpa": anchor_loss,
+            "lockoff_stress_mpa": max(lockoff, 0.0),
+            "affected_length_m": affected_length,
+            "full_tendon_affected": full_affected,
+            "dead_end_loss_mpa": dead_end_loss,
+            "set_check_mm": set_check,
+            "residual_mm": residual,
+        }
+    )
+    return result
 
 def _canonical_full_tendon_rows(
     tendon_rows: list[dict[str, Any]],
@@ -577,11 +804,13 @@ def anchorage_set_end_rows(
     anchor_set_mm: float,
     ep_mpa: float = DEFAULT_PRESTRESS_STEEL_EP_MPA,
 ) -> list[dict[str, Any]]:
-    """Return one anchorage-seating preview row per active stressing end.
+    """Return one anchorage-seating audit row per active stressing end.
 
-    The input is the accepted friction/wobble force diagram.  A positive
-    ``anchor_set_mm`` is intentionally required; zero means that a project/PT
-    supplier value has not yet been adopted and the component remains locked.
+    PTLOSS2R1 routes *single-end* stressing through the validated friction-coupled
+    reverse-slip distribution over the full tendon path. Both-end anchor seating
+    is deliberately locked until a stressing/seating sequence is explicitly
+    defined and validated; the historical PTLOSS2C final-state coupled solver is
+    not used here.
     """
 
     rows = _records(friction_rows)
@@ -601,26 +830,17 @@ def anchorage_set_end_rows(
         active = any(bool(row.get("Active")) for row in tendon_rows)
         tendon_type = str(first.get("Type") or "")
         jacking_end = str(first.get("Jacking end") or "")
+        normalized_jack = jacking_end.strip().casefold()
         aps_total = max(_float(first.get("Aps total (mm²)"), 0.0), 0.0)
         pj_kn = max(_float(first.get("Pj (kN)"), 0.0), 0.0)
         fpj_mpa = max(_float(first.get("fpj (MPa)"), 0.0), 0.0)
         friction_blocking = _deduplicated(
-            [
-                str(row.get("Blocking issue") or "")
-                for row in tendon_rows
-                if str(row.get("Blocking issue") or "").strip()
-            ]
+            [str(row.get("Blocking issue") or "") for row in tendon_rows]
         )
         friction_notes = _deduplicated(
-            [
-                str(row.get("Review note") or "")
-                for row in tendon_rows
-                if str(row.get("Review note") or "").strip()
-            ]
+            [str(row.get("Review note") or "") for row in tendon_rows]
         )
-        ends = _active_seating_ends(jacking_end)
-        if not ends:
-            ends = ("Unknown",)
+        ends = _active_seating_ends(jacking_end) or ("Unknown",)
 
         branch_by_end: dict[str, list[dict[str, float]]] = {}
         for active_end in ends:
@@ -632,45 +852,10 @@ def anchorage_set_end_rows(
                     length_m=length,
                 )
 
-        coupled_solution: dict[str, Any] | None = None
-        coupled_attempted = False
-        if (
-            active
-            and str(jacking_end).strip().casefold() == "both"
-            and adopted_set > 0.0
-            and ep > 0.0
-        ):
-            branch_limit = _branch_limit_m(jacking_end, length)
-            local_capacities = []
-            for active_end in ("Left", "Right"):
-                branch = branch_by_end.get(active_end, [])
-                local_capacities.append(
-                    _compatibility_set_mm(
-                        branch,
-                        influence_length_m=branch_limit,
-                        ep_mpa=ep,
-                    )
-                    if branch
-                    else 0.0
-                )
-            tolerance = max(1.0e-5, adopted_set * 1.0e-5)
-            if any(capacity + tolerance < adopted_set for capacity in local_capacities):
-                coupled_attempted = True
-                coupled_solution = _solve_both_end_full_length_interaction(
-                    tendon_rows,
-                    length_m=length,
-                    anchor_set_left_mm=adopted_set,
-                    anchor_set_right_mm=adopted_set,
-                    ep_mpa=ep,
-                )
-
         for end in ends:
-            issues: list[str] = list(friction_blocking)
-            notes: list[str] = list(friction_notes)
-            if not active:
-                status = "STORED ONLY"
-            else:
-                status = "PREVIEW READY"
+            issues = list(friction_blocking)
+            notes = list(friction_notes)
+            status = "STORED ONLY" if not active else "PREVIEW READY"
             if adopted_set <= 0.0:
                 issues.append(
                     "Adopt a positive project/PT supplier anchorage-set value before calculating draw-in loss."
@@ -682,7 +867,6 @@ def anchorage_set_end_rows(
             if end == "Unknown":
                 issues.append("Jacking end must be Left, Right, or Both.")
 
-            branch_limit = _branch_limit_m(jacking_end, length)
             branch_rows = branch_by_end.get(end, []) if end in {"Left", "Right"} else []
             if active and end in {"Left", "Right"}:
                 if not branch_rows:
@@ -692,162 +876,81 @@ def anchorage_set_end_rows(
                         f"Accepted friction trace does not start at the {end.lower()} anchorage (x = 0)."
                     )
 
-            influence: float | None = None
-            max_compatible_set = 0.0
-            residual = adopted_set
-            zero_movement_stress: float | None = None
+            interaction_mode = "SINGLE-END FRICTION-COUPLED"
+            affected_length: float | None = None
+            full_tendon_affected = False
             lockoff_stress: float | None = None
             lockoff_force: float | None = None
             anchor_loss_mpa: float | None = None
             anchor_loss_kn: float | None = None
             anchor_loss_percent: float | None = None
+            dead_end_loss_mpa: float | None = None
+            compatibility_set_check_mm: float | None = None
+            residual: float | None = None
+            max_nonnegative_set_mm: float | None = None
+            zero_movement_stress: float | None = None
             stress_integral_mpa_m: float | None = None
             one_side_stress_area_mpa_m: float | None = None
             mirrored_stress_area_mpa_m: float | None = None
-            compatibility_set_check_mm: float | None = None
-            interaction_mode = "ISOLATED LOCAL"
-            neutral_station_m: float | None = None
-            meeting_stress_mpa: float | None = None
-            neutral_initial_stress_mpa: float | None = None
-            continuity_residual_mpa: float | None = None
-            max_stress_gain_mpa: float | None = None
-            min_final_stress_mpa: float | None = None
 
-            coupled_ready = bool(
-                coupled_solution
-                and str(coupled_solution.get("status") or "") == "PREVIEW READY + NOTE"
-            )
-            if coupled_ready and end in {"Left", "Right"}:
-                interaction_mode = "FULL-LENGTH COUPLED"
-                full_rows = coupled_solution.get("rows") or []
-                neutral_station_m = _float(
-                    coupled_solution.get("neutral_station_m"), 0.0
-                )
-                meeting_stress_mpa = _float(
-                    coupled_solution.get("meeting_stress_mpa"), 0.0
-                )
-                neutral_initial_stress_mpa = _full_trace_value(
-                    full_rows, neutral_station_m, "initial_mpa"
-                )
-                continuity_residual_mpa = _float(
-                    coupled_solution.get("continuity_residual_mpa"), 0.0
-                )
-                max_stress_gain_mpa = _float(
-                    coupled_solution.get("max_stress_gain_mpa"), 0.0
-                )
-                min_final_stress_mpa = _float(
-                    coupled_solution.get("min_final_stress_mpa"), 0.0
-                )
-                anchor_station = 0.0 if end == "Left" else length
-                anchor_initial = _full_trace_value(
-                    full_rows, anchor_station, "initial_mpa"
-                )
-                lockoff_stress = max(
-                    _coupled_final_stress_mpa(
-                        full_rows,
-                        station_m=anchor_station,
-                        neutral_station_m=neutral_station_m,
-                        meeting_stress_mpa=meeting_stress_mpa,
-                    ),
-                    0.0,
-                )
-                influence = (
-                    neutral_station_m
-                    if end == "Left"
-                    else max(length - neutral_station_m, 0.0)
-                )
-                max_compatible_set = _compatibility_set_mm(
+            if normalized_jack == "both":
+                interaction_mode = "BOTH-END SEQUENCE REQUIRED"
+                if active:
+                    issues.append(BOTH_END_REVALIDATION_ISSUE)
+            elif (
+                active
+                and end in {"Left", "Right"}
+                and branch_rows
+                and adopted_set > 0.0
+                and ep > 0.0
+                and aps_total > 0.0
+                and pj_kn > 0.0
+                and fpj_mpa > 0.0
+                and not issues
+            ):
+                solved = _solve_single_end_friction_coupled(
                     branch_rows,
-                    influence_length_m=branch_limit,
-                    ep_mpa=ep,
-                )
-                compatibility_set_check_mm = _float(
-                    coupled_solution.get(
-                        "left_set_check_mm" if end == "Left" else "right_set_check_mm"
-                    ),
-                    0.0,
-                )
-                residual = _float(
-                    coupled_solution.get(
-                        "left_residual_mm" if end == "Left" else "right_residual_mm"
-                    ),
-                    0.0,
-                )
-                anchor_loss_mpa = max(anchor_initial - lockoff_stress, 0.0)
-                anchor_loss_kn = aps_total * anchor_loss_mpa / 1000.0
-                lockoff_force = aps_total * lockoff_stress / 1000.0
-                anchor_loss_percent = (
-                    100.0 * anchor_loss_kn / pj_kn if pj_kn > 0.0 else None
-                )
-            elif branch_rows and adopted_set > 0.0 and ep > 0.0:
-                influence, max_compatible_set, residual = _solve_influence_length_m(
-                    branch_rows,
-                    branch_limit_m=branch_limit,
                     anchor_set_mm=adopted_set,
                     ep_mpa=ep,
                 )
-                if influence is None:
-                    if coupled_attempted and coupled_solution is not None:
-                        issues.append(
-                            str(coupled_solution.get("issue") or "Full-length both-end interaction requires review.")
+                max_nonnegative_set_mm = solved.get("max_nonnegative_set_mm")
+                if solved.get("status") != "PREVIEW READY + NOTE":
+                    issues.append(str(solved.get("issue") or "Single-end anchorage-set solution requires review."))
+                else:
+                    status = "PREVIEW READY + NOTE"
+                    affected_length = _float(solved.get("affected_length_m"), 0.0)
+                    full_tendon_affected = bool(solved.get("full_tendon_affected"))
+                    anchor_loss_mpa = _float(solved.get("anchor_loss_mpa"), 0.0)
+                    lockoff_stress = _float(solved.get("lockoff_stress_mpa"), 0.0)
+                    dead_end_loss_mpa = _float(solved.get("dead_end_loss_mpa"), 0.0)
+                    compatibility_set_check_mm = _float(solved.get("set_check_mm"), 0.0)
+                    residual = _float(solved.get("residual_mm"), 0.0)
+                    lockoff_force = aps_total * lockoff_stress / 1000.0
+                    anchor_loss_kn = aps_total * anchor_loss_mpa / 1000.0
+                    anchor_loss_percent = 100.0 * anchor_loss_kn / pj_kn if pj_kn > 0.0 else None
+                    if full_tendon_affected:
+                        notes.append(
+                            "Adopted draw-in affects the full tendon; anchorage-set loss remains nonzero at the dead end."
                         )
                     else:
-                        issues.append(
-                            "Required seating movement exceeds the compatibility capacity of the current isolated branch; full-length/opposing-end interaction requires review."
+                        zero_movement_stress = _diagram_stress_mpa(branch_rows, affected_length)
+
+                    # Audit terms retained for transparent comparison with the
+                    # historical mirror-area formulation where an interior zero-loss
+                    # point exists. They are not the controlling PTLOSS2R1 solve.
+                    if not full_tendon_affected and affected_length > 0.0:
+                        stress_integral_mpa_m = _diagram_integral_mpa_m(branch_rows, affected_length)
+                        one_side_stress_area_mpa_m = max(
+                            stress_integral_mpa_m - affected_length * (zero_movement_stress or 0.0),
+                            0.0,
                         )
-                else:
-                    zero_movement_stress = _diagram_stress_mpa(branch_rows, influence)
-                    anchor_initial = _diagram_stress_mpa(branch_rows, 0.0)
-                    stress_integral_mpa_m = _diagram_integral_mpa_m(branch_rows, influence)
-                    one_side_stress_area_mpa_m = max(
-                        stress_integral_mpa_m - influence * zero_movement_stress,
-                        0.0,
-                    )
-                    mirrored_stress_area_mpa_m = 2.0 * one_side_stress_area_mpa_m
-                    compatibility_set_check_mm = (
-                        1000.0 * mirrored_stress_area_mpa_m / ep if ep > 0.0 else None
-                    )
-                    lockoff_stress = 2.0 * zero_movement_stress - anchor_initial
-                    if lockoff_stress < -1.0e-6:
-                        issues.append(
-                            "Mirrored force diagram gives negative anchorage stress; adopted seating value is outside the valid preview range."
-                        )
-                    lockoff_stress = max(lockoff_stress, 0.0)
-                    anchor_loss_mpa = max(anchor_initial - lockoff_stress, 0.0)
-                    anchor_loss_kn = aps_total * anchor_loss_mpa / 1000.0
-                    lockoff_force = aps_total * lockoff_stress / 1000.0
-                    anchor_loss_percent = (
-                        100.0 * anchor_loss_kn / pj_kn if pj_kn > 0.0 else None
-                    )
+                        mirrored_stress_area_mpa_m = 2.0 * one_side_stress_area_mpa_m
 
-            if str(jacking_end).strip().casefold() in {"left", "right"}:
-                notes.append(
-                    "This milestone models final seating at the active stressing end only; dead-end anchorage seating/history must be verified from the actual PT procedure."
-                )
-            if str(jacking_end).strip().casefold() == "both":
-                if coupled_ready:
-                    notes.append(
-                        "PTLOSS2C solved a coupled full-length both-end seating interaction after the independent half-length capacity was exceeded. The same adopted Δa is applied at both ends as a final-state compatibility preview; explicit first-end/second-end stressing and seating sequence is not modeled and must be verified for the approved PT procedure."
-                    )
-                else:
-                    notes.append(
-                        "Both-end seating uses independent local branches while valid; if those branches are exceeded, PTLOSS2C attempts a coupled full-length zero-displacement neutral-station solution."
-                    )
-            notes.append(
-                "PTLOSS2 uses linear interpolation of the accepted friction/wobble force diagram for compatibility-area audit; it is not final Pe/Pe_eff."
-            )
+            if active and issues:
+                status = "INPUT REQUIRED" if adopted_set <= 0.0 else "REVIEW REQUIRED"
 
-            if not active:
-                status = "STORED ONLY"
-            elif adopted_set <= 0.0:
-                status = "INPUT REQUIRED"
-            elif issues:
-                status = "REVIEW REQUIRED"
-            elif notes:
-                status = "PREVIEW READY + NOTE"
-            else:
-                status = "PREVIEW READY"
-
+            branch_limit = length if normalized_jack in {"left", "right"} else 0.5 * length
+            initial_anchor_stress = _diagram_stress_mpa(branch_rows, 0.0) if branch_rows else None
             result.append(
                 {
                     "Tendon ID": tendon_id,
@@ -862,11 +965,12 @@ def anchorage_set_end_rows(
                     "Pj (kN)": pj_kn,
                     "Branch limit (m)": branch_limit,
                     "Branch points": len(branch_rows),
-                    "Max compatible set (mm)": max_compatible_set,
-                    "Influence length (m)": influence,
-                    "Initial stress at anchorage after friction (MPa)": (
-                        _diagram_stress_mpa(branch_rows, 0.0) if branch_rows else None
-                    ),
+                    "Max compatible set (mm)": max_nonnegative_set_mm,
+                    "Max nonnegative set (mm)": max_nonnegative_set_mm,
+                    "Influence length (m)": affected_length,
+                    "Affected length (m)": affected_length,
+                    "Full tendon affected": full_tendon_affected,
+                    "Initial stress at anchorage after friction (MPa)": initial_anchor_stress,
                     "Zero movement stress (MPa)": zero_movement_stress,
                     "Stress integral to La (MPa·m)": stress_integral_mpa_m,
                     "One-side stress area (MPa·m)": one_side_stress_area_mpa_m,
@@ -877,15 +981,16 @@ def anchorage_set_end_rows(
                     "Anchorage-set loss at anchorage (MPa)": anchor_loss_mpa,
                     "Anchorage-set loss at anchorage (kN)": anchor_loss_kn,
                     "Anchorage-set loss at anchorage (%)": anchor_loss_percent,
+                    "Dead-end anchorage-set loss (MPa)": dead_end_loss_mpa,
                     "Compatibility residual (mm)": residual,
                     "Interaction mode": interaction_mode,
-                    "Neutral point s (m)": neutral_station_m,
-                    "Neutral-point initial stress (MPa)": neutral_initial_stress_mpa,
-                    "Meeting stress after seating (MPa)": meeting_stress_mpa,
-                    "Force continuity residual (MPa)": continuity_residual_mpa,
-                    "Max stress gain check (MPa)": max_stress_gain_mpa,
-                    "Minimum final stress check (MPa)": min_final_stress_mpa,
-                    "Method": ANCHORAGE_SET_METHOD_BASIS,
+                    "Neutral point s (m)": None,
+                    "Neutral-point initial stress (MPa)": None,
+                    "Meeting stress after seating (MPa)": None,
+                    "Force continuity residual (MPa)": None,
+                    "Max stress gain check (MPa)": 0.0 if anchor_loss_mpa is not None else None,
+                    "Minimum final stress check (MPa)": lockoff_stress,
+                    "Method": ANCHORAGE_SET_METHOD_BASIS if normalized_jack != "both" else "Both-end sequence-aware method pending revalidation",
                     "Status": status,
                     "Blocking issue": " ".join(_deduplicated(issues)),
                     "Review note": " ".join(_deduplicated(notes)),
@@ -901,11 +1006,11 @@ def anchorage_set_station_rows(
     *,
     length_m: float | None = None,
 ) -> list[dict[str, Any]]:
-    """Return station trace after the isolated anchorage-set component.
+    """Return station trace after the validated single-end anchor-set component.
 
-    Rows remain explicitly component-scoped.  ``P after anchorage set`` is not
-    exported as Pe/Pe_eff and is left blank whenever the corresponding seating
-    end has no valid influence-length solution.
+    Both-end rows remain blank by design until PTLOSS2R2 provides a validated
+    stressing/seating sequence-aware route. No result from the historical
+    PTLOSS2C coupled solver is fed forward.
     """
 
     rows = _records(friction_rows)
@@ -919,18 +1024,6 @@ def anchorage_set_station_rows(
         grouped.setdefault(str(row.get("Tendon ID") or ""), []).append(row)
 
     branch_cache: dict[tuple[str, str], list[dict[str, float]]] = {}
-    full_trace_cache: dict[str, list[dict[str, float]]] = {}
-    coupled_end_map: dict[str, dict[str, Any]] = {}
-    for end_row in ends:
-        tendon_id = str(end_row.get("Tendon ID") or "")
-        if (
-            tendon_id
-            and str(end_row.get("Interaction mode") or "") == "FULL-LENGTH COUPLED"
-            and end_row.get("Neutral point s (m)") is not None
-            and end_row.get("Meeting stress after seating (MPa)") is not None
-        ):
-            coupled_end_map.setdefault(tendon_id, end_row)
-
     for tendon_id, tendon_rows in grouped.items():
         if not tendon_rows:
             continue
@@ -947,11 +1040,6 @@ def anchorage_set_station_rows(
                 jacking_end=jacking_end,
                 length_m=tendon_length_m,
             )
-        if tendon_id in coupled_end_map:
-            full_trace_cache[tendon_id] = _canonical_full_tendon_rows(
-                tendon_rows,
-                length_m=tendon_length_m,
-            )
 
     output: list[dict[str, Any]] = []
     for row in rows:
@@ -962,72 +1050,46 @@ def anchorage_set_station_rows(
         friction_force = max(_float(row.get("P after friction (kN)"), 0.0), 0.0)
         aps_total = max(_float(row.get("Aps total (mm²)"), 0.0), 0.0)
         x_m = max(_float(row.get("x from jack (m)"), 0.0), 0.0)
+
         final_stress: float | None = None
         final_force: float | None = None
         component_loss_mpa: float | None = None
         component_loss_kn: float | None = None
-        influence_length: float | None = None
-        zero_stress: float | None = None
+        affected_length: float | None = None
         applied = False
         status = "NOT CALCULATED"
-        issue = "No valid anchorage-set solution is available for this source-end branch."
+        issue = "No validated anchorage-set solution is available for this stressing route."
 
-        coupled_result = coupled_end_map.get(tendon_id)
-        if coupled_result is not None:
-            full_rows = full_trace_cache.get(tendon_id, [])
-            neutral = _float(coupled_result.get("Neutral point s (m)"), 0.0)
-            meeting = _float(
-                coupled_result.get("Meeting stress after seating (MPa)"), 0.0
-            )
-            if full_rows:
-                station_m = max(_float(row.get("s (m)"), 0.0), 0.0)
-                final_stress = max(
-                    _coupled_final_stress_mpa(
-                        full_rows,
-                        station_m=station_m,
-                        neutral_station_m=neutral,
-                        meeting_stress_mpa=meeting,
-                    ),
-                    0.0,
-                )
-                component_loss_mpa = max(friction_stress - final_stress, 0.0)
+        if (
+            end_result is not None
+            and str(end_result.get("Interaction mode") or "") == "SINGLE-END FRICTION-COUPLED"
+            and end_result.get("Anchorage-set loss at anchorage (MPa)") is not None
+            and str(end_result.get("Status") or "").startswith("PREVIEW READY")
+        ):
+            branch = branch_cache.get((tendon_id, end), [])
+            anchor_loss = _float(end_result.get("Anchorage-set loss at anchorage (MPa)"), 0.0)
+            affected_length = _float(end_result.get("Affected length (m)"), 0.0)
+            component_loss_mpa = _single_end_anchor_loss_mpa(
+                branch, x_m=x_m, anchor_loss_mpa=anchor_loss
+            ) if branch else None
+            if component_loss_mpa is not None:
+                final_stress = max(friction_stress - component_loss_mpa, 0.0)
                 final_force = aps_total * final_stress / 1000.0
                 component_loss_kn = max(friction_force - final_force, 0.0)
-                influence_length = neutral if station_m <= neutral else max(
-                    (max(_float(length_m, 0.0), 0.0) if length_m is not None else full_rows[-1]["s_m"])
-                    - neutral,
-                    0.0,
-                )
-                applied = True
-                status = str(coupled_result.get("Status") or "PREVIEW READY + NOTE")
-                issue = str(coupled_result.get("Issue") or "")
+                applied = component_loss_mpa > 1.0e-9
+                status = str(end_result.get("Status") or "PREVIEW READY + NOTE")
+                issue = str(end_result.get("Issue") or "")
         elif end_result is not None:
-            influence_raw = end_result.get("Influence length (m)")
-            influence_length = (
-                _float(influence_raw, 0.0) if influence_raw is not None else None
-            )
-            zero_raw = end_result.get("Zero movement stress (MPa)")
-            zero_stress = _float(zero_raw, 0.0) if zero_raw is not None else None
-            status = str(end_result.get("Status") or "NOT CALCULATED")
-            issue = str(end_result.get("Issue") or "")
-            if influence_length is not None and zero_stress is not None:
-                branch = branch_cache.get((tendon_id, end), [])
-                initial_diagram_stress = _diagram_stress_mpa(branch, x_m) if branch else friction_stress
-                if x_m <= influence_length + 1.0e-9:
-                    final_stress = max(2.0 * zero_stress - initial_diagram_stress, 0.0)
-                    applied = True
-                else:
-                    final_stress = friction_stress
-                component_loss_mpa = max(friction_stress - final_stress, 0.0)
-                final_force = aps_total * final_stress / 1000.0
-                component_loss_kn = max(friction_force - final_force, 0.0)
+            status = str(end_result.get("Status") or "REVIEW REQUIRED")
+            issue = str(end_result.get("Issue") or end_result.get("Blocking issue") or issue)
 
         output.append(
             {
                 **row,
                 "Seating end": end,
                 "Anchorage set applied": applied,
-                "Influence length (m)": influence_length,
+                "Influence length (m)": affected_length,
+                "Affected length (m)": affected_length,
                 "Anchorage-set loss (MPa)": component_loss_mpa,
                 "Anchorage-set loss (kN)": component_loss_kn,
                 "Stress after anchorage set (MPa)": final_stress,
@@ -1040,7 +1102,7 @@ def anchorage_set_station_rows(
 
 
 def anchorage_set_summary(end_rows: Any) -> dict[str, Any]:
-    """Return dashboard values for the isolated PTLOSS2 component."""
+    """Return dashboard values for the active PTLOSS2R1 anchorage-set methodology."""
 
     rows = _records(end_rows)
     active = [row for row in rows if bool(row.get("Active"))]
