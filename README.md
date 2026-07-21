@@ -1,6 +1,10 @@
+### CROSSBEAM.PTLOSS2R3 - Anchorage Set Equivalent-Average QA & Closeout Polish
+
+Adds a distribution-derived equivalent-average anchorage-set QA summary, selected-tendon local-vs-average decision metrics, and an independent dense-grid simultaneous-both-end verification while preserving PTLOSS2R2 solver equations and keeping `Pe / Pe_eff` locked. See `README_CROSSBEAM_PTLOSS2R3.md`.
+
 ### CROSSBEAM.PTLOSS2R2 - Simultaneous Both-End Anchorage Set Revalidation
 
-Defines `Jack = Both` as simultaneous equal left/right stressing, activates guarded local/coupled simultaneous anchorage-seating compatibility, and corrects the both-end friction equilibrium route while keeping `Pe / Pe_eff` locked. See `README_CROSSBEAM_PTLOSS2R2.md`.
+Defines `Jack = Both` as simultaneous equal left/right stressing, solves local or coupled simultaneous seating from left/right branch equilibrium and compatibility, and keeps `Pe / Pe_eff` locked pending loss-chain closeout. See `README_CROSSBEAM_PTLOSS2R2.md`.
 
 ### CROSSBEAM.PTLOSS2R1 - Single-End Anchor-Set Revalidation + Both-End Safety Lock
 

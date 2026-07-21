@@ -77,6 +77,7 @@ from concrete_pmm_pro.crossbeam.tendon_analysis import (
 )
 from concrete_pmm_pro.crossbeam.anchorage_set import (
     anchorage_set_end_rows,
+    anchorage_set_equivalent_average_summary,
     anchorage_set_station_rows,
     anchorage_set_summary,
 )
@@ -4552,7 +4553,7 @@ def _anchorage_decision_rows(
                 "Δa (mm)": round(float(rows[0].get("Anchorage set (mm)") or 0.0), 3) if rows else "—",
                 "Mode": mode,
                 "Affected sₐ (m)": (
-                    "—" if not calculated or "COUPLED" in mode
+                    "—" if not calculated or mode == "BOTH-END SIMULTANEOUS COUPLED"
                     else round(max(float(row.get("Affected length (m)") or 0.0) for row in calculated), 4)
                 ),
                 "Neutral sₙ (m)": (
@@ -4759,6 +4760,7 @@ def _anchorage_seating_geometry_metric(
 
 def _render_anchorage_formula_unit_audit(
     end_rows: list[dict[str, Any]],
+    equivalent_summary: dict[str, Any] | None = None,
 ) -> None:
     single_calculated = [
         row
@@ -4851,6 +4853,75 @@ def _render_anchorage_formula_unit_audit(
         )
         st.success("PASS — 1000·∫(MPa/MPa)·m = mm for anchorage movement compatibility.")
         st.success("PASS — Aps(mm²) × f(MPa=N/mm²) / 1000 = tendon force in kN.")
+
+        st.markdown("**C. Equivalent-average distribution QA — summary only**")
+        st.latex(r"\overline{\Delta f}_{pA,i}=\frac{1}{L}\int_0^L \Delta f_{pA,i}(s)\,ds")
+        st.latex(
+            r"\overline{\Delta f}_{pA,\mathrm{global}}="
+            r"\frac{\sum_i A_{ps,i}\,\overline{\Delta f}_{pA,i}}{\sum_i A_{ps,i}}"
+        )
+        st.write(
+            "This equivalent average is derived from the calculated station-by-station "
+            "anchorage-set loss distribution. It is provided for summary / external lumped-loss "
+            "comparison only; local P(s) remains the Crossbeam design-use source of truth."
+        )
+        if equivalent_summary and equivalent_summary.get("equivalent_average_loss_mpa") is not None:
+            avg_mpa = float(equivalent_summary["equivalent_average_loss_mpa"])
+            avg_percent = float(equivalent_summary.get("equivalent_average_loss_percent") or 0.0)
+            expected_mpa = float(equivalent_summary.get("expected_average_loss_mpa") or 0.0)
+            max_resid = float(equivalent_summary.get("max_compatibility_residual_mpa") or 0.0)
+            st.write(
+                f"Area-weighted equivalent average = **{avg_mpa:.3f} MPa ({avg_percent:.3f}%)**; "
+                f"compatibility-derived expected average = **{expected_mpa:.3f} MPa**; "
+                f"maximum tendon residual = **{max_resid:.6g} MPa**."
+            )
+            if equivalent_summary.get("status") == "PASS":
+                st.success(
+                    "PASS — integrated station distributions reproduce the independent "
+                    "compatibility-average identity within tolerance."
+                )
+            else:
+                st.warning(
+                    "REVIEW — one or more station-distribution equivalent averages do not close "
+                    "against the compatibility-average identity."
+                )
+            with st.expander("Per-tendon equivalent-average QA", expanded=False):
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {
+                                "Tendon": row.get("Tendon ID"),
+                                "Status": row.get("Status"),
+                                "Mode": row.get("Mode", ""),
+                                "Eq. avg loss (MPa)": (
+                                    "—"
+                                    if row.get("Equivalent average loss (MPa)") is None
+                                    else round(float(row.get("Equivalent average loss (MPa)")), 3)
+                                ),
+                                "Eq. avg loss (%)": (
+                                    "—"
+                                    if row.get("Equivalent average loss (%)") is None
+                                    else round(float(row.get("Equivalent average loss (%)")), 3)
+                                ),
+                                "Expected avg (MPa)": (
+                                    "—"
+                                    if row.get("Expected compatibility average (MPa)") is None
+                                    else round(float(row.get("Expected compatibility average (MPa)")), 3)
+                                ),
+                                "Residual (MPa)": (
+                                    "—"
+                                    if row.get("Average residual (MPa)") is None
+                                    else round(float(row.get("Average residual (MPa)")), 6)
+                                ),
+                            }
+                            for row in equivalent_summary.get("tendon_rows", [])
+                        ]
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+        else:
+            st.info("Equivalent-average QA is not available until all required station-loss rows are calculated.")
 
         if single_calculated:
             governing = max(
@@ -4945,7 +5016,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "PTLOSS2R2 retains the revalidated single-end method and activates a guarded simultaneous both-end anchorage-seating preview using left/right friction-branch equilibrium and compatibility. Pe/Pe_eff and later losses remain locked.",
+        "PTLOSS2R3 retains the validated PTLOSS2R2 station-force routes and adds an equivalent-average anchorage-set QA summary derived from the calculated loss distribution. Local P(s) remains design-use source-of-truth; Pe/Pe_eff and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -4978,6 +5049,16 @@ def render_crossbeam_prestress_loss_page() -> None:
         ep_mpa=float(current_assumptions["ep_mpa"]),
     )
     current_anchorage_summary = anchorage_set_summary(current_anchorage_end_rows)
+    current_anchorage_station_rows = anchorage_set_station_rows(
+        current_loss_rows,
+        current_anchorage_end_rows,
+        length_m=length_m,
+    )
+    current_anchorage_equivalent_summary = anchorage_set_equivalent_average_summary(
+        current_anchorage_station_rows,
+        current_anchorage_end_rows,
+        length_m=length_m,
+    )
 
     (
         overview_tab,
@@ -5028,7 +5109,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Anchorage set",
                     "value": str(current_anchorage_summary["value"]),
-                    "detail": f"{int(current_anchorage_summary['calculated_end_count'])}/{int(current_anchorage_summary['active_seating_end_count'])} stressing end(s) calculated",
+                    "detail": f"{int(current_anchorage_summary['calculated_end_count'])}/{int(current_anchorage_summary['active_seating_end_count'])} seating end(s) calculated",
                     "status": str(current_anchorage_summary["status"]),
                 },
                 {
@@ -5248,15 +5329,13 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
 
     with anchorage_set_tab:
-        st.markdown("#### Anchorage Set / Draw-in — simultaneous both-end revalidation")
+        st.markdown("#### Anchorage Set / Draw-in — distribution-average QA closeout")
         _render_crossbeam_anchorage_set_assumptions()
         anchorage_end_rows = current_anchorage_end_rows
         anchorage_summary = current_anchorage_summary
-        anchorage_station_rows = anchorage_set_station_rows(
-            current_loss_rows,
-            anchorage_end_rows,
-            length_m=length_m,
-        )
+        anchorage_station_rows = current_anchorage_station_rows
+        anchorage_equivalent_summary = current_anchorage_equivalent_summary
+        anchorage_decision_rows = _anchorage_decision_rows(anchorage_end_rows)
         has_calculated_ends = int(anchorage_summary["calculated_end_count"]) > 0
         all_active_ends_calculated = (
             int(anchorage_summary["active_seating_end_count"]) > 0
@@ -5303,7 +5382,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                     ),
                 },
                 {
-                    "title": "Calculated ends",
+                    "title": "Calculated seating ends",
                     "value": (
                         f"{int(anchorage_summary['calculated_end_count'])}/"
                         f"{int(anchorage_summary['active_seating_end_count'])}"
@@ -5324,6 +5403,22 @@ def render_crossbeam_prestress_loss_page() -> None:
                         else "NOT CALCULATED"
                     ),
                     "status": "neutral" if has_calculated_ends else "warning",
+                },
+                {
+                    "title": "Equivalent average anchor-set loss",
+                    "value": (
+                        f"{float(anchorage_equivalent_summary['equivalent_average_loss_mpa']):.2f} MPa"
+                        if anchorage_equivalent_summary.get("equivalent_average_loss_mpa") is not None
+                        else "—"
+                    ),
+                    "detail": (
+                        f"{float(anchorage_equivalent_summary['equivalent_average_loss_percent']):.2f}% of area-weighted fpj · distribution average"
+                        if anchorage_equivalent_summary.get("equivalent_average_loss_percent") is not None
+                        else "NOT CALCULATED"
+                    ),
+                    "status": (
+                        "ready" if anchorage_equivalent_summary.get("status") == "PASS" else "warning"
+                    ),
                 },
                 {
                     "title": seating_geometry_metric["title"],
@@ -5396,9 +5491,91 @@ def render_crossbeam_prestress_loss_page() -> None:
                 "seating. This graph does not release Pe or Pe_eff."
             )
 
+            selected_decision = next(
+                (row for row in anchorage_decision_rows if str(row.get("Tendon")) == str(profile_tendon)),
+                None,
+            )
+            selected_equivalent = next(
+                (
+                    row
+                    for row in anchorage_equivalent_summary.get("tendon_rows", [])
+                    if str(row.get("Tendon ID")) == str(profile_tendon)
+                ),
+                None,
+            )
+            if selected_decision is not None:
+                st.markdown(f"##### Selected tendon — {profile_tendon}")
+                selected_avg_mpa = (
+                    None
+                    if selected_equivalent is None
+                    else selected_equivalent.get("Equivalent average loss (MPa)")
+                )
+                selected_avg_percent = (
+                    None
+                    if selected_equivalent is None
+                    else selected_equivalent.get("Equivalent average loss (%)")
+                )
+                selected_geometry = (
+                    f"sₙ = {selected_decision.get('Neutral sₙ (m)')} m"
+                    if selected_decision.get("Neutral sₙ (m)") not in {None, "—"}
+                    else (
+                        f"sₐ = {selected_decision.get('Affected sₐ (m)')} m"
+                        if selected_decision.get("Affected sₐ (m)") not in {None, "—"}
+                        else "—"
+                    )
+                )
+                render_metric_cards(
+                    [
+                        {
+                            "title": "Jacking / mode",
+                            "value": str(selected_decision.get("Jack") or "—"),
+                            "detail": str(selected_decision.get("Mode") or "—"),
+                            "status": "info",
+                        },
+                        {
+                            "title": "Local max anchor-set loss",
+                            "value": (
+                                f"{float(selected_decision.get('Max loss (% Pj)')):.3f}% of Pj"
+                                if selected_decision.get("Max loss (% Pj)") not in {None, "—"}
+                                else "—"
+                            ),
+                            "detail": "station/local diagnostic — not an equivalent average",
+                            "status": "neutral",
+                        },
+                        {
+                            "title": "Equivalent average loss",
+                            "value": (
+                                f"{float(selected_avg_mpa):.2f} MPa"
+                                if selected_avg_mpa is not None
+                                else "—"
+                            ),
+                            "detail": (
+                                f"{float(selected_avg_percent):.2f}% of fpj · integrated station distribution"
+                                if selected_avg_percent is not None
+                                else "NOT CALCULATED"
+                            ),
+                            "status": (
+                                "ready"
+                                if selected_equivalent is not None and selected_equivalent.get("Status") == "PASS"
+                                else "warning"
+                            ),
+                        },
+                        {
+                            "title": "Seating geometry",
+                            "value": selected_geometry,
+                            "detail": (
+                                "full tendon affected"
+                                if selected_decision.get("Full tendon?") == "YES"
+                                else "mode-specific characteristic station"
+                            ),
+                            "status": "neutral",
+                        },
+                    ]
+                )
+
         st.markdown("#### Anchorage-set decision summary")
         st.dataframe(
-            pd.DataFrame(_anchorage_decision_rows(anchorage_end_rows)),
+            pd.DataFrame(anchorage_decision_rows),
             use_container_width=True,
             hide_index=True,
             column_config={
@@ -5413,7 +5590,7 @@ def render_crossbeam_prestress_loss_page() -> None:
             "limitations, formulas, and unit checks remain available below for audit."
         )
 
-        _render_anchorage_formula_unit_audit(anchorage_end_rows)
+        _render_anchorage_formula_unit_audit(anchorage_end_rows, anchorage_equivalent_summary)
 
         with st.expander("Detailed seating-end compatibility audit", expanded=False):
             st.dataframe(
@@ -5430,42 +5607,46 @@ def render_crossbeam_prestress_loss_page() -> None:
                             "Ep (MPa)": round(row["Ep (MPa)"], 0),
                             "Available path (m)": round(row["Branch limit (m)"], 4),
                             "Affected sₐ (m)": (
-                                None
+                                "—"
                                 if row.get("Affected length (m)") is None
                                 else round(float(row.get("Affected length (m)") or 0.0), 4)
                             ),
-                            "Full tendon?": bool(row.get("Full tendon affected")) if row.get("Affected length (m)") is not None else None,
+                            "Full tendon?": (
+                                bool(row.get("Full tendon affected"))
+                                if row.get("Affected length (m)") is not None
+                                else "—"
+                            ),
                             "Dead-end loss (MPa)": (
-                                None
+                                "—"
                                 if row.get("Dead-end anchorage-set loss (MPa)") is None
                                 else round(float(row.get("Dead-end anchorage-set loss (MPa)") or 0.0), 3)
                             ),
                             "f@zero (MPa)": (
-                                None
+                                "—"
                                 if row["Zero movement stress (MPa)"] is None
                                 else round(row["Zero movement stress (MPa)"], 2)
                             ),
                             "f lock-off (MPa)": (
-                                None
+                                "—"
                                 if row["Lock-off stress at anchorage (MPa)"] is None
                                 else round(
                                     row["Lock-off stress at anchorage (MPa)"], 2
                                 )
                             ),
                             "P lock-off (kN)": (
-                                None
+                                "—"
                                 if row["Lock-off force at anchorage (kN)"] is None
                                 else round(row["Lock-off force at anchorage (kN)"], 2)
                             ),
                             "Local loss (%)": (
-                                None
+                                "—"
                                 if row["Anchorage-set loss at anchorage (%)"] is None
                                 else round(
                                     row["Anchorage-set loss at anchorage (%)"], 3
                                 )
                             ),
                             "Residual (mm)": (
-                                None
+                                "—"
                                 if row.get("Compatibility residual (mm)") is None
                                 else round(float(row.get("Compatibility residual (mm)") or 0.0), 6)
                             ),

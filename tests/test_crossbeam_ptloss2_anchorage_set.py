@@ -6,6 +6,7 @@ import pytest
 
 from concrete_pmm_pro.crossbeam.anchorage_set import (
     anchorage_set_end_rows,
+    anchorage_set_equivalent_average_summary,
     anchorage_set_station_rows,
     anchorage_set_summary,
 )
@@ -176,6 +177,88 @@ def _caltrans_linear_rows(*, length_ft: float, fjack_ksi: float, end_loss_ksi: f
         },
     ]
 
+
+
+def _independent_simultaneous_both_end_grid_solution(
+    *,
+    length_m: float,
+    fpj_mpa: float,
+    left_gradient_mpa_per_m: float,
+    right_gradient_mpa_per_m: float,
+    anchor_set_mm: float,
+    ep_mpa: float,
+    n_steps: int = 4000,
+) -> tuple[float, float, float, float]:
+    """Independent discretized check of the PTLOSS2R2 coupled equations.
+
+    This test helper intentionally does not call any production interpolation,
+    area, or coupled-solver helper.  It numerically integrates the physical
+    branch equations on a dense grid and solves the two seating-compatibility
+    equations by bisection.
+    """
+
+    def f_left(s: float) -> float:
+        return fpj_mpa - left_gradient_mpa_per_m * s
+
+    def f_right(s: float) -> float:
+        return fpj_mpa - right_gradient_mpa_per_m * (length_m - s)
+
+    def f_initial(s: float) -> float:
+        return max(f_left(s), f_right(s))
+
+    def integrate(a: float, b: float, fn) -> float:
+        if b <= a:
+            return 0.0
+        steps = max(20, int(n_steps * (b - a) / length_m))
+        h = (b - a) / steps
+        total = 0.5 * (fn(a) + fn(b))
+        for i in range(1, steps):
+            total += fn(a + i * h)
+        return total * h
+
+    target_area = anchor_set_mm * ep_mpa / 1000.0
+
+    def solve_meeting_from_left(sn: float) -> float:
+        numerator = integrate(
+            0.0,
+            sn,
+            lambda s: f_initial(s) - f_left(sn) + f_left(s),
+        ) - target_area
+        return numerator / sn
+
+    def right_residual(sn: float) -> tuple[float, float]:
+        meeting = solve_meeting_from_left(sn)
+        area = integrate(
+            sn,
+            length_m,
+            lambda s: f_initial(s) - (meeting + f_right(sn) - f_right(s)),
+        )
+        return area - target_area, meeting
+
+    lo = 1.0e-6
+    hi = length_m - 1.0e-6
+    r_lo, _ = right_residual(lo)
+    r_hi, _ = right_residual(hi)
+    assert r_lo * r_hi <= 0.0
+    for _ in range(90):
+        mid = 0.5 * (lo + hi)
+        residual, _ = right_residual(mid)
+        if residual == 0.0:
+            lo = hi = mid
+            break
+        if r_lo * residual <= 0.0:
+            hi = mid
+            r_hi = residual
+        else:
+            lo = mid
+            r_lo = residual
+    sn = 0.5 * (lo + hi)
+    _, meeting = right_residual(sn)
+    final_left_anchor = meeting + f_left(sn) - f_left(0.0)
+    final_right_anchor = meeting + f_right(sn) - f_right(length_m)
+    left_loss = f_initial(0.0) - final_left_anchor
+    right_loss = f_initial(length_m) - final_right_anchor
+    return sn, meeting, left_loss, right_loss
 
 def test_ptloss2r1_linear_force_diagram_matches_closed_form_area_compatibility() -> None:
     end_rows = anchorage_set_end_rows(
@@ -387,6 +470,68 @@ def test_ptloss2r1_default_crossbeam_t1_left_six_mm_solves_full_path_without_fal
         for row in t1_rows
     )
 
+def test_ptloss2r3_equivalent_average_single_end_integrates_actual_station_distribution() -> None:
+    friction_rows = _linear_left_friction_rows()
+    end_rows = anchorage_set_end_rows(
+        friction_rows, length_m=20.0, anchor_set_mm=5.0, ep_mpa=200000.0
+    )
+    station_rows = anchorage_set_station_rows(friction_rows, end_rows, length_m=20.0)
+    summary = anchorage_set_equivalent_average_summary(
+        station_rows, end_rows, length_m=20.0
+    )
+    assert summary["status"] == "PASS"
+    assert summary["equivalent_average_loss_mpa"] == pytest.approx(50.0)
+    assert summary["expected_average_loss_mpa"] == pytest.approx(50.0)
+    assert summary["max_compatibility_residual_mpa"] == pytest.approx(0.0, abs=1.0e-9)
+    tendon = summary["tendon_rows"][0]
+    assert tendon["Equivalent average loss (MPa)"] == pytest.approx(50.0)
+    assert tendon["Equivalent average loss (%)"] == pytest.approx(100.0 * 50.0 / 1400.0)
+
+
+def test_ptloss2r3_equivalent_average_both_end_is_double_end_compatibility_average() -> None:
+    friction_rows = _linear_both_end_friction_rows()
+    end_rows = anchorage_set_end_rows(
+        friction_rows, length_m=20.0, anchor_set_mm=6.0, ep_mpa=200000.0
+    )
+    station_rows = anchorage_set_station_rows(friction_rows, end_rows, length_m=20.0)
+    summary = anchorage_set_equivalent_average_summary(
+        station_rows, end_rows, length_m=20.0
+    )
+    # Two simultaneous 6 mm seating movements over 20 m: Ep*(12/20000)=120 MPa.
+    assert summary["status"] == "PASS"
+    assert summary["equivalent_average_loss_mpa"] == pytest.approx(120.0)
+    assert summary["expected_average_loss_mpa"] == pytest.approx(120.0)
+    assert summary["equivalent_average_loss_percent"] == pytest.approx(100.0 * 120.0 / 1400.0)
+
+
+def test_ptloss2r3_independent_dense_grid_matches_asymmetric_simultaneous_both_end_solver() -> None:
+    left_gradient = 8.0
+    right_gradient = 12.0
+    friction_rows = _linear_asymmetric_both_end_friction_rows(
+        left_gradient_mpa_per_m=left_gradient,
+        right_gradient_mpa_per_m=right_gradient,
+    )
+    end_rows = anchorage_set_end_rows(
+        friction_rows, length_m=20.0, anchor_set_mm=6.0, ep_mpa=200000.0
+    )
+    independent = _independent_simultaneous_both_end_grid_solution(
+        length_m=20.0,
+        fpj_mpa=1400.0,
+        left_gradient_mpa_per_m=left_gradient,
+        right_gradient_mpa_per_m=right_gradient,
+        anchor_set_mm=6.0,
+        ep_mpa=200000.0,
+    )
+    sn, meeting, left_loss, right_loss = independent
+    by_end = {row["Seating end"]: row for row in end_rows}
+    assert by_end["Left"]["Interaction mode"] == "BOTH-END SIMULTANEOUS COUPLED"
+    assert float(by_end["Left"]["Neutral point s (m)"]) == pytest.approx(sn, abs=2.0e-4)
+    assert float(by_end["Left"]["Meeting stress after seating (MPa)"]) == pytest.approx(meeting, abs=2.0e-3)
+    assert float(by_end["Left"]["Anchorage-set loss at anchorage (MPa)"]) == pytest.approx(left_loss, abs=2.0e-3)
+    assert float(by_end["Right"]["Anchorage-set loss at anchorage (MPa)"]) == pytest.approx(right_loss, abs=2.0e-3)
+
+
+
 def test_ptloss2r2_default_crossbeam_both_end_tendons_solve_simultaneous_preview() -> None:
     system = default_tendon_system_rows()
     profile = default_tendon_profile_points(
@@ -445,13 +590,15 @@ def test_ptloss2r2_ui_exposes_single_and_simultaneous_both_end_methods_without_r
     anchorage_block = source.split("with anchorage_set_tab:", maxsplit=1)[1].split(
         "with elastic_shortening_tab:", maxsplit=1
     )[0]
-    assert "Anchorage Set / Draw-in — simultaneous both-end revalidation" in anchorage_block
+    assert "Anchorage Set / Draw-in — distribution-average QA closeout" in anchorage_block
     assert "SINGLE-END FRICTION-COUPLED" in source
     assert "Simultaneous both-end stressing / seating — PTLOSS2R2" in source
     assert "Jack = Both means simultaneous equal left/right stressing" in source
     assert "Tendon force profile — before / after anchorage seating" in anchorage_block
     assert "After Anchorage Set" in source
     assert "Affected length sₐ" in source
+    assert "Equivalent average anchor-set loss" in anchorage_block
+    assert "Selected tendon —" in anchorage_block
     assert "Pe and Pe_eff remain locked" in anchorage_block
 
 

@@ -1389,6 +1389,232 @@ def anchorage_set_station_rows(
         )
     return output
 
+
+def _trapezoid_area_mpa_m(points: list[tuple[float, float]]) -> float:
+    """Integrate a nonnegative piecewise-linear stress-loss diagram."""
+
+    cleaned: dict[float, float] = {}
+    for station_m, loss_mpa in points:
+        station = max(_float(station_m, 0.0), 0.0)
+        loss = max(_float(loss_mpa, 0.0), 0.0)
+        cleaned[round(station, 9)] = loss
+    ordered = [(station, cleaned[station]) for station in sorted(cleaned)]
+    return sum(
+        0.5 * (left_loss + right_loss) * max(right_s - left_s, 0.0)
+        for (left_s, left_loss), (right_s, right_loss) in zip(ordered, ordered[1:])
+    )
+
+
+def anchorage_set_equivalent_average_summary(
+    station_rows: Any,
+    end_rows: Any,
+    *,
+    length_m: float,
+) -> dict[str, Any]:
+    """Return distribution-equivalent average anchorage-set loss and QA trace.
+
+    PTLOSS2R3 keeps the station-specific post-seating force as the design-use
+    source of truth.  This helper only collapses the *calculated station-loss
+    distribution* to an equivalent average stress so the Crossbeam workflow can
+    be compared apples-to-apples with report/global-loss workflows such as the
+    Segmental Box Girder app.
+
+    The numerical integration uses the same member-station coordinate ``s`` that
+    the current Crossbeam prestress-loss solver uses for compatibility.  It is a
+    QA/summary quantity, not a replacement for local ``P(s)``.
+    """
+
+    length = max(_float(length_m, 0.0), 0.0)
+    stations = _records(station_rows)
+    ends = _records(end_rows)
+    if length <= 0.0:
+        return {
+            "status": "REVIEW REQUIRED",
+            "equivalent_average_loss_mpa": None,
+            "equivalent_average_loss_percent": None,
+            "expected_average_loss_mpa": None,
+            "max_compatibility_residual_mpa": None,
+            "calculated_tendon_count": 0,
+            "active_tendon_count": 0,
+            "tendon_rows": [],
+            "issue": "Positive member length is required for equivalent-average audit.",
+        }
+
+    end_by_tendon: dict[str, list[dict[str, Any]]] = {}
+    for row in ends:
+        if bool(row.get("Active")):
+            end_by_tendon.setdefault(str(row.get("Tendon ID") or ""), []).append(row)
+    station_by_tendon: dict[str, list[dict[str, Any]]] = {}
+    for row in stations:
+        tendon_id = str(row.get("Tendon ID") or "")
+        if tendon_id:
+            station_by_tendon.setdefault(tendon_id, []).append(row)
+
+    tendon_results: list[dict[str, Any]] = []
+    for tendon_id, tendon_ends in sorted(end_by_tendon.items()):
+        tendon_stations = sorted(
+            station_by_tendon.get(tendon_id, []),
+            key=lambda row: _float(row.get("s (m)"), 0.0),
+        )
+        valid_station_rows = [
+            row for row in tendon_stations if row.get("Anchorage-set loss (MPa)") is not None
+        ]
+        calculated_ends = [
+            row
+            for row in tendon_ends
+            if row.get("Anchorage-set loss at anchorage (MPa)") is not None
+            and str(row.get("Status") or "").startswith("PREVIEW READY")
+        ]
+        if not tendon_stations or len(valid_station_rows) != len(tendon_stations) or not calculated_ends:
+            tendon_results.append(
+                {
+                    "Tendon ID": tendon_id,
+                    "Status": "NOT CALCULATED",
+                    "Equivalent average loss (MPa)": None,
+                    "Expected compatibility average (MPa)": None,
+                    "Average residual (MPa)": None,
+                    "Equivalent average loss (%)": None,
+                    "Aps total (mm²)": max(
+                        (_float(row.get("Aps total (mm²)"), 0.0) for row in tendon_ends),
+                        default=0.0,
+                    ),
+                    "fpj (MPa)": max(
+                        (_float(row.get("fpj (MPa)"), 0.0) for row in tendon_ends),
+                        default=0.0,
+                    ),
+                    "Active seating ends": len(tendon_ends),
+                }
+            )
+            continue
+
+        loss_points = [
+            (
+                _float(row.get("s (m)"), 0.0),
+                _float(row.get("Anchorage-set loss (MPa)"), 0.0),
+            )
+            for row in valid_station_rows
+        ]
+
+        # Insert exact physical breakpoints that may lie between profile stations.
+        # Single-end/local modes decay to zero at the affected-zone boundary.
+        for end_row in calculated_ends:
+            mode = str(end_row.get("Interaction mode") or "")
+            affected = end_row.get("Affected length (m)")
+            end = str(end_row.get("Seating end") or "")
+            if affected is not None and "COUPLED" not in mode:
+                affected_value = min(max(_float(affected, 0.0), 0.0), length)
+                boundary_station = affected_value if end == "Left" else length - affected_value
+                if 1.0e-9 < boundary_station < length - 1.0e-9:
+                    loss_points.append((boundary_station, 0.0))
+
+        # Coupled both-end solutions may have a kink at the neutral station.
+        controlling = calculated_ends[0]
+        neutral = controlling.get("Neutral point s (m)")
+        neutral_loss = controlling.get("Neutral-region anchorage-set loss (MPa)")
+        if neutral is not None and neutral_loss is not None:
+            loss_points.append((_float(neutral, 0.0), _float(neutral_loss, 0.0)))
+
+        # Ensure the integration domain is explicitly closed at both member ends.
+        by_station = {round(s, 9): loss for s, loss in loss_points}
+        if round(0.0, 9) not in by_station or round(length, 9) not in by_station:
+            tendon_results.append(
+                {
+                    "Tendon ID": tendon_id,
+                    "Status": "REVIEW REQUIRED",
+                    "Equivalent average loss (MPa)": None,
+                    "Expected compatibility average (MPa)": None,
+                    "Average residual (MPa)": None,
+                    "Equivalent average loss (%)": None,
+                    "Aps total (mm²)": _float(controlling.get("Aps total (mm²)"), 0.0),
+                    "fpj (MPa)": _float(controlling.get("fpj (MPa)"), 0.0),
+                    "Active seating ends": len(tendon_ends),
+                    "Issue": "Station trace must include both member ends for equivalent-average audit.",
+                }
+            )
+            continue
+
+        area_mpa_m = _trapezoid_area_mpa_m(loss_points)
+        average_mpa = area_mpa_m / length
+        ep = _float(controlling.get("Ep (MPa)"), DEFAULT_PRESTRESS_STEEL_EP_MPA)
+        adopted_set = _float(controlling.get("Anchorage set (mm)"), 0.0)
+        active_end_count = len(calculated_ends)
+        expected_area_mpa_m = ep * adopted_set * active_end_count / 1000.0
+        expected_average_mpa = expected_area_mpa_m / length
+        residual_mpa = average_mpa - expected_average_mpa
+        fpj = _float(controlling.get("fpj (MPa)"), 0.0)
+        percent = 100.0 * average_mpa / fpj if fpj > 0.0 else None
+        tolerance_mpa = max(0.05, 0.001 * max(expected_average_mpa, 1.0))
+        status = "PASS" if abs(residual_mpa) <= tolerance_mpa else "REVIEW REQUIRED"
+        tendon_results.append(
+            {
+                "Tendon ID": tendon_id,
+                "Status": status,
+                "Equivalent average loss (MPa)": average_mpa,
+                "Expected compatibility average (MPa)": expected_average_mpa,
+                "Average residual (MPa)": residual_mpa,
+                "Equivalent average loss (%)": percent,
+                "Integrated loss area (MPa·m)": area_mpa_m,
+                "Expected compatibility area (MPa·m)": expected_area_mpa_m,
+                "Aps total (mm²)": _float(controlling.get("Aps total (mm²)"), 0.0),
+                "fpj (MPa)": fpj,
+                "Active seating ends": active_end_count,
+                "Mode": str(controlling.get("Interaction mode") or ""),
+            }
+        )
+
+    calculated = [
+        row for row in tendon_results if row.get("Equivalent average loss (MPa)") is not None
+    ]
+    total_area = sum(max(_float(row.get("Aps total (mm²)"), 0.0), 0.0) for row in calculated)
+    if total_area <= 0.0 or not calculated:
+        return {
+            "status": "REVIEW REQUIRED",
+            "equivalent_average_loss_mpa": None,
+            "equivalent_average_loss_percent": None,
+            "expected_average_loss_mpa": None,
+            "max_compatibility_residual_mpa": None,
+            "calculated_tendon_count": len(calculated),
+            "active_tendon_count": len(end_by_tendon),
+            "tendon_rows": tendon_results,
+            "issue": "No complete station-distribution result is available for equivalent-average audit.",
+        }
+
+    weighted_loss = sum(
+        _float(row.get("Aps total (mm²)"), 0.0)
+        * _float(row.get("Equivalent average loss (MPa)"), 0.0)
+        for row in calculated
+    ) / total_area
+    weighted_expected = sum(
+        _float(row.get("Aps total (mm²)"), 0.0)
+        * _float(row.get("Expected compatibility average (MPa)"), 0.0)
+        for row in calculated
+    ) / total_area
+    weighted_fpj = sum(
+        _float(row.get("Aps total (mm²)"), 0.0) * _float(row.get("fpj (MPa)"), 0.0)
+        for row in calculated
+    ) / total_area
+    percent = 100.0 * weighted_loss / weighted_fpj if weighted_fpj > 0.0 else None
+    max_residual = max(
+        (abs(_float(row.get("Average residual (MPa)"), 0.0)) for row in calculated),
+        default=0.0,
+    )
+    all_pass = (
+        len(calculated) == len(end_by_tendon)
+        and all(str(row.get("Status")) == "PASS" for row in calculated)
+    )
+    return {
+        "status": "PASS" if all_pass else "REVIEW REQUIRED",
+        "equivalent_average_loss_mpa": weighted_loss,
+        "equivalent_average_loss_percent": percent,
+        "expected_average_loss_mpa": weighted_expected,
+        "max_compatibility_residual_mpa": max_residual,
+        "calculated_tendon_count": len(calculated),
+        "active_tendon_count": len(end_by_tendon),
+        "tendon_rows": tendon_results,
+        "issue": "" if all_pass else "One or more tendon equivalent-average audits require review.",
+    }
+
+
 def anchorage_set_summary(end_rows: Any) -> dict[str, Any]:
     """Return dashboard values for the active PTLOSS2R2 anchorage-set methodology."""
 
