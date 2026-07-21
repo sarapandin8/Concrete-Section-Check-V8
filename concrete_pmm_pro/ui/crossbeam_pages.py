@@ -4548,6 +4548,20 @@ def _anchorage_decision_rows(
                     if rows
                     else None
                 ),
+                "Mode": str(rows[0].get("Interaction mode") or "") if rows else "",
+                "Max isolated Δa (mm)": (
+                    None
+                    if not rows
+                    else round(
+                        max(float(row.get("Max compatible set (mm)") or 0.0) for row in rows),
+                        3,
+                    )
+                ),
+                "Neutral s (m)": (
+                    None
+                    if not rows or rows[0].get("Neutral point s (m)") is None
+                    else round(float(rows[0].get("Neutral point s (m)") or 0.0), 4)
+                ),
                 "Max loss (%)": (
                     None
                     if not calculated
@@ -4597,26 +4611,37 @@ def _anchorage_decision_rows(
 def _render_anchorage_formula_unit_audit(
     end_rows: list[dict[str, Any]],
 ) -> None:
-    calculated = [
+    local_calculated = [
         row
         for row in end_rows
-        if row.get("Influence length (m)") is not None
+        if str(row.get("Interaction mode") or "") != "FULL-LENGTH COUPLED"
+        and row.get("Influence length (m)") is not None
         and row.get("Mirrored stress-difference area (MPa·m)") is not None
+    ]
+    coupled_calculated = [
+        row
+        for row in end_rows
+        if str(row.get("Interaction mode") or "") == "FULL-LENGTH COUPLED"
+        and row.get("Neutral point s (m)") is not None
+        and row.get("Meeting stress after seating (MPa)") is not None
     ]
     with st.expander("Formula, source & SI unit audit", expanded=False):
         st.markdown("**Code / technical basis**")
         st.write(
-            "- AASHTO LRFD recognizes anchorage seating/set as an "
-            "instantaneous post-tensioning loss component."
+            "- Structural design code in the active workflow: ACI 318-19."
         )
-        st.write(f"- Implementation method: {ANCHORAGE_SET_METHOD_BASIS}.")
         st.write(
-            "- The compatibility-area / mirrored-diagram equation below is "
-            "the implemented engineering method; it is not presented as a "
-            "verbatim AASHTO numbered equation."
+            "- Prestress-loss framework: AASHTO LRFD recognizes anchorage seating/set "
+            "as an instantaneous post-tensioning loss component."
+        )
+        st.write(f"- Base numerical method: {ANCHORAGE_SET_METHOD_BASIS}.")
+        st.write(
+            "- PTLOSS2C full-length both-end interaction is an engineering implementation "
+            "extension of the FHWA graphical mirror-image/area-compatibility method; it is "
+            "not presented as a verbatim AASHTO numbered equation."
         )
 
-        st.markdown("**Compatibility equation implemented by PTLOSS2**")
+        st.markdown("**A. Isolated local mirror solution**")
         st.latex(
             r"\Delta a=\frac{1000}{E_p}\int_0^{L_a}"
             r"[f_{before}(x)-f_{after}(x)]\,dx"
@@ -4630,118 +4655,161 @@ def _render_anchorage_formula_unit_audit(
             r"\int_0^{L_a}f_{before}(x)\,dx-L_a f_{before}(L_a)\right]"
         )
         st.caption(
-            "The factor 1000 converts metres in the integration coordinate to "
-            "millimetres so Δa is returned in mm when stress and Ep are in MPa."
+            "This local solution is used only while the zero-movement influence length "
+            "stays inside the independent seating branch."
+        )
+
+        st.markdown("**B. PTLOSS2C coupled full-length both-end interaction**")
+        st.latex(
+            r"f_{after,L}(s)=f_n+f_L(s_n)-f_L(s),\quad 0\le s\le s_n"
+        )
+        st.latex(
+            r"f_{after,R}(s)=f_n+f_R(s_n)-f_R(s),\quad s_n\le s\le L"
+        )
+        st.latex(
+            r"\Delta a_L=\frac{1000}{E_p}\int_0^{s_n}"
+            r"[f_i(s)-f_{after,L}(s)]\,ds"
+        )
+        st.latex(
+            r"\Delta a_R=\frac{1000}{E_p}\int_{s_n}^{L}"
+            r"[f_i(s)-f_{after,R}(s)]\,ds"
+        )
+        st.latex(
+            r"f_{after,L}(s_n)=f_{after,R}(s_n)=f_n"
+        )
+        st.caption(
+            "The solver finds the zero-displacement neutral station s_n and common meeting "
+            "stress f_n so left and right seating compatibility close simultaneously. The "
+            "accepted PTLOSS1 post-friction diagram f_i is not changed by this calculation."
         )
 
         st.markdown("**SI dimensional audit**")
         st.dataframe(
             pd.DataFrame(
                 [
-                    {
-                        "Variable": "Δa",
-                        "Meaning": "Anchorage set / draw-in",
-                        "App unit": "mm",
-                    },
-                    {
-                        "Variable": "Ep",
-                        "Meaning": "Prestressing-steel elastic modulus",
-                        "App unit": "MPa = N/mm²",
-                    },
-                    {
-                        "Variable": "f",
-                        "Meaning": "Tendon stress",
-                        "App unit": "MPa = N/mm²",
-                    },
-                    {
-                        "Variable": "x, La",
-                        "Meaning": "Integration coordinate / influence length",
-                        "App unit": (
-                            "m in geometry; ×1000 to mm in compatibility"
-                        ),
-                    },
-                    {
-                        "Variable": "Aps",
-                        "Meaning": "Prestressing steel area",
-                        "App unit": "mm²",
-                    },
-                    {
-                        "Variable": "P",
-                        "Meaning": "Tendon force",
-                        "App unit": "kN; Aps×f/1000",
-                    },
+                    {"Variable": "Δa", "Meaning": "Anchorage set / draw-in", "App unit": "mm"},
+                    {"Variable": "Ep", "Meaning": "Prestressing-steel elastic modulus", "App unit": "MPa = N/mm²"},
+                    {"Variable": "f", "Meaning": "Tendon stress", "App unit": "MPa = N/mm²"},
+                    {"Variable": "s, x, La", "Meaning": "Integration coordinate / influence length", "App unit": "m in geometry; ×1000 to mm in compatibility"},
+                    {"Variable": "Aps", "Meaning": "Prestressing steel area", "App unit": "mm²"},
+                    {"Variable": "P", "Meaning": "Tendon force", "App unit": "kN; Aps×f/1000"},
                 ]
             ),
             use_container_width=True,
             hide_index=True,
         )
         st.success(
-            "PASS — (MPa·m / MPa) × 1000 mm/m = mm for anchorage movement "
-            "compatibility."
+            "PASS — (MPa·m / MPa) × 1000 mm/m = mm for anchorage movement compatibility."
         )
         st.success(
             "PASS — Aps(mm²) × f(MPa=N/mm²) / 1000 = tendon force in kN."
         )
 
-        if not calculated:
+        if coupled_calculated:
+            governing = max(
+                coupled_calculated,
+                key=lambda row: float(row.get("Anchorage-set loss at anchorage (%)") or 0.0),
+            )
+            adopted = float(governing.get("Anchorage set (mm)") or 0.0)
+            neutral = float(governing.get("Neutral point s (m)") or 0.0)
+            meeting = float(governing.get("Meeting stress after seating (MPa)") or 0.0)
+            initial_neutral = float(governing.get("Neutral-point initial stress (MPa)") or 0.0)
+            left_rows = [
+                row for row in coupled_calculated if row.get("Tendon ID") == governing.get("Tendon ID") and row.get("Seating end") == "Left"
+            ]
+            right_rows = [
+                row for row in coupled_calculated if row.get("Tendon ID") == governing.get("Tendon ID") and row.get("Seating end") == "Right"
+            ]
+            left = left_rows[0] if left_rows else governing
+            right = right_rows[0] if right_rows else governing
+            left_check = float(left.get("Compatibility set check (mm)") or 0.0)
+            right_check = float(right.get("Compatibility set check (mm)") or 0.0)
+            left_residual = float(left.get("Compatibility residual (mm)") or 0.0)
+            right_residual = float(right.get("Compatibility residual (mm)") or 0.0)
+            continuity = float(governing.get("Force continuity residual (MPa)") or 0.0)
+            max_gain = float(governing.get("Max stress gain check (MPa)") or 0.0)
+            min_final = float(governing.get("Minimum final stress check (MPa)") or 0.0)
+            st.markdown("**Governing coupled substituted-value audit**")
+            st.write(
+                f"Tendon **{governing.get('Tendon ID')}**: adopted Δa = {adopted:.3f} mm "
+                f"at both ends; solved neutral station s_n = {neutral:.4f} m."
+            )
+            st.write(
+                f"Initial stress at neutral station = {initial_neutral:.3f} MPa; "
+                f"final meeting stress f_n = {meeting:.3f} MPa."
+            )
+            st.write(
+                f"Left Δa_calc = {left_check:.6f} mm (residual {left_residual:.6g} mm); "
+                f"Right Δa_calc = {right_check:.6f} mm (residual {right_residual:.6g} mm)."
+            )
+            st.write(
+                f"Force-continuity residual = {continuity:.6g} MPa; maximum stress gain above "
+                f"accepted post-friction diagram = {max_gain:.6g} MPa; minimum final tendon "
+                f"stress = {min_final:.3f} MPa."
+            )
+            tolerance = max(1.0e-5, abs(adopted) * 1.0e-5)
+            if (
+                abs(left_residual) <= tolerance
+                and abs(right_residual) <= tolerance
+                and abs(continuity) <= 1.0e-5
+                and max_gain <= 1.0e-5
+                and min_final >= -1.0e-5
+            ):
+                st.success(
+                    "PASS — coupled left/right seating compatibility, force continuity, "
+                    "nonnegative-stress, and no-stress-gain checks all close within tolerance."
+                )
+            else:
+                st.warning(
+                    "REVIEW — one or more coupled full-length QA checks exceed tolerance."
+                )
+            return
+
+        if not local_calculated:
             st.info(
-                "No valid seating-end solution is available for substituted-value "
-                "audit. Resolve input/review conditions first."
+                "No valid seating solution is available for substituted-value audit. "
+                "Resolve input/review conditions first."
             )
             return
 
         governing = max(
-            calculated,
-            key=lambda row: float(
-                row.get("Anchorage-set loss at anchorage (%)") or 0.0
-            ),
+            local_calculated,
+            key=lambda row: float(row.get("Anchorage-set loss at anchorage (%)") or 0.0),
         )
         adopted = float(governing.get("Anchorage set (mm)") or 0.0)
         ep = float(governing.get("Ep (MPa)") or 0.0)
         la = float(governing.get("Influence length (m)") or 0.0)
-        integral = float(
-            governing.get("Stress integral to La (MPa·m)") or 0.0
-        )
+        integral = float(governing.get("Stress integral to La (MPa·m)") or 0.0)
         fzero = float(governing.get("Zero movement stress (MPa)") or 0.0)
-        one_side = float(
-            governing.get("One-side stress area (MPa·m)") or 0.0
-        )
-        mirrored = float(
-            governing.get("Mirrored stress-difference area (MPa·m)") or 0.0
-        )
+        one_side = float(governing.get("One-side stress area (MPa·m)") or 0.0)
+        mirrored = float(governing.get("Mirrored stress-difference area (MPa·m)") or 0.0)
         check = float(governing.get("Compatibility set check (mm)") or 0.0)
         residual = float(governing.get("Compatibility residual (mm)") or 0.0)
-        st.markdown("**Governing substituted-value audit**")
+        st.markdown("**Governing isolated substituted-value audit**")
         st.write(
-            f"Tendon **{governing.get('Tendon ID')}**, seating end "
-            f"**{governing.get('Seating end')}**: Δa = {adopted:.3f} mm, "
-            f"Ep = {ep:.0f} MPa, La = {la:.4f} m."
+            f"Tendon **{governing.get('Tendon ID')}**, seating end **{governing.get('Seating end')}**: "
+            f"Δa = {adopted:.3f} mm, Ep = {ep:.0f} MPa, La = {la:.4f} m."
         )
         st.latex(
-            rf"\int_0^{{L_a}} f_{{before}}(x)\,dx="
-            rf"{integral:.6f}\ \mathrm{{MPa\cdot m}}"
+            rf"\int_0^{{L_a}} f_{{before}}(x)\,dx={integral:.6f}\ \mathrm{{MPa\cdot m}}"
         )
         st.latex(
-            rf"A_1={integral:.6f}-({la:.6f})({fzero:.6f})="
-            rf"{one_side:.6f}\ \mathrm{{MPa\cdot m}}"
+            rf"A_1={integral:.6f}-({la:.6f})({fzero:.6f})={one_side:.6f}\ \mathrm{{MPa\cdot m}}"
         )
         st.latex(
             rf"\Delta a_{{calc}}=\frac{{1000(2A_1)}}{{E_p}}="
-            rf"\frac{{1000({mirrored:.6f})}}{{{ep:.3f}}}="
-            rf"{check:.6f}\ \mathrm{{mm}}"
+            rf"\frac{{1000({mirrored:.6f})}}{{{ep:.3f}}}={check:.6f}\ \mathrm{{mm}}"
         )
         tolerance = max(1.0e-5, abs(adopted) * 1.0e-5)
         if abs(check - adopted) <= tolerance and abs(residual) <= tolerance:
             st.success(
-                f"PASS — compatibility closes to the adopted Δa; residual = "
-                f"{residual:.6g} mm."
+                f"PASS — compatibility closes to the adopted Δa; residual = {residual:.6g} mm."
             )
         else:
             st.warning(
-                f"REVIEW — compatibility residual = {residual:.6g} mm; check "
-                "branch limits and solver assumptions."
+                f"REVIEW — compatibility residual = {residual:.6g} mm; check branch limits "
+                "and solver assumptions."
             )
-
 
 def render_crossbeam_prestress_loss_page() -> None:
     _ensure_state()
@@ -4755,7 +4823,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "PTLOSS2 keeps the component-scoped subtabs and activates an isolated anchorage-set/draw-in compatibility preview downstream of the accepted friction/wobble force diagram. Pe/Pe_eff and later losses remain locked.",
+        "PTLOSS2C keeps the component-scoped subtabs and adds guarded full-length both-end anchorage-seating interaction when independent local branches overlap. Pe/Pe_eff and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -5058,7 +5126,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
 
     with anchorage_set_tab:
-        st.markdown("#### Anchorage Set / Draw-in — isolated preview")
+        st.markdown("#### Anchorage Set / Draw-in — interaction preview")
         _render_crossbeam_anchorage_set_assumptions()
         anchorage_end_rows = current_anchorage_end_rows
         anchorage_summary = current_anchorage_summary
@@ -5079,7 +5147,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Component status",
                     "value": str(anchorage_summary["value"]),
-                    "detail": "isolated anchorage-set preview only",
+                    "detail": "component-scoped anchorage-set interaction preview",
                     "status": str(anchorage_summary["status"]),
                 },
                 {
@@ -5098,7 +5166,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                         f"{int(anchorage_summary['calculated_end_count'])}/"
                         f"{int(anchorage_summary['active_seating_end_count'])}"
                     ),
-                    "detail": "valid influence-length solution",
+                    "detail": "valid local/coupled seating solution",
                     "status": "ready" if all_active_ends_calculated else "warning",
                 },
                 {
@@ -5123,7 +5191,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                         else "—"
                     ),
                     "detail": (
-                        "zero-movement distance preview"
+                        "seating influence / neutral-point distance"
                         if has_calculated_ends
                         else "NOT CALCULATED"
                     ),
@@ -5166,6 +5234,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                             "Type": row["Type"],
                             "Jack": row["Jacking end"],
                             "Seat end": row["Seating end"],
+                            "Mode": row.get("Interaction mode", ""),
                             "Δa (mm)": round(row["Anchorage set (mm)"], 3),
                             "Ep (MPa)": round(row["Ep (MPa)"], 0),
                             "Branch (m)": round(row["Branch limit (m)"], 4),
@@ -5199,6 +5268,14 @@ def render_crossbeam_prestress_loss_page() -> None:
                                     row["Anchorage-set loss at anchorage (%)"], 3
                                 )
                             ),
+                            "Neutral s (m)": (
+                                None if row.get("Neutral point s (m)") is None
+                                else round(float(row.get("Neutral point s (m)") or 0.0), 4)
+                            ),
+                            "f meet (MPa)": (
+                                None if row.get("Meeting stress after seating (MPa)") is None
+                                else round(float(row.get("Meeting stress after seating (MPa)") or 0.0), 2)
+                            ),
                             "Residual (mm)": round(
                                 row["Compatibility residual (mm)"], 6
                             ),
@@ -5224,7 +5301,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         ]
         if calculated_station_rows:
             with st.expander(
-                "Detailed station trace after isolated anchorage set",
+                "Detailed station trace after anchorage-set interaction",
                 expanded=False,
             ):
                 st.dataframe(
@@ -5325,9 +5402,15 @@ def render_crossbeam_prestress_loss_page() -> None:
                 "diagram about the zero-movement point; no fixed percentage loss is used."
             )
             st.write(
-                "- Both-end jacking is only accepted as independent local seating "
-                "branches while the solved influence zones remain inside their half-length "
-                "branches; overlap requires a later stressing-sequence solver."
+                "- Both-end jacking first uses independent local seating branches. If the adopted "
+                "draw-in exceeds a half-length branch capacity, PTLOSS2C attempts a coupled "
+                "full-length neutral-station compatibility solution using the accepted left/right "
+                "jacking branch traces."
+            )
+            st.write(
+                "- For coupled both-end preview, the same adopted Δa is applied at both ends "
+                "and solved as a final-state compatibility interaction. Explicit first-end/"
+                "second-end stressing and seating sequence is not modeled in PTLOSS2C."
             )
             st.write(
                 "- One-end jacking currently models final seating at the active stressing "
@@ -5335,7 +5418,8 @@ def render_crossbeam_prestress_loss_page() -> None:
                 "project/PT procedure review item."
             )
             st.write(
-                "- P after anchorage set is component-scoped audit output only. Pe and "
+                "- The coupled solution is a guarded engineering implementation extension, not a verbatim "
+                "AASHTO numbered equation. P after anchorage set is component-scoped audit output only. Pe and "
                 "Pe_eff remain locked."
             )
 

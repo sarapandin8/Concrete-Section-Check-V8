@@ -17,6 +17,11 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     default_crossbeam_prestress_loss_settings,
     crossbeam_prestress_loss_settings_from_session_state,
     restore_crossbeam_prestress_loss_project_state,
+    aashto_friction_wobble_station_rows,
+)
+from concrete_pmm_pro.crossbeam.tendon import (
+    default_tendon_profile_points,
+    default_tendon_system_rows,
 )
 
 
@@ -211,12 +216,15 @@ def test_ptloss2_ui_activates_anchorage_subtab_without_releasing_pe_eff() -> Non
         "with elastic_shortening_tab:", maxsplit=1
     )[0]
 
-    assert "Anchorage Set / Draw-in — isolated preview" in anchorage_block
+    assert "Anchorage Set / Draw-in — interaction preview" in anchorage_block
     assert "Adopted anchorage set Δa (mm)" in source
     assert "Detailed seating-end compatibility audit" in anchorage_block
     assert "P after anchor set (kN)" in anchorage_block
     assert "Anchorage-set decision summary" in anchorage_block
     assert "Formula, source & SI unit audit" in source
+    assert "PTLOSS2C coupled full-length both-end interaction" in source
+    assert "Neutral point s (m)" in source
+    assert "Explicit first-end/" in anchorage_block and "second-end stressing" in anchorage_block
     assert "design assumption — verify PT supplier" in anchorage_block
     assert "Pe and " in anchorage_block and "Pe_eff remain locked" in anchorage_block
     assert "Guarded future component — no anchorage-set loss is calculated in PTLOSS1G." not in source
@@ -264,3 +272,137 @@ def test_ptloss2_ui_loss_defaults_use_valid_session_state_get_arity_and_include_
         "anchorage_set_mm",
         "ep_mpa",
     }.issubset(dict_keys)
+
+
+def _ptloss2c_symmetric_full_branch_rows() -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for station_m in (0.0, 5.0, 10.0, 15.0, 20.0):
+        left_stress = 1400.0 - 10.0 * station_m
+        right_stress = 1400.0 - 10.0 * (20.0 - station_m)
+        use_left = station_m <= 10.0
+        accepted = left_stress if use_left else right_stress
+        rows.append(
+            {
+                "Tendon ID": "T1",
+                "Active": True,
+                "Type": "Internal",
+                "Jacking end": "Both",
+                "Source end": "Left (nearest)" if use_left else "Right (nearest)",
+                "Point": f"P{int(station_m)}",
+                "s (m)": station_m,
+                "x from jack (m)": station_m if use_left else 20.0 - station_m,
+                "K (/m)": 0.0,
+                "Aps total (mm²)": 1000.0,
+                "fpj (MPa)": 1400.0,
+                "Pj (kN)": 1400.0,
+                "Stress after friction (MPa)": accepted,
+                "P after friction (kN)": accepted,
+                "Stress from left jack (MPa)": left_stress,
+                "Stress from right jack (MPa)": right_stress,
+                "Status": "LOSS READY",
+                "Blocking issue": "",
+                "Review note": "",
+            }
+        )
+    return rows
+
+
+def test_ptloss2c_full_length_both_end_overlap_closes_symmetric_hand_solution() -> None:
+    # Each isolated 10 m half can accommodate only 5 mm. With 6 mm adopted at
+    # each end, the coupled full-length solution has a zero-displacement point
+    # at midspan and a uniform 20 MPa additional stress drop at that point.
+    rows = anchorage_set_end_rows(
+        _ptloss2c_symmetric_full_branch_rows(),
+        length_m=20.0,
+        anchor_set_mm=6.0,
+        ep_mpa=200000.0,
+    )
+
+    assert len(rows) == 2
+    assert {row["Seating end"] for row in rows} == {"Left", "Right"}
+    for row in rows:
+        assert row["Status"] == "PREVIEW READY + NOTE"
+        assert row["Interaction mode"] == "FULL-LENGTH COUPLED"
+        assert row["Max compatible set (mm)"] == pytest.approx(5.0)
+        assert row["Neutral point s (m)"] == pytest.approx(10.0, abs=1.0e-7)
+        assert row["Meeting stress after seating (MPa)"] == pytest.approx(1280.0)
+        assert row["Lock-off stress at anchorage (MPa)"] == pytest.approx(1180.0)
+        assert row["Anchorage-set loss at anchorage (MPa)"] == pytest.approx(220.0)
+        assert row["Compatibility set check (mm)"] == pytest.approx(6.0)
+        assert abs(row["Compatibility residual (mm)"]) < 1.0e-8
+        assert abs(row["Force continuity residual (MPa)"]) < 1.0e-8
+        assert row["Max stress gain check (MPa)"] <= 1.0e-8
+        assert row["Minimum final stress check (MPa)"] == pytest.approx(1180.0)
+
+
+def test_ptloss2c_full_length_station_trace_uses_coupled_final_force_profile() -> None:
+    friction_rows = _ptloss2c_symmetric_full_branch_rows()
+    end_rows = anchorage_set_end_rows(
+        friction_rows,
+        length_m=20.0,
+        anchor_set_mm=6.0,
+        ep_mpa=200000.0,
+    )
+    station_rows = anchorage_set_station_rows(friction_rows, end_rows, length_m=20.0)
+    by_station = {float(row["s (m)"]): row for row in station_rows}
+
+    assert by_station[0.0]["P after anchorage set (kN)"] == pytest.approx(1180.0)
+    assert by_station[5.0]["P after anchorage set (kN)"] == pytest.approx(1230.0)
+    assert by_station[10.0]["P after anchorage set (kN)"] == pytest.approx(1280.0)
+    assert by_station[15.0]["P after anchorage set (kN)"] == pytest.approx(1230.0)
+    assert by_station[20.0]["P after anchorage set (kN)"] == pytest.approx(1180.0)
+    assert all(row["Anchorage set applied"] for row in station_rows)
+
+
+def test_ptloss2c_overlap_without_full_left_right_branch_trace_stays_review() -> None:
+    rows = anchorage_set_end_rows(
+        _linear_both_end_friction_rows(),
+        length_m=20.0,
+        anchor_set_mm=6.0,
+        ep_mpa=200000.0,
+    )
+    assert all(row["Status"] == "REVIEW REQUIRED" for row in rows)
+    assert all(row["Interaction mode"] == "ISOLATED LOCAL" for row in rows)
+    assert any("Full left/right jacking branch traces are incomplete" in row["Blocking issue"] for row in rows)
+
+
+def test_ptloss2c_coupled_solution_rejects_negative_final_tendon_stress() -> None:
+    rows = anchorage_set_end_rows(
+        _ptloss2c_symmetric_full_branch_rows(),
+        length_m=20.0,
+        anchor_set_mm=70.0,
+        ep_mpa=200000.0,
+    )
+    assert all(row["Status"] == "REVIEW REQUIRED" for row in rows)
+    assert any("negative tendon stress" in row["Blocking issue"] for row in rows)
+
+
+def test_ptloss2c_default_crossbeam_six_mm_solves_all_both_end_seating_ends() -> None:
+    system = default_tendon_system_rows()
+    profile = default_tendon_profile_points(
+        20.0,
+        tendon_ids=[row["Tendon ID"] for row in system],
+        width_mm=2500.0,
+        height_mm=1500.0,
+    )
+    friction_rows = aashto_friction_wobble_station_rows(
+        profile,
+        system,
+        length_m=20.0,
+    )
+    end_rows = anchorage_set_end_rows(
+        friction_rows,
+        length_m=20.0,
+        anchor_set_mm=6.0,
+        ep_mpa=195000.0,
+    )
+    summary = anchorage_set_summary(end_rows)
+
+    assert len(end_rows) == 16
+    assert summary["calculated_end_count"] == 16
+    assert summary["review_end_count"] == 0
+    assert all(row["Status"] == "PREVIEW READY + NOTE" for row in end_rows)
+    assert all(row["Interaction mode"] == "FULL-LENGTH COUPLED" for row in end_rows)
+    assert all(abs(float(row["Compatibility residual (mm)"])) < 1.0e-8 for row in end_rows)
+    assert all(float(row["Max stress gain check (MPa)"]) <= 1.0e-8 for row in end_rows)
+    assert all(float(row["Minimum final stress check (MPa)"]) > 0.0 for row in end_rows)

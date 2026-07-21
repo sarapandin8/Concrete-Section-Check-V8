@@ -1,3 +1,7 @@
+### CROSSBEAM.PTLOSS2C - Full-Length Both-End Anchorage Seating Interaction
+
+Adds a guarded full-length coupled both-end anchorage-seating compatibility preview when independent half-length branches are insufficient, using accepted PTLOSS1 left/right jacking traces while keeping explicit stressing sequence and `Pe / Pe_eff` locked. See `README_CROSSBEAM_PTLOSS2C.md`.
+
 ### CROSSBEAM.PTLOSS2B - Anchorage Set Decision View + Formula & SI Unit Audit
 
 Adds a 6.00 mm user-editable anchorage-set design-assumption default, a cleaner Anchorage Set decision view, and transparent friction/wobble plus draw-in formula/SI-unit audits without changing accepted solver equations or releasing `Pe / Pe_eff`. See `README_CROSSBEAM_PTLOSS2B.md`.

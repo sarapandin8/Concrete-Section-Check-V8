@@ -300,9 +300,31 @@ def test_ptloss1g_component_subtabs_are_scoped_and_future_losses_are_guarded() -
     assert '"Elastic Shortening",' in source
     assert '"Time-Dependent",' in source
     assert '"Audit",' in source
-    assert "Anchorage Set / Draw-in — isolated preview" in source
+    assert "Anchorage Set / Draw-in — interaction preview" in source
     assert "Guarded future component — no elastic-shortening loss is calculated in PTLOSS1G." in source
     assert "Guarded future component — creep, shrinkage, and relaxation are not calculated in PTLOSS1G." in source
     assert '"Pe / Pe_eff assembly"' in source
     assert '"Current state": "LOCKED — not certified"' in source
     assert "PTLOSS1G changes workspace organization only." in source
+
+
+def test_ptloss2c_both_end_friction_rows_expose_full_left_right_branch_traces_without_changing_accepted_force() -> None:
+    rows = aashto_friction_wobble_station_rows(
+        _straight_profile(),
+        _system_row(jacking_end="Both"),
+        length_m=20.0,
+        internal_mu=0.20,
+        internal_k_per_m=0.001,
+    )
+    by_point = {row["Point"]: row for row in rows}
+    midpoint = by_point["P2"]
+    right_anchor = by_point["P3"]
+
+    assert midpoint["Stress from left jack (MPa)"] == pytest.approx(
+        midpoint["Stress from right jack (MPa)"]
+    )
+    assert right_anchor["Stress after friction (MPa)"] == pytest.approx(
+        right_anchor["Stress from right jack (MPa)"]
+    )
+    assert right_anchor["Stress from left jack (MPa)"] < right_anchor["Stress after friction (MPa)"]
+    assert right_anchor["P after friction (kN)"] == pytest.approx(right_anchor["Pj (kN)"])

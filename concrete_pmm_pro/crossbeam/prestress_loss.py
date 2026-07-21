@@ -437,12 +437,14 @@ def aashto_friction_wobble_station_rows(
         for point in points:
             station_m = min(max(_float(point.get("s (m)"), 0.0), 0.0), length)
             key = (str(point.get("Point") or ""), round(station_m, 9))
+            left_angles_at_point = left_lookup.get(key, {})
+            right_angles_at_point = right_lookup.get(key, {})
             source_end, x_from_jack_m, angles = _source_end_values(
                 jacking_end=jacking_end,
                 station_m=station_m,
                 length_m=length,
-                left_angles=left_lookup.get(key, {}),
-                right_angles=right_lookup.get(key, {}),
+                left_angles=left_angles_at_point,
+                right_angles=right_angles_at_point,
             )
             alpha_v = _float(angles.get("alpha_v_rad"), 0.0)
             alpha_h = _float(angles.get("alpha_h_rad"), 0.0)
@@ -488,6 +490,50 @@ def aashto_friction_wobble_station_rows(
             f_after_mpa = max(fpj_mpa - loss_mpa, 0.0)
             p_after_kn = aps_total * f_after_mpa / 1000.0
             loss_kn = max(pj_kn - p_after_kn, 0.0)
+
+            # PTLOSS2C branch traces are additive audit/source fields only. They
+            # do not change the accepted PTLOSS1 nearest-jacking-end force. The
+            # full left/right traces are needed only when a both-end anchorage
+            # seating interaction extends beyond the independent half-length
+            # branches.
+            left_alpha_total = _float(left_angles_at_point.get("alpha_total_rad"), 0.0)
+            right_alpha_total = _float(right_angles_at_point.get("alpha_total_rad"), 0.0)
+            left_deviators = int(
+                round(_float(left_angles_at_point.get("deviator_count"), 0.0))
+            )
+            right_deviators = int(
+                round(_float(right_angles_at_point.get("deviator_count"), 0.0))
+            )
+            if tendon_type == "External":
+                left_branch_exponent = mu_external * (
+                    left_alpha_total + inadvertent * left_deviators
+                )
+                right_branch_exponent = mu_external * (
+                    right_alpha_total + inadvertent * right_deviators
+                )
+            else:
+                left_branch_exponent = k_internal * station_m + mu_internal * left_alpha_total
+                right_branch_exponent = (
+                    k_internal * max(length - station_m, 0.0)
+                    + mu_internal * right_alpha_total
+                )
+            left_branch_exponent = max(left_branch_exponent, 0.0)
+            right_branch_exponent = max(right_branch_exponent, 0.0)
+            normalized_jack = str(jacking_end or "").strip().casefold()
+            left_branch_stress = None
+            if normalized_jack in {"left", "both"}:
+                left_branch_stress = (
+                    fpj_mpa * exp(-left_branch_exponent)
+                    if left_branch_exponent < 80.0
+                    else 0.0
+                )
+            right_branch_stress = None
+            if normalized_jack in {"right", "both"}:
+                right_branch_stress = (
+                    fpj_mpa * exp(-right_branch_exponent)
+                    if right_branch_exponent < 80.0
+                    else 0.0
+                )
             active = bool(force.get("Active"))
             if not active:
                 status = "STORED ONLY"
@@ -529,6 +575,24 @@ def aashto_friction_wobble_station_rows(
                     "Stress after friction (MPa)": f_after_mpa,
                     "P after friction (kN)": p_after_kn,
                     "P/Pj after friction": 0.0 if pj_kn <= 0.0 else p_after_kn / pj_kn,
+                    "Left branch exponent": (
+                        left_branch_exponent if left_branch_stress is not None else None
+                    ),
+                    "Right branch exponent": (
+                        right_branch_exponent if right_branch_stress is not None else None
+                    ),
+                    "Stress from left jack (MPa)": left_branch_stress,
+                    "Stress from right jack (MPa)": right_branch_stress,
+                    "P from left jack (kN)": (
+                        None
+                        if left_branch_stress is None
+                        else aps_total * left_branch_stress / 1000.0
+                    ),
+                    "P from right jack (kN)": (
+                        None
+                        if right_branch_stress is None
+                        else aps_total * right_branch_stress / 1000.0
+                    ),
                     "Equation": equation,
                     "Status": status,
                     "Issue": "OK" if not issue_text else issue_text,
