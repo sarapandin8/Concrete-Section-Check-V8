@@ -1,3 +1,7 @@
+### CROSSBEAM.PTLOSS2R3B - Prestress Loss Rerun Performance Hotfix
+
+Moves the heavy independent dense-grid both-end QA out of the normal Streamlit rerun path and makes it explicit, input-fingerprint-gated validation evidence without changing accepted prestress-loss solver equations or releasing `Pe / Pe_eff`. See `README_CROSSBEAM_PTLOSS2R3B.md`.
+
 ### CROSSBEAM.PTLOSS2R3A - Force-Profile Visualization & Validation Evidence Hotfix
 
 Fixes Anchorage Set force-profile plotting so every force series is inside the explicit Y-axis range, adds three-point numeric graph QA, and exposes independent dense-grid simultaneous-both-end verification evidence without changing accepted loss solver equations or releasing `Pe / Pe_eff`. See `README_CROSSBEAM_PTLOSS2R3A.md`.

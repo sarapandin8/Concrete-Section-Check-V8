@@ -617,7 +617,7 @@ def test_ptloss2r2_ui_exposes_single_and_simultaneous_both_end_methods_without_r
     anchorage_block = source.split("with anchorage_set_tab:", maxsplit=1)[1].split(
         "with elastic_shortening_tab:", maxsplit=1
     )[0]
-    assert "Anchorage Set / Draw-in — visualization & validation-evidence closeout" in anchorage_block
+    assert "Anchorage Set / Draw-in — validated preview + on-demand independent QA" in anchorage_block
     assert "SINGLE-END FRICTION-COUPLED" in source
     assert "Simultaneous both-end stressing / seating — PTLOSS2R2" in source
     assert "Jack = Both means simultaneous equal left/right stressing" in source
@@ -631,6 +631,39 @@ def test_ptloss2r2_ui_exposes_single_and_simultaneous_both_end_methods_without_r
     assert "fig.update_yaxes(range=[y_min - margin, y_max + margin])" in source
     assert "Pe and Pe_eff remain locked" in anchorage_block
 
+
+
+
+def test_ptloss2r3b_heavy_independent_validation_is_explicit_button_gated_and_fingerprint_scoped() -> None:
+    import ast
+
+    source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    render_page = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "render_crossbeam_prestress_loss_page"
+    )
+    render_source = ast.get_source_segment(source, render_page) or ""
+    assert "independent_both_end_dense_grid_validation(" not in render_source
+
+    audit = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_render_anchorage_formula_unit_audit"
+    )
+    audit_source = ast.get_source_segment(source, audit) or ""
+    assert audit_source.count("independent_both_end_dense_grid_validation(") == 1
+    assert "Run / Refresh Independent Both-End Validation" in audit_source
+    assert "if st.button(" in audit_source
+    assert audit_source.index("if st.button(") < audit_source.index(
+        "independent_both_end_dense_grid_validation("
+    )
+    assert "QA validation requires refresh" in audit_source
+    assert "normal Streamlit reruns" in audit_source
+    assert "CB_PTLoss_INDEPENDENT_QA_FINGERPRINT_KEY" in source
+    assert "stored_fingerprint != str(fingerprint)" in source
+    assert 'return None, "STALE"' in source
 
 def test_ptloss2_ui_loss_defaults_use_valid_session_state_get_arity_and_include_new_fields() -> None:
     import ast

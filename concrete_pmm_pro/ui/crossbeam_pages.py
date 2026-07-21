@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, MutableMapping
 from datetime import datetime
+import hashlib
+import json
 from math import isfinite
 from typing import Any
 
@@ -4893,10 +4895,65 @@ def _anchorage_seating_geometry_metric(
         "detail": "distance from anchorage to zero anchor-set loss",
     }
 
+CB_PTLoss_INDEPENDENT_QA_FINGERPRINT_KEY = "crossbeam_ptloss_independent_qa_fingerprint_v1"
+CB_PTLoss_INDEPENDENT_QA_RESULT_KEY = "crossbeam_ptloss_independent_qa_result_v1"
+
+
+def _anchorage_independent_validation_fingerprint(
+    friction_rows: list[dict[str, Any]],
+    end_rows: list[dict[str, Any]],
+    *,
+    length_m: float,
+    anchor_set_mm: float,
+    ep_mpa: float,
+) -> str:
+    """Return a stable fingerprint for the heavy independent anchorage QA inputs."""
+
+    payload = {
+        "schema": 1,
+        "length_m": float(length_m),
+        "anchor_set_mm": float(anchor_set_mm),
+        "ep_mpa": float(ep_mpa),
+        "friction_rows": friction_rows,
+        "end_rows": end_rows,
+    }
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=repr,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _cached_anchorage_independent_validation(
+    fingerprint: str,
+) -> tuple[dict[str, Any] | None, str]:
+    """Return only current-input QA evidence; never reuse stale validation as PASS."""
+
+    stored_fingerprint = str(
+        st.session_state.get(CB_PTLoss_INDEPENDENT_QA_FINGERPRINT_KEY) or ""
+    )
+    stored_result = st.session_state.get(CB_PTLoss_INDEPENDENT_QA_RESULT_KEY)
+    if not isinstance(stored_result, Mapping):
+        return None, "NOT RUN"
+    if stored_fingerprint != str(fingerprint):
+        return None, "STALE"
+    return dict(stored_result), "CURRENT"
+
+
 def _render_anchorage_formula_unit_audit(
     end_rows: list[dict[str, Any]],
     equivalent_summary: dict[str, Any] | None = None,
     independent_validation: dict[str, Any] | None = None,
+    *,
+    independent_validation_cache_state: str = "NOT RUN",
+    independent_validation_fingerprint: str = "",
+    friction_rows: list[dict[str, Any]] | None = None,
+    length_m: float = 0.0,
+    anchor_set_mm: float = 0.0,
+    ep_mpa: float = 0.0,
 ) -> None:
     single_calculated = [
         row
@@ -5060,6 +5117,45 @@ def _render_anchorage_formula_unit_audit(
             st.info("Equivalent-average QA is not available until all required station-loss rows are calculated.")
 
         st.markdown("**D. Independent simultaneous-both-end numerical verification**")
+        st.caption(
+            "Heavy dense-grid QA is intentionally excluded from normal Streamlit reruns. "
+            "Run it explicitly after tendon geometry, friction inputs, Δa, or Ep change; "
+            "the result is reused only while the exact input fingerprint remains current."
+        )
+        if independent_validation_cache_state == "STALE":
+            st.warning(
+                "QA validation requires refresh — prestress-loss inputs changed after the last independent validation. "
+                "The previous PASS/REVIEW result is not used for the current model."
+            )
+        elif independent_validation_cache_state == "NOT RUN":
+            st.info("Independent dense-grid QA has not been run for the current input set.")
+        elif independent_validation_cache_state == "CURRENT":
+            st.success("Independent dense-grid QA evidence is current for this exact input fingerprint.")
+
+        if st.button(
+            "Run / Refresh Independent Both-End Validation",
+            key="crossbeam_ptloss2r3b_run_independent_both_end_validation",
+            help=(
+                "Runs the full dense-grid verifier on demand. This can take several seconds, "
+                "but normal page reruns do not execute it."
+            ),
+        ):
+            with st.spinner("Running independent dense-grid both-end validation..."):
+                independent_validation = independent_both_end_dense_grid_validation(
+                    friction_rows or [],
+                    end_rows,
+                    length_m=float(length_m),
+                    anchor_set_mm=float(anchor_set_mm),
+                    ep_mpa=float(ep_mpa),
+                )
+            st.session_state[CB_PTLoss_INDEPENDENT_QA_FINGERPRINT_KEY] = str(
+                independent_validation_fingerprint
+            )
+            st.session_state[CB_PTLoss_INDEPENDENT_QA_RESULT_KEY] = dict(
+                independent_validation
+            )
+            independent_validation_cache_state = "CURRENT"
+
         if independent_validation and independent_validation.get("status") != "NOT APPLICABLE":
             station_tol = float(independent_validation.get("station_tolerance_m") or 0.0)
             stress_tol = float(independent_validation.get("stress_tolerance_mpa") or 0.0)
@@ -5217,7 +5313,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "PTLOSS2R3A retains the validated PTLOSS2R2/R3 force and equivalent-average routes, fixes force-profile visualization bounds, and exposes three-point plus independent numerical QA evidence. Local P(s) remains design-use source-of-truth; Pe/Pe_eff and later losses remain locked.",
+        "PTLOSS2R3B keeps the accepted PTLOSS2R3A force/equivalent-average results while moving heavy independent dense-grid QA out of the normal rerun path. Validation is explicit, fingerprint-gated, and never reused after relevant inputs change; Pe/Pe_eff and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -5260,12 +5356,20 @@ def render_crossbeam_prestress_loss_page() -> None:
         current_anchorage_end_rows,
         length_m=length_m,
     )
-    current_anchorage_independent_validation = independent_both_end_dense_grid_validation(
-        current_loss_rows,
-        current_anchorage_end_rows,
-        length_m=length_m,
-        anchor_set_mm=float(current_assumptions["anchorage_set_mm"]),
-        ep_mpa=float(current_assumptions["ep_mpa"]),
+    current_anchorage_independent_validation_fingerprint = (
+        _anchorage_independent_validation_fingerprint(
+            current_loss_rows,
+            current_anchorage_end_rows,
+            length_m=length_m,
+            anchor_set_mm=float(current_assumptions["anchorage_set_mm"]),
+            ep_mpa=float(current_assumptions["ep_mpa"]),
+        )
+    )
+    (
+        current_anchorage_independent_validation,
+        current_anchorage_independent_validation_cache_state,
+    ) = _cached_anchorage_independent_validation(
+        current_anchorage_independent_validation_fingerprint
     )
 
     (
@@ -5537,13 +5641,16 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
 
     with anchorage_set_tab:
-        st.markdown("#### Anchorage Set / Draw-in — visualization & validation-evidence closeout")
+        st.markdown("#### Anchorage Set / Draw-in — validated preview + on-demand independent QA")
         _render_crossbeam_anchorage_set_assumptions()
         anchorage_end_rows = current_anchorage_end_rows
         anchorage_summary = current_anchorage_summary
         anchorage_station_rows = current_anchorage_station_rows
         anchorage_equivalent_summary = current_anchorage_equivalent_summary
         anchorage_independent_validation = current_anchorage_independent_validation
+        anchorage_independent_validation_cache_state = (
+            current_anchorage_independent_validation_cache_state
+        )
         anchorage_decision_rows = _anchorage_decision_rows(anchorage_end_rows)
         has_calculated_ends = int(anchorage_summary["calculated_end_count"]) > 0
         all_active_ends_calculated = (
@@ -5819,6 +5926,12 @@ def render_crossbeam_prestress_loss_page() -> None:
             anchorage_end_rows,
             anchorage_equivalent_summary,
             anchorage_independent_validation,
+            independent_validation_cache_state=anchorage_independent_validation_cache_state,
+            independent_validation_fingerprint=current_anchorage_independent_validation_fingerprint,
+            friction_rows=current_loss_rows,
+            length_m=length_m,
+            anchor_set_mm=float(current_assumptions["anchorage_set_mm"]),
+            ep_mpa=float(current_assumptions["ep_mpa"]),
         )
 
         with st.expander("Detailed seating-end compatibility audit", expanded=False):
