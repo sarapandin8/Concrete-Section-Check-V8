@@ -1,21 +1,26 @@
 """Crossbeam post-tensioned anchorage-set / draw-in calculation foundation.
 
-PTLOSS2R1 revalidates the design-use anchorage-set route against the accepted
-PTLOSS1 friction/wobble diagram and published force-diagram compatibility
-methods. Single-end stressing uses a friction-coupled reverse-slip distribution
-over the full available tendon path:
+PTLOSS2R2 retains the PTLOSS2R1 single-end friction-coupled reverse-slip method
+and defines ``Jacking end = Both`` as simultaneous equal left/right stressing.
+For the prestress-loss preview, both ends are also assumed to lock off / seat
+simultaneously with the same adopted anchorage draw-in unless the project/PT
+procedure states otherwise.
+
+Single-end stressing uses:
 
     Delta_fpA(x) = max(Delta_fpA0 - 2*Delta_fpF(x), 0)
 
-and Delta_fpA0 is solved so the integrated strain reduction equals the adopted
-anchorage draw-in. This formulation naturally permits either a partial affected
-length or full-tendon influence with nonzero loss at the dead end.
+with Delta_fpA0 solved from full-path strain compatibility. Simultaneous both-end
+seating first solves independent reverse-slip zones from the two anchors to the
+pre-seating point of no movement. If the zones remain separated, the local
+solutions are retained. If they reach/overlap the equilibrium region, a guarded
+full-tendon mirror-slope compatibility solve finds a zero-displacement neutral
+station and common meeting stress.
 
-Both-end anchorage seating is intentionally locked from design use until an
-explicit stressing/seating sequence is provided and validated. The historical
-PTLOSS2C final-state coupled solver remains private only for regression/history
-and is not routed into current design-use output. Pe/Pe_eff, elastic shortening,
-and time-dependent losses remain locked.
+The both-end coupled formulation is an engineering extension of the published
+force-diagram / equal-and-opposite friction concept, not a verbatim AASHTO
+numbered equation. Pe/Pe_eff, elastic shortening, and time-dependent losses
+remain locked.
 """
 
 from __future__ import annotations
@@ -31,10 +36,11 @@ ANCHORAGE_SET_METHOD_BASIS = (
     "Single-end friction-coupled reverse-slip / force-diagram compatibility"
 )
 
-BOTH_END_REVALIDATION_ISSUE = (
-    "Both-end anchorage-set calculation is locked pending an explicit validated "
-    "stressing/seating sequence (simultaneous/equal, Left->Right, or Right->Left). "
-    "The historical PTLOSS2C final-state coupled solution is not design-use."
+BOTH_END_SIMULTANEOUS_REVIEW_NOTE = (
+    "Jack = Both is defined by this app as simultaneous equal left/right stressing. "
+    "PTLOSS2R2 assumes simultaneous lock-off/seating with the same adopted Δa at both "
+    "ends for this component preview; verify that the approved PT procedure matches "
+    "this assumption before final design use."
 )
 
 def _float(value: Any, default: float = 0.0) -> float:
@@ -523,7 +529,7 @@ def _canonical_full_tendon_rows(
             continue
         by_s[round(station, 9)] = {
             "s_m": station,
-            "initial_mpa": max(_float(row.get("Stress after friction (MPa)"), 0.0), 0.0),
+            "initial_mpa": max(_float(left_raw, 0.0), _float(right_raw, 0.0), 0.0),
             "left_mpa": max(_float(left_raw, 0.0), 0.0),
             "right_mpa": max(_float(right_raw, 0.0), 0.0),
         }
@@ -535,6 +541,91 @@ def _canonical_full_tendon_rows(
     rows[0]["s_m"] = 0.0
     rows[-1]["s_m"] = length
     return rows
+
+
+def _both_end_preseat_no_movement(
+    rows: list[dict[str, float]],
+) -> tuple[float | None, float | None, str]:
+    """Return the simultaneous-jacking point of no movement from branch equilibrium.
+
+    Caltrans defines the two-end point of no movement as the location where movement
+    from the two stressing directions is countered and internal strand forces are in
+    equilibrium.  In this implementation it is therefore the unique intersection of
+    the independently traced left- and right-jacking stress branches.
+    """
+
+    if len(rows) < 2:
+        return None, None, "Complete left/right jacking branch traces are required."
+    length = rows[-1]["s_m"] - rows[0]["s_m"]
+    tolerance = 1.0e-8
+    diffs = [row["left_mpa"] - row["right_mpa"] for row in rows]
+    if max((abs(value) for value in diffs), default=0.0) <= tolerance:
+        station = rows[0]["s_m"] + 0.5 * length
+        stress = 0.5 * (
+            _full_trace_value(rows, station, "left_mpa")
+            + _full_trace_value(rows, station, "right_mpa")
+        )
+        return station, stress, ""
+
+    roots: list[float] = []
+    for left, right, d0, d1 in zip(rows, rows[1:], diffs, diffs[1:]):
+        x0, x1 = left["s_m"], right["s_m"]
+        if abs(d0) <= tolerance:
+            roots.append(x0)
+        if d0 * d1 < 0.0:
+            ratio = -d0 / (d1 - d0)
+            roots.append(x0 + ratio * (x1 - x0))
+    if abs(diffs[-1]) <= tolerance:
+        roots.append(rows[-1]["s_m"])
+
+    unique: list[float] = []
+    for root in sorted(roots):
+        if not unique or abs(root - unique[-1]) > 1.0e-7:
+            unique.append(root)
+    interior = [root for root in unique if rows[0]["s_m"] - 1.0e-9 <= root <= rows[-1]["s_m"] + 1.0e-9]
+    if len(interior) != 1:
+        return None, None, (
+            "A unique simultaneous-jacking point of no movement could not be established "
+            "from the left/right friction branch equilibrium."
+        )
+    station = interior[0]
+    stress = 0.5 * (
+        _full_trace_value(rows, station, "left_mpa")
+        + _full_trace_value(rows, station, "right_mpa")
+    )
+    return station, stress, ""
+
+
+def _branch_rows_to_no_movement(
+    rows: list[dict[str, float]],
+    *,
+    end: str,
+    neutral_station_m: float,
+) -> list[dict[str, float]]:
+    """Return x-from-anchor branch rows ending exactly at pre-seat no movement."""
+
+    if not rows:
+        return []
+    length = rows[-1]["s_m"]
+    neutral = min(max(_float(neutral_station_m, 0.0), 0.0), length)
+    target = str(end).strip().casefold()
+    stations = {0.0, neutral} if target == "left" else {neutral, length}
+    stations.update(
+        row["s_m"]
+        for row in rows
+        if (0.0 < row["s_m"] < neutral if target == "left" else neutral < row["s_m"] < length)
+    )
+    output: list[dict[str, float]] = []
+    for station in sorted(stations):
+        if target == "left":
+            x_m = station
+            stress = _full_trace_value(rows, station, "left_mpa")
+        else:
+            x_m = length - station
+            stress = _full_trace_value(rows, station, "right_mpa")
+        output.append({"x_m": x_m, "stress_mpa": stress, "k_per_m": 0.0})
+    output.sort(key=lambda row: row["x_m"])
+    return output
 
 
 def _full_trace_value(
@@ -599,7 +690,7 @@ def _coupled_final_stress_mpa(
     return meeting + branch_at_neutral - _full_trace_value(rows, station, "right_mpa")
 
 
-def _solve_both_end_full_length_interaction(
+def _solve_both_end_simultaneous_interaction(
     tendon_rows: list[dict[str, Any]],
     *,
     length_m: float,
@@ -607,14 +698,13 @@ def _solve_both_end_full_length_interaction(
     anchor_set_right_mm: float,
     ep_mpa: float,
 ) -> dict[str, Any]:
-    """Solve coupled full-length seating after independent branches overlap.
+    """Solve simultaneous both-end seating when reverse-slip zones interact.
 
-    This is an engineering implementation extension of the FHWA graphical
-    mirror-image/area compatibility method. The accepted PTLOSS1 pre-seating
-    force diagram is preserved. Reverse-slip branch shapes are taken from the
-    full left/right jack traces and joined at one zero-displacement neutral
-    station. The neutral station and meeting stress are solved from left and
-    right elongation compatibility.
+    The app definition is equal simultaneous left/right stressing followed by
+    simultaneous lock-off/seating with the same adopted draw-in at both ends.
+    This is a guarded engineering extension of the published graphical
+    equal-and-opposite friction / area-compatibility method, not a verbatim
+    AASHTO numbered equation.
     """
 
     length = max(_float(length_m, 0.0), 0.0)
@@ -806,11 +896,12 @@ def anchorage_set_end_rows(
 ) -> list[dict[str, Any]]:
     """Return one anchorage-seating audit row per active stressing end.
 
-    PTLOSS2R1 routes *single-end* stressing through the validated friction-coupled
-    reverse-slip distribution over the full tendon path. Both-end anchor seating
-    is deliberately locked until a stressing/seating sequence is explicitly
-    defined and validated; the historical PTLOSS2C final-state coupled solver is
-    not used here.
+    Single-end tendons use the PTLOSS2R1 full-path friction-coupled method.
+    ``Jack = Both`` is defined as simultaneous equal left/right stressing.  The
+    PTLOSS2R2 preview assumes simultaneous lock-off/seating with the same adopted
+    draw-in at both ends.  Independent local seating zones are retained when they
+    terminate before the pre-seat point of no movement; otherwise a guarded
+    full-tendon simultaneous compatibility solve is used.
     """
 
     rows = _records(friction_rows)
@@ -842,49 +933,96 @@ def anchorage_set_end_rows(
         )
         ends = _active_seating_ends(jacking_end) or ("Unknown",)
 
-        branch_by_end: dict[str, list[dict[str, float]]] = {}
-        for active_end in ends:
-            if active_end in {"Left", "Right"}:
-                branch_by_end[active_end] = _canonical_branch_rows(
-                    tendon_rows,
-                    end=active_end,
-                    jacking_end=jacking_end,
-                    length_m=length,
+        base_issues = list(friction_blocking)
+        if adopted_set <= 0.0:
+            base_issues.append(
+                "Adopt a positive project/PT supplier anchorage-set value before calculating draw-in loss."
+            )
+        if ep <= 0.0:
+            base_issues.append("Positive prestressing-steel modulus Ep is required.")
+        if aps_total <= 0.0 or pj_kn <= 0.0 or fpj_mpa <= 0.0:
+            base_issues.append("Positive Aps, fpj, and Pj are required from the tendon force source.")
+        if ends == ("Unknown",):
+            base_issues.append("Jacking end must be Left, Right, or Both.")
+
+        single_branches: dict[str, list[dict[str, float]]] = {}
+        both_solution: dict[str, Any] | None = None
+        preseat_no_movement: float | None = None
+        preseat_no_movement_stress: float | None = None
+        both_local_solutions: dict[str, dict[str, Any]] = {}
+        both_mode = ""
+        full_rows: list[dict[str, float]] = []
+        both_issue = ""
+
+        if normalized_jack in {"left", "right"}:
+            active_end = "Left" if normalized_jack == "left" else "Right"
+            single_branches[active_end] = _canonical_branch_rows(
+                tendon_rows,
+                end=active_end,
+                jacking_end=jacking_end,
+                length_m=length,
+            )
+        elif normalized_jack == "both" and not base_issues:
+            full_rows = _canonical_full_tendon_rows(tendon_rows, length_m=length)
+            preseat_no_movement, preseat_no_movement_stress, both_issue = (
+                _both_end_preseat_no_movement(full_rows)
+            )
+            if not both_issue and preseat_no_movement is not None:
+                left_branch = _branch_rows_to_no_movement(
+                    full_rows, end="Left", neutral_station_m=preseat_no_movement
                 )
+                right_branch = _branch_rows_to_no_movement(
+                    full_rows, end="Right", neutral_station_m=preseat_no_movement
+                )
+                single_branches = {"Left": left_branch, "Right": right_branch}
+                left_local = _solve_single_end_friction_coupled(
+                    left_branch, anchor_set_mm=adopted_set, ep_mpa=ep
+                )
+                right_local = _solve_single_end_friction_coupled(
+                    right_branch, anchor_set_mm=adopted_set, ep_mpa=ep
+                )
+                both_local_solutions = {"Left": left_local, "Right": right_local}
+                local_ready = all(
+                    solved.get("status") == "PREVIEW READY + NOTE"
+                    for solved in both_local_solutions.values()
+                )
+                zones_separate = local_ready and all(
+                    not bool(solved.get("full_tendon_affected"))
+                    for solved in both_local_solutions.values()
+                )
+                if zones_separate:
+                    both_mode = "BOTH-END SIMULTANEOUS LOCAL"
+                else:
+                    both_solution = _solve_both_end_simultaneous_interaction(
+                        tendon_rows,
+                        length_m=length,
+                        anchor_set_left_mm=adopted_set,
+                        anchor_set_right_mm=adopted_set,
+                        ep_mpa=ep,
+                    )
+                    if both_solution.get("status") == "PREVIEW READY + NOTE":
+                        both_mode = "BOTH-END SIMULTANEOUS COUPLED"
+                    else:
+                        both_issue = str(
+                            both_solution.get("issue")
+                            or "Simultaneous both-end anchorage-set compatibility requires review."
+                        )
 
         for end in ends:
-            issues = list(friction_blocking)
+            issues = list(base_issues)
             notes = list(friction_notes)
             status = "STORED ONLY" if not active else "PREVIEW READY"
-            if adopted_set <= 0.0:
-                issues.append(
-                    "Adopt a positive project/PT supplier anchorage-set value before calculating draw-in loss."
-                )
-            if ep <= 0.0:
-                issues.append("Positive prestressing-steel modulus Ep is required.")
-            if aps_total <= 0.0 or pj_kn <= 0.0 or fpj_mpa <= 0.0:
-                issues.append("Positive Aps, fpj, and Pj are required from the tendon force source.")
-            if end == "Unknown":
-                issues.append("Jacking end must be Left, Right, or Both.")
-
-            branch_rows = branch_by_end.get(end, []) if end in {"Left", "Right"} else []
-            if active and end in {"Left", "Right"}:
-                if not branch_rows:
-                    issues.append(f"Accepted friction trace has no {end.lower()}-end branch.")
-                elif branch_rows[0]["x_m"] > 1.0e-8:
-                    issues.append(
-                        f"Accepted friction trace does not start at the {end.lower()} anchorage (x = 0)."
-                    )
-
             interaction_mode = "SINGLE-END FRICTION-COUPLED"
             affected_length: float | None = None
             full_tendon_affected = False
+            reaches_neutral = False
             lockoff_stress: float | None = None
             lockoff_force: float | None = None
             anchor_loss_mpa: float | None = None
             anchor_loss_kn: float | None = None
             anchor_loss_percent: float | None = None
             dead_end_loss_mpa: float | None = None
+            neutral_region_loss_mpa: float | None = None
             compatibility_set_check_mm: float | None = None
             residual: float | None = None
             max_nonnegative_set_mm: float | None = None
@@ -892,11 +1030,73 @@ def anchorage_set_end_rows(
             stress_integral_mpa_m: float | None = None
             one_side_stress_area_mpa_m: float | None = None
             mirrored_stress_area_mpa_m: float | None = None
+            neutral_point: float | None = None
+            meeting_stress: float | None = None
+            continuity_residual: float | None = None
+            max_stress_gain: float | None = None
+            minimum_final_stress: float | None = None
+
+            branch_rows = single_branches.get(end, []) if end in {"Left", "Right"} else []
+            if active and end in {"Left", "Right"} and not branch_rows:
+                issues.append(f"Accepted friction trace has no {end.lower()}-end branch.")
 
             if normalized_jack == "both":
-                interaction_mode = "BOTH-END SEQUENCE REQUIRED"
-                if active:
-                    issues.append(BOTH_END_REVALIDATION_ISSUE)
+                interaction_mode = both_mode or "BOTH-END SIMULTANEOUS REVIEW"
+                notes.append(BOTH_END_SIMULTANEOUS_REVIEW_NOTE)
+                if both_issue:
+                    issues.append(both_issue)
+                elif both_mode == "BOTH-END SIMULTANEOUS LOCAL":
+                    solved = both_local_solutions[end]
+                    if solved.get("status") != "PREVIEW READY + NOTE":
+                        issues.append(str(solved.get("issue") or "Local simultaneous seating solution requires review."))
+                    else:
+                        status = "PREVIEW READY + NOTE"
+                        affected_length = _float(solved.get("affected_length_m"), 0.0)
+                        anchor_loss_mpa = _float(solved.get("anchor_loss_mpa"), 0.0)
+                        lockoff_stress = _float(solved.get("lockoff_stress_mpa"), 0.0)
+                        compatibility_set_check_mm = _float(solved.get("set_check_mm"), 0.0)
+                        residual = _float(solved.get("residual_mm"), 0.0)
+                        max_nonnegative_set_mm = solved.get("max_nonnegative_set_mm")
+                        zero_movement_stress = (
+                            _diagram_stress_mpa(branch_rows, affected_length)
+                            if affected_length is not None
+                            else None
+                        )
+                        reaches_neutral = bool(
+                            affected_length is not None
+                            and abs(affected_length - branch_rows[-1]["x_m"]) <= 1.0e-6
+                        )
+                elif both_mode == "BOTH-END SIMULTANEOUS COUPLED" and both_solution:
+                    status = "PREVIEW READY + NOTE"
+                    neutral_point = _float(both_solution.get("neutral_station_m"), 0.0)
+                    meeting_stress = _float(both_solution.get("meeting_stress_mpa"), 0.0)
+                    continuity_residual = _float(both_solution.get("continuity_residual_mpa"), 0.0)
+                    max_stress_gain = _float(both_solution.get("max_stress_gain_mpa"), 0.0)
+                    minimum_final_stress = _float(both_solution.get("min_final_stress_mpa"), 0.0)
+                    affected_length = neutral_point if end == "Left" else max(length - neutral_point, 0.0)
+                    reaches_neutral = True
+                    final_anchor = _coupled_final_stress_mpa(
+                        full_rows,
+                        station_m=0.0 if end == "Left" else length,
+                        neutral_station_m=neutral_point,
+                        meeting_stress_mpa=meeting_stress,
+                    )
+                    initial_anchor = _full_trace_value(
+                        full_rows, 0.0 if end == "Left" else length, "initial_mpa"
+                    )
+                    anchor_loss_mpa = max(initial_anchor - final_anchor, 0.0)
+                    lockoff_stress = max(final_anchor, 0.0)
+                    compatibility_set_check_mm = _float(
+                        both_solution.get("left_set_check_mm" if end == "Left" else "right_set_check_mm"),
+                        0.0,
+                    )
+                    residual = _float(
+                        both_solution.get("left_residual_mm" if end == "Left" else "right_residual_mm"),
+                        0.0,
+                    )
+                    initial_neutral = _full_trace_value(full_rows, neutral_point, "initial_mpa")
+                    neutral_region_loss_mpa = max(initial_neutral - meeting_stress, 0.0)
+                    zero_movement_stress = meeting_stress
             elif (
                 active
                 and end in {"Left", "Right"}
@@ -925,32 +1125,38 @@ def anchorage_set_end_rows(
                     dead_end_loss_mpa = _float(solved.get("dead_end_loss_mpa"), 0.0)
                     compatibility_set_check_mm = _float(solved.get("set_check_mm"), 0.0)
                     residual = _float(solved.get("residual_mm"), 0.0)
-                    lockoff_force = aps_total * lockoff_stress / 1000.0
-                    anchor_loss_kn = aps_total * anchor_loss_mpa / 1000.0
-                    anchor_loss_percent = 100.0 * anchor_loss_kn / pj_kn if pj_kn > 0.0 else None
                     if full_tendon_affected:
                         notes.append(
                             "Adopted draw-in affects the full tendon; anchorage-set loss remains nonzero at the dead end."
                         )
                     else:
                         zero_movement_stress = _diagram_stress_mpa(branch_rows, affected_length)
+                        if affected_length > 0.0:
+                            stress_integral_mpa_m = _diagram_integral_mpa_m(branch_rows, affected_length)
+                            one_side_stress_area_mpa_m = max(
+                                stress_integral_mpa_m - affected_length * (zero_movement_stress or 0.0),
+                                0.0,
+                            )
+                            mirrored_stress_area_mpa_m = 2.0 * one_side_stress_area_mpa_m
 
-                    # Audit terms retained for transparent comparison with the
-                    # historical mirror-area formulation where an interior zero-loss
-                    # point exists. They are not the controlling PTLOSS2R1 solve.
-                    if not full_tendon_affected and affected_length > 0.0:
-                        stress_integral_mpa_m = _diagram_integral_mpa_m(branch_rows, affected_length)
-                        one_side_stress_area_mpa_m = max(
-                            stress_integral_mpa_m - affected_length * (zero_movement_stress or 0.0),
-                            0.0,
-                        )
-                        mirrored_stress_area_mpa_m = 2.0 * one_side_stress_area_mpa_m
+            if anchor_loss_mpa is not None and lockoff_stress is not None:
+                lockoff_force = aps_total * lockoff_stress / 1000.0
+                anchor_loss_kn = aps_total * anchor_loss_mpa / 1000.0
+                anchor_loss_percent = 100.0 * anchor_loss_kn / pj_kn if pj_kn > 0.0 else None
 
             if active and issues:
                 status = "INPUT REQUIRED" if adopted_set <= 0.0 else "REVIEW REQUIRED"
 
-            branch_limit = length if normalized_jack in {"left", "right"} else 0.5 * length
+            if normalized_jack == "both" and preseat_no_movement is not None:
+                branch_limit = preseat_no_movement if end == "Left" else max(length - preseat_no_movement, 0.0)
+            else:
+                branch_limit = length
             initial_anchor_stress = _diagram_stress_mpa(branch_rows, 0.0) if branch_rows else None
+            method = (
+                ANCHORAGE_SET_METHOD_BASIS
+                if normalized_jack != "both"
+                else "Simultaneous both-end reverse-slip / force-diagram compatibility"
+            )
             result.append(
                 {
                     "Tendon ID": tendon_id,
@@ -970,7 +1176,10 @@ def anchorage_set_end_rows(
                     "Influence length (m)": affected_length,
                     "Affected length (m)": affected_length,
                     "Full tendon affected": full_tendon_affected,
+                    "Seating reaches neutral point": reaches_neutral,
                     "Initial stress at anchorage after friction (MPa)": initial_anchor_stress,
+                    "Pre-seat no-movement s (m)": preseat_no_movement,
+                    "Pre-seat no-movement stress (MPa)": preseat_no_movement_stress,
                     "Zero movement stress (MPa)": zero_movement_stress,
                     "Stress integral to La (MPa·m)": stress_integral_mpa_m,
                     "One-side stress area (MPa·m)": one_side_stress_area_mpa_m,
@@ -982,15 +1191,22 @@ def anchorage_set_end_rows(
                     "Anchorage-set loss at anchorage (kN)": anchor_loss_kn,
                     "Anchorage-set loss at anchorage (%)": anchor_loss_percent,
                     "Dead-end anchorage-set loss (MPa)": dead_end_loss_mpa,
+                    "Neutral-region anchorage-set loss (MPa)": neutral_region_loss_mpa,
                     "Compatibility residual (mm)": residual,
                     "Interaction mode": interaction_mode,
-                    "Neutral point s (m)": None,
-                    "Neutral-point initial stress (MPa)": None,
-                    "Meeting stress after seating (MPa)": None,
-                    "Force continuity residual (MPa)": None,
-                    "Max stress gain check (MPa)": 0.0 if anchor_loss_mpa is not None else None,
-                    "Minimum final stress check (MPa)": lockoff_stress,
-                    "Method": ANCHORAGE_SET_METHOD_BASIS if normalized_jack != "both" else "Both-end sequence-aware method pending revalidation",
+                    "Neutral point s (m)": neutral_point,
+                    "Neutral-point initial stress (MPa)": (
+                        None if neutral_point is None or not full_rows else _full_trace_value(full_rows, neutral_point, "initial_mpa")
+                    ),
+                    "Meeting stress after seating (MPa)": meeting_stress,
+                    "Force continuity residual (MPa)": continuity_residual,
+                    "Max stress gain check (MPa)": (
+                        0.0 if anchor_loss_mpa is not None and max_stress_gain is None else max_stress_gain
+                    ),
+                    "Minimum final stress check (MPa)": (
+                        lockoff_stress if minimum_final_stress is None else minimum_final_stress
+                    ),
+                    "Method": method,
                     "Status": status,
                     "Blocking issue": " ".join(_deduplicated(issues)),
                     "Review note": " ".join(_deduplicated(notes)),
@@ -1006,12 +1222,7 @@ def anchorage_set_station_rows(
     *,
     length_m: float | None = None,
 ) -> list[dict[str, Any]]:
-    """Return station trace after the validated single-end anchor-set component.
-
-    Both-end rows remain blank by design until PTLOSS2R2 provides a validated
-    stressing/seating sequence-aware route. No result from the historical
-    PTLOSS2C coupled solver is fed forward.
-    """
+    """Return station trace after single- or simultaneous-both-end seating preview."""
 
     rows = _records(friction_rows)
     ends = _records(end_rows)
@@ -1024,32 +1235,48 @@ def anchorage_set_station_rows(
         grouped.setdefault(str(row.get("Tendon ID") or ""), []).append(row)
 
     branch_cache: dict[tuple[str, str], list[dict[str, float]]] = {}
+    full_cache: dict[str, list[dict[str, float]]] = {}
+    preseat_cache: dict[str, float | None] = {}
     for tendon_id, tendon_rows in grouped.items():
         if not tendon_rows:
             continue
         jacking_end = str(tendon_rows[0].get("Jacking end") or "")
+        normalized = jacking_end.strip().casefold()
         tendon_length_m = (
             max(_float(length_m, 0.0), 0.0)
             if length_m is not None
             else max(_float(row.get("s (m)"), 0.0) for row in tendon_rows)
         )
-        for end in _active_seating_ends(jacking_end):
-            branch_cache[(tendon_id, end)] = _canonical_branch_rows(
-                tendon_rows,
-                end=end,
-                jacking_end=jacking_end,
-                length_m=tendon_length_m,
-            )
+        if normalized == "both":
+            full = _canonical_full_tendon_rows(tendon_rows, length_m=tendon_length_m)
+            full_cache[tendon_id] = full
+            preseat, _, _ = _both_end_preseat_no_movement(full)
+            preseat_cache[tendon_id] = preseat
+            if preseat is not None:
+                branch_cache[(tendon_id, "Left")] = _branch_rows_to_no_movement(
+                    full, end="Left", neutral_station_m=preseat
+                )
+                branch_cache[(tendon_id, "Right")] = _branch_rows_to_no_movement(
+                    full, end="Right", neutral_station_m=preseat
+                )
+        else:
+            for end in _active_seating_ends(jacking_end):
+                branch_cache[(tendon_id, end)] = _canonical_branch_rows(
+                    tendon_rows,
+                    end=end,
+                    jacking_end=jacking_end,
+                    length_m=tendon_length_m,
+                )
 
     output: list[dict[str, Any]] = []
     for row in rows:
         tendon_id = str(row.get("Tendon ID") or "")
-        end = _source_end_name(row)
-        end_result = end_map.get((tendon_id, end))
+        jacking_end = str(row.get("Jacking end") or "")
+        normalized = jacking_end.strip().casefold()
+        station = max(_float(row.get("s (m)"), 0.0), 0.0)
         friction_stress = max(_float(row.get("Stress after friction (MPa)"), 0.0), 0.0)
         friction_force = max(_float(row.get("P after friction (kN)"), 0.0), 0.0)
         aps_total = max(_float(row.get("Aps total (mm²)"), 0.0), 0.0)
-        x_m = max(_float(row.get("x from jack (m)"), 0.0), 0.0)
 
         final_stress: float | None = None
         final_force: float | None = None
@@ -1059,34 +1286,96 @@ def anchorage_set_station_rows(
         applied = False
         status = "NOT CALCULATED"
         issue = "No validated anchorage-set solution is available for this stressing route."
+        seating_end = _source_end_name(row)
 
-        if (
-            end_result is not None
-            and str(end_result.get("Interaction mode") or "") == "SINGLE-END FRICTION-COUPLED"
-            and end_result.get("Anchorage-set loss at anchorage (MPa)") is not None
-            and str(end_result.get("Status") or "").startswith("PREVIEW READY")
-        ):
-            branch = branch_cache.get((tendon_id, end), [])
-            anchor_loss = _float(end_result.get("Anchorage-set loss at anchorage (MPa)"), 0.0)
-            affected_length = _float(end_result.get("Affected length (m)"), 0.0)
-            component_loss_mpa = _single_end_anchor_loss_mpa(
-                branch, x_m=x_m, anchor_loss_mpa=anchor_loss
-            ) if branch else None
-            if component_loss_mpa is not None:
-                final_stress = max(friction_stress - component_loss_mpa, 0.0)
-                final_force = aps_total * final_stress / 1000.0
-                component_loss_kn = max(friction_force - final_force, 0.0)
-                applied = component_loss_mpa > 1.0e-9
-                status = str(end_result.get("Status") or "PREVIEW READY + NOTE")
-                issue = str(end_result.get("Issue") or "")
-        elif end_result is not None:
-            status = str(end_result.get("Status") or "REVIEW REQUIRED")
-            issue = str(end_result.get("Issue") or end_result.get("Blocking issue") or issue)
+        if normalized == "both":
+            left_result = end_map.get((tendon_id, "Left"))
+            right_result = end_map.get((tendon_id, "Right"))
+            controlling = left_result or right_result
+            mode = str((controlling or {}).get("Interaction mode") or "")
+            preseat = preseat_cache.get(tendon_id)
+            if mode == "BOTH-END SIMULTANEOUS LOCAL" and preseat is not None:
+                seating_end = "Left" if station <= preseat else "Right"
+                end_result = end_map.get((tendon_id, seating_end))
+                branch = branch_cache.get((tendon_id, seating_end), [])
+                x_m = station if seating_end == "Left" else max(
+                    (max(_float(length_m, 0.0), 0.0) if length_m is not None else branch[-1]["x_m"] + preseat) - station,
+                    0.0,
+                )
+                if (
+                    end_result is not None
+                    and branch
+                    and end_result.get("Anchorage-set loss at anchorage (MPa)") is not None
+                    and str(end_result.get("Status") or "").startswith("PREVIEW READY")
+                ):
+                    anchor_loss = _float(end_result.get("Anchorage-set loss at anchorage (MPa)"), 0.0)
+                    affected_length = _float(end_result.get("Affected length (m)"), 0.0)
+                    component_loss_mpa = _single_end_anchor_loss_mpa(
+                        branch, x_m=x_m, anchor_loss_mpa=anchor_loss
+                    )
+                    final_stress = max(friction_stress - component_loss_mpa, 0.0)
+                    status = str(end_result.get("Status") or "PREVIEW READY + NOTE")
+                    issue = str(end_result.get("Issue") or "")
+            elif mode == "BOTH-END SIMULTANEOUS COUPLED" and controlling is not None:
+                full = full_cache.get(tendon_id, [])
+                neutral = controlling.get("Neutral point s (m)")
+                meeting = controlling.get("Meeting stress after seating (MPa)")
+                if full and neutral is not None and meeting is not None:
+                    neutral_value = _float(neutral, 0.0)
+                    seating_end = "Left" if station <= neutral_value else "Right"
+                    end_result = end_map.get((tendon_id, seating_end)) or controlling
+                    affected_length = _float(end_result.get("Affected length (m)"), 0.0)
+                    final_stress = max(
+                        _coupled_final_stress_mpa(
+                            full,
+                            station_m=station,
+                            neutral_station_m=neutral_value,
+                            meeting_stress_mpa=_float(meeting, 0.0),
+                        ),
+                        0.0,
+                    )
+                    component_loss_mpa = max(friction_stress - final_stress, 0.0)
+                    status = str(end_result.get("Status") or "PREVIEW READY + NOTE")
+                    issue = str(end_result.get("Issue") or "")
+            else:
+                if controlling is not None:
+                    status = str(controlling.get("Status") or "REVIEW REQUIRED")
+                    issue = str(controlling.get("Issue") or controlling.get("Blocking issue") or issue)
+        else:
+            seating_end = _source_end_name(row)
+            end_result = end_map.get((tendon_id, seating_end))
+            x_m = max(_float(row.get("x from jack (m)"), 0.0), 0.0)
+            if (
+                end_result is not None
+                and str(end_result.get("Interaction mode") or "") == "SINGLE-END FRICTION-COUPLED"
+                and end_result.get("Anchorage-set loss at anchorage (MPa)") is not None
+                and str(end_result.get("Status") or "").startswith("PREVIEW READY")
+            ):
+                branch = branch_cache.get((tendon_id, seating_end), [])
+                anchor_loss = _float(end_result.get("Anchorage-set loss at anchorage (MPa)"), 0.0)
+                affected_length = _float(end_result.get("Affected length (m)"), 0.0)
+                component_loss_mpa = (
+                    _single_end_anchor_loss_mpa(branch, x_m=x_m, anchor_loss_mpa=anchor_loss)
+                    if branch
+                    else None
+                )
+                if component_loss_mpa is not None:
+                    final_stress = max(friction_stress - component_loss_mpa, 0.0)
+                    status = str(end_result.get("Status") or "PREVIEW READY + NOTE")
+                    issue = str(end_result.get("Issue") or "")
+            elif end_result is not None:
+                status = str(end_result.get("Status") or "REVIEW REQUIRED")
+                issue = str(end_result.get("Issue") or end_result.get("Blocking issue") or issue)
+
+        if final_stress is not None:
+            final_force = aps_total * final_stress / 1000.0
+            component_loss_kn = max(friction_force - final_force, 0.0)
+            applied = bool(component_loss_mpa is not None and component_loss_mpa > 1.0e-9)
 
         output.append(
             {
                 **row,
-                "Seating end": end,
+                "Seating end": seating_end,
                 "Anchorage set applied": applied,
                 "Influence length (m)": affected_length,
                 "Affected length (m)": affected_length,
@@ -1100,9 +1389,8 @@ def anchorage_set_station_rows(
         )
     return output
 
-
 def anchorage_set_summary(end_rows: Any) -> dict[str, Any]:
-    """Return dashboard values for the active PTLOSS2R1 anchorage-set methodology."""
+    """Return dashboard values for the active PTLOSS2R2 anchorage-set methodology."""
 
     rows = _records(end_rows)
     active = [row for row in rows if bool(row.get("Active"))]

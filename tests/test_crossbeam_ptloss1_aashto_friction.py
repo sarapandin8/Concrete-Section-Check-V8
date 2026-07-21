@@ -101,7 +101,7 @@ def test_ptloss2b_friction_formula_audit_recomputes_governing_station_exactly() 
     assert audit["P/Pj"] == pytest.approx(exp(-0.02))
     assert audit["Audit status"] == "PASS"
 
-def test_ptloss1_internal_both_end_uses_nearest_jacking_end_without_doubling_pj() -> None:
+def test_ptloss2r2_internal_both_end_uses_controlling_jacking_branch_without_doubling_pj() -> None:
     rows = aashto_friction_wobble_station_rows(
         _straight_profile(),
         _system_row(jacking_end="Both"),
@@ -113,15 +113,19 @@ def test_ptloss1_internal_both_end_uses_nearest_jacking_end_without_doubling_pj(
     end = next(row for row in rows if row["Point"] == "P3")
 
     expected_ratio = exp(-0.001 * 10.0)
-    assert midpoint["Source end"] == "Left (nearest)"
+    assert midpoint["Source end"] == "Left (controlling)"
     assert midpoint["x from jack (m)"] == pytest.approx(10.0)
     assert midpoint["alpha total (rad)"] == pytest.approx(0.0)
     assert midpoint["K basis"] == "Internal: AASHTO K"
     assert midpoint["mu basis"] == "Internal duct mu"
     assert midpoint["P/Pj after friction"] == pytest.approx(expected_ratio)
     assert midpoint["P after friction (kN)"] == pytest.approx(midpoint["Pj (kN)"] * expected_ratio)
-    assert end["Source end"] == "Right (nearest)"
+    assert end["Source end"] == "Right (controlling)"
     assert end["P after friction (kN)"] == pytest.approx(end["Pj (kN)"])
+    for row in rows:
+        assert row["Stress after friction (MPa)"] == pytest.approx(
+            max(float(row["Stress from left jack (MPa)"]), float(row["Stress from right jack (MPa)"]))
+        )
 
 
 def test_ptloss1_internal_3d_curve_accumulates_vector_angular_change() -> None:
@@ -300,7 +304,7 @@ def test_ptloss1g_component_subtabs_are_scoped_and_future_losses_are_guarded() -
     assert '"Elastic Shortening",' in source
     assert '"Time-Dependent",' in source
     assert '"Audit",' in source
-    assert "Anchorage Set / Draw-in — methodology revalidation" in source
+    assert "Anchorage Set / Draw-in — simultaneous both-end revalidation" in source
     assert "Guarded future component — no elastic-shortening loss is calculated in PTLOSS1G." in source
     assert "Guarded future component — creep, shrinkage, and relaxation are not calculated in PTLOSS1G." in source
     assert '"Pe / Pe_eff assembly"' in source

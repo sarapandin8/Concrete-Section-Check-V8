@@ -1,3 +1,7 @@
+### CROSSBEAM.PTLOSS2R2 - Simultaneous Both-End Anchorage Set Revalidation
+
+Defines `Jack = Both` as simultaneous equal left/right stressing, activates guarded local/coupled simultaneous anchorage-seating compatibility, and corrects the both-end friction equilibrium route while keeping `Pe / Pe_eff` locked. See `README_CROSSBEAM_PTLOSS2R2.md`.
+
 ### CROSSBEAM.PTLOSS2R1 - Single-End Anchor-Set Revalidation + Both-End Safety Lock
 
 Revalidates single-end anchorage seating with a full-path friction-coupled reverse-slip compatibility solver that reproduces Caltrans anchor-set benchmarks, permits full-tendon influence when required, and locks both-end anchor seating until an explicit sequence-aware method is validated. `Pe / Pe_eff` remain locked. See `README_CROSSBEAM_PTLOSS2R1.md`.

@@ -94,6 +94,43 @@ def _linear_both_end_friction_rows() -> list[dict[str, object]]:
     return rows
 
 
+
+def _linear_asymmetric_both_end_friction_rows(
+    *, left_gradient_mpa_per_m: float, right_gradient_mpa_per_m: float
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    length_m = 20.0
+    fpj = 1400.0
+    for station_m in (0.0, 4.0, 8.0, 12.0, 16.0, 20.0):
+        left_stress = fpj - left_gradient_mpa_per_m * station_m
+        right_stress = fpj - right_gradient_mpa_per_m * (length_m - station_m)
+        accepted = max(left_stress, right_stress)
+        source = "Left (controlling)" if left_stress >= right_stress else "Right (controlling)"
+        rows.append(
+            {
+                "Tendon ID": "T1",
+                "Active": True,
+                "Type": "Internal",
+                "Jacking end": "Both",
+                "Source end": source,
+                "Point": f"P{int(station_m)}",
+                "s (m)": station_m,
+                "x from jack (m)": station_m if left_stress >= right_stress else length_m - station_m,
+                "K (/m)": 0.0,
+                "Aps total (mm²)": 1000.0,
+                "fpj (MPa)": fpj,
+                "Pj (kN)": fpj,
+                "Stress after friction (MPa)": accepted,
+                "P after friction (kN)": accepted,
+                "Stress from left jack (MPa)": left_stress,
+                "Stress from right jack (MPa)": right_stress,
+                "Status": "LOSS READY",
+                "Blocking issue": "",
+                "Review note": "",
+            }
+        )
+    return rows
+
 def _caltrans_linear_rows(*, length_ft: float, fjack_ksi: float, end_loss_ksi: float) -> list[dict[str, object]]:
     length_m = length_ft * FT_TO_M
     fjack_mpa = fjack_ksi * KSI_TO_MPA
@@ -236,19 +273,85 @@ def test_ptloss2r1_si_implementation_round_trips_caltrans_native_units() -> None
     assert loss_ksi == pytest.approx(15.97524, rel=1.0e-5)
 
 
-def test_ptloss2r1_both_end_is_locked_until_stressing_sequence_is_explicit() -> None:
+def test_ptloss2r2_symmetric_simultaneous_both_end_overlap_matches_closed_form() -> None:
+    # Symmetric linear friction: f=1400-10x MPa from each end, L=20 m, Ep=200 GPa.
+    # Half-length local capacity corresponds to Δa=5 mm. At Δa=6 mm the seating
+    # zones interact. Closed form gives s_n=10 m, meeting stress=1280 MPa,
+    # anchorage loss=220 MPa, and lock-off stress=1180 MPa.
     rows = anchorage_set_end_rows(
         _linear_both_end_friction_rows(), length_m=20.0, anchor_set_mm=6.0, ep_mpa=200000.0
     )
     assert len(rows) == 2
     assert {row["Seating end"] for row in rows} == {"Left", "Right"}
-    assert all(row["Status"] == "REVIEW REQUIRED" for row in rows)
-    assert all(row["Interaction mode"] == "BOTH-END SEQUENCE REQUIRED" for row in rows)
-    assert all(row["Anchorage-set loss at anchorage (MPa)"] is None for row in rows)
-    assert all("stressing/seating sequence" in str(row["Blocking issue"]) for row in rows)
+    assert all(row["Status"] == "PREVIEW READY + NOTE" for row in rows)
+    assert all(row["Interaction mode"] == "BOTH-END SIMULTANEOUS COUPLED" for row in rows)
+    assert all(row["Pre-seat no-movement s (m)"] == pytest.approx(10.0) for row in rows)
+    assert all(row["Neutral point s (m)"] == pytest.approx(10.0) for row in rows)
+    assert all(row["Meeting stress after seating (MPa)"] == pytest.approx(1280.0) for row in rows)
+    assert all(row["Anchorage-set loss at anchorage (MPa)"] == pytest.approx(220.0) for row in rows)
+    assert all(row["Lock-off stress at anchorage (MPa)"] == pytest.approx(1180.0) for row in rows)
+    assert all(row["Compatibility set check (mm)"] == pytest.approx(6.0) for row in rows)
+    assert all(abs(float(row["Compatibility residual (mm)"])) < 1.0e-8 for row in rows)
 
     station_rows = anchorage_set_station_rows(_linear_both_end_friction_rows(), rows, length_m=20.0)
-    assert all(row["P after anchorage set (kN)"] is None for row in station_rows)
+    by_s = {float(row["s (m)"]): row for row in station_rows}
+    assert by_s[0.0]["P after anchorage set (kN)"] == pytest.approx(1180.0)
+    assert by_s[5.0]["P after anchorage set (kN)"] == pytest.approx(1230.0)
+    assert by_s[10.0]["P after anchorage set (kN)"] == pytest.approx(1280.0)
+    assert by_s[15.0]["P after anchorage set (kN)"] == pytest.approx(1230.0)
+    assert by_s[20.0]["P after anchorage set (kN)"] == pytest.approx(1180.0)
+
+
+def test_ptloss2r2_symmetric_small_drawin_keeps_separated_local_zones() -> None:
+    rows = anchorage_set_end_rows(
+        _linear_both_end_friction_rows(), length_m=20.0, anchor_set_mm=2.0, ep_mpa=200000.0
+    )
+    assert all(row["Interaction mode"] == "BOTH-END SIMULTANEOUS LOCAL" for row in rows)
+    expected_sa = (200000.0 * 2.0 / (1000.0 * 10.0)) ** 0.5
+    assert all(float(row["Affected length (m)"]) == pytest.approx(expected_sa) for row in rows)
+    assert all(row["Neutral point s (m)"] is None for row in rows)
+
+
+def test_ptloss2r2_zero_friction_both_end_reduces_to_uniform_elastic_shortening() -> None:
+    rows = _linear_both_end_friction_rows()
+    for row in rows:
+        row["Stress after friction (MPa)"] = 1400.0
+        row["P after friction (kN)"] = 1400.0
+        row["Stress from left jack (MPa)"] = 1400.0
+        row["Stress from right jack (MPa)"] = 1400.0
+    end_rows = anchorage_set_end_rows(rows, length_m=20.0, anchor_set_mm=6.0, ep_mpa=200000.0)
+    # Total tendon shortening is 2Δa = 12 mm, so uniform loss = Ep*(12/20000)=120 MPa.
+    assert all(row["Interaction mode"] == "BOTH-END SIMULTANEOUS COUPLED" for row in end_rows)
+    assert all(row["Neutral point s (m)"] == pytest.approx(10.0) for row in end_rows)
+    assert all(row["Anchorage-set loss at anchorage (MPa)"] == pytest.approx(120.0) for row in end_rows)
+    station_rows = anchorage_set_station_rows(rows, end_rows, length_m=20.0)
+    assert all(row["Stress after anchorage set (MPa)"] == pytest.approx(1280.0) for row in station_rows)
+
+
+def test_ptloss2r2_asymmetric_simultaneous_both_end_is_not_hardcoded_to_midspan() -> None:
+    original = anchorage_set_end_rows(
+        _linear_asymmetric_both_end_friction_rows(
+            left_gradient_mpa_per_m=8.0, right_gradient_mpa_per_m=12.0
+        ),
+        length_m=20.0,
+        anchor_set_mm=6.0,
+        ep_mpa=200000.0,
+    )
+    mirrored = anchorage_set_end_rows(
+        _linear_asymmetric_both_end_friction_rows(
+            left_gradient_mpa_per_m=12.0, right_gradient_mpa_per_m=8.0
+        ),
+        length_m=20.0,
+        anchor_set_mm=6.0,
+        ep_mpa=200000.0,
+    )
+    assert original[0]["Pre-seat no-movement s (m)"] == pytest.approx(12.0)
+    assert mirrored[0]["Pre-seat no-movement s (m)"] == pytest.approx(8.0)
+    n1 = float(original[0]["Neutral point s (m)"])
+    n2 = float(mirrored[0]["Neutral point s (m)"])
+    assert n1 != pytest.approx(10.0)
+    assert n2 == pytest.approx(20.0 - n1, abs=1.0e-7)
+    assert all(row["Compatibility set check (mm)"] == pytest.approx(6.0) for row in original + mirrored)
 
 
 
@@ -284,7 +387,7 @@ def test_ptloss2r1_default_crossbeam_t1_left_six_mm_solves_full_path_without_fal
         for row in t1_rows
     )
 
-def test_ptloss2r1_default_crossbeam_both_end_tendons_are_safely_locked() -> None:
+def test_ptloss2r2_default_crossbeam_both_end_tendons_solve_simultaneous_preview() -> None:
     system = default_tendon_system_rows()
     profile = default_tendon_profile_points(
         20.0,
@@ -298,9 +401,11 @@ def test_ptloss2r1_default_crossbeam_both_end_tendons_are_safely_locked() -> Non
     )
     summary = anchorage_set_summary(end_rows)
     assert len(end_rows) == 16
-    assert summary["calculated_end_count"] == 0
-    assert summary["review_end_count"] == 16
-    assert all(row["Interaction mode"] == "BOTH-END SEQUENCE REQUIRED" for row in end_rows)
+    assert summary["calculated_end_count"] == 16
+    assert summary["review_end_count"] == 0
+    assert all(row["Interaction mode"] == "BOTH-END SIMULTANEOUS COUPLED" for row in end_rows)
+    assert all(row["Pre-seat no-movement s (m)"] == pytest.approx(10.0) for row in end_rows)
+    assert all(row["Neutral point s (m)"] == pytest.approx(10.0) for row in end_rows)
 
 
 def test_ptloss2b_new_project_default_anchorage_set_is_six_mm_design_assumption() -> None:
@@ -335,15 +440,15 @@ def test_ptloss2_settings_persist_with_existing_crossbeam_loss_metadata() -> Non
     assert restored_state[CB_LOSS_EP_MPA_KEY] == pytest.approx(197000.0)
 
 
-def test_ptloss2r1_ui_exposes_single_end_method_and_locks_both_end_without_releasing_pe_eff() -> None:
+def test_ptloss2r2_ui_exposes_single_and_simultaneous_both_end_methods_without_releasing_pe_eff() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
     anchorage_block = source.split("with anchorage_set_tab:", maxsplit=1)[1].split(
         "with elastic_shortening_tab:", maxsplit=1
     )[0]
-    assert "Anchorage Set / Draw-in — methodology revalidation" in anchorage_block
+    assert "Anchorage Set / Draw-in — simultaneous both-end revalidation" in anchorage_block
     assert "SINGLE-END FRICTION-COUPLED" in source
-    assert "Both-end anchorage seating — locked pending sequence-aware revalidation" in source
-    assert "historical PTLOSS2C final-state coupled solution" in source
+    assert "Simultaneous both-end stressing / seating — PTLOSS2R2" in source
+    assert "Jack = Both means simultaneous equal left/right stressing" in source
     assert "Tendon force profile — before / after anchorage seating" in anchorage_block
     assert "After Anchorage Set" in source
     assert "Affected length sₐ" in source

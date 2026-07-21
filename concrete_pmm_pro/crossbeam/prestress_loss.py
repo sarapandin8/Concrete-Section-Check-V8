@@ -394,9 +394,12 @@ def aashto_friction_wobble_station_rows(
     Internal tendons use AASHTO Eq. 5.9.3.2.2b-1:
     ``Delta fpF = fpj * (1 - exp(-(Kx + mu alpha)))``.
 
-    Both-end jacking follows the AASHTO definition of ``alpha`` from the
-    nearest jacking end when tensioning is done equally at both ends.  The
-    source jacking force is never doubled.
+    For ``Jacking end = Both`` the app definition is simultaneous equal
+    jacking from the left and right ends.  The accepted pre-seating force at
+    each station is the higher of the two independently traced jacking-end
+    stresses, with the point of no movement at their intersection.  This
+    preserves a single tendon force field and never doubles the source jacking
+    force.
     """
 
     length = max(_float(length_m, 20.0), 0.1)
@@ -534,6 +537,37 @@ def aashto_friction_wobble_station_rows(
                     if right_branch_exponent < 80.0
                     else 0.0
                 )
+
+            # For simultaneous equal both-end jacking, the physical pre-seating
+            # tendon force is controlled by the jacking branch that delivers
+            # the higher stress at the station.  The branch intersection is the
+            # point of no movement (internal strand-force equilibrium).  Do not
+            # switch branches merely at the geometric midpoint because unequal
+            # curvature/wobble routes can move the equilibrium station.
+            if normalized_jack == "both" and left_branch_stress is not None and right_branch_stress is not None:
+                if left_branch_stress >= right_branch_stress:
+                    source_end = "Left (controlling)"
+                    x_from_jack_m = station_m
+                    alpha_v = _float(left_angles_at_point.get("alpha_v_rad"), 0.0)
+                    alpha_h = _float(left_angles_at_point.get("alpha_h_rad"), 0.0)
+                    alpha_total = left_alpha_total
+                    deviator_count = left_deviators
+                    exponent = left_branch_exponent
+                    f_after_mpa = left_branch_stress
+                else:
+                    source_end = "Right (controlling)"
+                    x_from_jack_m = max(length - station_m, 0.0)
+                    alpha_v = _float(right_angles_at_point.get("alpha_v_rad"), 0.0)
+                    alpha_h = _float(right_angles_at_point.get("alpha_h_rad"), 0.0)
+                    alpha_total = right_alpha_total
+                    deviator_count = right_deviators
+                    exponent = right_branch_exponent
+                    f_after_mpa = right_branch_stress
+                remaining_ratio = 0.0 if fpj_mpa <= 0.0 else f_after_mpa / fpj_mpa
+                loss_mpa = max(fpj_mpa - f_after_mpa, 0.0)
+                p_after_kn = aps_total * f_after_mpa / 1000.0
+                loss_kn = max(pj_kn - p_after_kn, 0.0)
+
             active = bool(force.get("Active"))
             if not active:
                 status = "STORED ONLY"
