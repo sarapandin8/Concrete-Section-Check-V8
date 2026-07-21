@@ -76,7 +76,6 @@ from concrete_pmm_pro.crossbeam.tendon_analysis import (
     tendon_force_trace_rows,
 )
 from concrete_pmm_pro.crossbeam.anchorage_set import (
-    ANCHORAGE_SET_METHOD_BASIS,
     anchorage_set_end_rows,
     anchorage_set_station_rows,
     anchorage_set_summary,
@@ -4608,6 +4607,188 @@ def _anchorage_decision_rows(
     return output
 
 
+
+def _anchorage_force_profile_figure(
+    station_rows: list[dict[str, Any]],
+    end_rows: list[dict[str, Any]],
+    *,
+    tendon_id: str,
+    length_m: float,
+) -> go.Figure:
+    """Return a component-scoped tendon-force comparison for anchorage seating QA.
+
+    The chart is intentionally read-only: it compares the jacking/reference force,
+    the accepted PTLOSS1 post-friction force diagram, and the PTLOSS2C post-seating
+    preview without assembling Pe or Pe_eff.
+    """
+
+    selected = [
+        row for row in station_rows if str(row.get("Tendon ID") or "") == str(tendon_id)
+    ]
+    by_station: dict[float, dict[str, Any]] = {}
+    for row in selected:
+        station = round(float(row.get("s (m)") or 0.0), 9)
+        by_station[station] = row
+    rows = [by_station[key] for key in sorted(by_station)]
+
+    fig = go.Figure()
+    if not rows:
+        fig.update_layout(
+            **_base_figure_layout(
+                f"Tendon force profile — {tendon_id}",
+                "Station s (m)",
+                "Tendon force P (kN)",
+                height=430,
+            )
+        )
+        return fig
+
+    stations = [float(row.get("s (m)") or 0.0) for row in rows]
+    pj_values = [float(row.get("Pj (kN)") or 0.0) for row in rows]
+    friction_values = [float(row.get("P after friction (kN)") or 0.0) for row in rows]
+    after_values = [
+        None
+        if row.get("P after anchorage set (kN)") is None
+        else float(row.get("P after anchorage set (kN)") or 0.0)
+        for row in rows
+    ]
+
+    if any(value > 0.0 for value in pj_values):
+        fig.add_trace(
+            go.Scatter(
+                x=stations,
+                y=pj_values,
+                mode="lines",
+                name="Reference Pj",
+                line={"width": 2.0, "dash": "dot"},
+                hovertemplate="s=%{x:.3f} m<br>Pj=%{y:.2f} kN<extra></extra>",
+            )
+        )
+    fig.add_trace(
+        go.Scatter(
+            x=stations,
+            y=friction_values,
+            mode="lines+markers",
+            name="After Friction & Wobble",
+            line={"width": 2.4},
+            marker={"size": 6},
+            hovertemplate="s=%{x:.3f} m<br>P=%{y:.2f} kN<extra></extra>",
+        )
+    )
+    if any(value is not None for value in after_values):
+        fig.add_trace(
+            go.Scatter(
+                x=stations,
+                y=after_values,
+                mode="lines+markers",
+                name="After Anchorage Set",
+                line={"width": 2.6},
+                marker={"size": 6},
+                hovertemplate="s=%{x:.3f} m<br>P=%{y:.2f} kN<extra></extra>",
+            )
+        )
+
+    tendon_ends = [
+        row for row in end_rows if str(row.get("Tendon ID") or "") == str(tendon_id)
+    ]
+    coupled = [
+        row
+        for row in tendon_ends
+        if str(row.get("Interaction mode") or "") == "FULL-LENGTH COUPLED"
+        and row.get("Neutral point s (m)") is not None
+    ]
+    if coupled:
+        neutral = float(coupled[0].get("Neutral point s (m)") or 0.0)
+        fig.add_vline(
+            x=neutral,
+            line_width=1.6,
+            line_dash="dash",
+            annotation_text=f"Neutral station sₙ = {neutral:.3f} m",
+            annotation_position="top",
+        )
+    else:
+        local_markers: list[tuple[float, str]] = []
+        for row in tendon_ends:
+            la_raw = row.get("Influence length (m)")
+            if la_raw is None:
+                continue
+            la = float(la_raw)
+            seat_end = str(row.get("Seating end") or "")
+            station = la if seat_end == "Left" else max(float(length_m) - la, 0.0)
+            local_markers.append((station, f"Zero-movement point ({seat_end})"))
+        for station, label in local_markers:
+            fig.add_vline(
+                x=station,
+                line_width=1.2,
+                line_dash="dash",
+                annotation_text=label,
+                annotation_position="top",
+            )
+
+    fig.update_layout(
+        **_base_figure_layout(
+            f"Tendon force profile — {tendon_id}",
+            "Station s (m)",
+            "Tendon force P (kN)",
+            height=460,
+        )
+    )
+    fig.update_xaxes(range=[0.0, max(float(length_m), 0.1)])
+    return fig
+
+
+def _anchorage_seating_geometry_metric(
+    end_rows: list[dict[str, Any]],
+    *,
+    has_calculated_ends: bool,
+    max_influence_length_m: float,
+) -> dict[str, str]:
+    if not has_calculated_ends:
+        return {
+            "title": "Seating geometry",
+            "value": "—",
+            "detail": "NOT CALCULATED",
+        }
+
+    calculated = [
+        row
+        for row in end_rows
+        if row.get("Influence length (m)") is not None
+        and row.get("Anchorage-set loss at anchorage (kN)") is not None
+    ]
+    modes = {str(row.get("Interaction mode") or "") for row in calculated}
+    if modes == {"FULL-LENGTH COUPLED"}:
+        neutral_values = sorted(
+            {
+                round(float(row.get("Neutral point s (m)") or 0.0), 9)
+                for row in calculated
+                if row.get("Neutral point s (m)") is not None
+            }
+        )
+        if len(neutral_values) == 1:
+            return {
+                "title": "Neutral station",
+                "value": f"sₙ = {neutral_values[0]:.3f} m",
+                "detail": "full-length coupled meeting point",
+            }
+        if neutral_values:
+            return {
+                "title": "Neutral station range",
+                "value": f"{neutral_values[0]:.3f}–{neutral_values[-1]:.3f} m",
+                "detail": "varies by tendon in coupled solution",
+            }
+    if modes and "FULL-LENGTH COUPLED" not in modes:
+        return {
+            "title": "Max influence length La",
+            "value": f"{float(max_influence_length_m):.3f} m",
+            "detail": "isolated zero-movement influence length",
+        }
+    return {
+        "title": "Seating geometry",
+        "value": "MIXED MODES",
+        "detail": "see tendon decision summary for La / neutral station",
+    }
+
 def _render_anchorage_formula_unit_audit(
     end_rows: list[dict[str, Any]],
 ) -> None:
@@ -4634,11 +4815,18 @@ def _render_anchorage_formula_unit_audit(
             "- Prestress-loss framework: AASHTO LRFD recognizes anchorage seating/set "
             "as an instantaneous post-tensioning loss component."
         )
-        st.write(f"- Base numerical method: {ANCHORAGE_SET_METHOD_BASIS}.")
         st.write(
-            "- PTLOSS2C full-length both-end interaction is an engineering implementation "
-            "extension of the FHWA graphical mirror-image/area-compatibility method; it is "
-            "not presented as a verbatim AASHTO numbered equation."
+            "- Loss component classification: anchorage seating/set — instantaneous "
+            "prestress loss."
+        )
+        st.write(
+            "- Numerical implementation: FHWA graphical force-diagram / "
+            "area-compatibility concept."
+        )
+        st.write(
+            "- PTLOSS2C extension: full-length coupled final-state compatibility "
+            "implementation. This is an engineering extension of the FHWA graphical "
+            "concept and is not presented as a verbatim AASHTO numbered equation."
         )
 
         st.markdown("**A. Isolated local mirror solution**")
@@ -4823,7 +5011,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "PTLOSS2C keeps the component-scoped subtabs and adds guarded full-length both-end anchorage-seating interaction when independent local branches overlap. Pe/Pe_eff and later losses remain locked.",
+        "PTLOSS2D adds a decision-view force-profile visualization and locks anchorage-seating terminology/code-method semantics while preserving the accepted PTLOSS2C calculation. Pe/Pe_eff and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -5126,7 +5314,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
 
     with anchorage_set_tab:
-        st.markdown("#### Anchorage Set / Draw-in — interaction preview")
+        st.markdown("#### Anchorage Set / Draw-in — validated interaction preview")
         _render_crossbeam_anchorage_set_assumptions()
         anchorage_end_rows = current_anchorage_end_rows
         anchorage_summary = current_anchorage_summary
@@ -5142,13 +5330,32 @@ def render_crossbeam_prestress_loss_page() -> None:
             == int(anchorage_summary["active_seating_end_count"])
         )
 
+        displayed_component_value = str(anchorage_summary["value"])
+        displayed_component_detail = "component-scoped anchorage-set interaction preview"
+        displayed_component_status = str(anchorage_summary["status"])
+        if (
+            displayed_component_value == "PREVIEW READY"
+            and anchorage_summary.get("review_notes")
+        ):
+            displayed_component_value = "PREVIEW READY — PROCEDURE REVIEW"
+            displayed_component_detail = (
+                "final-state compatibility solved; verify approved stressing/seating procedure"
+            )
+            displayed_component_status = "warning"
+
+        seating_geometry_metric = _anchorage_seating_geometry_metric(
+            anchorage_end_rows,
+            has_calculated_ends=has_calculated_ends,
+            max_influence_length_m=float(anchorage_summary["max_influence_length_m"]),
+        )
+
         render_metric_cards(
             [
                 {
                     "title": "Component status",
-                    "value": str(anchorage_summary["value"]),
-                    "detail": "component-scoped anchorage-set interaction preview",
-                    "status": str(anchorage_summary["status"]),
+                    "value": displayed_component_value,
+                    "detail": displayed_component_detail,
+                    "status": displayed_component_status,
                 },
                 {
                     "title": "Adopted Δa",
@@ -5170,7 +5377,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                     "status": "ready" if all_active_ends_calculated else "warning",
                 },
                 {
-                    "title": "Worst local loss",
+                    "title": "Worst seating loss",
                     "value": (
                         f"{float(anchorage_summary['worst_anchor_loss_percent']):.2f}%"
                         if has_calculated_ends
@@ -5184,17 +5391,9 @@ def render_crossbeam_prestress_loss_page() -> None:
                     "status": "neutral" if has_calculated_ends else "warning",
                 },
                 {
-                    "title": "Max influence length",
-                    "value": (
-                        f"{float(anchorage_summary['max_influence_length_m']):.3f} m"
-                        if has_calculated_ends
-                        else "—"
-                    ),
-                    "detail": (
-                        "seating influence / neutral-point distance"
-                        if has_calculated_ends
-                        else "NOT CALCULATED"
-                    ),
+                    "title": seating_geometry_metric["title"],
+                    "value": seating_geometry_metric["value"],
+                    "detail": seating_geometry_metric["detail"],
                     "status": "neutral" if has_calculated_ends else "warning",
                 },
             ]
@@ -5204,6 +5403,62 @@ def render_crossbeam_prestress_loss_page() -> None:
             st.warning(issue)
         for note in anchorage_summary["review_notes"]:
             st.info(note)
+
+        st.markdown("#### Tendon force profile — before / after anchorage seating")
+        active_tendon_ids = sorted(
+            {
+                str(row.get("Tendon ID") or "")
+                for row in anchorage_end_rows
+                if bool(row.get("Active")) and str(row.get("Tendon ID") or "")
+            }
+        )
+        governing_tendon = ""
+        calculated_for_governing = [
+            row
+            for row in anchorage_end_rows
+            if row.get("Anchorage-set loss at anchorage (%)") is not None
+        ]
+        if calculated_for_governing:
+            governing_tendon = str(
+                max(
+                    calculated_for_governing,
+                    key=lambda row: float(
+                        row.get("Anchorage-set loss at anchorage (%)") or 0.0
+                    ),
+                ).get("Tendon ID")
+                or ""
+            )
+        if active_tendon_ids:
+            default_index = (
+                active_tendon_ids.index(governing_tendon)
+                if governing_tendon in active_tendon_ids
+                else 0
+            )
+            profile_tendon = st.selectbox(
+                "Tendon to visualize",
+                options=active_tendon_ids,
+                index=default_index,
+                key="crossbeam_ptloss2d_force_profile_tendon",
+                help=(
+                    "Compare the jacking/reference force, accepted post-friction force, "
+                    "and component-scoped post-seating preview along the selected tendon."
+                ),
+            )
+            st.plotly_chart(
+                _anchorage_force_profile_figure(
+                    anchorage_station_rows,
+                    anchorage_end_rows,
+                    tendon_id=str(profile_tendon),
+                    length_m=length_m,
+                ),
+                use_container_width=True,
+                config=FIGURE_CONFIG,
+            )
+            st.caption(
+                "Reference Pj is shown for context only. 'After Friction & Wobble' is the "
+                "accepted PTLOSS1 force diagram; 'After Anchorage Set' is the isolated/coupled "
+                "PTLOSS2C component preview. This graph does not release Pe or Pe_eff."
+            )
 
         st.markdown("#### Anchorage-set decision summary")
         st.dataframe(
@@ -5392,7 +5647,15 @@ def render_crossbeam_prestress_loss_page() -> None:
                 )
 
         with st.expander("Calculation basis and QA boundary", expanded=False):
-            st.write(f"- Method: {ANCHORAGE_SET_METHOD_BASIS}.")
+            st.write(
+                "- Loss component classification: anchorage seating/set — instantaneous "
+                "prestress loss."
+            )
+            st.write(
+                "- Numerical implementation: FHWA graphical force-diagram / "
+                "area-compatibility concept; PTLOSS2C coupled mode is an engineering "
+                "final-state compatibility extension, not a verbatim AASHTO numbered equation."
+            )
             st.write(
                 "- Compatibility condition: anchorage movement equals the integrated "
                 "tendon strain reduction inside the zero-movement influence length."

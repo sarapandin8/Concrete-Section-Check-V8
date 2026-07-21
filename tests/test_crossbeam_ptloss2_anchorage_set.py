@@ -216,7 +216,7 @@ def test_ptloss2_ui_activates_anchorage_subtab_without_releasing_pe_eff() -> Non
         "with elastic_shortening_tab:", maxsplit=1
     )[0]
 
-    assert "Anchorage Set / Draw-in — interaction preview" in anchorage_block
+    assert "Anchorage Set / Draw-in — validated interaction preview" in anchorage_block
     assert "Adopted anchorage set Δa (mm)" in source
     assert "Detailed seating-end compatibility audit" in anchorage_block
     assert "P after anchor set (kN)" in anchorage_block
@@ -406,3 +406,24 @@ def test_ptloss2c_default_crossbeam_six_mm_solves_all_both_end_seating_ends() ->
     assert all(abs(float(row["Compatibility residual (mm)"])) < 1.0e-8 for row in end_rows)
     assert all(float(row["Max stress gain check (MPa)"]) <= 1.0e-8 for row in end_rows)
     assert all(float(row["Minimum final stress check (MPa)"]) > 0.0 for row in end_rows)
+
+
+def test_ptloss2d_ui_adds_force_profile_and_locks_coupled_semantics_without_releasing_pe_eff() -> None:
+    source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
+    anchorage_block = source.split("with anchorage_set_tab:", maxsplit=1)[1].split(
+        "with elastic_shortening_tab:", maxsplit=1
+    )[0]
+
+    assert "Anchorage Set / Draw-in — validated interaction preview" in anchorage_block
+    assert "PREVIEW READY — PROCEDURE REVIEW" in anchorage_block
+    assert "Tendon force profile — before / after anchorage seating" in anchorage_block
+    assert "Reference Pj" in source
+    assert "After Friction & Wobble" in source
+    assert "After Anchorage Set" in source
+    assert "Neutral station sₙ" in source
+    assert "full-length coupled meeting point" in source
+    assert "Loss component classification: anchorage seating/set" in source
+    assert "Numerical implementation: FHWA graphical force-diagram" in source
+    assert "Worst seating loss" in anchorage_block
+    assert "Max influence length" not in anchorage_block
+    assert "This graph does not release Pe or Pe_eff" in anchorage_block

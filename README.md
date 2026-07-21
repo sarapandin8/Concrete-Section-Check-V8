@@ -1,3 +1,7 @@
+### CROSSBEAM.PTLOSS2D - Anchorage Seating Visualization & Semantics Lock
+
+Adds a component-scoped tendon-force profile comparing reference Pj, accepted post-friction force, and post-anchorage-set preview; marks coupled neutral stations; and clarifies preview/procedure-review plus AASHTO/FHWA method semantics without changing PTLOSS2C solver equations or releasing `Pe / Pe_eff`. See `README_CROSSBEAM_PTLOSS2D.md`.
+
 ### CROSSBEAM.PTLOSS2C - Full-Length Both-End Anchorage Seating Interaction
 
 Adds a guarded full-length coupled both-end anchorage-seating compatibility preview when independent half-length branches are insufficient, using accepted PTLOSS1 left/right jacking traces while keeping explicit stressing sequence and `Pe / Pe_eff` locked. See `README_CROSSBEAM_PTLOSS2C.md`.
