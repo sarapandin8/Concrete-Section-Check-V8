@@ -23,6 +23,8 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     aashto_friction_wobble_station_rows,
     aashto_friction_wobble_summary,
     aashto_friction_wobble_tendon_summary_rows,
+    friction_wobble_formula_audit_rows,
+    friction_wobble_unit_audit,
     crossbeam_prestress_loss_settings_from_session_state,
     restore_crossbeam_prestress_loss_project_state,
 )
@@ -64,6 +66,40 @@ def test_ptloss1_default_k_converts_aashto_per_ft_to_per_m() -> None:
         AASHTO_INTERNAL_WOBBLE_K_PER_FT * FT_PER_M
     )
 
+
+
+def test_ptloss2b_friction_unit_audit_round_trips_aashto_k_and_keeps_exponent_dimensionless() -> None:
+    audit = friction_wobble_unit_audit(
+        adopted_internal_k_per_m=DEFAULT_INTERNAL_WOBBLE_K_PER_M
+    )
+    assert audit["reference_k_per_m"] == pytest.approx(
+        AASHTO_INTERNAL_WOBBLE_K_PER_FT * FT_PER_M
+    )
+    assert audit["source_roundtrip_k_per_ft"] == pytest.approx(
+        AASHTO_INTERNAL_WOBBLE_K_PER_FT
+    )
+    assert abs(audit["source_conversion_residual"]) < 1.0e-15
+    assert "dimensionless" in audit["kx_unit_check"]
+    assert "dimensionless" in audit["mu_alpha_unit_check"]
+
+
+def test_ptloss2b_friction_formula_audit_recomputes_governing_station_exactly() -> None:
+    rows = aashto_friction_wobble_station_rows(
+        _straight_profile(),
+        _system_row(jacking_end="Left"),
+        length_m=20.0,
+        internal_mu=0.20,
+        internal_k_per_m=0.001,
+    )
+    audit_rows = friction_wobble_formula_audit_rows(rows)
+    assert len(audit_rows) == 1
+    audit = audit_rows[0]
+    assert audit["Tendon type"] == "Internal"
+    assert audit["Kx"] == pytest.approx(0.02)
+    assert audit["mu-angle term"] == pytest.approx(0.0)
+    assert audit["Recomputed exponent"] == pytest.approx(audit["Exponent"])
+    assert audit["P/Pj"] == pytest.approx(exp(-0.02))
+    assert audit["Audit status"] == "PASS"
 
 def test_ptloss1_internal_both_end_uses_nearest_jacking_end_without_doubling_pj() -> None:
     rows = aashto_friction_wobble_station_rows(

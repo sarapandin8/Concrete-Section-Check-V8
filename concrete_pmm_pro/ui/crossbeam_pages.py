@@ -100,6 +100,8 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     aashto_friction_wobble_station_rows,
     aashto_friction_wobble_summary,
     aashto_friction_wobble_tendon_summary_rows,
+    friction_wobble_formula_audit_rows,
+    friction_wobble_unit_audit,
     normalize_crossbeam_prestress_loss_settings,
 )
 from concrete_pmm_pro.crossbeam.tendon_persistence import (
@@ -4278,7 +4280,7 @@ def _render_crossbeam_loss_assumptions() -> dict[str, float]:
                 step=0.0001,
                 format="%.6f",
                 key=CB_LOSS_INTERNAL_K_PER_M_KEY,
-                help="AASHTO table K = 0.0002 /ft converted to SI: about 0.000656 /m.",
+                help="Accepted PTLOSS1 reference K = 0.0002 /ft converted to SI: about 0.000656 /m. Verify the project/PT system basis before final design use.",
             )
         )
     with external_mu_col:
@@ -4344,8 +4346,8 @@ def _render_crossbeam_anchorage_set_assumptions() -> dict[str, float]:
                 format="%.2f",
                 key=CB_LOSS_ANCHORAGE_SET_MM_KEY,
                 help=(
-                    "Enter the project/PT supplier seating or wedge draw-in value applied at each active stressing anchorage. "
-                    "Zero intentionally keeps PTLOSS2 locked; no generic default loss is assumed."
+                    "Default design assumption = 6.00 mm. Verify and replace with the approved project/PT supplier "
+                    "anchorage seating or wedge draw-in value before final design use. Zero intentionally disables the preview."
                 ),
             )
         )
@@ -4364,11 +4366,381 @@ def _render_crossbeam_anchorage_set_assumptions() -> dict[str, float]:
                 ),
             )
         )
+    if abs(anchorage_set_mm - DEFAULT_ANCHORAGE_SET_MM) <= 1.0e-9:
+        source_note = (
+            "Current Δa = 6.00 mm is the app design-assumption default, not an "
+            "AASHTO-mandated value."
+        )
+    else:
+        source_note = (
+            f"Current adopted Δa = {anchorage_set_mm:.2f} mm is user/project input; "
+            "the app does not treat it as an AASHTO-mandated value."
+        )
     st.caption(
-        "PTLOSS2 uses the accepted post-friction force diagram and a compatibility-area/mirrored-force-diagram preview. "
-        "It does not deduct a fixed percentage and it does not release Pe or Pe_eff."
+        source_note
+        + " Verify Δa against the approved PT system / anchorage supplier before final "
+        "design use. PTLOSS2 uses the accepted post-friction force diagram and a "
+        "compatibility-area/mirrored-force-diagram preview; it does not deduct a fixed "
+        "percentage and it does not release Pe or Pe_eff."
     )
     return {"anchorage_set_mm": anchorage_set_mm, "ep_mpa": ep_mpa}
+
+
+def _render_friction_formula_unit_audit(
+    loss_rows: list[dict[str, Any]],
+    assumptions: Mapping[str, Any],
+) -> None:
+    audit = friction_wobble_unit_audit(
+        adopted_internal_k_per_m=float(assumptions["internal_k_per_m"]),
+    )
+    substitutions = friction_wobble_formula_audit_rows(
+        loss_rows,
+        external_inadvertent_angle_rad=float(
+            assumptions["external_inadvertent_angle_rad"]
+        ),
+    )
+    with st.expander("Formula, source & SI unit audit", expanded=False):
+        st.markdown("**Code / technical basis**")
+        st.write(f"- Friction/wobble basis: {AASHTO_PTL_FRICTION_BASIS}.")
+        st.write(
+            "- App computational system: SI. Stress = MPa, force = kN, "
+            "length = m, angular change = rad."
+        )
+        st.write(
+            "- Accepted PTLOSS1 reference K = 0.0002 /ft is converted before it "
+            "is used with x in metres; verify the adopted project/PT-system value."
+        )
+
+        st.markdown("**Internal tendon equation used by the solver**")
+        st.latex(r"P(x)=P_j\exp[-(Kx+\mu\alpha)]")
+        st.latex(
+            r"\Delta f_{pF}=f_{pj}\left(1-\exp[-(Kx+\mu\alpha)]\right)"
+        )
+        st.markdown("**External tendon equation used by the current preview**")
+        st.latex(r"P(x)=P_j\exp\{-\mu[\alpha+n_d\,\alpha_{add}]\}")
+        st.caption(
+            "For the current external preview, Kx is not used; n_d is the "
+            "counted deviator points and αadd is the adopted inadvertent-angle "
+            "addition per counted deviator."
+        )
+
+        st.markdown("**US-customary → SI conversion audit for wobble coefficient K**")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Item": "Accepted reference K",
+                        "Value": f"{audit['source_k_per_ft']:.7f}",
+                        "Unit": "/ft",
+                        "Audit": "Source value",
+                    },
+                    {
+                        "Item": "Conversion factor",
+                        "Value": f"{audit['ft_per_m']:.12f}",
+                        "Unit": "ft/m",
+                        "Audit": "1 m = 3.280839895 ft",
+                    },
+                    {
+                        "Item": "Converted reference K",
+                        "Value": f"{audit['reference_k_per_m']:.9f}",
+                        "Unit": "/m",
+                        "Audit": "K(/ft) × ft/m",
+                    },
+                    {
+                        "Item": "Adopted app K",
+                        "Value": f"{audit['adopted_k_per_m']:.9f}",
+                        "Unit": "/m",
+                        "Audit": (
+                            f"Equivalent "
+                            f"{audit['adopted_k_per_ft_equivalent']:.7f} /ft"
+                        ),
+                    },
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.success(str(audit["kx_unit_check"]))
+        st.success(str(audit["mu_alpha_unit_check"]))
+        if abs(float(audit["source_conversion_residual"])) <= 1.0e-12:
+            st.success(
+                "PASS — K reference round-trip conversion /ft → /m → "
+                "/ft is numerically consistent."
+            )
+        else:
+            st.warning(
+                "REVIEW — K unit-conversion round-trip residual is not negligible."
+            )
+
+        if substitutions:
+            st.markdown(
+                "**Representative governing substitution from the active tendon rows**"
+            )
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "Type": row["Tendon type"],
+                            "Tendon": row["Tendon ID"],
+                            "Point": row["Point"],
+                            "End": row["Source end"],
+                            "x (m)": round(float(row["x (m)"]), 4),
+                            "Kx": round(float(row["Kx"]), 7),
+                            "α (rad)": round(float(row["alpha (rad)"]), 7),
+                            "Angle add (rad)": round(
+                                float(row["Angle add total (rad)"]), 7
+                            ),
+                            "μ": round(float(row["mu"]), 5),
+                            "μ-angle": round(float(row["mu-angle term"]), 7),
+                            "Exponent": round(float(row["Exponent"]), 7),
+                            "P/Pj": round(float(row["P/Pj"]), 7),
+                            "Audit": row["Audit status"],
+                        }
+                        for row in substitutions
+                    ]
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+            for row in substitutions:
+                st.caption(
+                    f"{row['Tendon type']} {row['Tendon ID']} @ {row['Point']}: "
+                    f"Exponent = Kx + μ·angle = {float(row['Kx']):.7f} + "
+                    f"{float(row['mu-angle term']):.7f} = "
+                    f"{float(row['Recomputed exponent']):.7f}; P/Pj = "
+                    f"exp(-Exponent) = {float(row['P/Pj']):.7f}. "
+                    f"Audit = {row['Audit status']}."
+                )
+
+
+def _anchorage_decision_rows(
+    end_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in end_rows:
+        grouped.setdefault(str(row.get("Tendon ID") or ""), []).append(row)
+    output: list[dict[str, Any]] = []
+    for tendon_id, rows in sorted(grouped.items()):
+        calculated = [
+            row for row in rows if row.get("Influence length (m)") is not None
+        ]
+        statuses = [str(row.get("Status") or "") for row in rows]
+        if any(status == "REVIEW REQUIRED" for status in statuses):
+            status = "REVIEW REQUIRED"
+        elif any(status == "INPUT REQUIRED" for status in statuses):
+            status = "INPUT REQUIRED"
+        elif any(status == "PREVIEW READY + NOTE" for status in statuses):
+            status = "PREVIEW READY + NOTE"
+        elif any(status == "PREVIEW READY" for status in statuses):
+            status = "PREVIEW READY"
+        else:
+            status = statuses[0] if statuses else "REVIEW"
+        output.append(
+            {
+                "Tendon": tendon_id,
+                "Status": status,
+                "Jack": str(rows[0].get("Jacking end") or "") if rows else "",
+                "Ends": ", ".join(
+                    str(row.get("Seating end") or "") for row in rows
+                ),
+                "Δa (mm)": (
+                    round(float(rows[0].get("Anchorage set (mm)") or 0.0), 3)
+                    if rows
+                    else None
+                ),
+                "Max loss (%)": (
+                    None
+                    if not calculated
+                    else round(
+                        max(
+                            float(
+                                row.get(
+                                    "Anchorage-set loss at anchorage (%)"
+                                )
+                                or 0.0
+                            )
+                            for row in calculated
+                        ),
+                        3,
+                    )
+                ),
+                "Max La (m)": (
+                    None
+                    if not calculated
+                    else round(
+                        max(
+                            float(row.get("Influence length (m)") or 0.0)
+                            for row in calculated
+                        ),
+                        4,
+                    )
+                ),
+                "Min P lock-off (kN)": (
+                    None
+                    if not calculated
+                    else round(
+                        min(
+                            float(
+                                row.get("Lock-off force at anchorage (kN)")
+                                or 0.0
+                            )
+                            for row in calculated
+                        ),
+                        2,
+                    )
+                ),
+            }
+        )
+    return output
+
+
+def _render_anchorage_formula_unit_audit(
+    end_rows: list[dict[str, Any]],
+) -> None:
+    calculated = [
+        row
+        for row in end_rows
+        if row.get("Influence length (m)") is not None
+        and row.get("Mirrored stress-difference area (MPa·m)") is not None
+    ]
+    with st.expander("Formula, source & SI unit audit", expanded=False):
+        st.markdown("**Code / technical basis**")
+        st.write(
+            "- AASHTO LRFD recognizes anchorage seating/set as an "
+            "instantaneous post-tensioning loss component."
+        )
+        st.write(f"- Implementation method: {ANCHORAGE_SET_METHOD_BASIS}.")
+        st.write(
+            "- The compatibility-area / mirrored-diagram equation below is "
+            "the implemented engineering method; it is not presented as a "
+            "verbatim AASHTO numbered equation."
+        )
+
+        st.markdown("**Compatibility equation implemented by PTLOSS2**")
+        st.latex(
+            r"\Delta a=\frac{1000}{E_p}\int_0^{L_a}"
+            r"[f_{before}(x)-f_{after}(x)]\,dx"
+        )
+        st.latex(
+            r"f_{after}(x)=2f_{before}(L_a)-f_{before}(x),\quad "
+            r"0\le x\le L_a"
+        )
+        st.latex(
+            r"\Delta a=\frac{2000}{E_p}\left["
+            r"\int_0^{L_a}f_{before}(x)\,dx-L_a f_{before}(L_a)\right]"
+        )
+        st.caption(
+            "The factor 1000 converts metres in the integration coordinate to "
+            "millimetres so Δa is returned in mm when stress and Ep are in MPa."
+        )
+
+        st.markdown("**SI dimensional audit**")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Variable": "Δa",
+                        "Meaning": "Anchorage set / draw-in",
+                        "App unit": "mm",
+                    },
+                    {
+                        "Variable": "Ep",
+                        "Meaning": "Prestressing-steel elastic modulus",
+                        "App unit": "MPa = N/mm²",
+                    },
+                    {
+                        "Variable": "f",
+                        "Meaning": "Tendon stress",
+                        "App unit": "MPa = N/mm²",
+                    },
+                    {
+                        "Variable": "x, La",
+                        "Meaning": "Integration coordinate / influence length",
+                        "App unit": (
+                            "m in geometry; ×1000 to mm in compatibility"
+                        ),
+                    },
+                    {
+                        "Variable": "Aps",
+                        "Meaning": "Prestressing steel area",
+                        "App unit": "mm²",
+                    },
+                    {
+                        "Variable": "P",
+                        "Meaning": "Tendon force",
+                        "App unit": "kN; Aps×f/1000",
+                    },
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.success(
+            "PASS — (MPa·m / MPa) × 1000 mm/m = mm for anchorage movement "
+            "compatibility."
+        )
+        st.success(
+            "PASS — Aps(mm²) × f(MPa=N/mm²) / 1000 = tendon force in kN."
+        )
+
+        if not calculated:
+            st.info(
+                "No valid seating-end solution is available for substituted-value "
+                "audit. Resolve input/review conditions first."
+            )
+            return
+
+        governing = max(
+            calculated,
+            key=lambda row: float(
+                row.get("Anchorage-set loss at anchorage (%)") or 0.0
+            ),
+        )
+        adopted = float(governing.get("Anchorage set (mm)") or 0.0)
+        ep = float(governing.get("Ep (MPa)") or 0.0)
+        la = float(governing.get("Influence length (m)") or 0.0)
+        integral = float(
+            governing.get("Stress integral to La (MPa·m)") or 0.0
+        )
+        fzero = float(governing.get("Zero movement stress (MPa)") or 0.0)
+        one_side = float(
+            governing.get("One-side stress area (MPa·m)") or 0.0
+        )
+        mirrored = float(
+            governing.get("Mirrored stress-difference area (MPa·m)") or 0.0
+        )
+        check = float(governing.get("Compatibility set check (mm)") or 0.0)
+        residual = float(governing.get("Compatibility residual (mm)") or 0.0)
+        st.markdown("**Governing substituted-value audit**")
+        st.write(
+            f"Tendon **{governing.get('Tendon ID')}**, seating end "
+            f"**{governing.get('Seating end')}**: Δa = {adopted:.3f} mm, "
+            f"Ep = {ep:.0f} MPa, La = {la:.4f} m."
+        )
+        st.latex(
+            rf"\int_0^{{L_a}} f_{{before}}(x)\,dx="
+            rf"{integral:.6f}\ \mathrm{{MPa\cdot m}}"
+        )
+        st.latex(
+            rf"A_1={integral:.6f}-({la:.6f})({fzero:.6f})="
+            rf"{one_side:.6f}\ \mathrm{{MPa\cdot m}}"
+        )
+        st.latex(
+            rf"\Delta a_{{calc}}=\frac{{1000(2A_1)}}{{E_p}}="
+            rf"\frac{{1000({mirrored:.6f})}}{{{ep:.3f}}}="
+            rf"{check:.6f}\ \mathrm{{mm}}"
+        )
+        tolerance = max(1.0e-5, abs(adopted) * 1.0e-5)
+        if abs(check - adopted) <= tolerance and abs(residual) <= tolerance:
+            st.success(
+                f"PASS — compatibility closes to the adopted Δa; residual = "
+                f"{residual:.6g} mm."
+            )
+        else:
+            st.warning(
+                f"REVIEW — compatibility residual = {residual:.6g} mm; check "
+                "branch limits and solver assumptions."
+            )
 
 
 def render_crossbeam_prestress_loss_page() -> None:
@@ -4527,8 +4899,9 @@ def render_crossbeam_prestress_loss_page() -> None:
             "This subtab preserves the accepted PTLOSS1A–PTLOSS1E calculation behavior. "
             "PTLOSS1G changes workspace organization only."
         )
-        _render_crossbeam_loss_assumptions()
+        friction_assumptions = _render_crossbeam_loss_assumptions()
         loss_rows = current_loss_rows
+        _render_friction_formula_unit_audit(loss_rows, friction_assumptions)
         summary = current_summary
         tendon_summary_rows = aashto_friction_wobble_tendon_summary_rows(loss_rows)
 
@@ -4694,6 +5067,12 @@ def render_crossbeam_prestress_loss_page() -> None:
             anchorage_end_rows,
             length_m=length_m,
         )
+        has_calculated_ends = int(anchorage_summary["calculated_end_count"]) > 0
+        all_active_ends_calculated = (
+            int(anchorage_summary["active_seating_end_count"]) > 0
+            and int(anchorage_summary["calculated_end_count"])
+            == int(anchorage_summary["active_seating_end_count"])
+        )
 
         render_metric_cards(
             [
@@ -4706,92 +5085,125 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Adopted Δa",
                     "value": f"{float(current_assumptions['anchorage_set_mm']):.2f} mm",
-                    "detail": "per active stressing anchorage",
-                    "status": "neutral" if float(current_assumptions["anchorage_set_mm"]) > 0.0 else "warning",
+                    "detail": "design assumption — verify PT supplier",
+                    "status": (
+                        "neutral"
+                        if float(current_assumptions["anchorage_set_mm"]) > 0.0
+                        else "warning"
+                    ),
                 },
                 {
                     "title": "Calculated ends",
-                    "value": f"{int(anchorage_summary['calculated_end_count'])}/{int(anchorage_summary['active_seating_end_count'])}",
+                    "value": (
+                        f"{int(anchorage_summary['calculated_end_count'])}/"
+                        f"{int(anchorage_summary['active_seating_end_count'])}"
+                    ),
                     "detail": "valid influence-length solution",
-                    "status": "ready" if int(anchorage_summary["calculated_end_count"]) == int(anchorage_summary["active_seating_end_count"]) and int(anchorage_summary["active_seating_end_count"]) > 0 else "warning",
+                    "status": "ready" if all_active_ends_calculated else "warning",
                 },
                 {
                     "title": "Worst local loss",
-                    "value": f"{float(anchorage_summary['worst_anchor_loss_percent']):.2f}%",
-                    "detail": "at seated anchorage; vs Pj",
-                    "status": "neutral",
+                    "value": (
+                        f"{float(anchorage_summary['worst_anchor_loss_percent']):.2f}%"
+                        if has_calculated_ends
+                        else "—"
+                    ),
+                    "detail": (
+                        "at seated anchorage; vs Pj"
+                        if has_calculated_ends
+                        else "NOT CALCULATED"
+                    ),
+                    "status": "neutral" if has_calculated_ends else "warning",
                 },
                 {
                     "title": "Max influence length",
-                    "value": f"{float(anchorage_summary['max_influence_length_m']):.3f} m",
-                    "detail": "zero-movement distance preview",
-                    "status": "neutral",
+                    "value": (
+                        f"{float(anchorage_summary['max_influence_length_m']):.3f} m"
+                        if has_calculated_ends
+                        else "—"
+                    ),
+                    "detail": (
+                        "zero-movement distance preview"
+                        if has_calculated_ends
+                        else "NOT CALCULATED"
+                    ),
+                    "status": "neutral" if has_calculated_ends else "warning",
                 },
             ]
         )
+
         for issue in anchorage_summary["blocking_issues"]:
             st.warning(issue)
         for note in anchorage_summary["review_notes"]:
             st.info(note)
 
-        st.markdown("#### Seating-end compatibility audit")
+        st.markdown("#### Anchorage-set decision summary")
         st.dataframe(
-            pd.DataFrame(
-                [
-                    {
-                        "Tendon": row["Tendon ID"],
-                        "Status": row["Status"],
-                        "Type": row["Type"],
-                        "Jack": row["Jacking end"],
-                        "Seat end": row["Seating end"],
-                        "Δa (mm)": round(row["Anchorage set (mm)"], 3),
-                        "Ep (MPa)": round(row["Ep (MPa)"], 0),
-                        "Branch (m)": round(row["Branch limit (m)"], 4),
-                        "La (m)": None if row["Influence length (m)"] is None else round(row["Influence length (m)"], 4),
-                        "Max Δa (mm)": round(row["Max compatible set (mm)"], 3),
-                        "f@zero (MPa)": None if row["Zero movement stress (MPa)"] is None else round(row["Zero movement stress (MPa)"], 2),
-                        "f lock-off (MPa)": None if row["Lock-off stress at anchorage (MPa)"] is None else round(row["Lock-off stress at anchorage (MPa)"], 2),
-                        "P lock-off (kN)": None if row["Lock-off force at anchorage (kN)"] is None else round(row["Lock-off force at anchorage (kN)"], 2),
-                        "Local loss (%)": None if row["Anchorage-set loss at anchorage (%)"] is None else round(row["Anchorage-set loss at anchorage (%)"], 3),
-                        "Residual (mm)": round(row["Compatibility residual (mm)"], 6),
-                    }
-                    for row in anchorage_end_rows
-                ]
-            ),
+            pd.DataFrame(_anchorage_decision_rows(anchorage_end_rows)),
             use_container_width=True,
             hide_index=True,
             column_config={
                 "Tendon": st.column_config.TextColumn(width="small"),
                 "Status": st.column_config.TextColumn(width="medium"),
-                "Type": st.column_config.TextColumn(width="small"),
                 "Jack": st.column_config.TextColumn(width="small"),
-                "Seat end": st.column_config.TextColumn(width="small"),
+                "Ends": st.column_config.TextColumn(width="small"),
             },
         )
+        st.caption(
+            "Decision view only. Detailed left/right compatibility terms, station traces, "
+            "limitations, formulas, and unit checks remain available below for audit."
+        )
 
-        calculated_station_rows = [
-            row
-            for row in anchorage_station_rows
-            if row.get("P after anchorage set (kN)") is not None
-        ]
-        if calculated_station_rows:
-            st.markdown("#### Station trace after isolated anchorage set")
+        _render_anchorage_formula_unit_audit(anchorage_end_rows)
+
+        with st.expander("Detailed seating-end compatibility audit", expanded=False):
             st.dataframe(
                 pd.DataFrame(
                     [
                         {
                             "Tendon": row["Tendon ID"],
-                            "Status": row["Anchorage-set status"],
+                            "Status": row["Status"],
+                            "Type": row["Type"],
+                            "Jack": row["Jacking end"],
                             "Seat end": row["Seating end"],
-                            "Point": row["Point"],
-                            "s (m)": round(row["s (m)"], 4),
-                            "xj (m)": round(row["x from jack (m)"], 4),
-                            "La (m)": None if row["Influence length (m)"] is None else round(row["Influence length (m)"], 4),
-                            "P after friction (kN)": round(row["P after friction (kN)"], 3),
-                            "Anchor loss (kN)": round(row["Anchorage-set loss (kN)"], 3),
-                            "P after anchor set (kN)": round(row["P after anchorage set (kN)"], 3),
+                            "Δa (mm)": round(row["Anchorage set (mm)"], 3),
+                            "Ep (MPa)": round(row["Ep (MPa)"], 0),
+                            "Branch (m)": round(row["Branch limit (m)"], 4),
+                            "La (m)": (
+                                None
+                                if row["Influence length (m)"] is None
+                                else round(row["Influence length (m)"], 4)
+                            ),
+                            "Max Δa (mm)": round(row["Max compatible set (mm)"], 3),
+                            "f@zero (MPa)": (
+                                None
+                                if row["Zero movement stress (MPa)"] is None
+                                else round(row["Zero movement stress (MPa)"], 2)
+                            ),
+                            "f lock-off (MPa)": (
+                                None
+                                if row["Lock-off stress at anchorage (MPa)"] is None
+                                else round(
+                                    row["Lock-off stress at anchorage (MPa)"], 2
+                                )
+                            ),
+                            "P lock-off (kN)": (
+                                None
+                                if row["Lock-off force at anchorage (kN)"] is None
+                                else round(row["Lock-off force at anchorage (kN)"], 2)
+                            ),
+                            "Local loss (%)": (
+                                None
+                                if row["Anchorage-set loss at anchorage (%)"] is None
+                                else round(
+                                    row["Anchorage-set loss at anchorage (%)"], 3
+                                )
+                            ),
+                            "Residual (mm)": round(
+                                row["Compatibility residual (mm)"], 6
+                            ),
                         }
-                        for row in calculated_station_rows
+                        for row in anchorage_end_rows
                     ]
                 ),
                 use_container_width=True,
@@ -4799,10 +5211,59 @@ def render_crossbeam_prestress_loss_page() -> None:
                 column_config={
                     "Tendon": st.column_config.TextColumn(width="small"),
                     "Status": st.column_config.TextColumn(width="medium"),
+                    "Type": st.column_config.TextColumn(width="small"),
+                    "Jack": st.column_config.TextColumn(width="small"),
                     "Seat end": st.column_config.TextColumn(width="small"),
-                    "Point": st.column_config.TextColumn(width="small"),
                 },
             )
+
+        calculated_station_rows = [
+            row
+            for row in anchorage_station_rows
+            if row.get("P after anchorage set (kN)") is not None
+        ]
+        if calculated_station_rows:
+            with st.expander(
+                "Detailed station trace after isolated anchorage set",
+                expanded=False,
+            ):
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {
+                                "Tendon": row["Tendon ID"],
+                                "Status": row["Anchorage-set status"],
+                                "Seat end": row["Seating end"],
+                                "Point": row["Point"],
+                                "s (m)": round(row["s (m)"], 4),
+                                "xj (m)": round(row["x from jack (m)"], 4),
+                                "La (m)": (
+                                    None
+                                    if row["Influence length (m)"] is None
+                                    else round(row["Influence length (m)"], 4)
+                                ),
+                                "P after friction (kN)": round(
+                                    row["P after friction (kN)"], 3
+                                ),
+                                "Anchor loss (kN)": round(
+                                    row["Anchorage-set loss (kN)"], 3
+                                ),
+                                "P after anchor set (kN)": round(
+                                    row["P after anchorage set (kN)"], 3
+                                ),
+                            }
+                            for row in calculated_station_rows
+                        ]
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Tendon": st.column_config.TextColumn(width="small"),
+                        "Status": st.column_config.TextColumn(width="medium"),
+                        "Seat end": st.column_config.TextColumn(width="small"),
+                        "Point": st.column_config.TextColumn(width="small"),
+                    },
+                )
 
         review_rows = [
             {
@@ -4817,27 +5278,67 @@ def render_crossbeam_prestress_loss_page() -> None:
             or str(row.get("Review note") or "").strip()
         ]
         if review_rows:
-            st.markdown("#### Anchorage-set review / limitations")
-            st.dataframe(
-                pd.DataFrame(review_rows),
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Tendon": st.column_config.TextColumn(width="small"),
-                    "Seat end": st.column_config.TextColumn(width="small"),
-                    "Status": st.column_config.TextColumn(width="medium"),
-                    "Required issue": st.column_config.TextColumn(width="large"),
-                    "Review note": st.column_config.TextColumn(width="large"),
-                },
+            unique_required = sorted(
+                {
+                    str(row["Required issue"])
+                    for row in review_rows
+                    if str(row["Required issue"]) not in {"", "-"}
+                }
             )
+            unique_notes = sorted(
+                {
+                    str(row["Review note"])
+                    for row in review_rows
+                    if str(row["Review note"]) not in {"", "-"}
+                }
+            )
+            st.markdown("#### Review / limitations")
+            st.caption(
+                f"{len(review_rows)} seating-end review row(s); "
+                f"{len(unique_required)} unique required issue(s) and "
+                f"{len(unique_notes)} unique review note(s)."
+            )
+            for issue in unique_required:
+                st.warning(issue)
+            with st.expander("Detailed seating-end review", expanded=False):
+                st.dataframe(
+                    pd.DataFrame(review_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Tendon": st.column_config.TextColumn(width="small"),
+                        "Seat end": st.column_config.TextColumn(width="small"),
+                        "Status": st.column_config.TextColumn(width="medium"),
+                        "Required issue": st.column_config.TextColumn(width="large"),
+                        "Review note": st.column_config.TextColumn(width="large"),
+                    },
+                )
 
         with st.expander("Calculation basis and QA boundary", expanded=False):
             st.write(f"- Method: {ANCHORAGE_SET_METHOD_BASIS}.")
-            st.write("- Compatibility condition: anchorage movement equals the integrated tendon strain reduction inside the zero-movement influence length.")
-            st.write("- Force redistribution uses a mirrored accepted post-friction force diagram about the zero-movement point; no fixed percentage loss is used.")
-            st.write("- Both-end jacking is only accepted as independent local seating branches while the solved influence zones remain inside their half-length branches; overlap requires a later stressing-sequence solver.")
-            st.write("- One-end jacking currently models final seating at the active stressing end only. Dead-end anchorage seating/history remains an explicit project/PT procedure review item.")
-            st.write("- P after anchorage set is component-scoped audit output only. Pe and Pe_eff remain locked.")
+            st.write(
+                "- Compatibility condition: anchorage movement equals the integrated "
+                "tendon strain reduction inside the zero-movement influence length."
+            )
+            st.write(
+                "- Force redistribution uses a mirrored accepted post-friction force "
+                "diagram about the zero-movement point; no fixed percentage loss is used."
+            )
+            st.write(
+                "- Both-end jacking is only accepted as independent local seating "
+                "branches while the solved influence zones remain inside their half-length "
+                "branches; overlap requires a later stressing-sequence solver."
+            )
+            st.write(
+                "- One-end jacking currently models final seating at the active stressing "
+                "end only. Dead-end anchorage seating/history remains an explicit "
+                "project/PT procedure review item."
+            )
+            st.write(
+                "- P after anchorage set is component-scoped audit output only. Pe and "
+                "Pe_eff remain locked."
+            )
+
 
     with elastic_shortening_tab:
         st.markdown("#### Elastic Shortening")

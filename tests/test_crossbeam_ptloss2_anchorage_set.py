@@ -13,6 +13,8 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     CB_LOSS_ANCHORAGE_SET_MM_KEY,
     CB_LOSS_EP_MPA_KEY,
     CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY,
+    DEFAULT_ANCHORAGE_SET_MM,
+    default_crossbeam_prestress_loss_settings,
     crossbeam_prestress_loss_settings_from_session_state,
     restore_crossbeam_prestress_loss_project_state,
 )
@@ -109,6 +111,10 @@ def test_ptloss2_linear_force_diagram_matches_closed_form_area_compatibility() -
     assert row["Anchorage-set loss at anchorage (MPa)"] == pytest.approx(200.0)
     assert row["Anchorage-set loss at anchorage (kN)"] == pytest.approx(200.0)
     assert row["Anchorage-set loss at anchorage (%)"] == pytest.approx(100.0 * 200.0 / 1400.0)
+    assert row["Stress integral to La (MPa·m)"] == pytest.approx(13500.0)
+    assert row["One-side stress area (MPa·m)"] == pytest.approx(500.0)
+    assert row["Mirrored stress-difference area (MPa·m)"] == pytest.approx(1000.0)
+    assert row["Compatibility set check (mm)"] == pytest.approx(5.0)
     assert abs(row["Compatibility residual (mm)"]) < 1.0e-8
 
 
@@ -130,6 +136,12 @@ def test_ptloss2_station_trace_applies_only_inside_zero_movement_length() -> Non
     assert by_point["P3"]["P after anchorage set (kN)"] == pytest.approx(1200.0)
     assert by_point["P3"]["Anchorage-set loss (kN)"] == pytest.approx(0.0)
 
+
+
+def test_ptloss2b_new_project_default_anchorage_set_is_six_mm_design_assumption() -> None:
+    defaults = default_crossbeam_prestress_loss_settings()
+    assert DEFAULT_ANCHORAGE_SET_MM == pytest.approx(6.0)
+    assert defaults["anchorage_set_mm"] == pytest.approx(6.0)
 
 def test_ptloss2_zero_set_keeps_component_input_required() -> None:
     end_rows = anchorage_set_end_rows(
@@ -201,9 +213,12 @@ def test_ptloss2_ui_activates_anchorage_subtab_without_releasing_pe_eff() -> Non
 
     assert "Anchorage Set / Draw-in — isolated preview" in anchorage_block
     assert "Adopted anchorage set Δa (mm)" in source
-    assert "Seating-end compatibility audit" in anchorage_block
+    assert "Detailed seating-end compatibility audit" in anchorage_block
     assert "P after anchor set (kN)" in anchorage_block
-    assert "Pe and Pe_eff remain locked" in anchorage_block
+    assert "Anchorage-set decision summary" in anchorage_block
+    assert "Formula, source & SI unit audit" in source
+    assert "design assumption — verify PT supplier" in anchorage_block
+    assert "Pe and " in anchorage_block and "Pe_eff remain locked" in anchorage_block
     assert "Guarded future component — no anchorage-set loss is calculated in PTLOSS1G." not in source
 
 

@@ -350,6 +350,10 @@ def anchorage_set_end_rows(
             anchor_loss_mpa: float | None = None
             anchor_loss_kn: float | None = None
             anchor_loss_percent: float | None = None
+            stress_integral_mpa_m: float | None = None
+            one_side_stress_area_mpa_m: float | None = None
+            mirrored_stress_area_mpa_m: float | None = None
+            compatibility_set_check_mm: float | None = None
 
             if branch_rows and adopted_set > 0.0 and ep > 0.0:
                 influence, max_compatible_set, residual = _solve_influence_length_m(
@@ -365,6 +369,15 @@ def anchorage_set_end_rows(
                 else:
                     zero_movement_stress = _diagram_stress_mpa(branch_rows, influence)
                     anchor_initial = _diagram_stress_mpa(branch_rows, 0.0)
+                    stress_integral_mpa_m = _diagram_integral_mpa_m(branch_rows, influence)
+                    one_side_stress_area_mpa_m = max(
+                        stress_integral_mpa_m - influence * zero_movement_stress,
+                        0.0,
+                    )
+                    mirrored_stress_area_mpa_m = 2.0 * one_side_stress_area_mpa_m
+                    compatibility_set_check_mm = (
+                        1000.0 * mirrored_stress_area_mpa_m / ep if ep > 0.0 else None
+                    )
                     lockoff_stress = 2.0 * zero_movement_stress - anchor_initial
                     if lockoff_stress < -1.0e-6:
                         issues.append(
@@ -410,11 +423,21 @@ def anchorage_set_end_rows(
                     "Seating end": end,
                     "Anchorage set (mm)": adopted_set,
                     "Ep (MPa)": ep,
+                    "Aps total (mm²)": aps_total,
+                    "fpj (MPa)": fpj_mpa,
+                    "Pj (kN)": pj_kn,
                     "Branch limit (m)": branch_limit,
                     "Branch points": len(branch_rows),
                     "Max compatible set (mm)": max_compatible_set,
                     "Influence length (m)": influence,
+                    "Initial stress at anchorage after friction (MPa)": (
+                        _diagram_stress_mpa(branch_rows, 0.0) if branch_rows else None
+                    ),
                     "Zero movement stress (MPa)": zero_movement_stress,
+                    "Stress integral to La (MPa·m)": stress_integral_mpa_m,
+                    "One-side stress area (MPa·m)": one_side_stress_area_mpa_m,
+                    "Mirrored stress-difference area (MPa·m)": mirrored_stress_area_mpa_m,
+                    "Compatibility set check (mm)": compatibility_set_check_mm,
                     "Lock-off stress at anchorage (MPa)": lockoff_stress,
                     "Lock-off force at anchorage (kN)": lockoff_force,
                     "Anchorage-set loss at anchorage (MPa)": anchor_loss_mpa,

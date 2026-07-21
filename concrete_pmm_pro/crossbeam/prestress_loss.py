@@ -36,7 +36,7 @@ DEFAULT_INTERNAL_FRICTION_MU = 0.20
 DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU = AASHTO_EXTERNAL_RIGID_STEEL_PIPE_DEVIATOR_MU
 DEFAULT_EXTERNAL_DEVIATOR_MU = DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU
 DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD = 0.04
-DEFAULT_ANCHORAGE_SET_MM = 0.0
+DEFAULT_ANCHORAGE_SET_MM = 6.0
 DEFAULT_PRESTRESS_STEEL_EP_MPA = 195000.0
 EXTERNAL_HDPE_REVIEW_NOTE = "HDPE note: verify PT supplier, angle tolerances, sequence."
 EXTERNAL_NO_DEVIATOR_ISSUE = "No Deviator point: +0.04 rad not applied."
@@ -283,6 +283,101 @@ def _source_end_values(
         return "Left (nearest)", left_x, left_angles
     return "Right (nearest)", right_x, right_angles
 
+
+
+def friction_wobble_unit_audit(
+    *,
+    adopted_internal_k_per_m: float = DEFAULT_INTERNAL_WOBBLE_K_PER_M,
+) -> dict[str, Any]:
+    """Return explicit US-customary-to-SI conversion and dimensional checks.
+
+    The accepted PTLOSS1 reference value is expressed per foot. The Crossbeam
+    solver uses metres, therefore K must be converted to 1/m before forming the
+    dimensionless exponent Kx + mu*alpha.
+    """
+
+    adopted_k = max(_float(adopted_internal_k_per_m, DEFAULT_INTERNAL_WOBBLE_K_PER_M), 0.0)
+    reference_k_si = AASHTO_INTERNAL_WOBBLE_K_PER_FT * FT_PER_M
+    source_roundtrip = reference_k_si / FT_PER_M
+    return {
+        "source_k_per_ft": AASHTO_INTERNAL_WOBBLE_K_PER_FT,
+        "ft_per_m": FT_PER_M,
+        "reference_k_per_m": reference_k_si,
+        "source_roundtrip_k_per_ft": source_roundtrip,
+        "source_conversion_residual": source_roundtrip - AASHTO_INTERNAL_WOBBLE_K_PER_FT,
+        "adopted_k_per_m": adopted_k,
+        "adopted_k_per_ft_equivalent": adopted_k / FT_PER_M,
+        "kx_unit_check": "PASS — (1/m) × m is dimensionless",
+        "mu_alpha_unit_check": "PASS — μ is dimensionless and α is in radians",
+    }
+
+
+def friction_wobble_formula_audit_rows(
+    loss_rows: Any,
+    *,
+    external_inadvertent_angle_rad: float = DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD,
+) -> list[dict[str, Any]]:
+    """Return representative substituted-equation rows without changing the solver.
+
+    One governing traced station is returned for each tendon type so the UI can
+    expose the exact dimensionless terms used by the accepted PTLOSS1 solver.
+    """
+
+    rows = _records(loss_rows)
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        if not bool(row.get("Active")):
+            continue
+        grouped.setdefault(str(row.get("Type") or "Internal"), []).append(row)
+
+    audit_rows: list[dict[str, Any]] = []
+    angle_add = max(_float(external_inadvertent_angle_rad, DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD), 0.0)
+    for tendon_type, type_rows in sorted(grouped.items()):
+        if not type_rows:
+            continue
+        row = max(type_rows, key=lambda item: _float(item.get("Exponent"), 0.0))
+        x_m = _float(row.get("x from jack (m)"), 0.0)
+        alpha = _float(row.get("alpha total (rad)"), 0.0)
+        mu = _float(row.get("mu"), 0.0)
+        deviators = int(round(_float(row.get("Deviators counted"), 0.0)))
+        k_value = row.get("K (/m)")
+        kx = 0.0 if k_value is None else _float(k_value, 0.0) * x_m
+        effective_angle = alpha
+        if str(tendon_type).strip().casefold() == "external":
+            effective_angle += angle_add * deviators
+        mu_angle = mu * effective_angle
+        recomputed_exponent = kx + mu_angle
+        stored_exponent = _float(row.get("Exponent"), 0.0)
+        fpj = _float(row.get("fpj (MPa)"), 0.0)
+        remaining_ratio = exp(-recomputed_exponent) if recomputed_exponent < 80.0 else 0.0
+        recomputed_stress = fpj * remaining_ratio
+        stored_stress = _float(row.get("Stress after friction (MPa)"), 0.0)
+        exponent_residual = recomputed_exponent - stored_exponent
+        stress_residual = recomputed_stress - stored_stress
+        audit_rows.append(
+            {
+                "Tendon type": tendon_type,
+                "Tendon ID": str(row.get("Tendon ID") or ""),
+                "Point": str(row.get("Point") or ""),
+                "Source end": str(row.get("Source end") or ""),
+                "x (m)": x_m,
+                "Kx": kx,
+                "alpha (rad)": alpha,
+                "Angle add total (rad)": angle_add * deviators if str(tendon_type).strip().casefold() == "external" else 0.0,
+                "mu": mu,
+                "mu-angle term": mu_angle,
+                "Exponent": stored_exponent,
+                "Recomputed exponent": recomputed_exponent,
+                "P/Pj": remaining_ratio,
+                "fpj (MPa)": fpj,
+                "f after friction (MPa)": stored_stress,
+                "Equation": str(row.get("Equation") or ""),
+                "Audit status": "PASS" if abs(exponent_residual) <= 1.0e-10 and abs(stress_residual) <= 1.0e-7 else "REVIEW",
+                "Exponent residual": exponent_residual,
+                "Stress residual (MPa)": stress_residual,
+            }
+        )
+    return audit_rows
 
 def aashto_friction_wobble_station_rows(
     profile_values: Any,

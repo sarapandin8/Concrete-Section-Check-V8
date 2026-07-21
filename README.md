@@ -1,3 +1,7 @@
+### CROSSBEAM.PTLOSS2B - Anchorage Set Decision View + Formula & SI Unit Audit
+
+Adds a 6.00 mm user-editable anchorage-set design-assumption default, a cleaner Anchorage Set decision view, and transparent friction/wobble plus draw-in formula/SI-unit audits without changing accepted solver equations or releasing `Pe / Pe_eff`. See `README_CROSSBEAM_PTLOSS2B.md`.
+
 ### CROSSBEAM.PTLOSS2A - Prestress Loss Runtime Settings Hotfix
 
 Fixes the Crossbeam Prestress Loss runtime settings initialization so external-angle, anchorage-set, and prestressing-steel modulus defaults are read as separate session-state fields, eliminating the PTLOSS2 page-opening `TypeError` without changing any prestress-loss equations or other member workflows. See `README_CROSSBEAM_PTLOSS2A.md`.
