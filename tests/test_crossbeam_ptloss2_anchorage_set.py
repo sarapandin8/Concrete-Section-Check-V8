@@ -10,6 +10,9 @@ from concrete_pmm_pro.crossbeam.anchorage_set import (
     anchorage_set_station_rows,
     anchorage_set_summary,
 )
+from concrete_pmm_pro.crossbeam.anchorage_set_validation import (
+    independent_both_end_dense_grid_validation,
+)
 from concrete_pmm_pro.crossbeam.prestress_loss import (
     CB_LOSS_ANCHORAGE_SET_MM_KEY,
     CB_LOSS_EP_MPA_KEY,
@@ -532,6 +535,30 @@ def test_ptloss2r3_independent_dense_grid_matches_asymmetric_simultaneous_both_e
 
 
 
+def test_ptloss2r3a_independent_verifier_exposes_numeric_difference_evidence() -> None:
+    friction_rows = _linear_asymmetric_both_end_friction_rows(
+        left_gradient_mpa_per_m=8.0,
+        right_gradient_mpa_per_m=12.0,
+    )
+    end_rows = anchorage_set_end_rows(
+        friction_rows, length_m=20.0, anchor_set_mm=6.0, ep_mpa=200000.0
+    )
+    qa = independent_both_end_dense_grid_validation(
+        friction_rows,
+        end_rows,
+        length_m=20.0,
+        anchor_set_mm=6.0,
+        ep_mpa=200000.0,
+        n_steps=6000,
+    )
+    assert qa["status"] == "PASS"
+    assert qa["max_neutral_station_diff_m"] <= qa["station_tolerance_m"]
+    assert qa["max_meeting_stress_diff_mpa"] <= qa["stress_tolerance_mpa"]
+    assert qa["max_left_anchor_loss_diff_mpa"] <= qa["stress_tolerance_mpa"]
+    assert qa["max_right_anchor_loss_diff_mpa"] <= qa["stress_tolerance_mpa"]
+    assert qa["tendon_rows"][0]["Status"] == "PASS"
+
+
 def test_ptloss2r2_default_crossbeam_both_end_tendons_solve_simultaneous_preview() -> None:
     system = default_tendon_system_rows()
     profile = default_tendon_profile_points(
@@ -590,7 +617,7 @@ def test_ptloss2r2_ui_exposes_single_and_simultaneous_both_end_methods_without_r
     anchorage_block = source.split("with anchorage_set_tab:", maxsplit=1)[1].split(
         "with elastic_shortening_tab:", maxsplit=1
     )[0]
-    assert "Anchorage Set / Draw-in — distribution-average QA closeout" in anchorage_block
+    assert "Anchorage Set / Draw-in — visualization & validation-evidence closeout" in anchorage_block
     assert "SINGLE-END FRICTION-COUPLED" in source
     assert "Simultaneous both-end stressing / seating — PTLOSS2R2" in source
     assert "Jack = Both means simultaneous equal left/right stressing" in source
@@ -599,6 +626,9 @@ def test_ptloss2r2_ui_exposes_single_and_simultaneous_both_end_methods_without_r
     assert "Affected length sₐ" in source
     assert "Equivalent average anchor-set loss" in anchorage_block
     assert "Selected tendon —" in anchorage_block
+    assert "Three-point force-profile QA" in anchorage_block
+    assert "Independent simultaneous-both-end numerical verification" in source
+    assert "fig.update_yaxes(range=[y_min - margin, y_max + margin])" in source
     assert "Pe and Pe_eff remain locked" in anchorage_block
 
 

@@ -81,6 +81,9 @@ from concrete_pmm_pro.crossbeam.anchorage_set import (
     anchorage_set_station_rows,
     anchorage_set_summary,
 )
+from concrete_pmm_pro.crossbeam.anchorage_set_validation import (
+    independent_both_end_dense_grid_validation,
+)
 from concrete_pmm_pro.crossbeam.prestress_loss import (
     AASHTO_POLYETHYLENE_DUCT_MU,
     AASHTO_PTL_FRICTION_BASIS,
@@ -4581,6 +4584,124 @@ def _anchorage_decision_rows(
         )
     return output
 
+def _force_profile_interpolated_value(
+    rows: list[dict[str, Any]],
+    station_m: float,
+    field: str,
+) -> float | None:
+    """Return a linearly interpolated force value from component station rows."""
+
+    canonical: dict[float, dict[str, Any]] = {}
+    for row in rows:
+        station = round(float(row.get("s (m)") or 0.0), 9)
+        canonical[station] = row
+    ordered = [canonical[key] for key in sorted(canonical)]
+    if not ordered:
+        return None
+    target = float(station_m)
+    first_station = float(ordered[0].get("s (m)") or 0.0)
+    last_station = float(ordered[-1].get("s (m)") or 0.0)
+    target = min(max(target, first_station), last_station)
+
+    def value(row: dict[str, Any]) -> float | None:
+        raw = row.get(field)
+        if raw is None:
+            return None
+        number = float(raw)
+        return number if isfinite(number) else None
+
+    if target <= first_station + 1.0e-12:
+        return value(ordered[0])
+    for left, right in zip(ordered, ordered[1:]):
+        x0 = float(left.get("s (m)") or 0.0)
+        x1 = float(right.get("s (m)") or 0.0)
+        if target <= x1 + 1.0e-12:
+            y0 = value(left)
+            y1 = value(right)
+            if y0 is None or y1 is None:
+                return None
+            if x1 <= x0 + 1.0e-12:
+                return y1
+            ratio = min(max((target - x0) / (x1 - x0), 0.0), 1.0)
+            return y0 + ratio * (y1 - y0)
+    return value(ordered[-1])
+
+
+def _anchorage_force_profile_key_points(
+    station_rows: list[dict[str, Any]],
+    end_rows: list[dict[str, Any]],
+    *,
+    tendon_id: str,
+    length_m: float,
+) -> list[dict[str, Any]]:
+    """Return three compact numerical QA points matching the force-profile chart."""
+
+    selected = [
+        row for row in station_rows if str(row.get("Tendon ID") or "") == str(tendon_id)
+    ]
+    tendon_ends = [
+        row for row in end_rows if str(row.get("Tendon ID") or "") == str(tendon_id)
+    ]
+    if not selected:
+        return []
+
+    characteristic_station = 0.5 * max(float(length_m), 0.0)
+    characteristic_label = "Midspan"
+    coupled = next(
+        (
+            row
+            for row in tendon_ends
+            if "BOTH-END SIMULTANEOUS COUPLED" in str(row.get("Interaction mode") or "")
+            and row.get("Neutral point s (m)") is not None
+        ),
+        None,
+    )
+    if coupled is not None:
+        characteristic_station = float(coupled.get("Neutral point s (m)"))
+        characteristic_label = "Neutral sₙ"
+    else:
+        single = next(
+            (
+                row
+                for row in tendon_ends
+                if str(row.get("Interaction mode") or "") == "SINGLE-END FRICTION-COUPLED"
+                and row.get("Affected length (m)") is not None
+            ),
+            None,
+        )
+        if single is not None and not bool(single.get("Full tendon affected")):
+            affected = float(single.get("Affected length (m)") or 0.0)
+            if str(single.get("Seating end") or "").strip().casefold() == "right":
+                characteristic_station = max(float(length_m) - affected, 0.0)
+            else:
+                characteristic_station = affected
+            characteristic_label = "Affected-limit sₐ"
+        elif single is not None and bool(single.get("Full tendon affected")):
+            characteristic_label = "Midspan · full tendon affected"
+
+    targets = [
+        ("Left anchorage", 0.0),
+        (characteristic_label, characteristic_station),
+        ("Right anchorage", max(float(length_m), 0.0)),
+    ]
+    output: list[dict[str, Any]] = []
+    for label, station in targets:
+        friction = _force_profile_interpolated_value(selected, station, "P after friction (kN)")
+        after = _force_profile_interpolated_value(selected, station, "P after anchorage set (kN)")
+        output.append(
+            {
+                "QA point": label,
+                "s (m)": round(float(station), 4),
+                "P after friction (kN)": "—" if friction is None else round(friction, 2),
+                "P after anchorage set (kN)": "—" if after is None else round(after, 2),
+                "Anchor-set ΔP (kN)": (
+                    "—" if friction is None or after is None else round(friction - after, 2)
+                ),
+            }
+        )
+    return output
+
+
 def _anchorage_force_profile_figure(
     station_rows: list[dict[str, Any]],
     end_rows: list[dict[str, Any]],
@@ -4707,6 +4828,20 @@ def _anchorage_force_profile_figure(
         )
     )
     fig.update_xaxes(range=[0.0, max(float(length_m), 0.1)])
+    plotted_forces = [
+        value
+        for value in [*pj_values, *friction_values, *after_values]
+        if value is not None and isfinite(float(value))
+    ]
+    if plotted_forces:
+        y_min = min(float(value) for value in plotted_forces)
+        y_max = max(float(value) for value in plotted_forces)
+        span = max(y_max - y_min, 0.0)
+        magnitude = max(abs(y_min), abs(y_max), 1.0)
+        margin = max(5.0, 0.08 * span, 0.005 * magnitude)
+        if span <= 1.0e-9:
+            margin = max(margin, 0.02 * magnitude)
+        fig.update_yaxes(range=[y_min - margin, y_max + margin])
     return fig
 
 
@@ -4761,6 +4896,7 @@ def _anchorage_seating_geometry_metric(
 def _render_anchorage_formula_unit_audit(
     end_rows: list[dict[str, Any]],
     equivalent_summary: dict[str, Any] | None = None,
+    independent_validation: dict[str, Any] | None = None,
 ) -> None:
     single_calculated = [
         row
@@ -4923,6 +5059,71 @@ def _render_anchorage_formula_unit_audit(
         else:
             st.info("Equivalent-average QA is not available until all required station-loss rows are calculated.")
 
+        st.markdown("**D. Independent simultaneous-both-end numerical verification**")
+        if independent_validation and independent_validation.get("status") != "NOT APPLICABLE":
+            station_tol = float(independent_validation.get("station_tolerance_m") or 0.0)
+            stress_tol = float(independent_validation.get("stress_tolerance_mpa") or 0.0)
+            neutral_diff = float(independent_validation.get("max_neutral_station_diff_m") or 0.0)
+            meeting_diff = float(independent_validation.get("max_meeting_stress_diff_mpa") or 0.0)
+            left_diff = float(independent_validation.get("max_left_anchor_loss_diff_mpa") or 0.0)
+            right_diff = float(independent_validation.get("max_right_anchor_loss_diff_mpa") or 0.0)
+            st.write(
+                "Independent dense-grid verification reconstructs the accepted left/right friction "
+                "branches and re-solves simultaneous seating compatibility without calling the "
+                "production anchorage-set interpolation, area, or coupled-solver helpers."
+            )
+            st.write(
+                f"Maximum differences: neutral station = **{neutral_diff:.6g} m**; meeting stress = "
+                f"**{meeting_diff:.6g} MPa**; left anchorage loss = **{left_diff:.6g} MPa**; "
+                f"right anchorage loss = **{right_diff:.6g} MPa**."
+            )
+            st.caption(
+                f"Adopted QA tolerances: station ≤ {station_tol:.6g} m; stress/loss ≤ {stress_tol:.6g} MPa."
+            )
+            if independent_validation.get("status") == "PASS":
+                st.success(
+                    "PASS — independent dense-grid verifier agrees with the production simultaneous-both-end result within adopted tolerance."
+                )
+            else:
+                st.warning(
+                    "REVIEW — independent dense-grid verification exceeds one or more adopted tolerances."
+                )
+            with st.expander("Per-tendon independent-verifier comparison", expanded=False):
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {
+                                "Tendon": row.get("Tendon ID"),
+                                "Status": row.get("Status"),
+                                "Δsₙ (m)": (
+                                    "—" if row.get("Neutral station diff (m)") is None
+                                    else round(float(row.get("Neutral station diff (m)")), 8)
+                                ),
+                                "Δfₙ (MPa)": (
+                                    "—" if row.get("Meeting stress diff (MPa)") is None
+                                    else round(float(row.get("Meeting stress diff (MPa)")), 6)
+                                ),
+                                "ΔLoss-L (MPa)": (
+                                    "—" if row.get("Left anchor-loss diff (MPa)") is None
+                                    else round(float(row.get("Left anchor-loss diff (MPa)")), 6)
+                                ),
+                                "ΔLoss-R (MPa)": (
+                                    "—" if row.get("Right anchor-loss diff (MPa)") is None
+                                    else round(float(row.get("Right anchor-loss diff (MPa)")), 6)
+                                ),
+                                "Issue": row.get("Issue") or "",
+                            }
+                            for row in independent_validation.get("tendon_rows", [])
+                        ]
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+        else:
+            st.info(
+                "Independent simultaneous-both-end verification is not applicable until a coupled both-end preview is available."
+            )
+
         if single_calculated:
             governing = max(
                 single_calculated,
@@ -5016,7 +5217,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "PTLOSS2R3 retains the validated PTLOSS2R2 station-force routes and adds an equivalent-average anchorage-set QA summary derived from the calculated loss distribution. Local P(s) remains design-use source-of-truth; Pe/Pe_eff and later losses remain locked.",
+        "PTLOSS2R3A retains the validated PTLOSS2R2/R3 force and equivalent-average routes, fixes force-profile visualization bounds, and exposes three-point plus independent numerical QA evidence. Local P(s) remains design-use source-of-truth; Pe/Pe_eff and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -5058,6 +5259,13 @@ def render_crossbeam_prestress_loss_page() -> None:
         current_anchorage_station_rows,
         current_anchorage_end_rows,
         length_m=length_m,
+    )
+    current_anchorage_independent_validation = independent_both_end_dense_grid_validation(
+        current_loss_rows,
+        current_anchorage_end_rows,
+        length_m=length_m,
+        anchor_set_mm=float(current_assumptions["anchorage_set_mm"]),
+        ep_mpa=float(current_assumptions["ep_mpa"]),
     )
 
     (
@@ -5329,12 +5537,13 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
 
     with anchorage_set_tab:
-        st.markdown("#### Anchorage Set / Draw-in — distribution-average QA closeout")
+        st.markdown("#### Anchorage Set / Draw-in — visualization & validation-evidence closeout")
         _render_crossbeam_anchorage_set_assumptions()
         anchorage_end_rows = current_anchorage_end_rows
         anchorage_summary = current_anchorage_summary
         anchorage_station_rows = current_anchorage_station_rows
         anchorage_equivalent_summary = current_anchorage_equivalent_summary
+        anchorage_independent_validation = current_anchorage_independent_validation
         anchorage_decision_rows = _anchorage_decision_rows(anchorage_end_rows)
         has_calculated_ends = int(anchorage_summary["calculated_end_count"]) > 0
         all_active_ends_calculated = (
@@ -5572,6 +5781,22 @@ def render_crossbeam_prestress_loss_page() -> None:
                         },
                     ]
                 )
+                key_points = _anchorage_force_profile_key_points(
+                    anchorage_station_rows,
+                    anchorage_end_rows,
+                    tendon_id=str(profile_tendon),
+                    length_m=length_m,
+                )
+                if key_points:
+                    st.markdown("**Three-point force-profile QA**")
+                    st.dataframe(
+                        pd.DataFrame(key_points),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                    st.caption(
+                        "Numerical checkpoints use the same station-force outputs shown in the chart so the plotted curves can be cross-checked at the two anchorages and the neutral/characteristic station."
+                    )
 
         st.markdown("#### Anchorage-set decision summary")
         st.dataframe(
@@ -5590,7 +5815,11 @@ def render_crossbeam_prestress_loss_page() -> None:
             "limitations, formulas, and unit checks remain available below for audit."
         )
 
-        _render_anchorage_formula_unit_audit(anchorage_end_rows, anchorage_equivalent_summary)
+        _render_anchorage_formula_unit_audit(
+            anchorage_end_rows,
+            anchorage_equivalent_summary,
+            anchorage_independent_validation,
+        )
 
         with st.expander("Detailed seating-end compatibility audit", expanded=False):
             st.dataframe(

@@ -1,3 +1,7 @@
+### CROSSBEAM.PTLOSS2R3A - Force-Profile Visualization & Validation Evidence Hotfix
+
+Fixes Anchorage Set force-profile plotting so every force series is inside the explicit Y-axis range, adds three-point numeric graph QA, and exposes independent dense-grid simultaneous-both-end verification evidence without changing accepted loss solver equations or releasing `Pe / Pe_eff`. See `README_CROSSBEAM_PTLOSS2R3A.md`.
+
 ### CROSSBEAM.PTLOSS2R3 - Anchorage Set Equivalent-Average QA & Closeout Polish
 
 Adds a distribution-derived equivalent-average anchorage-set QA summary, selected-tendon local-vs-average decision metrics, and an independent dense-grid simultaneous-both-end verification while preserving PTLOSS2R2 solver equations and keeping `Pe / Pe_eff` locked. See `README_CROSSBEAM_PTLOSS2R3.md`.
