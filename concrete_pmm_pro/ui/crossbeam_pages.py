@@ -5679,6 +5679,12 @@ def render_crossbeam_prestress_loss_page() -> None:
             max_influence_length_m=float(anchorage_summary["max_influence_length_m"]),
         )
 
+        st.markdown("##### Overall anchorage-set summary — all active tendons")
+        st.caption(
+            "These cards summarize the full active tendon set. Selected-tendon values are shown "
+            "separately below the force-profile graph so governing/global values are not confused "
+            "with the tendon currently being visualized."
+        )
         render_metric_cards(
             [
                 {

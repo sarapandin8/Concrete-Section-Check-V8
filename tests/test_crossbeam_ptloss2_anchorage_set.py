@@ -624,6 +624,8 @@ def test_ptloss2r2_ui_exposes_single_and_simultaneous_both_end_methods_without_r
     assert "Tendon force profile — before / after anchorage seating" in anchorage_block
     assert "After Anchorage Set" in source
     assert "Affected length sₐ" in source
+    assert "Overall anchorage-set summary — all active tendons" in anchorage_block
+    assert "These cards summarize the full active tendon set" in anchorage_block
     assert "Equivalent average anchor-set loss" in anchorage_block
     assert "Selected tendon —" in anchorage_block
     assert "Three-point force-profile QA" in anchorage_block

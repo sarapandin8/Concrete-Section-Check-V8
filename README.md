@@ -1696,3 +1696,7 @@ The Crossbeam Project Section Summary now supports single-row selection. Selecti
 ## CROSSBEAM.SECLIB1F — One-click section open and save-action polish
 
 Replaces the Project Section Summary checkbox selector with a dedicated one-click Edit button column and moves Section-name saving to the app-standard blue primary action button. This is Crossbeam-only UI/state polish; geometry, assignments, Project JSON, solvers, reports, and existing workflows are unchanged. See `README_CROSSBEAM_SECLIB1F.md`.
+
+## CROSSBEAM.PTLOSS2R3C — Anchorage Set Semantic Closeout
+
+Adds an explicit overall-all-tendons summary layer above the selected-tendon force-profile layer so governing/global anchorage-set values cannot be confused with the tendon currently being visualized; solver equations remain unchanged.
