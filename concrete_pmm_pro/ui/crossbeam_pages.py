@@ -4225,11 +4225,15 @@ def _loss_setting_defaults_from_state() -> dict[str, float | int | str]:
             ),
             "external_inadvertent_angle_rad": st.session_state.get(
                 CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY,
-    CB_LOSS_ANCHORAGE_SET_MM_KEY,
-    CB_LOSS_EP_MPA_KEY,
                 DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD,
-    DEFAULT_ANCHORAGE_SET_MM,
-    DEFAULT_PRESTRESS_STEEL_EP_MPA,
+            ),
+            "anchorage_set_mm": st.session_state.get(
+                CB_LOSS_ANCHORAGE_SET_MM_KEY,
+                DEFAULT_ANCHORAGE_SET_MM,
+            ),
+            "ep_mpa": st.session_state.get(
+                CB_LOSS_EP_MPA_KEY,
+                DEFAULT_PRESTRESS_STEEL_EP_MPA,
             ),
         }
     )

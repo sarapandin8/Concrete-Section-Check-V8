@@ -1,3 +1,7 @@
+### CROSSBEAM.PTLOSS2A - Prestress Loss Runtime Settings Hotfix
+
+Fixes the Crossbeam Prestress Loss runtime settings initialization so external-angle, anchorage-set, and prestressing-steel modulus defaults are read as separate session-state fields, eliminating the PTLOSS2 page-opening `TypeError` without changing any prestress-loss equations or other member workflows. See `README_CROSSBEAM_PTLOSS2A.md`.
+
 ### CROSSBEAM.PTLOSS2 - Anchorage Set / Draw-in Loss Foundation
 
 Adds an isolated Crossbeam anchorage-set/draw-in compatibility preview that derives zero-movement influence length, lock-off force/stress, and station-level additional seating loss from the accepted post-friction force diagram while keeping `Pe / Pe_eff` and later loss/stage solvers locked. See `README_CROSSBEAM_PTLOSS2.md`.

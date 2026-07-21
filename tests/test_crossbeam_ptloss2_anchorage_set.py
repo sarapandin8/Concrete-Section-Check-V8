@@ -205,3 +205,47 @@ def test_ptloss2_ui_activates_anchorage_subtab_without_releasing_pe_eff() -> Non
     assert "P after anchor set (kN)" in anchorage_block
     assert "Pe and Pe_eff remain locked" in anchorage_block
     assert "Guarded future component — no anchorage-set loss is calculated in PTLOSS1G." not in source
+
+
+def test_ptloss2_ui_loss_defaults_use_valid_session_state_get_arity_and_include_new_fields() -> None:
+    import ast
+
+    source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    target = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_loss_setting_defaults_from_state"
+    )
+
+    get_calls = []
+    dict_keys: set[str] = set()
+    for node in ast.walk(target):
+        if isinstance(node, ast.Dict):
+            for key in node.keys:
+                if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                    dict_keys.add(key.value)
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr != "get":
+            continue
+        owner = node.func.value
+        if not (
+            isinstance(owner, ast.Attribute)
+            and owner.attr == "session_state"
+            and isinstance(owner.value, ast.Name)
+            and owner.value.id == "st"
+        ):
+            continue
+        get_calls.append(node)
+
+    assert get_calls
+    assert all(len(call.args) == 2 and not call.keywords for call in get_calls)
+    assert {
+        "internal_mu",
+        "internal_k_per_m",
+        "external_deviator_mu",
+        "external_inadvertent_angle_rad",
+        "anchorage_set_mm",
+        "ep_mpa",
+    }.issubset(dict_keys)
