@@ -2,9 +2,10 @@
 
 CROSSBEAM.PT1 connects longitudinal segment mapping, tendon system data, and
 four-view tendon geometry to one Project-JSON source of truth.  PTLOSS1 adds a
-guarded AASHTO friction/wobble loss foundation, and PTLOSS1G organizes the loss
-workspace into component-scoped subtabs while future loss, SLS, ULS, anchorage-zone,
-and D-region solvers remain explicitly guarded.
+guarded AASHTO friction/wobble loss foundation, PTLOSS1G organizes the loss
+workspace into component-scoped subtabs, and PTLOSS2 adds an isolated anchorage-set
+compatibility preview while Pe/Pe_eff, later losses, SLS, ULS, anchorage-zone, and
+D-region solvers remain explicitly guarded.
 
 All state keys are namespaced to the crossbeam workflow.  Legacy WF1 keys are
 read for one-way in-session migration so accepted WF1/WF1A projects keep their
@@ -74,16 +75,26 @@ from concrete_pmm_pro.crossbeam.tendon_analysis import (
     tendon_force_source_summary,
     tendon_force_trace_rows,
 )
+from concrete_pmm_pro.crossbeam.anchorage_set import (
+    ANCHORAGE_SET_METHOD_BASIS,
+    anchorage_set_end_rows,
+    anchorage_set_station_rows,
+    anchorage_set_summary,
+)
 from concrete_pmm_pro.crossbeam.prestress_loss import (
     AASHTO_POLYETHYLENE_DUCT_MU,
     AASHTO_PTL_FRICTION_BASIS,
     CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY,
+    CB_LOSS_ANCHORAGE_SET_MM_KEY,
+    CB_LOSS_EP_MPA_KEY,
     CB_LOSS_EXTERNAL_MU_KEY,
     CB_LOSS_INTERNAL_K_PER_M_KEY,
     CB_LOSS_INTERNAL_MU_KEY,
     DEFAULT_EXTERNAL_DEVIATOR_MU,
     DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU,
     DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD,
+    DEFAULT_ANCHORAGE_SET_MM,
+    DEFAULT_PRESTRESS_STEEL_EP_MPA,
     DEFAULT_INTERNAL_FRICTION_MU,
     DEFAULT_INTERNAL_WOBBLE_K_PER_M,
     aashto_friction_wobble_station_rows,
@@ -4214,7 +4225,11 @@ def _loss_setting_defaults_from_state() -> dict[str, float | int | str]:
             ),
             "external_inadvertent_angle_rad": st.session_state.get(
                 CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY,
+    CB_LOSS_ANCHORAGE_SET_MM_KEY,
+    CB_LOSS_EP_MPA_KEY,
                 DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD,
+    DEFAULT_ANCHORAGE_SET_MM,
+    DEFAULT_PRESTRESS_STEEL_EP_MPA,
             ),
         }
     )
@@ -4308,6 +4323,50 @@ def _render_crossbeam_loss_assumptions() -> dict[str, float]:
     }
 
 
+def _render_crossbeam_anchorage_set_assumptions() -> dict[str, float]:
+    settings = _loss_setting_defaults_from_state()
+    st.session_state[CB_LOSS_ANCHORAGE_SET_MM_KEY] = float(settings["anchorage_set_mm"])
+    st.session_state[CB_LOSS_EP_MPA_KEY] = float(settings["ep_mpa"])
+
+    st.markdown("#### Anchorage seating inputs")
+    set_col, ep_col = st.columns(2)
+    with set_col:
+        anchorage_set_mm = float(
+            st.number_input(
+                "Adopted anchorage set Δa (mm)",
+                min_value=0.0,
+                max_value=50.0,
+                step=0.5,
+                format="%.2f",
+                key=CB_LOSS_ANCHORAGE_SET_MM_KEY,
+                help=(
+                    "Enter the project/PT supplier seating or wedge draw-in value applied at each active stressing anchorage. "
+                    "Zero intentionally keeps PTLOSS2 locked; no generic default loss is assumed."
+                ),
+            )
+        )
+    with ep_col:
+        ep_mpa = float(
+            st.number_input(
+                "Prestressing steel Ep (MPa)",
+                min_value=100000.0,
+                max_value=250000.0,
+                step=1000.0,
+                format="%.0f",
+                key=CB_LOSS_EP_MPA_KEY,
+                help=(
+                    "Elastic modulus used only for anchorage-movement compatibility. "
+                    "The app starts at 195,000 MPa; verify the project/PT steel basis before final design use."
+                ),
+            )
+        )
+    st.caption(
+        "PTLOSS2 uses the accepted post-friction force diagram and a compatibility-area/mirrored-force-diagram preview. "
+        "It does not deduct a fixed percentage and it does not release Pe or Pe_eff."
+    )
+    return {"anchorage_set_mm": anchorage_set_mm, "ep_mpa": ep_mpa}
+
+
 def render_crossbeam_prestress_loss_page() -> None:
     _ensure_state()
     render_page_header(
@@ -4320,7 +4379,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "PTLOSS1G organizes loss components into guarded subtabs. Only AASHTO friction/wobble is calculated at this milestone; later components remain explicitly inactive until their own validated solver milestones are completed.",
+        "PTLOSS2 keeps the component-scoped subtabs and activates an isolated anchorage-set/draw-in compatibility preview downstream of the accepted friction/wobble force diagram. Pe/Pe_eff and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -4346,6 +4405,13 @@ def render_crossbeam_prestress_loss_page() -> None:
         ),
     )
     current_summary = aashto_friction_wobble_summary(current_loss_rows)
+    current_anchorage_end_rows = anchorage_set_end_rows(
+        current_loss_rows,
+        length_m=length_m,
+        anchor_set_mm=float(current_assumptions["anchorage_set_mm"]),
+        ep_mpa=float(current_assumptions["ep_mpa"]),
+    )
+    current_anchorage_summary = anchorage_set_summary(current_anchorage_end_rows)
 
     (
         overview_tab,
@@ -4394,9 +4460,15 @@ def render_crossbeam_prestress_loss_page() -> None:
                     "status": "neutral",
                 },
                 {
+                    "title": "Anchorage set",
+                    "value": str(current_anchorage_summary["value"]),
+                    "detail": f"{int(current_anchorage_summary['calculated_end_count'])}/{int(current_anchorage_summary['active_seating_end_count'])} stressing end(s) calculated",
+                    "status": str(current_anchorage_summary["status"]),
+                },
+                {
                     "title": "Overall loss status",
                     "value": "INCOMPLETE",
-                    "detail": "later loss components not yet calculated",
+                    "detail": "Pe/Pe_eff and later loss components remain locked",
                     "status": "warning",
                 },
             ]
@@ -4419,8 +4491,8 @@ def render_crossbeam_prestress_loss_page() -> None:
                     {
                         "Component": "Anchorage set / draw-in",
                         "AASHTO article": "5.9.3.2.1",
-                        "Current status": "Guarded future component",
-                        "Dependency": "Friction profile + seating/set + recovery length",
+                        "Current status": str(current_anchorage_summary["value"]),
+                        "Dependency": "Accepted friction profile + Δa + Ep + influence length",
                     },
                     {
                         "Component": "Elastic shortening",
@@ -4441,7 +4513,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
         st.warning(
             "Do not interpret the current friction/wobble result as final effective prestress. "
-            "PTLOSS1G deliberately keeps Pe and Pe_eff assembly locked until the required loss "
+            "PTLOSS2 deliberately keeps Pe and Pe_eff assembly locked until the required loss "
             "components and stage logic are validated in named solver milestones."
         )
 
@@ -4609,14 +4681,159 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
 
     with anchorage_set_tab:
-        st.markdown("#### Anchorage Set / Draw-in")
-        st.info(
-            "Guarded future component — no anchorage-set loss is calculated in PTLOSS1G. "
-            "PTLOSS2 will establish wedge seating/draw-in input, affected recovery length, and force-profile interaction with the accepted friction/wobble result before any Pe_eff integration."
+        st.markdown("#### Anchorage Set / Draw-in — isolated preview")
+        _render_crossbeam_anchorage_set_assumptions()
+        anchorage_end_rows = current_anchorage_end_rows
+        anchorage_summary = current_anchorage_summary
+        anchorage_station_rows = anchorage_set_station_rows(
+            current_loss_rows,
+            anchorage_end_rows,
+            length_m=length_m,
         )
-        st.caption(
-            "Engineering dependency: this component cannot be treated as an independent percentage deduction; its force recovery depends on the post-jacking friction profile and anchorage movement."
+
+        render_metric_cards(
+            [
+                {
+                    "title": "Component status",
+                    "value": str(anchorage_summary["value"]),
+                    "detail": "isolated anchorage-set preview only",
+                    "status": str(anchorage_summary["status"]),
+                },
+                {
+                    "title": "Adopted Δa",
+                    "value": f"{float(current_assumptions['anchorage_set_mm']):.2f} mm",
+                    "detail": "per active stressing anchorage",
+                    "status": "neutral" if float(current_assumptions["anchorage_set_mm"]) > 0.0 else "warning",
+                },
+                {
+                    "title": "Calculated ends",
+                    "value": f"{int(anchorage_summary['calculated_end_count'])}/{int(anchorage_summary['active_seating_end_count'])}",
+                    "detail": "valid influence-length solution",
+                    "status": "ready" if int(anchorage_summary["calculated_end_count"]) == int(anchorage_summary["active_seating_end_count"]) and int(anchorage_summary["active_seating_end_count"]) > 0 else "warning",
+                },
+                {
+                    "title": "Worst local loss",
+                    "value": f"{float(anchorage_summary['worst_anchor_loss_percent']):.2f}%",
+                    "detail": "at seated anchorage; vs Pj",
+                    "status": "neutral",
+                },
+                {
+                    "title": "Max influence length",
+                    "value": f"{float(anchorage_summary['max_influence_length_m']):.3f} m",
+                    "detail": "zero-movement distance preview",
+                    "status": "neutral",
+                },
+            ]
         )
+        for issue in anchorage_summary["blocking_issues"]:
+            st.warning(issue)
+        for note in anchorage_summary["review_notes"]:
+            st.info(note)
+
+        st.markdown("#### Seating-end compatibility audit")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Tendon": row["Tendon ID"],
+                        "Status": row["Status"],
+                        "Type": row["Type"],
+                        "Jack": row["Jacking end"],
+                        "Seat end": row["Seating end"],
+                        "Δa (mm)": round(row["Anchorage set (mm)"], 3),
+                        "Ep (MPa)": round(row["Ep (MPa)"], 0),
+                        "Branch (m)": round(row["Branch limit (m)"], 4),
+                        "La (m)": None if row["Influence length (m)"] is None else round(row["Influence length (m)"], 4),
+                        "Max Δa (mm)": round(row["Max compatible set (mm)"], 3),
+                        "f@zero (MPa)": None if row["Zero movement stress (MPa)"] is None else round(row["Zero movement stress (MPa)"], 2),
+                        "f lock-off (MPa)": None if row["Lock-off stress at anchorage (MPa)"] is None else round(row["Lock-off stress at anchorage (MPa)"], 2),
+                        "P lock-off (kN)": None if row["Lock-off force at anchorage (kN)"] is None else round(row["Lock-off force at anchorage (kN)"], 2),
+                        "Local loss (%)": None if row["Anchorage-set loss at anchorage (%)"] is None else round(row["Anchorage-set loss at anchorage (%)"], 3),
+                        "Residual (mm)": round(row["Compatibility residual (mm)"], 6),
+                    }
+                    for row in anchorage_end_rows
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Tendon": st.column_config.TextColumn(width="small"),
+                "Status": st.column_config.TextColumn(width="medium"),
+                "Type": st.column_config.TextColumn(width="small"),
+                "Jack": st.column_config.TextColumn(width="small"),
+                "Seat end": st.column_config.TextColumn(width="small"),
+            },
+        )
+
+        calculated_station_rows = [
+            row
+            for row in anchorage_station_rows
+            if row.get("P after anchorage set (kN)") is not None
+        ]
+        if calculated_station_rows:
+            st.markdown("#### Station trace after isolated anchorage set")
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "Tendon": row["Tendon ID"],
+                            "Status": row["Anchorage-set status"],
+                            "Seat end": row["Seating end"],
+                            "Point": row["Point"],
+                            "s (m)": round(row["s (m)"], 4),
+                            "xj (m)": round(row["x from jack (m)"], 4),
+                            "La (m)": None if row["Influence length (m)"] is None else round(row["Influence length (m)"], 4),
+                            "P after friction (kN)": round(row["P after friction (kN)"], 3),
+                            "Anchor loss (kN)": round(row["Anchorage-set loss (kN)"], 3),
+                            "P after anchor set (kN)": round(row["P after anchorage set (kN)"], 3),
+                        }
+                        for row in calculated_station_rows
+                    ]
+                ),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Tendon": st.column_config.TextColumn(width="small"),
+                    "Status": st.column_config.TextColumn(width="medium"),
+                    "Seat end": st.column_config.TextColumn(width="small"),
+                    "Point": st.column_config.TextColumn(width="small"),
+                },
+            )
+
+        review_rows = [
+            {
+                "Tendon": row["Tendon ID"],
+                "Seat end": row["Seating end"],
+                "Status": row["Status"],
+                "Required issue": row.get("Blocking issue", "") or "-",
+                "Review note": row.get("Review note", "") or "-",
+            }
+            for row in anchorage_end_rows
+            if str(row.get("Blocking issue") or "").strip()
+            or str(row.get("Review note") or "").strip()
+        ]
+        if review_rows:
+            st.markdown("#### Anchorage-set review / limitations")
+            st.dataframe(
+                pd.DataFrame(review_rows),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Tendon": st.column_config.TextColumn(width="small"),
+                    "Seat end": st.column_config.TextColumn(width="small"),
+                    "Status": st.column_config.TextColumn(width="medium"),
+                    "Required issue": st.column_config.TextColumn(width="large"),
+                    "Review note": st.column_config.TextColumn(width="large"),
+                },
+            )
+
+        with st.expander("Calculation basis and QA boundary", expanded=False):
+            st.write(f"- Method: {ANCHORAGE_SET_METHOD_BASIS}.")
+            st.write("- Compatibility condition: anchorage movement equals the integrated tendon strain reduction inside the zero-movement influence length.")
+            st.write("- Force redistribution uses a mirrored accepted post-friction force diagram about the zero-movement point; no fixed percentage loss is used.")
+            st.write("- Both-end jacking is only accepted as independent local seating branches while the solved influence zones remain inside their half-length branches; overlap requires a later stressing-sequence solver.")
+            st.write("- One-end jacking currently models final seating at the active stressing end only. Dead-end anchorage seating/history remains an explicit project/PT procedure review item.")
+            st.write("- P after anchorage set is component-scoped audit output only. Pe and Pe_eff remain locked.")
 
     with elastic_shortening_tab:
         st.markdown("#### Elastic Shortening")
@@ -4652,8 +4869,8 @@ def render_crossbeam_prestress_loss_page() -> None:
                     {
                         "Order": 3,
                         "Source / component": "Anchorage set / draw-in",
-                        "Current state": "Locked",
-                        "Feeds": "Future recovered force profile",
+                        "Current state": str(current_anchorage_summary["value"]),
+                        "Feeds": "Isolated post-seating force profile preview",
                     },
                     {
                         "Order": 4,
@@ -4679,6 +4896,6 @@ def render_crossbeam_prestress_loss_page() -> None:
             hide_index=True,
         )
         st.warning(
-            "QA gate: subtab separation is a UI architecture choice only. It does not make the loss components independent mathematically. "
+            "QA gate: PTLOSS2 activates anchorage set only as an isolated downstream component. Subtab separation does not make the loss components independent mathematically. "
             "Solver dependencies, sign conventions, stressing sequence, and stage definitions must remain explicit before final effective prestress is released to downstream checks."
         )

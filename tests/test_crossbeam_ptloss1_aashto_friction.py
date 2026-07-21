@@ -220,7 +220,7 @@ def test_ptloss1_settings_are_project_json_metadata_safe() -> None:
         restored_state,
     )
 
-    assert metadata["schema_version"] == 1
+    assert metadata["schema_version"] == 2
     assert restored is not None
     assert restored_state[CB_LOSS_INTERNAL_MU_KEY] == pytest.approx(0.18)
     assert restored_state[CB_LOSS_INTERNAL_K_PER_M_KEY] == pytest.approx(0.0007)
@@ -264,7 +264,7 @@ def test_ptloss1g_component_subtabs_are_scoped_and_future_losses_are_guarded() -
     assert '"Elastic Shortening",' in source
     assert '"Time-Dependent",' in source
     assert '"Audit",' in source
-    assert "Guarded future component — no anchorage-set loss is calculated in PTLOSS1G." in source
+    assert "Anchorage Set / Draw-in — isolated preview" in source
     assert "Guarded future component — no elastic-shortening loss is calculated in PTLOSS1G." in source
     assert "Guarded future component — creep, shrinkage, and relaxation are not calculated in PTLOSS1G." in source
     assert '"Pe / Pe_eff assembly"' in source

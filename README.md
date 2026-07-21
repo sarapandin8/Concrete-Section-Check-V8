@@ -1,3 +1,7 @@
+### CROSSBEAM.PTLOSS2 - Anchorage Set / Draw-in Loss Foundation
+
+Adds an isolated Crossbeam anchorage-set/draw-in compatibility preview that derives zero-movement influence length, lock-off force/stress, and station-level additional seating loss from the accepted post-friction force diagram while keeping `Pe / Pe_eff` and later loss/stage solvers locked. See `README_CROSSBEAM_PTLOSS2.md`.
+
 ### CROSSBEAM.PTLOSS1G - Prestress Loss Subtab Architecture
 
 Reorganizes the Crossbeam `Prestress Loss` workspace into `Overview`, `Friction & Wobble`, `Anchorage Set / Draw-in`, `Elastic Shortening`, `Time-Dependent`, and `Audit` subtabs while preserving accepted friction/wobble calculations and keeping future loss components plus `Pe / Pe_eff` assembly explicitly guarded. See `README_CROSSBEAM_PTLOSS1G.md`.

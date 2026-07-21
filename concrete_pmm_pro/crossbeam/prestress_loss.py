@@ -17,12 +17,14 @@ from concrete_pmm_pro.crossbeam.tendon_analysis import tendon_force_source_rows
 
 
 CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY = "crossbeam_prestress_loss_settings"
-CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION = 1
+CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION = 2
 
 CB_LOSS_INTERNAL_MU_KEY = "crossbeam_ptloss1_internal_mu"
 CB_LOSS_INTERNAL_K_PER_M_KEY = "crossbeam_ptloss1_internal_k_per_m"
 CB_LOSS_EXTERNAL_MU_KEY = "crossbeam_ptloss1_external_deviator_mu"
 CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY = "crossbeam_ptloss1_external_inadvertent_angle_rad"
+CB_LOSS_ANCHORAGE_SET_MM_KEY = "crossbeam_ptloss2_anchorage_set_mm"
+CB_LOSS_EP_MPA_KEY = "crossbeam_ptloss2_ep_mpa"
 
 AASHTO_PTL_FRICTION_BASIS = "AASHTO LRFD 5.9.3.2.2b"
 AASHTO_INTERNAL_WOBBLE_K_PER_FT = 0.0002
@@ -34,6 +36,8 @@ DEFAULT_INTERNAL_FRICTION_MU = 0.20
 DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU = AASHTO_EXTERNAL_RIGID_STEEL_PIPE_DEVIATOR_MU
 DEFAULT_EXTERNAL_DEVIATOR_MU = DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU
 DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD = 0.04
+DEFAULT_ANCHORAGE_SET_MM = 0.0
+DEFAULT_PRESTRESS_STEEL_EP_MPA = 195000.0
 EXTERNAL_HDPE_REVIEW_NOTE = "HDPE note: verify PT supplier, angle tolerances, sequence."
 EXTERNAL_NO_DEVIATOR_ISSUE = "No Deviator point: +0.04 rad not applied."
 
@@ -72,6 +76,8 @@ def default_crossbeam_prestress_loss_settings() -> dict[str, float | int | str]:
         "internal_k_per_m": DEFAULT_INTERNAL_WOBBLE_K_PER_M,
         "external_deviator_mu": DEFAULT_EXTERNAL_DEVIATOR_MU,
         "external_inadvertent_angle_rad": DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD,
+        "anchorage_set_mm": DEFAULT_ANCHORAGE_SET_MM,
+        "ep_mpa": DEFAULT_PRESTRESS_STEEL_EP_MPA,
     }
 
 
@@ -106,6 +112,16 @@ def normalize_crossbeam_prestress_loss_settings(value: Any) -> dict[str, float |
             0.0,
             0.25,
         ),
+        "anchorage_set_mm": _clamp(
+            _float(source.get("anchorage_set_mm"), float(defaults["anchorage_set_mm"])),
+            0.0,
+            50.0,
+        ),
+        "ep_mpa": _clamp(
+            _float(source.get("ep_mpa"), float(defaults["ep_mpa"])),
+            100000.0,
+            250000.0,
+        ),
     }
 
 
@@ -119,6 +135,8 @@ def crossbeam_prestress_loss_settings_from_session_state(session_state: Any) -> 
             CB_LOSS_INTERNAL_K_PER_M_KEY,
             CB_LOSS_EXTERNAL_MU_KEY,
             CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY,
+            CB_LOSS_ANCHORAGE_SET_MM_KEY,
+            CB_LOSS_EP_MPA_KEY,
         )
     ):
         return {}
@@ -128,6 +146,8 @@ def crossbeam_prestress_loss_settings_from_session_state(session_state: Any) -> 
             "internal_k_per_m": session_state.get(CB_LOSS_INTERNAL_K_PER_M_KEY),
             "external_deviator_mu": session_state.get(CB_LOSS_EXTERNAL_MU_KEY),
             "external_inadvertent_angle_rad": session_state.get(CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY),
+            "anchorage_set_mm": session_state.get(CB_LOSS_ANCHORAGE_SET_MM_KEY),
+            "ep_mpa": session_state.get(CB_LOSS_EP_MPA_KEY),
         }
     )
     return dict(settings)
@@ -144,6 +164,8 @@ def restore_crossbeam_prestress_loss_project_state(
         CB_LOSS_INTERNAL_K_PER_M_KEY,
         CB_LOSS_EXTERNAL_MU_KEY,
         CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY,
+        CB_LOSS_ANCHORAGE_SET_MM_KEY,
+        CB_LOSS_EP_MPA_KEY,
     ):
         session_state.pop(key, None)
 
@@ -159,6 +181,8 @@ def restore_crossbeam_prestress_loss_project_state(
     session_state[CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY] = float(
         settings["external_inadvertent_angle_rad"]
     )
+    session_state[CB_LOSS_ANCHORAGE_SET_MM_KEY] = float(settings["anchorage_set_mm"])
+    session_state[CB_LOSS_EP_MPA_KEY] = float(settings["ep_mpa"])
     return settings
 
 
