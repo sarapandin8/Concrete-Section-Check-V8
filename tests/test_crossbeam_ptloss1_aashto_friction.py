@@ -260,7 +260,7 @@ def test_ptloss1_settings_are_project_json_metadata_safe() -> None:
         restored_state,
     )
 
-    assert metadata["schema_version"] == 4
+    assert metadata["schema_version"] == 5
     assert restored is not None
     assert restored_state[CB_LOSS_INTERNAL_MU_KEY] == pytest.approx(0.18)
     assert restored_state[CB_LOSS_INTERNAL_K_PER_M_KEY] == pytest.approx(0.0007)

@@ -22,7 +22,7 @@ from concrete_pmm_pro.crossbeam.construction_stage import (
 
 
 CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY = "crossbeam_prestress_loss_settings"
-CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION = 4
+CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION = 5
 
 CB_LOSS_INTERNAL_MU_KEY = "crossbeam_ptloss1_internal_mu"
 CB_LOSS_INTERNAL_K_PER_M_KEY = "crossbeam_ptloss1_internal_k_per_m"
@@ -36,9 +36,7 @@ CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY = "crossbeam_ptloss3_eci_override_enabled"
 CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY = "crossbeam_ptloss3_eci_override_mpa"
 CB_LOSS_ES_CONSTRUCTION_METHOD_KEY = "crossbeam_ptloss3b1_construction_method"
 CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY = "crossbeam_ptloss3b1_stressing_strength_ratio"
-CB_LOSS_ES_VERIFIED_CROSSBEAM_STRENGTH_MPA_KEY = "crossbeam_ptloss3b1_verified_crossbeam_strength_mpa"
 CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY = "crossbeam_ptloss3b1_closure_required_mpa"
-CB_LOSS_ES_CLOSURE_VERIFIED_MPA_KEY = "crossbeam_ptloss3b1_closure_verified_mpa"
 CB_LOSS_ES_COLUMN_ROWS_KEY = "crossbeam_ptloss3b1_column_rows"
 CB_LOSS_ES_PAIR_SEQUENCE_KEY = "crossbeam_ptloss3b1_pair_sequence"
 
@@ -115,9 +113,7 @@ def default_crossbeam_prestress_loss_settings() -> dict[str, Any]:
         "es_eci_override_mpa": DEFAULT_ES_ECI_OVERRIDE_MPA,
         "es_construction_method": CONSTRUCTION_METHOD_PRECAST,
         "es_stressing_strength_ratio": DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
-        "es_verified_crossbeam_strength_mpa": 0.0,
         "es_closure_required_mpa": 0.0,
-        "es_closure_verified_mpa": 0.0,
         "es_column_rows": [],
         "es_pair_sequence": [],
     }
@@ -184,14 +180,8 @@ def normalize_crossbeam_prestress_loss_settings(value: Any) -> dict[str, Any]:
             0.1,
             1.5,
         ),
-        "es_verified_crossbeam_strength_mpa": _clamp(
-            _float(source.get("es_verified_crossbeam_strength_mpa"), 0.0), 0.0, 200.0
-        ),
         "es_closure_required_mpa": _clamp(
             _float(source.get("es_closure_required_mpa"), 0.0), 0.0, 200.0
-        ),
-        "es_closure_verified_mpa": _clamp(
-            _float(source.get("es_closure_verified_mpa"), 0.0), 0.0, 200.0
         ),
         "es_column_rows": _records(source.get("es_column_rows")),
         "es_pair_sequence": [
@@ -218,9 +208,7 @@ def crossbeam_prestress_loss_settings_from_session_state(session_state: Any) -> 
             CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY,
             CB_LOSS_ES_CONSTRUCTION_METHOD_KEY,
             CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
-            CB_LOSS_ES_VERIFIED_CROSSBEAM_STRENGTH_MPA_KEY,
             CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY,
-            CB_LOSS_ES_CLOSURE_VERIFIED_MPA_KEY,
             CB_LOSS_ES_COLUMN_ROWS_KEY,
             CB_LOSS_ES_PAIR_SEQUENCE_KEY,
         )
@@ -240,9 +228,7 @@ def crossbeam_prestress_loss_settings_from_session_state(session_state: Any) -> 
             "es_eci_override_mpa": session_state.get(CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY),
             "es_construction_method": session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY),
             "es_stressing_strength_ratio": session_state.get(CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY),
-            "es_verified_crossbeam_strength_mpa": session_state.get(CB_LOSS_ES_VERIFIED_CROSSBEAM_STRENGTH_MPA_KEY),
             "es_closure_required_mpa": session_state.get(CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY),
-            "es_closure_verified_mpa": session_state.get(CB_LOSS_ES_CLOSURE_VERIFIED_MPA_KEY),
             "es_column_rows": session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY),
             "es_pair_sequence": session_state.get(CB_LOSS_ES_PAIR_SEQUENCE_KEY),
         }
@@ -269,9 +255,7 @@ def restore_crossbeam_prestress_loss_project_state(
         CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY,
         CB_LOSS_ES_CONSTRUCTION_METHOD_KEY,
         CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
-        CB_LOSS_ES_VERIFIED_CROSSBEAM_STRENGTH_MPA_KEY,
         CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY,
-        CB_LOSS_ES_CLOSURE_VERIFIED_MPA_KEY,
         CB_LOSS_ES_COLUMN_ROWS_KEY,
         CB_LOSS_ES_PAIR_SEQUENCE_KEY,
     ):
@@ -297,9 +281,7 @@ def restore_crossbeam_prestress_loss_project_state(
     session_state[CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY] = float(settings["es_eci_override_mpa"])
     session_state[CB_LOSS_ES_CONSTRUCTION_METHOD_KEY] = str(settings["es_construction_method"])
     session_state[CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY] = float(settings["es_stressing_strength_ratio"])
-    session_state[CB_LOSS_ES_VERIFIED_CROSSBEAM_STRENGTH_MPA_KEY] = float(settings["es_verified_crossbeam_strength_mpa"])
     session_state[CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY] = float(settings["es_closure_required_mpa"])
-    session_state[CB_LOSS_ES_CLOSURE_VERIFIED_MPA_KEY] = float(settings["es_closure_verified_mpa"])
     session_state[CB_LOSS_ES_COLUMN_ROWS_KEY] = [dict(row) for row in settings["es_column_rows"]]
     session_state[CB_LOSS_ES_PAIR_SEQUENCE_KEY] = list(settings["es_pair_sequence"])
     return settings

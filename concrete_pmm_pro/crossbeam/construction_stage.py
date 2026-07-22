@@ -1,14 +1,14 @@
-"""Crossbeam PTLOSS3B1 construction/stressing-stage source model.
+"""Crossbeam PTLOSS3B1A construction/stressing-stage source model.
 
 This module defines only the auditable *source model* needed before a future
 Portal-Frame stressing-stage solver can calculate primary/secondary prestress,
 contact reactions, and source-derived ``f_cgp``.  It deliberately does not
 perform frame analysis.
 
-The workflow assumptions accepted for PTLOSS3B1 are:
+The workflow assumptions accepted for PTLOSS3B1A are:
 - Crossbeam construction method is either Precast Segmental or Cast-in-Place.
 - Column bases are fixed by the current Crossbeam project assumption.
-- Column geometry is aligned with the application's local 2/3 axes.
+- Column plan dimensions are defined relative to the Crossbeam axis: Btrans is transverse/normal to s, and Blong is parallel/along s.
 - Temporary erection support/falsework is continuous over the full Crossbeam
   length, initially in contact, vertical compression-only, and allowed to lift
   off automatically in the future stage solver.
@@ -104,8 +104,8 @@ def default_column_stage_rows(length_m: float) -> list[dict[str, Any]]:
             "Station s (m)": 0.0,
             "Height (m)": 0.0,
             "Shape": COLUMN_SHAPE_RECT_CHAMFER,
-            "B local-2 (mm)": 0.0,
-            "H local-3 (mm)": 0.0,
+            "Btrans (mm)": 0.0,
+            "Blong (mm)": 0.0,
             "Corner (mm)": 0.0,
             "Diameter (mm)": 0.0,
             "f'c (MPa)": DEFAULT_COLUMN_FC_MPA,
@@ -115,8 +115,8 @@ def default_column_stage_rows(length_m: float) -> list[dict[str, Any]]:
             "Station s (m)": length,
             "Height (m)": 0.0,
             "Shape": COLUMN_SHAPE_RECT_CHAMFER,
-            "B local-2 (mm)": 0.0,
-            "H local-3 (mm)": 0.0,
+            "Btrans (mm)": 0.0,
+            "Blong (mm)": 0.0,
             "Corner (mm)": 0.0,
             "Diameter (mm)": 0.0,
             "f'c (MPa)": DEFAULT_COLUMN_FC_MPA,
@@ -137,8 +137,8 @@ def canonical_column_stage_rows(values: Any, *, length_m: float) -> list[dict[st
                 "Station s (m)": min(max(_float(row.get("Station s (m)")), 0.0), length),
                 "Height (m)": max(_float(row.get("Height (m)")), 0.0),
                 "Shape": normalize_column_shape(row.get("Shape")),
-                "B local-2 (mm)": max(_float(row.get("B local-2 (mm)")), 0.0),
-                "H local-3 (mm)": max(_float(row.get("H local-3 (mm)")), 0.0),
+                "Btrans (mm)": max(_float(row.get("Btrans (mm)", row.get("B local-2 (mm)"))), 0.0),
+                "Blong (mm)": max(_float(row.get("Blong (mm)", row.get("H local-3 (mm)"))), 0.0),
                 "Corner (mm)": max(_float(row.get("Corner (mm)")), 0.0),
                 "Diameter (mm)": max(_float(row.get("Diameter (mm)")), 0.0),
                 "f'c (MPa)": max(_float(row.get("f'c (MPa)"), DEFAULT_COLUMN_FC_MPA), 0.0),
@@ -151,14 +151,16 @@ def canonical_column_stage_rows(values: Any, *, length_m: float) -> list[dict[st
 def column_section_properties(row: Mapping[str, Any]) -> dict[str, Any]:
     """Return exact gross A/I properties for the three accepted column shapes.
 
-    ``B local-2`` is the section dimension along the local-2 coordinate and
-    ``H local-3`` along local-3.  Therefore ``I22`` integrates local-3 distance
-    squared and ``I33`` integrates local-2 distance squared.
+    ``Btrans`` is normal/transverse to the Crossbeam longitudinal ``s`` axis.
+    ``Blong`` is parallel to/along the Crossbeam ``s`` axis.  For the future
+    in-plane portal-frame solver, ``I22`` is the inertia about the transverse
+    axis (therefore it uses the longitudinal dimension cubed), while ``I33``
+    is the inertia about the longitudinal axis.
     """
 
     shape = normalize_column_shape(row.get("Shape"))
-    b = max(_float(row.get("B local-2 (mm)")), 0.0)
-    h = max(_float(row.get("H local-3 (mm)")), 0.0)
+    b = max(_float(row.get("Btrans (mm)", row.get("B local-2 (mm)"))), 0.0)
+    h = max(_float(row.get("Blong (mm)", row.get("H local-3 (mm)"))), 0.0)
     corner = max(_float(row.get("Corner (mm)")), 0.0)
     diameter = max(_float(row.get("Diameter (mm)")), 0.0)
     issues: list[str] = []
@@ -172,7 +174,7 @@ def column_section_properties(row: Mapping[str, Any]) -> dict[str, Any]:
             i22 = i33 = pi * diameter**4 / 64.0
     elif shape == COLUMN_SHAPE_RECT_CHAMFER:
         if b <= 0.0 or h <= 0.0:
-            issues.append("Rectangular column B and H must be positive.")
+            issues.append("Rectangular column Btrans and Blong must be positive.")
             area = i22 = i33 = 0.0
         elif corner < 0.0 or corner >= 0.5 * min(b, h):
             issues.append("Equal chamfer must be smaller than half the minimum rectangular dimension.")
@@ -188,7 +190,7 @@ def column_section_properties(row: Mapping[str, Any]) -> dict[str, Any]:
             i33 = h * b**3 / 12.0 - 4.0 * (tri_i_centroid + tri_area * x**2)
     else:  # equal fillet
         if b <= 0.0 or h <= 0.0:
-            issues.append("Rectangular column B and H must be positive.")
+            issues.append("Rectangular column Btrans and Blong must be positive.")
             area = i22 = i33 = 0.0
         elif corner < 0.0 or corner >= 0.5 * min(b, h):
             issues.append("Equal fillet radius must be smaller than half the minimum rectangular dimension.")
@@ -354,9 +356,7 @@ def construction_stage_readiness(
     construction_method: Any,
     crossbeam_fc_mpa: float | None,
     stressing_strength_ratio: float,
-    verified_crossbeam_strength_mpa: float,
     closure_required_mpa: float,
-    closure_verified_mpa: float,
     column_rows: Any,
     length_m: float,
     group_rows: Any,
@@ -366,9 +366,7 @@ def construction_stage_readiness(
     fc = max(_float(crossbeam_fc_mpa), 0.0)
     ratio = min(max(_float(stressing_strength_ratio, DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO), 0.1), 1.5)
     target = fc * ratio if fc > 0.0 else None
-    verified = max(_float(verified_crossbeam_strength_mpa), 0.0)
     closure_required = max(_float(closure_required_mpa), 0.0)
-    closure_verified = max(_float(closure_verified_mpa), 0.0)
     columns = column_stage_summary(column_rows, length_m=length_m)
     sequence = stressing_pair_sequence_summary(group_rows, pair_sequence)
     temp_support = temporary_support_source(length_m)
@@ -377,28 +375,16 @@ def construction_stage_readiness(
     strength_status = "REVIEW REQUIRED"
     if target is None:
         issues.append("Crossbeam f'c source is not available for the stressing-strength criterion.")
-    elif verified <= 0.0:
-        issues.append("Verified Crossbeam concrete strength at stressing has not been entered.")
-    elif verified + 1.0e-9 < target:
-        issues.append(
-            f"Verified Crossbeam stressing strength {verified:.3f} MPa is below the adopted target {target:.3f} MPa."
-        )
     else:
-        strength_status = "READY"
+        strength_status = "DESIGN CRITERION DEFINED"
 
     closure_status = "NOT APPLICABLE"
     if method == CONSTRUCTION_METHOD_PRECAST:
         closure_status = "REVIEW REQUIRED"
         if closure_required <= 0.0:
             issues.append("Required joint/closure concrete strength at stressing must be defined for Precast Segmental construction.")
-        elif closure_verified <= 0.0:
-            issues.append("Verified joint/closure concrete strength at stressing has not been entered.")
-        elif closure_verified + 1.0e-9 < closure_required:
-            issues.append(
-                f"Verified joint/closure strength {closure_verified:.3f} MPa is below the adopted requirement {closure_required:.3f} MPa."
-            )
         else:
-            closure_status = "READY"
+            closure_status = "DESIGN CRITERION DEFINED"
 
     if not columns["ready"]:
         issues.extend(columns["issues"])
@@ -408,20 +394,18 @@ def construction_stage_readiness(
     issues = _dedupe(issues)
     ready = not issues
     return {
-        "status": "STAGE SOURCE READY — SOLVER NOT YET RELEASED" if ready else "INPUT / VERIFICATION REQUIRED",
+        "status": "DESIGN SOURCE READY — SOLVER NOT YET RELEASED" if ready else "DESIGN INPUT REQUIRED",
         "ready": ready,
         "construction_method": method,
         "crossbeam_fc_mpa": fc if fc > 0.0 else None,
         "stressing_strength_ratio": ratio,
         "target_stressing_strength_mpa": target,
-        "verified_crossbeam_strength_mpa": verified if verified > 0.0 else None,
         "strength_status": strength_status,
         "closure_required_mpa": closure_required if closure_required > 0.0 else None,
-        "closure_verified_mpa": closure_verified if closure_verified > 0.0 else None,
         "closure_status": closure_status,
         "columns": columns,
         "pair_sequence": sequence,
         "temporary_support": temp_support,
         "issues": issues,
-        "solver_status": "LOCKED — PTLOSS3B1 SOURCE MODEL ONLY",
+        "solver_status": "LOCKED — PTLOSS3B1A SOURCE MODEL ONLY",
     }

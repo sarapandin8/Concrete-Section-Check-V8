@@ -178,7 +178,7 @@ def test_ptloss3_override_settings_round_trip_in_project_metadata() -> None:
     restored = restore_crossbeam_prestress_loss_project_state(
         {CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY: metadata}, restored_state
     )
-    assert metadata["schema_version"] == 4
+    assert metadata["schema_version"] == 5
     assert metadata["es_fcgp_override_enabled"] is True
     assert metadata["es_fcgp_override_mpa"] == pytest.approx(32.5)
     assert metadata["es_eci_override_enabled"] is True
@@ -201,8 +201,8 @@ def test_ptloss3b1_column_shapes_and_derived_properties_are_axis_aligned() -> No
     chamfer = column_section_properties(
         {
             "Shape": COLUMN_SHAPE_RECT_CHAMFER,
-            "B local-2 (mm)": 2000.0,
-            "H local-3 (mm)": 1500.0,
+            "Btrans (mm)": 2000.0,
+            "Blong (mm)": 1500.0,
             "Corner (mm)": 100.0,
             "f'c (MPa)": 35.0,
         }
@@ -215,8 +215,8 @@ def test_ptloss3b1_column_shapes_and_derived_properties_are_axis_aligned() -> No
     fillet = column_section_properties(
         {
             "Shape": COLUMN_SHAPE_RECT_FILLET,
-            "B local-2 (mm)": 2000.0,
-            "H local-3 (mm)": 1500.0,
+            "Btrans (mm)": 2000.0,
+            "Blong (mm)": 1500.0,
             "Corner (mm)": 100.0,
             "f'c (MPa)": 35.0,
         }
@@ -296,16 +296,14 @@ def test_ptloss3b1_stage_source_requires_physical_inputs_but_keeps_solver_locked
         construction_method=CONSTRUCTION_METHOD_PRECAST,
         crossbeam_fc_mpa=45.0,
         stressing_strength_ratio=0.80,
-        verified_crossbeam_strength_mpa=36.0,
         closure_required_mpa=50.0,
-        closure_verified_mpa=52.0,
         column_rows=columns,
         length_m=20.0,
         group_rows=groups,
         pair_sequence=["G1", "G2", "G3", "G4"],
     )
     assert summary["ready"] is True
-    assert summary["status"] == "STAGE SOURCE READY — SOLVER NOT YET RELEASED"
+    assert summary["status"] == "DESIGN SOURCE READY — SOLVER NOT YET RELEASED"
     assert summary["solver_status"].startswith("LOCKED")
     assert summary["temporary_support"]["behavior"] == "COMPRESSION-ONLY"
 
@@ -313,12 +311,10 @@ def test_ptloss3b1_stage_source_requires_physical_inputs_but_keeps_solver_locked
 def test_ptloss3b1_project_metadata_round_trip_includes_stage_source() -> None:
     from concrete_pmm_pro.crossbeam.prestress_loss import (
         CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY,
-        CB_LOSS_ES_CLOSURE_VERIFIED_MPA_KEY,
         CB_LOSS_ES_COLUMN_ROWS_KEY,
         CB_LOSS_ES_CONSTRUCTION_METHOD_KEY,
         CB_LOSS_ES_PAIR_SEQUENCE_KEY,
         CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
-        CB_LOSS_ES_VERIFIED_CROSSBEAM_STRENGTH_MPA_KEY,
         CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY,
         crossbeam_prestress_loss_settings_from_session_state,
         restore_crossbeam_prestress_loss_project_state,
@@ -328,14 +324,12 @@ def test_ptloss3b1_project_metadata_round_trip_includes_stage_source() -> None:
     state = {
         CB_LOSS_ES_CONSTRUCTION_METHOD_KEY: "Precast Segmental",
         CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY: 0.8,
-        CB_LOSS_ES_VERIFIED_CROSSBEAM_STRENGTH_MPA_KEY: 36.0,
         CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY: 50.0,
-        CB_LOSS_ES_CLOSURE_VERIFIED_MPA_KEY: 52.0,
         CB_LOSS_ES_COLUMN_ROWS_KEY: columns,
         CB_LOSS_ES_PAIR_SEQUENCE_KEY: ["G2", "G1"],
     }
     metadata = crossbeam_prestress_loss_settings_from_session_state(state)
-    assert metadata["schema_version"] == 4
+    assert metadata["schema_version"] == 5
     assert metadata["es_column_rows"] == columns
     assert metadata["es_pair_sequence"] == ["G2", "G1"]
     restored: dict[str, object] = {}
@@ -347,6 +341,70 @@ def test_ptloss3b1_project_metadata_round_trip_includes_stage_source() -> None:
     assert restored[CB_LOSS_ES_PAIR_SEQUENCE_KEY] == ["G2", "G1"]
 
 
+
+def test_ptloss3b1a_design_readiness_does_not_require_future_field_test_results() -> None:
+    from concrete_pmm_pro.crossbeam.construction_stage import (
+        COLUMN_SHAPE_CIRCULAR,
+        CONSTRUCTION_METHOD_PRECAST,
+        construction_stage_readiness,
+    )
+
+    system, profile = _default_sources()
+    groups = symmetric_stressing_group_rows(profile, system, length_m=20.0)
+    columns = [
+        {
+            "Column ID": "C1",
+            "Station s (m)": 0.0,
+            "Height (m)": 8.0,
+            "Shape": COLUMN_SHAPE_CIRCULAR,
+            "Diameter (mm)": 1600.0,
+            "f'c (MPa)": 35.0,
+        },
+        {
+            "Column ID": "C2",
+            "Station s (m)": 20.0,
+            "Height (m)": 8.0,
+            "Shape": COLUMN_SHAPE_CIRCULAR,
+            "Diameter (mm)": 1600.0,
+            "f'c (MPa)": 35.0,
+        },
+    ]
+    summary = construction_stage_readiness(
+        construction_method=CONSTRUCTION_METHOD_PRECAST,
+        crossbeam_fc_mpa=45.0,
+        stressing_strength_ratio=0.80,
+        closure_required_mpa=50.0,
+        column_rows=columns,
+        length_m=20.0,
+        group_rows=groups,
+        pair_sequence=["G1", "G2", "G3", "G4"],
+    )
+    assert summary["ready"] is True
+    assert summary["strength_status"] == "DESIGN CRITERION DEFINED"
+    assert summary["closure_status"] == "DESIGN CRITERION DEFINED"
+
+
+def test_ptloss3b1a_legacy_column_dimensions_migrate_to_btrans_blong() -> None:
+    from concrete_pmm_pro.crossbeam.construction_stage import canonical_column_stage_rows
+
+    rows = canonical_column_stage_rows(
+        [
+            {
+                "Column ID": "C1",
+                "Station s (m)": 0.0,
+                "Height (m)": 8.0,
+                "B local-2 (mm)": 1200.0,
+                "H local-3 (mm)": 1800.0,
+                "f'c (MPa)": 35.0,
+            }
+        ],
+        length_m=20.0,
+    )
+    assert math.isclose(rows[0]["Btrans (mm)"], 1200.0)
+    assert math.isclose(rows[0]["Blong (mm)"], 1800.0)
+    assert "B local-2 (mm)" not in rows[0]
+    assert "H local-3 (mm)" not in rows[0]
+
 def test_ptloss3b1_ui_exposes_construction_columns_contact_and_pair_sequence_without_stage_solver() -> None:
     from pathlib import Path
 
@@ -357,6 +415,10 @@ def test_ptloss3b1_ui_exposes_construction_columns_contact_and_pair_sequence_wit
     assert "Construction / stressing-stage source model" in elastic_block
     assert "Rectangular — Equal Chamfer 4 Corners" not in elastic_block  # options come from scoped module
     assert "Column / support-line layout" in elastic_block
+    assert "Btrans" in elastic_block and "Transverse / Normal to Crossbeam axis" in elastic_block
+    assert "Blong" in elastic_block and "Along / Parallel to Crossbeam axis" in elastic_block
+    assert "Verified Crossbeam strength at stressing" not in elastic_block
+    assert "Verified joint / closure strength at stressing" not in elastic_block
     assert "Base assumption is FIXED" in elastic_block
     assert "COMPRESSION-ONLY" in elastic_block
     assert "Lift-off" in elastic_block and "AUTOMATIC" in elastic_block

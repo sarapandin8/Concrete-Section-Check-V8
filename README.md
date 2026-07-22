@@ -1712,3 +1712,7 @@ Activates the Crossbeam Elastic Shortening workspace as a source-gated AASHTO-ba
 ## CROSSBEAM.PTLOSS3B1 — Construction/Stressing-Stage Source Model
 
 Adds the Crossbeam construction/stressing-stage source model required before source-derived `f_cgp` can be released: Precast Segmental/Cast-in-Place construction selection, stressing-strength and closure-strength readiness inputs, editable multi-column layout with three local-axis-aligned column shapes and automatically derived gross stiffness properties, continuous full-length compression-only temporary support with future automatic lift-off, and a user-confirmed symmetric stressing-pair sequence. No Portal-Frame stage solver, Primary/Secondary Prestress response, contact analysis, `f_cgp`, or `Pe/Pe_eff` is released in this milestone. See `README_CROSSBEAM_PTLOSS3B1.md`.
+
+## CROSSBEAM.PTLOSS3B1A — Construction Source UX & State Reliability
+
+Removes future field-test strength inputs from the design-stage Elastic Shortening source, replaces ambiguous column `B/H` dimensions with `Btrans` normal to the Crossbeam axis and `Blong` along the axis, separates shape-specific geometry inputs, and adds explicit callback-based persistence for column and stressing-pair sequence editors. Structural stage response, contact, `f_cgp`, and effective prestress remain locked. See `README_CROSSBEAM_PTLOSS3B1A.md`.

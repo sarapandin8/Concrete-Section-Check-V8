@@ -102,6 +102,9 @@ from concrete_pmm_pro.crossbeam.elastic_shortening import (
 from concrete_pmm_pro.crossbeam.construction_stage import (
     COLUMN_BASE_ASSUMPTION,
     COLUMN_SHAPE_OPTIONS,
+    COLUMN_SHAPE_RECT_CHAMFER,
+    COLUMN_SHAPE_RECT_FILLET,
+    COLUMN_SHAPE_CIRCULAR,
     CONSTRUCTION_METHOD_OPTIONS,
     CONSTRUCTION_METHOD_PRECAST,
     DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
@@ -125,9 +128,7 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY,
     CB_LOSS_ES_CONSTRUCTION_METHOD_KEY,
     CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
-    CB_LOSS_ES_VERIFIED_CROSSBEAM_STRENGTH_MPA_KEY,
     CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY,
-    CB_LOSS_ES_CLOSURE_VERIFIED_MPA_KEY,
     CB_LOSS_ES_COLUMN_ROWS_KEY,
     CB_LOSS_ES_PAIR_SEQUENCE_KEY,
     CB_LOSS_EXTERNAL_MU_KEY,
@@ -1398,6 +1399,161 @@ def _commit_tendon_material_editor(
     st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = _tendon_system_from_material_editor(
         source, editor_rows
     )
+
+
+
+def _ptloss3b1_column_summary_editor_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "_Source Index": index,
+            "Column ID": row.get("Column ID"),
+            "Station s (m)": row.get("Station s (m)"),
+            "Column Height (m)": row.get("Height (m)"),
+            "Shape": row.get("Shape"),
+            "f'c (MPa)": row.get("f'c (MPa)"),
+        }
+        for index, row in enumerate(rows)
+    ]
+
+
+def _ptloss3b1_column_geometry_editor_rows(
+    rows: list[dict[str, Any]], shape: str
+) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for index, row in enumerate(rows):
+        if str(row.get("Shape") or "") != shape:
+            continue
+        base: dict[str, Any] = {
+            "_Source Index": index,
+            "Column ID": row.get("Column ID"),
+        }
+        if shape == COLUMN_SHAPE_CIRCULAR:
+            base["Diameter (mm)"] = row.get("Diameter (mm)")
+        else:
+            base["Btrans (mm)"] = row.get("Btrans (mm)")
+            base["Blong (mm)"] = row.get("Blong (mm)")
+            if shape == COLUMN_SHAPE_RECT_CHAMFER:
+                base["Chamfer c (mm)"] = row.get("Corner (mm)")
+            else:
+                base["Fillet radius r (mm)"] = row.get("Corner (mm)")
+        output.append(base)
+    return output
+
+
+def _commit_ptloss3b1_column_summary_editor(
+    editor_key: str,
+    fallback_rows: list[dict[str, Any]],
+    length_m: float,
+) -> None:
+    current = canonical_column_stage_rows(
+        st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
+    )
+    editor_rows = data_editor_payload_to_records(
+        st.session_state.get(editor_key), fallback_rows
+    )
+    updated: list[dict[str, Any]] = []
+    for new_index, edited in enumerate(editor_rows):
+        raw_source_index = edited.get("_Source Index")
+        try:
+            source_index = int(raw_source_index)
+        except (TypeError, ValueError):
+            source_index = -1
+        if 0 <= source_index < len(current):
+            row = dict(current[source_index])
+        else:
+            row = default_column_stage_rows(length_m)[0]
+            row["Column ID"] = f"C{new_index + 1}"
+            row["Station s (m)"] = 0.0
+        row.update(
+            {
+                "Column ID": str(edited.get("Column ID") or f"C{new_index + 1}").strip()
+                or f"C{new_index + 1}",
+                "Station s (m)": _finite_float(edited.get("Station s (m)")),
+                "Height (m)": _finite_float(edited.get("Column Height (m)")),
+                "Shape": str(edited.get("Shape") or COLUMN_SHAPE_RECT_CHAMFER),
+                "f'c (MPa)": _finite_float(edited.get("f'c (MPa)")),
+            }
+        )
+        updated.append(row)
+    st.session_state[CB_LOSS_ES_COLUMN_ROWS_KEY] = canonical_column_stage_rows(
+        updated, length_m=length_m
+    )
+    st.session_state["crossbeam_ptloss3b1_column_editor_revision"] = int(
+        st.session_state.get("crossbeam_ptloss3b1_column_editor_revision", 0)
+    ) + 1
+
+
+def _commit_ptloss3b1_column_geometry_editor(
+    editor_key: str,
+    fallback_rows: list[dict[str, Any]],
+    length_m: float,
+    shape: str,
+) -> None:
+    current = canonical_column_stage_rows(
+        st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
+    )
+    editor_rows = data_editor_payload_to_records(
+        st.session_state.get(editor_key), fallback_rows
+    )
+    for edited in editor_rows:
+        try:
+            source_index = int(edited.get("_Source Index"))
+        except (TypeError, ValueError):
+            continue
+        if not (0 <= source_index < len(current)):
+            continue
+        row = current[source_index]
+        if str(row.get("Shape") or "") != shape:
+            continue
+        if shape == COLUMN_SHAPE_CIRCULAR:
+            row["Diameter (mm)"] = _finite_float(edited.get("Diameter (mm)"))
+        else:
+            row["Btrans (mm)"] = _finite_float(edited.get("Btrans (mm)"))
+            row["Blong (mm)"] = _finite_float(edited.get("Blong (mm)"))
+            corner_key = (
+                "Chamfer c (mm)"
+                if shape == COLUMN_SHAPE_RECT_CHAMFER
+                else "Fillet radius r (mm)"
+            )
+            row["Corner (mm)"] = _finite_float(edited.get(corner_key))
+    st.session_state[CB_LOSS_ES_COLUMN_ROWS_KEY] = canonical_column_stage_rows(
+        current, length_m=length_m
+    )
+    st.session_state["crossbeam_ptloss3b1_column_editor_revision"] = int(
+        st.session_state.get("crossbeam_ptloss3b1_column_editor_revision", 0)
+    ) + 1
+
+
+def _commit_ptloss3b1_pair_sequence_editor(
+    editor_key: str,
+    fallback_rows: list[dict[str, Any]],
+    group_rows: list[dict[str, Any]],
+) -> None:
+    editor_rows = data_editor_payload_to_records(
+        st.session_state.get(editor_key), fallback_rows
+    )
+    numbers = [int(_finite_float(row.get("Sequence"))) for row in editor_rows]
+    groups = [str(row.get("Group ID") or "") for row in editor_rows]
+    valid = (
+        bool(editor_rows)
+        and sorted(numbers) == list(range(1, len(editor_rows) + 1))
+        and len(set(groups)) == len(editor_rows)
+        and set(groups) == {str(row.get("Group ID") or "") for row in group_rows}
+    )
+    if valid:
+        st.session_state[CB_LOSS_ES_PAIR_SEQUENCE_KEY] = [
+            str(row.get("Group ID") or "")
+            for row in sorted(editor_rows, key=lambda row: int(_finite_float(row.get("Sequence"))))
+        ]
+        st.session_state.pop("crossbeam_ptloss3b1_pair_sequence_issue", None)
+        st.session_state["crossbeam_ptloss3b1_pair_sequence_editor_revision"] = int(
+            st.session_state.get("crossbeam_ptloss3b1_pair_sequence_editor_revision", 0)
+        ) + 1
+    else:
+        st.session_state["crossbeam_ptloss3b1_pair_sequence_issue"] = (
+            "Stressing sequence must use each verified pair exactly once with unique sequence numbers 1..G. "
+            "The last valid sequence remains adopted."
+        )
 
 
 def _editor_bool(value: Any) -> bool:
@@ -4296,14 +4452,8 @@ def _loss_setting_defaults_from_state() -> dict[str, Any]:
                 CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
                 DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
             ),
-            "es_verified_crossbeam_strength_mpa": st.session_state.get(
-                CB_LOSS_ES_VERIFIED_CROSSBEAM_STRENGTH_MPA_KEY, 0.0
-            ),
             "es_closure_required_mpa": st.session_state.get(
                 CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY, 0.0
-            ),
-            "es_closure_verified_mpa": st.session_state.get(
-                CB_LOSS_ES_CLOSURE_VERIFIED_MPA_KEY, 0.0
             ),
             "es_column_rows": st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY, []),
             "es_pair_sequence": st.session_state.get(CB_LOSS_ES_PAIR_SEQUENCE_KEY, []),
@@ -5502,7 +5652,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "Friction/Wobble and Anchorage Set preserve their accepted results. PTLOSS3B1 adds the Crossbeam construction/stressing-stage source model, continuous compression-only temporary support definition, and user-confirmed stressing-pair sequence while source-derived f_cgp, the stage solver, Pe/Pe_eff, and later losses remain locked.",
+        "Friction/Wobble and Anchorage Set preserve their accepted results. PTLOSS3B1A adds the Crossbeam construction/stressing-stage source model, continuous compression-only temporary support definition, and user-confirmed stressing-pair sequence while source-derived f_cgp, the stage solver, Pe/Pe_eff, and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -6349,7 +6499,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     with elastic_shortening_tab:
         st.markdown("#### Elastic Shortening — construction/stressing-stage source foundation")
         st.caption(
-            "PTLOSS3B1 preserves the validated PTLOSS3A symmetric-pair/AASHTO foundation and adds the construction/stressing-stage source model required before any Portal-Frame stage solver can derive f_cgp. Primary/secondary prestress, contact analysis, f_cgp, Pe/Pe_eff, and later losses remain locked."
+            "PTLOSS3B1A preserves the validated PTLOSS3A symmetric-pair/AASHTO foundation and adds the construction/stressing-stage source model required before any Portal-Frame stage solver can derive f_cgp. Primary/secondary prestress, contact analysis, f_cgp, Pe/Pe_eff, and later losses remain locked."
         )
 
         upstream_ready = bool(
@@ -6383,16 +6533,8 @@ def render_crossbeam_prestress_loss_page() -> None:
             float(current_assumptions.get("es_stressing_strength_ratio", DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO)),
         )
         st.session_state.setdefault(
-            CB_LOSS_ES_VERIFIED_CROSSBEAM_STRENGTH_MPA_KEY,
-            float(current_assumptions.get("es_verified_crossbeam_strength_mpa", 0.0)),
-        )
-        st.session_state.setdefault(
             CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY,
             float(current_assumptions.get("es_closure_required_mpa", 0.0)),
-        )
-        st.session_state.setdefault(
-            CB_LOSS_ES_CLOSURE_VERIFIED_MPA_KEY,
-            float(current_assumptions.get("es_closure_verified_mpa", 0.0)),
         )
         stored_column_rows = current_assumptions.get("es_column_rows") or []
         if not stored_column_rows:
@@ -6547,10 +6689,10 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         st.markdown("##### Construction / stressing-stage source model")
         st.caption(
-            "PTLOSS3B1 stores the physical construction facts needed by the future limited 2D Portal-Frame stage solver. "
+            "PTLOSS3B1A stores the physical construction facts needed by the future limited 2D Portal-Frame stage solver. "
             "It does not yet calculate Primary/Secondary Prestress, contact reactions, or source-derived f_cgp."
         )
-        method_col, ratio_col, verified_col = st.columns(3)
+        method_col, ratio_col = st.columns(2)
         with method_col:
             st.selectbox(
                 "Construction method",
@@ -6559,23 +6701,16 @@ def render_crossbeam_prestress_loss_page() -> None:
             )
         with ratio_col:
             st.number_input(
-                "Stressing strength criterion f'ci / f'c",
+                "Design stressing-strength criterion f'ci / f'c",
                 min_value=0.10,
                 max_value=1.50,
                 step=0.05,
                 format="%.2f",
                 key=CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
-                help="Project criterion only; default 0.80. Final stressing requires the specified/verified concrete strength required by the project/PT procedure.",
-            )
-        with verified_col:
-            st.number_input(
-                "Verified Crossbeam strength at stressing (MPa)",
-                min_value=0.0,
-                max_value=200.0,
-                step=0.5,
-                format="%.2f",
-                key=CB_LOSS_ES_VERIFIED_CROSSBEAM_STRENGTH_MPA_KEY,
-                help="Enter the verified stressing-stage concrete strength when available; 0 means not yet verified.",
+                help=(
+                    "Design criterion only; default 0.80. Actual concrete test results belong to construction QA / "
+                    "stressing release and are intentionally not requested on this design page."
+                ),
             )
 
         crossbeam_fc_source = current_es_material_source.get("fc_mpa")
@@ -6587,69 +6722,147 @@ def render_crossbeam_prestress_loss_page() -> None:
             st.session_state[CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY] = float(crossbeam_fc_source)
 
         if str(st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)) == CONSTRUCTION_METHOD_PRECAST:
-            closure_req_col, closure_verified_col = st.columns(2)
-            with closure_req_col:
-                st.number_input(
-                    "Required joint / closure strength at stressing (MPa)",
-                    min_value=0.0,
-                    max_value=200.0,
-                    step=0.5,
-                    format="%.2f",
-                    key=CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY,
-                    help="Project requirement. The workflow commonly requires joint/closure concrete to meet or exceed the adopted Crossbeam requirement before stressing; use the approved project value.",
-                )
-            with closure_verified_col:
-                st.number_input(
-                    "Verified joint / closure strength at stressing (MPa)",
-                    min_value=0.0,
-                    max_value=200.0,
-                    step=0.5,
-                    format="%.2f",
-                    key=CB_LOSS_ES_CLOSURE_VERIFIED_MPA_KEY,
-                    help="Enter verified test strength; 0 means not yet verified.",
-                )
+            st.number_input(
+                "Required joint / closure concrete strength at stressing (MPa)",
+                min_value=0.0,
+                max_value=200.0,
+                step=0.5,
+                format="%.2f",
+                key=CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY,
+                help=(
+                    "Design/project requirement at stressing. Enter the specified minimum strength; actual field-test "
+                    "verification belongs to construction QA and is not a design-stage input."
+                ),
+            )
             st.caption(
-                "Precast Segmental source assumption: all segments are erected, joint/closure concrete has reached the adopted stressing requirement, and stressing is performed before the temporary erection support/gantry is intentionally removed."
+                "Precast Segmental design-stage assumption: all segments are erected and the joint/closure concrete is required "
+                "to reach the adopted specified stressing strength before tendon stressing. Actual test acceptance is outside "
+                "this design-input page."
             )
         else:
             st.caption(
-                "Cast-in-Place source assumption: Crossbeam stressing occurs after the adopted stressing-strength criterion is reached while the continuous full-length falsework/support condition remains defined below."
+                "Cast-in-Place design-stage assumption: Crossbeam stressing occurs after the specified stressing-strength "
+                "criterion is reached while the continuous full-length falsework/support condition remains defined below."
             )
 
         st.markdown("##### Column / support-line layout")
         st.caption(
-            "Column local axes follow the app axes: B is along local-2 and H along local-3. Base assumption is FIXED. "
-            "Enter only physical geometry/material inputs; A, I22, I33, Ec, EA and EI are derived automatically."
+            "Column plan dimensions are defined relative to the Crossbeam longitudinal axis s. "
+            "Btrans is transverse/normal to the Crossbeam axis; Blong is parallel to/along the Crossbeam axis. "
+            "Column Height is the vertical member height and is a separate input. Base assumption is FIXED."
         )
+        st.code(
+            "PLAN VIEW\n"
+            "                 Btrans\n"
+            "                   ↕\n"
+            "              ┌─────────┐\n"
+            "Crossbeam s → │ Column  │ → Blong (along / parallel to s)\n"
+            "              └─────────┘\n"
+            "Btrans = transverse / normal to s-axis",
+            language=None,
+        )
+
         column_source_rows = canonical_column_stage_rows(
             st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
         )
-        column_editor = st.data_editor(
-            pd.DataFrame(column_source_rows),
+        column_revision = int(st.session_state.get("crossbeam_ptloss3b1_column_editor_revision", 0))
+        column_summary_rows = _ptloss3b1_column_summary_editor_rows(column_source_rows)
+        column_editor_key = f"crossbeam_ptloss3b1_column_layout_editor_{column_revision}"
+        st.data_editor(
+            pd.DataFrame(column_summary_rows),
             num_rows="dynamic",
             use_container_width=True,
             hide_index=True,
-            key="crossbeam_ptloss3b1_column_layout_editor",
+            key=column_editor_key,
+            on_change=_commit_ptloss3b1_column_summary_editor,
+            args=(column_editor_key, column_summary_rows, float(length_m)),
             column_config={
-                "Shape": st.column_config.SelectboxColumn(
-                    "Shape", options=list(COLUMN_SHAPE_OPTIONS), required=True
+                "_Source Index": None,
+                "Column ID": st.column_config.TextColumn("Column ID", required=True),
+                "Station s (m)": st.column_config.NumberColumn(
+                    "Station s (m)", min_value=0.0, max_value=float(length_m), format="%.3f", required=True
                 ),
-                "Station s (m)": st.column_config.NumberColumn("Station s (m)", min_value=0.0, max_value=float(length_m), format="%.3f"),
-                "Height (m)": st.column_config.NumberColumn("Height (m)", min_value=0.0, format="%.3f"),
-                "B local-2 (mm)": st.column_config.NumberColumn("B local-2 (mm)", min_value=0.0, format="%.1f"),
-                "H local-3 (mm)": st.column_config.NumberColumn("H local-3 (mm)", min_value=0.0, format="%.1f"),
-                "Corner (mm)": st.column_config.NumberColumn("Chamfer / fillet (mm)", min_value=0.0, format="%.1f"),
-                "Diameter (mm)": st.column_config.NumberColumn("Diameter (mm)", min_value=0.0, format="%.1f"),
-                "f'c (MPa)": st.column_config.NumberColumn("f'c (MPa)", min_value=1.0, max_value=150.0, format="%.1f"),
+                "Column Height (m)": st.column_config.NumberColumn(
+                    "Column Height — vertical (m)", min_value=0.0, format="%.3f", required=True
+                ),
+                "Shape": st.column_config.SelectboxColumn(
+                    "Section shape", options=list(COLUMN_SHAPE_OPTIONS), required=True
+                ),
+                "f'c (MPa)": st.column_config.NumberColumn(
+                    "Column f'c (MPa)", min_value=1.0, max_value=150.0, format="%.1f", required=True
+                ),
             },
         )
-        st.session_state[CB_LOSS_ES_COLUMN_ROWS_KEY] = canonical_column_stage_rows(
-            column_editor, length_m=length_m
+
+        # Re-read canonical rows after any callback-driven summary edit.  Section
+        # dimensions are edited in shape-specific tables so non-applicable inputs
+        # are never exposed to the user.
+        column_source_rows = canonical_column_stage_rows(
+            st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
         )
+        st.markdown("###### Column section geometry — inputs shown only when applicable")
+        st.caption(
+            "Rectangular sections use Btrans and Blong plus either Chamfer c or Fillet radius r. "
+            "Circular sections use Diameter only. Dormant values from other shapes are ignored by the geometry solver."
+        )
+
+        geometry_specs = (
+            (COLUMN_SHAPE_RECT_CHAMFER, "Rectangular — equal chamfer", "Chamfer c (mm)"),
+            (COLUMN_SHAPE_RECT_FILLET, "Rectangular — equal fillet", "Fillet radius r (mm)"),
+            (COLUMN_SHAPE_CIRCULAR, "Circular", "Diameter (mm)"),
+        )
+        for shape, heading, corner_label in geometry_specs:
+            geometry_rows = _ptloss3b1_column_geometry_editor_rows(column_source_rows, shape)
+            if not geometry_rows:
+                continue
+            st.markdown(f"**{heading}**")
+            geometry_key = (
+                f"crossbeam_ptloss3b1_column_geometry_{abs(hash(shape))}_{column_revision}"
+            )
+            config: dict[str, Any] = {
+                "_Source Index": None,
+                "Column ID": st.column_config.TextColumn("Column ID", disabled=True),
+            }
+            if shape == COLUMN_SHAPE_CIRCULAR:
+                config["Diameter (mm)"] = st.column_config.NumberColumn(
+                    "Diameter D (mm)", min_value=0.0, format="%.1f", required=True
+                )
+            else:
+                config["Btrans (mm)"] = st.column_config.NumberColumn(
+                    "Btrans — Transverse / Normal to Crossbeam axis (mm)",
+                    min_value=0.0,
+                    format="%.1f",
+                    required=True,
+                )
+                config["Blong (mm)"] = st.column_config.NumberColumn(
+                    "Blong — Along / Parallel to Crossbeam axis (mm)",
+                    min_value=0.0,
+                    format="%.1f",
+                    required=True,
+                )
+                config[corner_label] = st.column_config.NumberColumn(
+                    corner_label, min_value=0.0, format="%.1f", required=True
+                )
+            st.data_editor(
+                pd.DataFrame(geometry_rows),
+                num_rows="fixed",
+                use_container_width=True,
+                hide_index=True,
+                key=geometry_key,
+                on_change=_commit_ptloss3b1_column_geometry_editor,
+                args=(geometry_key, geometry_rows, float(length_m), shape),
+                disabled=["Column ID"],
+                column_config=config,
+            )
+
         derived_column_rows = column_stage_property_rows(
             st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
         )
         with st.expander("Derived column section / stiffness source", expanded=False):
+            st.caption(
+                "I_trans is about the transverse axis and is the column inertia relevant to in-plane portal-frame bending along s; "
+                "I_long is about the longitudinal Crossbeam axis."
+            )
             st.dataframe(
                 pd.DataFrame(
                     [
@@ -6660,8 +6873,8 @@ def render_crossbeam_prestress_loss_page() -> None:
                             "Height (m)": round(_finite_float(row.get("Height (m)")), 3),
                             "Base": COLUMN_BASE_ASSUMPTION,
                             "A (m²)": round(_finite_float(row.get("Area (m²)")), 5),
-                            "I22 (m⁴)": round(_finite_float(row.get("I22 (m⁴)")), 6),
-                            "I33 (m⁴)": round(_finite_float(row.get("I33 (m⁴)")), 6),
+                            "I_trans (m⁴)": round(_finite_float(row.get("I22 (m⁴)")), 6),
+                            "I_long (m⁴)": round(_finite_float(row.get("I33 (m⁴)")), 6),
                             "Ec (MPa)": round(_finite_float(row.get("Ec (MPa)")), 0),
                             "Status": row.get("Status"),
                             "Issue": row.get("Issue"),
@@ -6692,11 +6905,19 @@ def render_crossbeam_prestress_loss_page() -> None:
         pair_sequence_source = stressing_pair_sequence_rows(
             current_es_group_rows, current_pair_sequence
         )
-        pair_sequence_editor = st.data_editor(
+        pair_sequence_revision = int(
+            st.session_state.get("crossbeam_ptloss3b1_pair_sequence_editor_revision", 0)
+        )
+        pair_sequence_editor_key = (
+            f"crossbeam_ptloss3b1_pair_sequence_editor_{pair_sequence_revision}"
+        )
+        st.data_editor(
             pd.DataFrame(pair_sequence_source),
             use_container_width=True,
             hide_index=True,
-            key="crossbeam_ptloss3b1_pair_sequence_editor",
+            key=pair_sequence_editor_key,
+            on_change=_commit_ptloss3b1_pair_sequence_editor,
+            args=(pair_sequence_editor_key, pair_sequence_source, current_es_group_rows),
             disabled=["Group ID", "Tendons stressed together", "Group Pj (kN)", "Status"],
             column_config={
                 "Sequence": st.column_config.NumberColumn(
@@ -6704,29 +6925,14 @@ def render_crossbeam_prestress_loss_page() -> None:
                 )
             },
         )
-        edited_sequence_records = _records(pair_sequence_editor)
-        edited_sequence_numbers = [int(_finite_float(row.get("Sequence"))) for row in edited_sequence_records]
-        if (
-            edited_sequence_records
-            and sorted(edited_sequence_numbers) == list(range(1, len(edited_sequence_records) + 1))
-            and len({str(row.get("Group ID") or "") for row in edited_sequence_records}) == len(edited_sequence_records)
-        ):
-            st.session_state[CB_LOSS_ES_PAIR_SEQUENCE_KEY] = [
-                str(row.get("Group ID") or "")
-                for row in sorted(edited_sequence_records, key=lambda row: int(_finite_float(row.get("Sequence"))))
-            ]
-        else:
-            st.warning(
-                "Stressing sequence must use each verified pair exactly once with unique sequence numbers 1..G. The last valid sequence remains adopted."
-            )
+        if st.session_state.get("crossbeam_ptloss3b1_pair_sequence_issue"):
+            st.warning(str(st.session_state.get("crossbeam_ptloss3b1_pair_sequence_issue")))
 
         stage_source_summary = construction_stage_readiness(
             construction_method=st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY),
             crossbeam_fc_mpa=crossbeam_fc_source,
             stressing_strength_ratio=float(st.session_state.get(CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY, DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO)),
-            verified_crossbeam_strength_mpa=float(st.session_state.get(CB_LOSS_ES_VERIFIED_CROSSBEAM_STRENGTH_MPA_KEY, 0.0)),
             closure_required_mpa=float(st.session_state.get(CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY, 0.0)),
-            closure_verified_mpa=float(st.session_state.get(CB_LOSS_ES_CLOSURE_VERIFIED_MPA_KEY, 0.0)),
             column_rows=st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY),
             length_m=length_m,
             group_rows=current_es_group_rows,
@@ -6745,7 +6951,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                     "title": "Crossbeam stressing strength",
                     "value": "—" if target_strength is None else f">= {float(target_strength):.2f} MPa",
                     "detail": str(stage_source_summary.get("strength_status")),
-                    "status": "ready" if stage_source_summary.get("strength_status") == "READY" else "warning",
+                    "status": "ready" if stage_source_summary.get("strength_status") == "DESIGN CRITERION DEFINED" else "warning",
                 },
                 {
                     "title": "Column source",
@@ -6762,7 +6968,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Stage solver",
                     "value": "LOCKED",
-                    "detail": "PTLOSS3B1 source model only",
+                    "detail": "PTLOSS3B1A source model only",
                     "status": "warning",
                 },
             ]
@@ -6772,7 +6978,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 for issue in stage_source_summary.get("issues", []):
                     st.warning(str(issue))
         st.caption(
-            "PTLOSS3B1 does not assume temporary support remains active after prestress camber develops. The future stage solver must treat the full-length support as compression-only contact and automatically release any location whose reaction would become tensile."
+            "PTLOSS3B1A does not assume temporary support remains active after prestress camber develops. The future stage solver must treat the full-length support as compression-only contact and automatically release any location whose reaction would become tensile."
         )
 
         if not current_es_group_summary.get("ready"):
@@ -6812,7 +7018,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         with st.expander("Calculation trace / QA — formula, stage source, and overrides", expanded=False):
             st.markdown("##### Code / methodology basis")
             st.write(
-                f"Published basis: **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B1 stores the separate construction stressing-pair sequence for the future incremental stage solver."
+                f"Published basis: **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B1A stores the separate construction stressing-pair sequence for the future incremental stage solver."
             )
             st.latex(r"\Delta f_{pES,avg}=\left(\frac{G-1}{2G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
             st.latex(r"\Delta f_{pES,g}=\left(\frac{G-g}{G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
@@ -6822,7 +7028,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
             st.markdown("##### Stage-stress source")
             st.warning(
-                "PTLOSS3B1 defines the construction/stressing-stage source but still does not invent the Portal-Frame structural response. Source-derived f_cgp remains BLOCKED until the validated Primary/Secondary Prestress + gravity/contact stage solver is released. A manual f_cgp override below is QA-only and cannot release final effective prestress."
+                "PTLOSS3B1A defines the construction/stressing-stage source but still does not invent the Portal-Frame structural response. Source-derived f_cgp remains BLOCKED until the validated Primary/Secondary Prestress + gravity/contact stage solver is released. A manual f_cgp override below is QA-only and cannot release final effective prestress."
             )
 
             st.checkbox(
@@ -6956,7 +7162,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                             if current_es_group_summary.get("ready")
                             else "PAIR SOURCE REVIEW"
                         ),
-                        "Feeds": "PTLOSS3B1 construction/stage source model only; Pe/Pe_eff remains locked",
+                        "Feeds": "PTLOSS3B1A construction/stage source model only; Pe/Pe_eff remains locked",
                     },
                     {
                         "Order": 5,
