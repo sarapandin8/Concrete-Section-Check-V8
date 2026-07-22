@@ -1704,3 +1704,7 @@ Adds an explicit overall-all-tendons summary layer above the selected-tendon for
 ## CROSSBEAM.PTLOSS2R3D — Anchorage Set QA-State & Wording Closeout
 
 Clarifies that independent dense-grid validation is optional verification only, moves it to a collapsed QA expander, and enforces mutually exclusive NOT RUN / PASS-REVIEW / STALE / NOT APPLICABLE states without changing any prestress-loss solver equation or numerical result. See `README_CROSSBEAM_PTLOSS2R3D.md`.
+
+## CROSSBEAM.PTLOSS3A — Symmetric-Pair Elastic-Shortening Source-Gate Foundation
+
+Activates the Crossbeam Elastic Shortening workspace as a source-gated AASHTO-based preview foundation. The workflow derives simultaneous symmetric tendon pairs from adopted geometry, uses stressing-group rather than raw-tendon sequence factors, preserves the accepted post-Anchorage-Set force state as the upstream source, and intentionally blocks final ES adoption until a validated source-derived stressing-stage `f_cgp` route is available. Manual `f_cgp`/`Eci` overrides are advanced QA only; `Pe/Pe_eff` remains locked. See `README_CROSSBEAM_PTLOSS3A.md`.

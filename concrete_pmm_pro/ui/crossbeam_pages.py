@@ -26,6 +26,11 @@ import plotly.graph_objects as go
 import streamlit as st
 from shapely.geometry import Point
 
+from concrete_pmm_pro.core.concrete_materials import (
+    concrete_materials_by_name,
+    ensure_concrete_material_library,
+)
+
 from concrete_pmm_pro.crossbeam.section_library import (
     build_geometry_for_definition,
     canonical_section_definitions,
@@ -86,12 +91,24 @@ from concrete_pmm_pro.crossbeam.anchorage_set import (
 from concrete_pmm_pro.crossbeam.anchorage_set_validation import (
     independent_both_end_dense_grid_validation,
 )
+from concrete_pmm_pro.crossbeam.elastic_shortening import (
+    AASHTO_PTL_ELASTIC_SHORTENING_BASIS,
+    PTLOSS3_PAIR_METHOD,
+    elastic_shortening_station_rows,
+    elastic_shortening_summary,
+    symmetric_stressing_group_rows,
+    stressing_group_summary,
+)
 from concrete_pmm_pro.crossbeam.prestress_loss import (
     AASHTO_POLYETHYLENE_DUCT_MU,
     AASHTO_PTL_FRICTION_BASIS,
     CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY,
     CB_LOSS_ANCHORAGE_SET_MM_KEY,
     CB_LOSS_EP_MPA_KEY,
+    CB_LOSS_ES_FCGP_OVERRIDE_ENABLED_KEY,
+    CB_LOSS_ES_FCGP_OVERRIDE_MPA_KEY,
+    CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY,
+    CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY,
     CB_LOSS_EXTERNAL_MU_KEY,
     CB_LOSS_INTERNAL_K_PER_M_KEY,
     CB_LOSS_INTERNAL_MU_KEY,
@@ -100,6 +117,8 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD,
     DEFAULT_ANCHORAGE_SET_MM,
     DEFAULT_PRESTRESS_STEEL_EP_MPA,
+    DEFAULT_ES_ECI_OVERRIDE_MPA,
+    DEFAULT_ES_FCGP_OVERRIDE_MPA,
     DEFAULT_INTERNAL_FRICTION_MU,
     DEFAULT_INTERNAL_WOBBLE_K_PER_M,
     aashto_friction_wobble_station_rows,
@@ -4215,36 +4234,122 @@ def render_crossbeam_tendon_profile_page() -> None:
         )
 
 
-def _loss_setting_defaults_from_state() -> dict[str, float | int | str]:
+def _loss_setting_defaults_from_state() -> dict[str, Any]:
     return normalize_crossbeam_prestress_loss_settings(
         {
             "internal_mu": st.session_state.get(
-                CB_LOSS_INTERNAL_MU_KEY,
-                DEFAULT_INTERNAL_FRICTION_MU,
+                CB_LOSS_INTERNAL_MU_KEY, DEFAULT_INTERNAL_FRICTION_MU
             ),
             "internal_k_per_m": st.session_state.get(
-                CB_LOSS_INTERNAL_K_PER_M_KEY,
-                DEFAULT_INTERNAL_WOBBLE_K_PER_M,
+                CB_LOSS_INTERNAL_K_PER_M_KEY, DEFAULT_INTERNAL_WOBBLE_K_PER_M
             ),
             "external_deviator_mu": st.session_state.get(
-                CB_LOSS_EXTERNAL_MU_KEY,
-                DEFAULT_EXTERNAL_DEVIATOR_MU,
+                CB_LOSS_EXTERNAL_MU_KEY, DEFAULT_EXTERNAL_DEVIATOR_MU
             ),
             "external_inadvertent_angle_rad": st.session_state.get(
                 CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY,
                 DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD,
             ),
             "anchorage_set_mm": st.session_state.get(
-                CB_LOSS_ANCHORAGE_SET_MM_KEY,
-                DEFAULT_ANCHORAGE_SET_MM,
+                CB_LOSS_ANCHORAGE_SET_MM_KEY, DEFAULT_ANCHORAGE_SET_MM
             ),
             "ep_mpa": st.session_state.get(
-                CB_LOSS_EP_MPA_KEY,
-                DEFAULT_PRESTRESS_STEEL_EP_MPA,
+                CB_LOSS_EP_MPA_KEY, DEFAULT_PRESTRESS_STEEL_EP_MPA
+            ),
+            "es_fcgp_override_enabled": st.session_state.get(
+                CB_LOSS_ES_FCGP_OVERRIDE_ENABLED_KEY, False
+            ),
+            "es_fcgp_override_mpa": st.session_state.get(
+                CB_LOSS_ES_FCGP_OVERRIDE_MPA_KEY, DEFAULT_ES_FCGP_OVERRIDE_MPA
+            ),
+            "es_eci_override_enabled": st.session_state.get(
+                CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY, False
+            ),
+            "es_eci_override_mpa": st.session_state.get(
+                CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY, DEFAULT_ES_ECI_OVERRIDE_MPA
             ),
         }
     )
 
+
+def _crossbeam_es_material_source(
+    section_definitions: list[dict[str, Any]],
+    segment_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Return a conservative preview source for the concrete stressing modulus."""
+
+    try:
+        library = ensure_concrete_material_library(
+            concrete_material=st.session_state.get("concrete_material"),
+            concrete_materials=st.session_state.get("concrete_materials"),
+            active_concrete_material_name=st.session_state.get(
+                "active_concrete_material_name"
+            ),
+            deck_topping_material_name=st.session_state.get(
+                "deck_topping_material_name"
+            ),
+        )
+        material_map = concrete_materials_by_name(library.materials)
+    except Exception as exc:
+        return {
+            "status": "SOURCE BLOCKED",
+            "eci_mpa": None,
+            "material_names": [],
+            "issues": [f"Concrete material library could not be resolved: {exc}"],
+        }
+
+    definitions = crossbeam_section_definition_map(section_definitions)
+    used_materials: list[str] = []
+    issues: list[str] = []
+    for row in segment_rows:
+        section_id = str(row.get("Section ID") or "").strip()
+        definition = definitions.get(section_id)
+        if definition is None:
+            issues.append(
+                f"Segment {row.get('Segment') or '?'} references unknown Section ID {section_id or '(blank)'}."
+            )
+            continue
+        material_name = str(definition.get("Material") or "").strip()
+        if not material_name:
+            issues.append(f"Section {section_id} has no concrete material assignment.")
+            continue
+        used_materials.append(material_name)
+
+    unique_materials = list(dict.fromkeys(used_materials))
+    for name in unique_materials:
+        if name not in material_map:
+            issues.append(
+                f"Assigned concrete material '{name}' is not available in the material library."
+            )
+    if len(unique_materials) > 1:
+        issues.append(
+            "Multiple concrete materials are assigned along the active Crossbeam; a single Eci preview source is not released until the stressing-stage material route is defined."
+        )
+    if not unique_materials:
+        issues.append(
+            "No concrete material is resolved from the active Crossbeam segment assignments."
+        )
+
+    if issues:
+        return {
+            "status": "SOURCE BLOCKED",
+            "eci_mpa": None,
+            "material_names": unique_materials,
+            "issues": list(dict.fromkeys(issues)),
+        }
+
+    material = material_map[unique_materials[0]]
+    return {
+        "status": "MATERIAL SOURCE READY — STAGE REVIEW",
+        "eci_mpa": float(material.effective_Ec_MPa),
+        "material_names": unique_materials,
+        "fc_mpa": float(material.fc_MPa),
+        "issues": [],
+        "note": (
+            "Uses the assigned concrete material effective Ec as the PTLOSS3A preview Eci. "
+            "Verify the actual stressing/load-transfer age and modulus before final adoption."
+        ),
+    }
 
 def _loss_k_display(row: Mapping[str, Any]) -> str:
     value = row.get("K (/m)")
@@ -5358,7 +5463,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "Anchorage-set preview preserves the accepted station-force and equivalent-average results while keeping heavy independent numerical QA optional, fingerprint-gated, and outside normal reruns. Pe/Pe_eff and later losses remain locked.",
+        "Friction/Wobble and Anchorage Set preserve their accepted results. Elastic Shortening now audits symmetric-pair stressing groups, stressing-stage modulus, and f_cgp source readiness before any ES preview is released; Pe/Pe_eff and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -5417,6 +5522,19 @@ def render_crossbeam_prestress_loss_page() -> None:
         current_anchorage_independent_validation_fingerprint
     )
 
+    current_section_definitions = _crossbeam_section_definitions()
+    current_segment_rows = _records(st.session_state.get(CB_SEGMENT_ROWS_KEY))
+    current_es_group_rows = symmetric_stressing_group_rows(
+        profile_rows,
+        system_rows,
+        length_m=length_m,
+    )
+    current_es_group_summary = stressing_group_summary(current_es_group_rows)
+    current_es_material_source = _crossbeam_es_material_source(
+        current_section_definitions,
+        current_segment_rows,
+    )
+
     (
         overview_tab,
         friction_tab,
@@ -5441,8 +5559,8 @@ def render_crossbeam_prestress_loss_page() -> None:
             [
                 {
                     "title": "Active calculation",
-                    "value": "Friction + wobble",
-                    "detail": AASHTO_PTL_FRICTION_BASIS,
+                    "value": "Friction + Anchorage Set",
+                    "detail": "Elastic Shortening source gate active",
                     "status": str(current_summary["status"]),
                 },
                 {
@@ -5501,8 +5619,12 @@ def render_crossbeam_prestress_loss_page() -> None:
                     {
                         "Component": "Elastic shortening",
                         "AASHTO article": "5.9.3.2.3b",
-                        "Current status": "Guarded future component",
-                        "Dependency": "Concrete stress at tendon CG + stressing sequence",
+                        "Current status": (
+                            "Pair source ready / stage stress blocked"
+                            if current_es_group_summary.get("ready")
+                            else "Stressing-pair source review"
+                        ),
+                        "Dependency": "Verified symmetric stressing pairs + Eci + source-derived f_cgp",
                     },
                     {
                         "Component": "Creep + shrinkage + relaxation",
@@ -6186,11 +6308,304 @@ def render_crossbeam_prestress_loss_page() -> None:
 
 
     with elastic_shortening_tab:
-        st.markdown("#### Elastic Shortening")
-        st.info(
-            "Guarded future component — no elastic-shortening loss is calculated in PTLOSS1G. "
-            "A later named solver milestone must define concrete stress at tendon level, stressing/transfer sequence, modulus basis, and tendon-group interaction before this component becomes active."
+        st.markdown("#### Elastic Shortening — symmetric-pair stressing foundation")
+        st.caption(
+            "PTLOSS3A implements the AASHTO post-tensioned sequential elastic-shortening framework with the Crossbeam construction intent that geometrically symmetric tendon pairs are stressed simultaneously. The stage concrete stress f_cgp remains source-gated; Pe/Pe_eff is not released."
         )
+
+        upstream_ready = bool(
+            int(current_anchorage_summary.get("active_seating_end_count") or 0) > 0
+            and int(current_anchorage_summary.get("calculated_end_count") or 0)
+            == int(current_anchorage_summary.get("active_seating_end_count") or 0)
+        )
+
+        st.session_state.setdefault(
+            CB_LOSS_ES_FCGP_OVERRIDE_ENABLED_KEY,
+            bool(current_assumptions.get("es_fcgp_override_enabled", False)),
+        )
+        st.session_state.setdefault(
+            CB_LOSS_ES_FCGP_OVERRIDE_MPA_KEY,
+            float(current_assumptions.get("es_fcgp_override_mpa", DEFAULT_ES_FCGP_OVERRIDE_MPA)),
+        )
+        st.session_state.setdefault(
+            CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY,
+            bool(current_assumptions.get("es_eci_override_enabled", False)),
+        )
+        st.session_state.setdefault(
+            CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY,
+            float(current_assumptions.get("es_eci_override_mpa", DEFAULT_ES_ECI_OVERRIDE_MPA)),
+        )
+
+        material_eci = current_es_material_source.get("eci_mpa")
+        eci_override_enabled = bool(
+            st.session_state.get(CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY, False)
+        )
+        selected_eci = (
+            float(st.session_state.get(CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY, DEFAULT_ES_ECI_OVERRIDE_MPA))
+            if eci_override_enabled
+            else (float(material_eci) if material_eci is not None else None)
+        )
+        fcgp_override_enabled = bool(
+            st.session_state.get(CB_LOSS_ES_FCGP_OVERRIDE_ENABLED_KEY, False)
+        )
+        selected_fcgp = (
+            float(st.session_state.get(CB_LOSS_ES_FCGP_OVERRIDE_MPA_KEY, DEFAULT_ES_FCGP_OVERRIDE_MPA))
+            if fcgp_override_enabled
+            else None
+        )
+
+        es_summary = elastic_shortening_summary(
+            current_es_group_rows,
+            ep_mpa=float(current_assumptions["ep_mpa"]),
+            eci_mpa=float(selected_eci or 0.0),
+            fcgp_mpa=selected_fcgp,
+        )
+        if not upstream_ready:
+            es_summary = {
+                **es_summary,
+                "value": "SOURCE BLOCKED",
+                "component_status": "UPSTREAM FORCE STATE REQUIRED",
+                "average_loss_mpa": None,
+                "max_sequence_loss_mpa": None,
+                "sequence_rows": [],
+            }
+
+        active_force_rows = [
+            row
+            for row in tendon_force_source_rows(system_rows)
+            if bool(row.get("Active"))
+            and str(row.get("Force source status") or "") != "REVIEW REQUIRED"
+        ]
+        total_aps = sum(_finite_float(row.get("Aps total (mm²)")) for row in active_force_rows)
+        fpj_weighted = (
+            sum(
+                _finite_float(row.get("Aps total (mm²)"))
+                * _finite_float(row.get("fpj (MPa)"))
+                for row in active_force_rows
+            )
+            / total_aps
+            if total_aps > 0.0
+            else 0.0
+        )
+        avg_loss = es_summary.get("average_loss_mpa")
+        max_loss = es_summary.get("max_sequence_loss_mpa")
+        avg_percent = (100.0 * float(avg_loss) / fpj_weighted) if avg_loss is not None and fpj_weighted > 0.0 else None
+        max_percent = (100.0 * float(max_loss) / fpj_weighted) if max_loss is not None and fpj_weighted > 0.0 else None
+        es_preview_station_rows = elastic_shortening_station_rows(
+            current_anchorage_station_rows, es_summary.get("sequence_rows", [])
+        )
+        calculated_es_preview_rows = [
+            row for row in es_preview_station_rows if row.get("P after ES (kN)") is not None
+        ]
+        min_p_after_es = (
+            min(_finite_float(row.get("P after ES (kN)")) for row in calculated_es_preview_rows)
+            if calculated_es_preview_rows
+            else None
+        )
+
+        render_metric_cards(
+            [
+                {
+                    "title": "ES basis",
+                    "value": str(current_es_group_summary.get("status") or "REVIEW REQUIRED"),
+                    "detail": f"{int(current_es_group_summary.get('group_count') or 0)} symmetric stressing pair/group(s)",
+                    "status": "ready" if current_es_group_summary.get("ready") else "warning",
+                },
+                {
+                    "title": "Upstream force state",
+                    "value": "READY" if upstream_ready else "SOURCE BLOCKED",
+                    "detail": "accepted P(s) after Friction + Anchorage Set",
+                    "status": "ready" if upstream_ready else "warning",
+                },
+                {
+                    "title": "Concrete modulus Eci",
+                    "value": f"{float(selected_eci):,.0f} MPa" if selected_eci is not None else "—",
+                    "detail": (
+                        "manual QA override"
+                        if eci_override_enabled
+                        else str(current_es_material_source.get("status") or "SOURCE BLOCKED")
+                    ),
+                    "status": "warning" if eci_override_enabled or selected_eci is None else "ready",
+                },
+                {
+                    "title": "Stage stress f_cgp",
+                    "value": f"{float(selected_fcgp):.3f} MPa" if selected_fcgp is not None else "SOURCE BLOCKED",
+                    "detail": "manual QA override" if fcgp_override_enabled else "source-derived stressing-stage stress not yet available",
+                    "status": "warning",
+                },
+                {
+                    "title": "Average ES loss",
+                    "value": f"{float(avg_loss):.2f} MPa" if avg_loss is not None else "—",
+                    "detail": f"{avg_percent:.2f}% of area-weighted fpj" if avg_percent is not None else "blocked until stage source is resolved",
+                    "status": "warning" if fcgp_override_enabled and avg_loss is not None else "neutral",
+                },
+                {
+                    "title": "Max pair-sequence ES",
+                    "value": f"{float(max_loss):.2f} MPa" if max_loss is not None else "—",
+                    "detail": f"{max_percent:.2f}% of area-weighted fpj · diagnostic" if max_percent is not None else "sequence diagnostic not released",
+                    "status": "warning" if max_loss is not None else "neutral",
+                },
+                {
+                    "title": "Minimum P after ES",
+                    "value": f"{float(min_p_after_es):,.1f} kN" if min_p_after_es is not None else "—",
+                    "detail": "continues from accepted P after Anchorage Set" if min_p_after_es is not None else "blocked until ES preview is available",
+                    "status": "warning" if min_p_after_es is not None else "neutral",
+                },
+                {
+                    "title": "Component status",
+                    "value": str(es_summary.get("component_status") or "SOURCE BLOCKED"),
+                    "detail": "manual overrides remain QA-only; Pe/Pe_eff locked",
+                    "status": "warning",
+                },
+            ]
+        )
+
+        st.info(
+            "Crossbeam stressing rule: each verified left/right symmetric tendon pair is one simultaneous stressing group. Tendons within the same pair do not create sequential elastic-shortening loss against each other. Earlier groups lose stress from later group stressing."
+        )
+
+        if not current_es_group_summary.get("ready"):
+            for issue in current_es_group_summary.get("issues", []):
+                st.warning(str(issue))
+        if current_es_material_source.get("issues"):
+            for issue in current_es_material_source.get("issues", []):
+                st.warning(str(issue))
+        elif current_es_material_source.get("note"):
+            st.caption(str(current_es_material_source.get("note")))
+
+        st.markdown("#### Symmetric stressing-pair source")
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Group": row.get("Group ID"),
+                        "Preview sequence": row.get("Sequence"),
+                        "Symmetric tendons": row.get("Tendons"),
+                        "Type": row.get("Type", ""),
+                        "Group Pj (kN)": round(_finite_float(row.get("Group Pj (kN)")), 2),
+                        "Depth mismatch (mm)": round(_finite_float(row.get("Depth mismatch (mm)")), 3),
+                        "Mirror-x mismatch (mm)": round(_finite_float(row.get("Mirror-x mismatch (mm)")), 3),
+                        "Status": row.get("Status"),
+                        "Issue": row.get("Issue"),
+                    }
+                    for row in current_es_group_rows
+                ]
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.caption(
+            "Pairing is derived from the adopted tendon geometry, not tendon names. Preview sequence follows the resolved pair order for transparency; confirm the construction stressing-pair order before final adoption."
+        )
+
+        with st.expander("Calculation trace / QA — formula, stage source, and overrides", expanded=False):
+            st.markdown("##### Code / methodology basis")
+            st.write(
+                f"Published basis: **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3A maps verified simultaneous symmetric pairs to equivalent stressing groups only when every pair is geometrically valid and group jacking forces are equivalent."
+            )
+            st.latex(r"\Delta f_{pES,avg}=\left(\frac{G-1}{2G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
+            st.latex(r"\Delta f_{pES,g}=\left(\frac{G-g}{G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
+            st.caption(
+                "G = number of verified equivalent simultaneous stressing groups/pairs; g = preview group sequence index. This grouping is a Crossbeam engineering implementation of the sequential-stressing principle, not a verbatim replacement of AASHTO N for arbitrary unequal groups."
+            )
+
+            st.markdown("##### Stage-stress source")
+            st.warning(
+                "PTLOSS3A does not invent the portal-frame stressing-stage self-weight/frame moment. Therefore source-derived f_cgp is intentionally BLOCKED until a validated stressing-stage section-response source exists. A manual f_cgp override below is QA-only and cannot release final effective prestress."
+            )
+
+            st.checkbox(
+                "Enable manual f_cgp override (engineer QA only)",
+                key=CB_LOSS_ES_FCGP_OVERRIDE_ENABLED_KEY,
+            )
+            st.number_input(
+                "Manual f_cgp (MPa)",
+                min_value=0.0,
+                max_value=200.0,
+                step=0.1,
+                format="%.3f",
+                key=CB_LOSS_ES_FCGP_OVERRIDE_MPA_KEY,
+                disabled=not bool(st.session_state.get(CB_LOSS_ES_FCGP_OVERRIDE_ENABLED_KEY)),
+                help="QA preview only. f_cgp must ultimately come from the accepted stressing/load-transfer stage response, including prestress and applicable self-weight/stage effects with protected sign conventions.",
+            )
+            st.checkbox(
+                "Enable manual Eci override (engineer QA only)",
+                key=CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY,
+            )
+            st.number_input(
+                "Manual Eci (MPa)",
+                min_value=1000.0,
+                max_value=100000.0,
+                step=100.0,
+                format="%.0f",
+                key=CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY,
+                disabled=not bool(st.session_state.get(CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY)),
+                help="Use only when the actual stressing-age concrete modulus is supported by an engineering source. The assigned material Ec is otherwise shown as the preview source with stage review required.",
+            )
+
+            group_count = int(current_es_group_summary.get("group_count") or 0)
+            if group_count > 0:
+                st.write(
+                    f"Verified stressing groups **G = {group_count}**; average factor **(G−1)/(2G) = {(group_count - 1)/(2*group_count):.6f}**."
+                )
+            if selected_eci is not None:
+                st.write(
+                    f"Ep/Eci = **{float(current_assumptions['ep_mpa']):.0f}/{float(selected_eci):.0f} = {float(current_assumptions['ep_mpa'])/float(selected_eci):.6f}**."
+                )
+            if avg_loss is not None and selected_fcgp is not None and group_count > 0:
+                st.write(
+                    f"Average ES preview = **{(group_count - 1)/(2*group_count):.6f} × {float(current_assumptions['ep_mpa'])/float(selected_eci):.6f} × {float(selected_fcgp):.3f} = {float(avg_loss):.3f} MPa**."
+                )
+
+            sequence_rows = es_summary.get("sequence_rows", [])
+            if sequence_rows:
+                st.markdown("##### Pair-by-pair sequence preview")
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {
+                                "Group": row.get("Group ID"),
+                                "Sequence": row.get("Sequence"),
+                                "Tendons stressed together": row.get("Tendons"),
+                                "Sequence factor": round(_finite_float(row.get("Sequence factor")), 6),
+                                "Ep/Eci": round(_finite_float(row.get("Ep/Eci")), 6),
+                                "f_cgp (MPa)": round(_finite_float(row.get("f_cgp (MPa)")), 3),
+                                "ΔfpES (MPa)": round(_finite_float(row.get("ΔfpES (MPa)")), 3),
+                            }
+                            for row in sequence_rows
+                        ]
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+                calculated_es_rows = calculated_es_preview_rows
+                if calculated_es_rows:
+                    st.markdown("##### Upstream-chain station audit")
+                    st.caption(
+                        "PTLOSS3 subtracts the ES component from the accepted post-anchorage-set force state; it never restarts from fpj."
+                    )
+                    st.dataframe(
+                        pd.DataFrame(
+                            [
+                                {
+                                    "Tendon": row.get("Tendon ID"),
+                                    "Group": row.get("ES Group ID"),
+                                    "s (m)": round(_finite_float(row.get("s (m)")), 4),
+                                    "P after anchorage set (kN)": round(_finite_float(row.get("P after anchorage set (kN)")), 3),
+                                    "ES loss (MPa)": round(_finite_float(row.get("Elastic-shortening loss (MPa)")), 3),
+                                    "P after ES (kN)": round(_finite_float(row.get("P after ES (kN)")), 3),
+                                }
+                                for row in calculated_es_rows
+                            ]
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+            st.caption(
+                "QA boundary: manual f_cgp/Eci overrides are preview-only. Pe/Pe_eff and Time-Dependent losses remain locked. No AASHTO code-certified final ES result is released until the source-derived stressing-stage f_cgp route is validated."
+            )
 
     with time_dependent_tab:
         st.markdown("#### Time-Dependent Losses")
@@ -6225,8 +6640,12 @@ def render_crossbeam_prestress_loss_page() -> None:
                     {
                         "Order": 4,
                         "Source / component": "Elastic shortening",
-                        "Current state": "Locked",
-                        "Feeds": "Future transfer-stage force state",
+                        "Current state": (
+                            "PAIR SOURCE READY / f_cgp BLOCKED"
+                            if current_es_group_summary.get("ready")
+                            else "PAIR SOURCE REVIEW"
+                        ),
+                        "Feeds": "PTLOSS3A component preview only; Pe/Pe_eff remains locked",
                     },
                     {
                         "Order": 5,

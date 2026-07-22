@@ -17,7 +17,7 @@ from concrete_pmm_pro.crossbeam.tendon_analysis import tendon_force_source_rows
 
 
 CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY = "crossbeam_prestress_loss_settings"
-CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION = 2
+CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION = 3
 
 CB_LOSS_INTERNAL_MU_KEY = "crossbeam_ptloss1_internal_mu"
 CB_LOSS_INTERNAL_K_PER_M_KEY = "crossbeam_ptloss1_internal_k_per_m"
@@ -25,6 +25,10 @@ CB_LOSS_EXTERNAL_MU_KEY = "crossbeam_ptloss1_external_deviator_mu"
 CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY = "crossbeam_ptloss1_external_inadvertent_angle_rad"
 CB_LOSS_ANCHORAGE_SET_MM_KEY = "crossbeam_ptloss2_anchorage_set_mm"
 CB_LOSS_EP_MPA_KEY = "crossbeam_ptloss2_ep_mpa"
+CB_LOSS_ES_FCGP_OVERRIDE_ENABLED_KEY = "crossbeam_ptloss3_fcgp_override_enabled"
+CB_LOSS_ES_FCGP_OVERRIDE_MPA_KEY = "crossbeam_ptloss3_fcgp_override_mpa"
+CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY = "crossbeam_ptloss3_eci_override_enabled"
+CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY = "crossbeam_ptloss3_eci_override_mpa"
 
 AASHTO_PTL_FRICTION_BASIS = "AASHTO LRFD 5.9.3.2.2b"
 AASHTO_INTERNAL_WOBBLE_K_PER_FT = 0.0002
@@ -38,6 +42,8 @@ DEFAULT_EXTERNAL_DEVIATOR_MU = DEFAULT_EXTERNAL_HDPE_LINED_CONSERVATIVE_MU
 DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD = 0.04
 DEFAULT_ANCHORAGE_SET_MM = 6.0
 DEFAULT_PRESTRESS_STEEL_EP_MPA = 195000.0
+DEFAULT_ES_FCGP_OVERRIDE_MPA = 0.0
+DEFAULT_ES_ECI_OVERRIDE_MPA = 31500.0
 EXTERNAL_HDPE_REVIEW_NOTE = "HDPE note: verify PT supplier, angle tolerances, sequence."
 EXTERNAL_NO_DEVIATOR_ISSUE = "No Deviator point: +0.04 rad not applied."
 
@@ -49,6 +55,19 @@ def _float(value: Any, default: float = 0.0) -> float:
         return float(default)
     return number if isfinite(number) else float(default)
 
+
+
+def _bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return bool(default)
+    text = str(value).strip().casefold()
+    if text in {"true", "yes", "1", "on", "enabled"}:
+        return True
+    if text in {"false", "no", "0", "off", "disabled"}:
+        return False
+    return bool(default)
 
 def _clamp(value: float, lower: float, upper: float) -> float:
     return min(max(float(value), float(lower)), float(upper))
@@ -78,6 +97,10 @@ def default_crossbeam_prestress_loss_settings() -> dict[str, float | int | str]:
         "external_inadvertent_angle_rad": DEFAULT_EXTERNAL_INADVERTENT_ANGLE_RAD,
         "anchorage_set_mm": DEFAULT_ANCHORAGE_SET_MM,
         "ep_mpa": DEFAULT_PRESTRESS_STEEL_EP_MPA,
+        "es_fcgp_override_enabled": False,
+        "es_fcgp_override_mpa": DEFAULT_ES_FCGP_OVERRIDE_MPA,
+        "es_eci_override_enabled": False,
+        "es_eci_override_mpa": DEFAULT_ES_ECI_OVERRIDE_MPA,
     }
 
 
@@ -122,6 +145,18 @@ def normalize_crossbeam_prestress_loss_settings(value: Any) -> dict[str, float |
             100000.0,
             250000.0,
         ),
+        "es_fcgp_override_enabled": _bool(source.get("es_fcgp_override_enabled"), False),
+        "es_fcgp_override_mpa": _clamp(
+            _float(source.get("es_fcgp_override_mpa"), float(defaults["es_fcgp_override_mpa"])),
+            0.0,
+            200.0,
+        ),
+        "es_eci_override_enabled": _bool(source.get("es_eci_override_enabled"), False),
+        "es_eci_override_mpa": _clamp(
+            _float(source.get("es_eci_override_mpa"), float(defaults["es_eci_override_mpa"])),
+            1000.0,
+            100000.0,
+        ),
     }
 
 
@@ -137,6 +172,10 @@ def crossbeam_prestress_loss_settings_from_session_state(session_state: Any) -> 
             CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY,
             CB_LOSS_ANCHORAGE_SET_MM_KEY,
             CB_LOSS_EP_MPA_KEY,
+            CB_LOSS_ES_FCGP_OVERRIDE_ENABLED_KEY,
+            CB_LOSS_ES_FCGP_OVERRIDE_MPA_KEY,
+            CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY,
+            CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY,
         )
     ):
         return {}
@@ -148,6 +187,10 @@ def crossbeam_prestress_loss_settings_from_session_state(session_state: Any) -> 
             "external_inadvertent_angle_rad": session_state.get(CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY),
             "anchorage_set_mm": session_state.get(CB_LOSS_ANCHORAGE_SET_MM_KEY),
             "ep_mpa": session_state.get(CB_LOSS_EP_MPA_KEY),
+            "es_fcgp_override_enabled": session_state.get(CB_LOSS_ES_FCGP_OVERRIDE_ENABLED_KEY),
+            "es_fcgp_override_mpa": session_state.get(CB_LOSS_ES_FCGP_OVERRIDE_MPA_KEY),
+            "es_eci_override_enabled": session_state.get(CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY),
+            "es_eci_override_mpa": session_state.get(CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY),
         }
     )
     return dict(settings)
@@ -166,6 +209,10 @@ def restore_crossbeam_prestress_loss_project_state(
         CB_LOSS_EXTERNAL_INADVERTENT_ANGLE_KEY,
         CB_LOSS_ANCHORAGE_SET_MM_KEY,
         CB_LOSS_EP_MPA_KEY,
+        CB_LOSS_ES_FCGP_OVERRIDE_ENABLED_KEY,
+        CB_LOSS_ES_FCGP_OVERRIDE_MPA_KEY,
+        CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY,
+        CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY,
     ):
         session_state.pop(key, None)
 
@@ -183,6 +230,10 @@ def restore_crossbeam_prestress_loss_project_state(
     )
     session_state[CB_LOSS_ANCHORAGE_SET_MM_KEY] = float(settings["anchorage_set_mm"])
     session_state[CB_LOSS_EP_MPA_KEY] = float(settings["ep_mpa"])
+    session_state[CB_LOSS_ES_FCGP_OVERRIDE_ENABLED_KEY] = bool(settings["es_fcgp_override_enabled"])
+    session_state[CB_LOSS_ES_FCGP_OVERRIDE_MPA_KEY] = float(settings["es_fcgp_override_mpa"])
+    session_state[CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY] = bool(settings["es_eci_override_enabled"])
+    session_state[CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY] = float(settings["es_eci_override_mpa"])
     return settings
 
 
