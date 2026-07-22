@@ -604,7 +604,7 @@ def test_ptloss2_settings_persist_with_existing_crossbeam_loss_metadata() -> Non
     restored = restore_crossbeam_prestress_loss_project_state(
         {CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY: metadata}, restored_state
     )
-    assert metadata["schema_version"] == 3
+    assert metadata["schema_version"] == 4
     assert metadata["anchorage_set_mm"] == pytest.approx(7.0)
     assert metadata["ep_mpa"] == pytest.approx(197000.0)
     assert restored is not None

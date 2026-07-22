@@ -1708,3 +1708,7 @@ Clarifies that independent dense-grid validation is optional verification only, 
 ## CROSSBEAM.PTLOSS3A — Symmetric-Pair Elastic-Shortening Source-Gate Foundation
 
 Activates the Crossbeam Elastic Shortening workspace as a source-gated AASHTO-based preview foundation. The workflow derives simultaneous symmetric tendon pairs from adopted geometry, uses stressing-group rather than raw-tendon sequence factors, preserves the accepted post-Anchorage-Set force state as the upstream source, and intentionally blocks final ES adoption until a validated source-derived stressing-stage `f_cgp` route is available. Manual `f_cgp`/`Eci` overrides are advanced QA only; `Pe/Pe_eff` remains locked. See `README_CROSSBEAM_PTLOSS3A.md`.
+
+## CROSSBEAM.PTLOSS3B1 — Construction/Stressing-Stage Source Model
+
+Adds the Crossbeam construction/stressing-stage source model required before source-derived `f_cgp` can be released: Precast Segmental/Cast-in-Place construction selection, stressing-strength and closure-strength readiness inputs, editable multi-column layout with three local-axis-aligned column shapes and automatically derived gross stiffness properties, continuous full-length compression-only temporary support with future automatic lift-off, and a user-confirmed symmetric stressing-pair sequence. No Portal-Frame stage solver, Primary/Secondary Prestress response, contact analysis, `f_cgp`, or `Pe/Pe_eff` is released in this milestone. See `README_CROSSBEAM_PTLOSS3B1.md`.

@@ -99,6 +99,20 @@ from concrete_pmm_pro.crossbeam.elastic_shortening import (
     symmetric_stressing_group_rows,
     stressing_group_summary,
 )
+from concrete_pmm_pro.crossbeam.construction_stage import (
+    COLUMN_BASE_ASSUMPTION,
+    COLUMN_SHAPE_OPTIONS,
+    CONSTRUCTION_METHOD_OPTIONS,
+    CONSTRUCTION_METHOD_PRECAST,
+    DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
+    canonical_column_stage_rows,
+    column_stage_property_rows,
+    construction_stage_readiness,
+    default_column_stage_rows,
+    normalize_pair_sequence,
+    stressing_pair_sequence_rows,
+    temporary_support_source,
+)
 from concrete_pmm_pro.crossbeam.prestress_loss import (
     AASHTO_POLYETHYLENE_DUCT_MU,
     AASHTO_PTL_FRICTION_BASIS,
@@ -109,6 +123,13 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     CB_LOSS_ES_FCGP_OVERRIDE_MPA_KEY,
     CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY,
     CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY,
+    CB_LOSS_ES_CONSTRUCTION_METHOD_KEY,
+    CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
+    CB_LOSS_ES_VERIFIED_CROSSBEAM_STRENGTH_MPA_KEY,
+    CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY,
+    CB_LOSS_ES_CLOSURE_VERIFIED_MPA_KEY,
+    CB_LOSS_ES_COLUMN_ROWS_KEY,
+    CB_LOSS_ES_PAIR_SEQUENCE_KEY,
     CB_LOSS_EXTERNAL_MU_KEY,
     CB_LOSS_INTERNAL_K_PER_M_KEY,
     CB_LOSS_INTERNAL_MU_KEY,
@@ -4268,6 +4289,24 @@ def _loss_setting_defaults_from_state() -> dict[str, Any]:
             "es_eci_override_mpa": st.session_state.get(
                 CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY, DEFAULT_ES_ECI_OVERRIDE_MPA
             ),
+            "es_construction_method": st.session_state.get(
+                CB_LOSS_ES_CONSTRUCTION_METHOD_KEY, CONSTRUCTION_METHOD_PRECAST
+            ),
+            "es_stressing_strength_ratio": st.session_state.get(
+                CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
+                DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
+            ),
+            "es_verified_crossbeam_strength_mpa": st.session_state.get(
+                CB_LOSS_ES_VERIFIED_CROSSBEAM_STRENGTH_MPA_KEY, 0.0
+            ),
+            "es_closure_required_mpa": st.session_state.get(
+                CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY, 0.0
+            ),
+            "es_closure_verified_mpa": st.session_state.get(
+                CB_LOSS_ES_CLOSURE_VERIFIED_MPA_KEY, 0.0
+            ),
+            "es_column_rows": st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY, []),
+            "es_pair_sequence": st.session_state.get(CB_LOSS_ES_PAIR_SEQUENCE_KEY, []),
         }
     )
 
@@ -5463,7 +5502,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "Friction/Wobble and Anchorage Set preserve their accepted results. Elastic Shortening now audits symmetric-pair stressing groups, stressing-stage modulus, and f_cgp source readiness before any ES preview is released; Pe/Pe_eff and later losses remain locked.",
+        "Friction/Wobble and Anchorage Set preserve their accepted results. PTLOSS3B1 adds the Crossbeam construction/stressing-stage source model, continuous compression-only temporary support definition, and user-confirmed stressing-pair sequence while source-derived f_cgp, the stage solver, Pe/Pe_eff, and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -6308,9 +6347,9 @@ def render_crossbeam_prestress_loss_page() -> None:
 
 
     with elastic_shortening_tab:
-        st.markdown("#### Elastic Shortening — symmetric-pair stressing foundation")
+        st.markdown("#### Elastic Shortening — construction/stressing-stage source foundation")
         st.caption(
-            "PTLOSS3A implements the AASHTO post-tensioned sequential elastic-shortening framework with the Crossbeam construction intent that geometrically symmetric tendon pairs are stressed simultaneously. The stage concrete stress f_cgp remains source-gated; Pe/Pe_eff is not released."
+            "PTLOSS3B1 preserves the validated PTLOSS3A symmetric-pair/AASHTO foundation and adds the construction/stressing-stage source model required before any Portal-Frame stage solver can derive f_cgp. Primary/secondary prestress, contact analysis, f_cgp, Pe/Pe_eff, and later losses remain locked."
         )
 
         upstream_ready = bool(
@@ -6335,6 +6374,48 @@ def render_crossbeam_prestress_loss_page() -> None:
             CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY,
             float(current_assumptions.get("es_eci_override_mpa", DEFAULT_ES_ECI_OVERRIDE_MPA)),
         )
+        st.session_state.setdefault(
+            CB_LOSS_ES_CONSTRUCTION_METHOD_KEY,
+            str(current_assumptions.get("es_construction_method") or CONSTRUCTION_METHOD_PRECAST),
+        )
+        st.session_state.setdefault(
+            CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
+            float(current_assumptions.get("es_stressing_strength_ratio", DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO)),
+        )
+        st.session_state.setdefault(
+            CB_LOSS_ES_VERIFIED_CROSSBEAM_STRENGTH_MPA_KEY,
+            float(current_assumptions.get("es_verified_crossbeam_strength_mpa", 0.0)),
+        )
+        st.session_state.setdefault(
+            CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY,
+            float(current_assumptions.get("es_closure_required_mpa", 0.0)),
+        )
+        st.session_state.setdefault(
+            CB_LOSS_ES_CLOSURE_VERIFIED_MPA_KEY,
+            float(current_assumptions.get("es_closure_verified_mpa", 0.0)),
+        )
+        stored_column_rows = current_assumptions.get("es_column_rows") or []
+        if not stored_column_rows:
+            stored_column_rows = default_column_stage_rows(length_m)
+        st.session_state.setdefault(
+            CB_LOSS_ES_COLUMN_ROWS_KEY,
+            canonical_column_stage_rows(stored_column_rows, length_m=length_m),
+        )
+        stored_pair_sequence = normalize_pair_sequence(
+            current_assumptions.get("es_pair_sequence"), current_es_group_rows
+        )
+        st.session_state.setdefault(CB_LOSS_ES_PAIR_SEQUENCE_KEY, stored_pair_sequence)
+        active_pair_sequence = normalize_pair_sequence(
+            st.session_state.get(CB_LOSS_ES_PAIR_SEQUENCE_KEY), current_es_group_rows
+        )
+        group_by_id = {str(row.get("Group ID") or ""): row for row in current_es_group_rows}
+        ordered_es_group_rows = [
+            group_by_id[group_id]
+            for group_id in active_pair_sequence
+            if group_id in group_by_id
+        ]
+        if len(ordered_es_group_rows) != len(current_es_group_rows):
+            ordered_es_group_rows = list(current_es_group_rows)
 
         material_eci = current_es_material_source.get("eci_mpa")
         eci_override_enabled = bool(
@@ -6355,7 +6436,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
 
         es_summary = elastic_shortening_summary(
-            current_es_group_rows,
+            ordered_es_group_rows,
             ep_mpa=float(current_assumptions["ep_mpa"]),
             eci_mpa=float(selected_eci or 0.0),
             fcgp_mpa=selected_fcgp,
@@ -6464,6 +6545,236 @@ def render_crossbeam_prestress_loss_page() -> None:
             "Crossbeam stressing rule: each verified left/right symmetric tendon pair is one simultaneous stressing group. Tendons within the same pair do not create sequential elastic-shortening loss against each other. Earlier groups lose stress from later group stressing."
         )
 
+        st.markdown("##### Construction / stressing-stage source model")
+        st.caption(
+            "PTLOSS3B1 stores the physical construction facts needed by the future limited 2D Portal-Frame stage solver. "
+            "It does not yet calculate Primary/Secondary Prestress, contact reactions, or source-derived f_cgp."
+        )
+        method_col, ratio_col, verified_col = st.columns(3)
+        with method_col:
+            st.selectbox(
+                "Construction method",
+                options=list(CONSTRUCTION_METHOD_OPTIONS),
+                key=CB_LOSS_ES_CONSTRUCTION_METHOD_KEY,
+            )
+        with ratio_col:
+            st.number_input(
+                "Stressing strength criterion f'ci / f'c",
+                min_value=0.10,
+                max_value=1.50,
+                step=0.05,
+                format="%.2f",
+                key=CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
+                help="Project criterion only; default 0.80. Final stressing requires the specified/verified concrete strength required by the project/PT procedure.",
+            )
+        with verified_col:
+            st.number_input(
+                "Verified Crossbeam strength at stressing (MPa)",
+                min_value=0.0,
+                max_value=200.0,
+                step=0.5,
+                format="%.2f",
+                key=CB_LOSS_ES_VERIFIED_CROSSBEAM_STRENGTH_MPA_KEY,
+                help="Enter the verified stressing-stage concrete strength when available; 0 means not yet verified.",
+            )
+
+        crossbeam_fc_source = current_es_material_source.get("fc_mpa")
+        if (
+            str(st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)) == CONSTRUCTION_METHOD_PRECAST
+            and float(st.session_state.get(CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY, 0.0) or 0.0) <= 0.0
+            and crossbeam_fc_source is not None
+        ):
+            st.session_state[CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY] = float(crossbeam_fc_source)
+
+        if str(st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)) == CONSTRUCTION_METHOD_PRECAST:
+            closure_req_col, closure_verified_col = st.columns(2)
+            with closure_req_col:
+                st.number_input(
+                    "Required joint / closure strength at stressing (MPa)",
+                    min_value=0.0,
+                    max_value=200.0,
+                    step=0.5,
+                    format="%.2f",
+                    key=CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY,
+                    help="Project requirement. The workflow commonly requires joint/closure concrete to meet or exceed the adopted Crossbeam requirement before stressing; use the approved project value.",
+                )
+            with closure_verified_col:
+                st.number_input(
+                    "Verified joint / closure strength at stressing (MPa)",
+                    min_value=0.0,
+                    max_value=200.0,
+                    step=0.5,
+                    format="%.2f",
+                    key=CB_LOSS_ES_CLOSURE_VERIFIED_MPA_KEY,
+                    help="Enter verified test strength; 0 means not yet verified.",
+                )
+            st.caption(
+                "Precast Segmental source assumption: all segments are erected, joint/closure concrete has reached the adopted stressing requirement, and stressing is performed before the temporary erection support/gantry is intentionally removed."
+            )
+        else:
+            st.caption(
+                "Cast-in-Place source assumption: Crossbeam stressing occurs after the adopted stressing-strength criterion is reached while the continuous full-length falsework/support condition remains defined below."
+            )
+
+        st.markdown("##### Column / support-line layout")
+        st.caption(
+            "Column local axes follow the app axes: B is along local-2 and H along local-3. Base assumption is FIXED. "
+            "Enter only physical geometry/material inputs; A, I22, I33, Ec, EA and EI are derived automatically."
+        )
+        column_source_rows = canonical_column_stage_rows(
+            st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
+        )
+        column_editor = st.data_editor(
+            pd.DataFrame(column_source_rows),
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
+            key="crossbeam_ptloss3b1_column_layout_editor",
+            column_config={
+                "Shape": st.column_config.SelectboxColumn(
+                    "Shape", options=list(COLUMN_SHAPE_OPTIONS), required=True
+                ),
+                "Station s (m)": st.column_config.NumberColumn("Station s (m)", min_value=0.0, max_value=float(length_m), format="%.3f"),
+                "Height (m)": st.column_config.NumberColumn("Height (m)", min_value=0.0, format="%.3f"),
+                "B local-2 (mm)": st.column_config.NumberColumn("B local-2 (mm)", min_value=0.0, format="%.1f"),
+                "H local-3 (mm)": st.column_config.NumberColumn("H local-3 (mm)", min_value=0.0, format="%.1f"),
+                "Corner (mm)": st.column_config.NumberColumn("Chamfer / fillet (mm)", min_value=0.0, format="%.1f"),
+                "Diameter (mm)": st.column_config.NumberColumn("Diameter (mm)", min_value=0.0, format="%.1f"),
+                "f'c (MPa)": st.column_config.NumberColumn("f'c (MPa)", min_value=1.0, max_value=150.0, format="%.1f"),
+            },
+        )
+        st.session_state[CB_LOSS_ES_COLUMN_ROWS_KEY] = canonical_column_stage_rows(
+            column_editor, length_m=length_m
+        )
+        derived_column_rows = column_stage_property_rows(
+            st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
+        )
+        with st.expander("Derived column section / stiffness source", expanded=False):
+            st.dataframe(
+                pd.DataFrame(
+                    [
+                        {
+                            "Column": row.get("Column ID"),
+                            "s (m)": round(_finite_float(row.get("Station s (m)")), 3),
+                            "Shape": row.get("Shape"),
+                            "Height (m)": round(_finite_float(row.get("Height (m)")), 3),
+                            "Base": COLUMN_BASE_ASSUMPTION,
+                            "A (m²)": round(_finite_float(row.get("Area (m²)")), 5),
+                            "I22 (m⁴)": round(_finite_float(row.get("I22 (m⁴)")), 6),
+                            "I33 (m⁴)": round(_finite_float(row.get("I33 (m⁴)")), 6),
+                            "Ec (MPa)": round(_finite_float(row.get("Ec (MPa)")), 0),
+                            "Status": row.get("Status"),
+                            "Issue": row.get("Issue"),
+                        }
+                        for row in derived_column_rows
+                    ]
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        st.markdown("##### Temporary erection support / falsework at stressing")
+        temp_support = temporary_support_source(length_m)
+        render_metric_cards(
+            [
+                {"title": "Support extent", "value": "FULL LENGTH", "detail": f"s = 0.000 to {float(length_m):.3f} m", "status": "ready"},
+                {"title": "Initial contact", "value": "IN CONTACT", "detail": "continuous support under Crossbeam", "status": "ready"},
+                {"title": "Vertical behavior", "value": "COMPRESSION-ONLY", "detail": "no tensile/uplift resistance", "status": "ready"},
+                {"title": "Lift-off", "value": "AUTOMATIC", "detail": "future stage solver iterates contact state", "status": "ready"},
+            ]
+        )
+        st.caption(str(temp_support.get("note") or ""))
+
+        st.markdown("##### Stressing pair sequence")
+        current_pair_sequence = normalize_pair_sequence(
+            st.session_state.get(CB_LOSS_ES_PAIR_SEQUENCE_KEY), current_es_group_rows
+        )
+        pair_sequence_source = stressing_pair_sequence_rows(
+            current_es_group_rows, current_pair_sequence
+        )
+        pair_sequence_editor = st.data_editor(
+            pd.DataFrame(pair_sequence_source),
+            use_container_width=True,
+            hide_index=True,
+            key="crossbeam_ptloss3b1_pair_sequence_editor",
+            disabled=["Group ID", "Tendons stressed together", "Group Pj (kN)", "Status"],
+            column_config={
+                "Sequence": st.column_config.NumberColumn(
+                    "Sequence", min_value=1, max_value=max(len(pair_sequence_source), 1), step=1, required=True
+                )
+            },
+        )
+        edited_sequence_records = _records(pair_sequence_editor)
+        edited_sequence_numbers = [int(_finite_float(row.get("Sequence"))) for row in edited_sequence_records]
+        if (
+            edited_sequence_records
+            and sorted(edited_sequence_numbers) == list(range(1, len(edited_sequence_records) + 1))
+            and len({str(row.get("Group ID") or "") for row in edited_sequence_records}) == len(edited_sequence_records)
+        ):
+            st.session_state[CB_LOSS_ES_PAIR_SEQUENCE_KEY] = [
+                str(row.get("Group ID") or "")
+                for row in sorted(edited_sequence_records, key=lambda row: int(_finite_float(row.get("Sequence"))))
+            ]
+        else:
+            st.warning(
+                "Stressing sequence must use each verified pair exactly once with unique sequence numbers 1..G. The last valid sequence remains adopted."
+            )
+
+        stage_source_summary = construction_stage_readiness(
+            construction_method=st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY),
+            crossbeam_fc_mpa=crossbeam_fc_source,
+            stressing_strength_ratio=float(st.session_state.get(CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY, DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO)),
+            verified_crossbeam_strength_mpa=float(st.session_state.get(CB_LOSS_ES_VERIFIED_CROSSBEAM_STRENGTH_MPA_KEY, 0.0)),
+            closure_required_mpa=float(st.session_state.get(CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY, 0.0)),
+            closure_verified_mpa=float(st.session_state.get(CB_LOSS_ES_CLOSURE_VERIFIED_MPA_KEY, 0.0)),
+            column_rows=st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY),
+            length_m=length_m,
+            group_rows=current_es_group_rows,
+            pair_sequence=st.session_state.get(CB_LOSS_ES_PAIR_SEQUENCE_KEY),
+        )
+        target_strength = stage_source_summary.get("target_stressing_strength_mpa")
+        render_metric_cards(
+            [
+                {
+                    "title": "Construction source",
+                    "value": str(stage_source_summary.get("construction_method")),
+                    "detail": str(stage_source_summary.get("status")),
+                    "status": "ready" if stage_source_summary.get("ready") else "warning",
+                },
+                {
+                    "title": "Crossbeam stressing strength",
+                    "value": "—" if target_strength is None else f">= {float(target_strength):.2f} MPa",
+                    "detail": str(stage_source_summary.get("strength_status")),
+                    "status": "ready" if stage_source_summary.get("strength_status") == "READY" else "warning",
+                },
+                {
+                    "title": "Column source",
+                    "value": f"{int(stage_source_summary.get('columns', {}).get('column_count') or 0)} column(s)",
+                    "detail": str(stage_source_summary.get("columns", {}).get("status") or "INPUT REQUIRED"),
+                    "status": "ready" if stage_source_summary.get("columns", {}).get("ready") else "warning",
+                },
+                {
+                    "title": "Pair sequence",
+                    "value": " -> ".join(stage_source_summary.get("pair_sequence", {}).get("sequence", [])) or "—",
+                    "detail": str(stage_source_summary.get("pair_sequence", {}).get("status") or "REVIEW REQUIRED"),
+                    "status": "ready" if stage_source_summary.get("pair_sequence", {}).get("ready") else "warning",
+                },
+                {
+                    "title": "Stage solver",
+                    "value": "LOCKED",
+                    "detail": "PTLOSS3B1 source model only",
+                    "status": "warning",
+                },
+            ]
+        )
+        if stage_source_summary.get("issues"):
+            with st.expander("Construction / stressing-stage source issues", expanded=False):
+                for issue in stage_source_summary.get("issues", []):
+                    st.warning(str(issue))
+        st.caption(
+            "PTLOSS3B1 does not assume temporary support remains active after prestress camber develops. The future stage solver must treat the full-length support as compression-only contact and automatically release any location whose reaction would become tensile."
+        )
+
         if not current_es_group_summary.get("ready"):
             for issue in current_es_group_summary.get("issues", []):
                 st.warning(str(issue))
@@ -6479,7 +6790,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 [
                     {
                         "Group": row.get("Group ID"),
-                        "Preview sequence": row.get("Sequence"),
+                        "Geometry pair order": row.get("Sequence"),
                         "Symmetric tendons": row.get("Tendons"),
                         "Type": row.get("Type", ""),
                         "Group Pj (kN)": round(_finite_float(row.get("Group Pj (kN)")), 2),
@@ -6495,13 +6806,13 @@ def render_crossbeam_prestress_loss_page() -> None:
             hide_index=True,
         )
         st.caption(
-            "Pairing is derived from the adopted tendon geometry, not tendon names. Preview sequence follows the resolved pair order for transparency; confirm the construction stressing-pair order before final adoption."
+            "Pairing is derived from the adopted tendon geometry, not tendon names. Construction stressing-pair order is a separate user-confirmed source above; geometry order must not be treated as the final stressing sequence."
         )
 
         with st.expander("Calculation trace / QA — formula, stage source, and overrides", expanded=False):
             st.markdown("##### Code / methodology basis")
             st.write(
-                f"Published basis: **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3A maps verified simultaneous symmetric pairs to equivalent stressing groups only when every pair is geometrically valid and group jacking forces are equivalent."
+                f"Published basis: **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B1 stores the separate construction stressing-pair sequence for the future incremental stage solver."
             )
             st.latex(r"\Delta f_{pES,avg}=\left(\frac{G-1}{2G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
             st.latex(r"\Delta f_{pES,g}=\left(\frac{G-g}{G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
@@ -6511,7 +6822,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
             st.markdown("##### Stage-stress source")
             st.warning(
-                "PTLOSS3A does not invent the portal-frame stressing-stage self-weight/frame moment. Therefore source-derived f_cgp is intentionally BLOCKED until a validated stressing-stage section-response source exists. A manual f_cgp override below is QA-only and cannot release final effective prestress."
+                "PTLOSS3B1 defines the construction/stressing-stage source but still does not invent the Portal-Frame structural response. Source-derived f_cgp remains BLOCKED until the validated Primary/Secondary Prestress + gravity/contact stage solver is released. A manual f_cgp override below is QA-only and cannot release final effective prestress."
             )
 
             st.checkbox(
@@ -6641,11 +6952,11 @@ def render_crossbeam_prestress_loss_page() -> None:
                         "Order": 4,
                         "Source / component": "Elastic shortening",
                         "Current state": (
-                            "PAIR SOURCE READY / f_cgp BLOCKED"
+                            "STAGE SOURCE MODEL / f_cgp BLOCKED"
                             if current_es_group_summary.get("ready")
                             else "PAIR SOURCE REVIEW"
                         ),
-                        "Feeds": "PTLOSS3A component preview only; Pe/Pe_eff remains locked",
+                        "Feeds": "PTLOSS3B1 construction/stage source model only; Pe/Pe_eff remains locked",
                     },
                     {
                         "Order": 5,
