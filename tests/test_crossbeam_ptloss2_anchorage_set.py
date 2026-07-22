@@ -617,7 +617,7 @@ def test_ptloss2r2_ui_exposes_single_and_simultaneous_both_end_methods_without_r
     anchorage_block = source.split("with anchorage_set_tab:", maxsplit=1)[1].split(
         "with elastic_shortening_tab:", maxsplit=1
     )[0]
-    assert "Anchorage Set / Draw-in — validated preview + on-demand independent QA" in anchorage_block
+    assert "Anchorage Set / Draw-in — engineering preview + optional independent QA" in anchorage_block
     assert "SINGLE-END FRICTION-COUPLED" in source
     assert "Simultaneous both-end stressing / seating — PTLOSS2R2" in source
     assert "Jack = Both means simultaneous equal left/right stressing" in source
@@ -629,7 +629,7 @@ def test_ptloss2r2_ui_exposes_single_and_simultaneous_both_end_methods_without_r
     assert "Equivalent average anchor-set loss" in anchorage_block
     assert "Selected tendon —" in anchorage_block
     assert "Three-point force-profile QA" in anchorage_block
-    assert "Independent simultaneous-both-end numerical verification" in source
+    assert "Optional Independent Numerical QA — does not affect calculated prestress-loss results" in source
     assert "fig.update_yaxes(range=[y_min - margin, y_max + margin])" in source
     assert "Pe and Pe_eff remain locked" in anchorage_block
 
@@ -649,23 +649,41 @@ def test_ptloss2r3b_heavy_independent_validation_is_explicit_button_gated_and_fi
     render_source = ast.get_source_segment(source, render_page) or ""
     assert "independent_both_end_dense_grid_validation(" not in render_source
 
-    audit = next(
+    qa_renderer = next(
         node
         for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "_render_anchorage_formula_unit_audit"
+        if isinstance(node, ast.FunctionDef) and node.name == "_render_anchorage_optional_independent_qa"
     )
-    audit_source = ast.get_source_segment(source, audit) or ""
-    assert audit_source.count("independent_both_end_dense_grid_validation(") == 1
-    assert "Run / Refresh Independent Both-End Validation" in audit_source
-    assert "if st.button(" in audit_source
-    assert audit_source.index("if st.button(") < audit_source.index(
+    qa_source = ast.get_source_segment(source, qa_renderer) or ""
+    assert qa_source.count("independent_both_end_dense_grid_validation(") == 1
+    assert "Run / Refresh Optional Independent QA" in qa_source
+    assert "if st.button(" in qa_source
+    assert qa_source.index("if st.button(") < qa_source.index(
         "independent_both_end_dense_grid_validation("
     )
-    assert "QA validation requires refresh" in audit_source
-    assert "normal Streamlit reruns" in audit_source
+    assert "STALE — REFRESH REQUIRED" in qa_source
+    assert "normal Streamlit reruns" in qa_source
+    assert "Verification only. Running or skipping this QA does not change" in qa_source
     assert "CB_PTLoss_INDEPENDENT_QA_FINGERPRINT_KEY" in source
     assert "stored_fingerprint != str(fingerprint)" in source
     assert 'return None, "STALE"' in source
+
+
+def test_ptloss2r3d_optional_independent_qa_has_noncontradictory_state_machine_and_disclaimer() -> None:
+    source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
+    qa_block = source.split("def _render_anchorage_optional_independent_qa(", maxsplit=1)[1].split(
+        "def render_crossbeam_prestress_loss_page()", maxsplit=1
+    )[0]
+    assert "INDEPENDENT QA — NOT RUN — READY TO VALIDATE" in qa_block
+    assert "INDEPENDENT QA — PASS" in qa_block
+    assert "INDEPENDENT QA — STALE — REFRESH REQUIRED" in qa_block
+    assert "INDEPENDENT QA — NOT APPLICABLE" in qa_block
+    assert "Run / Refresh Optional Independent QA" in qa_block
+    assert "does not affect calculated prestress-loss results" in qa_block
+    assert "does not by itself constitute code certification" in qa_block
+    assert "not applicable until a coupled both-end preview is available" not in qa_block
+    assert "if not coupled_both_available:" in qa_block
+    assert qa_block.index("if not coupled_both_available:") < qa_block.index("if st.button(")
 
 def test_ptloss2_ui_loss_defaults_use_valid_session_state_get_arity_and_include_new_fields() -> None:
     import ast

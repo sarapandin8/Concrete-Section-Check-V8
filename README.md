@@ -1700,3 +1700,7 @@ Replaces the Project Section Summary checkbox selector with a dedicated one-clic
 ## CROSSBEAM.PTLOSS2R3C — Anchorage Set Semantic Closeout
 
 Adds an explicit overall-all-tendons summary layer above the selected-tendon force-profile layer so governing/global anchorage-set values cannot be confused with the tendon currently being visualized; solver equations remain unchanged.
+
+## CROSSBEAM.PTLOSS2R3D — Anchorage Set QA-State & Wording Closeout
+
+Clarifies that independent dense-grid validation is optional verification only, moves it to a collapsed QA expander, and enforces mutually exclusive NOT RUN / PASS-REVIEW / STALE / NOT APPLICABLE states without changing any prestress-loss solver equation or numerical result. See `README_CROSSBEAM_PTLOSS2R3D.md`.

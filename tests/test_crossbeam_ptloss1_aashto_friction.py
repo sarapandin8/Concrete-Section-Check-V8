@@ -304,7 +304,7 @@ def test_ptloss1g_component_subtabs_are_scoped_and_future_losses_are_guarded() -
     assert '"Elastic Shortening",' in source
     assert '"Time-Dependent",' in source
     assert '"Audit",' in source
-    assert "Anchorage Set / Draw-in — validated preview + on-demand independent QA" in source
+    assert "Anchorage Set / Draw-in — engineering preview + optional independent QA" in source
     assert "Guarded future component — no elastic-shortening loss is calculated in PTLOSS1G." in source
     assert "Guarded future component — creep, shrinkage, and relaxation are not calculated in PTLOSS1G." in source
     assert '"Pe / Pe_eff assembly"' in source

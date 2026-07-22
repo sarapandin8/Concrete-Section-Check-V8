@@ -4946,14 +4946,6 @@ def _cached_anchorage_independent_validation(
 def _render_anchorage_formula_unit_audit(
     end_rows: list[dict[str, Any]],
     equivalent_summary: dict[str, Any] | None = None,
-    independent_validation: dict[str, Any] | None = None,
-    *,
-    independent_validation_cache_state: str = "NOT RUN",
-    independent_validation_fingerprint: str = "",
-    friction_rows: list[dict[str, Any]] | None = None,
-    length_m: float = 0.0,
-    anchor_set_mm: float = 0.0,
-    ep_mpa: float = 0.0,
 ) -> None:
     single_calculated = [
         row
@@ -5116,110 +5108,6 @@ def _render_anchorage_formula_unit_audit(
         else:
             st.info("Equivalent-average QA is not available until all required station-loss rows are calculated.")
 
-        st.markdown("**D. Independent simultaneous-both-end numerical verification**")
-        st.caption(
-            "Heavy dense-grid QA is intentionally excluded from normal Streamlit reruns. "
-            "Run it explicitly after tendon geometry, friction inputs, Δa, or Ep change; "
-            "the result is reused only while the exact input fingerprint remains current."
-        )
-        if independent_validation_cache_state == "STALE":
-            st.warning(
-                "QA validation requires refresh — prestress-loss inputs changed after the last independent validation. "
-                "The previous PASS/REVIEW result is not used for the current model."
-            )
-        elif independent_validation_cache_state == "NOT RUN":
-            st.info("Independent dense-grid QA has not been run for the current input set.")
-        elif independent_validation_cache_state == "CURRENT":
-            st.success("Independent dense-grid QA evidence is current for this exact input fingerprint.")
-
-        if st.button(
-            "Run / Refresh Independent Both-End Validation",
-            key="crossbeam_ptloss2r3b_run_independent_both_end_validation",
-            help=(
-                "Runs the full dense-grid verifier on demand. This can take several seconds, "
-                "but normal page reruns do not execute it."
-            ),
-        ):
-            with st.spinner("Running independent dense-grid both-end validation..."):
-                independent_validation = independent_both_end_dense_grid_validation(
-                    friction_rows or [],
-                    end_rows,
-                    length_m=float(length_m),
-                    anchor_set_mm=float(anchor_set_mm),
-                    ep_mpa=float(ep_mpa),
-                )
-            st.session_state[CB_PTLoss_INDEPENDENT_QA_FINGERPRINT_KEY] = str(
-                independent_validation_fingerprint
-            )
-            st.session_state[CB_PTLoss_INDEPENDENT_QA_RESULT_KEY] = dict(
-                independent_validation
-            )
-            independent_validation_cache_state = "CURRENT"
-
-        if independent_validation and independent_validation.get("status") != "NOT APPLICABLE":
-            station_tol = float(independent_validation.get("station_tolerance_m") or 0.0)
-            stress_tol = float(independent_validation.get("stress_tolerance_mpa") or 0.0)
-            neutral_diff = float(independent_validation.get("max_neutral_station_diff_m") or 0.0)
-            meeting_diff = float(independent_validation.get("max_meeting_stress_diff_mpa") or 0.0)
-            left_diff = float(independent_validation.get("max_left_anchor_loss_diff_mpa") or 0.0)
-            right_diff = float(independent_validation.get("max_right_anchor_loss_diff_mpa") or 0.0)
-            st.write(
-                "Independent dense-grid verification reconstructs the accepted left/right friction "
-                "branches and re-solves simultaneous seating compatibility without calling the "
-                "production anchorage-set interpolation, area, or coupled-solver helpers."
-            )
-            st.write(
-                f"Maximum differences: neutral station = **{neutral_diff:.6g} m**; meeting stress = "
-                f"**{meeting_diff:.6g} MPa**; left anchorage loss = **{left_diff:.6g} MPa**; "
-                f"right anchorage loss = **{right_diff:.6g} MPa**."
-            )
-            st.caption(
-                f"Adopted QA tolerances: station ≤ {station_tol:.6g} m; stress/loss ≤ {stress_tol:.6g} MPa."
-            )
-            if independent_validation.get("status") == "PASS":
-                st.success(
-                    "PASS — independent dense-grid verifier agrees with the production simultaneous-both-end result within adopted tolerance."
-                )
-            else:
-                st.warning(
-                    "REVIEW — independent dense-grid verification exceeds one or more adopted tolerances."
-                )
-            with st.expander("Per-tendon independent-verifier comparison", expanded=False):
-                st.dataframe(
-                    pd.DataFrame(
-                        [
-                            {
-                                "Tendon": row.get("Tendon ID"),
-                                "Status": row.get("Status"),
-                                "Δsₙ (m)": (
-                                    "—" if row.get("Neutral station diff (m)") is None
-                                    else round(float(row.get("Neutral station diff (m)")), 8)
-                                ),
-                                "Δfₙ (MPa)": (
-                                    "—" if row.get("Meeting stress diff (MPa)") is None
-                                    else round(float(row.get("Meeting stress diff (MPa)")), 6)
-                                ),
-                                "ΔLoss-L (MPa)": (
-                                    "—" if row.get("Left anchor-loss diff (MPa)") is None
-                                    else round(float(row.get("Left anchor-loss diff (MPa)")), 6)
-                                ),
-                                "ΔLoss-R (MPa)": (
-                                    "—" if row.get("Right anchor-loss diff (MPa)") is None
-                                    else round(float(row.get("Right anchor-loss diff (MPa)")), 6)
-                                ),
-                                "Issue": row.get("Issue") or "",
-                            }
-                            for row in independent_validation.get("tendon_rows", [])
-                        ]
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-        else:
-            st.info(
-                "Independent simultaneous-both-end verification is not applicable until a coupled both-end preview is available."
-            )
-
         if single_calculated:
             governing = max(
                 single_calculated,
@@ -5301,6 +5189,163 @@ def _render_anchorage_formula_unit_audit(
         if not single_calculated and not both_calculated:
             st.info("No valid anchorage-set solution is available for substituted-value audit.")
 
+
+def _render_anchorage_optional_independent_qa(
+    end_rows: list[dict[str, Any]],
+    independent_validation: dict[str, Any] | None,
+    *,
+    independent_validation_cache_state: str = "NOT RUN",
+    independent_validation_fingerprint: str = "",
+    friction_rows: list[dict[str, Any]] | None = None,
+    length_m: float = 0.0,
+    anchor_set_mm: float = 0.0,
+    ep_mpa: float = 0.0,
+) -> None:
+    """Render optional current-input numerical QA without affecting loss results."""
+
+    coupled_both_available = any(
+        "BOTH-END SIMULTANEOUS COUPLED" in str(row.get("Interaction mode") or "")
+        and str(row.get("Status") or "").startswith("PREVIEW READY")
+        and row.get("Anchorage-set loss at anchorage (MPa)") is not None
+        for row in end_rows
+    )
+
+    with st.expander(
+        "Optional Independent Numerical QA — does not affect calculated prestress-loss results",
+        expanded=False,
+    ):
+        st.write(
+            "Verification only. Running or skipping this QA does not change Friction & Wobble, "
+            "Anchorage Set loss, station force P(s), or Equivalent Average Loss."
+        )
+        st.caption(
+            "The dense-grid checker is intentionally excluded from normal Streamlit reruns. "
+            "It is an optional consistency check for the current simultaneous-both-end coupled preview "
+            "and may take several seconds when run."
+        )
+
+        if not coupled_both_available:
+            st.info(
+                "INDEPENDENT QA — NOT APPLICABLE. No simultaneous both-end coupled preview is available "
+                "in the current active tendon set."
+            )
+            st.caption(
+                "Single-end calculations remain covered by their published benchmark, closed-form special-case, "
+                "SI-unit, and current-input compatibility checks."
+            )
+            return
+
+        if st.button(
+            "Run / Refresh Optional Independent QA",
+            key="crossbeam_ptloss2r3b_run_independent_both_end_validation",
+            help=(
+                "Optional verification only. Runs the full dense-grid checker on demand and does not "
+                "modify any calculated prestress-loss result."
+            ),
+        ):
+            with st.spinner("Running optional independent dense-grid validation..."):
+                independent_validation = independent_both_end_dense_grid_validation(
+                    friction_rows or [],
+                    end_rows,
+                    length_m=float(length_m),
+                    anchor_set_mm=float(anchor_set_mm),
+                    ep_mpa=float(ep_mpa),
+                )
+            st.session_state[CB_PTLoss_INDEPENDENT_QA_FINGERPRINT_KEY] = str(
+                independent_validation_fingerprint
+            )
+            st.session_state[CB_PTLoss_INDEPENDENT_QA_RESULT_KEY] = dict(
+                independent_validation
+            )
+            independent_validation_cache_state = "CURRENT"
+
+        if independent_validation_cache_state == "STALE":
+            st.warning(
+                "INDEPENDENT QA — STALE — REFRESH REQUIRED. Relevant prestress-loss inputs changed after "
+                "the last independent validation, so the previous PASS/REVIEW evidence is not used for the current model."
+            )
+        elif independent_validation_cache_state == "NOT RUN":
+            st.info(
+                "INDEPENDENT QA — NOT RUN — READY TO VALIDATE. A valid simultaneous both-end coupled preview "
+                "is available; run the optional checker only when independent current-input evidence is desired."
+            )
+        elif independent_validation_cache_state == "CURRENT":
+            qa_status = str((independent_validation or {}).get("status") or "")
+            if qa_status == "PASS":
+                st.success(
+                    "INDEPENDENT QA — PASS. Current-input dense-grid evidence agrees with the production "
+                    "simultaneous-both-end result within adopted tolerance."
+                )
+            elif qa_status == "REVIEW":
+                st.warning(
+                    "INDEPENDENT QA — REVIEW. Current-input dense-grid evidence exceeds one or more adopted tolerances."
+                )
+            elif qa_status == "NOT APPLICABLE":
+                st.warning(
+                    "INDEPENDENT QA — REVIEW. A coupled both-end preview is available, but the stored validation "
+                    "result is not applicable; refresh the optional QA evidence."
+                )
+            else:
+                st.info("INDEPENDENT QA — CURRENT. Current-input QA evidence is stored for this exact fingerprint.")
+
+        if independent_validation_cache_state == "CURRENT" and independent_validation:
+            if independent_validation.get("status") != "NOT APPLICABLE":
+                station_tol = float(independent_validation.get("station_tolerance_m") or 0.0)
+                stress_tol = float(independent_validation.get("stress_tolerance_mpa") or 0.0)
+                neutral_diff = float(independent_validation.get("max_neutral_station_diff_m") or 0.0)
+                meeting_diff = float(independent_validation.get("max_meeting_stress_diff_mpa") or 0.0)
+                left_diff = float(independent_validation.get("max_left_anchor_loss_diff_mpa") or 0.0)
+                right_diff = float(independent_validation.get("max_right_anchor_loss_diff_mpa") or 0.0)
+                st.write(
+                    "Independent dense-grid verification reconstructs the accepted left/right friction branches "
+                    "and re-solves simultaneous seating compatibility without calling the production anchorage-set "
+                    "interpolation, area, or coupled-solver helpers."
+                )
+                st.write(
+                    f"Maximum differences: neutral station = **{neutral_diff:.6g} m**; meeting stress = "
+                    f"**{meeting_diff:.6g} MPa**; left anchorage loss = **{left_diff:.6g} MPa**; "
+                    f"right anchorage loss = **{right_diff:.6g} MPa**."
+                )
+                st.caption(
+                    f"Adopted QA tolerances: station ≤ {station_tol:.6g} m; stress/loss ≤ {stress_tol:.6g} MPa."
+                )
+                with st.expander("Per-tendon independent-verifier comparison", expanded=False):
+                    st.dataframe(
+                        pd.DataFrame(
+                            [
+                                {
+                                    "Tendon": row.get("Tendon ID"),
+                                    "Status": row.get("Status"),
+                                    "Δsₙ (m)": (
+                                        "—" if row.get("Neutral station diff (m)") is None
+                                        else round(float(row.get("Neutral station diff (m)")), 8)
+                                    ),
+                                    "Δfₙ (MPa)": (
+                                        "—" if row.get("Meeting stress diff (MPa)") is None
+                                        else round(float(row.get("Meeting stress diff (MPa)")), 6)
+                                    ),
+                                    "ΔLoss-L (MPa)": (
+                                        "—" if row.get("Left anchor-loss diff (MPa)") is None
+                                        else round(float(row.get("Left anchor-loss diff (MPa)")), 6)
+                                    ),
+                                    "ΔLoss-R (MPa)": (
+                                        "—" if row.get("Right anchor-loss diff (MPa)") is None
+                                        else round(float(row.get("Right anchor-loss diff (MPa)")), 6)
+                                    ),
+                                    "Issue": row.get("Issue") or "",
+                                }
+                                for row in independent_validation.get("tendon_rows", [])
+                            ]
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+        st.caption(
+            "Independent QA PASS confirms agreement between two numerical implementations within tolerance; "
+            "it does not by itself constitute code certification or alter the calculated prestress-loss results."
+        )
+
 def render_crossbeam_prestress_loss_page() -> None:
     _ensure_state()
     render_page_header(
@@ -5313,7 +5358,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "PTLOSS2R3B keeps the accepted PTLOSS2R3A force/equivalent-average results while moving heavy independent dense-grid QA out of the normal rerun path. Validation is explicit, fingerprint-gated, and never reused after relevant inputs change; Pe/Pe_eff and later losses remain locked.",
+        "Anchorage-set preview preserves the accepted station-force and equivalent-average results while keeping heavy independent numerical QA optional, fingerprint-gated, and outside normal reruns. Pe/Pe_eff and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -5641,7 +5686,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
 
     with anchorage_set_tab:
-        st.markdown("#### Anchorage Set / Draw-in — validated preview + on-demand independent QA")
+        st.markdown("#### Anchorage Set / Draw-in — engineering preview + optional independent QA")
         _render_crossbeam_anchorage_set_assumptions()
         anchorage_end_rows = current_anchorage_end_rows
         anchorage_summary = current_anchorage_summary
@@ -5931,6 +5976,9 @@ def render_crossbeam_prestress_loss_page() -> None:
         _render_anchorage_formula_unit_audit(
             anchorage_end_rows,
             anchorage_equivalent_summary,
+        )
+        _render_anchorage_optional_independent_qa(
+            anchorage_end_rows,
             anchorage_independent_validation,
             independent_validation_cache_state=anchorage_independent_validation_cache_state,
             independent_validation_fingerprint=current_anchorage_independent_validation_fingerprint,
