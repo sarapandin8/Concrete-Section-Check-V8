@@ -80,3 +80,50 @@ def test_page_entry_reconciles_migrated_assignments_against_current_segment_role
     crossbeam_rebar_page._reconcile_migrated_rebar_assignments_once(current_segments)
     assert state[CB_RB_ZONE_ROWS_KEY] == snapshot
     assert state[CB_RB_ZONE_REV_KEY] == 1
+
+
+def test_page_entry_reconciles_current_schema_stale_builtin_assignments_without_migrated_flag(monkeypatch) -> None:
+    definitions = default_section_definitions()
+    current_segments = migrate_segment_rows_to_library(
+        default_crossbeam_segment_rows(20.0), definitions
+    )
+    stale_solid_segments = [dict(row, **{"Section role": "Solid"}) for row in current_segments]
+    longitudinal = default_crossbeam_rebar_templates()
+    transverse = default_crossbeam_transverse_templates()
+    stale_zones = default_crossbeam_rebar_zones(
+        stale_solid_segments, longitudinal, transverse
+    )
+
+    # Current-schema restore: references resolve, but role compatibility is wrong.
+    stale_validation = validate_loaded_crossbeam_rebar_state(
+        longitudinal, transverse, stale_zones, current_segments
+    )
+    assert stale_validation["status"] == "REVIEW REQUIRED"
+    stale_validation["migrated"] = False
+    stale_validation["migration_notes"] = []
+
+    state = {
+        CB_RB_TEMPLATE_ROWS_KEY: longitudinal,
+        CB_TR_TEMPLATE_ROWS_KEY: transverse,
+        CB_RB_ZONE_ROWS_KEY: stale_zones,
+        CB_RB_ZONE_REV_KEY: 0,
+        CB_RB_PROJECT_LOAD_VALIDATION_KEY: stale_validation,
+    }
+    monkeypatch.setattr(crossbeam_rebar_page, "st", SimpleNamespace(session_state=state))
+
+    crossbeam_rebar_page._reconcile_migrated_rebar_assignments_once(current_segments)
+
+    zones = {str(row["Segment"]): row for row in state[CB_RB_ZONE_ROWS_KEY]}
+    for segment in current_segments:
+        segment_id = str(segment["Segment"])
+        if str(segment["Section role"]) == "Hollow":
+            assert zones[segment_id]["Longitudinal template"] == RB_HOLLOW_MIN
+            assert zones[segment_id]["Transverse template"] == TR_HOLLOW_MIN
+        else:
+            assert zones[segment_id]["Longitudinal template"] == RB_SOLID_COLUMN
+
+    validation = state[CB_RB_PROJECT_LOAD_VALIDATION_KEY]
+    assert validation["status"] == "READY"
+    assert validation["migrated"] is False
+    assert state[CB_RB_MIG1_ROLE_REPAIR_DONE_KEY] is True
+    assert state[CB_RB_ZONE_REV_KEY] == 1

@@ -296,6 +296,96 @@ def test_post_load_validation_preserves_and_reports_unresolved_template_ids() ->
     assert any("TR-MISSING" in message and "does not resolve" in message for message in validation["errors"])
 
 
+def test_mig1a_current_schema_restore_repairs_stale_builtin_solid_templates_on_hollow_segments() -> None:
+    source, segments = _crossbeam_geometry_state()
+    project_data = json.loads(project_to_json(project_from_session_state(source)))
+    longitudinal = default_crossbeam_rebar_templates()
+    transverse = default_crossbeam_transverse_templates()
+
+    # Exact field failure reproduced from the user screenshot: the project is
+    # already saved in the current rebar schema (migrated=False), but stale
+    # built-in Solid template references from an older migration remain on the
+    # canonical Hollow segments.
+    stale_solid_segments = [dict(row, **{"Section role": "Solid"}) for row in segments]
+    stale_zones = default_crossbeam_rebar_zones(
+        stale_solid_segments, longitudinal, transverse
+    )
+    project_data["metadata"][CROSSBEAM_REBAR_METADATA_KEY] = {
+        "schema_version": CROSSBEAM_REBAR_SCHEMA_VERSION,
+        "longitudinal_templates": longitudinal,
+        "transverse_templates": transverse,
+        "zone_assignments": stale_zones,
+    }
+
+    restored: dict[str, object] = {}
+    apply_project_to_session_state(project_from_json(json.dumps(project_data)), restored)
+
+    by_segment = {str(row["Segment"]): row for row in restored[CB_RB_ZONE_ROWS_KEY]}
+    for segment in segments:
+        segment_id = str(segment["Segment"])
+        role = str(segment.get("Section role"))
+        if role == "Hollow":
+            assert by_segment[segment_id]["Longitudinal template"] == RB_HOLLOW_MIN
+            assert by_segment[segment_id]["Transverse template"] == TR_HOLLOW_MIN
+        else:
+            assert by_segment[segment_id]["Longitudinal template"] == RB_SOLID_COLUMN
+            assert by_segment[segment_id]["Transverse template"] == TR_SOLID_COLUMN
+
+    validation = restored[CB_RB_PROJECT_LOAD_VALIDATION_KEY]
+    assert validation["status"] == "READY"
+    assert validation["references_resolved"] is True
+    assert validation["migrated"] is False
+    assert any(
+        "stale built-in longitudinal" in str(note)
+        for note in validation["migration_notes"]
+    )
+    assert any(
+        "stale built-in transverse" in str(note)
+        for note in validation["migration_notes"]
+    )
+
+
+def test_mig1a_current_schema_restore_does_not_invent_repair_for_custom_incompatible_template() -> None:
+    source, segments = _crossbeam_geometry_state()
+    project_data = json.loads(project_to_json(project_from_session_state(source)))
+    longitudinal = default_crossbeam_rebar_templates()
+    custom = dict(next(row for row in longitudinal if row["Template ID"] == RB_SOLID_COLUMN))
+    custom["Template ID"] = "RB-CUSTOM-SOLID"
+    custom["Template name"] = "Engineer custom solid template"
+    longitudinal.append(custom)
+    longitudinal = canonical_rebar_templates(longitudinal)
+    transverse = default_crossbeam_transverse_templates()
+    zones = default_crossbeam_rebar_zones(segments, longitudinal, transverse)
+    hollow_segment = next(
+        str(row["Segment"]) for row in segments if str(row.get("Section role")) == "Hollow"
+    )
+    target = next(row for row in zones if str(row["Segment"]) == hollow_segment)
+    target["Rebar template"] = "RB-CUSTOM-SOLID"
+    target["Longitudinal template"] = "RB-CUSTOM-SOLID"
+
+    project_data["metadata"][CROSSBEAM_REBAR_METADATA_KEY] = {
+        "schema_version": CROSSBEAM_REBAR_SCHEMA_VERSION,
+        "longitudinal_templates": longitudinal,
+        "transverse_templates": transverse,
+        "zone_assignments": zones,
+    }
+
+    restored: dict[str, object] = {}
+    apply_project_to_session_state(project_from_json(json.dumps(project_data)), restored)
+
+    restored_target = next(
+        row for row in restored[CB_RB_ZONE_ROWS_KEY] if str(row["Segment"]) == hollow_segment
+    )
+    assert restored_target["Longitudinal template"] == "RB-CUSTOM-SOLID"
+    validation = restored[CB_RB_PROJECT_LOAD_VALIDATION_KEY]
+    assert validation["status"] == "REVIEW REQUIRED"
+    assert validation["migrated"] is False
+    assert any(
+        "RB-CUSTOM-SOLID" in str(message) and "is for Solid" in str(message)
+        for message in validation["errors"]
+    )
+
+
 def test_mig1_repairs_stale_solid_zone_templates_against_current_hollow_segment_roles() -> None:
     _source, segments = _crossbeam_geometry_state()
     longitudinal = default_crossbeam_rebar_templates()

@@ -13,6 +13,7 @@ from typing import Any
 
 from concrete_pmm_pro.crossbeam.rebar import (
     RB_HOLLOW_MIN,
+    RB_SOLID_ANCHORAGE,
     RB_SOLID_COLUMN,
     canonical_rebar_templates,
     canonical_rebar_zones,
@@ -23,6 +24,10 @@ from concrete_pmm_pro.crossbeam.rebar import (
     validate_rebar_zones,
 )
 from concrete_pmm_pro.crossbeam.transverse import (
+    TR_HOLLOW_END,
+    TR_HOLLOW_MIN,
+    TR_SOLID_ANCHORAGE,
+    TR_SOLID_COLUMN,
     canonical_transverse_templates,
     default_crossbeam_transverse_templates,
     default_transverse_template_id,
@@ -387,6 +392,109 @@ def repair_migrated_zone_template_compatibility(
     return canonical_rebar_zones(repaired), longitudinal_repairs, transverse_repairs
 
 
+_BUILTIN_LONGITUDINAL_TEMPLATE_IDS = {
+    RB_HOLLOW_MIN,
+    RB_SOLID_COLUMN,
+    RB_SOLID_ANCHORAGE,
+}
+_BUILTIN_TRANSVERSE_TEMPLATE_IDS = {
+    TR_HOLLOW_MIN,
+    TR_HOLLOW_END,
+    TR_SOLID_COLUMN,
+    TR_SOLID_ANCHORAGE,
+}
+
+
+def repair_stale_builtin_zone_template_compatibility(
+    zones: list[dict[str, Any]],
+    segment_rows: list[dict[str, Any]],
+    longitudinal_templates: list[dict[str, Any]],
+    transverse_templates: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Repair stale built-in role mismatches in any restored project schema.
+
+    RB-MIG1 originally limited automatic reconciliation to projects explicitly
+    marked as legacy-migrated.  A project saved *after* an older faulty migration
+    can already use the current schema while still carrying stale built-in
+    ``RB-SOLID-*`` / ``TR-SOLID-*`` references on Hollow segments (or vice versa).
+
+    This narrower repair is safe to run for every restored project because it
+    touches only known built-in template IDs that are incompatible with the
+    current canonical Segment role.  Custom incompatible assignments, missing
+    IDs, and unknown IDs remain untouched so validation still reports REVIEW
+    rather than inventing engineering intent.
+    """
+
+    segment_by_id = {
+        str(row.get("Segment") or "").strip(): row for row in _records(segment_rows)
+    }
+    longitudinal_map = template_map(longitudinal_templates)
+    transverse_map = transverse_template_map(transverse_templates)
+    repaired: list[dict[str, Any]] = []
+    longitudinal_repairs = 0
+    transverse_repairs = 0
+
+    for source in canonical_rebar_zones(zones):
+        row = dict(source)
+        segment = segment_by_id.get(str(row.get("Segment") or "").strip(), {})
+        role = _segment_role(segment)
+
+        longitudinal_id = str(
+            row.get("Longitudinal template") or row.get("Rebar template") or ""
+        ).strip()
+        longitudinal = longitudinal_map.get(longitudinal_id)
+        longitudinal_role = (
+            str(longitudinal.get("Applicable role") or "Any").strip().title()
+            if longitudinal
+            else ""
+        )
+        if (
+            longitudinal_id in _BUILTIN_LONGITUDINAL_TEMPLATE_IDS
+            and longitudinal is not None
+            and longitudinal_role not in {role, "Any"}
+        ):
+            replacement = _default_longitudinal_template_id_for_role(
+                role, longitudinal_templates
+            )
+            replacement_row = longitudinal_map.get(replacement)
+            replacement_role = (
+                str(replacement_row.get("Applicable role") or "Any").strip().title()
+                if replacement_row
+                else ""
+            )
+            if replacement and replacement_role in {role, "Any"}:
+                row["Rebar template"] = replacement
+                row["Longitudinal template"] = replacement
+                longitudinal_repairs += 1
+
+        transverse_id = str(row.get("Transverse template") or "").strip()
+        transverse = transverse_map.get(transverse_id)
+        transverse_role = (
+            str(transverse.get("Applicable role") or "Any").strip().title()
+            if transverse
+            else ""
+        )
+        if (
+            transverse_id in _BUILTIN_TRANSVERSE_TEMPLATE_IDS
+            and transverse is not None
+            and transverse_role not in {role, "Any"}
+        ):
+            replacement = default_transverse_template_id(role, transverse_templates)
+            replacement_row = transverse_map.get(replacement)
+            replacement_role = (
+                str(replacement_row.get("Applicable role") or "Any").strip().title()
+                if replacement_row
+                else ""
+            )
+            if replacement and replacement_role in {role, "Any"}:
+                row["Transverse template"] = replacement
+                transverse_repairs += 1
+
+        repaired.append(row)
+
+    return canonical_rebar_zones(repaired), longitudinal_repairs, transverse_repairs
+
+
 def _fill_legacy_transverse_references(
     zones: list[dict[str, Any]],
     segment_rows: list[dict[str, Any]],
@@ -577,6 +685,26 @@ def restore_crossbeam_rebar_project_state(
             migration_notes.append(
                 f"Repaired {transverse_repairs} legacy transverse Zone assignment(s) to match the current Segment Solid/Hollow role."
             )
+
+    # RB-MIG1A: a project may already be saved in the current schema while
+    # carrying stale built-in assignments created by an older faulty migration.
+    # Repair only known built-in role mismatches; preserve custom/unknown refs.
+    zones, stale_longitudinal_repairs, stale_transverse_repairs = (
+        repair_stale_builtin_zone_template_compatibility(
+            zones,
+            segments,
+            longitudinal,
+            transverse,
+        )
+    )
+    if stale_longitudinal_repairs:
+        migration_notes.append(
+            f"Reconciled {stale_longitudinal_repairs} stale built-in longitudinal Zone assignment(s) with the current Segment Solid/Hollow role."
+        )
+    if stale_transverse_repairs:
+        migration_notes.append(
+            f"Reconciled {stale_transverse_repairs} stale built-in transverse Zone assignment(s) with the current Segment Solid/Hollow role."
+        )
 
     session_state[CB_RB_TEMPLATE_ROWS_KEY] = longitudinal
     session_state[CB_TR_TEMPLATE_ROWS_KEY] = transverse

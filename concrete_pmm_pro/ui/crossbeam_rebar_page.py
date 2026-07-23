@@ -80,6 +80,7 @@ from concrete_pmm_pro.crossbeam.rebar_persistence import (
     CB_TR_PREVIEW_MODE_KEY,
     CB_TR_TEMPLATE_ROWS_KEY,
     repair_migrated_zone_template_compatibility,
+    repair_stale_builtin_zone_template_compatibility,
     validate_loaded_crossbeam_rebar_state,
 )
 from concrete_pmm_pro.crossbeam.tendon import (
@@ -293,7 +294,7 @@ def _reconcile_migrated_rebar_assignments_once(
     if st.session_state.get(CB_RB_MIG1_ROLE_REPAIR_DONE_KEY):
         return
     validation = st.session_state.get(CB_RB_PROJECT_LOAD_VALIDATION_KEY)
-    if not isinstance(validation, Mapping) or not bool(validation.get("migrated")):
+    if not isinstance(validation, Mapping):
         st.session_state[CB_RB_MIG1_ROLE_REPAIR_DONE_KEY] = True
         return
 
@@ -306,12 +307,24 @@ def _reconcile_migrated_rebar_assignments_once(
         or default_crossbeam_transverse_templates()
     )
     zones = canonical_rebar_zones(_records(st.session_state.get(CB_RB_ZONE_ROWS_KEY)))
-    repaired, longitudinal_repairs, transverse_repairs = repair_migrated_zone_template_compatibility(
-        zones,
-        segment_rows,
-        longitudinal,
-        transverse,
-    )
+    if bool(validation.get("migrated")):
+        repaired, longitudinal_repairs, transverse_repairs = repair_migrated_zone_template_compatibility(
+            zones,
+            segment_rows,
+            longitudinal,
+            transverse,
+        )
+    else:
+        # RB-MIG1A: current-schema project JSON can preserve stale built-in
+        # Solid/Hollow assignments from an older migration.  Repair only known
+        # built-in mismatches; custom or unknown incompatible references remain
+        # REVIEW so engineer intent is never invented.
+        repaired, longitudinal_repairs, transverse_repairs = repair_stale_builtin_zone_template_compatibility(
+            zones,
+            segment_rows,
+            longitudinal,
+            transverse,
+        )
 
     if longitudinal_repairs or transverse_repairs:
         st.session_state[CB_RB_ZONE_ROWS_KEY] = repaired
@@ -331,19 +344,21 @@ def _reconcile_migrated_rebar_assignments_once(
             segment_rows,
             load_errors=load_errors,
         )
-        refreshed["migrated"] = True
+        was_migrated = bool(validation.get("migrated"))
+        refreshed["migrated"] = was_migrated
         notes = [
             str(message)
             for message in validation.get("migration_notes", [])
             if str(message).strip()
         ]
+        repair_source = "migrated" if was_migrated else "stale built-in"
         if longitudinal_repairs:
             notes.append(
-                f"Reconciled {longitudinal_repairs} migrated longitudinal Zone assignment(s) with the current Segment Solid/Hollow role."
+                f"Reconciled {longitudinal_repairs} {repair_source} longitudinal Zone assignment(s) with the current Segment Solid/Hollow role."
             )
         if transverse_repairs:
             notes.append(
-                f"Reconciled {transverse_repairs} migrated transverse Zone assignment(s) with the current Segment Solid/Hollow role."
+                f"Reconciled {transverse_repairs} {repair_source} transverse Zone assignment(s) with the current Segment Solid/Hollow role."
             )
         refreshed["migration_notes"] = list(dict.fromkeys(notes))
         st.session_state[CB_RB_PROJECT_LOAD_VALIDATION_KEY] = refreshed
