@@ -198,6 +198,9 @@ WORKFLOW_LOAD_TABLE_METADATA_KEYS = (
 CROSSBEAM_LENGTH_STATE_KEY = "crossbeam_ui1_length_m"
 CROSSBEAM_SEGMENT_ROWS_STATE_KEY = "crossbeam_ui1_segment_layout_rows"
 CROSSBEAM_SEGMENT_REVISION_STATE_KEY = "crossbeam_ui1_segment_editor_revision"
+CROSSBEAM_PRECAST_LAYOUT_STATE_KEY = "crossbeam_cip1_precast_segment_rows"
+CROSSBEAM_CIP_LAYOUT_STATE_KEY = "crossbeam_cip1_cast_in_place_zone_rows"
+CROSSBEAM_CONSTRUCTION_METHOD_LAST_STATE_KEY = "crossbeam_cip1_last_construction_method"
 
 
 def _crossbeam_input_metadata_from_session(session_state: Any) -> dict[str, Any]:
@@ -214,6 +217,15 @@ def _crossbeam_input_metadata_from_session(session_state: Any) -> dict[str, Any]
         "active_section_id": _get_session_value(session_state, CB_SECLIB_ACTIVE_ID_KEY, None),
         "length_m": _clean_table_value(_get_session_value(session_state, CROSSBEAM_LENGTH_STATE_KEY, None)),
         "segment_rows": _clean_table_value(migrated_segments),
+        "precast_segment_rows": _clean_table_value(
+            _get_session_value(session_state, CROSSBEAM_PRECAST_LAYOUT_STATE_KEY, [])
+        ),
+        "cast_in_place_zone_rows": _clean_table_value(
+            _get_session_value(session_state, CROSSBEAM_CIP_LAYOUT_STATE_KEY, [])
+        ),
+        "construction_method_last": _get_session_value(
+            session_state, CROSSBEAM_CONSTRUCTION_METHOD_LAST_STATE_KEY, None
+        ),
     }
 
 
@@ -1215,6 +1227,19 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
             session_state[CROSSBEAM_SEGMENT_REVISION_STATE_KEY] = int(
                 session_state.get(CROSSBEAM_SEGMENT_REVISION_STATE_KEY, 0) or 0
             ) + 1
+        precast_rows = crossbeam_input.get("precast_segment_rows")
+        if isinstance(precast_rows, list):
+            session_state[CROSSBEAM_PRECAST_LAYOUT_STATE_KEY] = (
+                migrate_segment_rows_to_library(precast_rows, definitions) if definitions else list(precast_rows)
+            )
+        cip_rows = crossbeam_input.get("cast_in_place_zone_rows")
+        if isinstance(cip_rows, list):
+            session_state[CROSSBEAM_CIP_LAYOUT_STATE_KEY] = (
+                migrate_segment_rows_to_library(cip_rows, definitions) if definitions else list(cip_rows)
+            )
+        construction_last = crossbeam_input.get("construction_method_last")
+        if construction_last is not None:
+            session_state[CROSSBEAM_CONSTRUCTION_METHOD_LAST_STATE_KEY] = construction_last
 
     restore_crossbeam_rebar_project_state(
         project.metadata,

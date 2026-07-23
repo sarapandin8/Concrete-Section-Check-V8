@@ -1731,3 +1731,6 @@ Hardens Crossbeam Segment Layout first-edit persistence and makes Section ID the
 
 ## CROSSBEAM.RB-MIG1A — Current-Schema Stale Built-In Rebar Assignment Repair
 Extends geometry-compatible Rebar reconciliation to current-schema restored projects that still carry stale built-in Solid/Hollow assignments from older migration/session-order defects, while preserving custom/unknown incompatible references as explicit review items.
+
+## CROSSBEAM.CIP1
+Adds a construction-type-aware Crossbeam layout foundation: Precast retains physical Solid/Hollow segments, while Cast-in-Place uses preserved Solid-only Section/Zone layouts for one monolithic continuously cast member and guards the incompatible Segmental Rebar editor until the validated CIP continuous-bar topology milestone.

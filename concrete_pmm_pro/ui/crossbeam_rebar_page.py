@@ -2306,6 +2306,35 @@ def _render_section_rebar_preview(
 
 def render_crossbeam_rebar_page() -> None:
     length_m, segment_rows, segment_errors = crossbeam_segment_layout_from_state()
+    construction_method = str(
+        st.session_state.get("crossbeam_ptloss3b1_construction_method") or "Precast Segmental"
+    )
+    if construction_method == "Cast-in-Place":
+        render_page_header(
+            "Crossbeam Rebar — Cast-in-Place",
+            "The Crossbeam is one monolithic continuously cast Solid member. Section/zone boundaries do not interrupt ordinary longitudinal reinforcement.",
+            icon="RB", kicker="Sections workspace", badge="Portal Frame Crossbeam", accent="green",
+        )
+        render_metric_cards(
+            [
+                {"title": "Construction type", "value": "CAST-IN-PLACE", "detail": "Monolithic continuous pour", "status": "ready"},
+                {"title": "Section family", "value": "SOLID ONLY", "detail": "No Hollow zones are permitted", "status": "ready"},
+                {"title": "Longitudinal rebar", "value": "CONTINUOUS TOPOLOGY", "detail": "Editor not released in CIP1", "status": "warning"},
+                {"title": "Solver handoff", "value": "LOCKED", "detail": "RB-CIP milestones remain pending", "status": "neutral"},
+            ]
+        )
+        st.warning(
+            "CIP1 WORKFLOW GUARD — The existing Segmental Rebar editor is intentionally disabled for Cast-in-Place projects because its segment-local bars and As = 0 joint rule are not physically applicable. "
+            "The Cast-in-Place continuous longitudinal bar-run editor will be released as a separate validated milestone. Existing Segmental Rebar data is preserved and will return when Construction Type is switched back to Precast Segmental."
+        )
+        if segment_errors:
+            for issue in segment_errors:
+                st.error(issue)
+        st.caption(
+            f"Current Cast-in-Place Section/Zone source: {len(segment_rows)} zone(s) over L = {length_m:.3f} m. Zone boundaries are geometry/property boundaries, not physical joints."
+        )
+        return
+
     _ensure_rb1_state(segment_rows)
 
     ordinary_enabled = ordinary_rebar_enabled(st.session_state, default=True)

@@ -107,6 +107,8 @@ from concrete_pmm_pro.crossbeam.construction_stage import (
     COLUMN_SHAPE_CIRCULAR,
     CONSTRUCTION_METHOD_OPTIONS,
     CONSTRUCTION_METHOD_PRECAST,
+    CONSTRUCTION_METHOD_CIP,
+    normalize_construction_method,
     DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
     DEFAULT_PRECAST_CLOSURE_STRENGTH_MPA,
     canonical_column_stage_rows,
@@ -198,6 +200,9 @@ LEGACY_PROFILE_ROWS_KEY = "crossbeam_wf1_tendon_profile_rows"
 CB_LENGTH_KEY = "crossbeam_ui1_length_m"
 CB_SEGMENT_ROWS_KEY = "crossbeam_ui1_segment_layout_rows"
 CB_SEGMENT_REV_KEY = "crossbeam_ui1_segment_editor_revision"
+CB_PRECAST_SEGMENT_ROWS_KEY = "crossbeam_cip1_precast_segment_rows"
+CB_CIP_ZONE_ROWS_KEY = "crossbeam_cip1_cast_in_place_zone_rows"
+CB_CONSTRUCTION_METHOD_LAST_KEY = "crossbeam_cip1_last_construction_method"
 CB_UI1A_MIGRATION_KEY = "crossbeam_ui1a_segment_assignment_migrated"
 CB_LENGTH_WIDGET_KEY = "crossbeam_pt1b_length_widget_m"
 CB_LENGTH_WIDGET_SYNC_KEY = "crossbeam_pt1b_length_widget_synced_m"
@@ -752,6 +757,7 @@ def _ensure_state() -> None:
             st.session_state[CB_SEGMENT_ROWS_KEY] = _canonical_segment_rows(current_rows)
         st.session_state[CB_UI1A_MIGRATION_KEY] = True
     st.session_state.setdefault(CB_SEGMENT_REV_KEY, 0)
+    _sync_layout_state_for_construction_method(length_m)
 
     legacy_profile = _legacy_profile_rows()
     if CB_TENDON_SYSTEM_ROWS_KEY not in st.session_state:
@@ -854,6 +860,23 @@ def _apply_crossbeam_member_length_change(
                     row[key] = _finite_float(row.get(key), 0.0) * ratio
             scaled_segments.append(row)
         segment_rows = scaled_segments
+
+        # Preserve both construction-mode layouts across a member-length scale
+        # operation.  The active rows above and each dormant namespace are
+        # scaled independently so switching construction type later cannot
+        # resurrect stale stations based on the old member length.
+        for layout_key in (CB_PRECAST_SEGMENT_ROWS_KEY, CB_CIP_ZONE_ROWS_KEY):
+            stored_rows = _records(session_state.get(layout_key))
+            if not stored_rows:
+                continue
+            scaled_stored: list[dict[str, Any]] = []
+            for source in stored_rows:
+                row = dict(source)
+                for key in ("x_start_m", "x_end_m", "s_start (m)", "s_end (m)"):
+                    if key in row:
+                        row[key] = _finite_float(row.get(key), 0.0) * ratio
+                scaled_stored.append(row)
+            session_state[layout_key] = scaled_stored
 
         scaled_profile: list[dict[str, Any]] = []
         for source in profile_rows:
@@ -1138,6 +1161,8 @@ def _elevation_figure(
     rows: list[dict[str, Any]],
     length_m: float,
     column_rows: list[dict[str, Any]] | None = None,
+    *,
+    cast_in_place: bool = False,
 ) -> go.Figure:
     rows = _canonical_segment_rows(rows)
     fig = go.Figure()
@@ -1153,30 +1178,25 @@ def _elevation_figure(
             y=[None],
             mode="markers",
             marker={"symbol": "square", "size": 14, "color": fills["Solid"], "line": {"color": outlines["Solid"], "width": 1}},
-            name="Solid segment",
+            name="Solid section zone" if cast_in_place else "Solid segment",
             hoverinfo="skip",
         )
     )
-    fig.add_trace(
-        go.Scatter(
-            x=[None],
-            y=[None],
-            mode="markers",
-            marker={"symbol": "square", "size": 14, "color": fills["Hollow"], "line": {"color": outlines["Hollow"], "width": 1}},
-            name="Hollow segment",
-            hoverinfo="skip",
+    if not cast_in_place:
+        fig.add_trace(
+            go.Scatter(
+                x=[None], y=[None], mode="markers",
+                marker={"symbol": "square", "size": 14, "color": fills["Hollow"], "line": {"color": outlines["Hollow"], "width": 1}},
+                name="Hollow segment", hoverinfo="skip",
+            )
         )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=[None, None],
-            y=[None, None],
-            mode="lines",
-            line={"color": outlines["Hollow"], "width": 1.5, "dash": "dash"},
-            name="Hidden void boundary",
-            hoverinfo="skip",
+        fig.add_trace(
+            go.Scatter(
+                x=[None, None], y=[None, None], mode="lines",
+                line={"color": outlines["Hollow"], "width": 1.5, "dash": "dash"},
+                name="Hidden void boundary", hoverinfo="skip",
+            )
         )
-    )
     fig.add_trace(
         go.Scatter(
             x=[None],
@@ -1248,7 +1268,7 @@ def _elevation_figure(
             line={"color": outlines.get(role, "#555"), "width": 1.5},
             layer="below",
         )
-        if role == "Hollow":
+        if role == "Hollow" and not cast_in_place:
             # Elevation convention: the longitudinal void runs through the
             # complete assigned hollow segment.  Because the void is hidden
             # in elevation, show its full-length boundary with dashed lines
@@ -1289,7 +1309,7 @@ def _elevation_figure(
         fig.add_annotation(
             x=(start + end) / 2.0,
             y=0.5,
-            text=f"<b>{row['Segment']} · {section_id}</b><br>{role}",
+            text=(f"<b>{row['Segment']} · {section_id}</b><br>Solid zone" if cast_in_place else f"<b>{row['Segment']} · {section_id}</b><br>{role}"),
             showarrow=False,
             font={"size": 11, "color": "#17324d"},
         )
@@ -1302,7 +1322,12 @@ def _elevation_figure(
         )
 
     for station in sorted({0.0, length_m, *[row["x_start_m"] for row in rows], *[row["x_end_m"] for row in rows]}):
-        fig.add_shape(type="line", x0=station, x1=station, y0=-0.02, y1=1.04, line={"color": "#9b1c31", "width": 1})
+        boundary_line = (
+            {"color": "#64748b", "width": 1, "dash": "dot"}
+            if cast_in_place and station not in (0.0, length_m)
+            else {"color": "#9b1c31", "width": 1}
+        )
+        fig.add_shape(type="line", x0=station, x1=station, y0=-0.02, y1=1.04, line=boundary_line)
 
     fig.add_trace(
         go.Scatter(
@@ -1349,7 +1374,12 @@ def _elevation_figure(
         font={"size": 10, "color": "#17324d"},
     )
 
-    fig.update_layout(**_base_figure_layout("Crossbeam Longitudinal Segment Elevation", "Station s (m)", "Section role schematic", height=510))
+    fig.update_layout(**_base_figure_layout(
+        "Crossbeam Longitudinal Section / Zone Elevation" if cast_in_place else "Crossbeam Longitudinal Segment Elevation",
+        "Station s (m)",
+        "Monolithic solid section schematic" if cast_in_place else "Section role schematic",
+        height=510,
+    ))
     fig.update_layout(
         margin={"l": 72, "r": 36, "t": 96, "b": 64},
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5},
@@ -1698,6 +1728,60 @@ def _commit_ptloss3b1_pair_sequence_editor(
         )
 
 
+
+
+def _solid_section_ids(definitions: list[dict[str, Any]]) -> list[str]:
+    return [
+        str(row.get("Section ID") or "")
+        for row in definitions
+        if str(row.get("Section role") or "") == "Solid" and str(row.get("Section ID") or "")
+    ]
+
+
+def _default_cip_zone_rows(length_m: float, definitions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    solid_ids = _solid_section_ids(definitions)
+    section_id = solid_ids[0] if solid_ids else ""
+    return _segment_rows_from_editor_rows(
+        [{"Segment": "Z1", "x_start_m": 0.0, "x_end_m": float(length_m), "Section ID": section_id}],
+        definitions,
+    )
+
+
+def _sync_layout_state_for_construction_method(length_m: float) -> str:
+    """Preserve separate Precast and CIP layouts while exposing one active state."""
+    definitions = _crossbeam_section_definitions()
+    method = normalize_construction_method(
+        st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
+    )
+    previous = normalize_construction_method(
+        st.session_state.get(CB_CONSTRUCTION_METHOD_LAST_KEY, method)
+    )
+    active_rows = _records(st.session_state.get(CB_SEGMENT_ROWS_KEY))
+    if previous != method:
+        old_key = CB_PRECAST_SEGMENT_ROWS_KEY if previous == CONSTRUCTION_METHOD_PRECAST else CB_CIP_ZONE_ROWS_KEY
+        if active_rows:
+            st.session_state[old_key] = active_rows
+        new_key = CB_PRECAST_SEGMENT_ROWS_KEY if method == CONSTRUCTION_METHOD_PRECAST else CB_CIP_ZONE_ROWS_KEY
+        new_rows = _records(st.session_state.get(new_key))
+        if not new_rows:
+            new_rows = (
+                migrate_segment_rows_to_library(default_crossbeam_segment_rows(length_m), definitions)
+                if method == CONSTRUCTION_METHOD_PRECAST
+                else _default_cip_zone_rows(length_m, definitions)
+            )
+        st.session_state[CB_SEGMENT_ROWS_KEY] = new_rows
+        st.session_state[CB_SEGMENT_REV_KEY] = int(st.session_state.get(CB_SEGMENT_REV_KEY, 0)) + 1
+    else:
+        key = CB_PRECAST_SEGMENT_ROWS_KEY if method == CONSTRUCTION_METHOD_PRECAST else CB_CIP_ZONE_ROWS_KEY
+        if active_rows and key not in st.session_state:
+            st.session_state[key] = active_rows
+    st.session_state[CB_CONSTRUCTION_METHOD_LAST_KEY] = method
+    return method
+
+
+def _construction_method_changed(length_m: float) -> None:
+    _sync_layout_state_for_construction_method(length_m)
+
 def _ensure_crossbeam_construction_support_source_state(length_m: float) -> list[dict[str, Any]]:
     """Initialize the member-level construction/support source without duplicating ownership.
 
@@ -1735,6 +1819,8 @@ def render_crossbeam_construction_support_source_workspace(length_m: float) -> N
             "Crossbeam construction type",
             options=list(CONSTRUCTION_METHOD_OPTIONS),
             key=CB_LOSS_ES_CONSTRUCTION_METHOD_KEY,
+            on_change=_construction_method_changed,
+            args=(float(length_m),),
             help=(
                 "Segmental activates joint/closure stressing criteria downstream. Cast-in-Place suppresses segmental joint/closure requirements. "
                 "This is a member-level construction source, not an Elastic Shortening result."
@@ -4000,35 +4086,58 @@ def render_crossbeam_tendon_system_page() -> None:
 
 def render_crossbeam_segment_layout_page() -> None:
     _ensure_state()
+    construction_method = _sync_layout_state_for_construction_method(_crossbeam_member_length_m())
+    is_cip = construction_method == CONSTRUCTION_METHOD_CIP
     render_page_header(
-        "Crossbeam Segment Layout",
-        "Assign solid and hollow section roles along station s and verify the complete crossbeam elevation before future station-based checks.",
+        "Crossbeam Section / Zone Layout" if is_cip else "Crossbeam Segment Layout",
+        (
+            "Define longitudinal solid section-property zones along one monolithic continuously cast Crossbeam."
+            if is_cip
+            else "Assign solid and hollow section roles along station s and verify the complete crossbeam elevation before future station-based checks."
+        ),
         icon="SG",
         kicker="Sections workspace",
         badge="Portal Frame Crossbeam",
         accent="green",
     )
     render_section_bar(
-        "Longitudinal section assignment",
-        "The layout must cover s = 0 to s = L continuously without gaps or overlaps.",
+        "Longitudinal section / zone assignment" if is_cip else "Longitudinal section assignment",
+        (
+            "Zone boundaries define geometry/property changes only; the Cast-in-Place Crossbeam is monolithic and has no physical segment joints."
+            if is_cip
+            else "The layout must cover s = 0 to s = L continuously without gaps or overlaps."
+        ),
         mark="S",
     )
     length_m = _render_crossbeam_member_length_reference()
 
     definitions = _crossbeam_section_definitions()
     definition_by_id = crossbeam_section_definition_map(definitions)
-    section_ids = list(definition_by_id)
-    if st.button("Reset segment layout to solid/hollow seed", key="crossbeam_ui1_reset_segments"):
-        st.session_state[CB_SEGMENT_ROWS_KEY] = migrate_segment_rows_to_library(
-            default_crossbeam_segment_rows(length_m), definitions
+    section_ids = (
+        _solid_section_ids(definitions) if is_cip else list(definition_by_id)
+    )
+    reset_label = (
+        "Reset Section/Zone Layout to full-length Solid"
+        if is_cip
+        else "Reset Segment Layout to Solid/Hollow seed"
+    )
+    if st.button(reset_label, key="crossbeam_ui1_reset_segments"):
+        st.session_state[CB_SEGMENT_ROWS_KEY] = (
+            _default_cip_zone_rows(length_m, definitions)
+            if is_cip
+            else migrate_segment_rows_to_library(default_crossbeam_segment_rows(length_m), definitions)
         )
         st.session_state[CB_SEGMENT_REV_KEY] = int(st.session_state.get(CB_SEGMENT_REV_KEY, 0)) + 1
         st.rerun()
 
     active_section_id = str(st.session_state.get("crossbeam_seclib1_active_section_id") or "Not selected")
     st.info(
-        "Each segment is assigned to a project Section ID from the Crossbeam Section Definition Library in Section Builder. "
-        f"Active Section Builder definition: {active_section_id}."
+        (
+            "Each zone is assigned to a Solid project Section ID. Zone boundaries are not physical joints. "
+            if is_cip
+            else "Each segment is assigned to a project Section ID from the Crossbeam Section Definition Library in Section Builder. "
+        )
+        + f"Active Section Builder definition: {active_section_id}."
     )
 
     revision = int(st.session_state.get(CB_SEGMENT_REV_KEY, 0))
@@ -4046,14 +4155,18 @@ def render_crossbeam_segment_layout_page() -> None:
         on_change=_commit_segment_layout_editor,
         args=(editor_key, editor_rows, float(length_m)),
         column_config={
-            "Segment": st.column_config.TextColumn("Segment", required=True),
+            "Segment": st.column_config.TextColumn("Zone" if is_cip else "Segment", required=True),
             "x_start_m": st.column_config.NumberColumn("s_start (m)", min_value=0.0, format="%.3f", required=True),
             "x_end_m": st.column_config.NumberColumn("s_end (m)", min_value=0.0, format="%.3f", required=True),
             "Section ID": st.column_config.SelectboxColumn(
                 "Section ID",
                 options=section_ids,
                 required=True,
-                help="Section IDs are created and edited in Section Builder. Different Hollow IDs may use different wall thicknesses.",
+                help=(
+                    "Cast-in-Place permits Solid Section IDs only."
+                    if is_cip
+                    else "Section IDs are created and edited in Section Builder. Different Hollow IDs may use different wall thicknesses."
+                ),
             ),
             "Section name": st.column_config.TextColumn("Section name", disabled=True),
             "Section role": st.column_config.TextColumn("Role", disabled=True),
@@ -4068,6 +4181,14 @@ def render_crossbeam_segment_layout_page() -> None:
         _records(st.session_state.get(CB_SEGMENT_ROWS_KEY)), length_m
     )
     st.session_state[CB_SEGMENT_ROWS_KEY] = rows
+    active_layout_key = CB_CIP_ZONE_ROWS_KEY if is_cip else CB_PRECAST_SEGMENT_ROWS_KEY
+    st.session_state[active_layout_key] = rows
+    if is_cip:
+        hollow_rows = [row for row in rows if row.get("Section role") != "Solid"]
+        if hollow_rows:
+            errors.append(
+                "Cast-in-Place workflow permits Solid Section IDs only. Reassign all Hollow zones before the layout is analysis-ready."
+            )
 
     solid_count = sum(row["Section role"] == "Solid" for row in rows)
     hollow_count = sum(row["Section role"] == "Hollow" for row in rows)
@@ -4080,9 +4201,10 @@ def render_crossbeam_segment_layout_page() -> None:
                 "detail": f"Extent 0–{length_m:.3f} m; not a solver result",
                 "status": "ready" if not errors else "warning",
             },
-            {"title": "Segments", "value": len(rows), "detail": "Station ranges", "status": "info"},
-            {"title": "Section IDs used", "value": section_ids_used, "detail": f"{len(definitions)} available in library", "status": "info"},
-            {"title": "Solid / Hollow", "value": f"{solid_count} / {hollow_count}", "detail": "Assigned segment roles", "status": "neutral"},
+            {"title": "Section / Zones" if is_cip else "Segments", "value": len(rows), "detail": "Station ranges", "status": "info"},
+            {"title": "Section IDs used", "value": section_ids_used, "detail": f"{len(section_ids)} applicable in this mode", "status": "info"},
+            ({"title": "Section family", "value": "SOLID ONLY", "detail": "Monolithic Cast-in-Place Crossbeam", "status": "ready"}
+             if is_cip else {"title": "Solid / Hollow", "value": f"{solid_count} / {hollow_count}", "detail": "Assigned segment roles", "status": "neutral"}),
         ]
     )
     if errors:
@@ -4099,7 +4221,7 @@ def render_crossbeam_segment_layout_page() -> None:
     )
     if footprint_qa["ready"]:
         st.success(
-            f"Column / support footprint QA — {footprint_qa['compatible_count']} / {footprint_qa['count']} support footprint(s) are compatible with Solid segment regions."
+            f"Column / support footprint QA — {footprint_qa['compatible_count']} / {footprint_qa['count']} support footprint(s) are compatible with Solid {'zone' if is_cip else 'segment'} regions."
         )
     else:
         st.warning(
@@ -4113,12 +4235,17 @@ def render_crossbeam_segment_layout_page() -> None:
         )
 
     st.plotly_chart(
-        _elevation_figure(rows, length_m, support_rows),
+        _elevation_figure(rows, length_m, support_rows, cast_in_place=is_cip),
         use_container_width=True,
         config=FIGURE_CONFIG,
     )
     st.caption(
-        "Elevation is a Section-ID-based geometric review figure. Column/support overlays use the member-level source from Section Builder: rectangular support width in this longitudinal view is Blong; circular support width is Diameter D. Column vertical height is intentionally schematic/not to scale so the Crossbeam layout remains readable. Dashed lines show the hidden void through hollow segments. Station solver handoff and solid-to-hollow D-region checks remain future scope."
+        (
+            "Elevation is a Solid Section-ID zone review of one monolithic continuously cast Crossbeam. Zone boundaries indicate section-property changes only and are not physical joints. "
+            if is_cip
+            else "Elevation is a Section-ID-based geometric review figure. Dashed lines show the hidden void through hollow segments. "
+        )
+        + "Column/support overlays use the member-level source from Section Builder: rectangular support width is Blong; circular support width is Diameter D. Column vertical height is schematic/not to scale."
     )
 
 

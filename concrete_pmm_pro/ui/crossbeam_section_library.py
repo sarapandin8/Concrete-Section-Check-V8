@@ -46,6 +46,8 @@ CB_SECLIB_SUMMARY_ROW_IDS_KEY = "crossbeam_seclib1e_summary_row_ids"
 CB_SECLIB_SUMMARY_BUTTON_KEY_STATE = "crossbeam_seclib1f_summary_button_key"
 CB_SECLIB_SUMMARY_BUTTON_ROW_IDS_KEY = "crossbeam_seclib1f_summary_button_row_ids"
 CUSTOM_SECTION_NAME_OPTION = "Custom project name"
+CB_CONSTRUCTION_METHOD_KEY = "crossbeam_ptloss3b1_construction_method"
+CONSTRUCTION_METHOD_CIP = "Cast-in-Place"
 
 
 def _records(value: Any) -> list[dict[str, Any]]:
@@ -669,12 +671,19 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
 
     with duplicate_col:
         st.write("")
+        cip_mode = str(st.session_state.get(CB_CONSTRUCTION_METHOD_KEY) or "") == CONSTRUCTION_METHOD_CIP
+        active_is_hollow = str(active.get("Section role") or "") == "Hollow"
         if st.button(
             "Duplicate current",
             key="crossbeam_seclib1_duplicate",
             use_container_width=True,
             type="primary",
-            help="Recommended for creating another Hollow/Solid section with different dimensions.",
+            disabled=cip_mode and active_is_hollow,
+            help=(
+                "Cast-in-Place permits Solid sections only; select a Solid Section ID before duplicating."
+                if cip_mode and active_is_hollow
+                else "Recommended for creating another Hollow/Solid section with different dimensions."
+            ),
         ):
             updated, new_id = duplicate_definition(definitions, active_id)
             _set_definitions(
@@ -685,7 +694,13 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
             st.rerun()
     with hollow_col:
         st.write("")
-        if st.button("New Hollow", key="crossbeam_seclib1_add_hollow", use_container_width=True):
+        if st.button(
+            "New Hollow",
+            key="crossbeam_seclib1_add_hollow",
+            use_container_width=True,
+            disabled=cip_mode,
+            help=("Cast-in-Place Crossbeam permits Solid sections only." if cip_mode else None),
+        ):
             updated, new_id = add_default_definition(
                 definitions,
                 CROSSBEAM_HOLLOW_PRESET_KEY,
