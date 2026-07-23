@@ -8,7 +8,11 @@ from concrete_pmm_pro.crossbeam.workflow import (
     DEFAULT_CROSSBEAM_LENGTH_M,
     default_crossbeam_segment_rows,
 )
-from concrete_pmm_pro.ui.crossbeam_pages import _canonical_segment_rows, _validate_segments
+from concrete_pmm_pro.ui.crossbeam_pages import (
+    _canonical_segment_rows,
+    _segment_rows_from_editor_rows,
+    _validate_segments,
+)
 
 
 def test_crossbeam_ui1a_navigation_places_layout_after_builder():
@@ -60,3 +64,33 @@ def test_segment_layout_editor_uses_project_section_id_selectbox():
     assert "Section IDs are created and edited in Section Builder" in source
     assert 'TextColumn("Section name", disabled=True)' in source
     assert 'TextColumn("Preset family", disabled=True)' in source
+
+
+def test_segment_layout_editor_commits_first_patch_and_derives_library_metadata():
+    from concrete_pmm_pro.crossbeam.section_library import default_section_definitions
+
+    source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text()
+    assert "def _commit_segment_layout_editor(" in source
+    assert "on_change=_commit_segment_layout_editor" in source
+    assert "Re-read the durable source here" in source
+
+    definitions = default_section_definitions()
+    rows = _segment_rows_from_editor_rows(
+        [
+            {
+                "Segment": "S1",
+                "x_start_m": 0.0,
+                "x_end_m": 10.0,
+                "Section ID": "CB-H01",
+                # Stale user-facing metadata must be ignored.
+                "Section name": "WRONG",
+                "Section role": "Solid",
+                "Preset family": "WRONG",
+            }
+        ],
+        definitions,
+    )
+    assert rows[0]["Section ID"] == "CB-H01"
+    assert rows[0]["Section name"] == "Hollow typical"
+    assert rows[0]["Section role"] == "Hollow"
+    assert "Rectangular Hollow" in rows[0]["Section type / preset"]

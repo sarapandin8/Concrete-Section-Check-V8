@@ -239,10 +239,17 @@ def column_section_properties(row: Mapping[str, Any]) -> dict[str, Any]:
         "Area (mm²)": area,
         "I22 (mm⁴)": i22,
         "I33 (mm⁴)": i33,
+        # Explicit engineering aliases for the future 2D s-vertical portal-frame
+        # solver.  Retain I22/I33 for backward compatibility, but do not make a
+        # solver infer the bending axis from those generic labels.
+        "I_perp_s (mm⁴)": i22,
+        "I_parallel_s (mm⁴)": i33,
         "Ec (MPa)": ec,
         "EA (N)": ec * area,
         "EI22 (N-mm²)": ec * i22,
         "EI33 (N-mm²)": ec * i33,
+        "EI_perp_s (N-mm²)": ec * i22,
+        "EI_parallel_s (N-mm²)": ec * i33,
         "issues": _dedupe(issues),
         "ready": not issues and area > 0.0 and i22 > 0.0 and i33 > 0.0 and ec > 0.0,
     }
@@ -262,6 +269,8 @@ def column_stage_property_rows(values: Any, *, length_m: float) -> list[dict[str
                 "Area (m²)": props["Area (mm²)"] / 1.0e6,
                 "I22 (m⁴)": props["I22 (mm⁴)"] / 1.0e12,
                 "I33 (m⁴)": props["I33 (mm⁴)"] / 1.0e12,
+                "I_perp_s (m⁴)": props["I_perp_s (mm⁴)"] / 1.0e12,
+                "I_parallel_s (m⁴)": props["I_parallel_s (mm⁴)"] / 1.0e12,
                 "Ec (MPa)": props["Ec (MPa)"],
                 "Status": "READY" if props["ready"] and row["Height (m)"] > 0.0 else "INPUT REQUIRED",
                 "Issue": "OK" if not issues else "; ".join(_dedupe(issues)),
@@ -292,6 +301,111 @@ def column_stage_summary(values: Any, *, length_m: float) -> dict[str, Any]:
         "rows": rows,
         "issues": issues,
         "base_assumption": COLUMN_BASE_ASSUMPTION,
+    }
+
+
+def column_support_footprint_rows(
+    column_values: Any,
+    segment_values: Any,
+    *,
+    length_m: float,
+) -> list[dict[str, Any]]:
+    """Return longitudinal support-footprint QA against Segment Layout roles.
+
+    ``Blong`` is the rectangular support width along the Crossbeam ``s`` axis;
+    circular columns use ``Diameter``.  A positive-width overlap with any
+    Hollow segment is flagged for engineering review.  End columns whose
+    physical footprint extends beyond the modeled member extent are also
+    flagged so the user can verify the adopted member-end/column-centerline
+    convention before a future stage solver is released.
+    """
+
+    length = max(_float(length_m), 0.0)
+    columns = canonical_column_stage_rows(column_values, length_m=length)
+    segments = _records(segment_values)
+    tolerance = max(1.0e-9, length * 1.0e-9)
+    output: list[dict[str, Any]] = []
+
+    for column in columns:
+        shape = normalize_column_shape(column.get("Shape"))
+        if shape == COLUMN_SHAPE_CIRCULAR:
+            width_m = max(_float(column.get("Diameter (mm)")), 0.0) / 1000.0
+            width_source = "Diameter D"
+        else:
+            width_m = max(_float(column.get("Blong (mm)")), 0.0) / 1000.0
+            width_source = "Blong"
+
+        station = _float(column.get("Station s (m)"))
+        left = station - 0.5 * width_m
+        right = station + 0.5 * width_m
+        issues: list[str] = []
+        hollow_hits: list[str] = []
+        solid_hits: list[str] = []
+
+        if width_m <= tolerance:
+            issues.append(f"{width_source} must be positive before support-footprint QA can be released.")
+        if left < -tolerance or right > length + tolerance:
+            issues.append(
+                "Support footprint extends beyond the modeled Crossbeam extent; verify the member-end / column-centerline convention."
+            )
+
+        for segment in segments:
+            start = _float(segment.get("x_start_m", segment.get("s_start (m)")))
+            end = _float(segment.get("x_end_m", segment.get("s_end (m)")))
+            overlap = min(right, end) - max(left, start)
+            if overlap <= tolerance:
+                continue
+            segment_id = str(segment.get("Segment") or "?")
+            role = str(segment.get("Section role", segment.get("Role")) or "").strip().casefold()
+            if role == "hollow":
+                hollow_hits.append(segment_id)
+            elif role == "solid":
+                solid_hits.append(segment_id)
+
+        if hollow_hits:
+            issues.append(
+                "Support footprint intersects Hollow segment(s): " + ", ".join(dict.fromkeys(hollow_hits)) + "."
+            )
+        if width_m > tolerance and not hollow_hits and not solid_hits:
+            issues.append("Support footprint does not overlap a recognized Solid/Hollow segment range.")
+
+        output.append(
+            {
+                "Column": str(column.get("Column ID") or ""),
+                "Center s (m)": station,
+                "Width source": width_source,
+                "Footprint width (m)": width_m,
+                "s_left (m)": left,
+                "s_right (m)": right,
+                "Solid segment(s)": " / ".join(dict.fromkeys(solid_hits)) or "—",
+                "Hollow segment(s)": " / ".join(dict.fromkeys(hollow_hits)) or "—",
+                "Status": "COMPATIBLE" if not issues else "REVIEW",
+                "Issue": "OK" if not issues else " ".join(_dedupe(issues)),
+            }
+        )
+    return output
+
+
+def column_support_footprint_summary(
+    column_values: Any,
+    segment_values: Any,
+    *,
+    length_m: float,
+) -> dict[str, Any]:
+    rows = column_support_footprint_rows(
+        column_values,
+        segment_values,
+        length_m=length_m,
+    )
+    compatible = sum(row.get("Status") == "COMPATIBLE" for row in rows)
+    issues = [str(row.get("Issue") or "") for row in rows if row.get("Status") != "COMPATIBLE"]
+    return {
+        "rows": rows,
+        "count": len(rows),
+        "compatible_count": compatible,
+        "ready": bool(rows) and compatible == len(rows),
+        "status": "SUPPORT FOOTPRINTS COMPATIBLE" if rows and compatible == len(rows) else "SUPPORT FOOTPRINT REVIEW",
+        "issues": _dedupe(issues),
     }
 
 

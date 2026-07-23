@@ -527,3 +527,93 @@ def test_ptloss3b1c_segment_elevation_uses_real_column_width_along_s() -> None:
     annotation_text = " ".join(str(a.text or "") for a in fig.layout.annotations)
     assert "C1" in annotation_text and "Blong 2.000 m" in annotation_text
     assert "C2" in annotation_text and "Ø2.000 m" in annotation_text
+
+
+def test_ptloss3b1d_column_axis_lock_uses_i_perp_s_for_s_vertical_frame_bending() -> None:
+    from concrete_pmm_pro.crossbeam.construction_stage import column_section_properties
+
+    props = column_section_properties(
+        {
+            "Shape": "Rectangular — Equal Chamfer 4 Corners",
+            "Btrans (mm)": 1000.0,
+            "Blong (mm)": 2000.0,
+            "Corner (mm)": 0.0,
+            "f'c (MPa)": 35.0,
+        }
+    )
+    expected_perp = 1000.0 * 2000.0**3 / 12.0
+    expected_parallel = 2000.0 * 1000.0**3 / 12.0
+    assert math.isclose(props["I_perp_s (mm⁴)"], expected_perp)
+    assert math.isclose(props["I_parallel_s (mm⁴)"], expected_parallel)
+    assert props["I_perp_s (mm⁴)"] == props["I22 (mm⁴)"]
+    assert props["I_parallel_s (mm⁴)"] == props["I33 (mm⁴)"]
+    assert props["I_perp_s (mm⁴)"] > props["I_parallel_s (mm⁴)"]
+
+
+def test_ptloss3b1d_support_footprint_qa_detects_hollow_overlap_and_uses_blong() -> None:
+    import pytest
+
+    from concrete_pmm_pro.crossbeam.construction_stage import column_support_footprint_summary
+
+    columns = [
+        {
+            "Column ID": "C1",
+            "Station s (m)": 5.0,
+            "Height (m)": 10.0,
+            "Shape": "Rectangular — Equal Chamfer 4 Corners",
+            "Btrans (mm)": 4000.0,
+            "Blong (mm)": 2000.0,
+            "Corner (mm)": 200.0,
+            "Diameter (mm)": 2000.0,
+            "f'c (MPa)": 35.0,
+        }
+    ]
+    segments = [
+        {"Segment": "S1", "x_start_m": 0.0, "x_end_m": 4.5, "Section role": "Solid"},
+        {"Segment": "S2", "x_start_m": 4.5, "x_end_m": 8.0, "Section role": "Hollow"},
+    ]
+    summary = column_support_footprint_summary(columns, segments, length_m=8.0)
+    row = summary["rows"][0]
+    assert row["Footprint width (m)"] == pytest.approx(2.0)  # Blong, not Btrans
+    assert row["s_left (m)"] == pytest.approx(4.0)
+    assert row["s_right (m)"] == pytest.approx(6.0)
+    assert row["Status"] == "REVIEW"
+    assert "S2" in row["Hollow segment(s)"]
+    assert summary["ready"] is False
+
+
+def test_ptloss3b1d_support_footprint_qa_accepts_solid_region() -> None:
+    from concrete_pmm_pro.crossbeam.construction_stage import column_support_footprint_summary
+
+    columns = [
+        {
+            "Column ID": "C1",
+            "Station s (m)": 2.0,
+            "Height (m)": 10.0,
+            "Shape": "Circular",
+            "Btrans (mm)": 2000.0,
+            "Blong (mm)": 2000.0,
+            "Corner (mm)": 200.0,
+            "Diameter (mm)": 2000.0,
+            "f'c (MPa)": 35.0,
+        }
+    ]
+    segments = [
+        {"Segment": "S1", "x_start_m": 0.0, "x_end_m": 4.0, "Section role": "Solid"},
+        {"Segment": "S2", "x_start_m": 4.0, "x_end_m": 8.0, "Section role": "Hollow"},
+    ]
+    summary = column_support_footprint_summary(columns, segments, length_m=8.0)
+    assert summary["ready"] is True
+    assert summary["compatible_count"] == 1
+    assert summary["rows"][0]["Width source"] == "Diameter D"
+    assert summary["rows"][0]["Solid segment(s)"] == "S1"
+
+
+def test_ptloss3b1d_section_builder_places_member_sources_before_section_specific_workspace() -> None:
+    from pathlib import Path
+
+    source = Path("concrete_pmm_pro/ui/section_builder.py").read_text()
+    member = source.index("_render_crossbeam_member_geometry_workspace(settings)")
+    support = source.index("_render_crossbeam_construction_support_workspace(settings)")
+    columns = source.index("parameter_col, preview_col = st.columns")
+    assert member < support < columns

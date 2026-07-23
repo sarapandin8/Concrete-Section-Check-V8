@@ -110,6 +110,7 @@ from concrete_pmm_pro.crossbeam.construction_stage import (
     DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
     DEFAULT_PRECAST_CLOSURE_STRENGTH_MPA,
     canonical_column_stage_rows,
+    column_support_footprint_summary,
     column_stage_property_rows,
     construction_stage_readiness,
     default_column_stage_rows,
@@ -515,7 +516,7 @@ def _canonical_segment_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for index, row in enumerate(migrated):
         section_id = str(row.get("Section ID") or "").strip()
         definition = by_id.get(section_id)
-        if definition is None and definitions:
+        if definition is None and not section_id and definitions:
             definition = definitions[index % len(definitions)]
             section_id = definition["Section ID"]
         definition = definition or {}
@@ -549,6 +550,69 @@ def _segment_editor_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         }
         for row in _canonical_segment_rows(rows)
     ]
+
+
+def _segment_editor_row_is_blank(row: Mapping[str, Any]) -> bool:
+    return all(
+        _editor_value_is_blank(row.get(key))
+        for key in ("Segment", "x_start_m", "x_end_m", "Section ID")
+    )
+
+
+def _segment_rows_from_editor_rows(
+    editor_rows: list[dict[str, Any]],
+    definitions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return durable Segment rows with metadata derived from Section ID."""
+
+    usable = [dict(row) for row in editor_rows if not _segment_editor_row_is_blank(row)]
+    definition_by_id = crossbeam_section_definition_map(definitions)
+    updated: list[dict[str, Any]] = []
+    for index, edited in enumerate(usable):
+        section_id = _editor_text(edited.get("Section ID"))
+        definition = definition_by_id.get(section_id)
+        updated.append(
+            {
+                "Segment": _editor_text(edited.get("Segment")) or f"S{index + 1}",
+                "x_start_m": _finite_float(edited.get("x_start_m")),
+                "x_end_m": _finite_float(edited.get("x_end_m")),
+                "Section ID": section_id,
+                "Section name": str((definition or {}).get("Section name") or ""),
+                "Section type / preset": str((definition or {}).get("Preset family") or ""),
+                "Section preset key": str((definition or {}).get("Preset key") or ""),
+                "Section role": str((definition or {}).get("Section role") or ""),
+            }
+        )
+    return updated
+
+
+def _commit_segment_layout_editor(
+    editor_key: str,
+    fallback_rows: list[dict[str, Any]],
+    length_m: float,
+) -> None:
+    """Commit the first Streamlit data-editor patch into canonical Segment state.
+
+    Section name/role/preset are derived from the selected Section ID and are
+    never accepted as independent user-editable state.  Bumping the editor
+    revision after every valid patch forces the read-only metadata columns to
+    refresh immediately on the next render.
+    """
+
+    editor_rows = data_editor_payload_to_records(
+        st.session_state.get(editor_key), fallback_rows
+    )
+    definitions = _crossbeam_section_definitions()
+    updated = _segment_rows_from_editor_rows(editor_rows, definitions)
+
+    # Keep the exact selected Section ID even when a stale/unknown reference is
+    # encountered so validation can report it honestly instead of silently
+    # substituting a different section.  Valid editor selections resolve all
+    # read-only metadata above from the Section Definition Library.
+    st.session_state[CB_SEGMENT_ROWS_KEY] = updated
+    st.session_state[CB_SEGMENT_REV_KEY] = int(
+        st.session_state.get(CB_SEGMENT_REV_KEY, 0)
+    ) + 1
 
 
 def _rows_match_old_30m_seed(rows: list[dict[str, Any]]) -> bool:
@@ -1795,8 +1859,12 @@ def render_crossbeam_construction_support_source_workspace(length_m: float) -> N
                         "Height (m)": round(_finite_float(row.get("Height (m)")), 3),
                         "Base": COLUMN_BASE_ASSUMPTION,
                         "A (m²)": round(_finite_float(row.get("Area (m²)")), 5),
-                        "I_trans (m⁴)": round(_finite_float(row.get("I22 (m⁴)")), 6),
-                        "I_long (m⁴)": round(_finite_float(row.get("I33 (m⁴)")), 6),
+                        "I⊥s — about transverse axis (m⁴)": round(
+                            _finite_float(row.get("I_perp_s (m⁴)", row.get("I22 (m⁴)"))), 6
+                        ),
+                        "I∥s — about s-parallel axis (m⁴)": round(
+                            _finite_float(row.get("I_parallel_s (m⁴)", row.get("I33 (m⁴)"))), 6
+                        ),
                         "Ec (MPa)": round(_finite_float(row.get("Ec (MPa)")), 0),
                         "Status": row.get("Status"),
                         "Issue": row.get("Issue"),
@@ -1805,6 +1873,9 @@ def render_crossbeam_construction_support_source_workspace(length_m: float) -> N
                 ]),
                 use_container_width=True,
                 hide_index=True,
+            )
+            st.caption(
+                "Axis lock for the future 2D s–vertical Portal-Frame solver: in-plane column bending uses I⊥s (about the transverse axis). I∥s is retained for the orthogonal bending axis."
             )
 
 
@@ -3964,12 +4035,16 @@ def render_crossbeam_segment_layout_page() -> None:
     source_rows = _records(st.session_state.get(CB_SEGMENT_ROWS_KEY)) or migrate_segment_rows_to_library(
         default_crossbeam_segment_rows(length_m), definitions
     )
-    edited = st.data_editor(
-        pd.DataFrame(_segment_editor_rows(source_rows)),
+    editor_rows = _segment_editor_rows(source_rows)
+    editor_key = f"crossbeam_ui1_segment_editor_{revision}"
+    st.data_editor(
+        pd.DataFrame(editor_rows),
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
-        key=f"crossbeam_ui1_segment_editor_{revision}",
+        key=editor_key,
+        on_change=_commit_segment_layout_editor,
+        args=(editor_key, editor_rows, float(length_m)),
         column_config={
             "Segment": st.column_config.TextColumn("Segment", required=True),
             "x_start_m": st.column_config.NumberColumn("s_start (m)", min_value=0.0, format="%.3f", required=True),
@@ -3986,8 +4061,12 @@ def render_crossbeam_segment_layout_page() -> None:
         },
         disabled=["Section name", "Section role", "Preset family"],
     )
-    raw_rows = _records(edited)
-    rows, errors = _validate_segments(raw_rows, length_m)
+    # Canonical Segment state is committed in the editor callback so the first
+    # patch survives Streamlit reruns.  Re-read the durable source here instead
+    # of trusting a stale pre-callback dataframe return value.
+    rows, errors = _validate_segments(
+        _records(st.session_state.get(CB_SEGMENT_ROWS_KEY)), length_m
+    )
     st.session_state[CB_SEGMENT_ROWS_KEY] = rows
 
     solid_count = sum(row["Section role"] == "Solid" for row in rows)
@@ -4013,6 +4092,26 @@ def render_crossbeam_segment_layout_page() -> None:
     support_rows = canonical_column_stage_rows(
         st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
     )
+    footprint_qa = column_support_footprint_summary(
+        support_rows,
+        rows,
+        length_m=length_m,
+    )
+    if footprint_qa["ready"]:
+        st.success(
+            f"Column / support footprint QA — {footprint_qa['compatible_count']} / {footprint_qa['count']} support footprint(s) are compatible with Solid segment regions."
+        )
+    else:
+        st.warning(
+            f"Column / support footprint QA — {footprint_qa['compatible_count']} / {footprint_qa['count']} compatible. Review support extents before the future stage solver is released."
+        )
+    with st.expander("Column / support footprint QA", expanded=not footprint_qa["ready"]):
+        st.dataframe(
+            pd.DataFrame(footprint_qa["rows"]),
+            use_container_width=True,
+            hide_index=True,
+        )
+
     st.plotly_chart(
         _elevation_figure(rows, length_m, support_rows),
         use_container_width=True,
@@ -6125,7 +6224,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "Friction/Wobble and Anchorage Set preserve their accepted results. PTLOSS3B1C relocates member construction/support ownership to Section Builder and carries the same source into Segment Layout and Prestress Loss while source-derived f_cgp, the stage solver, Pe/Pe_eff, and later losses remain locked.",
+        "Friction/Wobble and Anchorage Set preserve their accepted results. PTLOSS3B1D relocates member construction/support ownership to Section Builder and carries the same source into Segment Layout and Prestress Loss while source-derived f_cgp, the stage solver, Pe/Pe_eff, and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -6972,7 +7071,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     with elastic_shortening_tab:
         st.markdown("#### Elastic Shortening — construction/stressing-stage source foundation")
         st.caption(
-            "PTLOSS3B1C preserves the validated PTLOSS3 foundation while moving member construction/support editing to Section Builder; Elastic Shortening consumes that source read-only. Primary/secondary prestress, contact analysis, f_cgp, Pe/Pe_eff, and later losses remain locked."
+            "PTLOSS3B1D preserves the validated PTLOSS3 foundation while moving member construction/support editing to Section Builder; Elastic Shortening consumes that source read-only. Primary/secondary prestress, contact analysis, f_cgp, Pe/Pe_eff, and later losses remain locked."
         )
 
         upstream_ready = bool(
@@ -7162,7 +7261,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         st.markdown("##### Construction / stressing-stage source model")
         st.caption(
-            "PTLOSS3B1C reads the physical construction/support facts owned by Section Builder for the future limited 2D Portal-Frame stage solver. "
+            "PTLOSS3B1D reads the physical construction/support facts owned by Section Builder for the future limited 2D Portal-Frame stage solver. "
             "It does not yet calculate Primary/Secondary Prestress, contact reactions, or source-derived f_cgp."
         )
         _ensure_crossbeam_construction_support_source_state(length_m)
@@ -7312,7 +7411,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Stage solver",
                     "value": "LOCKED",
-                    "detail": "PTLOSS3B1C source model only",
+                    "detail": "PTLOSS3B1D source model only",
                     "status": "warning",
                 },
             ]
@@ -7322,7 +7421,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 for issue in stage_source_summary.get("issues", []):
                     st.warning(str(issue))
         st.caption(
-            "PTLOSS3B1C does not assume temporary support remains active after prestress camber develops. The future stage solver must treat the full-length support as compression-only contact and automatically release any location whose reaction would become tensile."
+            "PTLOSS3B1D does not assume temporary support remains active after prestress camber develops. The future stage solver must treat the full-length support as compression-only contact and automatically release any location whose reaction would become tensile."
         )
 
         if not current_es_group_summary.get("ready"):
@@ -7362,7 +7461,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         with st.expander("Calculation trace / QA — formula, stage source, and overrides", expanded=False):
             st.markdown("##### Code / methodology basis")
             st.write(
-                f"Published basis: **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B1C preserves the separate construction stressing-pair sequence for the future incremental stage solver."
+                f"Published basis: **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B1D preserves the separate construction stressing-pair sequence for the future incremental stage solver."
             )
             st.latex(r"\Delta f_{pES,avg}=\left(\frac{G-1}{2G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
             st.latex(r"\Delta f_{pES,g}=\left(\frac{G-g}{G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
@@ -7372,7 +7471,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
             st.markdown("##### Stage-stress source")
             st.warning(
-                "PTLOSS3B1C preserves the construction/stressing-stage source but still does not invent the Portal-Frame structural response. Source-derived f_cgp remains BLOCKED until the validated Primary/Secondary Prestress + gravity/contact stage solver is released. A manual f_cgp override below is QA-only and cannot release final effective prestress."
+                "PTLOSS3B1D preserves the construction/stressing-stage source but still does not invent the Portal-Frame structural response. Source-derived f_cgp remains BLOCKED until the validated Primary/Secondary Prestress + gravity/contact stage solver is released. A manual f_cgp override below is QA-only and cannot release final effective prestress."
             )
 
             st.checkbox(
@@ -7506,7 +7605,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                             if current_es_group_summary.get("ready")
                             else "PAIR SOURCE REVIEW"
                         ),
-                        "Feeds": "PTLOSS3B1C construction/stage source model only; Pe/Pe_eff remains locked",
+                        "Feeds": "PTLOSS3B1D construction/stage source model only; Pe/Pe_eff remains locked",
                     },
                     {
                         "Order": 5,

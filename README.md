@@ -1724,3 +1724,7 @@ Removes future field-test strength inputs from the design-stage Elastic Shorteni
 ## CROSSBEAM.PTLOSS3B1C — Construction/Support Source Relocation + Segment Elevation Overlay
 
 Moves Crossbeam construction type and Column/support-line geometry ownership to Section Builder, adds practical column/closure defaults, keeps Elastic Shortening read-only on that source, and overlays actual longitudinal support widths in Segment Layout without changing any prestress-loss or structural-stage solver equations. See `README_CROSSBEAM_PTLOSS3B1C.md`.
+
+## CROSSBEAM.PTLOSS3B1D — Support Geometry QA, Column Axis Lock & Segment-Layout State Reliability
+
+Hardens Crossbeam Segment Layout first-edit persistence and makes Section ID the single assignment source with automatic read-only Section name/Role/Preset metadata; explicitly locks the future Portal-Frame bending inertia to `I⊥s`, adds Column/support footprint compatibility QA against Solid/Hollow segment roles, and moves member construction/support sources ahead of section-specific geometry in Section Builder. No prestress-loss or structural-stage solver is released or changed. See `README_CROSSBEAM_PTLOSS3B1D.md`.

@@ -3441,9 +3441,18 @@ def render_section_builder() -> None:
 
     preset, material_assignment = selection
 
+    crossbeam_workflow = is_portal_frame_crossbeam_workflow(settings)
+    if crossbeam_workflow:
+        # Member-level sources belong together and must appear before the
+        # selected Section-ID geometry so users do not mistake support data for
+        # section-specific properties.
+        _render_crossbeam_member_geometry_workspace(settings)
+        _render_crossbeam_construction_support_workspace(settings)
+
     parameter_col, preview_col = st.columns([0.47, 0.53], gap="medium")
     with parameter_col:
-        _render_crossbeam_member_geometry_workspace(settings)
+        if not crossbeam_workflow:
+            _render_crossbeam_member_geometry_workspace(settings)
         label_mode, params = _render_geometry_parameters_workspace(preset, material_assignment)
 
     geometry, dimensions, validation = _build_geometry(preset, params)
@@ -3464,8 +3473,6 @@ def render_section_builder() -> None:
 
     with preview_col:
         _render_section_preview_panel(geometry, dimensions, label_mode, validation)
-
-    _render_crossbeam_construction_support_workspace(settings)
 
     if geometry is not None:
         with st.expander("Generated SectionGeometry"):
