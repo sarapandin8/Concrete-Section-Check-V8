@@ -108,6 +108,7 @@ from concrete_pmm_pro.crossbeam.construction_stage import (
     CONSTRUCTION_METHOD_OPTIONS,
     CONSTRUCTION_METHOD_PRECAST,
     DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
+    DEFAULT_PRECAST_CLOSURE_STRENGTH_MPA,
     canonical_column_stage_rows,
     column_stage_property_rows,
     construction_stage_readiness,
@@ -775,6 +776,9 @@ def _apply_crossbeam_member_length_change(
         if zone_state_exists
         else []
     )
+    column_rows = canonical_column_stage_rows(
+        session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=old_length_m
+    ) if CB_LOSS_ES_COLUMN_ROWS_KEY in session_state else []
     ratio = target_length_m / old_length_m
 
     if policy == CB_LENGTH_POLICY_SCALE and abs(ratio - 1.0) > 1e-12:
@@ -810,11 +814,22 @@ def _apply_crossbeam_member_length_change(
             scaled_zones.append(row)
         zone_rows = canonical_rebar_zones(scaled_zones)
 
+        scaled_columns: list[dict[str, Any]] = []
+        for source in column_rows:
+            row = dict(source)
+            row["Station s (m)"] = _finite_float(row.get("Station s (m)"), 0.0) * ratio
+            scaled_columns.append(row)
+        column_rows = canonical_column_stage_rows(scaled_columns, length_m=target_length_m)
+
     session_state[CB_LENGTH_KEY] = target_length_m
     session_state[CB_SEGMENT_ROWS_KEY] = segment_rows
     session_state[CB_PROFILE_ROWS_KEY] = canonical_tendon_profile_points(
         profile_rows, target_length_m
     )
+    if column_rows:
+        session_state[CB_LOSS_ES_COLUMN_ROWS_KEY] = canonical_column_stage_rows(
+            column_rows, length_m=target_length_m
+        )
     if (
         zone_state_exists
         and policy == CB_LENGTH_POLICY_SCALE
@@ -1055,7 +1070,11 @@ def _base_figure_layout(title: str, x_title: str, y_title: str, *, height: int =
     }
 
 
-def _elevation_figure(rows: list[dict[str, Any]], length_m: float) -> go.Figure:
+def _elevation_figure(
+    rows: list[dict[str, Any]],
+    length_m: float,
+    column_rows: list[dict[str, Any]] | None = None,
+) -> go.Figure:
     rows = _canonical_segment_rows(rows)
     fig = go.Figure()
     height = 1.0
@@ -1094,6 +1113,59 @@ def _elevation_figure(rows: list[dict[str, Any]], length_m: float) -> go.Figure:
             hoverinfo="skip",
         )
     )
+    fig.add_trace(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="markers",
+            marker={"symbol": "square", "size": 14, "color": "rgba(91,112,132,0.30)", "line": {"color": "#4f6579", "width": 1.2}},
+            name="Column / support",
+            hoverinfo="skip",
+        )
+    )
+
+    normalized_columns = canonical_column_stage_rows(column_rows or [], length_m=length_m) if column_rows else []
+    support_extents: list[tuple[float, float]] = []
+    for column in normalized_columns:
+        station = _finite_float(column.get("Station s (m)"))
+        shape = str(column.get("Shape") or COLUMN_SHAPE_RECT_CHAMFER)
+        width_m = (
+            _finite_float(column.get("Diameter (mm)")) / 1000.0
+            if shape == COLUMN_SHAPE_CIRCULAR
+            else _finite_float(column.get("Blong (mm)")) / 1000.0
+        )
+        if width_m <= 0.0:
+            continue
+        x0 = station - width_m / 2.0
+        x1 = station + width_m / 2.0
+        support_extents.append((x0, x1))
+        fig.add_shape(
+            type="rect",
+            x0=x0,
+            x1=x1,
+            y0=-0.62,
+            y1=0.0,
+            fillcolor="rgba(91,112,132,0.28)",
+            line={"color": "#4f6579", "width": 1.4},
+            layer="below",
+        )
+        fig.add_shape(
+            type="line",
+            x0=station,
+            x1=station,
+            y0=-0.68,
+            y1=1.08,
+            line={"color": "#4f6579", "width": 1.0, "dash": "dot"},
+            layer="below",
+        )
+        width_label = f"Ø{width_m:.3f} m" if shape == COLUMN_SHAPE_CIRCULAR else f"Blong {width_m:.3f} m"
+        fig.add_annotation(
+            x=station,
+            y=-0.36,
+            text=f"<b>{column.get('Column ID')}</b><br>{width_label}",
+            showarrow=False,
+            font={"size": 9, "color": "#34495e"},
+        )
 
     for row in rows:
         start = row["x_start_m"]
@@ -1218,8 +1290,14 @@ def _elevation_figure(rows: list[dict[str, Any]], length_m: float) -> go.Figure:
         margin={"l": 72, "r": 36, "t": 96, "b": 64},
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5},
     )
-    fig.update_yaxes(range=[-0.22, 1.28], showticklabels=False, fixedrange=True)
-    fig.update_xaxes(range=[-0.02 * length_m, 1.02 * length_m])
+    fig.update_yaxes(range=[-0.78, 1.28], showticklabels=False, fixedrange=True)
+    if support_extents:
+        min_support = min(x0 for x0, _ in support_extents)
+        max_support = max(x1 for _, x1 in support_extents)
+    else:
+        min_support, max_support = 0.0, length_m
+    x_pad = max(0.02 * length_m, 0.25)
+    fig.update_xaxes(range=[min(-x_pad, min_support - x_pad), max(length_m + x_pad, max_support + x_pad)])
     return fig
 
 
@@ -1554,6 +1632,180 @@ def _commit_ptloss3b1_pair_sequence_editor(
             "Stressing sequence must use each verified pair exactly once with unique sequence numbers 1..G. "
             "The last valid sequence remains adopted."
         )
+
+
+def _ensure_crossbeam_construction_support_source_state(length_m: float) -> list[dict[str, Any]]:
+    """Initialize the member-level construction/support source without duplicating ownership.
+
+    Section Builder is the editing owner.  Prestress Loss and Segment Layout read
+    the same namespaced state keys.  Project JSON restoration may pre-populate
+    them before this helper is called.
+    """
+
+    st.session_state.setdefault(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY, CONSTRUCTION_METHOD_PRECAST)
+    source_rows = st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY)
+    if not _records(source_rows):
+        st.session_state[CB_LOSS_ES_COLUMN_ROWS_KEY] = default_column_stage_rows(length_m)
+    else:
+        st.session_state[CB_LOSS_ES_COLUMN_ROWS_KEY] = canonical_column_stage_rows(
+            source_rows, length_m=length_m
+        )
+    return canonical_column_stage_rows(
+        st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
+    )
+
+
+def render_crossbeam_construction_support_source_workspace(length_m: float) -> None:
+    """Render the member-level construction type and column/support source in Section Builder."""
+
+    rows = _ensure_crossbeam_construction_support_source_state(length_m)
+    with st.container(border=True):
+        st.markdown("#### Crossbeam Construction & Support Configuration")
+        st.caption(
+            "Member-level source shared by Segment Layout and Prestress Loss. Column station s is the support/column centerline; "
+            "Btrans is normal to the Crossbeam axis, Blong is along the Crossbeam axis, and Column Height is vertical. "
+            "Column bases are FIXED by the current project assumption."
+        )
+
+        st.selectbox(
+            "Crossbeam construction type",
+            options=list(CONSTRUCTION_METHOD_OPTIONS),
+            key=CB_LOSS_ES_CONSTRUCTION_METHOD_KEY,
+            help=(
+                "Segmental activates joint/closure stressing criteria downstream. Cast-in-Place suppresses segmental joint/closure requirements. "
+                "This is a member-level construction source, not an Elastic Shortening result."
+            ),
+        )
+
+        st.markdown("##### Column / support-line layout")
+        revision = int(st.session_state.get("crossbeam_ptloss3b1_column_editor_revision", 0))
+        summary_rows = _ptloss3b1_column_summary_editor_rows(rows)
+        editor_key = f"crossbeam_section_builder_column_layout_editor_{revision}"
+        st.data_editor(
+            pd.DataFrame(summary_rows),
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
+            key=editor_key,
+            on_change=_commit_ptloss3b1_column_summary_editor,
+            args=(editor_key, summary_rows, float(length_m)),
+            column_config={
+                "_Source Index": None,
+                "Column ID": st.column_config.TextColumn("Column ID", required=True),
+                "Station s (m)": st.column_config.NumberColumn(
+                    "Column centerline station s (m)", min_value=0.0, max_value=float(length_m), format="%.3f", required=True
+                ),
+                "Column Height (m)": st.column_config.NumberColumn(
+                    "Column Height — vertical (m)", min_value=0.0, format="%.3f", required=True
+                ),
+                "Shape": st.column_config.SelectboxColumn(
+                    "Section shape", options=list(COLUMN_SHAPE_OPTIONS), required=True
+                ),
+                "f'c (MPa)": st.column_config.NumberColumn(
+                    "Column f'c (MPa)", min_value=1.0, max_value=150.0, format="%.1f", required=True
+                ),
+            },
+        )
+
+        rows = canonical_column_stage_rows(
+            st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
+        )
+        st.markdown("##### Column section geometry")
+        st.caption(
+            "Rectangular sections use Btrans and Blong plus Chamfer c or Fillet radius r. Circular sections use Diameter D only. "
+            "Dormant dimensions from other shapes are ignored by the geometry/property solver."
+        )
+
+        geometry_specs = (
+            (COLUMN_SHAPE_RECT_CHAMFER, "Rectangular — equal chamfer", "Chamfer c (mm)"),
+            (COLUMN_SHAPE_RECT_FILLET, "Rectangular — equal fillet", "Fillet radius r (mm)"),
+            (COLUMN_SHAPE_CIRCULAR, "Circular", "Diameter (mm)"),
+        )
+        for shape, heading, corner_label in geometry_specs:
+            geometry_rows = _ptloss3b1_column_geometry_editor_rows(rows, shape)
+            if not geometry_rows:
+                continue
+            st.markdown(f"**{heading}**")
+            geometry_key = f"crossbeam_section_builder_column_geometry_{abs(hash(shape))}_{revision}"
+            config: dict[str, Any] = {
+                "_Source Index": None,
+                "Column ID": st.column_config.TextColumn("Column ID", disabled=True),
+            }
+            if shape == COLUMN_SHAPE_CIRCULAR:
+                config["Diameter (mm)"] = st.column_config.NumberColumn(
+                    "Diameter D (mm)", min_value=0.0, format="%.1f", required=True
+                )
+            else:
+                config["Btrans (mm)"] = st.column_config.NumberColumn(
+                    "Btrans — Normal to Crossbeam axis (mm)", min_value=0.0, format="%.1f", required=True
+                )
+                config["Blong (mm)"] = st.column_config.NumberColumn(
+                    "Blong — Along Crossbeam axis (mm)", min_value=0.0, format="%.1f", required=True
+                )
+                config[corner_label] = st.column_config.NumberColumn(
+                    corner_label, min_value=0.0, format="%.1f", required=True
+                )
+            st.data_editor(
+                pd.DataFrame(geometry_rows),
+                num_rows="fixed",
+                use_container_width=True,
+                hide_index=True,
+                key=geometry_key,
+                on_change=_commit_ptloss3b1_column_geometry_editor,
+                args=(geometry_key, geometry_rows, float(length_m), shape),
+                disabled=["Column ID"],
+                column_config=config,
+            )
+
+        rows = canonical_column_stage_rows(
+            st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
+        )
+        if rows:
+            preview_key = "crossbeam_section_builder_column_preview_index"
+            indices = list(range(len(rows)))
+            if st.session_state.get(preview_key) not in indices:
+                st.session_state[preview_key] = 0
+            controls, preview_card, spacer = st.columns([0.24, 0.46, 0.30], gap="medium")
+            with controls:
+                selected = st.selectbox(
+                    "Column preview",
+                    options=indices,
+                    format_func=lambda idx: f"{rows[int(idx)].get('Column ID')} · s={_finite_float(rows[int(idx)].get('Station s (m)')):.3f} m",
+                    key=preview_key,
+                )
+                st.caption("Btrans = normal to Crossbeam axis · Blong = along Crossbeam axis")
+            with preview_card:
+                with st.container(border=True):
+                    st.plotly_chart(
+                        _column_plan_section_preview_figure(rows[int(selected)]),
+                        use_container_width=True,
+                        config={"displayModeBar": False, "displaylogo": False, "responsive": True},
+                    )
+
+        derived = column_stage_property_rows(
+            st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
+        )
+        with st.expander("Derived column section / stiffness source", expanded=False):
+            st.dataframe(
+                pd.DataFrame([
+                    {
+                        "Column": row.get("Column ID"),
+                        "s (m)": round(_finite_float(row.get("Station s (m)")), 3),
+                        "Shape": row.get("Shape"),
+                        "Height (m)": round(_finite_float(row.get("Height (m)")), 3),
+                        "Base": COLUMN_BASE_ASSUMPTION,
+                        "A (m²)": round(_finite_float(row.get("Area (m²)")), 5),
+                        "I_trans (m⁴)": round(_finite_float(row.get("I22 (m⁴)")), 6),
+                        "I_long (m⁴)": round(_finite_float(row.get("I33 (m⁴)")), 6),
+                        "Ec (MPa)": round(_finite_float(row.get("Ec (MPa)")), 0),
+                        "Status": row.get("Status"),
+                        "Issue": row.get("Issue"),
+                    }
+                    for row in derived
+                ]),
+                use_container_width=True,
+                hide_index=True,
+            )
 
 
 def _editor_bool(value: Any) -> bool:
@@ -3758,9 +4010,16 @@ def render_crossbeam_segment_layout_page() -> None:
         for error in errors:
             st.error(error)
 
-    st.plotly_chart(_elevation_figure(rows, length_m), use_container_width=True, config=FIGURE_CONFIG)
+    support_rows = canonical_column_stage_rows(
+        st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
+    )
+    st.plotly_chart(
+        _elevation_figure(rows, length_m, support_rows),
+        use_container_width=True,
+        config=FIGURE_CONFIG,
+    )
     st.caption(
-        "Elevation is a Section-ID-based geometric review figure. Dashed lines show the hidden void extending from the start to the end of each hollow segment. Each Section ID owns its own dimensions and calculated gross properties in Section Builder; station solver handoff and solid-to-hollow D-region checks remain future scope."
+        "Elevation is a Section-ID-based geometric review figure. Column/support overlays use the member-level source from Section Builder: rectangular support width in this longitudinal view is Blong; circular support width is Diameter D. Column vertical height is intentionally schematic/not to scale so the Crossbeam layout remains readable. Dashed lines show the hidden void through hollow segments. Station solver handoff and solid-to-hollow D-region checks remain future scope."
     )
 
 
@@ -4453,7 +4712,7 @@ def _loss_setting_defaults_from_state() -> dict[str, Any]:
                 DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
             ),
             "es_closure_required_mpa": st.session_state.get(
-                CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY, 0.0
+                CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY, DEFAULT_PRECAST_CLOSURE_STRENGTH_MPA
             ),
             "es_column_rows": st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY, []),
             "es_pair_sequence": st.session_state.get(CB_LOSS_ES_PAIR_SEQUENCE_KEY, []),
@@ -5157,7 +5416,7 @@ def _column_plan_section_preview_figure(row: Mapping[str, Any]) -> go.Figure:
         fig.add_annotation(
             x=0.0,
             y=axis_y - 0.055 * span,
-            text="Crossbeam axis s — along / parallel",
+            text="<b>CROSSBEAM AXIS, s</b>",
             showarrow=False,
             font={"size": 11},
         )
@@ -5202,8 +5461,9 @@ def _column_plan_section_preview_figure(row: Mapping[str, Any]) -> go.Figure:
         fig.update_yaxes(range=[-1.0, 1.0], visible=False, scaleanchor="x", scaleratio=1)
 
     fig.update_layout(
+        title={"text": f"{column_id} · Column plan section", "x": 0.5, "xanchor": "center", "font": {"size": 14}},
         height=270,
-        margin={"l": 12, "r": 12, "t": 8, "b": 8},
+        margin={"l": 12, "r": 12, "t": 34, "b": 8},
         showlegend=False,
         hovermode=False,
         plot_bgcolor="rgba(0,0,0,0)",
@@ -5865,7 +6125,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "Friction/Wobble and Anchorage Set preserve their accepted results. PTLOSS3B1B preserves the accepted construction/stressing-stage source model and adds a compact axis-aware graphical column-section preview while source-derived f_cgp, the stage solver, Pe/Pe_eff, and later losses remain locked.",
+        "Friction/Wobble and Anchorage Set preserve their accepted results. PTLOSS3B1C relocates member construction/support ownership to Section Builder and carries the same source into Segment Layout and Prestress Loss while source-derived f_cgp, the stage solver, Pe/Pe_eff, and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -6712,7 +6972,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     with elastic_shortening_tab:
         st.markdown("#### Elastic Shortening — construction/stressing-stage source foundation")
         st.caption(
-            "PTLOSS3B1B preserves the validated PTLOSS3A/PTLOSS3B1A source foundation and refines column-source review with a compact axis-aware plan-section preview. Primary/secondary prestress, contact analysis, f_cgp, Pe/Pe_eff, and later losses remain locked."
+            "PTLOSS3B1C preserves the validated PTLOSS3 foundation while moving member construction/support editing to Section Builder; Elastic Shortening consumes that source read-only. Primary/secondary prestress, contact analysis, f_cgp, Pe/Pe_eff, and later losses remain locked."
         )
 
         upstream_ready = bool(
@@ -6902,15 +7162,19 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         st.markdown("##### Construction / stressing-stage source model")
         st.caption(
-            "PTLOSS3B1B preserves the physical construction facts needed by the future limited 2D Portal-Frame stage solver. "
+            "PTLOSS3B1C reads the physical construction/support facts owned by Section Builder for the future limited 2D Portal-Frame stage solver. "
             "It does not yet calculate Primary/Secondary Prestress, contact reactions, or source-derived f_cgp."
         )
-        method_col, ratio_col = st.columns(2)
-        with method_col:
-            st.selectbox(
-                "Construction method",
-                options=list(CONSTRUCTION_METHOD_OPTIONS),
-                key=CB_LOSS_ES_CONSTRUCTION_METHOD_KEY,
+        _ensure_crossbeam_construction_support_source_state(length_m)
+        construction_method = str(
+            st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY) or CONSTRUCTION_METHOD_PRECAST
+        )
+        source_col, ratio_col = st.columns(2)
+        with source_col:
+            st.markdown("**Crossbeam construction type**")
+            st.info(
+                f"{construction_method} — edit member construction type and Column / support-line layout in "
+                "Sections → Section Builder → Crossbeam Construction & Support Configuration."
             )
         with ratio_col:
             st.number_input(
@@ -6928,197 +7192,43 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         crossbeam_fc_source = current_es_material_source.get("fc_mpa")
         if (
-            str(st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)) == CONSTRUCTION_METHOD_PRECAST
+            construction_method == CONSTRUCTION_METHOD_PRECAST
             and float(st.session_state.get(CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY, 0.0) or 0.0) <= 0.0
-            and crossbeam_fc_source is not None
         ):
-            st.session_state[CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY] = float(crossbeam_fc_source)
+            st.session_state[CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY] = DEFAULT_PRECAST_CLOSURE_STRENGTH_MPA
 
-        if str(st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)) == CONSTRUCTION_METHOD_PRECAST:
+        if construction_method == CONSTRUCTION_METHOD_PRECAST:
             st.number_input(
-                "Required joint / closure concrete strength at stressing (MPa)",
+                "Specified minimum joint / closure strength at stressing (MPa)",
                 min_value=0.0,
                 max_value=200.0,
                 step=0.5,
                 format="%.2f",
                 key=CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY,
                 help=(
-                    "Design/project requirement at stressing. Enter the specified minimum strength; actual field-test "
-                    "verification belongs to construction QA and is not a design-stage input."
+                    "Design/project requirement at stressing. Default 50 MPa is editable; actual field-test verification belongs "
+                    "to construction QA and is not a design-stage input."
                 ),
             )
             st.caption(
-                "Precast Segmental design-stage assumption: all segments are erected and the joint/closure concrete is required "
-                "to reach the adopted specified stressing strength before tendon stressing. Actual test acceptance is outside "
-                "this design-input page."
+                "Precast Segmental design-stage assumption: all segments are erected and the joint/closure concrete reaches the "
+                "adopted specified minimum strength before tendon stressing. Actual test acceptance is outside this design-input page."
             )
         else:
             st.caption(
-                "Cast-in-Place design-stage assumption: Crossbeam stressing occurs after the specified stressing-strength "
-                "criterion is reached while the continuous full-length falsework/support condition remains defined below."
+                "Cast-in-Place design-stage assumption: Crossbeam stressing occurs after the specified stressing-strength criterion "
+                "is reached while the continuous full-length falsework/support condition remains defined below."
             )
-
-        st.markdown("##### Column / support-line layout")
-        st.caption(
-            "Column plan dimensions are defined relative to the Crossbeam longitudinal axis s. "
-            "Btrans is transverse/normal to the Crossbeam axis; Blong is parallel to/along the Crossbeam axis. "
-            "Column Height is the vertical member height and is a separate input. Base assumption is FIXED."
-        )
 
         column_source_rows = canonical_column_stage_rows(
             st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
         )
-        if column_source_rows:
-            preview_key = "crossbeam_ptloss3b1a_column_preview_index"
-            valid_preview_indices = list(range(len(column_source_rows)))
-            if st.session_state.get(preview_key) not in valid_preview_indices:
-                st.session_state[preview_key] = 0
-            preview_controls, preview_graph = st.columns([0.30, 0.70], gap="medium")
-            with preview_controls:
-                selected_preview_index = st.selectbox(
-                    "Column plan-section preview",
-                    options=valid_preview_indices,
-                    format_func=lambda idx: (
-                        f"{column_source_rows[int(idx)].get('Column ID')} · "
-                        f"s={_finite_float(column_source_rows[int(idx)].get('Station s (m)')):.3f} m"
-                    ),
-                    key=preview_key,
-                    help="Select a column to preview its plan-section shape and axis-relative dimensions.",
-                )
-                selected_preview_row = column_source_rows[int(selected_preview_index)]
-                selected_shape = str(selected_preview_row.get("Shape") or "")
-                st.caption(
-                    "Axis convention: s = Crossbeam longitudinal axis; Btrans = normal to s; "
-                    "Blong = along / parallel to s."
-                )
-                st.caption(f"Selected shape: {selected_shape}")
-            with preview_graph:
-                st.plotly_chart(
-                    _column_plan_section_preview_figure(selected_preview_row),
-                    use_container_width=True,
-                    config={"displayModeBar": False, "displaylogo": False, "responsive": True},
-                )
-
-        column_revision = int(st.session_state.get("crossbeam_ptloss3b1_column_editor_revision", 0))
-        column_summary_rows = _ptloss3b1_column_summary_editor_rows(column_source_rows)
-        column_editor_key = f"crossbeam_ptloss3b1_column_layout_editor_{column_revision}"
-        st.data_editor(
-            pd.DataFrame(column_summary_rows),
-            num_rows="dynamic",
-            use_container_width=True,
-            hide_index=True,
-            key=column_editor_key,
-            on_change=_commit_ptloss3b1_column_summary_editor,
-            args=(column_editor_key, column_summary_rows, float(length_m)),
-            column_config={
-                "_Source Index": None,
-                "Column ID": st.column_config.TextColumn("Column ID", required=True),
-                "Station s (m)": st.column_config.NumberColumn(
-                    "Station s (m)", min_value=0.0, max_value=float(length_m), format="%.3f", required=True
-                ),
-                "Column Height (m)": st.column_config.NumberColumn(
-                    "Column Height — vertical (m)", min_value=0.0, format="%.3f", required=True
-                ),
-                "Shape": st.column_config.SelectboxColumn(
-                    "Section shape", options=list(COLUMN_SHAPE_OPTIONS), required=True
-                ),
-                "f'c (MPa)": st.column_config.NumberColumn(
-                    "Column f'c (MPa)", min_value=1.0, max_value=150.0, format="%.1f", required=True
-                ),
-            },
-        )
-
-        # Re-read canonical rows after any callback-driven summary edit.  Section
-        # dimensions are edited in shape-specific tables so non-applicable inputs
-        # are never exposed to the user.
-        column_source_rows = canonical_column_stage_rows(
-            st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
-        )
-        st.markdown("###### Column section geometry — inputs shown only when applicable")
+        column_ready_rows = column_stage_property_rows(column_source_rows, length_m=length_m)
+        column_ready_count = sum(str(row.get("Status")) == "READY" for row in column_ready_rows)
         st.caption(
-            "Rectangular sections use Btrans and Blong plus either Chamfer c or Fillet radius r. "
-            "Circular sections use Diameter only. Dormant values from other shapes are ignored by the geometry solver."
+            f"Column / support-line source: {len(column_source_rows)} column(s), {column_ready_count} geometry row(s) ready. "
+            "Geometry editing is owned by Section Builder; Elastic Shortening uses this source read-only."
         )
-
-        geometry_specs = (
-            (COLUMN_SHAPE_RECT_CHAMFER, "Rectangular — equal chamfer", "Chamfer c (mm)"),
-            (COLUMN_SHAPE_RECT_FILLET, "Rectangular — equal fillet", "Fillet radius r (mm)"),
-            (COLUMN_SHAPE_CIRCULAR, "Circular", "Diameter (mm)"),
-        )
-        for shape, heading, corner_label in geometry_specs:
-            geometry_rows = _ptloss3b1_column_geometry_editor_rows(column_source_rows, shape)
-            if not geometry_rows:
-                continue
-            st.markdown(f"**{heading}**")
-            geometry_key = (
-                f"crossbeam_ptloss3b1_column_geometry_{abs(hash(shape))}_{column_revision}"
-            )
-            config: dict[str, Any] = {
-                "_Source Index": None,
-                "Column ID": st.column_config.TextColumn("Column ID", disabled=True),
-            }
-            if shape == COLUMN_SHAPE_CIRCULAR:
-                config["Diameter (mm)"] = st.column_config.NumberColumn(
-                    "Diameter D (mm)", min_value=0.0, format="%.1f", required=True
-                )
-            else:
-                config["Btrans (mm)"] = st.column_config.NumberColumn(
-                    "Btrans — Transverse / Normal to Crossbeam axis (mm)",
-                    min_value=0.0,
-                    format="%.1f",
-                    required=True,
-                )
-                config["Blong (mm)"] = st.column_config.NumberColumn(
-                    "Blong — Along / Parallel to Crossbeam axis (mm)",
-                    min_value=0.0,
-                    format="%.1f",
-                    required=True,
-                )
-                config[corner_label] = st.column_config.NumberColumn(
-                    corner_label, min_value=0.0, format="%.1f", required=True
-                )
-            st.data_editor(
-                pd.DataFrame(geometry_rows),
-                num_rows="fixed",
-                use_container_width=True,
-                hide_index=True,
-                key=geometry_key,
-                on_change=_commit_ptloss3b1_column_geometry_editor,
-                args=(geometry_key, geometry_rows, float(length_m), shape),
-                disabled=["Column ID"],
-                column_config=config,
-            )
-
-        derived_column_rows = column_stage_property_rows(
-            st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
-        )
-        with st.expander("Derived column section / stiffness source", expanded=False):
-            st.caption(
-                "I_trans is about the transverse axis and is the column inertia relevant to in-plane portal-frame bending along s; "
-                "I_long is about the longitudinal Crossbeam axis."
-            )
-            st.dataframe(
-                pd.DataFrame(
-                    [
-                        {
-                            "Column": row.get("Column ID"),
-                            "s (m)": round(_finite_float(row.get("Station s (m)")), 3),
-                            "Shape": row.get("Shape"),
-                            "Height (m)": round(_finite_float(row.get("Height (m)")), 3),
-                            "Base": COLUMN_BASE_ASSUMPTION,
-                            "A (m²)": round(_finite_float(row.get("Area (m²)")), 5),
-                            "I_trans (m⁴)": round(_finite_float(row.get("I22 (m⁴)")), 6),
-                            "I_long (m⁴)": round(_finite_float(row.get("I33 (m⁴)")), 6),
-                            "Ec (MPa)": round(_finite_float(row.get("Ec (MPa)")), 0),
-                            "Status": row.get("Status"),
-                            "Issue": row.get("Issue"),
-                        }
-                        for row in derived_column_rows
-                    ]
-                ),
-                use_container_width=True,
-                hide_index=True,
-            )
 
         st.markdown("##### Temporary erection support / falsework at stressing")
         temp_support = temporary_support_source(length_m)
@@ -7202,7 +7312,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Stage solver",
                     "value": "LOCKED",
-                    "detail": "PTLOSS3B1B source model only",
+                    "detail": "PTLOSS3B1C source model only",
                     "status": "warning",
                 },
             ]
@@ -7212,7 +7322,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 for issue in stage_source_summary.get("issues", []):
                     st.warning(str(issue))
         st.caption(
-            "PTLOSS3B1B does not assume temporary support remains active after prestress camber develops. The future stage solver must treat the full-length support as compression-only contact and automatically release any location whose reaction would become tensile."
+            "PTLOSS3B1C does not assume temporary support remains active after prestress camber develops. The future stage solver must treat the full-length support as compression-only contact and automatically release any location whose reaction would become tensile."
         )
 
         if not current_es_group_summary.get("ready"):
@@ -7252,7 +7362,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         with st.expander("Calculation trace / QA — formula, stage source, and overrides", expanded=False):
             st.markdown("##### Code / methodology basis")
             st.write(
-                f"Published basis: **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B1B preserves the separate construction stressing-pair sequence for the future incremental stage solver."
+                f"Published basis: **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B1C preserves the separate construction stressing-pair sequence for the future incremental stage solver."
             )
             st.latex(r"\Delta f_{pES,avg}=\left(\frac{G-1}{2G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
             st.latex(r"\Delta f_{pES,g}=\left(\frac{G-g}{G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
@@ -7262,7 +7372,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
             st.markdown("##### Stage-stress source")
             st.warning(
-                "PTLOSS3B1B preserves the construction/stressing-stage source but still does not invent the Portal-Frame structural response. Source-derived f_cgp remains BLOCKED until the validated Primary/Secondary Prestress + gravity/contact stage solver is released. A manual f_cgp override below is QA-only and cannot release final effective prestress."
+                "PTLOSS3B1C preserves the construction/stressing-stage source but still does not invent the Portal-Frame structural response. Source-derived f_cgp remains BLOCKED until the validated Primary/Secondary Prestress + gravity/contact stage solver is released. A manual f_cgp override below is QA-only and cannot release final effective prestress."
             )
 
             st.checkbox(
@@ -7396,7 +7506,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                             if current_es_group_summary.get("ready")
                             else "PAIR SOURCE REVIEW"
                         ),
-                        "Feeds": "PTLOSS3B1B construction/stage source model only; Pe/Pe_eff remains locked",
+                        "Feeds": "PTLOSS3B1C construction/stage source model only; Pe/Pe_eff remains locked",
                     },
                     {
                         "Order": 5,

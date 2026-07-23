@@ -48,6 +48,12 @@ TEMP_SUPPORT_VERTICAL_MODEL = "RIGID VERTICAL CONTACT"
 
 DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO = 0.80
 DEFAULT_COLUMN_FC_MPA = 35.0
+DEFAULT_COLUMN_HEIGHT_M = 10.0
+DEFAULT_COLUMN_BTRANS_MM = 2000.0
+DEFAULT_COLUMN_BLONG_MM = 2000.0
+DEFAULT_COLUMN_CORNER_MM = 200.0
+DEFAULT_COLUMN_DIAMETER_MM = 2000.0
+DEFAULT_PRECAST_CLOSURE_STRENGTH_MPA = 50.0
 
 
 def _float(value: Any, default: float = 0.0) -> float:
@@ -95,30 +101,36 @@ def normalize_column_shape(value: Any) -> str:
 
 
 def default_column_stage_rows(length_m: float) -> list[dict[str, Any]]:
-    """Return the minimum two-column layout without inventing dimensions."""
+    """Return the practical two-column seed used by new Crossbeam projects.
+
+    C1 is centered at ``s=0`` and C2 at ``s=L``.  The plan-section defaults
+    follow the accepted Crossbeam source convention and remain fully editable.
+    Dormant shape values are retained so switching between rectangular and
+    circular preview shapes does not destroy the user's last dimensions.
+    """
 
     length = max(_float(length_m), 0.0)
     return [
         {
             "Column ID": "C1",
             "Station s (m)": 0.0,
-            "Height (m)": 0.0,
+            "Height (m)": DEFAULT_COLUMN_HEIGHT_M,
             "Shape": COLUMN_SHAPE_RECT_CHAMFER,
-            "Btrans (mm)": 0.0,
-            "Blong (mm)": 0.0,
-            "Corner (mm)": 0.0,
-            "Diameter (mm)": 0.0,
+            "Btrans (mm)": DEFAULT_COLUMN_BTRANS_MM,
+            "Blong (mm)": DEFAULT_COLUMN_BLONG_MM,
+            "Corner (mm)": DEFAULT_COLUMN_CORNER_MM,
+            "Diameter (mm)": DEFAULT_COLUMN_DIAMETER_MM,
             "f'c (MPa)": DEFAULT_COLUMN_FC_MPA,
         },
         {
             "Column ID": "C2",
             "Station s (m)": length,
-            "Height (m)": 0.0,
+            "Height (m)": DEFAULT_COLUMN_HEIGHT_M,
             "Shape": COLUMN_SHAPE_RECT_CHAMFER,
-            "Btrans (mm)": 0.0,
-            "Blong (mm)": 0.0,
-            "Corner (mm)": 0.0,
-            "Diameter (mm)": 0.0,
+            "Btrans (mm)": DEFAULT_COLUMN_BTRANS_MM,
+            "Blong (mm)": DEFAULT_COLUMN_BLONG_MM,
+            "Corner (mm)": DEFAULT_COLUMN_CORNER_MM,
+            "Diameter (mm)": DEFAULT_COLUMN_DIAMETER_MM,
             "f'c (MPa)": DEFAULT_COLUMN_FC_MPA,
         },
     ]

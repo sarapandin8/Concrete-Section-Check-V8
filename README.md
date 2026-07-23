@@ -1720,3 +1720,7 @@ Replaces the PTLOSS3 construction-source ASCII axis sketch with a compact, selec
 ## CROSSBEAM.PTLOSS3B1A — Construction Source UX & State Reliability
 
 Removes future field-test strength inputs from the design-stage Elastic Shortening source, replaces ambiguous column `B/H` dimensions with `Btrans` normal to the Crossbeam axis and `Blong` along the axis, separates shape-specific geometry inputs, and adds explicit callback-based persistence for column and stressing-pair sequence editors. Structural stage response, contact, `f_cgp`, and effective prestress remain locked. See `README_CROSSBEAM_PTLOSS3B1A.md`.
+
+## CROSSBEAM.PTLOSS3B1C — Construction/Support Source Relocation + Segment Elevation Overlay
+
+Moves Crossbeam construction type and Column/support-line geometry ownership to Section Builder, adds practical column/closure defaults, keeps Elastic Shortening read-only on that source, and overlays actual longitudinal support widths in Segment Layout without changing any prestress-loss or structural-stage solver equations. See `README_CROSSBEAM_PTLOSS3B1C.md`.

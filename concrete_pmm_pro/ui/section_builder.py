@@ -3047,6 +3047,20 @@ def _render_crossbeam_member_geometry_workspace(
         render_crossbeam_member_length_control()
 
 
+def _render_crossbeam_construction_support_workspace(settings: AnalysisModeSettings) -> None:
+    """Render member-level construction/support source in Section Builder only."""
+
+    if not is_portal_frame_crossbeam_workflow(settings):
+        return
+    from concrete_pmm_pro.ui.crossbeam_pages import (
+        CB_LENGTH_KEY,
+        render_crossbeam_construction_support_source_workspace,
+    )
+
+    length_m = float(st.session_state.get(CB_LENGTH_KEY, 20.0) or 20.0)
+    render_crossbeam_construction_support_source_workspace(length_m)
+
+
 def _build_geometry(
     preset: dict[str, Any],
     params: dict[str, Any],
@@ -3450,6 +3464,8 @@ def render_section_builder() -> None:
 
     with preview_col:
         _render_section_preview_panel(geometry, dimensions, label_mode, validation)
+
+    _render_crossbeam_construction_support_workspace(settings)
 
     if geometry is not None:
         with st.expander("Generated SectionGeometry"):

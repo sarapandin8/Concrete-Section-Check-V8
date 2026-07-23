@@ -28,6 +28,8 @@ from concrete_pmm_pro.crossbeam.transverse import (
     default_crossbeam_transverse_templates,
 )
 from concrete_pmm_pro.crossbeam.workflow import default_crossbeam_segment_rows
+from concrete_pmm_pro.crossbeam.construction_stage import default_column_stage_rows
+from concrete_pmm_pro.crossbeam.prestress_loss import CB_LOSS_ES_COLUMN_ROWS_KEY
 from concrete_pmm_pro.ui.crossbeam_pages import (
     CB_CROSS_SECTION_STATION_KEY,
     CB_LENGTH_KEY,
@@ -70,6 +72,7 @@ def _twenty_metre_state() -> dict[str, object]:
         CB_SEGMENT_REV_KEY: 4,
         CB_PROFILE_REV_KEY: 7,
         CB_RB_ZONE_REV_KEY: 2,
+        CB_LOSS_ES_COLUMN_ROWS_KEY: default_column_stage_rows(20.0),
     }
 
 
@@ -102,6 +105,7 @@ def test_pt1c_scale_policy_moves_all_longitudinal_station_sources_together() -> 
     assert {row["s/L"] for row in state[CB_PROFILE_ROWS_KEY]} == {0.0, 0.5, 1.0}
     assert [row["s_end_m"] for row in state[CB_RB_ZONE_ROWS_KEY]][-1] == 30.0
     assert state[CB_CROSS_SECTION_STATION_KEY] == 7.5
+    assert [row["Station s (m)"] for row in state[CB_LOSS_ES_COLUMN_ROWS_KEY]] == [0.0, 30.0]
     assert state[CB_RB_SEGMENT_SIGNATURE_KEY] == segment_signature(
         state[CB_SEGMENT_ROWS_KEY]
     )
@@ -127,6 +131,7 @@ def test_pt1c_keep_policy_changes_l_but_preserves_absolute_station_inputs() -> N
         row["s (m)"] for row in state[CB_PROFILE_ROWS_KEY]
     ]
     original_zones = deepcopy(state[CB_RB_ZONE_ROWS_KEY])
+    original_columns = deepcopy(state[CB_LOSS_ES_COLUMN_ROWS_KEY])
 
     notice = _apply_crossbeam_member_length_change(
         state, 30.0, CB_LENGTH_POLICY_KEEP
@@ -136,6 +141,7 @@ def test_pt1c_keep_policy_changes_l_but_preserves_absolute_station_inputs() -> N
     assert state[CB_SEGMENT_ROWS_KEY] == original_segments
     assert [row["s (m)"] for row in state[CB_PROFILE_ROWS_KEY]] == original_profile_stations
     assert state[CB_RB_ZONE_ROWS_KEY] == original_zones
+    assert state[CB_LOSS_ES_COLUMN_ROWS_KEY] == original_columns
     assert state[CB_CROSS_SECTION_STATION_KEY] == 5.0
     assert state[CB_RB_ZONE_REV_KEY] == 2
     assert notice["scaled"] is False

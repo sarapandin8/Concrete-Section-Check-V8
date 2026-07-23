@@ -405,29 +405,27 @@ def test_ptloss3b1a_legacy_column_dimensions_migrate_to_btrans_blong() -> None:
     assert "B local-2 (mm)" not in rows[0]
     assert "H local-3 (mm)" not in rows[0]
 
-def test_ptloss3b1_ui_exposes_construction_columns_contact_and_pair_sequence_without_stage_solver() -> None:
+def test_ptloss3b1c_relocates_member_construction_and_column_source_to_section_builder() -> None:
     from pathlib import Path
 
-    source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
-    elastic_block = source.split("with elastic_shortening_tab:", maxsplit=1)[1].split(
+    crossbeam_source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
+    section_builder_source = Path("concrete_pmm_pro/ui/section_builder.py").read_text(encoding="utf-8")
+    elastic_block = crossbeam_source.split("with elastic_shortening_tab:", maxsplit=1)[1].split(
         "with time_dependent_tab:", maxsplit=1
     )[0]
-    assert "Construction / stressing-stage source model" in elastic_block
-    assert "Rectangular — Equal Chamfer 4 Corners" not in elastic_block  # options come from scoped module
-    assert "Column / support-line layout" in elastic_block
-    assert "Btrans" in elastic_block and "Transverse / Normal to Crossbeam axis" in elastic_block
-    assert "Blong" in elastic_block and "Along / Parallel to Crossbeam axis" in elastic_block
-    assert "Column plan-section preview" in elastic_block
-    assert "PLAN VIEW\n" not in elastic_block
-    assert "_column_plan_section_preview_figure" in source
-    assert "Verified Crossbeam strength at stressing" not in elastic_block
-    assert "Verified joint / closure strength at stressing" not in elastic_block
-    assert "Base assumption is FIXED" in elastic_block
+    assert 'st.markdown("##### Column / support-line layout")' not in elastic_block
+    assert "Column plan-section preview" not in elastic_block
+    assert 'st.selectbox(\n                "Construction method"' not in elastic_block
+    assert "Geometry editing is owned by Section Builder" in elastic_block
     assert "COMPRESSION-ONLY" in elastic_block
-    assert "Lift-off" in elastic_block and "AUTOMATIC" in elastic_block
     assert "Stressing pair sequence" in elastic_block
     assert "Stage solver" in elastic_block and "LOCKED" in elastic_block
-    assert "source-derived f_cgp remains blocked" in elastic_block.lower()
+    assert "render_crossbeam_construction_support_source_workspace" in section_builder_source
+    assert "_render_crossbeam_construction_support_workspace(settings)" in section_builder_source
+    assert "Crossbeam Construction & Support Configuration" in crossbeam_source
+    assert "Btrans — Normal to Crossbeam axis" in crossbeam_source
+    assert "Blong — Along Crossbeam axis" in crossbeam_source
+
 
 
 def test_ptloss3b1b_column_plan_preview_is_compact_and_axis_aware() -> None:
@@ -447,7 +445,7 @@ def test_ptloss3b1b_column_plan_preview_is_compact_and_axis_aware() -> None:
     texts = " ".join(str(item.text or "") for item in rect.layout.annotations)
     assert "Btrans = 1,200 mm" in texts
     assert "Blong = 1,800 mm" in texts
-    assert "Crossbeam axis s" in texts
+    assert "CROSSBEAM AXIS, s" in texts
     assert "Chamfer c = 150 mm" in texts
 
     circle = _column_plan_section_preview_figure(
@@ -460,4 +458,72 @@ def test_ptloss3b1b_column_plan_preview_is_compact_and_axis_aware() -> None:
     assert circle.layout.height == 270
     circle_texts = " ".join(str(item.text or "") for item in circle.layout.annotations)
     assert "D = 1,500 mm" in circle_texts
-    assert "Crossbeam axis s" in circle_texts
+    assert "CROSSBEAM AXIS, s" in circle_texts
+
+
+def test_ptloss3b1c_default_columns_and_closure_seed_match_adopted_project_defaults() -> None:
+    from concrete_pmm_pro.crossbeam.construction_stage import (
+        DEFAULT_PRECAST_CLOSURE_STRENGTH_MPA,
+        default_column_stage_rows,
+    )
+    from concrete_pmm_pro.crossbeam.prestress_loss import default_crossbeam_prestress_loss_settings
+
+    rows = default_column_stage_rows(20.0)
+    assert len(rows) == 2
+    assert rows[0]["Station s (m)"] == 0.0
+    assert rows[1]["Station s (m)"] == 20.0
+    for row in rows:
+        assert row["Height (m)"] == 10.0
+        assert row["Btrans (mm)"] == 2000.0
+        assert row["Blong (mm)"] == 2000.0
+        assert row["Corner (mm)"] == 200.0
+        assert row["Diameter (mm)"] == 2000.0
+        assert row["f'c (MPa)"] == 35.0
+    settings = default_crossbeam_prestress_loss_settings()
+    assert settings["es_closure_required_mpa"] == DEFAULT_PRECAST_CLOSURE_STRENGTH_MPA == 50.0
+
+
+def test_ptloss3b1c_segment_elevation_uses_real_column_width_along_s() -> None:
+    from concrete_pmm_pro.ui.crossbeam_pages import _elevation_figure
+
+    segments = [
+        {
+            "Segment": "S1",
+            "x_start_m": 0.0,
+            "x_end_m": 20.0,
+            "Section ID": "CB-S01",
+            "Section name": "Solid",
+            "Section role": "Solid",
+            "Section type / preset": "PC Crossbeam — Rectangular Solid with Bottom Fillets",
+        }
+    ]
+    columns = [
+        {
+            "Column ID": "C1",
+            "Station s (m)": 5.0,
+            "Height (m)": 10.0,
+            "Shape": "Rectangular — Equal Chamfer 4 Corners",
+            "Btrans (mm)": 3000.0,
+            "Blong (mm)": 2000.0,
+            "Corner (mm)": 200.0,
+            "Diameter (mm)": 2000.0,
+            "f'c (MPa)": 35.0,
+        },
+        {
+            "Column ID": "C2",
+            "Station s (m)": 15.0,
+            "Height (m)": 10.0,
+            "Shape": "Circular",
+            "Diameter (mm)": 2000.0,
+            "f'c (MPa)": 35.0,
+        },
+    ]
+    fig = _elevation_figure(segments, 20.0, columns)
+    rects = [shape for shape in fig.layout.shapes if getattr(shape, "type", None) == "rect"]
+    support_rects = [shape for shape in rects if float(shape.y0) < 0.0]
+    assert len(support_rects) == 2
+    widths = sorted(round(float(shape.x1) - float(shape.x0), 6) for shape in support_rects)
+    assert widths == [2.0, 2.0]
+    annotation_text = " ".join(str(a.text or "") for a in fig.layout.annotations)
+    assert "C1" in annotation_text and "Blong 2.000 m" in annotation_text
+    assert "C2" in annotation_text and "Ø2.000 m" in annotation_text

@@ -17,6 +17,7 @@ from concrete_pmm_pro.crossbeam.tendon_analysis import tendon_force_source_rows
 from concrete_pmm_pro.crossbeam.construction_stage import (
     CONSTRUCTION_METHOD_PRECAST,
     DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
+    DEFAULT_PRECAST_CLOSURE_STRENGTH_MPA,
     normalize_construction_method,
 )
 
@@ -113,7 +114,7 @@ def default_crossbeam_prestress_loss_settings() -> dict[str, Any]:
         "es_eci_override_mpa": DEFAULT_ES_ECI_OVERRIDE_MPA,
         "es_construction_method": CONSTRUCTION_METHOD_PRECAST,
         "es_stressing_strength_ratio": DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
-        "es_closure_required_mpa": 0.0,
+        "es_closure_required_mpa": DEFAULT_PRECAST_CLOSURE_STRENGTH_MPA,
         "es_column_rows": [],
         "es_pair_sequence": [],
     }
