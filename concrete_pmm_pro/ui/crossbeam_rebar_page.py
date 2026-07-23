@@ -70,6 +70,7 @@ from concrete_pmm_pro.crossbeam.rebar_persistence import (
     CB_RB_PREVIEW_SEGMENT_KEY,
     CB_RB_PREVIEW_ZONE_KEY,
     CB_RB_PROJECT_LOAD_VALIDATION_KEY,
+    CB_RB_MIG1_ROLE_REPAIR_DONE_KEY,
     CB_RB_SEGMENT_SIGNATURE_KEY,
     CB_RB_SUBVIEW_KEY,
     CB_RB_TEMPLATE_REV_KEY,
@@ -78,6 +79,8 @@ from concrete_pmm_pro.crossbeam.rebar_persistence import (
     CB_RB_ZONE_ROWS_KEY,
     CB_TR_PREVIEW_MODE_KEY,
     CB_TR_TEMPLATE_ROWS_KEY,
+    repair_migrated_zone_template_compatibility,
+    validate_loaded_crossbeam_rebar_state,
 )
 from concrete_pmm_pro.crossbeam.tendon import (
     tendon_continuity_audit_rows,
@@ -275,6 +278,79 @@ def _pt_continuity_review_from_state(
     }
 
 
+def _reconcile_migrated_rebar_assignments_once(
+    segment_rows: list[dict[str, Any]],
+) -> None:
+    """Repair one migrated-project role mismatch against the current Segment source.
+
+    Project restore normally receives the canonical Segment Layout.  This one-time
+    page-entry reconciliation also covers older files/session transitions where
+    legacy Rebar migration ran before the final Section-ID-derived Solid/Hollow
+    roles were available.  Compatible custom assignments are preserved; only
+    missing/incompatible template references are remapped.
+    """
+
+    if st.session_state.get(CB_RB_MIG1_ROLE_REPAIR_DONE_KEY):
+        return
+    validation = st.session_state.get(CB_RB_PROJECT_LOAD_VALIDATION_KEY)
+    if not isinstance(validation, Mapping) or not bool(validation.get("migrated")):
+        st.session_state[CB_RB_MIG1_ROLE_REPAIR_DONE_KEY] = True
+        return
+
+    longitudinal = canonical_rebar_templates(
+        _records(st.session_state.get(CB_RB_TEMPLATE_ROWS_KEY))
+        or default_crossbeam_rebar_templates()
+    )
+    transverse = canonical_transverse_templates(
+        _records(st.session_state.get(CB_TR_TEMPLATE_ROWS_KEY))
+        or default_crossbeam_transverse_templates()
+    )
+    zones = canonical_rebar_zones(_records(st.session_state.get(CB_RB_ZONE_ROWS_KEY)))
+    repaired, longitudinal_repairs, transverse_repairs = repair_migrated_zone_template_compatibility(
+        zones,
+        segment_rows,
+        longitudinal,
+        transverse,
+    )
+
+    if longitudinal_repairs or transverse_repairs:
+        st.session_state[CB_RB_ZONE_ROWS_KEY] = repaired
+        st.session_state[CB_RB_ZONE_REV_KEY] = int(
+            st.session_state.get(CB_RB_ZONE_REV_KEY, 0) or 0
+        ) + 1
+        st.session_state[CB_RB_SEGMENT_SIGNATURE_KEY] = segment_signature(segment_rows)
+        load_errors = [
+            str(message)
+            for message in validation.get("errors", [])
+            if "must be a JSON object" in str(message)
+        ]
+        refreshed = validate_loaded_crossbeam_rebar_state(
+            longitudinal,
+            transverse,
+            repaired,
+            segment_rows,
+            load_errors=load_errors,
+        )
+        refreshed["migrated"] = True
+        notes = [
+            str(message)
+            for message in validation.get("migration_notes", [])
+            if str(message).strip()
+        ]
+        if longitudinal_repairs:
+            notes.append(
+                f"Reconciled {longitudinal_repairs} migrated longitudinal Zone assignment(s) with the current Segment Solid/Hollow role."
+            )
+        if transverse_repairs:
+            notes.append(
+                f"Reconciled {transverse_repairs} migrated transverse Zone assignment(s) with the current Segment Solid/Hollow role."
+            )
+        refreshed["migration_notes"] = list(dict.fromkeys(notes))
+        st.session_state[CB_RB_PROJECT_LOAD_VALIDATION_KEY] = refreshed
+
+    st.session_state[CB_RB_MIG1_ROLE_REPAIR_DONE_KEY] = True
+
+
 def _ensure_rb1_state(segment_rows: list[dict[str, Any]]) -> None:
     ensure_crossbeam_transverse_state()
     if CB_RB_TEMPLATE_ROWS_KEY not in st.session_state:
@@ -306,6 +382,7 @@ def _ensure_rb1_state(segment_rows: list[dict[str, Any]]) -> None:
         if changed:
             st.session_state[CB_RB_ZONE_ROWS_KEY] = migrated
     st.session_state.setdefault(CB_RB_ZONE_REV_KEY, 0)
+    _reconcile_migrated_rebar_assignments_once(segment_rows)
 
 
 def _render_project_load_validation() -> None:

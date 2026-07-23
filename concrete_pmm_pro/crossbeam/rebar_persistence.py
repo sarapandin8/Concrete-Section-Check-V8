@@ -12,6 +12,8 @@ from collections.abc import Mapping, MutableMapping
 from typing import Any
 
 from concrete_pmm_pro.crossbeam.rebar import (
+    RB_HOLLOW_MIN,
+    RB_SOLID_COLUMN,
     canonical_rebar_templates,
     canonical_rebar_zones,
     default_crossbeam_rebar_templates,
@@ -48,6 +50,7 @@ CB_TR_TEMPLATE_REV_KEY = "crossbeam_tr1_template_editor_revision"
 CB_TR_PREVIEW_MODE_KEY = "crossbeam_tr1_preview_mode"
 
 CB_RB_PROJECT_LOAD_VALIDATION_KEY = "crossbeam_rb_persist1_load_validation"
+CB_RB_MIG1_ROLE_REPAIR_DONE_KEY = "crossbeam_rb_mig1_role_repair_done"
 
 RB_SUBVIEW_OPTIONS = {
     "Templates",
@@ -283,6 +286,107 @@ def _segment_role(segment: Mapping[str, Any]) -> str:
     return role if role in {"Solid", "Hollow"} else "Solid"
 
 
+def _default_longitudinal_template_id_for_role(
+    role: str,
+    longitudinal_templates: list[dict[str, Any]],
+) -> str:
+    """Return a role-compatible longitudinal template without unsafe fallback.
+
+    Legacy migration may encounter stale Zone assignments created before the
+    current Segment Layout/Section Library role was available.  Preserve any
+    already-compatible assignment.  When repair is required, prefer the
+    accepted default template for the resolved Segment role, otherwise use the
+    first active role-compatible project template.  Never fall back to an
+    incompatible template merely because it is the first active row.
+    """
+
+    role_text = str(role or "Solid").strip().title()
+    if role_text not in {"Solid", "Hollow"}:
+        role_text = "Solid"
+    active = list(template_map(longitudinal_templates).values())
+    preferred = RB_HOLLOW_MIN if role_text == "Hollow" else RB_SOLID_COLUMN
+    if any(str(row.get("Template ID") or "") == preferred for row in active):
+        return preferred
+    compatible = [
+        row
+        for row in active
+        if str(row.get("Applicable role") or "Any").strip().title() in {role_text, "Any"}
+    ]
+    return str(compatible[0].get("Template ID") or "") if compatible else ""
+
+
+def repair_migrated_zone_template_compatibility(
+    zones: list[dict[str, Any]],
+    segment_rows: list[dict[str, Any]],
+    longitudinal_templates: list[dict[str, Any]],
+    transverse_templates: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Repair only incompatible legacy/migrated Zone-template references.
+
+    The current Segment Layout + Section Library is the geometry source of
+    truth.  Compatible custom legacy assignments are preserved byte-for-byte at
+    the template-ID level; only missing/incompatible references are remapped.
+    If no compatible project template exists, the original reference is left in
+    place so validation reports REVIEW instead of silently substituting an
+    incompatible fallback.
+    """
+
+    segment_by_id = {
+        str(row.get("Segment") or "").strip(): row for row in _records(segment_rows)
+    }
+    longitudinal_map = template_map(longitudinal_templates)
+    transverse_map = transverse_template_map(transverse_templates)
+    repaired: list[dict[str, Any]] = []
+    longitudinal_repairs = 0
+    transverse_repairs = 0
+
+    for source in canonical_rebar_zones(zones):
+        row = dict(source)
+        segment = segment_by_id.get(str(row.get("Segment") or "").strip(), {})
+        role = _segment_role(segment)
+
+        longitudinal_id = str(
+            row.get("Longitudinal template") or row.get("Rebar template") or ""
+        ).strip()
+        longitudinal = longitudinal_map.get(longitudinal_id)
+        longitudinal_role = (
+            str(longitudinal.get("Applicable role") or "Any").strip().title()
+            if longitudinal
+            else ""
+        )
+        if longitudinal is None or longitudinal_role not in {role, "Any"}:
+            replacement = _default_longitudinal_template_id_for_role(
+                role, longitudinal_templates
+            )
+            if replacement:
+                row["Rebar template"] = replacement
+                row["Longitudinal template"] = replacement
+                longitudinal_repairs += 1
+
+        transverse_id = str(row.get("Transverse template") or "").strip()
+        transverse = transverse_map.get(transverse_id)
+        transverse_role = (
+            str(transverse.get("Applicable role") or "Any").strip().title()
+            if transverse
+            else ""
+        )
+        if transverse is None or transverse_role not in {role, "Any"}:
+            replacement = default_transverse_template_id(role, transverse_templates)
+            replacement_row = transverse_map.get(replacement)
+            replacement_role = (
+                str(replacement_row.get("Applicable role") or "Any").strip().title()
+                if replacement_row
+                else ""
+            )
+            if replacement and replacement_role in {role, "Any"}:
+                row["Transverse template"] = replacement
+                transverse_repairs += 1
+
+        repaired.append(row)
+
+    return canonical_rebar_zones(repaired), longitudinal_repairs, transverse_repairs
+
+
 def _fill_legacy_transverse_references(
     zones: list[dict[str, Any]],
     segment_rows: list[dict[str, Any]],
@@ -419,6 +523,7 @@ def restore_crossbeam_rebar_project_state(
         CB_TR_PREVIEW_MODE_KEY,
     ):
         session_state.pop(key, None)
+    session_state.pop(CB_RB_MIG1_ROLE_REPAIR_DONE_KEY, None)
 
     if block is None and not segments:
         session_state.pop(CB_RB_PROJECT_LOAD_VALIDATION_KEY, None)
@@ -457,6 +562,20 @@ def restore_crossbeam_rebar_project_state(
         if filled_count:
             migration_notes.append(
                 f"Added {filled_count} missing Transverse Template reference(s) using each Segment role."
+            )
+        zones, longitudinal_repairs, transverse_repairs = repair_migrated_zone_template_compatibility(
+            zones,
+            segments,
+            longitudinal,
+            transverse,
+        )
+        if longitudinal_repairs:
+            migration_notes.append(
+                f"Repaired {longitudinal_repairs} legacy longitudinal Zone assignment(s) to match the current Segment Solid/Hollow role."
+            )
+        if transverse_repairs:
+            migration_notes.append(
+                f"Repaired {transverse_repairs} legacy transverse Zone assignment(s) to match the current Segment Solid/Hollow role."
             )
 
     session_state[CB_RB_TEMPLATE_ROWS_KEY] = longitudinal

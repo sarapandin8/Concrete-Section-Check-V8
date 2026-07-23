@@ -1728,3 +1728,6 @@ Moves Crossbeam construction type and Column/support-line geometry ownership to 
 ## CROSSBEAM.PTLOSS3B1D — Support Geometry QA, Column Axis Lock & Segment-Layout State Reliability
 
 Hardens Crossbeam Segment Layout first-edit persistence and makes Section ID the single assignment source with automatic read-only Section name/Role/Preset metadata; explicitly locks the future Portal-Frame bending inertia to `I⊥s`, adds Column/support footprint compatibility QA against Solid/Hollow segment roles, and moves member construction/support sources ahead of section-specific geometry in Section Builder. No prestress-loss or structural-stage solver is released or changed. See `README_CROSSBEAM_PTLOSS3B1D.md`.
+
+### CROSSBEAM.RB-MIG1
+Hardened legacy Crossbeam Rebar migration so migrated Segment/Zone assignments are reconciled once against the canonical Section-ID-derived Solid/Hollow roles, preserving compatible custom assignments and blocking unsafe incompatible fallbacks.

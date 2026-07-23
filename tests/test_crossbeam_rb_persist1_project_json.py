@@ -5,6 +5,7 @@ import json
 from concrete_pmm_pro.crossbeam.rebar import (
     RB_HOLLOW_MIN,
     RB_SOLID_ANCHORAGE,
+    RB_SOLID_COLUMN,
     canonical_rebar_templates,
     canonical_rebar_zones,
     default_crossbeam_rebar_templates,
@@ -29,6 +30,8 @@ from concrete_pmm_pro.crossbeam.rebar_persistence import (
     CROSSBEAM_REBAR_LEGACY_METADATA_KEYS,
     CROSSBEAM_REBAR_METADATA_KEY,
     CROSSBEAM_REBAR_SCHEMA_VERSION,
+    repair_migrated_zone_template_compatibility,
+    validate_loaded_crossbeam_rebar_state,
 )
 from concrete_pmm_pro.crossbeam.section_library import (
     CB_SECLIB_ACTIVE_ID_KEY,
@@ -40,6 +43,7 @@ from concrete_pmm_pro.crossbeam.section_library import (
 from concrete_pmm_pro.crossbeam.transverse import (
     TR_HOLLOW_MIN,
     TR_SOLID_ANCHORAGE,
+    TR_SOLID_COLUMN,
     canonical_transverse_templates,
     default_crossbeam_transverse_templates,
 )
@@ -290,3 +294,95 @@ def test_post_load_validation_preserves_and_reports_unresolved_template_ids() ->
     assert validation["migrated"] is False
     assert any("RB-MISSING" in message and "does not resolve" in message for message in validation["errors"])
     assert any("TR-MISSING" in message and "does not resolve" in message for message in validation["errors"])
+
+
+def test_mig1_repairs_stale_solid_zone_templates_against_current_hollow_segment_roles() -> None:
+    _source, segments = _crossbeam_geometry_state()
+    longitudinal = default_crossbeam_rebar_templates()
+    transverse = default_crossbeam_transverse_templates()
+
+    # Reproduce the legacy-session failure mode: Zone rows were seeded while
+    # every Segment was temporarily interpreted as Solid, then the canonical
+    # Section-ID-derived roles resolved to the current mixed Solid/Hollow layout.
+    stale_solid_segments = [dict(row, **{"Section role": "Solid"}) for row in segments]
+    stale_zones = default_crossbeam_rebar_zones(
+        stale_solid_segments, longitudinal, transverse
+    )
+    assert all(row["Longitudinal template"] == RB_SOLID_COLUMN for row in stale_zones)
+    assert all(row["Transverse template"] == TR_SOLID_COLUMN for row in stale_zones)
+
+    repaired, long_count, trans_count = repair_migrated_zone_template_compatibility(
+        stale_zones, segments, longitudinal, transverse
+    )
+
+    hollow_ids = {
+        str(row["Segment"])
+        for row in segments
+        if str(row.get("Section role")) == "Hollow"
+    }
+    solid_ids = {
+        str(row["Segment"])
+        for row in segments
+        if str(row.get("Section role")) == "Solid"
+    }
+    by_segment = {str(row["Segment"]): row for row in repaired}
+    assert long_count == len(hollow_ids)
+    assert trans_count == len(hollow_ids)
+    for segment_id in hollow_ids:
+        assert by_segment[segment_id]["Longitudinal template"] == RB_HOLLOW_MIN
+        assert by_segment[segment_id]["Rebar template"] == RB_HOLLOW_MIN
+        assert by_segment[segment_id]["Transverse template"] == TR_HOLLOW_MIN
+    for segment_id in solid_ids:
+        assert by_segment[segment_id]["Longitudinal template"] == RB_SOLID_COLUMN
+        assert by_segment[segment_id]["Transverse template"] == TR_SOLID_COLUMN
+
+    validation = validate_loaded_crossbeam_rebar_state(
+        longitudinal, transverse, repaired, segments
+    )
+    assert validation["status"] == "READY"
+    assert validation["references_resolved"] is True
+    assert not any("but" in str(error) and "is Hollow" in str(error) for error in validation["errors"])
+
+
+def test_mig1_preserves_compatible_custom_template_assignments() -> None:
+    _source, segments = _crossbeam_geometry_state()
+    longitudinal, transverse, zones = _renamed_input_model(segments)
+    before = canonical_rebar_zones(zones)
+
+    repaired, long_count, trans_count = repair_migrated_zone_template_compatibility(
+        before, segments, longitudinal, transverse
+    )
+
+    assert long_count == 0
+    assert trans_count == 0
+    assert repaired == before
+
+
+def test_mig1_does_not_fallback_to_incompatible_template_when_role_has_no_match() -> None:
+    _source, segments = _crossbeam_geometry_state()
+    longitudinal = [
+        row for row in default_crossbeam_rebar_templates()
+        if str(row.get("Applicable role")) == "Solid"
+    ]
+    transverse = [
+        row for row in default_crossbeam_transverse_templates()
+        if str(row.get("Applicable role")) == "Solid"
+    ]
+    stale_solid_segments = [dict(row, **{"Section role": "Solid"}) for row in segments]
+    stale_zones = default_crossbeam_rebar_zones(
+        stale_solid_segments, longitudinal, transverse
+    )
+
+    repaired, long_count, trans_count = repair_migrated_zone_template_compatibility(
+        stale_zones, segments, longitudinal, transverse
+    )
+
+    # No Hollow-compatible project template exists, so MIG1 must leave the
+    # mismatch visible for validation rather than silently reusing a Solid row.
+    assert long_count == 0
+    assert trans_count == 0
+    validation = validate_loaded_crossbeam_rebar_state(
+        longitudinal, transverse, repaired, segments
+    )
+    assert validation["status"] == "REVIEW REQUIRED"
+    assert any("is for Solid" in str(error) and "is Hollow" in str(error) for error in validation["errors"])
