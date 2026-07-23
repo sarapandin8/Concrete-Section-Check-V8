@@ -18,7 +18,7 @@ from collections.abc import Iterable, Mapping, MutableMapping
 from datetime import datetime
 import hashlib
 import json
-from math import isfinite
+from math import cos, isfinite, pi, sin
 from typing import Any
 
 import pandas as pd
@@ -4998,6 +4998,219 @@ def _anchorage_force_profile_key_points(
     return output
 
 
+
+def _column_plan_section_preview_figure(row: Mapping[str, Any]) -> go.Figure:
+    """Return a compact plan-section preview for one Crossbeam column source row.
+
+    Plot axes deliberately follow the engineering input convention used by the
+    Crossbeam construction-stage source: horizontal is the Crossbeam
+    longitudinal ``s`` direction (``Blong``), while vertical is transverse / normal
+    to ``s`` (``Btrans``).  The figure is a UI preview only; geometry properties
+    continue to come from the scoped construction-stage geometry module.
+    """
+
+    shape = str(row.get("Shape") or COLUMN_SHAPE_RECT_CHAMFER)
+    btrans = max(_finite_float(row.get("Btrans (mm)")), 0.0)
+    blong = max(_finite_float(row.get("Blong (mm)")), 0.0)
+    corner = max(_finite_float(row.get("Corner (mm)")), 0.0)
+    diameter = max(_finite_float(row.get("Diameter (mm)")), 0.0)
+    column_id = str(row.get("Column ID") or "Column")
+
+    fig = go.Figure()
+    outline_x: list[float] = []
+    outline_y: list[float] = []
+    dimension_text = ""
+    corner_text = ""
+
+    if shape == COLUMN_SHAPE_CIRCULAR and diameter > 0.0:
+        radius = diameter / 2.0
+        for index in range(73):
+            theta = 2.0 * pi * index / 72.0
+            outline_x.append(radius * cos(theta))
+            outline_y.append(radius * sin(theta))
+        half_x = half_y = radius
+        dimension_text = f"D = {diameter:,.0f} mm"
+    elif shape in (COLUMN_SHAPE_RECT_CHAMFER, COLUMN_SHAPE_RECT_FILLET) and btrans > 0.0 and blong > 0.0:
+        half_x = blong / 2.0
+        half_y = btrans / 2.0
+        corner_use = min(corner, 0.499999 * min(btrans, blong))
+        if shape == COLUMN_SHAPE_RECT_CHAMFER:
+            c = corner_use
+            outline_x = [
+                -half_x + c,
+                half_x - c,
+                half_x,
+                half_x,
+                half_x - c,
+                -half_x + c,
+                -half_x,
+                -half_x,
+                -half_x + c,
+            ]
+            outline_y = [
+                -half_y,
+                -half_y,
+                -half_y + c,
+                half_y - c,
+                half_y,
+                half_y,
+                half_y - c,
+                -half_y + c,
+                -half_y,
+            ]
+            corner_text = f"Chamfer c = {corner:,.0f} mm"
+        else:
+            r = corner_use
+            if r <= 0.0:
+                outline_x = [-half_x, half_x, half_x, -half_x, -half_x]
+                outline_y = [-half_y, -half_y, half_y, half_y, -half_y]
+            else:
+                centers = (
+                    (half_x - r, half_y - r, 0.0, pi / 2.0),
+                    (-half_x + r, half_y - r, pi / 2.0, pi),
+                    (-half_x + r, -half_y + r, pi, 3.0 * pi / 2.0),
+                    (half_x - r, -half_y + r, 3.0 * pi / 2.0, 2.0 * pi),
+                )
+                for cx, cy, start, end in centers:
+                    for index in range(10):
+                        theta = start + (end - start) * index / 9.0
+                        outline_x.append(cx + r * cos(theta))
+                        outline_y.append(cy + r * sin(theta))
+                outline_x.append(outline_x[0])
+                outline_y.append(outline_y[0])
+            corner_text = f"Fillet r = {corner:,.0f} mm"
+        dimension_text = f"Blong = {blong:,.0f} mm"
+    else:
+        half_x = half_y = 1.0
+
+    if outline_x and outline_y:
+        fig.add_trace(
+            go.Scatter(
+                x=outline_x,
+                y=outline_y,
+                mode="lines",
+                fill="toself",
+                line={"width": 2.4},
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+        span = max(2.0 * half_x, 2.0 * half_y, 1.0)
+        dim_offset = 0.12 * span
+        tick = 0.035 * span
+
+        if shape == COLUMN_SHAPE_CIRCULAR:
+            y_dim = half_y + dim_offset
+            fig.add_shape(type="line", x0=-half_x, x1=half_x, y0=y_dim, y1=y_dim, line={"width": 1.4})
+            fig.add_shape(type="line", x0=-half_x, x1=-half_x, y0=y_dim - tick, y1=y_dim + tick, line={"width": 1.4})
+            fig.add_shape(type="line", x0=half_x, x1=half_x, y0=y_dim - tick, y1=y_dim + tick, line={"width": 1.4})
+            fig.add_annotation(x=0.0, y=y_dim + 0.035 * span, text=dimension_text, showarrow=False, font={"size": 12})
+        else:
+            # Blong is horizontal because it is parallel to the Crossbeam s-axis.
+            y_dim = half_y + dim_offset
+            fig.add_shape(type="line", x0=-half_x, x1=half_x, y0=y_dim, y1=y_dim, line={"width": 1.4})
+            fig.add_shape(type="line", x0=-half_x, x1=-half_x, y0=y_dim - tick, y1=y_dim + tick, line={"width": 1.4})
+            fig.add_shape(type="line", x0=half_x, x1=half_x, y0=y_dim - tick, y1=y_dim + tick, line={"width": 1.4})
+            fig.add_annotation(x=0.0, y=y_dim + 0.035 * span, text=dimension_text, showarrow=False, font={"size": 12})
+
+            # Btrans is vertical in plan because it is normal to the Crossbeam s-axis.
+            x_dim = -half_x - dim_offset
+            fig.add_shape(type="line", x0=x_dim, x1=x_dim, y0=-half_y, y1=half_y, line={"width": 1.4})
+            fig.add_shape(type="line", x0=x_dim - tick, x1=x_dim + tick, y0=-half_y, y1=-half_y, line={"width": 1.4})
+            fig.add_shape(type="line", x0=x_dim - tick, x1=x_dim + tick, y0=half_y, y1=half_y, line={"width": 1.4})
+            fig.add_annotation(
+                x=x_dim - 0.035 * span,
+                y=0.0,
+                text=f"Btrans = {btrans:,.0f} mm",
+                textangle=-90,
+                showarrow=False,
+                font={"size": 12},
+            )
+            if corner_text:
+                fig.add_annotation(
+                    x=half_x,
+                    y=half_y,
+                    text=corner_text,
+                    showarrow=True,
+                    arrowhead=2,
+                    ax=48,
+                    ay=-28,
+                    font={"size": 11},
+                )
+
+        axis_y = -half_y - 0.27 * span
+        fig.add_annotation(
+            x=half_x + 0.25 * span,
+            y=axis_y,
+            ax=-half_x - 0.12 * span,
+            ay=axis_y,
+            xref="x",
+            yref="y",
+            axref="x",
+            ayref="y",
+            showarrow=True,
+            arrowhead=3,
+            arrowsize=1.1,
+            arrowwidth=1.6,
+            text="",
+        )
+        fig.add_annotation(
+            x=0.0,
+            y=axis_y - 0.055 * span,
+            text="Crossbeam axis s — along / parallel",
+            showarrow=False,
+            font={"size": 11},
+        )
+        fig.add_annotation(
+            x=0.0,
+            y=0.0,
+            text=column_id,
+            showarrow=False,
+            font={"size": 13},
+        )
+
+        x_pad = 0.42 * span
+        y_pad_top = 0.34 * span
+        y_pad_bottom = 0.44 * span
+        fig.update_xaxes(range=[-half_x - x_pad, half_x + x_pad], visible=False)
+        fig.update_yaxes(
+            range=[-half_y - y_pad_bottom, half_y + y_pad_top],
+            visible=False,
+            scaleanchor="x",
+            scaleratio=1,
+        )
+    else:
+        fig.add_annotation(
+            x=0.5,
+            y=0.58,
+            xref="paper",
+            yref="paper",
+            text="Enter the required section dimensions to preview this column.",
+            showarrow=False,
+            font={"size": 13},
+        )
+        fig.add_annotation(
+            x=0.5,
+            y=0.36,
+            xref="paper",
+            yref="paper",
+            text="s = Crossbeam longitudinal axis · Btrans = normal to s · Blong = along s",
+            showarrow=False,
+            font={"size": 11},
+        )
+        fig.update_xaxes(range=[-1.0, 1.0], visible=False)
+        fig.update_yaxes(range=[-1.0, 1.0], visible=False, scaleanchor="x", scaleratio=1)
+
+    fig.update_layout(
+        height=270,
+        margin={"l": 12, "r": 12, "t": 8, "b": 8},
+        showlegend=False,
+        hovermode=False,
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
+    )
+    return fig
+
 def _anchorage_force_profile_figure(
     station_rows: list[dict[str, Any]],
     end_rows: list[dict[str, Any]],
@@ -5652,7 +5865,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "Friction/Wobble and Anchorage Set preserve their accepted results. PTLOSS3B1A adds the Crossbeam construction/stressing-stage source model, continuous compression-only temporary support definition, and user-confirmed stressing-pair sequence while source-derived f_cgp, the stage solver, Pe/Pe_eff, and later losses remain locked.",
+        "Friction/Wobble and Anchorage Set preserve their accepted results. PTLOSS3B1B preserves the accepted construction/stressing-stage source model and adds a compact axis-aware graphical column-section preview while source-derived f_cgp, the stage solver, Pe/Pe_eff, and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -6499,7 +6712,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     with elastic_shortening_tab:
         st.markdown("#### Elastic Shortening — construction/stressing-stage source foundation")
         st.caption(
-            "PTLOSS3B1A preserves the validated PTLOSS3A symmetric-pair/AASHTO foundation and adds the construction/stressing-stage source model required before any Portal-Frame stage solver can derive f_cgp. Primary/secondary prestress, contact analysis, f_cgp, Pe/Pe_eff, and later losses remain locked."
+            "PTLOSS3B1B preserves the validated PTLOSS3A/PTLOSS3B1A source foundation and refines column-source review with a compact axis-aware plan-section preview. Primary/secondary prestress, contact analysis, f_cgp, Pe/Pe_eff, and later losses remain locked."
         )
 
         upstream_ready = bool(
@@ -6689,7 +6902,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         st.markdown("##### Construction / stressing-stage source model")
         st.caption(
-            "PTLOSS3B1A stores the physical construction facts needed by the future limited 2D Portal-Frame stage solver. "
+            "PTLOSS3B1B preserves the physical construction facts needed by the future limited 2D Portal-Frame stage solver. "
             "It does not yet calculate Primary/Secondary Prestress, contact reactions, or source-derived f_cgp."
         )
         method_col, ratio_col = st.columns(2)
@@ -6751,20 +6964,41 @@ def render_crossbeam_prestress_loss_page() -> None:
             "Btrans is transverse/normal to the Crossbeam axis; Blong is parallel to/along the Crossbeam axis. "
             "Column Height is the vertical member height and is a separate input. Base assumption is FIXED."
         )
-        st.code(
-            "PLAN VIEW\n"
-            "                 Btrans\n"
-            "                   ↕\n"
-            "              ┌─────────┐\n"
-            "Crossbeam s → │ Column  │ → Blong (along / parallel to s)\n"
-            "              └─────────┘\n"
-            "Btrans = transverse / normal to s-axis",
-            language=None,
-        )
 
         column_source_rows = canonical_column_stage_rows(
             st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
         )
+        if column_source_rows:
+            preview_key = "crossbeam_ptloss3b1a_column_preview_index"
+            valid_preview_indices = list(range(len(column_source_rows)))
+            if st.session_state.get(preview_key) not in valid_preview_indices:
+                st.session_state[preview_key] = 0
+            preview_controls, preview_graph = st.columns([0.30, 0.70], gap="medium")
+            with preview_controls:
+                selected_preview_index = st.selectbox(
+                    "Column plan-section preview",
+                    options=valid_preview_indices,
+                    format_func=lambda idx: (
+                        f"{column_source_rows[int(idx)].get('Column ID')} · "
+                        f"s={_finite_float(column_source_rows[int(idx)].get('Station s (m)')):.3f} m"
+                    ),
+                    key=preview_key,
+                    help="Select a column to preview its plan-section shape and axis-relative dimensions.",
+                )
+                selected_preview_row = column_source_rows[int(selected_preview_index)]
+                selected_shape = str(selected_preview_row.get("Shape") or "")
+                st.caption(
+                    "Axis convention: s = Crossbeam longitudinal axis; Btrans = normal to s; "
+                    "Blong = along / parallel to s."
+                )
+                st.caption(f"Selected shape: {selected_shape}")
+            with preview_graph:
+                st.plotly_chart(
+                    _column_plan_section_preview_figure(selected_preview_row),
+                    use_container_width=True,
+                    config={"displayModeBar": False, "displaylogo": False, "responsive": True},
+                )
+
         column_revision = int(st.session_state.get("crossbeam_ptloss3b1_column_editor_revision", 0))
         column_summary_rows = _ptloss3b1_column_summary_editor_rows(column_source_rows)
         column_editor_key = f"crossbeam_ptloss3b1_column_layout_editor_{column_revision}"
@@ -6968,7 +7202,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Stage solver",
                     "value": "LOCKED",
-                    "detail": "PTLOSS3B1A source model only",
+                    "detail": "PTLOSS3B1B source model only",
                     "status": "warning",
                 },
             ]
@@ -6978,7 +7212,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 for issue in stage_source_summary.get("issues", []):
                     st.warning(str(issue))
         st.caption(
-            "PTLOSS3B1A does not assume temporary support remains active after prestress camber develops. The future stage solver must treat the full-length support as compression-only contact and automatically release any location whose reaction would become tensile."
+            "PTLOSS3B1B does not assume temporary support remains active after prestress camber develops. The future stage solver must treat the full-length support as compression-only contact and automatically release any location whose reaction would become tensile."
         )
 
         if not current_es_group_summary.get("ready"):
@@ -7018,7 +7252,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         with st.expander("Calculation trace / QA — formula, stage source, and overrides", expanded=False):
             st.markdown("##### Code / methodology basis")
             st.write(
-                f"Published basis: **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B1A stores the separate construction stressing-pair sequence for the future incremental stage solver."
+                f"Published basis: **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B1B preserves the separate construction stressing-pair sequence for the future incremental stage solver."
             )
             st.latex(r"\Delta f_{pES,avg}=\left(\frac{G-1}{2G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
             st.latex(r"\Delta f_{pES,g}=\left(\frac{G-g}{G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
@@ -7028,7 +7262,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
             st.markdown("##### Stage-stress source")
             st.warning(
-                "PTLOSS3B1A defines the construction/stressing-stage source but still does not invent the Portal-Frame structural response. Source-derived f_cgp remains BLOCKED until the validated Primary/Secondary Prestress + gravity/contact stage solver is released. A manual f_cgp override below is QA-only and cannot release final effective prestress."
+                "PTLOSS3B1B preserves the construction/stressing-stage source but still does not invent the Portal-Frame structural response. Source-derived f_cgp remains BLOCKED until the validated Primary/Secondary Prestress + gravity/contact stage solver is released. A manual f_cgp override below is QA-only and cannot release final effective prestress."
             )
 
             st.checkbox(
@@ -7162,7 +7396,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                             if current_es_group_summary.get("ready")
                             else "PAIR SOURCE REVIEW"
                         ),
-                        "Feeds": "PTLOSS3B1A construction/stage source model only; Pe/Pe_eff remains locked",
+                        "Feeds": "PTLOSS3B1B construction/stage source model only; Pe/Pe_eff remains locked",
                     },
                     {
                         "Order": 5,

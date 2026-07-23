@@ -200,7 +200,7 @@ def test_ptloss3b1_column_shapes_and_derived_properties_are_axis_aligned() -> No
 
     chamfer = column_section_properties(
         {
-            "Shape": COLUMN_SHAPE_RECT_CHAMFER,
+            "Shape": "Rectangular — Equal Chamfer 4 Corners",
             "Btrans (mm)": 2000.0,
             "Blong (mm)": 1500.0,
             "Corner (mm)": 100.0,
@@ -230,7 +230,7 @@ def test_ptloss3b1_column_shapes_and_derived_properties_are_axis_aligned() -> No
     )
 
     circular = column_section_properties(
-        {"Shape": COLUMN_SHAPE_CIRCULAR, "Diameter (mm)": 1600.0, "f'c (MPa)": 35.0}
+        {"Shape": "Circular", "Diameter (mm)": 1600.0, "f'c (MPa)": 35.0}
     )
     assert circular["ready"] is True
     assert math.isclose(circular["Area (mm²)"], math.pi * 1600.0**2 / 4.0)
@@ -279,7 +279,7 @@ def test_ptloss3b1_stage_source_requires_physical_inputs_but_keeps_solver_locked
             "Column ID": "C1",
             "Station s (m)": 0.0,
             "Height (m)": 8.0,
-            "Shape": COLUMN_SHAPE_CIRCULAR,
+            "Shape": "Circular",
             "Diameter (mm)": 1600.0,
             "f'c (MPa)": 35.0,
         },
@@ -287,7 +287,7 @@ def test_ptloss3b1_stage_source_requires_physical_inputs_but_keeps_solver_locked
             "Column ID": "C2",
             "Station s (m)": 20.0,
             "Height (m)": 8.0,
-            "Shape": COLUMN_SHAPE_CIRCULAR,
+            "Shape": "Circular",
             "Diameter (mm)": 1600.0,
             "f'c (MPa)": 35.0,
         },
@@ -356,7 +356,7 @@ def test_ptloss3b1a_design_readiness_does_not_require_future_field_test_results(
             "Column ID": "C1",
             "Station s (m)": 0.0,
             "Height (m)": 8.0,
-            "Shape": COLUMN_SHAPE_CIRCULAR,
+            "Shape": "Circular",
             "Diameter (mm)": 1600.0,
             "f'c (MPa)": 35.0,
         },
@@ -364,7 +364,7 @@ def test_ptloss3b1a_design_readiness_does_not_require_future_field_test_results(
             "Column ID": "C2",
             "Station s (m)": 20.0,
             "Height (m)": 8.0,
-            "Shape": COLUMN_SHAPE_CIRCULAR,
+            "Shape": "Circular",
             "Diameter (mm)": 1600.0,
             "f'c (MPa)": 35.0,
         },
@@ -417,6 +417,9 @@ def test_ptloss3b1_ui_exposes_construction_columns_contact_and_pair_sequence_wit
     assert "Column / support-line layout" in elastic_block
     assert "Btrans" in elastic_block and "Transverse / Normal to Crossbeam axis" in elastic_block
     assert "Blong" in elastic_block and "Along / Parallel to Crossbeam axis" in elastic_block
+    assert "Column plan-section preview" in elastic_block
+    assert "PLAN VIEW\n" not in elastic_block
+    assert "_column_plan_section_preview_figure" in source
     assert "Verified Crossbeam strength at stressing" not in elastic_block
     assert "Verified joint / closure strength at stressing" not in elastic_block
     assert "Base assumption is FIXED" in elastic_block
@@ -425,3 +428,36 @@ def test_ptloss3b1_ui_exposes_construction_columns_contact_and_pair_sequence_wit
     assert "Stressing pair sequence" in elastic_block
     assert "Stage solver" in elastic_block and "LOCKED" in elastic_block
     assert "source-derived f_cgp remains blocked" in elastic_block.lower()
+
+
+def test_ptloss3b1b_column_plan_preview_is_compact_and_axis_aware() -> None:
+    from concrete_pmm_pro.ui.crossbeam_pages import _column_plan_section_preview_figure
+
+    rect = _column_plan_section_preview_figure(
+        {
+            "Column ID": "C1",
+            "Shape": "Rectangular — Equal Chamfer 4 Corners",
+            "Btrans (mm)": 1200.0,
+            "Blong (mm)": 1800.0,
+            "Corner (mm)": 150.0,
+        }
+    )
+    assert rect.layout.height == 270
+    assert len(rect.data) == 1
+    texts = " ".join(str(item.text or "") for item in rect.layout.annotations)
+    assert "Btrans = 1,200 mm" in texts
+    assert "Blong = 1,800 mm" in texts
+    assert "Crossbeam axis s" in texts
+    assert "Chamfer c = 150 mm" in texts
+
+    circle = _column_plan_section_preview_figure(
+        {
+            "Column ID": "C2",
+            "Shape": "Circular",
+            "Diameter (mm)": 1500.0,
+        }
+    )
+    assert circle.layout.height == 270
+    circle_texts = " ".join(str(item.text or "") for item in circle.layout.annotations)
+    assert "D = 1,500 mm" in circle_texts
+    assert "Crossbeam axis s" in circle_texts
