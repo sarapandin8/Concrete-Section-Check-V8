@@ -1734,3 +1734,6 @@ Extends geometry-compatible Rebar reconciliation to current-schema restored proj
 
 ## CROSSBEAM.CIP1
 Adds a construction-type-aware Crossbeam layout foundation: Precast retains physical Solid/Hollow segments, while Cast-in-Place uses preserved Solid-only Section/Zone layouts for one monolithic continuously cast member and guards the incompatible Segmental Rebar editor until the validated CIP continuous-bar topology milestone.
+
+## CROSSBEAM.CIP1A — Member Configuration Relocation & Construction-Type State Routing
+Moves Crossbeam length plus construction/support controls to the top of Section Builder, hardens the Precast/Cast-in-Place master switch with explicit canonical/widget state routing, and filters Cast-in-Place Section Builder views to preserved Solid-only Section IDs without changing accepted solver logic. See `README_CROSSBEAM_CIP1A.md`.

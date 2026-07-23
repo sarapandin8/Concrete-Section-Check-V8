@@ -203,6 +203,9 @@ CB_SEGMENT_REV_KEY = "crossbeam_ui1_segment_editor_revision"
 CB_PRECAST_SEGMENT_ROWS_KEY = "crossbeam_cip1_precast_segment_rows"
 CB_CIP_ZONE_ROWS_KEY = "crossbeam_cip1_cast_in_place_zone_rows"
 CB_CONSTRUCTION_METHOD_LAST_KEY = "crossbeam_cip1_last_construction_method"
+CB_CONSTRUCTION_METHOD_WIDGET_KEY = "crossbeam_cip1a_construction_method_widget"
+CB_CONSTRUCTION_METHOD_WIDGET_SYNC_KEY = "crossbeam_cip1a_construction_method_widget_synced"
+CB_CONSTRUCTION_METHOD_NOTICE_KEY = "crossbeam_cip1a_construction_method_notice"
 CB_UI1A_MIGRATION_KEY = "crossbeam_ui1a_segment_assignment_migrated"
 CB_LENGTH_WIDGET_KEY = "crossbeam_pt1b_length_widget_m"
 CB_LENGTH_WIDGET_SYNC_KEY = "crossbeam_pt1b_length_widget_synced_m"
@@ -1779,8 +1782,73 @@ def _sync_layout_state_for_construction_method(length_m: float) -> str:
     return method
 
 
-def _construction_method_changed(length_m: float) -> None:
-    _sync_layout_state_for_construction_method(length_m)
+def _commit_construction_method_change(length_m: float) -> None:
+    """Commit the UI construction-type selector into the canonical member source.
+
+    The widget deliberately uses a key separate from the Project-JSON-backed
+    canonical source.  This prevents a restored/stale widget value from
+    overwriting the member construction type during Streamlit reruns.
+    """
+
+    previous = normalize_construction_method(
+        st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
+    )
+    selected = normalize_construction_method(
+        st.session_state.get(CB_CONSTRUCTION_METHOD_WIDGET_KEY)
+    )
+    st.session_state[CB_LOSS_ES_CONSTRUCTION_METHOD_KEY] = selected
+    _sync_layout_state_for_construction_method(float(length_m))
+    st.session_state[CB_CONSTRUCTION_METHOD_WIDGET_SYNC_KEY] = selected
+    if selected != previous:
+        st.session_state[CB_CONSTRUCTION_METHOD_NOTICE_KEY] = (
+            f"Crossbeam construction type changed to {selected}. "
+            + (
+                "Cast-in-Place now uses the preserved Solid-only Section/Zone layout; Precast Segment/Hollow data remains stored and unchanged."
+                if selected == CONSTRUCTION_METHOD_CIP
+                else "Precast Segmental layout and physical segment-joint semantics are active again; the Cast-in-Place Solid-only layout remains preserved."
+            )
+        )
+
+
+def _sync_construction_method_widget_from_source() -> str:
+    """Synchronize the display widget only when the canonical source changed externally."""
+
+    canonical = normalize_construction_method(
+        st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
+    )
+    synced = normalize_construction_method(
+        st.session_state.get(CB_CONSTRUCTION_METHOD_WIDGET_SYNC_KEY, canonical)
+    )
+    if (
+        CB_CONSTRUCTION_METHOD_WIDGET_KEY not in st.session_state
+        or canonical != synced
+    ):
+        st.session_state[CB_CONSTRUCTION_METHOD_WIDGET_KEY] = canonical
+    st.session_state[CB_CONSTRUCTION_METHOD_WIDGET_SYNC_KEY] = canonical
+    return canonical
+
+
+def _render_crossbeam_construction_type_control(length_m: float) -> str:
+    """Render the master construction-type switch with explicit state routing."""
+
+    canonical = _sync_construction_method_widget_from_source()
+    notice = st.session_state.pop(CB_CONSTRUCTION_METHOD_NOTICE_KEY, None)
+    if notice:
+        st.success(str(notice))
+    st.selectbox(
+        "Crossbeam construction type",
+        options=list(CONSTRUCTION_METHOD_OPTIONS),
+        key=CB_CONSTRUCTION_METHOD_WIDGET_KEY,
+        on_change=_commit_construction_method_change,
+        args=(float(length_m),),
+        help=(
+            "Precast Segmental activates physical segment/joint semantics and Solid/Hollow sections. "
+            "Cast-in-Place activates one monolithic Solid-only Section/Zone workflow. "
+            "The two longitudinal layouts are preserved separately when switching modes."
+        ),
+    )
+    return canonical
+
 
 def _ensure_crossbeam_construction_support_source_state(length_m: float) -> list[dict[str, Any]]:
     """Initialize the member-level construction/support source without duplicating ownership.
@@ -1815,17 +1883,7 @@ def render_crossbeam_construction_support_source_workspace(length_m: float) -> N
             "Column bases are FIXED by the current project assumption."
         )
 
-        st.selectbox(
-            "Crossbeam construction type",
-            options=list(CONSTRUCTION_METHOD_OPTIONS),
-            key=CB_LOSS_ES_CONSTRUCTION_METHOD_KEY,
-            on_change=_construction_method_changed,
-            args=(float(length_m),),
-            help=(
-                "Segmental activates joint/closure stressing criteria downstream. Cast-in-Place suppresses segmental joint/closure requirements. "
-                "This is a member-level construction source, not an Elastic Shortening result."
-            ),
-        )
+        _render_crossbeam_construction_type_control(float(length_m))
 
         st.markdown("##### Column / support-line layout")
         revision = int(st.session_state.get("crossbeam_ptloss3b1_column_editor_revision", 0))

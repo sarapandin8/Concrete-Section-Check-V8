@@ -3433,6 +3433,15 @@ def render_section_builder() -> None:
     presets = load_section_presets()
     categories = load_section_categories()
 
+    crossbeam_workflow = is_portal_frame_crossbeam_workflow(settings)
+    if crossbeam_workflow:
+        # CIP1A: all member-level master sources are rendered before the
+        # Section-ID library.  Construction type and L therefore route the
+        # downstream Section Library / Layout / Rebar semantics on the same
+        # rerun instead of appearing below section-specific controls.
+        _render_crossbeam_member_geometry_workspace(settings)
+        _render_crossbeam_construction_support_workspace(settings)
+
     render_crossbeam_section_library_panel(settings)
     selection = _render_section_definition_panel(presets, categories)
 
@@ -3440,14 +3449,6 @@ def render_section_builder() -> None:
         return
 
     preset, material_assignment = selection
-
-    crossbeam_workflow = is_portal_frame_crossbeam_workflow(settings)
-    if crossbeam_workflow:
-        # Member-level sources belong together and must appear before the
-        # selected Section-ID geometry so users do not mistake support data for
-        # section-specific properties.
-        _render_crossbeam_member_geometry_workspace(settings)
-        _render_crossbeam_construction_support_workspace(settings)
 
     parameter_col, preview_col = st.columns([0.47, 0.53], gap="medium")
     with parameter_col:

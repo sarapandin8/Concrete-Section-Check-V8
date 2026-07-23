@@ -58,6 +58,24 @@ def _records(value: Any) -> list[dict[str, Any]]:
     return []
 
 
+
+def _applicable_section_definitions(
+    definitions: list[dict[str, Any]], construction_method: str
+) -> list[dict[str, Any]]:
+    """Return the Section IDs visible/applicable to the active construction mode.
+
+    Cast-in-Place preserves dormant Hollow definitions in project state but
+    exposes Solid definitions only to Section Builder and longitudinal layout.
+    """
+
+    if str(construction_method or "") == CONSTRUCTION_METHOD_CIP:
+        return [
+            row
+            for row in definitions
+            if str(row.get("Section role") or "") == "Solid"
+        ]
+    return list(definitions)
+
 def _current_material_name(session_state: Mapping[str, Any]) -> str:
     return str(
         session_state.get("active_concrete_material_name")
@@ -637,15 +655,32 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
     definitions = ensure_crossbeam_section_library_state(st.session_state)
     definitions, errors, warnings = validate_section_definitions(definitions)
     st.session_state[CB_SECLIB_DEFINITIONS_KEY] = definitions
-    ids = [row["Section ID"] for row in definitions]
+
+    cip_mode = str(st.session_state.get(CB_CONSTRUCTION_METHOD_KEY) or "") == CONSTRUCTION_METHOD_CIP
+    applicable_definitions = _applicable_section_definitions(
+        definitions, CONSTRUCTION_METHOD_CIP if cip_mode else "Precast Segmental"
+    )
+    if not applicable_definitions:
+        st.error("Cast-in-Place requires at least one Solid Crossbeam Section ID.")
+        applicable_definitions = list(definitions)
+    ids = [row["Section ID"] for row in applicable_definitions]
     active_id = str(st.session_state.get(CB_SECLIB_ACTIVE_ID_KEY) or ids[0])
     if active_id not in ids:
+        # Switching to Cast-in-Place changes only the active editor selection;
+        # dormant Hollow definitions remain preserved for Precast mode.
         active_id = ids[0]
         st.session_state[CB_SECLIB_ACTIVE_ID_KEY] = active_id
+        definition = definition_map(definitions).get(active_id)
+        if definition is not None:
+            _set_builder_widget_state(st.session_state, definition)
 
     render_section_bar(
         "Crossbeam Project Sections",
-        "Select the project section to edit. For another web/flange thickness, duplicate the current section, edit the dimensions below, then assign the new Section ID in Segment Layout.",
+        (
+            "Cast-in-Place mode shows Solid Section IDs only. Dormant Hollow definitions are preserved for Precast Segmental mode."
+            if cip_mode
+            else "Select the project section to edit. For another web/flange thickness, duplicate the current section, edit the dimensions below, then assign the new Section ID in Segment Layout."
+        ),
         mark="SL",
     )
 
@@ -671,7 +706,6 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
 
     with duplicate_col:
         st.write("")
-        cip_mode = str(st.session_state.get(CB_CONSTRUCTION_METHOD_KEY) or "") == CONSTRUCTION_METHOD_CIP
         active_is_hollow = str(active.get("Section role") or "") == "Hollow"
         if st.button(
             "Duplicate current",
@@ -743,27 +777,36 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
     for warning in warnings:
         st.warning(warning)
 
-    property_rows = section_property_records(definitions)
+    property_rows = section_property_records(applicable_definitions)
     ready_count = sum(record["Status"] in {"READY", "REVIEW"} for record in property_rows)
     render_metric_cards(
         [
             {
                 "title": "Project sections",
-                "value": len(definitions),
-                "detail": "Section IDs available",
+                "value": len(applicable_definitions),
+                "detail": "Solid Section IDs applicable" if cip_mode else "Section IDs available",
                 "status": "info",
             },
-            {
-                "title": "Solid / Hollow",
-                "value": f"{sum(row['Section role'] == 'Solid' for row in definitions)} / {sum(row['Section role'] == 'Hollow' for row in definitions)}",
-                "detail": "Geometry-family count",
-                "status": "neutral",
-            },
+            (
+                {
+                    "title": "Section family",
+                    "value": "SOLID ONLY",
+                    "detail": "Cast-in-Place workflow guard",
+                    "status": "ready",
+                }
+                if cip_mode
+                else {
+                    "title": "Solid / Hollow",
+                    "value": f"{sum(row['Section role'] == 'Solid' for row in definitions)} / {sum(row['Section role'] == 'Hollow' for row in definitions)}",
+                    "detail": "Geometry-family count",
+                    "status": "neutral",
+                }
+            ),
             {
                 "title": "Geometry ready",
-                "value": f"{ready_count} / {len(definitions)}",
+                "value": f"{ready_count} / {len(applicable_definitions)}",
                 "detail": "Calculated gross properties",
-                "status": "ready" if ready_count == len(definitions) and not errors else "warning",
+                "status": "ready" if ready_count == len(applicable_definitions) and not errors else "warning",
             },
             {
                 "title": "Assignments",
@@ -778,7 +821,7 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
     st.caption(
         "Click **Edit** once to open a Section ID. The current row is highlighted; geometry, properties, live preview, and management controls update together."
     )
-    summary_rows = _project_section_summary_rows(definitions, usage, active_id)
+    summary_rows = _project_section_summary_rows(applicable_definitions, usage, active_id)
     summary_revision = int(st.session_state.get(CB_SECLIB_REVISION_KEY, 0) or 0)
     summary_widget_key = f"crossbeam_seclib1f_project_section_summary_{summary_revision}"
     row_ids = [str(row.get("Section ID") or "") for row in summary_rows]
