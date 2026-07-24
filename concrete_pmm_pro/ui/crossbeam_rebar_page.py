@@ -2702,7 +2702,15 @@ def _commit_cip_longitudinal_identity(editor_key: str, fallback: list[dict[str, 
 def _commit_cip_longitudinal_material(editor_key: str, fallback: list[dict[str, Any]]) -> None:
     source = canonical_rebar_templates(_records(st.session_state.get(CIP_RB_TEMPLATE_ROWS_KEY)))
     edited = _cip_records_from_editor(editor_key, fallback)
-    rows, warnings = _template_material_rows_from_editor(source, edited)
+    # RB-CIP2B: Section/Zone assignment is the only CIP adoption decision.
+    # Preserve the legacy serialized credit flag non-destructively, but never
+    # expose or reinterpret it as a second user control.
+    legacy_credit = {str(row.get("Template ID") or ""): bool(row.get("Credit inside segment")) for row in source}
+    edited_for_merge = [
+        {**item, "Credit": legacy_credit.get(str(item.get("Template ID") or ""), True)}
+        for item in edited
+    ]
+    rows, warnings = _template_material_rows_from_editor(source, edited_for_merge)
     rows = canonical_rebar_templates([{**row, "Applicable role": "Solid", "Construction": "Cast in place", "Longitudinal basis": "Zone-local"} for row in rows])
     _store_cip_longitudinal_templates(rows)
     if warnings:
@@ -2801,9 +2809,13 @@ def _render_cip_longitudinal_template_library(
         else:
             st.caption("Assigned templates remain protected until their Section/Zones are reassigned.")
 
-    st.markdown("#### Participation and material")
+    st.markdown("#### Material and template status")
+    st.caption(
+        "For Cast-in-Place, selecting a Longitudinal Template in **Section / Zone** is the single adopted-reinforcement assignment. "
+        "There is no separate `Credit in zone` confirmation."
+    )
     material_rows = [
-        {"Template ID": row["Template ID"], "Basis": "Zone-local", "fy (MPa)": int(round(float(row["fy MPa"]))), "Material": row["Rebar material"], "Active": row["Active"], "Credit": row["Credit inside segment"]}
+        {"Template ID": row["Template ID"], "Basis": "Zone-local", "fy (MPa)": int(round(float(row["fy MPa"]))), "Material": row["Rebar material"], "Active": row["Active"]}
         for row in rows
     ]
     material_key = f"crossbeam_rb_cip2a_long_material_{revision}"
@@ -2817,7 +2829,6 @@ def _render_cip_longitudinal_template_library(
             "fy (MPa)": st.column_config.SelectboxColumn(options=[390, 490], required=True, width="small"),
             "Material": st.column_config.SelectboxColumn(options=list(TEMPLATE_MATERIAL_OPTIONS), required=True, width="small"),
             "Active": st.column_config.CheckboxColumn(width="small"),
-            "Credit": st.column_config.CheckboxColumn("Credit in zone", width="small"),
         },
     )
 
@@ -3058,7 +3069,11 @@ def _commit_cip_zone_assignment(editor_key: str, fallback: list[dict[str, Any]])
 
 def _render_cip_zone_assignment(segment_rows: list[dict[str, Any]], long_rows: list[dict[str, Any]], trans_rows: list[dict[str, Any]], zone_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     st.markdown("### Section / Zone Reinforcement Assignment")
-    st.caption("Assign Solid longitudinal and transverse templates to each Cast-in-Place Section/Zone. Zone boundaries are geometry/property boundaries, not physical construction joints.")
+    st.caption(
+        "Assign Solid longitudinal and transverse templates to each Cast-in-Place Section/Zone. "
+        "This assignment is the canonical adopted reinforcement source for that Zone; no second design-credit checkbox is required. "
+        "Zone boundaries are geometry/property boundaries, not physical construction joints."
+    )
     by_zone = {str(row.get("Zone ID") or ""): row for row in canonical_rebar_zones(zone_rows)}
     editor_rows = []
     for layout in sorted(segment_rows, key=lambda row: _number(row.get("x_start_m"), 0.0)):
@@ -3135,7 +3150,7 @@ def _render_cip_template_aligned_workspace(*, length_m: float, segment_rows: lis
     for issue in segment_errors + errors:
         st.error(issue)
     if warnings:
-        st.caption(f"Input completeness: {len(warnings)} adopted-reinforcement item(s) remain optional/pending before any future solver handoff.")
+        st.caption(f"Input completeness: {len(warnings)} assigned CIP reinforcement item(s) remain incomplete/pending before any future solver handoff.")
 
     active = _cip_subnavigation()
     if active == "Longitudinal":
@@ -3181,7 +3196,7 @@ def _render_cip_template_aligned_workspace(*, length_m: float, segment_rows: lis
                 {"title":"Transverse template","value":str(assign.get("Transverse template") or "—"),"detail":"Local tie/shear arrangement source","status":"info"},
                 {"title":"Continuity certification","value":"NOT CERTIFIED","detail":"Development/splice/termination QA remains future scope","status":"warning"},
             ])
-    st.warning("SOLVER HANDOFF LOCKED — The aligned CIP template/Section-Zone workflow is input and review only. ULS/SLS/PMM, shear/torsion, prestress-loss, Result Summary, and Report/QA receive no CIP rebar credit from RB-CIP2A.")
+    st.warning("SOLVER HANDOFF LOCKED — The aligned CIP template/Section-Zone workflow is input and review only. ULS/SLS/PMM, shear/torsion, prestress-loss, Result Summary, and Report/QA receive no CIP rebar solver credit from RB-CIP2B.")
 
 def render_crossbeam_rebar_page() -> None:
     length_m, segment_rows, segment_errors = crossbeam_segment_layout_from_state()

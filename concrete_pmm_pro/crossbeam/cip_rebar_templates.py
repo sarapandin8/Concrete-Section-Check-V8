@@ -2,6 +2,10 @@
 
 CROSSBEAM.RB-CIP2A aligns the Cast-in-Place Rebar workspace with the accepted
 Precast Segmental interaction pattern while keeping a separate canonical state.
+CROSSBEAM.RB-CIP2B locks Section/Zone template assignment as the single adopted
+reinforcement source for Cast-in-Place.  A separate per-template ``Credit in
+zone`` switch is intentionally not part of CIP semantics.
+
 CIP uses Solid-only longitudinal/transverse templates assigned to Section/Zones.
 Zone boundaries are property boundaries, not physical joints, so longitudinal
 continuity is reviewed across adjacent Zones rather than forced to zero.
@@ -218,15 +222,76 @@ def validate_cip_template_model(
     if unknown:
         warnings.append("Dormant CIP rebar assignments are not active in the current Section / Zone Layout: " + ", ".join(sorted(unknown)) + ".")
 
-    for row in long_rows:
-        if not bool(row.get("Active")):
+    # Section/Zone assignment is the canonical adopted reinforcement source in
+    # Cast-in-Place.  Only templates actually assigned to active Zones affect
+    # completeness; dormant/unassigned library templates do not create noise.
+    assigned_long_ids = {
+        _text(zone_by_id.get(layout_id, {}).get("Longitudinal template")
+              or zone_by_id.get(layout_id, {}).get("Rebar template"))
+        for layout_id in layout
+    }
+    for template_id in sorted(tid for tid in assigned_long_ids if tid):
+        row = long_map.get(template_id)
+        if row is None:
             continue
         if not any(float(row.get(field) or 0.0) > 0.0 for field in ("Top As mm²", "Bottom As mm²", "Side As mm²")):
             warnings.append(
-                f"{row.get('Template ID')}: adopted provided longitudinal As is not defined; auto-layout remains preview-only and receives no solver credit."
+                f"{template_id}: assigned longitudinal template has no adopted provided As yet; auto-layout remains preview-only until future solver handoff."
             )
 
     return list(dict.fromkeys(errors)), list(dict.fromkeys(warnings))
+
+
+def cip_adopted_zone_reinforcement_rows(
+    *,
+    layout_rows: list[dict[str, Any]],
+    longitudinal_templates: list[dict[str, Any]],
+    transverse_templates: list[dict[str, Any]],
+    zone_assignments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Resolve the adopted CIP reinforcement source for each active Zone.
+
+    The Section/Zone assignment itself is the engineering adoption decision.
+    Legacy template metadata such as ``Credit inside segment`` is deliberately
+    ignored here; there is no second design-credit switch in Cast-in-Place.
+
+    This resolver is still solver-neutral.  It exposes the validated source
+    mapping future solver handoff must consume, but it does not activate solver
+    credit in RB-CIP2B.
+    """
+
+    zones = {str(row.get("Zone ID") or ""): row for row in canonical_rebar_zones(zone_assignments)}
+    long_map = template_map(longitudinal_templates)
+    trans_map = transverse_template_map(transverse_templates)
+    output: list[dict[str, Any]] = []
+    for index, layout in enumerate(sorted(layout_rows, key=lambda row: _float(row.get("x_start_m"), 0.0))):
+        zone_id = _text(layout.get("Segment")) or f"Z{index + 1}"
+        assignment = zones.get(zone_id, {})
+        long_id = _text(assignment.get("Longitudinal template") or assignment.get("Rebar template"))
+        trans_id = _text(assignment.get("Transverse template"))
+        long_row = long_map.get(long_id)
+        trans_row = trans_map.get(trans_id)
+        issues: list[str] = []
+        if long_row is None:
+            issues.append("Longitudinal template is not assigned to an active Solid template")
+        if trans_row is None:
+            issues.append("Transverse template is not assigned to an active Solid template")
+        output.append(
+            {
+                "Zone ID": zone_id,
+                "s_start_m": _float(layout.get("x_start_m"), 0.0),
+                "s_end_m": _float(layout.get("x_end_m"), 0.0),
+                "Section ID": _text(layout.get("Section ID")),
+                "Longitudinal template": long_id,
+                "Transverse template": trans_id,
+                "Longitudinal source": dict(long_row) if long_row is not None else None,
+                "Transverse source": dict(trans_row) if trans_row is not None else None,
+                "Adoption basis": "Section / Zone assignment",
+                "Status": "ADOPTED SOURCE" if not issues else "REVIEW REQUIRED",
+                "Issues": issues,
+            }
+        )
+    return output
 
 
 def _longitudinal_signature(template: Mapping[str, Any]) -> tuple[Any, ...]:
@@ -248,7 +313,6 @@ def _longitudinal_signature(template: Mapping[str, Any]) -> tuple[Any, ...]:
         round(_float(template.get("Top As mm²"), 0.0), 6),
         round(_float(template.get("Bottom As mm²"), 0.0), 6),
         round(_float(template.get("Side As mm²"), 0.0), 6),
-        bool(template.get("Credit inside segment")),
     )
 
 
