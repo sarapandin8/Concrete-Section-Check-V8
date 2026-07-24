@@ -354,9 +354,10 @@ def _data_editor_calls(path: Path) -> list[ast.Call]:
 def test_every_crossbeam_rebar_data_editor_has_first_edit_callback() -> None:
     root = Path(__file__).resolve().parents[1]
     paths_and_counts = {
-        # RB-CIP2 adds one CIP-only continuous bar-run editor.  It must obey the
-        # same first-edit callback contract as the eight accepted Segmental editors.
-        root / "concrete_pmm_pro" / "ui" / "crossbeam_rebar_page.py": 9,
+        # RB-CIP2A replaces the single user-facing bar-run editor with the
+        # aligned Solid-template/Section-Zone CIP workflow.  All added editors
+        # must obey the same first-edit callback contract as Segmental Rebar.
+        root / "concrete_pmm_pro" / "ui" / "crossbeam_rebar_page.py": 17,
         root / "concrete_pmm_pro" / "ui" / "crossbeam_transverse_page.py": 7,
     }
     for path, expected_count in paths_and_counts.items():

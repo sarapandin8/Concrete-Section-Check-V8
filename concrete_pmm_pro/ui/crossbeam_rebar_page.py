@@ -84,6 +84,24 @@ from concrete_pmm_pro.crossbeam.cip_rebar_persistence import (
     CB_RB_CIP_RUN_ROWS_KEY,
     CB_RB_CIP_VALIDATION_KEY,
 )
+from concrete_pmm_pro.crossbeam.cip_rebar_templates import (
+    CIP_RB_PREVIEW_ZONE_KEY,
+    CIP_RB_REVIEW_STATION_KEY,
+    CIP_RB_SUBVIEW_KEY,
+    CIP_RB_SUBVIEWS,
+    CIP_RB_TEMPLATE_REV_KEY,
+    CIP_RB_TEMPLATE_ROWS_KEY,
+    CIP_RB_ZONE_REV_KEY,
+    CIP_RB_ZONE_ROWS_KEY,
+    CIP_TR_TEMPLATE_REV_KEY,
+    CIP_TR_TEMPLATE_ROWS_KEY,
+    cip_continuity_audit_rows,
+    default_cip_longitudinal_templates,
+    default_cip_transverse_templates,
+    default_cip_zone_assignments,
+    reconcile_cip_zone_assignments,
+    validate_cip_template_model,
+)
 from concrete_pmm_pro.crossbeam.rebar_persistence import (
     CB_RB_ACTIVE_TEMPLATE_KEY,
     CB_RB_PREVIEW_MARKER_MODE_KEY,
@@ -114,10 +132,15 @@ from concrete_pmm_pro.crossbeam.tendon_persistence import (
     CB_TENDON_SYSTEM_ROWS_KEY,
 )
 from concrete_pmm_pro.crossbeam.transverse import (
+    TRANSVERSE_BAR_SIZE_OPTIONS,
+    TRANSVERSE_FY_BY_MATERIAL,
+    TRANSVERSE_MATERIAL_OPTIONS,
     build_transverse_cage_geometry,
     canonical_transverse_templates,
     default_crossbeam_transverse_templates,
     default_transverse_template_id,
+    duplicate_transverse_template,
+    new_transverse_template,
     place_longitudinal_bars_relative_to_cages,
     review_longitudinal_bar_containment,
     transverse_bar_diameter_mm,
@@ -2108,29 +2131,39 @@ def _render_section_rebar_preview(
     zone_rows: list[dict[str, Any]],
     template_rows: list[dict[str, Any]],
     transverse_template_rows: list[dict[str, Any]],
+    *,
+    cip_mode: bool = False,
+    preview_segment_key: str = CB_RB_PREVIEW_SEGMENT_KEY,
+    preview_zone_key: str = CB_RB_PREVIEW_ZONE_KEY,
+    preview_mode_key: str = CB_TR_PREVIEW_MODE_KEY,
+    marker_mode_key: str = CB_RB_PREVIEW_MARKER_MODE_KEY,
 ) -> None:
     render_section_bar(
-        "Segment-specific reinforcement preview",
-        "Select one Segment/Zone, then review Longitudinal, Transverse / Shear, or Combined local reinforcement. All views terminate at segment boundaries and remain disconnected from ULS/SLS solvers.",
+        "Section/Zone reinforcement preview" if cip_mode else "Segment-specific reinforcement preview",
+        (
+            "Select one Cast-in-Place Section/Zone, then review Longitudinal, Transverse / Shear, or Combined local reinforcement. Zone boundaries are property boundaries and do not automatically terminate longitudinal bars."
+            if cip_mode
+            else "Select one Segment/Zone, then review Longitudinal, Transverse / Shear, or Combined local reinforcement. All views terminate at segment boundaries and remain disconnected from ULS/SLS solvers."
+        ),
         mark="SEC",
     )
     if not segment_rows:
-        st.warning("Create a valid Segment Layout before reviewing section reinforcement.")
+        st.warning("Create a valid Section / Zone Layout before reviewing reinforcement." if cip_mode else "Create a valid Segment Layout before reviewing section reinforcement.")
         return
 
     segment_by_id = {str(row.get("Segment") or ""): row for row in segment_rows}
     segment_ids = list(segment_by_id)
-    current_segment = str(st.session_state.get(CB_RB_PREVIEW_SEGMENT_KEY) or segment_ids[0])
+    current_segment = str(st.session_state.get(preview_segment_key) or segment_ids[0])
     if current_segment not in segment_ids:
-        st.session_state[CB_RB_PREVIEW_SEGMENT_KEY] = segment_ids[0]
+        st.session_state[preview_segment_key] = segment_ids[0]
     selected_segment_id = st.selectbox(
-        "Segment to preview",
+        "Section / Zone to preview" if cip_mode else "Segment to preview",
         options=segment_ids,
         format_func=lambda value: (
             f"{value} · {segment_by_id[value].get('Section ID', '')} · "
             f"{segment_by_id[value].get('Section name') or segment_by_id[value].get('Section role', '')}"
         ),
-        key=CB_RB_PREVIEW_SEGMENT_KEY,
+        key=preview_segment_key,
     )
     selected_segment = segment_by_id[selected_segment_id]
     candidate_zones = [row for row in canonical_rebar_zones(zone_rows) if row.get("Segment") == selected_segment_id]
@@ -2138,17 +2171,17 @@ def _render_section_rebar_preview(
         st.error(f"{selected_segment_id} has no assigned reinforcement zone.")
         return
     zone_ids = [str(row.get("Zone ID") or "") for row in candidate_zones]
-    current_zone = str(st.session_state.get(CB_RB_PREVIEW_ZONE_KEY) or zone_ids[0])
+    current_zone = str(st.session_state.get(preview_zone_key) or zone_ids[0])
     if current_zone not in zone_ids:
-        st.session_state[CB_RB_PREVIEW_ZONE_KEY] = zone_ids[0]
-    selected_zone_id = st.selectbox("Zone to preview", options=zone_ids, key=CB_RB_PREVIEW_ZONE_KEY)
+        st.session_state[preview_zone_key] = zone_ids[0]
+    selected_zone_id = st.selectbox("Rebar assignment to preview" if cip_mode else "Zone to preview", options=zone_ids, key=preview_zone_key)
     selected_zone = next(row for row in candidate_zones if str(row.get("Zone ID") or "") == selected_zone_id)
 
     definitions = canonical_section_definitions(st.session_state.get(CB_SECLIB_DEFINITIONS_KEY, []))
     section_id = str(selected_segment.get("Section ID") or "")
     definition = definition_map(definitions).get(section_id)
     if definition is None:
-        st.error(f"Section ID {section_id or '(blank)'} is unavailable. Repair the Section Builder / Segment Layout assignment.")
+        st.error(f"Section ID {section_id or '(blank)'} is unavailable. Repair the Section Builder / {'Section / Zone Layout' if cip_mode else 'Segment Layout'} assignment.")
         return
     try:
         geometry = build_geometry_for_definition(definition)
@@ -2177,7 +2210,7 @@ def _render_section_rebar_preview(
         "Preview mode",
         options=["Longitudinal", "Transverse / Shear", "Combined review"],
         horizontal=True,
-        key=CB_TR_PREVIEW_MODE_KEY,
+        key=preview_mode_key,
     )
 
     if preview_mode in {"Longitudinal", "Combined review"}:
@@ -2237,7 +2270,7 @@ def _render_section_rebar_preview(
             "Bar display",
             options=["Enhanced markers", "True bar diameter"],
             horizontal=True,
-            key=CB_RB_PREVIEW_MARKER_MODE_KEY,
+            key=marker_mode_key,
             help="Enhanced markers improve visual review only. Quantities and As always use the true bar diameter.",
         )
         offset_rules = []
@@ -2317,11 +2350,16 @@ def _render_section_rebar_preview(
             figure_config=FIGURE_CONFIG,
         )
 
-    st.info(
-        "JOINT GUARD — Longitudinal ordinary rebar crossing each segment joint is 0 mm². "
-        "Transverse reinforcement is local to the selected Segment/Zone and receives no automatic joint-shear credit. "
-        "PT continuity status is reported by the Tendon Profile Calculated Audit."
-    )
+    if cip_mode:
+        st.info(
+            "CIP CONTINUITY NOTE — Section/Zone boundaries are not physical joints. Longitudinal reinforcement may remain continuous across adjacent Zones; exact development, splice, termination, and anchorage adequacy remain separate QA."
+        )
+    else:
+        st.info(
+            "JOINT GUARD — Longitudinal ordinary rebar crossing each segment joint is 0 mm². "
+            "Transverse reinforcement is local to the selected Segment/Zone and receives no automatic joint-shear credit. "
+            "PT continuity status is reported by the Tendon Profile Calculated Audit."
+        )
 
 
 
@@ -2596,215 +2634,554 @@ def _cip_editor_select_options(
     return ([""] if include_blank else []) + list(supported) + extras
 
 
-def _render_cip_longitudinal_rebar_workspace(
-    *,
-    length_m: float,
-    segment_rows: list[dict[str, Any]],
-    segment_errors: list[str],
-) -> None:
-    """Render RB-CIP2 editor and topology previews while keeping solvers locked."""
 
-    if CB_RB_CIP_RUN_ROWS_KEY not in st.session_state:
-        st.session_state[CB_RB_CIP_RUN_ROWS_KEY] = default_cip_longitudinal_bar_runs()
-    if CB_RB_CIP_RUN_REV_KEY not in st.session_state:
-        st.session_state[CB_RB_CIP_RUN_REV_KEY] = 0
 
-    runs = canonical_cip_longitudinal_bar_runs(st.session_state.get(CB_RB_CIP_RUN_ROWS_KEY, []))
-    st.session_state[CB_RB_CIP_RUN_ROWS_KEY] = runs
-    status = cip_rebar_topology_status(runs, length_m=length_m)
-    st.session_state[CB_RB_CIP_VALIDATION_KEY] = status
+def _cip_records_from_editor(editor_key: str, fallback: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return data_editor_payload_to_records(st.session_state.get(editor_key), fallback)
 
-    topology_value = "LAYOUT READY" if status["status"] == "FOUNDATION READY" else status["status"]
-    topology_visual_status = "ready" if status["status"] == "FOUNDATION READY" else "warning"
-    render_metric_cards(
-        [
-            {"title": "Construction type", "value": "CAST-IN-PLACE", "detail": "Monolithic continuous pour", "status": "ready"},
-            {"title": "Section family", "value": "SOLID ONLY", "detail": "No Hollow zones are permitted", "status": "ready"},
+
+def _store_cip_longitudinal_templates(rows: list[dict[str, Any]]) -> None:
+    st.session_state[CIP_RB_TEMPLATE_ROWS_KEY] = canonical_rebar_templates(rows)
+
+
+def _store_cip_transverse_templates(rows: list[dict[str, Any]]) -> None:
+    st.session_state[CIP_TR_TEMPLATE_ROWS_KEY] = canonical_transverse_templates(rows)
+
+
+def _store_cip_zone_rows(rows: list[dict[str, Any]]) -> None:
+    st.session_state[CIP_RB_ZONE_ROWS_KEY] = canonical_rebar_zones(rows)
+
+
+def _bump_cip_longitudinal_revision() -> None:
+    st.session_state[CIP_RB_TEMPLATE_REV_KEY] = int(st.session_state.get(CIP_RB_TEMPLATE_REV_KEY, 0) or 0) + 1
+
+
+def _bump_cip_transverse_revision() -> None:
+    st.session_state[CIP_TR_TEMPLATE_REV_KEY] = int(st.session_state.get(CIP_TR_TEMPLATE_REV_KEY, 0) or 0) + 1
+
+
+def _bump_cip_zone_revision() -> None:
+    st.session_state[CIP_RB_ZONE_REV_KEY] = int(st.session_state.get(CIP_RB_ZONE_REV_KEY, 0) or 0) + 1
+
+
+def _ensure_cip_template_state(segment_rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    long_rows = canonical_rebar_templates(_records(st.session_state.get(CIP_RB_TEMPLATE_ROWS_KEY)))
+    if not long_rows:
+        long_rows = default_cip_longitudinal_templates()
+        _store_cip_longitudinal_templates(long_rows)
+    trans_rows = canonical_transverse_templates(_records(st.session_state.get(CIP_TR_TEMPLATE_ROWS_KEY)))
+    if not trans_rows:
+        trans_rows = default_cip_transverse_templates()
+        _store_cip_transverse_templates(trans_rows)
+    zone_rows = canonical_rebar_zones(_records(st.session_state.get(CIP_RB_ZONE_ROWS_KEY)))
+    if not zone_rows:
+        zone_rows = default_cip_zone_assignments(segment_rows, long_rows, trans_rows)
+    else:
+        zone_rows = reconcile_cip_zone_assignments(zone_rows, segment_rows, long_rows, trans_rows)
+    _store_cip_zone_rows(zone_rows)
+    return long_rows, trans_rows, zone_rows
+
+
+def _commit_cip_longitudinal_identity(editor_key: str, fallback: list[dict[str, Any]]) -> None:
+    source = canonical_rebar_templates(_records(st.session_state.get(CIP_RB_TEMPLATE_ROWS_KEY)))
+    zones = canonical_rebar_zones(_records(st.session_state.get(CIP_RB_ZONE_ROWS_KEY)))
+    edited = _cip_records_from_editor(editor_key, fallback)
+    rows, updated_zones, rename_map, errors = _template_identity_rows_from_editor(source, edited, zones)
+    # CIP is Solid-only. Preserve user text, but never allow a Hollow role into active CIP state.
+    rows = canonical_rebar_templates([{**row, "Applicable role": "Solid", "Construction": "Cast in place", "Longitudinal basis": "Zone-local"} for row in rows])
+    if errors:
+        st.session_state["crossbeam_rb_cip2a_notice"] = " ".join(errors)
+        return
+    _store_cip_longitudinal_templates(rows)
+    _store_cip_zone_rows(updated_zones)
+    if rename_map:
+        _bump_cip_zone_revision()
+    _bump_cip_longitudinal_revision()
+
+
+def _commit_cip_longitudinal_material(editor_key: str, fallback: list[dict[str, Any]]) -> None:
+    source = canonical_rebar_templates(_records(st.session_state.get(CIP_RB_TEMPLATE_ROWS_KEY)))
+    edited = _cip_records_from_editor(editor_key, fallback)
+    rows, warnings = _template_material_rows_from_editor(source, edited)
+    rows = canonical_rebar_templates([{**row, "Applicable role": "Solid", "Construction": "Cast in place", "Longitudinal basis": "Zone-local"} for row in rows])
+    _store_cip_longitudinal_templates(rows)
+    if warnings:
+        st.session_state["crossbeam_rb_cip2a_notice"] = " ".join(warnings)
+    if _material_editor_sync_required(edited, rows):
+        _bump_cip_longitudinal_revision()
+
+
+def _commit_cip_longitudinal_outer(editor_key: str, fallback: list[dict[str, Any]]) -> None:
+    source = canonical_rebar_templates(_records(st.session_state.get(CIP_RB_TEMPLATE_ROWS_KEY)))
+    edited = _cip_records_from_editor(editor_key, fallback)
+    _store_cip_longitudinal_templates(_template_face_layout_from_editor(source, edited, face="Outer"))
+
+
+def _commit_cip_longitudinal_adopted(editor_key: str, fallback: list[dict[str, Any]]) -> None:
+    source = canonical_rebar_templates(_records(st.session_state.get(CIP_RB_TEMPLATE_ROWS_KEY)))
+    edited = _cip_records_from_editor(editor_key, fallback)
+    _store_cip_longitudinal_templates(
+        _template_rows_from_editor(
+            source,
+            edited,
             {
-                "title": "Continuous topology",
-                "value": topology_value,
-                "detail": f"{status['active_run_count']} active station-based longitudinal bar run(s)",
-                "status": topology_visual_status,
+                "Top As (mm²)": "Top As mm²",
+                "Bottom As (mm²)": "Bottom As mm²",
+                "Side As (mm²)": "Side As mm²",
+                "Notes": "Notes",
             },
-            {"title": "Solver handoff", "value": "LOCKED", "detail": "Topology preview only; no CIP solver credit", "status": "neutral"},
-        ]
-    )
-
-    st.info(
-        "Continuous longitudinal reinforcement is defined by station-based bar runs. "
-        "Section/Zone boundaries are geometry/property boundaries and do not terminate reinforcement. "
-        "Development, splice, termination, exact cross-section bar coordinates, and solver handoff remain separate QA milestones."
-    )
-
-    for issue in segment_errors:
-        st.error(issue)
-
-    render_section_bar(
-        "Continuous longitudinal bar-run editor",
-        "Define where each longitudinal bar group exists along the physical Crossbeam station axis. Add/delete rows directly; one edit commits immediately to the CIP-only canonical state.",
-        mark="RB",
-    )
-    controls = st.columns([1.2, 4.8])
-    with controls[0]:
-        if st.button("Add draft bar run", key="crossbeam_rb_cip2_add_run", use_container_width=True):
-            current = canonical_cip_longitudinal_bar_runs(st.session_state.get(CB_RB_CIP_RUN_ROWS_KEY, []))
-            current.append(new_cip_longitudinal_bar_run(current, length_m=length_m))
-            st.session_state[CB_RB_CIP_RUN_ROWS_KEY] = current
-            st.session_state[CB_RB_CIP_RUN_REV_KEY] = int(st.session_state.get(CB_RB_CIP_RUN_REV_KEY, 0) or 0) + 1
-            st.rerun()
-    with controls[1]:
-        st.caption(
-            "A new draft is seeded over 0–L only as an editing convenience and remains REVIEW REQUIRED until layer, bar, material, quantity basis, and engineering intent are defined."
         )
-
-    revision = int(st.session_state.get(CB_RB_CIP_RUN_REV_KEY, 0) or 0)
-    editor_rows = _cip_run_editor_rows(st.session_state.get(CB_RB_CIP_RUN_ROWS_KEY, []))
-    layer_options = _cip_editor_select_options(editor_rows, field="Layer / face", supported=CIP_RUN_LAYER_OPTIONS)
-    bar_size_options = _cip_editor_select_options(editor_rows, field="Bar size", supported=CIP_RUN_BAR_SIZE_OPTIONS)
-    material_options = _cip_editor_select_options(editor_rows, field="Material", supported=CIP_RUN_MATERIAL_OPTIONS)
-    basis_options = _cip_editor_select_options(editor_rows, field="Definition basis", supported=CIP_RUN_DEFINITION_BASIS_OPTIONS)
-    start_intent_options = _cip_editor_select_options(editor_rows, field="Start intent", supported=CIP_RUN_TERMINATION_INTENT_OPTIONS, include_blank=False)
-    end_intent_options = _cip_editor_select_options(editor_rows, field="End intent", supported=CIP_RUN_TERMINATION_INTENT_OPTIONS, include_blank=False)
-    editor_key = f"crossbeam_rb_cip2_run_editor_{revision}"
-    st.data_editor(
-        pd.DataFrame(editor_rows),
-        num_rows="dynamic",
-        use_container_width=True,
-        hide_index=True,
-        key=editor_key,
-        on_change=_commit_cip_run_editor,
-        args=(editor_key, editor_rows),
-        column_config={
-            "Active": st.column_config.CheckboxColumn("Active"),
-            "Run ID": st.column_config.TextColumn("Run ID", required=True, help="Unique engineering identifier for this continuous longitudinal bar run."),
-            "s_start (m)": st.column_config.NumberColumn("s_start (m)", min_value=0.0, max_value=max(float(length_m), 0.0), format="%.3f", required=True),
-            "s_end (m)": st.column_config.NumberColumn("s_end (m)", min_value=0.0, max_value=max(float(length_m), 0.0), format="%.3f", required=True),
-            "Bar group": st.column_config.TextColumn("Bar group", required=True),
-            "Layer / face": st.column_config.SelectboxColumn("Layer / face", options=layer_options, required=True),
-            "Bar size": st.column_config.SelectboxColumn(
-                "Bar size",
-                options=bar_size_options,
-                required=True,
-                help="App standard: DB10–DB28 use SD40; DB32 uses SD50. Mismatches remain visible as REVIEW REQUIRED and are not silently rewritten.",
-            ),
-            "Diameter (mm)": st.column_config.NumberColumn("Diameter (mm)", format="%.1f", disabled=True),
-            "Material": st.column_config.SelectboxColumn("Material", options=material_options, required=True),
-            "fy (MPa)": st.column_config.NumberColumn("fy (MPa)", format="%.0f", disabled=True),
-            "Definition basis": st.column_config.SelectboxColumn("Definition basis", options=basis_options, required=True),
-            "Bar count": st.column_config.NumberColumn("Bar count", min_value=0, step=1, format="%d"),
-            "Target spacing (mm)": st.column_config.NumberColumn("Target spacing (mm)", min_value=0.0, format="%.1f"),
-            "Start intent": st.column_config.SelectboxColumn("Start intent", options=start_intent_options, required=True),
-            "End intent": st.column_config.SelectboxColumn("End intent", options=end_intent_options, required=True),
-            "Notes": st.column_config.TextColumn("Notes"),
-        },
-        disabled=["Diameter (mm)", "fy (MPa)"],
     )
 
-    # Re-read callback-owned canonical state.  This mirrors the accepted one-edit
-    # persistence pattern used by Section/Zone Layout and avoids stale editor data.
-    runs = canonical_cip_longitudinal_bar_runs(st.session_state.get(CB_RB_CIP_RUN_ROWS_KEY, []))
-    st.session_state[CB_RB_CIP_RUN_ROWS_KEY] = runs
-    status = cip_rebar_topology_status(runs, length_m=length_m)
-    st.session_state[CB_RB_CIP_VALIDATION_KEY] = status
-    for issue in status.get("errors", []):
-        st.error(issue)
-    for issue in status.get("warnings", []):
-        st.warning(issue)
 
-    render_section_bar(
-        "Longitudinal continuity elevation",
-        "Station-based engineering topology preview. Zone bands show Section/Zone ownership only; dotted boundaries do not cut or splice a bar run.",
-        mark="E",
-    )
-    if runs:
-        st.plotly_chart(
-            _cip_longitudinal_topology_figure(runs, segment_rows=segment_rows, length_m=length_m),
-            use_container_width=True,
-            config=FIGURE_CONFIG,
-        )
-        st.caption(
-            "Preview scope: bar-run continuity and station extent only. This figure does not claim development length, splice adequacy, anchorage, congestion, code-minimum reinforcement, or exact cross-section bar coordinates."
-        )
-        audit_rows = _cip_topology_audit_rows(runs, segment_rows=segment_rows)
-        if audit_rows:
-            with st.expander("Zone-crossing continuity audit", expanded=False):
-                st.dataframe(pd.DataFrame(audit_rows), use_container_width=True, hide_index=True)
-    else:
-        st.info(
-            "LAYOUT REQUIRED — No Cast-in-Place longitudinal bar runs are defined. Add a draft run, then define the engineering topology explicitly; no reinforcement is invented automatically."
-        )
-
-    render_section_bar(
-        "Section participation at review station",
-        "Review which continuous longitudinal runs are present at any station without pretending that topology-only data defines exact bar coordinates.",
-        mark="S",
-    )
-    station_key = "crossbeam_rb_cip2_review_station_m"
-    current_station = _number(st.session_state.get(station_key), 0.5 * float(length_m))
-    bounded_station = min(max(current_station, 0.0), max(float(length_m), 0.0))
-    if station_key not in st.session_state or abs(current_station - bounded_station) > 1.0e-12:
-        st.session_state[station_key] = bounded_station
-    station = st.number_input(
-        "Review station s (m)",
-        min_value=0.0,
-        max_value=max(float(length_m), 0.0),
-        step=0.100,
-        format="%.3f",
-        key=station_key,
-    )
-    station_runs = cip_longitudinal_runs_at_station(runs, station_m=station)
-    zone_id = _cip_zone_at_station(segment_rows, station, length_m)
-    exact_bar_count = sum(
-        int(row.get("Bar count") or 0)
-        for row in station_runs
-        if str(row.get("Definition basis") or "") == "By exact bar count"
-    )
-    spacing_groups = sum(
-        1
-        for row in station_runs
-        if str(row.get("Definition basis") or "") == "By target spacing"
-    )
-    render_metric_cards(
-        [
-            {"title": "Review station", "value": f"s = {station:.3f} m", "detail": f"Section / Zone {zone_id}", "status": "neutral"},
-            {"title": "Active runs", "value": str(len(station_runs)), "detail": "Longitudinal bar groups present at this station", "status": "ready" if station_runs else "warning"},
-            {"title": "Exact-count bars", "value": str(exact_bar_count), "detail": "Sum of runs defined by exact bar count only", "status": "neutral"},
-            {"title": "Spacing-based groups", "value": str(spacing_groups), "detail": "Count is not inferred from topology alone", "status": "neutral"},
-        ]
-    )
-    if station_runs:
-        participation = []
-        for row in station_runs:
-            basis = str(row.get("Definition basis") or "")
-            participation.append(
-                {
-                    "Run ID": str(row.get("Run ID") or ""),
-                    "Bar group": str(row.get("Bar group") or ""),
-                    "Layer / face": str(row.get("Layer / face") or ""),
-                    "Bar size": str(row.get("Bar size") or ""),
-                    "Material": str(row.get("Material") or ""),
-                    "fy (MPa)": float(row.get("fy MPa") or 0.0),
-                    "Definition": (
-                        f"{int(row.get('Bar count') or 0)} bars"
-                        if basis == "By exact bar count"
-                        else f"target @ {float(row.get('Target spacing mm') or 0.0):g} mm"
-                        if basis == "By target spacing"
-                        else "Not defined"
-                    ),
-                    "Run span (m)": f"{float(row.get('s_start_m') or 0.0):.3f}–{float(row.get('s_end_m') or 0.0):.3f}",
-                }
-            )
-        st.dataframe(pd.DataFrame(participation), use_container_width=True, hide_index=True)
-    else:
-        st.info("No active longitudinal bar run is present at the selected review station.")
-
-    st.warning(
-        "SOLVER HANDOFF LOCKED — RB-CIP2 edits and previews continuous longitudinal topology only. "
-        "ULS/SLS/PMM, shear/torsion, prestress-loss, Result Summary, and Report/QA do not receive CIP longitudinal bar-run credit from this milestone."
-    )
+def _render_cip_longitudinal_template_library(
+    template_rows: list[dict[str, Any]], zone_rows: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    st.markdown("### Rebar Template Library")
     st.caption(
-        f"Current Cast-in-Place Section/Zone source: {len(segment_rows)} zone(s) over L = {length_m:.3f} m. Precast Segmental Rebar state remains separate and preserved."
+        "Same interaction pattern as Precast Segmental, but Cast-in-Place is Solid-only. Templates define local reinforcement arrangements; Section/Zone boundaries do not automatically terminate longitudinal bars."
     )
+    rows = canonical_rebar_templates(template_rows)
+    revision = int(st.session_state.get(CIP_RB_TEMPLATE_REV_KEY, 0) or 0)
+    cols = st.columns([0.18, 0.82], gap="small")
+    with cols[0]:
+        if st.button("New Solid", use_container_width=True, key=f"crossbeam_rb_cip2a_new_solid_{revision}"):
+            rows.append(new_rebar_template("Solid", [str(row.get("Template ID") or "") for row in rows]))
+            rows[-1]["Construction"] = "Cast in place"
+            rows[-1]["Longitudinal basis"] = "Zone-local"
+            rows[-1]["Notes"] = "Cast-in-Place Solid Section/Zone reinforcement; Zone boundaries do not automatically terminate longitudinal bars."
+            _store_cip_longitudinal_templates(rows)
+            _bump_cip_longitudinal_revision(); st.rerun()
+    with cols[1]:
+        st.caption("No Hollow template can be created in Cast-in-Place mode. Duplicate or edit Solid templates, then assign them in Section / Zone.")
+
+    identity_rows = [
+        {
+            "_Original ID": row["Template ID"], "Copy": False, "Delete": False,
+            "Template ID": row["Template ID"], "Template name": row["Template name"],
+            "Role": "Solid", "Construction": "Cast in place",
+        }
+        for row in rows
+    ]
+    identity_key = f"crossbeam_rb_cip2a_long_identity_{revision}"
+    edited = st.data_editor(
+        pd.DataFrame(identity_rows), use_container_width=True, hide_index=True, num_rows="fixed",
+        key=identity_key, on_change=_commit_cip_longitudinal_identity, args=(identity_key, identity_rows),
+        column_config={
+            "_Original ID": None,
+            "Copy": st.column_config.CheckboxColumn(width="small"),
+            "Delete": st.column_config.CheckboxColumn(width="small"),
+            "Template ID": st.column_config.TextColumn(required=True, width="medium"),
+            "Template name": st.column_config.TextColumn(required=True, width="large"),
+            "Role": st.column_config.TextColumn(width="small"),
+            "Construction": st.column_config.TextColumn(width="medium"),
+        },
+        disabled=["Role", "Construction"],
+    )
+    identity_records = _records(edited)
+    copy_ids = _template_action_selection(identity_records, "Copy")
+    delete_ids = _template_action_selection(identity_records, "Delete")
+    actions = st.columns([0.18, 0.18, 0.18, 0.46], gap="small")
+    with actions[0]:
+        if st.button(f"Duplicate checked ({len(copy_ids)})", disabled=not copy_ids, use_container_width=True, key=f"crossbeam_rb_cip2a_dup_{revision}"):
+            rows, _ = _duplicate_template_ids(rows, copy_ids); _store_cip_longitudinal_templates(rows); _bump_cip_longitudinal_revision(); st.rerun()
+    with actions[1]:
+        confirm = st.checkbox("Confirm delete", disabled=not delete_ids, key=f"crossbeam_rb_cip2a_del_confirm_{revision}")
+    with actions[2]:
+        if st.button(f"Delete checked ({len(delete_ids)})", disabled=not delete_ids or not confirm, use_container_width=True, key=f"crossbeam_rb_cip2a_del_{revision}"):
+            rows, deleted, errors = _delete_template_ids(rows, delete_ids, zone_rows)
+            st.session_state["crossbeam_rb_cip2a_notice"] = ("Deleted " + ", ".join(deleted) + ".") if deleted and not errors else " ".join(errors)
+            if not errors:
+                _store_cip_longitudinal_templates(rows); _bump_cip_longitudinal_revision()
+            st.rerun()
+    with actions[3]:
+        notice = str(st.session_state.pop("crossbeam_rb_cip2a_notice", "") or "")
+        if notice:
+            (st.success if notice.startswith("Deleted") else st.warning)(notice)
+        else:
+            st.caption("Assigned templates remain protected until their Section/Zones are reassigned.")
+
+    st.markdown("#### Participation and material")
+    material_rows = [
+        {"Template ID": row["Template ID"], "Basis": "Zone-local", "fy (MPa)": int(round(float(row["fy MPa"]))), "Material": row["Rebar material"], "Active": row["Active"], "Credit": row["Credit inside segment"]}
+        for row in rows
+    ]
+    material_key = f"crossbeam_rb_cip2a_long_material_{revision}"
+    st.data_editor(
+        pd.DataFrame(material_rows), use_container_width=True, hide_index=True, num_rows="fixed",
+        key=material_key, on_change=_commit_cip_longitudinal_material, args=(material_key, material_rows),
+        disabled=["Template ID", "Basis"],
+        column_config={
+            "Template ID": st.column_config.TextColumn(width="medium"),
+            "Basis": st.column_config.TextColumn(width="small"),
+            "fy (MPa)": st.column_config.SelectboxColumn(options=[390, 490], required=True, width="small"),
+            "Material": st.column_config.SelectboxColumn(options=list(TEMPLATE_MATERIAL_OPTIONS), required=True, width="small"),
+            "Active": st.column_config.CheckboxColumn(width="small"),
+            "Credit": st.column_config.CheckboxColumn("Credit in zone", width="small"),
+        },
+    )
+
+    st.markdown("#### Outer-face auto layout")
+    st.caption("Same Solid-section layout controls as Precast. Target means spacing in mm or total perimeter bar count, depending on Method.")
+    outer_rows = []
+    for row in rows:
+        method = str(row.get("Outer layout method") or "By target spacing")
+        outer_rows.append({
+            "Template ID": row["Template ID"], "Use": bool(row.get("Outer face bars")), "Bar": row.get("Outer bar size"),
+            "Method": method, "Fallback offset (mm)": float(row.get("Outer center offset mm") or 50.0),
+            "Target": int(row.get("Outer exact bar count") or 4) if method == "By exact bar count" else float(row.get("Outer target spacing mm") or 150.0),
+        })
+    outer_key = f"crossbeam_rb_cip2a_long_outer_{revision}"
+    st.data_editor(
+        pd.DataFrame(outer_rows), use_container_width=True, hide_index=True, num_rows="fixed",
+        key=outer_key, on_change=_commit_cip_longitudinal_outer, args=(outer_key, outer_rows), disabled=["Template ID"],
+        column_config={
+            "Template ID": st.column_config.TextColumn(width="medium"),
+            "Use": st.column_config.CheckboxColumn(width="small"),
+            "Bar": st.column_config.SelectboxColumn(options=list(TEMPLATE_BAR_SIZE_OPTIONS), required=True, width="small"),
+            "Method": st.column_config.SelectboxColumn(options=list(TEMPLATE_LAYOUT_METHOD_OPTIONS), required=True, width="medium"),
+            "Fallback offset (mm)": st.column_config.NumberColumn(min_value=1.0, step=5.0, format="%.0f", width="small"),
+            "Target": st.column_config.NumberColumn(min_value=1.0, step=1.0, format="%.0f", width="small"),
+        },
+    )
+
+    with st.expander("Adopted provided reinforcement — optional / future solver handoff", expanded=False):
+        adopted_rows = [
+            {"Template ID": row["Template ID"], "Top As (mm²)": row.get("Top As mm²", 0.0), "Bottom As (mm²)": row.get("Bottom As mm²", 0.0), "Side As (mm²)": row.get("Side As mm²", 0.0), "Notes": row.get("Notes", "")}
+            for row in rows
+        ]
+        adopted_key = f"crossbeam_rb_cip2a_long_adopted_{revision}"
+        st.data_editor(
+            pd.DataFrame(adopted_rows), use_container_width=True, hide_index=True, num_rows="fixed",
+            key=adopted_key, on_change=_commit_cip_longitudinal_adopted, args=(adopted_key, adopted_rows), disabled=["Template ID"],
+            column_config={
+                "Template ID": st.column_config.TextColumn(width="medium"),
+                "Top As (mm²)": st.column_config.NumberColumn(min_value=0.0, format="%.0f"),
+                "Bottom As (mm²)": st.column_config.NumberColumn(min_value=0.0, format="%.0f"),
+                "Side As (mm²)": st.column_config.NumberColumn(min_value=0.0, format="%.0f"),
+                "Notes": st.column_config.TextColumn(width="large"),
+            },
+        )
+
+    return canonical_rebar_templates(_records(st.session_state.get(CIP_RB_TEMPLATE_ROWS_KEY)) or rows)
+
+
+def _merge_cip_transverse_rows(source: list[dict[str, Any]], editor_rows: list[dict[str, Any]], field_map: Mapping[str, str]) -> list[dict[str, Any]]:
+    rows = canonical_transverse_templates(source)
+    by_id = {str(row.get("Template ID") or ""): dict(row) for row in rows}
+    for item in editor_rows:
+        tid = str(item.get("Template ID") or "").strip()
+        if tid not in by_id:
+            continue
+        for ef, tf in field_map.items():
+            if ef in item:
+                by_id[tid][tf] = item.get(ef)
+        by_id[tid]["Applicable role"] = "Solid"
+        by_id[tid]["Construction"] = "Cast in place"
+    return canonical_transverse_templates([by_id[str(row.get("Template ID") or "")] for row in rows])
+
+
+def _commit_cip_transverse_table(editor_key: str, fallback: list[dict[str, Any]], field_map: Mapping[str, str]) -> None:
+    source = canonical_transverse_templates(_records(st.session_state.get(CIP_TR_TEMPLATE_ROWS_KEY)))
+    edited = _cip_records_from_editor(editor_key, fallback)
+    _store_cip_transverse_templates(_merge_cip_transverse_rows(source, edited, field_map))
+
+
+def _commit_cip_transverse_material(editor_key: str, fallback: list[dict[str, Any]]) -> None:
+    source = canonical_transverse_templates(_records(st.session_state.get(CIP_TR_TEMPLATE_ROWS_KEY)))
+    edited = _cip_records_from_editor(editor_key, fallback)
+    rows = _merge_cip_transverse_rows(source, edited, {"Material": "Rebar material"})
+    _store_cip_transverse_templates(rows)
+    _bump_cip_transverse_revision()
+
+
+def _commit_cip_transverse_identity(editor_key: str, fallback: list[dict[str, Any]]) -> None:
+    source = canonical_transverse_templates(_records(st.session_state.get(CIP_TR_TEMPLATE_ROWS_KEY)))
+    zones = canonical_rebar_zones(_records(st.session_state.get(CIP_RB_ZONE_ROWS_KEY)))
+    edited = _cip_records_from_editor(editor_key, fallback)
+    by_old = {str(row.get("Template ID") or ""): dict(row) for row in source}
+    proposed: list[dict[str, Any]] = []
+    rename: dict[str, str] = {}
+    errors: list[str] = []
+    for item in edited:
+        old = str(item.get("_Original ID") or "").strip()
+        row = dict(by_old.get(old) or {})
+        if not row:
+            continue
+        new_id = _normalize_template_id(item.get("Template ID") or old)
+        if not new_id:
+            errors.append(f"{old}: Template ID is required.")
+            new_id = old
+        row["Template ID"] = new_id
+        row["Template name"] = str(item.get("Template name") or row.get("Template name") or new_id).strip()
+        row["Applicable role"] = "Solid"
+        row["Construction"] = "Cast in place"
+        proposed.append(row)
+        if old != new_id:
+            rename[old] = new_id
+    ids = [str(row.get("Template ID") or "") for row in proposed]
+    duplicates = sorted({tid for tid in ids if tid and ids.count(tid) > 1})
+    if duplicates:
+        errors.append("Duplicate Transverse Template IDs are not allowed: " + ", ".join(duplicates) + ".")
+    if errors:
+        st.session_state["crossbeam_rb_cip2a_tr_notice"] = " ".join(errors)
+        return
+    for zone in zones:
+        old = str(zone.get("Transverse template") or "")
+        if old in rename:
+            zone["Transverse template"] = rename[old]
+    _store_cip_transverse_templates(proposed)
+    _store_cip_zone_rows(zones)
+    _bump_cip_transverse_revision()
+    if rename:
+        _bump_cip_zone_revision()
+
+
+def _delete_cip_transverse_templates(rows: list[dict[str, Any]], ids: list[str], zones: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+    used = {str(zone.get("Transverse template") or "") for zone in canonical_rebar_zones(zones)}
+    errors = [f"{tid}: cannot delete because a Section/Zone still references this Transverse Template." for tid in ids if tid in used]
+    if errors:
+        return canonical_transverse_templates(rows), [], errors
+    deleted = [tid for tid in ids if any(str(row.get("Template ID") or "") == tid for row in rows)]
+    kept = [row for row in rows if str(row.get("Template ID") or "") not in set(deleted)]
+    return canonical_transverse_templates(kept), deleted, []
+
+
+def _render_cip_transverse_template_library(template_rows: list[dict[str, Any]], zone_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    st.markdown("### Transverse / Shear Template Library")
+    st.caption("Solid-only Cast-in-Place transverse reinforcement using the same template pattern as Precast Segmental. Section/Zone boundaries are not physical joints.")
+    rows = canonical_transverse_templates(template_rows)
+    revision = int(st.session_state.get(CIP_TR_TEMPLATE_REV_KEY, 0) or 0)
+    cols = st.columns([0.18, 0.82])
+    with cols[0]:
+        if st.button("New Solid", use_container_width=True, key=f"crossbeam_rb_cip2a_tr_new_{revision}"):
+            created = new_transverse_template("Solid", [str(row.get("Template ID") or "") for row in rows])
+            created["Construction"] = "Cast in place"; created["Applicable role"] = "Solid"
+            rows.append(created); _store_cip_transverse_templates(rows); _bump_cip_transverse_revision(); st.rerun()
+    with cols[1]:
+        st.caption("Use Solid multi-leg tie templates only. Hollow transverse topology remains available only in Precast Segmental mode.")
+
+    identity_rows = [
+        {"_Original ID": row["Template ID"], "Copy": False, "Delete": False, "Template ID": row["Template ID"], "Template name": row["Template name"], "Role": "Solid", "Construction": "Cast in place"}
+        for row in rows
+    ]
+    identity_key = f"crossbeam_rb_cip2a_tr_identity_{revision}"
+    identity_edited = st.data_editor(
+        pd.DataFrame(identity_rows), use_container_width=True, hide_index=True, num_rows="fixed",
+        key=identity_key, on_change=_commit_cip_transverse_identity, args=(identity_key, identity_rows),
+        disabled=["Role", "Construction"],
+        column_config={
+            "_Original ID": None,
+            "Copy": st.column_config.CheckboxColumn(width="small"), "Delete": st.column_config.CheckboxColumn(width="small"),
+            "Template ID": st.column_config.TextColumn(required=True, width="medium"), "Template name": st.column_config.TextColumn(required=True, width="large"),
+            "Role": st.column_config.TextColumn(width="small"), "Construction": st.column_config.TextColumn(width="medium"),
+        },
+    )
+    identity_records = _records(identity_edited)
+    copy_ids = _template_action_selection(identity_records, "Copy")
+    delete_ids = _template_action_selection(identity_records, "Delete")
+    actions = st.columns([0.18, 0.18, 0.18, 0.46], gap="small")
+    with actions[0]:
+        if st.button(f"Duplicate checked ({len(copy_ids)})", disabled=not copy_ids, use_container_width=True, key=f"crossbeam_rb_cip2a_tr_dup_{revision}"):
+            existing = [str(row.get("Template ID") or "") for row in rows]
+            for tid in copy_ids:
+                source = next((row for row in rows if str(row.get("Template ID") or "") == tid), None)
+                if source:
+                    created = duplicate_transverse_template(source, existing); rows.append(created); existing.append(str(created.get("Template ID") or ""))
+            _store_cip_transverse_templates(rows); _bump_cip_transverse_revision(); st.rerun()
+    with actions[1]:
+        confirm = st.checkbox("Confirm delete", disabled=not delete_ids, key=f"crossbeam_rb_cip2a_tr_del_confirm_{revision}")
+    with actions[2]:
+        if st.button(f"Delete checked ({len(delete_ids)})", disabled=not delete_ids or not confirm, use_container_width=True, key=f"crossbeam_rb_cip2a_tr_del_{revision}"):
+            rows, deleted, delete_errors = _delete_cip_transverse_templates(rows, delete_ids, zone_rows)
+            st.session_state["crossbeam_rb_cip2a_tr_notice"] = ("Deleted " + ", ".join(deleted) + ".") if deleted and not delete_errors else " ".join(delete_errors)
+            if not delete_errors:
+                _store_cip_transverse_templates(rows); _bump_cip_transverse_revision()
+            st.rerun()
+    with actions[3]:
+        notice = str(st.session_state.pop("crossbeam_rb_cip2a_tr_notice", "") or "")
+        if notice:
+            (st.success if notice.startswith("Deleted") else st.warning)(notice)
+        else:
+            st.caption("Assigned transverse templates remain protected until their Section/Zones are reassigned.")
+
+    st.markdown("#### Participation and material")
+    material_rows = [{"Template ID": row["Template ID"], "Material": row["Rebar material"], "fy (MPa)": int(round(float(row["fy MPa"])))} for row in rows]
+    material_key = f"crossbeam_rb_cip2a_tr_material_{revision}"
+    st.data_editor(
+        pd.DataFrame(material_rows), use_container_width=True, hide_index=True, num_rows="fixed", key=material_key,
+        on_change=_commit_cip_transverse_material, args=(material_key, material_rows), disabled=["Template ID", "fy (MPa)"],
+        column_config={"Template ID": st.column_config.TextColumn(width="medium"), "Material": st.column_config.SelectboxColumn(options=list(TRANSVERSE_MATERIAL_OPTIONS), required=True), "fy (MPa)": st.column_config.NumberColumn(format="%.0f", help="Derived from the selected material grade.")},
+    )
+
+    st.markdown("#### Solid multi-leg ties")
+    tie_rows = [{"Template ID": row["Template ID"], "Bar": row["Bar size"], "Spacing (mm)": row["Spacing mm"], "Effective legs": row["Effective legs"], "Closed tie": row["Closed cage"]} for row in rows]
+    tie_key = f"crossbeam_rb_cip2a_tr_ties_{revision}"
+    st.data_editor(
+        pd.DataFrame(tie_rows), use_container_width=True, hide_index=True, num_rows="fixed", key=tie_key,
+        on_change=_commit_cip_transverse_table, args=(tie_key, tie_rows, {"Bar": "Bar size", "Spacing (mm)": "Spacing mm", "Effective legs": "Effective legs", "Closed tie": "Closed cage"}), disabled=["Template ID"],
+        column_config={
+            "Template ID": st.column_config.TextColumn(width="medium"), "Bar": st.column_config.SelectboxColumn(options=list(TRANSVERSE_BAR_SIZE_OPTIONS), required=True, width="small"),
+            "Spacing (mm)": st.column_config.NumberColumn(min_value=25.0, step=25.0, format="%.0f"), "Effective legs": st.column_config.NumberColumn(min_value=2, step=1, format="%d"), "Closed tie": st.column_config.CheckboxColumn(),
+        },
+    )
+
+    st.markdown("#### Cross-section cage placement")
+    placement_rows = [{"Template ID": row["Template ID"], "Cage centerline offset (mm)": row["Center offset mm"], "First set from Zone start (mm)": row["First bar offset mm"], "Minimum clearance to Zone end (mm)": row["Last bar offset mm"]} for row in rows]
+    placement_key = f"crossbeam_rb_cip2a_tr_place_{revision}"
+    st.data_editor(
+        pd.DataFrame(placement_rows), use_container_width=True, hide_index=True, num_rows="fixed", key=placement_key,
+        on_change=_commit_cip_transverse_table,
+        args=(placement_key, placement_rows, {"Cage centerline offset (mm)": "Center offset mm", "First set from Zone start (mm)": "First bar offset mm", "Minimum clearance to Zone end (mm)": "Last bar offset mm"}), disabled=["Template ID"],
+        column_config={
+            "Template ID": st.column_config.TextColumn(width="medium"), "Cage centerline offset (mm)": st.column_config.NumberColumn(min_value=1.0, step=5.0, format="%.0f"),
+            "First set from Zone start (mm)": st.column_config.NumberColumn(min_value=0.0, step=25.0, format="%.0f"), "Minimum clearance to Zone end (mm)": st.column_config.NumberColumn(min_value=0.0, step=25.0, format="%.0f"),
+        },
+    )
+    return canonical_transverse_templates(_records(st.session_state.get(CIP_TR_TEMPLATE_ROWS_KEY)) or rows)
+
+
+def _commit_cip_zone_assignment(editor_key: str, fallback: list[dict[str, Any]]) -> None:
+    source = canonical_rebar_zones(_records(st.session_state.get(CIP_RB_ZONE_ROWS_KEY)))
+    edited = {str(row.get("Zone") or ""): row for row in _cip_records_from_editor(editor_key, fallback)}
+    updated = []
+    for row in source:
+        item = edited.get(str(row.get("Zone ID") or ""))
+        new = dict(row)
+        if item:
+            new["Longitudinal template"] = str(item.get("Longitudinal template") or "")
+            new["Rebar template"] = new["Longitudinal template"]
+            new["Transverse template"] = str(item.get("Transverse template") or "")
+        updated.append(new)
+    _store_cip_zone_rows(updated)
+
+
+def _render_cip_zone_assignment(segment_rows: list[dict[str, Any]], long_rows: list[dict[str, Any]], trans_rows: list[dict[str, Any]], zone_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    st.markdown("### Section / Zone Reinforcement Assignment")
+    st.caption("Assign Solid longitudinal and transverse templates to each Cast-in-Place Section/Zone. Zone boundaries are geometry/property boundaries, not physical construction joints.")
+    by_zone = {str(row.get("Zone ID") or ""): row for row in canonical_rebar_zones(zone_rows)}
+    editor_rows = []
+    for layout in sorted(segment_rows, key=lambda row: _number(row.get("x_start_m"), 0.0)):
+        zid = str(layout.get("Segment") or "")
+        assignment = by_zone.get(zid, {})
+        editor_rows.append({
+            "Zone": zid,
+            "Start (m)": float(layout.get("x_start_m") or 0.0), "End (m)": float(layout.get("x_end_m") or 0.0),
+            "Section ID": str(layout.get("Section ID") or ""), "Section name": str(layout.get("Section name") or ""),
+            "Longitudinal template": str(assignment.get("Longitudinal template") or assignment.get("Rebar template") or ""),
+            "Transverse template": str(assignment.get("Transverse template") or ""),
+        })
+    revision = int(st.session_state.get(CIP_RB_ZONE_REV_KEY, 0) or 0)
+    key = f"crossbeam_rb_cip2a_zone_assign_{revision}"
+    long_options = list(template_map(long_rows))
+    trans_options = list(transverse_template_map(trans_rows))
+    st.data_editor(
+        pd.DataFrame(editor_rows), use_container_width=True, hide_index=True, num_rows="fixed", key=key,
+        on_change=_commit_cip_zone_assignment, args=(key, editor_rows),
+        disabled=["Zone", "Start (m)", "End (m)", "Section ID", "Section name"],
+        column_config={
+            "Zone": st.column_config.TextColumn(width="small"), "Start (m)": st.column_config.NumberColumn(format="%.3f", width="small"), "End (m)": st.column_config.NumberColumn(format="%.3f", width="small"),
+            "Section ID": st.column_config.TextColumn(width="medium"), "Section name": st.column_config.TextColumn(width="large"),
+            "Longitudinal template": st.column_config.SelectboxColumn(options=long_options, required=True, width="medium"), "Transverse template": st.column_config.SelectboxColumn(options=trans_options, required=True, width="medium"),
+        },
+    )
+    return canonical_rebar_zones(_records(st.session_state.get(CIP_RB_ZONE_ROWS_KEY)) or zone_rows)
+
+
+def _cip_template_elevation_figure(segment_rows: list[dict[str, Any]], zone_rows: list[dict[str, Any]], length_m: float) -> go.Figure:
+    assignments = {str(row.get("Zone ID") or ""): row for row in canonical_rebar_zones(zone_rows)}
+    fig = go.Figure()
+    for idx, row in enumerate(sorted(segment_rows, key=lambda item: _number(item.get("x_start_m"), 0.0))):
+        zid = str(row.get("Segment") or f"Z{idx+1}")
+        x0 = _number(row.get("x_start_m"), 0.0); x1 = _number(row.get("x_end_m"), 0.0)
+        assign = assignments.get(zid, {})
+        fig.add_shape(type="rect", x0=x0, x1=x1, y0=-0.45, y1=0.45, line=dict(width=1), fillcolor="rgba(120,120,120,0.08)")
+        fig.add_annotation(x=0.5*(x0+x1), y=0.22, text=f"{zid}<br>{assign.get('Longitudinal template','—')}", showarrow=False)
+        if idx:
+            fig.add_vline(x=x0, line_dash="dot", line_width=1)
+    fig.update_xaxes(title="Crossbeam station s (m)", range=[0.0, max(float(length_m), 0.001)])
+    fig.update_yaxes(visible=False, range=[-0.65, 0.65])
+    fig.update_layout(height=280, margin=dict(l=20,r=20,t=20,b=40), showlegend=False)
+    return fig
+
+
+def _cip_subnavigation() -> str:
+    current = str(st.session_state.get(CIP_RB_SUBVIEW_KEY) or CIP_RB_SUBVIEWS[0])
+    if current not in CIP_RB_SUBVIEWS:
+        current = CIP_RB_SUBVIEWS[0]
+        st.session_state[CIP_RB_SUBVIEW_KEY] = current
+    cols = st.columns(len(CIP_RB_SUBVIEWS), gap="small")
+    for i, label in enumerate(CIP_RB_SUBVIEWS):
+        with cols[i]:
+            if st.button(label, use_container_width=True, type="primary" if current == label else "secondary", key=f"crossbeam_rb_cip2a_nav_{i}"):
+                st.session_state[CIP_RB_SUBVIEW_KEY] = label; st.rerun()
+    return current
+
+
+def _render_cip_template_aligned_workspace(*, length_m: float, segment_rows: list[dict[str, Any]], segment_errors: list[str]) -> None:
+    long_rows, trans_rows, zone_rows = _ensure_cip_template_state(segment_rows)
+    errors, warnings = validate_cip_template_model(layout_rows=segment_rows, longitudinal_templates=long_rows, transverse_templates=trans_rows, zone_assignments=zone_rows)
+    legacy_runs = canonical_cip_longitudinal_bar_runs(_records(st.session_state.get(CB_RB_CIP_RUN_ROWS_KEY)))
+
+    render_metric_cards([
+        {"title":"Rebar model","value":"SOLID TEMPLATE / ZONE","detail":"Same interaction pattern as Precast Segmental; separate CIP canonical state","status":"ready"},
+        {"title":"Zone boundary","value":"NOT A JOINT","detail":"Ordinary longitudinal bars may remain continuous across Section/Zone boundaries","status":"ready"},
+        {"title":"Continuity","value":"REVIEW" if errors else "DERIVED QA","detail":"Adjacent Zone layouts are compared; exact development/splice/termination remains separate","status":"warning" if errors else "info"},
+        {"title":"Solver handoff","value":"LOCKED","detail":"Input/preview only; no CIP rebar solver credit","status":"neutral"},
+    ])
+    st.info("Cast-in-Place uses the accepted Rebar Template Library pattern from Precast Segmental, limited to Solid sections. The key engineering difference is continuity: Section/Zone boundaries do not force ordinary longitudinal reinforcement to zero.")
+    if legacy_runs:
+        st.warning("Legacy RB-CIP2 bar-run rows are preserved in Project JSON but are no longer the user-facing input model and are not converted automatically. Re-enter adopted reinforcement through the aligned template/Section-Zone workflow before future solver handoff.")
+    for issue in segment_errors + errors:
+        st.error(issue)
+    if warnings:
+        st.caption(f"Input completeness: {len(warnings)} adopted-reinforcement item(s) remain optional/pending before any future solver handoff.")
+
+    active = _cip_subnavigation()
+    if active == "Longitudinal":
+        long_rows = _render_cip_longitudinal_template_library(long_rows, zone_rows)
+        render_metric_cards([
+            {"title":"Active templates","value":len(template_map(long_rows)),"detail":"Solid longitudinal template IDs","status":"info"},
+            {"title":"Quantities defined","value":sum(_template_quantity_defined(r) for r in template_map(long_rows).values()),"detail":"Adopted provided reinforcement remains optional until solver handoff","status":"neutral"},
+            {"title":"Physical joint crossing rule","value":"N/A","detail":"CIP Zone boundaries are not segment joints","status":"ready"},
+        ])
+    elif active == "Transverse / Shear":
+        trans_rows = _render_cip_transverse_template_library(trans_rows, zone_rows)
+    elif active == "Section / Zone":
+        zone_rows = _render_cip_zone_assignment(segment_rows, long_rows, trans_rows, zone_rows)
+        st.plotly_chart(_cip_template_elevation_figure(segment_rows, zone_rows, length_m), use_container_width=True, config=FIGURE_CONFIG)
+        st.caption("Template extents follow Section/Zones. Dotted Zone boundaries are property boundaries only and do not imply longitudinal bar cut-off or splice.")
+    elif active == "Preview":
+        _render_section_rebar_preview(
+            segment_rows, zone_rows, long_rows, trans_rows,
+            cip_mode=True,
+            preview_segment_key=CIP_RB_PREVIEW_ZONE_KEY,
+            preview_zone_key="crossbeam_rb_cip2a_preview_assignment",
+            preview_mode_key="crossbeam_rb_cip2a_preview_mode",
+            marker_mode_key="crossbeam_rb_cip2a_marker_mode",
+        )
+    else:
+        render_section_bar("Continuity across Section/Zone boundaries", "Derived QA compares adjacent longitudinal template arrangements without pretending that a property boundary is a physical joint.", mark="QA")
+        continuity = cip_continuity_audit_rows(segment_rows, zone_rows, long_rows)
+        if continuity:
+            st.dataframe(pd.DataFrame(continuity), use_container_width=True, hide_index=True)
+        else:
+            st.info("No internal Section/Zone boundary exists in the current Cast-in-Place layout.")
+        station = st.number_input("Review station s (m)", min_value=0.0, max_value=max(float(length_m),0.0), step=0.100, format="%.3f", key=CIP_RB_REVIEW_STATION_KEY)
+        current = None
+        for layout in sorted(segment_rows, key=lambda r:_number(r.get("x_start_m"),0.0)):
+            if _number(layout.get("x_start_m"),0.0)-1e-9 <= station <= _number(layout.get("x_end_m"),0.0)+1e-9:
+                current = layout; break
+        if current:
+            zid = str(current.get("Segment") or "")
+            assign = next((r for r in zone_rows if str(r.get("Zone ID") or "") == zid), {})
+            render_metric_cards([
+                {"title":"Review station","value":f"s = {station:.3f} m","detail":f"Section / Zone {zid}","status":"neutral"},
+                {"title":"Longitudinal template","value":str(assign.get("Longitudinal template") or "—"),"detail":"Local arrangement source","status":"info"},
+                {"title":"Transverse template","value":str(assign.get("Transverse template") or "—"),"detail":"Local tie/shear arrangement source","status":"info"},
+                {"title":"Continuity certification","value":"NOT CERTIFIED","detail":"Development/splice/termination QA remains future scope","status":"warning"},
+            ])
+    st.warning("SOLVER HANDOFF LOCKED — The aligned CIP template/Section-Zone workflow is input and review only. ULS/SLS/PMM, shear/torsion, prestress-loss, Result Summary, and Report/QA receive no CIP rebar credit from RB-CIP2A.")
 
 def render_crossbeam_rebar_page() -> None:
     length_m, segment_rows, segment_errors = crossbeam_segment_layout_from_state()
@@ -2814,10 +3191,10 @@ def render_crossbeam_rebar_page() -> None:
     if construction_method == "Cast-in-Place":
         render_page_header(
             "Crossbeam Rebar — Cast-in-Place",
-            "Define continuous longitudinal reinforcement as station-based bar runs across one monolithic Solid Crossbeam. Section/Zone boundaries do not interrupt ordinary longitudinal reinforcement.",
+            "Define Solid Section/Zone reinforcement using the same template-based workflow as Precast Segmental, while preserving monolithic longitudinal continuity across Zone boundaries.",
             icon="RB", kicker="Sections workspace", badge="Portal Frame Crossbeam", accent="green",
         )
-        _render_cip_longitudinal_rebar_workspace(
+        _render_cip_template_aligned_workspace(
             length_m=length_m,
             segment_rows=segment_rows,
             segment_errors=segment_errors,
