@@ -64,6 +64,15 @@ from concrete_pmm_pro.crossbeam.rebar import (
     rebar_diameter_mm,
     validate_rebar_zones,
 )
+from concrete_pmm_pro.crossbeam.cip_rebar import (
+    canonical_cip_longitudinal_bar_runs,
+    cip_rebar_topology_status,
+    default_cip_longitudinal_bar_runs,
+)
+from concrete_pmm_pro.crossbeam.cip_rebar_persistence import (
+    CB_RB_CIP_RUN_ROWS_KEY,
+    CB_RB_CIP_VALIDATION_KEY,
+)
 from concrete_pmm_pro.crossbeam.rebar_persistence import (
     CB_RB_ACTIVE_TEMPLATE_KEY,
     CB_RB_PREVIEW_MARKER_MODE_KEY,
@@ -2310,26 +2319,58 @@ def render_crossbeam_rebar_page() -> None:
         st.session_state.get("crossbeam_ptloss3b1_construction_method") or "Precast Segmental"
     )
     if construction_method == "Cast-in-Place":
+        if CB_RB_CIP_RUN_ROWS_KEY not in st.session_state:
+            st.session_state[CB_RB_CIP_RUN_ROWS_KEY] = default_cip_longitudinal_bar_runs()
+        cip_runs = canonical_cip_longitudinal_bar_runs(
+            st.session_state.get(CB_RB_CIP_RUN_ROWS_KEY, [])
+        )
+        st.session_state[CB_RB_CIP_RUN_ROWS_KEY] = cip_runs
+        cip_status = cip_rebar_topology_status(cip_runs, length_m=length_m)
+        st.session_state[CB_RB_CIP_VALIDATION_KEY] = cip_status
+
         render_page_header(
             "Crossbeam Rebar — Cast-in-Place",
-            "The Crossbeam is one monolithic continuously cast Solid member. Section/zone boundaries do not interrupt ordinary longitudinal reinforcement.",
+            "The Crossbeam is one monolithic continuously cast Solid member. Section/Zone boundaries do not interrupt ordinary longitudinal reinforcement.",
             icon="RB", kicker="Sections workspace", badge="Portal Frame Crossbeam", accent="green",
+        )
+        topology_visual_status = (
+            "ready" if cip_status["status"] == "FOUNDATION READY"
+            else "warning"
         )
         render_metric_cards(
             [
                 {"title": "Construction type", "value": "CAST-IN-PLACE", "detail": "Monolithic continuous pour", "status": "ready"},
                 {"title": "Section family", "value": "SOLID ONLY", "detail": "No Hollow zones are permitted", "status": "ready"},
-                {"title": "Longitudinal rebar", "value": "CONTINUOUS TOPOLOGY", "detail": "Editor not released in CIP1", "status": "warning"},
-                {"title": "Solver handoff", "value": "LOCKED", "detail": "RB-CIP milestones remain pending", "status": "neutral"},
+                {
+                    "title": "Continuous topology",
+                    "value": cip_status["status"],
+                    "detail": f"{cip_status['active_run_count']} active station-based bar run(s); editor pending RB-CIP2",
+                    "status": topology_visual_status,
+                },
+                {"title": "Solver handoff", "value": "LOCKED", "detail": "No CIP bar-run solver credit in RB-CIP1", "status": "neutral"},
             ]
         )
         st.warning(
-            "CIP1 WORKFLOW GUARD — The existing Segmental Rebar editor is intentionally disabled for Cast-in-Place projects because its segment-local bars and As = 0 joint rule are not physically applicable. "
-            "The Cast-in-Place continuous longitudinal bar-run editor will be released as a separate validated milestone. Existing Segmental Rebar data is preserved and will return when Construction Type is switched back to Precast Segmental."
+            "RB-CIP1 WORKFLOW GUARD — The continuous longitudinal bar-run data foundation is now separate from the Precast Segmental template/zone model, but the editing workflow is not released yet. "
+            "Section/Zone boundaries do not terminate CIP longitudinal bars, Segmental As = 0 joint semantics are not applied here, and no CIP bar run is routed to ULS/SLS/PMM or other design solvers. Existing Segmental Rebar data remains preserved for Precast Segmental mode."
         )
         if segment_errors:
             for issue in segment_errors:
                 st.error(issue)
+        for issue in cip_status.get("errors", []):
+            st.error(issue)
+        if cip_runs:
+            for issue in cip_status.get("warnings", []):
+                st.warning(issue)
+            with st.expander("Continuous longitudinal topology — read-only foundation", expanded=False):
+                st.dataframe(pd.DataFrame(cip_runs), use_container_width=True, hide_index=True)
+                st.caption(
+                    "Read-only in RB-CIP1. Runs are station-based and may cross any Section/Zone boundary. Development, splice, curtailment, anchorage, congestion, and code-minimum QA are not certified by this foundation."
+                )
+        else:
+            st.info(
+                "LAYOUT REQUIRED — No Cast-in-Place longitudinal bar runs are defined. RB-CIP1 intentionally does not invent reinforcement. The bar-run editor will be introduced in RB-CIP2."
+            )
         st.caption(
             f"Current Cast-in-Place Section/Zone source: {len(segment_rows)} zone(s) over L = {length_m:.3f} m. Zone boundaries are geometry/property boundaries, not physical joints."
         )
