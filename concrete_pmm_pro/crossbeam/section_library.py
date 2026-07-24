@@ -397,7 +397,12 @@ def replace_section_id_in_segments(segment_rows: Any, old_id: str, new_id: str) 
     return result
 
 
-def migrate_segment_rows_to_library(segment_rows: Any, definitions: Any) -> list[dict[str, Any]]:
+def migrate_segment_rows_to_library(
+    segment_rows: Any,
+    definitions: Any,
+    *,
+    preserve_explicit_unknown_ids: bool = False,
+) -> list[dict[str, Any]]:
     """Replace legacy preset keys/names with project Section IDs.
 
     Existing station boundaries and segment names are preserved.  Legacy rows
@@ -423,10 +428,35 @@ def migrate_segment_rows_to_library(segment_rows: Any, definitions: Any) -> list
         preset_key = str(row.get("Section preset key") or "").strip()
         preset_name = str(row.get("Section type / preset") or "").strip()
         role = str(row.get("Section role") or "").strip().title()
-        if raw_id in by_id:
-            section_id = raw_id
-        elif raw_id in {CROSSBEAM_SOLID_PRESET_KEY, CROSSBEAM_HOLLOW_PRESET_KEY}:
-            section_id = by_preset.get(raw_id)
+        has_project_assignment_metadata = any(
+            key in row
+            for key in (
+                "Section name",
+                "Section preset key",
+                "Section type / preset",
+            )
+        )
+        if raw_id:
+            if raw_id in by_id:
+                section_id = raw_id
+            elif raw_id in {CROSSBEAM_SOLID_PRESET_KEY, CROSSBEAM_HOLLOW_PRESET_KEY}:
+                section_id = by_preset.get(raw_id)
+            elif preserve_explicit_unknown_ids or has_project_assignment_metadata:
+                # An explicit unknown project Section ID is engineering data,
+                # not permission to guess a replacement from its stale role or
+                # row position. Preserve it so downstream validation reports
+                # REVIEW instead of silently changing the assigned geometry.
+                section_id = raw_id
+            elif preset_key in by_preset:
+                section_id = by_preset[preset_key]
+            elif preset_name == CROSSBEAM_HOLLOW_PRESET_NAME:
+                section_id = by_role.get("Hollow")
+            elif preset_name == CROSSBEAM_SOLID_PRESET_NAME:
+                section_id = by_role.get("Solid")
+            elif role in by_role:
+                section_id = by_role[role]
+            else:
+                section_id = raw_id
         elif preset_key in by_preset:
             section_id = by_preset[preset_key]
         elif preset_name == CROSSBEAM_HOLLOW_PRESET_NAME:

@@ -210,7 +210,15 @@ def _crossbeam_input_metadata_from_session(session_state: Any) -> dict[str, Any]
     segment_rows = _clean_table_value(_get_session_value(session_state, CROSSBEAM_SEGMENT_ROWS_STATE_KEY, []))
     if not definitions and not segment_rows:
         return {}
-    migrated_segments = migrate_segment_rows_to_library(segment_rows or [], definitions) if definitions else list(segment_rows or [])
+    migrated_segments = (
+        migrate_segment_rows_to_library(
+            segment_rows or [],
+            definitions,
+            preserve_explicit_unknown_ids=True,
+        )
+        if definitions
+        else list(segment_rows or [])
+    )
     return {
         "schema_version": SECLIB_SCHEMA_VERSION,
         "section_definitions": _clean_table_value(definitions),
@@ -1222,7 +1230,13 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
         segment_rows = crossbeam_input.get("segment_rows")
         if isinstance(segment_rows, list):
             session_state[CROSSBEAM_SEGMENT_ROWS_STATE_KEY] = (
-                migrate_segment_rows_to_library(segment_rows, definitions) if definitions else list(segment_rows)
+                migrate_segment_rows_to_library(
+                    segment_rows,
+                    definitions,
+                    preserve_explicit_unknown_ids=True,
+                )
+                if definitions
+                else list(segment_rows)
             )
             session_state[CROSSBEAM_SEGMENT_REVISION_STATE_KEY] = int(
                 session_state.get(CROSSBEAM_SEGMENT_REVISION_STATE_KEY, 0) or 0
@@ -1230,12 +1244,24 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
         precast_rows = crossbeam_input.get("precast_segment_rows")
         if isinstance(precast_rows, list):
             session_state[CROSSBEAM_PRECAST_LAYOUT_STATE_KEY] = (
-                migrate_segment_rows_to_library(precast_rows, definitions) if definitions else list(precast_rows)
+                migrate_segment_rows_to_library(
+                    precast_rows,
+                    definitions,
+                    preserve_explicit_unknown_ids=True,
+                )
+                if definitions
+                else list(precast_rows)
             )
         cip_rows = crossbeam_input.get("cast_in_place_zone_rows")
         if isinstance(cip_rows, list):
             session_state[CROSSBEAM_CIP_LAYOUT_STATE_KEY] = (
-                migrate_segment_rows_to_library(cip_rows, definitions) if definitions else list(cip_rows)
+                migrate_segment_rows_to_library(
+                    cip_rows,
+                    definitions,
+                    preserve_explicit_unknown_ids=True,
+                )
+                if definitions
+                else list(cip_rows)
             )
         construction_last = crossbeam_input.get("construction_method_last")
         if construction_last is not None:
