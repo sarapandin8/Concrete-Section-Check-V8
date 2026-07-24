@@ -470,8 +470,8 @@ def test_ptloss3b1c_default_columns_and_closure_seed_match_adopted_project_defau
 
     rows = default_column_stage_rows(20.0)
     assert len(rows) == 2
-    assert rows[0]["Station s (m)"] == 0.0
-    assert rows[1]["Station s (m)"] == 20.0
+    assert rows[0]["Station s (m)"] == 1.5
+    assert rows[1]["Station s (m)"] == 18.5
     for row in rows:
         assert row["Height (m)"] == 10.0
         assert row["Btrans (mm)"] == 2000.0
@@ -481,6 +481,14 @@ def test_ptloss3b1c_default_columns_and_closure_seed_match_adopted_project_defau
         assert row["f'c (MPa)"] == 35.0
     settings = default_crossbeam_prestress_loss_settings()
     assert settings["es_closure_required_mpa"] == DEFAULT_PRECAST_CLOSURE_STRENGTH_MPA == 50.0
+
+
+
+def test_cip1b_short_member_column_seed_uses_ordered_quarter_points() -> None:
+    from concrete_pmm_pro.crossbeam.construction_stage import default_column_stage_rows
+
+    rows = default_column_stage_rows(2.0)
+    assert [row["Station s (m)"] for row in rows] == [0.5, 1.5]
 
 
 def test_ptloss3b1c_segment_elevation_uses_real_column_width_along_s() -> None:

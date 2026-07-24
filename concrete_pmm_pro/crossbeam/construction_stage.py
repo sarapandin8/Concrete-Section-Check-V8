@@ -103,17 +103,31 @@ def normalize_column_shape(value: Any) -> str:
 def default_column_stage_rows(length_m: float) -> list[dict[str, Any]]:
     """Return the practical two-column seed used by new Crossbeam projects.
 
-    C1 is centered at ``s=0`` and C2 at ``s=L``.  The plan-section defaults
-    follow the accepted Crossbeam source convention and remain fully editable.
+    ``L`` is the physical end-to-end Crossbeam length.  For normal member
+    lengths, C1/C2 default 1.5 m inboard from the physical ends so the default
+    2.0 m-long column footprints remain inside the member.  Very short members
+    use quarter-point seeds to avoid crossed/coincident default centerlines.
+    All stations remain fully editable by the user.
+
     Dormant shape values are retained so switching between rectangular and
     circular preview shapes does not destroy the user's last dimensions.
     """
 
     length = max(_float(length_m), 0.0)
+    if length >= 3.0:
+        c1_station = 1.5
+        c2_station = length - 1.5
+    elif length > 0.0:
+        c1_station = 0.25 * length
+        c2_station = 0.75 * length
+    else:
+        c1_station = 0.0
+        c2_station = 0.0
+
     return [
         {
             "Column ID": "C1",
-            "Station s (m)": 0.0,
+            "Station s (m)": c1_station,
             "Height (m)": DEFAULT_COLUMN_HEIGHT_M,
             "Shape": COLUMN_SHAPE_RECT_CHAMFER,
             "Btrans (mm)": DEFAULT_COLUMN_BTRANS_MM,
@@ -124,7 +138,7 @@ def default_column_stage_rows(length_m: float) -> list[dict[str, Any]]:
         },
         {
             "Column ID": "C2",
-            "Station s (m)": length,
+            "Station s (m)": c2_station,
             "Height (m)": DEFAULT_COLUMN_HEIGHT_M,
             "Shape": COLUMN_SHAPE_RECT_CHAMFER,
             "Btrans (mm)": DEFAULT_COLUMN_BTRANS_MM,

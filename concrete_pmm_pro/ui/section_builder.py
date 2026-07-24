@@ -76,6 +76,8 @@ RAILWAY_U_GIRDER_DEFAULT_SPAN_LENGTH_M = 10.0
 RAILWAY_U_GIRDER_DEFAULT_FORMWORK_LOAD_KN_M2 = 2.5
 RAILWAY_U_GIRDER_DEFAULT_LIFTING_RATIO = 0.20
 RAILWAY_U_GIRDER_DEFAULT_LIFTING_IMPACT = 1.10
+CB_CONSTRUCTION_METHOD_KEY = "crossbeam_ptloss3b1_construction_method"
+CONSTRUCTION_METHOD_CIP = "Cast-in-Place"
 RAILWAY_U_GIRDER_DEFAULT_WET_SLAB_DISTRIBUTION = 0.50
 
 
@@ -1446,6 +1448,16 @@ def _render_section_assembly_panel(preset: dict[str, Any]) -> None:
         _render_building_member_assembly_panel(preset, settings)
 
 
+def _crossbeam_cip_mode() -> bool:
+    """Return whether the active Crossbeam construction source is Cast-in-Place."""
+
+    settings = _analysis_mode_from_session_state()
+    return (
+        is_portal_frame_crossbeam_workflow(settings)
+        and str(st.session_state.get(CB_CONSTRUCTION_METHOD_KEY) or "") == CONSTRUCTION_METHOD_CIP
+    )
+
+
 def _render_concrete_material_assignment(preset: dict[str, Any]) -> dict[str, Any]:
     materials = _ensure_concrete_material_session()
     material_map = concrete_materials_by_name(materials)
@@ -1559,6 +1571,12 @@ def _render_concrete_material_assignment(preset: dict[str, Any]) -> dict[str, An
     st.session_state["primary_concrete_material_name"] = selected_primary
     st.session_state["concrete_material"] = primary_material
 
+    if _crossbeam_cip_mode() and "precast" in selected_primary.casefold():
+        st.warning(
+            "MATERIAL SOURCE REVIEW — Construction Type is Cast-in-Place, but the assigned concrete material name is labeled Precast. "
+            "The app does not change material properties automatically; confirm or reassign the intended project material source."
+        )
+
     bridge_composite_metadata = _composite_metadata_enabled_for_workflow(preset)
     assignment = {
         "primary_material_name": selected_primary,
@@ -1635,7 +1653,7 @@ def _render_section_builder_status_strip(preset: dict[str, Any], material_assign
     settings = _analysis_mode_from_session_state()
     primary = str(material_assignment.get("primary_material_name", "N/A"))
     deck = str(material_assignment.get("deck_topping_material_name", "N/A"))
-    material_detail = f"Precast {primary}"
+    material_detail = f"{'Cast-in-Place' if _crossbeam_cip_mode() else 'Precast'} {primary}"
     if _composite_metadata_enabled_for_workflow(preset, settings):
         material_detail += f" / topping {deck}"
 
@@ -2079,6 +2097,10 @@ def _member_type_filter_description(settings: AnalysisModeSettings) -> str:
             "Building Beam/Girder hides bridge/railway/highway-only presets; shared precast girder geometry is shown with a Building-specific label. Bridge-specific load/stage/AASHTO Be tools stay hidden."
         )
     if is_portal_frame_crossbeam_workflow(settings):
+        if _crossbeam_cip_mode():
+            return (
+                "Cast-in-Place mode permits Portal Frame Crossbeam Solid presets only. Hollow Section IDs remain preserved only for Precast Segmental mode."
+            )
         return (
             "Section Type / Preset is filtered to Portal Frame Crossbeam presets: rectangular solid with bottom fillets and rectangular hollow with wall-thickness-defined opening, bottom fillets, and inner chamfers."
         )
@@ -2883,7 +2905,11 @@ def _render_section_definition_panel(
                 )
                 st.caption(
                     "Controlled by the selected Crossbeam Project Section above. "
-                    "Create a New Solid/New Hollow section instead of changing topology in place."
+                    + (
+                        "Cast-in-Place is Solid-only; create or duplicate Solid Section IDs instead of changing topology in place."
+                        if _crossbeam_cip_mode()
+                        else "Create a New Solid/New Hollow section instead of changing topology in place."
+                    )
                 )
             else:
                 selected_preset_key = st.selectbox(
@@ -3040,8 +3066,9 @@ def _render_crossbeam_member_geometry_workspace(
             ),
             unsafe_allow_html=True,
         )
+        layout_label = "Section / Zone Layout" if _crossbeam_cip_mode() else "Segment Layout"
         st.markdown(
-            '<div class="cpmm-section-note">Crossbeam length L belongs to the complete member and is shared by Segment Layout, Tendon Profile, and Rebar Zone stationing. Section dimensions below remain owned by the selected Section ID.</div>',
+            f'<div class="cpmm-section-note">Crossbeam length L is the physical end-to-end member length and is shared by {layout_label}, Tendon Profile, and Rebar stationing. Section dimensions below remain owned by the selected Section ID.</div>',
             unsafe_allow_html=True,
         )
         render_crossbeam_member_length_control()
@@ -3290,8 +3317,9 @@ def _render_section_properties_summary(
     geometry: Any | None,
     validation: ValidationResult,
 ) -> None:
+    property_heading = "Gross Concrete Section Properties" if _crossbeam_cip_mode() else "Precast Gross Section Properties"
     st.markdown(
-        _commercial_panel_title_html("Precast Gross Section Properties", "Properties", "Gross", "Concrete polygon"),
+        _commercial_panel_title_html(property_heading, "Properties", "Gross", "Concrete polygon"),
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -3334,11 +3362,22 @@ def _render_section_properties_summary(
     )
 
     settings = _analysis_mode_from_session_state()
+    cip_crossbeam = _crossbeam_cip_mode()
+    gross_basis_detail = "Gross concrete polygon only" if cip_crossbeam else "Precast/gross concrete polygon only"
     workflow_metrics: list[SectionMetric]
     if is_portal_frame_crossbeam_workflow(settings):
         workflow_metrics = [
             SectionMetric("ULS PMM", "Not active", "Crossbeam station-based ULS remains future guarded scope", "neutral"),
-            SectionMetric("Crossbeam station model", "Layout foundation", "Segment assignment is defined separately from the section library", "info"),
+            SectionMetric(
+                "Crossbeam station model",
+                "Layout foundation",
+                (
+                    "Section/Zone assignment is defined separately from the section library"
+                    if cip_crossbeam
+                    else "Segment assignment is defined separately from the section library"
+                ),
+                "info",
+            ),
         ]
     else:
         workflow_metrics = [
@@ -3354,7 +3393,7 @@ def _render_section_properties_summary(
     st.markdown(
         _property_strip_html(
             [
-                SectionMetric("Gross Area", f"{summary.area_mm2:,.1f} mm^2", "Precast/gross concrete polygon only"),
+                SectionMetric("Gross Area", f"{summary.area_mm2:,.1f} mm^2", gross_basis_detail),
                 SectionMetric(
                     "Centroid x",
                     _format_optional_mm(summary.centroid_x_mm, 2),
@@ -3388,7 +3427,7 @@ def _render_section_properties_summary(
         st.markdown(
             _kv_panel_html(
                 [
-                    ("Property basis", "Gross concrete / precast polygon only"),
+                    ("Property basis", "Gross concrete polygon only" if cip_crossbeam else "Gross concrete / precast polygon only"),
                     ("Composite status", "Tslab, Be, n, and Btransformed are not merged into A, centroid, Ix, Iy, or Z"),
                     ("Coordinate y", "Positive upward in generated section coordinates"),
                     ("Centroid yb", f"{_format_optional_mm(yb, 2)} measured from bottom fiber"),

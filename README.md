@@ -1737,3 +1737,6 @@ Adds a construction-type-aware Crossbeam layout foundation: Precast retains phys
 
 ## CROSSBEAM.CIP1A — Member Configuration Relocation & Construction-Type State Routing
 Moves Crossbeam length plus construction/support controls to the top of Section Builder, hardens the Precast/Cast-in-Place master switch with explicit canonical/widget state routing, and filters Cast-in-Place Section Builder views to preserved Solid-only Section IDs without changing accepted solver logic. See `README_CROSSBEAM_CIP1A.md`.
+
+## CROSSBEAM.CIP1B
+Cast-in-Place semantic cleanup: safer inboard default column stations, Solid-only Section Library wording/actions, Zone-aware references, generic gross-property terminology, and non-destructive material-source consistency warnings.

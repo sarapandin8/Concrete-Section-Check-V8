@@ -105,7 +105,7 @@ def test_pt1c_scale_policy_moves_all_longitudinal_station_sources_together() -> 
     assert {row["s/L"] for row in state[CB_PROFILE_ROWS_KEY]} == {0.0, 0.5, 1.0}
     assert [row["s_end_m"] for row in state[CB_RB_ZONE_ROWS_KEY]][-1] == 30.0
     assert state[CB_CROSS_SECTION_STATION_KEY] == 7.5
-    assert [row["Station s (m)"] for row in state[CB_LOSS_ES_COLUMN_ROWS_KEY]] == [0.0, 30.0]
+    assert [row["Station s (m)"] for row in state[CB_LOSS_ES_COLUMN_ROWS_KEY]] == [2.25, 27.75]
     assert state[CB_RB_SEGMENT_SIGNATURE_KEY] == segment_signature(
         state[CB_SEGMENT_ROWS_KEY]
     )
