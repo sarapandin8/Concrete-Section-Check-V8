@@ -13,6 +13,7 @@ import streamlit as st
 from concrete_pmm_pro.core.analysis import AnalysisModeSettings
 from concrete_pmm_pro.core.analysis_modes import analysis_mode_label, is_portal_frame_crossbeam_workflow
 from concrete_pmm_pro.core.design_code import workflow_project_code_label_from_session
+from concrete_pmm_pro.crossbeam.construction_stage import crossbeam_layout_navigation_label
 from concrete_pmm_pro.state.dirty_state import current_project_dirty_status, update_dirty_state_from_session
 from concrete_pmm_pro.io.project_io import (
     ProjectIOError,
@@ -69,7 +70,12 @@ def _sections_navigation_options() -> list[str]:
 
     mode = _analysis_mode_from_session_for_chrome()
     if is_portal_frame_crossbeam_workflow(mode):
-        return ["Section Builder", "Segment Layout", "Rebar", "Tendon System", "Tendon Profile", "Prestress Loss"]
+        layout_label = crossbeam_layout_navigation_label(
+            st.session_state.get("crossbeam_ptloss3b1_construction_method")
+        )
+        if layout_label == "Segment Layout":
+            return ["Section Builder", "Segment Layout", "Rebar", "Tendon System", "Tendon Profile", "Prestress Loss"]
+        return ["Section Builder", "Section / Zone Layout", "Rebar", "Tendon System", "Tendon Profile", "Prestress Loss"]
     return list(WORKSPACE_NAVIGATION["Sections"])
 
 
@@ -1206,6 +1212,7 @@ def _commercial_subpage_icon(subpage: str) -> str:
         "Prestress": "PT",
         "Tendon System": "PT",
         "Segment Layout": "SG",
+        "Section / Zone Layout": "ZN",
         "Tendon Profile": "3D",
         "ULS Strength": "ULS",
         "SLS / Stress & Cracking": "SLS",
@@ -1451,7 +1458,9 @@ def render_sections_workspace() -> None:
         render_prestress_page()
     elif active == "Tendon System":
         render_crossbeam_tendon_system_page()
-    elif active == "Segment Layout":
+    elif active in {"Segment Layout", "Section / Zone Layout"}:
+        # One shared route and one canonical layout source; only the visible label
+        # changes with Construction Type.
         render_crossbeam_segment_layout_page()
     elif active == "Tendon Profile":
         render_crossbeam_tendon_profile_page()

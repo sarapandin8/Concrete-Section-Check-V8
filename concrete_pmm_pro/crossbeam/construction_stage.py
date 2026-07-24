@@ -95,6 +95,22 @@ def normalize_construction_method(value: Any) -> str:
     return text if text in CONSTRUCTION_METHOD_OPTIONS else CONSTRUCTION_METHOD_PRECAST
 
 
+def crossbeam_layout_navigation_label(construction_method: Any) -> str:
+    """Return the user-facing layout label without changing the shared route.
+
+    Precast Segmental keeps physical ``Segment Layout`` semantics.  Cast-in-Place
+    uses the same workspace/route but exposes ``Section / Zone Layout`` because
+    its boundaries are geometry/property zones within one monolithic pour, not
+    physical segment joints.
+    """
+
+    return (
+        "Section / Zone Layout"
+        if normalize_construction_method(construction_method) == CONSTRUCTION_METHOD_CIP
+        else "Segment Layout"
+    )
+
+
 def normalize_column_shape(value: Any) -> str:
     text = str(value or "").strip()
     return text if text in COLUMN_SHAPE_OPTIONS else COLUMN_SHAPE_RECT_CHAMFER

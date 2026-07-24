@@ -41,6 +41,15 @@ CIP_RUN_BAR_SIZE_OPTIONS = (
 )
 CIP_RUN_MATERIAL_OPTIONS = ("SD40", "SD50")
 CIP_RUN_FY_BY_MATERIAL = {"SD40": 390.0, "SD50": 490.0}
+CIP_RUN_STANDARD_MATERIAL_BY_SIZE = {
+    "DB10": "SD40",
+    "DB12": "SD40",
+    "DB16": "SD40",
+    "DB20": "SD40",
+    "DB25": "SD40",
+    "DB28": "SD40",
+    "DB32": "SD50",
+}
 CIP_RUN_DIAMETER_BY_SIZE = {
     "DB10": 10.0,
     "DB12": 12.0,
@@ -201,7 +210,7 @@ def validate_cip_longitudinal_bar_runs(
             errors.append(f"{label}: Bar group is required.")
         layer = str(row.get("Layer / face") or "").strip()
         if layer not in CIP_RUN_LAYER_OPTIONS:
-            errors.append(f"{label}: Layer / face '{layer or '(blank)'}' is not supported by the RB-CIP1 topology contract.")
+            errors.append(f"{label}: Layer / face '{layer or '(blank)'}' is not supported by the CIP topology contract.")
 
         bar_size = str(row.get("Bar size") or "").strip().upper()
         if bar_size not in CIP_RUN_BAR_SIZE_OPTIONS:
@@ -218,6 +227,11 @@ def validate_cip_longitudinal_bar_runs(
         material = str(row.get("Material") or "").strip().upper()
         if material not in CIP_RUN_MATERIAL_OPTIONS:
             errors.append(f"{label}: Material '{material or '(blank)'}' is not supported.")
+        expected_material = CIP_RUN_STANDARD_MATERIAL_BY_SIZE.get(bar_size)
+        if expected_material is not None and material in CIP_RUN_MATERIAL_OPTIONS and material != expected_material:
+            errors.append(
+                f"{label}: {bar_size} must use {expected_material} under the app standard bar-grade rule; current Material is {material}."
+            )
         expected_fy = CIP_RUN_FY_BY_MATERIAL.get(material)
         fy = _finite_float(row.get("fy MPa"), 0.0)
         if fy <= 0.0:
@@ -250,7 +264,7 @@ def validate_cip_longitudinal_bar_runs(
 
     if not rows:
         warnings.append(
-            "No Cast-in-Place longitudinal bar runs are defined. RB-CIP1 does not invent reinforcement; create runs in the future RB-CIP2 editor."
+            "No Cast-in-Place longitudinal bar runs are defined. The workflow does not invent reinforcement; define runs explicitly in the continuous bar-run editor."
         )
 
     return rows, list(dict.fromkeys(errors)), list(dict.fromkeys(warnings))
@@ -277,3 +291,98 @@ def cip_rebar_topology_status(values: Any, *, length_m: float) -> dict[str, Any]
         "solver_handoff": "LOCKED",
         "development_splice_qa": "NOT RELEASED",
     }
+
+def new_cip_longitudinal_bar_run(values: Any, *, length_m: float) -> dict[str, Any]:
+    """Return one explicit draft row after the user asks to add a bar run.
+
+    The draft intentionally carries no bar size, material, layer, quantity, or
+    termination certification.  Its station seed spans the physical member only
+    as an editing convenience and remains ``REVIEW REQUIRED`` until the engineer
+    supplies the required reinforcement definition.  No solver consumes the row.
+    """
+
+    existing = canonical_cip_longitudinal_bar_runs(values)
+    used = {str(row.get("Run ID") or "").strip() for row in existing}
+    index = 1
+    while f"CIP-R{index}" in used:
+        index += 1
+    length = max(_finite_float(length_m, 0.0), 0.0)
+    return canonical_cip_longitudinal_bar_runs(
+        [
+            {
+                "Active": True,
+                "Run ID": f"CIP-R{index}",
+                "s_start_m": 0.0,
+                "s_end_m": length,
+                "Bar group": "",
+                "Layer / face": "",
+                "Bar size": "",
+                "Material": "",
+                "Definition basis": "",
+                "Bar count": 0,
+                "Target spacing mm": 0.0,
+                "Start intent": "Not yet defined",
+                "End intent": "Not yet defined",
+                "Notes": "",
+            }
+        ]
+    )[0]
+
+
+def cip_bar_run_zone_intersections(
+    run: Mapping[str, Any],
+    zone_rows: Any,
+    *,
+    tolerance: float = 1.0e-9,
+) -> list[str]:
+    """Return Section/Zone IDs with positive-length overlap with one CIP run.
+
+    Merely touching a zone boundary does not count as occupying the adjacent zone.
+    This makes the audit explicit that a continuous bar may cross one or many zone
+    boundaries without those boundaries becoming reinforcement terminations.
+    """
+
+    start = _finite_float(run.get("s_start_m", run.get("s_start (m)")), 0.0)
+    end = _finite_float(run.get("s_end_m", run.get("s_end (m)")), 0.0)
+    output: list[str] = []
+    if end <= start:
+        return output
+    if hasattr(zone_rows, "to_dict"):
+        try:
+            zones = zone_rows.to_dict(orient="records")
+        except (TypeError, ValueError):
+            zones = []
+    elif isinstance(zone_rows, (list, tuple)):
+        zones = list(zone_rows)
+    else:
+        zones = []
+    for index, source in enumerate(zones, start=1):
+        if not isinstance(source, Mapping):
+            continue
+        zone_start = _finite_float(source.get("x_start_m", source.get("s_start_m")), 0.0)
+        zone_end = _finite_float(source.get("x_end_m", source.get("s_end_m")), 0.0)
+        overlap = min(end, zone_end) - max(start, zone_start)
+        if overlap > abs(float(tolerance)):
+            zone_id = str(source.get("Segment") or source.get("Zone") or f"Z{index}").strip()
+            output.append(zone_id or f"Z{index}")
+    return output
+
+
+def cip_longitudinal_runs_at_station(
+    values: Any,
+    *,
+    station_m: float,
+    tolerance: float = 1.0e-9,
+) -> list[dict[str, Any]]:
+    """Return active CIP longitudinal runs present at a review station."""
+
+    station = _finite_float(station_m, 0.0)
+    tol = abs(float(tolerance))
+    return [
+        row
+        for row in canonical_cip_longitudinal_bar_runs(values)
+        if bool(row.get("Active"))
+        and _finite_float(row.get("s_start_m"), 0.0) - tol <= station
+        <= _finite_float(row.get("s_end_m"), 0.0) + tol
+    ]
+

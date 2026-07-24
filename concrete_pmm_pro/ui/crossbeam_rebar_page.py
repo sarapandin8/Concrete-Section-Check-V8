@@ -65,11 +65,22 @@ from concrete_pmm_pro.crossbeam.rebar import (
     validate_rebar_zones,
 )
 from concrete_pmm_pro.crossbeam.cip_rebar import (
+    CIP_RUN_BAR_SIZE_OPTIONS,
+    CIP_RUN_DEFINITION_BASIS_OPTIONS,
+    CIP_RUN_DIAMETER_BY_SIZE,
+    CIP_RUN_FY_BY_MATERIAL,
+    CIP_RUN_LAYER_OPTIONS,
+    CIP_RUN_MATERIAL_OPTIONS,
+    CIP_RUN_TERMINATION_INTENT_OPTIONS,
     canonical_cip_longitudinal_bar_runs,
+    cip_bar_run_zone_intersections,
+    cip_longitudinal_runs_at_station,
     cip_rebar_topology_status,
     default_cip_longitudinal_bar_runs,
+    new_cip_longitudinal_bar_run,
 )
 from concrete_pmm_pro.crossbeam.cip_rebar_persistence import (
+    CB_RB_CIP_RUN_REV_KEY,
     CB_RB_CIP_RUN_ROWS_KEY,
     CB_RB_CIP_VALIDATION_KEY,
 )
@@ -2313,66 +2324,503 @@ def _render_section_rebar_preview(
     )
 
 
+
+def _cip_run_editor_rows(values: Any) -> list[dict[str, Any]]:
+    """Return compact RB-CIP2 editable rows from canonical CIP topology."""
+
+    return [
+        {
+            "Active": bool(row.get("Active")),
+            "Run ID": str(row.get("Run ID") or ""),
+            "s_start (m)": float(row.get("s_start_m") or 0.0),
+            "s_end (m)": float(row.get("s_end_m") or 0.0),
+            "Bar group": str(row.get("Bar group") or ""),
+            "Layer / face": str(row.get("Layer / face") or ""),
+            "Bar size": str(row.get("Bar size") or ""),
+            "Diameter (mm)": float(row.get("Bar diameter mm") or 0.0),
+            "Material": str(row.get("Material") or ""),
+            "fy (MPa)": float(row.get("fy MPa") or 0.0),
+            "Definition basis": str(row.get("Definition basis") or ""),
+            "Bar count": int(row.get("Bar count") or 0),
+            "Target spacing (mm)": float(row.get("Target spacing mm") or 0.0),
+            "Start intent": str(row.get("Start intent") or "Not yet defined"),
+            "End intent": str(row.get("End intent") or "Not yet defined"),
+            "Notes": str(row.get("Notes") or ""),
+        }
+        for row in canonical_cip_longitudinal_bar_runs(values)
+    ]
+
+
+def _cip_editor_row_is_blank(row: Mapping[str, Any]) -> bool:
+    return not any(
+        str(row.get(key) or "").strip()
+        for key in (
+            "Run ID",
+            "Bar group",
+            "Layer / face",
+            "Bar size",
+            "Material",
+            "Definition basis",
+            "Notes",
+        )
+    ) and not any(
+        _number(row.get(key), 0.0)
+        for key in ("s_start (m)", "s_end (m)", "Bar count", "Target spacing (mm)")
+    )
+
+
+def _cip_run_rows_from_editor_rows(editor_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert RB-CIP2 editor rows into canonical station-based run rows.
+
+    Bar diameter and fy are derived from the selected database bar/material and
+    are not duplicated as independently editable cells.
+    """
+
+    source: list[dict[str, Any]] = []
+    for row in editor_rows:
+        if not isinstance(row, Mapping) or _cip_editor_row_is_blank(row):
+            continue
+        bar_size = str(row.get("Bar size") or "").strip().upper()
+        material = str(row.get("Material") or "").strip().upper()
+        source.append(
+            {
+                "Active": bool(row.get("Active", True)),
+                "Run ID": str(row.get("Run ID") or "").strip(),
+                "s_start_m": _number(row.get("s_start (m)"), 0.0),
+                "s_end_m": _number(row.get("s_end (m)"), 0.0),
+                "Bar group": str(row.get("Bar group") or "").strip(),
+                "Layer / face": str(row.get("Layer / face") or "").strip(),
+                "Bar size": bar_size,
+                "Bar diameter mm": CIP_RUN_DIAMETER_BY_SIZE.get(
+                    bar_size, _number(row.get("Diameter (mm)"), 0.0)
+                ),
+                "Material": material,
+                "fy MPa": CIP_RUN_FY_BY_MATERIAL.get(
+                    material, _number(row.get("fy (MPa)"), 0.0)
+                ),
+                "Definition basis": str(row.get("Definition basis") or "").strip(),
+                "Bar count": int(round(_number(row.get("Bar count"), 0.0))),
+                "Target spacing mm": _number(row.get("Target spacing (mm)"), 0.0),
+                "Start intent": str(row.get("Start intent") or "Not yet defined").strip(),
+                "End intent": str(row.get("End intent") or "Not yet defined").strip(),
+                "Notes": str(row.get("Notes") or "").strip(),
+            }
+        )
+    return canonical_cip_longitudinal_bar_runs(source)
+
+
+def _commit_cip_run_editor(editor_key: str, fallback_rows: list[dict[str, Any]]) -> None:
+    """Commit the first data-editor patch into canonical CIP run state."""
+
+    editor_rows = data_editor_payload_to_records(
+        st.session_state.get(editor_key), fallback_rows
+    )
+    st.session_state[CB_RB_CIP_RUN_ROWS_KEY] = _cip_run_rows_from_editor_rows(editor_rows)
+    st.session_state[CB_RB_CIP_RUN_REV_KEY] = int(
+        st.session_state.get(CB_RB_CIP_RUN_REV_KEY, 0) or 0
+    ) + 1
+
+
+def _cip_zone_at_station(segment_rows: list[dict[str, Any]], station_m: float, length_m: float) -> str:
+    station = float(station_m)
+    tolerance = max(1.0e-9, abs(float(length_m)) * 1.0e-9)
+    for index, row in enumerate(segment_rows, start=1):
+        start = _number(row.get("x_start_m", row.get("s_start_m")), 0.0)
+        end = _number(row.get("x_end_m", row.get("s_end_m")), 0.0)
+        is_last_end = abs(station - float(length_m)) <= tolerance and abs(end - float(length_m)) <= tolerance
+        if start - tolerance <= station < end - tolerance or is_last_end:
+            return str(row.get("Segment") or row.get("Zone") or f"Z{index}")
+    return "—"
+
+
+def _cip_longitudinal_topology_figure(
+    runs: list[dict[str, Any]],
+    *,
+    segment_rows: list[dict[str, Any]],
+    length_m: float,
+) -> go.Figure:
+    """Return a topology-only longitudinal elevation for CIP bar runs."""
+
+    layer_order = ["Perimeter / Other", "Side / Web", "Bottom", "Top", "Unassigned"]
+    layer_y = {name: float(index) for index, name in enumerate(layer_order)}
+    fig = go.Figure()
+
+    # Zone boundaries are property boundaries only.  Light alternating bands make
+    # crossings visible without visually turning them into construction joints.
+    for index, zone in enumerate(segment_rows):
+        start = _number(zone.get("x_start_m", zone.get("s_start_m")), 0.0)
+        end = _number(zone.get("x_end_m", zone.get("s_end_m")), 0.0)
+        zone_id = str(zone.get("Segment") or zone.get("Zone") or f"Z{index + 1}")
+        if end > start:
+            fig.add_vrect(
+                x0=start,
+                x1=end,
+                fillcolor="rgba(88, 130, 170, 0.045)" if index % 2 == 0 else "rgba(88, 130, 170, 0.015)",
+                line_width=0,
+                layer="below",
+            )
+            fig.add_annotation(
+                x=0.5 * (start + end),
+                y=1.08,
+                yref="paper",
+                text=zone_id,
+                showarrow=False,
+                font={"size": 10},
+            )
+    for boundary in sorted(
+        {
+            _number(row.get("x_start_m", row.get("s_start_m")), 0.0)
+            for row in segment_rows
+        }
+        | {
+            _number(row.get("x_end_m", row.get("s_end_m")), 0.0)
+            for row in segment_rows
+        }
+    ):
+        if 1.0e-9 < boundary < float(length_m) - 1.0e-9:
+            fig.add_vline(x=boundary, line_dash="dot", line_width=1.0)
+
+    active = [row for row in canonical_cip_longitudinal_bar_runs(runs) if bool(row.get("Active"))]
+    by_layer: dict[str, list[dict[str, Any]]] = {}
+    for row in active:
+        layer = str(row.get("Layer / face") or "Unassigned")
+        if layer not in layer_y:
+            layer = "Unassigned"
+        by_layer.setdefault(layer, []).append(row)
+
+    for layer, layer_rows in by_layer.items():
+        count = len(layer_rows)
+        for index, row in enumerate(layer_rows):
+            offset = (index - (count - 1) / 2.0) * 0.09
+            y = layer_y[layer] + offset
+            start = _number(row.get("s_start_m"), 0.0)
+            end = _number(row.get("s_end_m"), 0.0)
+            basis = str(row.get("Definition basis") or "")
+            quantity = (
+                f"{int(row.get('Bar count') or 0)} bars"
+                if basis == "By exact bar count"
+                else f"target @ {float(row.get('Target spacing mm') or 0.0):g} mm"
+                if basis == "By target spacing"
+                else "quantity undefined"
+            )
+            hover = (
+                f"<b>{str(row.get('Run ID') or '(unnamed run)')}</b><br>"
+                f"Group: {str(row.get('Bar group') or '—')}<br>"
+                f"Layer: {str(row.get('Layer / face') or '—')}<br>"
+                f"Bar: {str(row.get('Bar size') or '—')} · {str(row.get('Material') or '—')}<br>"
+                f"Definition: {quantity}<br>"
+                f"Span: {start:.3f}–{end:.3f} m<extra></extra>"
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=[start, end],
+                    y=[y, y],
+                    mode="lines+markers",
+                    name=str(row.get("Run ID") or "(unnamed run)"),
+                    line={"width": 6},
+                    marker={"size": 8},
+                    hovertemplate=hover,
+                )
+            )
+
+    fig.update_layout(
+        height=430,
+        margin={"l": 70, "r": 25, "t": 55, "b": 55},
+        xaxis={"title": "Crossbeam station s (m)", "range": [0.0, max(float(length_m), 0.1)]},
+        yaxis={
+            "title": "Longitudinal bar layer / face",
+            "tickmode": "array",
+            "tickvals": [layer_y[name] for name in layer_order],
+            "ticktext": layer_order,
+            "range": [-0.55, float(len(layer_order) - 1) + 0.55],
+        },
+        legend={"orientation": "h", "y": -0.24},
+        hovermode="closest",
+    )
+    return fig
+
+
+def _cip_topology_audit_rows(
+    runs: list[dict[str, Any]],
+    *,
+    segment_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for row in canonical_cip_longitudinal_bar_runs(runs):
+        if not bool(row.get("Active")):
+            continue
+        zones = cip_bar_run_zone_intersections(row, segment_rows)
+        crossings = max(len(zones) - 1, 0)
+        basis = str(row.get("Definition basis") or "")
+        quantity = (
+            str(int(row.get("Bar count") or 0))
+            if basis == "By exact bar count"
+            else f"@ {float(row.get('Target spacing mm') or 0.0):g} mm"
+            if basis == "By target spacing"
+            else "—"
+        )
+        output.append(
+            {
+                "Run ID": str(row.get("Run ID") or ""),
+                "Layer / face": str(row.get("Layer / face") or ""),
+                "Bar": str(row.get("Bar size") or ""),
+                "Qty / spacing": quantity,
+                "s_start (m)": float(row.get("s_start_m") or 0.0),
+                "s_end (m)": float(row.get("s_end_m") or 0.0),
+                "Zones occupied": " → ".join(zones) if zones else "—",
+                "Zone boundaries crossed": crossings,
+                "Continuity interpretation": (
+                    f"Continuous through {crossings} zone boundary(ies)"
+                    if crossings
+                    else "No internal zone boundary crossed"
+                ),
+            }
+        )
+    return output
+
+
+def _cip_editor_select_options(
+    rows: list[dict[str, Any]],
+    *,
+    field: str,
+    supported: tuple[str, ...],
+    include_blank: bool = True,
+) -> list[str]:
+    """Keep unsupported loaded labels visible for explicit REVIEW instead of replacement."""
+
+    extras: list[str] = []
+    for row in rows:
+        value = str(row.get(field) or "").strip()
+        if value and value not in supported and value not in extras:
+            extras.append(value)
+    return ([""] if include_blank else []) + list(supported) + extras
+
+
+def _render_cip_longitudinal_rebar_workspace(
+    *,
+    length_m: float,
+    segment_rows: list[dict[str, Any]],
+    segment_errors: list[str],
+) -> None:
+    """Render RB-CIP2 editor and topology previews while keeping solvers locked."""
+
+    if CB_RB_CIP_RUN_ROWS_KEY not in st.session_state:
+        st.session_state[CB_RB_CIP_RUN_ROWS_KEY] = default_cip_longitudinal_bar_runs()
+    if CB_RB_CIP_RUN_REV_KEY not in st.session_state:
+        st.session_state[CB_RB_CIP_RUN_REV_KEY] = 0
+
+    runs = canonical_cip_longitudinal_bar_runs(st.session_state.get(CB_RB_CIP_RUN_ROWS_KEY, []))
+    st.session_state[CB_RB_CIP_RUN_ROWS_KEY] = runs
+    status = cip_rebar_topology_status(runs, length_m=length_m)
+    st.session_state[CB_RB_CIP_VALIDATION_KEY] = status
+
+    topology_value = "LAYOUT READY" if status["status"] == "FOUNDATION READY" else status["status"]
+    topology_visual_status = "ready" if status["status"] == "FOUNDATION READY" else "warning"
+    render_metric_cards(
+        [
+            {"title": "Construction type", "value": "CAST-IN-PLACE", "detail": "Monolithic continuous pour", "status": "ready"},
+            {"title": "Section family", "value": "SOLID ONLY", "detail": "No Hollow zones are permitted", "status": "ready"},
+            {
+                "title": "Continuous topology",
+                "value": topology_value,
+                "detail": f"{status['active_run_count']} active station-based longitudinal bar run(s)",
+                "status": topology_visual_status,
+            },
+            {"title": "Solver handoff", "value": "LOCKED", "detail": "Topology preview only; no CIP solver credit", "status": "neutral"},
+        ]
+    )
+
+    st.info(
+        "Continuous longitudinal reinforcement is defined by station-based bar runs. "
+        "Section/Zone boundaries are geometry/property boundaries and do not terminate reinforcement. "
+        "Development, splice, termination, exact cross-section bar coordinates, and solver handoff remain separate QA milestones."
+    )
+
+    for issue in segment_errors:
+        st.error(issue)
+
+    render_section_bar(
+        "Continuous longitudinal bar-run editor",
+        "Define where each longitudinal bar group exists along the physical Crossbeam station axis. Add/delete rows directly; one edit commits immediately to the CIP-only canonical state.",
+        mark="RB",
+    )
+    controls = st.columns([1.2, 4.8])
+    with controls[0]:
+        if st.button("Add draft bar run", key="crossbeam_rb_cip2_add_run", use_container_width=True):
+            current = canonical_cip_longitudinal_bar_runs(st.session_state.get(CB_RB_CIP_RUN_ROWS_KEY, []))
+            current.append(new_cip_longitudinal_bar_run(current, length_m=length_m))
+            st.session_state[CB_RB_CIP_RUN_ROWS_KEY] = current
+            st.session_state[CB_RB_CIP_RUN_REV_KEY] = int(st.session_state.get(CB_RB_CIP_RUN_REV_KEY, 0) or 0) + 1
+            st.rerun()
+    with controls[1]:
+        st.caption(
+            "A new draft is seeded over 0–L only as an editing convenience and remains REVIEW REQUIRED until layer, bar, material, quantity basis, and engineering intent are defined."
+        )
+
+    revision = int(st.session_state.get(CB_RB_CIP_RUN_REV_KEY, 0) or 0)
+    editor_rows = _cip_run_editor_rows(st.session_state.get(CB_RB_CIP_RUN_ROWS_KEY, []))
+    layer_options = _cip_editor_select_options(editor_rows, field="Layer / face", supported=CIP_RUN_LAYER_OPTIONS)
+    bar_size_options = _cip_editor_select_options(editor_rows, field="Bar size", supported=CIP_RUN_BAR_SIZE_OPTIONS)
+    material_options = _cip_editor_select_options(editor_rows, field="Material", supported=CIP_RUN_MATERIAL_OPTIONS)
+    basis_options = _cip_editor_select_options(editor_rows, field="Definition basis", supported=CIP_RUN_DEFINITION_BASIS_OPTIONS)
+    start_intent_options = _cip_editor_select_options(editor_rows, field="Start intent", supported=CIP_RUN_TERMINATION_INTENT_OPTIONS, include_blank=False)
+    end_intent_options = _cip_editor_select_options(editor_rows, field="End intent", supported=CIP_RUN_TERMINATION_INTENT_OPTIONS, include_blank=False)
+    editor_key = f"crossbeam_rb_cip2_run_editor_{revision}"
+    st.data_editor(
+        pd.DataFrame(editor_rows),
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        key=editor_key,
+        on_change=_commit_cip_run_editor,
+        args=(editor_key, editor_rows),
+        column_config={
+            "Active": st.column_config.CheckboxColumn("Active"),
+            "Run ID": st.column_config.TextColumn("Run ID", required=True, help="Unique engineering identifier for this continuous longitudinal bar run."),
+            "s_start (m)": st.column_config.NumberColumn("s_start (m)", min_value=0.0, max_value=max(float(length_m), 0.0), format="%.3f", required=True),
+            "s_end (m)": st.column_config.NumberColumn("s_end (m)", min_value=0.0, max_value=max(float(length_m), 0.0), format="%.3f", required=True),
+            "Bar group": st.column_config.TextColumn("Bar group", required=True),
+            "Layer / face": st.column_config.SelectboxColumn("Layer / face", options=layer_options, required=True),
+            "Bar size": st.column_config.SelectboxColumn(
+                "Bar size",
+                options=bar_size_options,
+                required=True,
+                help="App standard: DB10–DB28 use SD40; DB32 uses SD50. Mismatches remain visible as REVIEW REQUIRED and are not silently rewritten.",
+            ),
+            "Diameter (mm)": st.column_config.NumberColumn("Diameter (mm)", format="%.1f", disabled=True),
+            "Material": st.column_config.SelectboxColumn("Material", options=material_options, required=True),
+            "fy (MPa)": st.column_config.NumberColumn("fy (MPa)", format="%.0f", disabled=True),
+            "Definition basis": st.column_config.SelectboxColumn("Definition basis", options=basis_options, required=True),
+            "Bar count": st.column_config.NumberColumn("Bar count", min_value=0, step=1, format="%d"),
+            "Target spacing (mm)": st.column_config.NumberColumn("Target spacing (mm)", min_value=0.0, format="%.1f"),
+            "Start intent": st.column_config.SelectboxColumn("Start intent", options=start_intent_options, required=True),
+            "End intent": st.column_config.SelectboxColumn("End intent", options=end_intent_options, required=True),
+            "Notes": st.column_config.TextColumn("Notes"),
+        },
+        disabled=["Diameter (mm)", "fy (MPa)"],
+    )
+
+    # Re-read callback-owned canonical state.  This mirrors the accepted one-edit
+    # persistence pattern used by Section/Zone Layout and avoids stale editor data.
+    runs = canonical_cip_longitudinal_bar_runs(st.session_state.get(CB_RB_CIP_RUN_ROWS_KEY, []))
+    st.session_state[CB_RB_CIP_RUN_ROWS_KEY] = runs
+    status = cip_rebar_topology_status(runs, length_m=length_m)
+    st.session_state[CB_RB_CIP_VALIDATION_KEY] = status
+    for issue in status.get("errors", []):
+        st.error(issue)
+    for issue in status.get("warnings", []):
+        st.warning(issue)
+
+    render_section_bar(
+        "Longitudinal continuity elevation",
+        "Station-based engineering topology preview. Zone bands show Section/Zone ownership only; dotted boundaries do not cut or splice a bar run.",
+        mark="E",
+    )
+    if runs:
+        st.plotly_chart(
+            _cip_longitudinal_topology_figure(runs, segment_rows=segment_rows, length_m=length_m),
+            use_container_width=True,
+            config=FIGURE_CONFIG,
+        )
+        st.caption(
+            "Preview scope: bar-run continuity and station extent only. This figure does not claim development length, splice adequacy, anchorage, congestion, code-minimum reinforcement, or exact cross-section bar coordinates."
+        )
+        audit_rows = _cip_topology_audit_rows(runs, segment_rows=segment_rows)
+        if audit_rows:
+            with st.expander("Zone-crossing continuity audit", expanded=False):
+                st.dataframe(pd.DataFrame(audit_rows), use_container_width=True, hide_index=True)
+    else:
+        st.info(
+            "LAYOUT REQUIRED — No Cast-in-Place longitudinal bar runs are defined. Add a draft run, then define the engineering topology explicitly; no reinforcement is invented automatically."
+        )
+
+    render_section_bar(
+        "Section participation at review station",
+        "Review which continuous longitudinal runs are present at any station without pretending that topology-only data defines exact bar coordinates.",
+        mark="S",
+    )
+    station_key = "crossbeam_rb_cip2_review_station_m"
+    current_station = _number(st.session_state.get(station_key), 0.5 * float(length_m))
+    bounded_station = min(max(current_station, 0.0), max(float(length_m), 0.0))
+    if station_key not in st.session_state or abs(current_station - bounded_station) > 1.0e-12:
+        st.session_state[station_key] = bounded_station
+    station = st.number_input(
+        "Review station s (m)",
+        min_value=0.0,
+        max_value=max(float(length_m), 0.0),
+        step=0.100,
+        format="%.3f",
+        key=station_key,
+    )
+    station_runs = cip_longitudinal_runs_at_station(runs, station_m=station)
+    zone_id = _cip_zone_at_station(segment_rows, station, length_m)
+    exact_bar_count = sum(
+        int(row.get("Bar count") or 0)
+        for row in station_runs
+        if str(row.get("Definition basis") or "") == "By exact bar count"
+    )
+    spacing_groups = sum(
+        1
+        for row in station_runs
+        if str(row.get("Definition basis") or "") == "By target spacing"
+    )
+    render_metric_cards(
+        [
+            {"title": "Review station", "value": f"s = {station:.3f} m", "detail": f"Section / Zone {zone_id}", "status": "neutral"},
+            {"title": "Active runs", "value": str(len(station_runs)), "detail": "Longitudinal bar groups present at this station", "status": "ready" if station_runs else "warning"},
+            {"title": "Exact-count bars", "value": str(exact_bar_count), "detail": "Sum of runs defined by exact bar count only", "status": "neutral"},
+            {"title": "Spacing-based groups", "value": str(spacing_groups), "detail": "Count is not inferred from topology alone", "status": "neutral"},
+        ]
+    )
+    if station_runs:
+        participation = []
+        for row in station_runs:
+            basis = str(row.get("Definition basis") or "")
+            participation.append(
+                {
+                    "Run ID": str(row.get("Run ID") or ""),
+                    "Bar group": str(row.get("Bar group") or ""),
+                    "Layer / face": str(row.get("Layer / face") or ""),
+                    "Bar size": str(row.get("Bar size") or ""),
+                    "Material": str(row.get("Material") or ""),
+                    "fy (MPa)": float(row.get("fy MPa") or 0.0),
+                    "Definition": (
+                        f"{int(row.get('Bar count') or 0)} bars"
+                        if basis == "By exact bar count"
+                        else f"target @ {float(row.get('Target spacing mm') or 0.0):g} mm"
+                        if basis == "By target spacing"
+                        else "Not defined"
+                    ),
+                    "Run span (m)": f"{float(row.get('s_start_m') or 0.0):.3f}–{float(row.get('s_end_m') or 0.0):.3f}",
+                }
+            )
+        st.dataframe(pd.DataFrame(participation), use_container_width=True, hide_index=True)
+    else:
+        st.info("No active longitudinal bar run is present at the selected review station.")
+
+    st.warning(
+        "SOLVER HANDOFF LOCKED — RB-CIP2 edits and previews continuous longitudinal topology only. "
+        "ULS/SLS/PMM, shear/torsion, prestress-loss, Result Summary, and Report/QA do not receive CIP longitudinal bar-run credit from this milestone."
+    )
+    st.caption(
+        f"Current Cast-in-Place Section/Zone source: {len(segment_rows)} zone(s) over L = {length_m:.3f} m. Precast Segmental Rebar state remains separate and preserved."
+    )
+
 def render_crossbeam_rebar_page() -> None:
     length_m, segment_rows, segment_errors = crossbeam_segment_layout_from_state()
     construction_method = str(
         st.session_state.get("crossbeam_ptloss3b1_construction_method") or "Precast Segmental"
     )
     if construction_method == "Cast-in-Place":
-        if CB_RB_CIP_RUN_ROWS_KEY not in st.session_state:
-            st.session_state[CB_RB_CIP_RUN_ROWS_KEY] = default_cip_longitudinal_bar_runs()
-        cip_runs = canonical_cip_longitudinal_bar_runs(
-            st.session_state.get(CB_RB_CIP_RUN_ROWS_KEY, [])
-        )
-        st.session_state[CB_RB_CIP_RUN_ROWS_KEY] = cip_runs
-        cip_status = cip_rebar_topology_status(cip_runs, length_m=length_m)
-        st.session_state[CB_RB_CIP_VALIDATION_KEY] = cip_status
-
         render_page_header(
             "Crossbeam Rebar — Cast-in-Place",
-            "The Crossbeam is one monolithic continuously cast Solid member. Section/Zone boundaries do not interrupt ordinary longitudinal reinforcement.",
+            "Define continuous longitudinal reinforcement as station-based bar runs across one monolithic Solid Crossbeam. Section/Zone boundaries do not interrupt ordinary longitudinal reinforcement.",
             icon="RB", kicker="Sections workspace", badge="Portal Frame Crossbeam", accent="green",
         )
-        topology_visual_status = (
-            "ready" if cip_status["status"] == "FOUNDATION READY"
-            else "warning"
-        )
-        render_metric_cards(
-            [
-                {"title": "Construction type", "value": "CAST-IN-PLACE", "detail": "Monolithic continuous pour", "status": "ready"},
-                {"title": "Section family", "value": "SOLID ONLY", "detail": "No Hollow zones are permitted", "status": "ready"},
-                {
-                    "title": "Continuous topology",
-                    "value": cip_status["status"],
-                    "detail": f"{cip_status['active_run_count']} active station-based bar run(s); editor pending RB-CIP2",
-                    "status": topology_visual_status,
-                },
-                {"title": "Solver handoff", "value": "LOCKED", "detail": "No CIP bar-run solver credit in RB-CIP1", "status": "neutral"},
-            ]
-        )
-        st.warning(
-            "RB-CIP1 WORKFLOW GUARD — The continuous longitudinal bar-run data foundation is now separate from the Precast Segmental template/zone model, but the editing workflow is not released yet. "
-            "Section/Zone boundaries do not terminate CIP longitudinal bars, Segmental As = 0 joint semantics are not applied here, and no CIP bar run is routed to ULS/SLS/PMM or other design solvers. Existing Segmental Rebar data remains preserved for Precast Segmental mode."
-        )
-        if segment_errors:
-            for issue in segment_errors:
-                st.error(issue)
-        for issue in cip_status.get("errors", []):
-            st.error(issue)
-        if cip_runs:
-            for issue in cip_status.get("warnings", []):
-                st.warning(issue)
-            with st.expander("Continuous longitudinal topology — read-only foundation", expanded=False):
-                st.dataframe(pd.DataFrame(cip_runs), use_container_width=True, hide_index=True)
-                st.caption(
-                    "Read-only in RB-CIP1. Runs are station-based and may cross any Section/Zone boundary. Development, splice, curtailment, anchorage, congestion, and code-minimum QA are not certified by this foundation."
-                )
-        else:
-            st.info(
-                "LAYOUT REQUIRED — No Cast-in-Place longitudinal bar runs are defined. RB-CIP1 intentionally does not invent reinforcement. The bar-run editor will be introduced in RB-CIP2."
-            )
-        st.caption(
-            f"Current Cast-in-Place Section/Zone source: {len(segment_rows)} zone(s) over L = {length_m:.3f} m. Zone boundaries are geometry/property boundaries, not physical joints."
+        _render_cip_longitudinal_rebar_workspace(
+            length_m=length_m,
+            segment_rows=segment_rows,
+            segment_errors=segment_errors,
         )
         return
 
