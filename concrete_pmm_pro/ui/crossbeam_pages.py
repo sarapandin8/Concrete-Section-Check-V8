@@ -99,6 +99,13 @@ from concrete_pmm_pro.crossbeam.elastic_shortening import (
     symmetric_stressing_group_rows,
     stressing_group_summary,
 )
+from concrete_pmm_pro.crossbeam.stressing_stage_frame import (
+    PTLOSS3B2A_PRESTRESS_CASE,
+    PTLOSS3B2A_CASES,
+    build_crossbeam_linear_stage_model,
+    linear_stage_case_summary_rows,
+    run_crossbeam_linear_stage_response,
+)
 from concrete_pmm_pro.crossbeam.construction_stage import (
     COLUMN_BASE_ASSUMPTION,
     COLUMN_SHAPE_OPTIONS,
@@ -5755,6 +5762,73 @@ def _column_plan_section_preview_figure(row: Mapping[str, Any]) -> go.Figure:
     )
     return fig
 
+def _ptloss3b2a_response_figure(
+    response_rows: list[dict[str, Any]],
+    *,
+    title: str,
+    field: str,
+    y_title: str,
+    trace_name: str,
+    height: int = 420,
+) -> go.Figure:
+    """Return a shared-style PTLOSS3B2A station-response chart."""
+
+    rows = sorted(
+        [row for row in response_rows if row.get(field) is not None],
+        key=lambda row: (_finite_float(row.get("s (m)")), str(row.get("Element") or "")),
+    )
+    fig = go.Figure()
+    if rows:
+        fig.add_trace(
+            go.Scatter(
+                x=[_finite_float(row.get("s (m)")) for row in rows],
+                y=[_finite_float(row.get(field)) for row in rows],
+                mode="lines",
+                name=trace_name,
+                line={"width": 2.4},
+                hovertemplate=(
+                    "s=%{x:.3f} m<br>" + trace_name + "=%{y:.3f}<extra></extra>"
+                ),
+            )
+        )
+    fig.add_hline(y=0.0, line_width=1.0, line_dash="dot")
+    fig.update_layout(**_base_figure_layout(title, "Crossbeam station s (m)", y_title, height=height))
+    return fig
+
+
+def _ptloss3b2a_force_figure(
+    response_rows: list[dict[str, Any]],
+    *,
+    title: str,
+    height: int = 430,
+) -> go.Figure:
+    """Return axial/shear traces sharing the same kN axis."""
+
+    rows = sorted(
+        response_rows,
+        key=lambda row: (_finite_float(row.get("s (m)")), str(row.get("Element") or "")),
+    )
+    fig = go.Figure()
+    stations = [_finite_float(row.get("s (m)")) for row in rows]
+    for field, name, dash in (
+        ("N compression-positive (kN)", "N comp.", "solid"),
+        ("V (kN)", "V", "dash"),
+    ):
+        fig.add_trace(
+            go.Scatter(
+                x=stations,
+                y=[_finite_float(row.get(field)) for row in rows],
+                mode="lines",
+                name=name,
+                line={"width": 2.2, "dash": dash},
+                hovertemplate=f"s=%{{x:.3f}} m<br>{name}=%{{y:.3f}} kN<extra></extra>",
+            )
+        )
+    fig.add_hline(y=0.0, line_width=1.0, line_dash="dot")
+    fig.update_layout(**_base_figure_layout(title, "Crossbeam station s (m)", "Force (kN)", height=height))
+    return fig
+
+
 def _anchorage_force_profile_figure(
     station_rows: list[dict[str, Any]],
     end_rows: list[dict[str, Any]],
@@ -6409,7 +6483,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "Friction/Wobble and Anchorage Set preserve their accepted results. PTLOSS3B1D relocates member construction/support ownership to Section Builder and carries the same source into Segment Layout and Prestress Loss while source-derived f_cgp, the stage solver, Pe/Pe_eff, and later losses remain locked.",
+        "Friction/Wobble and Anchorage Set preserve their accepted results. PTLOSS3B2A adds a fixed-base gross-section 2D Portal-Frame linear-response QA from the same Section Builder source while continuous contact/lift-off, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -7256,7 +7330,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     with elastic_shortening_tab:
         st.markdown("#### Elastic Shortening — construction/stressing-stage source foundation")
         st.caption(
-            "PTLOSS3B1D preserves the validated PTLOSS3 foundation while moving member construction/support editing to Section Builder; Elastic Shortening consumes that source read-only. Primary/secondary prestress, contact analysis, f_cgp, Pe/Pe_eff, and later losses remain locked."
+            "PTLOSS3B2A adds an auditable fixed-base 2D Portal-Frame linear-response QA using gross section stiffness, Crossbeam self-weight, and the accepted P after Anchorage Set tendon force state. Continuous compression-only falsework contact, lift-off, final Primary/Secondary decomposition, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked."
         )
 
         upstream_ready = bool(
@@ -7446,8 +7520,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         st.markdown("##### Construction / stressing-stage source model")
         st.caption(
-            "PTLOSS3B1D reads the physical construction/support facts owned by Section Builder for the future limited 2D Portal-Frame stage solver. "
-            "It does not yet calculate Primary/Secondary Prestress, contact reactions, or source-derived f_cgp."
+            "PTLOSS3B2A reads the construction/support facts owned by Section Builder and exercises them in a fixed-base gross-section linear Portal-Frame QA model. The actual continuous falsework contact state is still excluded, so the result cannot release source-derived f_cgp or final Elastic Shortening."
         )
         _ensure_crossbeam_construction_support_source_state(length_m)
         construction_method = str(
@@ -7595,8 +7668,8 @@ def render_crossbeam_prestress_loss_page() -> None:
                 },
                 {
                     "title": "Stage solver",
-                    "value": "LOCKED",
-                    "detail": "PTLOSS3B1D source model only",
+                    "value": "LINEAR QA / CONTACT LOCKED",
+                    "detail": "PTLOSS3B2A fixed-base response only",
                     "status": "warning",
                 },
             ]
@@ -7606,7 +7679,240 @@ def render_crossbeam_prestress_loss_page() -> None:
                 for issue in stage_source_summary.get("issues", []):
                     st.warning(str(issue))
         st.caption(
-            "PTLOSS3B1D does not assume temporary support remains active after prestress camber develops. The future stage solver must treat the full-length support as compression-only contact and automatically release any location whose reaction would become tensile."
+            "PTLOSS3B2A does not assume temporary support remains active after prestress camber develops. The next contact milestone must discretize the full-length support as compression-only contact and automatically release any location whose reaction would become tensile."
+        )
+
+        st.markdown("##### PTLOSS3B2A — Linear Portal-Frame Response QA")
+        st.caption(
+            "Gross-section Crossbeam and fixed-base columns are solved in the s–vertical plane. Load cases are kept separate: Crossbeam self-weight, accepted tendon force after Anchorage Set, and their linear superposition. Continuous falsework contact is intentionally excluded, so these results are QA/benchmark outputs only and do not feed f_cgp, Elastic Shortening, Pe/Pe_eff, Result Summary, or Report/QA."
+        )
+
+        try:
+            stage_material_library = ensure_concrete_material_library(
+                concrete_material=st.session_state.get("concrete_material"),
+                concrete_materials=st.session_state.get("concrete_materials"),
+                active_concrete_material_name=st.session_state.get(
+                    "active_concrete_material_name"
+                ),
+                deck_topping_material_name=st.session_state.get(
+                    "deck_topping_material_name"
+                ),
+            )
+            stage_materials = stage_material_library.materials
+            stage_material_issue = None
+        except Exception as exc:
+            stage_materials = []
+            stage_material_issue = str(exc)
+
+        linear_stage_model = build_crossbeam_linear_stage_model(
+            length_m=length_m,
+            segment_rows=current_segment_rows,
+            section_definitions=current_section_definitions,
+            concrete_materials=stage_materials,
+            column_rows=column_source_rows,
+            profile_rows=profile_rows,
+        )
+        if stage_material_issue:
+            linear_stage_model = {
+                **linear_stage_model,
+                "ready": False,
+                "status": "SOURCE BLOCKED",
+                "issues": [
+                    *list(linear_stage_model.get("issues") or []),
+                    f"Concrete material library could not be resolved: {stage_material_issue}",
+                ],
+            }
+
+        if upstream_ready:
+            linear_stage_result = run_crossbeam_linear_stage_response(
+                model=linear_stage_model,
+                profile_rows=profile_rows,
+                anchorage_station_rows=current_anchorage_station_rows,
+            )
+        else:
+            linear_stage_result = {
+                "status": "SOURCE BLOCKED",
+                "ready": False,
+                "issues": [
+                    "Accepted P after Anchorage Set is required before the prestress load case can be assembled."
+                ],
+                "cases": {},
+                "model": linear_stage_model,
+                "fcgp_status": "LOCKED — UPSTREAM FORCE STATE REQUIRED",
+                "temporary_support_status": "EXCLUDED — PTLOSS3B2B CONTACT MILESTONE",
+            }
+
+        linear_elements = list(linear_stage_model.get("elements") or [])
+        beam_element_count = sum(str(row.get("kind")) == "beam" for row in linear_elements)
+        column_element_count = sum(str(row.get("kind")) == "column" for row in linear_elements)
+        linear_residual = linear_stage_result.get("max_equilibrium_residual_ratio")
+        render_metric_cards(
+            [
+                {
+                    "title": "Linear frame model",
+                    "value": str(linear_stage_model.get("status") or "SOURCE BLOCKED"),
+                    "detail": f"{beam_element_count} beam + {column_element_count} column element(s)",
+                    "status": "ready" if linear_stage_model.get("ready") else "warning",
+                },
+                {
+                    "title": "Post-anchor load source",
+                    "value": str(
+                        linear_stage_result.get("prestress_load_source", {}).get(
+                            "status", "SOURCE BLOCKED"
+                        )
+                    ),
+                    "detail": "P after Anchorage Set + adopted tendon profile",
+                    "status": "ready"
+                    if linear_stage_result.get("prestress_load_source", {}).get("ready")
+                    else "warning",
+                },
+                {
+                    "title": "Global equilibrium",
+                    "value": "—"
+                    if linear_residual is None
+                    else (
+                        "PASS" if float(linear_residual) <= 1.0e-8 else "REVIEW"
+                    ),
+                    "detail": "not solved"
+                    if linear_residual is None
+                    else f"max residual ratio = {float(linear_residual):.3e}",
+                    "status": "ready"
+                    if linear_residual is not None and float(linear_residual) <= 1.0e-8
+                    else "warning",
+                },
+                {
+                    "title": "Temporary support",
+                    "value": "EXCLUDED",
+                    "detail": "continuous compression-only contact is PTLOSS3B2B",
+                    "status": "warning",
+                },
+                {
+                    "title": "f_cgp handoff",
+                    "value": "LOCKED",
+                    "detail": "linear QA cannot release stressing-stage concrete stress",
+                    "status": "warning",
+                },
+            ]
+        )
+
+        for note in linear_stage_model.get("notes", []):
+            st.info(str(note))
+        if linear_stage_result.get("issues"):
+            with st.expander("Linear frame source / solver issues", expanded=True):
+                for issue in linear_stage_result.get("issues", []):
+                    st.warning(str(issue))
+
+        if linear_stage_result.get("cases"):
+            st.markdown("###### Linear load-case summary")
+            case_summary_rows = linear_stage_case_summary_rows(linear_stage_result)
+            st.dataframe(
+                pd.DataFrame(case_summary_rows),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Load case": st.column_config.TextColumn(width="large"),
+                    "Status": st.column_config.TextColumn(width="medium"),
+                    "Applied Fx (kN)": st.column_config.NumberColumn(format="%.3f"),
+                    "Applied Fy (kN)": st.column_config.NumberColumn(format="%.3f"),
+                    "Reaction Fx (kN)": st.column_config.NumberColumn(format="%.3f"),
+                    "Reaction Fy (kN)": st.column_config.NumberColumn(format="%.3f"),
+                    "Max |N| (kN)": st.column_config.NumberColumn(format="%.3f"),
+                    "Max |V| (kN)": st.column_config.NumberColumn(format="%.3f"),
+                    "Max |M| (kN-m)": st.column_config.NumberColumn(format="%.3f"),
+                    "Max |v| (mm)": st.column_config.NumberColumn(format="%.4f"),
+                    "Equilibrium residual": st.column_config.NumberColumn(format="%.3e"),
+                },
+            )
+
+            response_case = st.selectbox(
+                "Linear QA load case",
+                options=list(PTLOSS3B2A_CASES),
+                index=list(PTLOSS3B2A_CASES).index(PTLOSS3B2A_PRESTRESS_CASE),
+                key="crossbeam_ptloss3b2a_response_case",
+            )
+            selected_linear_case = linear_stage_result.get("cases", {}).get(
+                response_case, {}
+            )
+            selected_response_rows = list(
+                selected_linear_case.get("beam_response_rows") or []
+            )
+            if selected_response_rows:
+                st.plotly_chart(
+                    _ptloss3b2a_response_figure(
+                        selected_response_rows,
+                        title=f"Crossbeam Moment — {response_case}",
+                        field="M sagging-positive (kN-m)",
+                        y_title="Moment M (kN-m; sagging +)",
+                        trace_name="M",
+                    ),
+                    use_container_width=True,
+                    config=FIGURE_CONFIG,
+                )
+                st.caption(
+                    "Moment is sagging-positive. This fixed-base linear frame trace includes gross-section stiffness and the selected linear load case, but excludes continuous falsework contact and is not a final Primary/Secondary Prestress decomposition."
+                )
+                st.plotly_chart(
+                    _ptloss3b2a_force_figure(
+                        selected_response_rows,
+                        title=f"Crossbeam Axial / Shear — {response_case}",
+                    ),
+                    use_container_width=True,
+                    config=FIGURE_CONFIG,
+                )
+                st.caption(
+                    "N is compression-positive; V follows dM/ds. Jumps at frame joints or concentrated tendon-equivalent loads are retained for QA."
+                )
+                st.plotly_chart(
+                    _ptloss3b2a_response_figure(
+                        selected_response_rows,
+                        title=f"Crossbeam Vertical Displacement — {response_case}",
+                        field="v_up (mm)",
+                        y_title="Vertical displacement v (mm; upward +)",
+                        trace_name="v",
+                    ),
+                    use_container_width=True,
+                    config=FIGURE_CONFIG,
+                )
+                st.caption(
+                    "Upward displacement is positive. The displacement is a no-contact linear QA bound, not the stressing-stage camber after falsework lift-off iteration."
+                )
+
+            with st.expander("PTLOSS3B2A reaction, column-action, and tendon-load audit", expanded=False):
+                reaction_rows = [
+                    {
+                        "Node": row.get("label"),
+                        "Column": row.get("column_id", ""),
+                        "Rx (kN)": _finite_float(row.get("reaction_fx_N")) / 1000.0,
+                        "Ry (kN)": _finite_float(row.get("reaction_fy_N")) / 1000.0,
+                        "Mz (kN-m)": _finite_float(row.get("reaction_moment_Nmm")) / 1.0e6,
+                    }
+                    for row in selected_linear_case.get("nodes", [])
+                    if bool(row.get("fixed"))
+                ]
+                st.markdown("**Fixed-base reactions**")
+                st.dataframe(pd.DataFrame(reaction_rows), use_container_width=True, hide_index=True)
+                st.markdown("**Column end actions**")
+                st.dataframe(
+                    pd.DataFrame(selected_linear_case.get("column_action_rows", [])),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                st.markdown("**Equivalent tendon-load assembly**")
+                st.dataframe(
+                    pd.DataFrame(
+                        linear_stage_result.get("prestress_load_source", {}).get(
+                            "audit_rows", []
+                        )
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                st.caption(
+                    "Each tendon path segment uses its actual endpoint P after Anchorage Set and profile eccentricity. Endpoint/deviator force vectors and eccentric moments are assembled on the Crossbeam centroid nodes; no fpj restart or generic equivalent uniform load is used."
+                )
+
+        st.warning(
+            "Solver boundary — PTLOSS3B2A is a fixed-base linear benchmark only. It does not represent the accepted continuous full-length compression-only support condition at stressing. Do not use these QA actions or displacements as f_cgp, final Elastic Shortening, Pe/Pe_eff, or reportable design results."
         )
 
         if not current_es_group_summary.get("ready"):
@@ -7646,7 +7952,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         with st.expander("Calculation trace / QA — formula, stage source, and overrides", expanded=False):
             st.markdown("##### Code / methodology basis")
             st.write(
-                f"Published basis: **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B1D preserves the separate construction stressing-pair sequence for the future incremental stage solver."
+                f"Published basis: **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B2A preserves the separate construction stressing-pair sequence for the future incremental contact/stage solver."
             )
             st.latex(r"\Delta f_{pES,avg}=\left(\frac{G-1}{2G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
             st.latex(r"\Delta f_{pES,g}=\left(\frac{G-g}{G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
@@ -7656,7 +7962,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
             st.markdown("##### Stage-stress source")
             st.warning(
-                "PTLOSS3B1D preserves the construction/stressing-stage source but still does not invent the Portal-Frame structural response. Source-derived f_cgp remains BLOCKED until the validated Primary/Secondary Prestress + gravity/contact stage solver is released. A manual f_cgp override below is QA-only and cannot release final effective prestress."
+                "PTLOSS3B2A now provides a fixed-base gross-section linear Portal-Frame QA response, but it intentionally excludes the accepted continuous compression-only falsework contact and lift-off state. Source-derived f_cgp remains BLOCKED until the contact-aware incremental Primary/Secondary Prestress + gravity stage solver is validated. A manual f_cgp override below is QA-only and cannot release final effective prestress."
             )
 
             st.checkbox(
@@ -7786,11 +8092,11 @@ def render_crossbeam_prestress_loss_page() -> None:
                         "Order": 4,
                         "Source / component": "Elastic shortening",
                         "Current state": (
-                            "STAGE SOURCE MODEL / f_cgp BLOCKED"
+                            "LINEAR FRAME QA / f_cgp CONTACT BLOCKED"
                             if current_es_group_summary.get("ready")
                             else "PAIR SOURCE REVIEW"
                         ),
-                        "Feeds": "PTLOSS3B1D construction/stage source model only; Pe/Pe_eff remains locked",
+                        "Feeds": "PTLOSS3B2A fixed-base linear QA only; contact-aware f_cgp and Pe/Pe_eff remain locked",
                     },
                     {
                         "Order": 5,
