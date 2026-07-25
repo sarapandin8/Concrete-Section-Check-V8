@@ -116,7 +116,7 @@ def test_cip_transition_ui_states_scope_and_solver_lock():
     assert "Continuity Transition QA" in source
     assert "BAR ADDITION or BAR REDUCTION identifies a quantity transition only" in source
     assert "does not certify development, splice, termination, anchorage, or exact bar identity" in source
-    assert "no CIP rebar solver credit from RB-CIP3A" in source
+    assert "no CIP rebar solver credit from RB-CIP3B" in source
 
 
 def test_same_template_across_different_section_ids_requires_geometry_transition_review():

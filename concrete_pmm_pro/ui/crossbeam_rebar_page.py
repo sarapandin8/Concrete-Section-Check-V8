@@ -95,6 +95,7 @@ from concrete_pmm_pro.crossbeam.cip_rebar_templates import (
     CIP_RB_ZONE_ROWS_KEY,
     CIP_TR_TEMPLATE_REV_KEY,
     CIP_TR_TEMPLATE_ROWS_KEY,
+    cip_assigned_longitudinal_quantity_rows,
     cip_continuity_audit_rows,
     default_cip_longitudinal_templates,
     default_cip_transverse_templates,
@@ -2872,7 +2873,11 @@ def _render_cip_longitudinal_template_library(
         },
     )
 
-    with st.expander("Adopted provided reinforcement — optional / future solver handoff", expanded=False):
+    with st.expander("Adopted provided As — optional override / QA", expanded=False):
+        st.caption(
+            "A valid Outer-face auto layout (bar size plus exact count or target spacing) is already a complete quantity definition. "
+            "Enter Top/Bottom/Side adopted As only as an explicit override or independent QA value; it is not a second confirmation step."
+        )
         adopted_rows = [
             {"Template ID": row["Template ID"], "Top As (mm²)": row.get("Top As mm²", 0.0), "Bottom As (mm²)": row.get("Bottom As mm²", 0.0), "Side As (mm²)": row.get("Side As mm²", 0.0), "Notes": row.get("Notes", "")}
             for row in rows
@@ -3157,6 +3162,12 @@ def _cip_subnavigation() -> str:
 def _render_cip_template_aligned_workspace(*, length_m: float, segment_rows: list[dict[str, Any]], segment_errors: list[str]) -> None:
     long_rows, trans_rows, zone_rows = _ensure_cip_template_state(segment_rows)
     errors, warnings = validate_cip_template_model(layout_rows=segment_rows, longitudinal_templates=long_rows, transverse_templates=trans_rows, zone_assignments=zone_rows)
+    quantity_rows = cip_assigned_longitudinal_quantity_rows(
+        layout_rows=segment_rows,
+        longitudinal_templates=long_rows,
+        zone_assignments=zone_rows,
+    )
+    incomplete_quantity_rows = [row for row in quantity_rows if not bool(row.get("Complete"))]
     continuity_rows = cip_continuity_audit_rows(segment_rows, zone_rows, long_rows)
     transition_review_count = sum(
         1 for row in continuity_rows if str(row.get("Transition") or "") != "MATCHED LAYOUT"
@@ -3191,23 +3202,60 @@ def _render_cip_template_aligned_workspace(*, length_m: float, segment_rows: lis
         st.warning("Legacy RB-CIP2 bar-run rows are preserved in Project JSON but are no longer the user-facing input model and are not converted automatically. Re-enter adopted reinforcement through the aligned template/Section-Zone workflow before future solver handoff.")
     for issue in segment_errors + errors:
         st.error(issue)
-    if warnings:
-        count = len(warnings)
+    if incomplete_quantity_rows:
+        count = len(incomplete_quantity_rows)
         noun = "template requires" if count == 1 else "templates require"
         st.warning(
-            f"Input completeness: {count} assigned reinforcement {noun} additional input before solver handoff."
+            f"Input completeness: {count} assigned longitudinal reinforcement {noun} a valid bar-size/count-or-spacing definition before solver handoff."
         )
-        for warning in warnings:
-            st.caption(f"• {warning}")
+        for row in incomplete_quantity_rows:
+            st.caption(f"• {row.get('Template ID')}: {row.get('Issue')}")
+    elif quantity_rows:
+        count = len(quantity_rows)
+        noun = "template has" if count == 1 else "templates have"
+        st.success(
+            f"Input completeness: {count} assigned longitudinal reinforcement {noun} a valid quantity definition. "
+            "Exact-count As is derived directly; target-spacing count/As remains Section-geometry-derived. Solver handoff is still locked."
+        )
+    for warning in warnings:
+        if "longitudinal quantity definition is incomplete" not in warning:
+            st.warning(warning)
 
     active = _cip_subnavigation()
     if active == "Longitudinal":
         long_rows = _render_cip_longitudinal_template_library(long_rows, zone_rows)
+        assigned_quantity_rows = cip_assigned_longitudinal_quantity_rows(
+            layout_rows=segment_rows,
+            longitudinal_templates=long_rows,
+            zone_assignments=zone_rows,
+        )
+        quantity_defined = sum(bool(row.get("Complete")) for row in assigned_quantity_rows)
         render_metric_cards([
             {"title":"Active templates","value":len(template_map(long_rows)),"detail":"Solid longitudinal template IDs","status":"info"},
-            {"title":"Quantities defined","value":sum(_template_quantity_defined(r) for r in template_map(long_rows).values()),"detail":"Adopted provided reinforcement remains optional until solver handoff","status":"neutral"},
+            {
+                "title":"Assigned quantity definitions",
+                "value":f"{quantity_defined} / {len(assigned_quantity_rows)}",
+                "detail":"Exact count, target spacing, or optional adopted-As override",
+                "status":"ready" if assigned_quantity_rows and quantity_defined == len(assigned_quantity_rows) else "warning",
+            },
             {"title":"Physical joint crossing rule","value":"N/A","detail":"CIP Zone boundaries are not segment joints","status":"ready"},
         ])
+        if assigned_quantity_rows:
+            st.markdown("#### Assigned longitudinal quantity sources")
+            st.dataframe(
+                pd.DataFrame(assigned_quantity_rows)[["Template ID", "Source", "Definition"]],
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Template ID": st.column_config.TextColumn(width="medium"),
+                    "Source": st.column_config.TextColumn(width="medium"),
+                    "Definition": st.column_config.TextColumn(width="large"),
+                },
+            )
+            st.caption(
+                "Quantity source is derived from the assigned Template. Adopted As remains an optional override/QA value, not a duplicate confirmation. "
+                "No solver credit is enabled in RB-CIP3B."
+            )
     elif active == "Transverse / Shear":
         trans_rows = _render_cip_transverse_template_library(trans_rows, zone_rows)
     elif active == "Section / Zone":
@@ -3244,7 +3292,23 @@ def _render_cip_template_aligned_workspace(*, length_m: float, segment_rows: lis
                 pd.DataFrame(continuity)[display_columns],
                 use_container_width=True,
                 hide_index=True,
+                column_config={
+                    "Boundary": st.column_config.TextColumn(width="small"),
+                    "s (m)": st.column_config.NumberColumn(format="%.3f", width="small"),
+                    "Left template": st.column_config.TextColumn(width="medium"),
+                    "Right template": st.column_config.TextColumn(width="medium"),
+                    "Transition": st.column_config.TextColumn(width="medium"),
+                    "Quantity change": st.column_config.TextColumn(width="medium"),
+                    "Required review": st.column_config.TextColumn(width="large"),
+                },
             )
+            with st.expander("Transition review details", expanded=False):
+                for row in continuity:
+                    st.markdown(
+                        f"**{row.get('Boundary')} · s = {float(row.get('s (m)') or 0.0):.3f} m · {row.get('Transition')}**  "
+                        f"\n{row.get('Quantity change')}  "
+                        f"\n{row.get('Required review')}"
+                    )
             st.caption(
                 "MATCHED LAYOUT means adjacent template definitions agree. BAR ADDITION or BAR REDUCTION identifies a quantity transition only; the continuing bars and detailing location still require engineering definition."
             )
@@ -3264,7 +3328,7 @@ def _render_cip_template_aligned_workspace(*, length_m: float, segment_rows: lis
                 {"title":"Transverse template","value":str(assign.get("Transverse template") or "—"),"detail":"Local tie/shear arrangement source","status":"info"},
                 {"title":"Continuity certification","value":"NOT CERTIFIED","detail":"Development/splice/termination QA remains future scope","status":"warning"},
             ])
-    st.warning("SOLVER HANDOFF LOCKED — CIP transition QA is input/review only. ULS/SLS/PMM, shear/torsion, prestress-loss, Result Summary, and Report/QA receive no CIP rebar solver credit from RB-CIP3A.")
+    st.warning("SOLVER HANDOFF LOCKED — CIP transition QA is input/review only. ULS/SLS/PMM, shear/torsion, prestress-loss, Result Summary, and Report/QA receive no CIP rebar solver credit from RB-CIP3B.")
 
 def render_crossbeam_rebar_page() -> None:
     length_m, segment_rows, segment_errors = crossbeam_segment_layout_from_state()

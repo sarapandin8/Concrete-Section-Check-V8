@@ -7,7 +7,8 @@ reinforcement source for Cast-in-Place.  A separate per-template ``Credit in
 zone`` switch is intentionally not part of CIP semantics.
 
 CROSSBEAM.RB-CIP3A adds conservative transition classification at adjacent CIP
-Zone boundaries.  It distinguishes matched layouts, exact-count bar additions,
+Zone boundaries. CROSSBEAM.RB-CIP3B recognizes valid auto-layout definitions as
+complete quantity sources, keeps adopted As optional, and improves transition review clarity.  It distinguishes matched layouts, exact-count bar additions,
 exact-count bar reductions, and unresolved layout changes without certifying
 bar identity, development, splice, termination, or anchorage.
 
@@ -23,10 +24,13 @@ or exact bar-to-bar continuity.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from math import pi
 from typing import Any
 
 from concrete_pmm_pro.crossbeam.rebar import (
     RB_SOLID_COLUMN,
+    REBAR_DIAMETER_BY_SIZE,
+    TEMPLATE_BAR_SIZE_OPTIONS,
     canonical_rebar_templates,
     canonical_rebar_zones,
     default_crossbeam_rebar_templates,
@@ -183,6 +187,168 @@ def reconcile_cip_zone_assignments(
     return canonical_rebar_zones(output)
 
 
+def cip_longitudinal_quantity_definition(template: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the canonical quantity-definition status for one CIP template.
+
+    Section/Zone template assignment is the adoption decision.  A valid
+    auto-layout definition (bar size plus exact count or target spacing) is a
+    complete reinforcement quantity source; engineers are not required to
+    duplicate the same intent in the optional adopted-As fields.  Exact-count
+    layouts can resolve total perimeter-bar area directly.  Target-spacing
+    layouts remain geometry-derived because the generated count depends on the
+    assigned Solid section perimeter.
+
+    This status is input/QA metadata only and does not enable solver credit.
+    """
+
+    row = dict(template or {})
+    adopted = tuple(
+        max(_float(row.get(field), 0.0), 0.0)
+        for field in ("Top As mm²", "Bottom As mm²", "Side As mm²")
+    )
+    adopted_total = sum(adopted)
+    if adopted_total > 0.0:
+        return {
+            "Complete": True,
+            "Source": "ADOPTED AS OVERRIDE",
+            "Definition": f"Top/Bottom/Side adopted As total = {adopted_total:.1f} mm²",
+            "Derived bar count": None,
+            "Derived As mm²": adopted_total,
+            "Geometry derived": False,
+            "Issue": "",
+        }
+
+    if not bool(row.get("Active")):
+        return {
+            "Complete": False,
+            "Source": "INACTIVE",
+            "Definition": "Assigned template is inactive",
+            "Derived bar count": None,
+            "Derived As mm²": None,
+            "Geometry derived": False,
+            "Issue": "assigned longitudinal template is inactive",
+        }
+    if not bool(row.get("Outer face bars")):
+        return {
+            "Complete": False,
+            "Source": "NO OUTER LAYOUT",
+            "Definition": "Outer-face longitudinal layout is disabled",
+            "Derived bar count": None,
+            "Derived As mm²": None,
+            "Geometry derived": False,
+            "Issue": "outer-face longitudinal layout is disabled and no adopted As override is defined",
+        }
+
+    bar_size = _text(row.get("Outer bar size")).upper()
+    if bar_size not in TEMPLATE_BAR_SIZE_OPTIONS or bar_size not in REBAR_DIAMETER_BY_SIZE:
+        return {
+            "Complete": False,
+            "Source": "INVALID BAR",
+            "Definition": f"Unsupported outer bar size: {bar_size or '(blank)'}",
+            "Derived bar count": None,
+            "Derived As mm²": None,
+            "Geometry derived": False,
+            "Issue": "outer-face bar size is not supported",
+        }
+
+    method = _text(row.get("Outer layout method"))
+    diameter = float(REBAR_DIAMETER_BY_SIZE[bar_size])
+    one_bar_area = pi * diameter * diameter / 4.0
+    if method == "By exact bar count":
+        count = int(_float(row.get("Outer exact bar count"), 0.0))
+        if count <= 0:
+            return {
+                "Complete": False,
+                "Source": "EXACT COUNT",
+                "Definition": f"{bar_size}; exact bar count is not positive",
+                "Derived bar count": None,
+                "Derived As mm²": None,
+                "Geometry derived": False,
+                "Issue": "exact outer bar count must be positive",
+            }
+        area = count * one_bar_area
+        return {
+            "Complete": True,
+            "Source": "EXACT BAR COUNT",
+            "Definition": f"{count}-{bar_size}; derived total perimeter As = {area:.1f} mm²",
+            "Derived bar count": count,
+            "Derived As mm²": area,
+            "Geometry derived": False,
+            "Issue": "",
+        }
+
+    if method == "By target spacing":
+        spacing = _float(row.get("Outer target spacing mm"), 0.0)
+        if spacing <= 0.0:
+            return {
+                "Complete": False,
+                "Source": "TARGET SPACING",
+                "Definition": f"{bar_size}; target spacing is not positive",
+                "Derived bar count": None,
+                "Derived As mm²": None,
+                "Geometry derived": True,
+                "Issue": "target outer-bar spacing must be positive",
+            }
+        return {
+            "Complete": True,
+            "Source": "TARGET SPACING",
+            "Definition": f"{bar_size} at target spacing {spacing:.1f} mm; count and As resolve from assigned Section geometry",
+            "Derived bar count": None,
+            "Derived As mm²": None,
+            "Geometry derived": True,
+            "Issue": "",
+        }
+
+    return {
+        "Complete": False,
+        "Source": "INVALID METHOD",
+        "Definition": f"Unsupported outer layout method: {method or '(blank)'}",
+        "Derived bar count": None,
+        "Derived As mm²": None,
+        "Geometry derived": False,
+        "Issue": "outer-face layout method is not supported",
+    }
+
+
+def cip_assigned_longitudinal_quantity_rows(
+    *,
+    layout_rows: list[dict[str, Any]],
+    longitudinal_templates: list[dict[str, Any]],
+    zone_assignments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return one quantity-source row per assigned active CIP template."""
+
+    layout = _layout_map(layout_rows)
+    zones = {str(row.get("Zone ID") or ""): row for row in canonical_rebar_zones(zone_assignments)}
+    templates = template_map(longitudinal_templates)
+    assigned_ids = []
+    for zone_id in layout:
+        zone = zones.get(zone_id, {})
+        template_id = _text(zone.get("Longitudinal template") or zone.get("Rebar template"))
+        if template_id and template_id not in assigned_ids:
+            assigned_ids.append(template_id)
+
+    output: list[dict[str, Any]] = []
+    for template_id in assigned_ids:
+        template = templates.get(template_id)
+        if template is None:
+            output.append(
+                {
+                    "Template ID": template_id,
+                    "Complete": False,
+                    "Source": "MISSING TEMPLATE",
+                    "Definition": "Assigned template does not resolve to an active Solid template",
+                    "Derived bar count": None,
+                    "Derived As mm²": None,
+                    "Geometry derived": False,
+                    "Issue": "assigned template does not resolve to an active Solid template",
+                }
+            )
+            continue
+        output.append({"Template ID": template_id, **cip_longitudinal_quantity_definition(template)})
+    return output
+
+
 def validate_cip_template_model(
     *,
     layout_rows: list[dict[str, Any]],
@@ -230,18 +396,14 @@ def validate_cip_template_model(
     # Section/Zone assignment is the canonical adopted reinforcement source in
     # Cast-in-Place.  Only templates actually assigned to active Zones affect
     # completeness; dormant/unassigned library templates do not create noise.
-    assigned_long_ids = {
-        _text(zone_by_id.get(layout_id, {}).get("Longitudinal template")
-              or zone_by_id.get(layout_id, {}).get("Rebar template"))
-        for layout_id in layout
-    }
-    for template_id in sorted(tid for tid in assigned_long_ids if tid):
-        row = long_map.get(template_id)
-        if row is None:
-            continue
-        if not any(float(row.get(field) or 0.0) > 0.0 for field in ("Top As mm²", "Bottom As mm²", "Side As mm²")):
+    for quantity in cip_assigned_longitudinal_quantity_rows(
+        layout_rows=layout_rows,
+        longitudinal_templates=long_rows,
+        zone_assignments=zones,
+    ):
+        if not bool(quantity.get("Complete")):
             warnings.append(
-                f"{template_id}: assigned longitudinal template has no adopted provided As yet; auto-layout remains preview-only until future solver handoff."
+                f"{quantity.get('Template ID')}: longitudinal quantity definition is incomplete — {quantity.get('Issue')}."
             )
 
     return list(dict.fromkeys(errors)), list(dict.fromkeys(warnings))

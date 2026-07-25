@@ -86,6 +86,6 @@ def test_precast_transverse_elevation_legend_is_preserved():
 def test_cip_ui_removes_developer_plural_and_uses_specific_cleanup_copy():
     source = Path("concrete_pmm_pro/ui/crossbeam_rebar_page.py").read_text(encoding="utf-8")
     assert "assigned CIP reinforcement item(s)" not in source
-    assert "assigned reinforcement {noun} additional input" in source
+    assert "assigned longitudinal reinforcement {noun} a valid bar-size/count-or-spacing definition" in source
     assert "Actual spacing and first/last offsets remain Zone-local" in source
     assert "splice/termination" in source
