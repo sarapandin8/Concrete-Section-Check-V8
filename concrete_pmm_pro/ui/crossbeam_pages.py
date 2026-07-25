@@ -18,7 +18,7 @@ from collections.abc import Iterable, Mapping, MutableMapping
 from datetime import datetime
 import hashlib
 import json
-from math import cos, isfinite, pi, sin
+from math import cos, isfinite, pi, sin, sqrt
 from typing import Any
 
 import pandas as pd
@@ -27,6 +27,7 @@ import streamlit as st
 from shapely.geometry import Point
 
 from concrete_pmm_pro.core.concrete_materials import (
+    aci_concrete_ec_mpa,
     concrete_materials_by_name,
     ensure_concrete_material_library,
 )
@@ -103,7 +104,10 @@ from concrete_pmm_pro.crossbeam.stressing_stage_frame import (
     PTLOSS3B2A_PRESTRESS_CASE,
     PTLOSS3B2A_CASES,
     build_crossbeam_linear_stage_model,
+    linear_stage_stiffness_source_rows,
     linear_stage_case_summary_rows,
+    ptloss3b2a1_benchmark_rows,
+    run_crossbeam_linear_mesh_sensitivity,
     run_crossbeam_linear_stage_response,
 )
 from concrete_pmm_pro.crossbeam.construction_stage import (
@@ -5078,15 +5082,45 @@ def _crossbeam_es_material_source(
         }
 
     material = material_map[unique_materials[0]]
+    stressing_ratio = _finite_float(
+        st.session_state.get(
+            CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
+            DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
+        )
+    )
+    if stressing_ratio <= 0.0 or stressing_ratio > 1.0:
+        return {
+            "status": "SOURCE BLOCKED",
+            "eci_mpa": None,
+            "material_names": unique_materials,
+            "issues": [
+                "Crossbeam stressing-strength ratio f'ci/f'c must be greater than 0 and not exceed 1.0."
+            ],
+        }
+    fc_mpa = float(material.fc_MPa)
+    fci_mpa = stressing_ratio * fc_mpa
+    if str(material.Ec_method).casefold() == "manual":
+        eci_mpa = float(material.effective_Ec_MPa) * sqrt(fci_mpa / fc_mpa)
+        eci_method = "Manual Ec at f'c scaled by sqrt(f'ci/f'c)"
+    else:
+        eci_mpa = aci_concrete_ec_mpa(fci_mpa)
+        eci_method = "ACI normal-weight concrete Ec = 4700 sqrt(f'ci)"
     return {
-        "status": "MATERIAL SOURCE READY — STAGE REVIEW",
-        "eci_mpa": float(material.effective_Ec_MPa),
+        "status": "STAGE MODULUS SOURCE READY",
+        "eci_mpa": eci_mpa,
         "material_names": unique_materials,
-        "fc_mpa": float(material.fc_MPa),
+        "fc_mpa": fc_mpa,
+        "fci_mpa": fci_mpa,
+        "stressing_strength_ratio": stressing_ratio,
+        "ec_28_mpa": float(material.effective_Ec_MPa),
+        "eci_method": eci_method,
         "issues": [],
         "note": (
-            "Uses the assigned concrete material effective Ec as the PTLOSS3A preview Eci. "
-            "Verify the actual stressing/load-transfer age and modulus before final adoption."
+            "Crossbeam Eci is derived from the adopted stressing strength using "
+            f"{eci_method}, with "
+            f"f'ci = {stressing_ratio:.3f} f'c = {fci_mpa:.3f} MPa. "
+            "Column stiffness uses each column f'c input as the available stressing-stage strength; "
+            "joint/closure concrete is not a separate frame stiffness region in this QA milestone."
         ),
     }
 
@@ -6483,7 +6517,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "Friction/Wobble and Anchorage Set preserve their accepted results. PTLOSS3B2A adds a fixed-base gross-section 2D Portal-Frame linear-response QA from the same Section Builder source while continuous contact/lift-off, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked.",
+        "Friction/Wobble and Anchorage Set preserve their accepted results. PTLOSS3B2A1 adds a stressing-stage-modulus, rigid-offset 2D Portal-Frame linear-response QA from the same Section Builder source while continuous contact/lift-off, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -7328,9 +7362,26 @@ def render_crossbeam_prestress_loss_page() -> None:
 
 
     with elastic_shortening_tab:
+        st.markdown(
+            """
+            <style>
+            @media print {
+              div[data-testid="stAlert"],
+              div[data-testid="stNumberInput"],
+              div[data-testid="stDataFrame"],
+              div[data-testid="stHorizontalBlock"],
+              div[data-testid="stExpander"] {
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+              }
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         st.markdown("#### Elastic Shortening — construction/stressing-stage source foundation")
         st.caption(
-            "PTLOSS3B2A adds an auditable fixed-base 2D Portal-Frame linear-response QA using gross section stiffness, Crossbeam self-weight, and the accepted P after Anchorage Set tendon force state. Continuous compression-only falsework contact, lift-off, final Primary/Secondary decomposition, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked."
+            "PTLOSS3B2A1 hardens the fixed-base 2D Portal-Frame linear-response QA with stressing-stage Eci, explicit EA/EI sources, exact centroidal rigid offsets, independent P·e/sign/symmetry benchmarks, and mesh-sensitivity review. Continuous compression-only falsework contact, lift-off, final Primary/Secondary decomposition, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked."
         )
 
         upstream_ready = bool(
@@ -7520,7 +7571,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         st.markdown("##### Construction / stressing-stage source model")
         st.caption(
-            "PTLOSS3B2A reads the construction/support facts owned by Section Builder and exercises them in a fixed-base gross-section linear Portal-Frame QA model. The actual continuous falsework contact state is still excluded, so the result cannot release source-derived f_cgp or final Elastic Shortening."
+            "PTLOSS3B2A1 reads the construction/support facts owned by Section Builder and exercises them in a fixed-base gross-section linear Portal-Frame QA model. The actual continuous falsework contact state is still excluded, so the result cannot release source-derived f_cgp or final Elastic Shortening."
         )
         _ensure_crossbeam_construction_support_source_state(length_m)
         construction_method = str(
@@ -7669,7 +7720,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Stage solver",
                     "value": "LINEAR QA / CONTACT LOCKED",
-                    "detail": "PTLOSS3B2A fixed-base response only",
+                    "detail": "PTLOSS3B2A1 hardened fixed-base response only",
                     "status": "warning",
                 },
             ]
@@ -7679,10 +7730,10 @@ def render_crossbeam_prestress_loss_page() -> None:
                 for issue in stage_source_summary.get("issues", []):
                     st.warning(str(issue))
         st.caption(
-            "PTLOSS3B2A does not assume temporary support remains active after prestress camber develops. The next contact milestone must discretize the full-length support as compression-only contact and automatically release any location whose reaction would become tensile."
+            "PTLOSS3B2A1 does not assume temporary support remains active after prestress camber develops. The next contact milestone must discretize the full-length support as compression-only contact and automatically release any location whose reaction would become tensile."
         )
 
-        st.markdown("##### PTLOSS3B2A — Linear Portal-Frame Response QA")
+        st.markdown("##### PTLOSS3B2A1 — Stage-Modulus / Rigid-Offset Linear Response QA")
         st.caption(
             "Gross-section Crossbeam and fixed-base columns are solved in the s–vertical plane. Load cases are kept separate: Crossbeam self-weight, accepted tendon force after Anchorage Set, and their linear superposition. Continuous falsework contact is intentionally excluded, so these results are QA/benchmark outputs only and do not feed f_cgp, Elastic Shortening, Pe/Pe_eff, Result Summary, or Report/QA."
         )
@@ -7711,6 +7762,12 @@ def render_crossbeam_prestress_loss_page() -> None:
             concrete_materials=stage_materials,
             column_rows=column_source_rows,
             profile_rows=profile_rows,
+            crossbeam_stressing_strength_ratio=float(
+                st.session_state.get(
+                    CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
+                    DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
+                )
+            ),
         )
         if stage_material_issue:
             linear_stage_model = {
@@ -7795,6 +7852,152 @@ def render_crossbeam_prestress_loss_page() -> None:
             ]
         )
 
+        reference_axis = dict(linear_stage_model.get("reference_axis") or {})
+        stage_modulus = dict(linear_stage_model.get("stage_modulus") or {})
+        benchmark_rows = ptloss3b2a1_benchmark_rows()
+        benchmark_pass = bool(benchmark_rows) and all(
+            str(row.get("Status")) == "PASS" for row in benchmark_rows
+        )
+        render_metric_cards(
+            [
+                {
+                    "title": "Crossbeam stage modulus",
+                    "value": (
+                        f"Eci {float(material_eci):,.0f} MPa"
+                        if material_eci is not None
+                        else "SOURCE BLOCKED"
+                    ),
+                    "detail": (
+                        f"f'ci={_finite_float(current_es_material_source.get('fci_mpa')):.2f} MPa "
+                        f"= {_finite_float(current_es_material_source.get('stressing_strength_ratio')):.3f} f'c"
+                        if current_es_material_source.get("fci_mpa") is not None
+                        else "stressing-stage strength source required"
+                    ),
+                    "status": "ready" if material_eci is not None else "warning",
+                },
+                {
+                    "title": "Reference axis",
+                    "value": str(reference_axis.get("status") or "SOURCE BLOCKED"),
+                    "detail": (
+                        f"{reference_axis.get('reference_section_id') or '—'}; "
+                        f"centroid spread={_finite_float(reference_axis.get('centroid_spread_mm')):.3f} mm"
+                    ),
+                    "status": "ready" if reference_axis.get("status") == "READY" else "warning",
+                },
+                {
+                    "title": "Centroid transitions",
+                    "value": "RIGID-OFFSET QA",
+                    "detail": "exact element-end transformation; no stiff dummy links",
+                    "status": "ready" if linear_stage_model.get("ready") else "warning",
+                },
+                {
+                    "title": "Independent benchmarks",
+                    "value": "PASS" if benchmark_pass else "REVIEW",
+                    "detail": "centroid tendon · P·e sign · symmetric portal",
+                    "status": "ready" if benchmark_pass else "warning",
+                },
+                {
+                    "title": "Mesh sensitivity",
+                    "value": "ON DEMAND",
+                    "detail": "0.50 / 0.25 / 0.125 m; diagnostic only",
+                    "status": "neutral",
+                },
+            ]
+        )
+
+        with st.expander("Stage stiffness, reference-axis, and benchmark audit", expanded=False):
+            mesh_source = dict(linear_stage_model.get("mesh") or {})
+            st.markdown("**Crossbeam / column EA–EI sources**")
+            st.dataframe(
+                pd.DataFrame(linear_stage_stiffness_source_rows(linear_stage_model)),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "E used (MPa)": st.column_config.NumberColumn(format="%.1f"),
+                    "A (mm²)": st.column_config.NumberColumn(format="%.1f"),
+                    "I⊥s (mm⁴)": st.column_config.NumberColumn(format="%.4e"),
+                    "EA (N)": st.column_config.NumberColumn(format="%.4e"),
+                    "EI⊥s (N-mm²)": st.column_config.NumberColumn(format="%.4e"),
+                    "Centroid from top (mm)": st.column_config.NumberColumn(format="%.3f"),
+                    "Rigid offset to reference (mm; up +)": st.column_config.NumberColumn(format="%.3f"),
+                },
+            )
+            st.caption(
+                f"Reference axis method: {reference_axis.get('method') or '—'}. "
+                f"Reference centroid from top = {_finite_float(reference_axis.get('reference_centroid_from_top_mm')):.3f} mm. "
+                f"Crossbeam modulus route: {stage_modulus.get('crossbeam_method') or '—'}. "
+                f"Column route: {stage_modulus.get('column_method') or '—'}."
+            )
+            st.caption(
+                f"Mandatory mesh stations: {int(mesh_source.get('mandatory_station_count') or 0)}; "
+                f"status = {mesh_source.get('mandatory_station_status') or 'REVIEW'}. "
+                "Segment/Zone boundaries, column centerlines, and tendon profile control stations are inserted as exact frame nodes before subdivision."
+            )
+            st.markdown("**Independent analytical/sign benchmarks**")
+            st.dataframe(
+                pd.DataFrame(benchmark_rows),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Benchmark": st.column_config.TextColumn(width="large"),
+                    "Expected": st.column_config.TextColumn(width="large"),
+                    "Observed": st.column_config.TextColumn(width="large"),
+                    "Residual": st.column_config.NumberColumn(format="%.3e"),
+                },
+            )
+            st.caption(
+                "These are synthetic kernel benchmarks independent of the active project. PASS verifies the implemented sign and symmetry conventions only; it does not certify the active stressing stage or release f_cgp."
+            )
+
+        run_mesh_sensitivity = st.checkbox(
+            "Run PTLOSS3B2A1 mesh-sensitivity diagnostic",
+            value=False,
+            key="crossbeam_ptloss3b2a1_run_mesh_sensitivity",
+            help="Runs the prestress-only linear QA at 0.50, 0.25, and 0.125 m target beam-element lengths. This diagnostic is isolated and does not feed engineering results.",
+        )
+        if run_mesh_sensitivity:
+            if upstream_ready and linear_stage_model.get("ready"):
+                mesh_audit = run_crossbeam_linear_mesh_sensitivity(
+                    length_m=length_m,
+                    segment_rows=current_segment_rows,
+                    section_definitions=current_section_definitions,
+                    concrete_materials=stage_materials,
+                    column_rows=column_source_rows,
+                    profile_rows=profile_rows,
+                    anchorage_station_rows=current_anchorage_station_rows,
+                    crossbeam_stressing_strength_ratio=float(
+                        st.session_state.get(
+                            CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
+                            DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
+                        )
+                    ),
+                )
+                st.markdown(f"**Mesh sensitivity status — {mesh_audit.get('status')}**")
+                st.dataframe(
+                    pd.DataFrame(mesh_audit.get("rows", [])),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Target max element (m)": st.column_config.NumberColumn(format="%.3f"),
+                        "Max |N| (kN)": st.column_config.NumberColumn(format="%.3f"),
+                        "Max |V| (kN)": st.column_config.NumberColumn(format="%.3f"),
+                        "Max |M| (kN-m)": st.column_config.NumberColumn(format="%.3f"),
+                        "Max |v| (mm)": st.column_config.NumberColumn(format="%.5f"),
+                        "Equilibrium residual": st.column_config.NumberColumn(format="%.3e"),
+                        "ΔN from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
+                        "ΔV from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
+                        "ΔM from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
+                        "Δv from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
+                    },
+                )
+                st.caption(str(mesh_audit.get("criterion") or ""))
+                for issue in mesh_audit.get("issues", []):
+                    st.warning(str(issue))
+            else:
+                st.warning(
+                    "Mesh sensitivity requires a ready stage-stiffness model and accepted P after Anchorage Set."
+                )
+
         for note in linear_stage_model.get("notes", []):
             st.info(str(note))
         if linear_stage_result.get("issues"):
@@ -7852,15 +8055,32 @@ def render_crossbeam_prestress_loss_page() -> None:
                     "Moment is sagging-positive. This fixed-base linear frame trace includes gross-section stiffness and the selected linear load case, but excludes continuous falsework contact and is not a final Primary/Secondary Prestress decomposition."
                 )
                 st.plotly_chart(
-                    _ptloss3b2a_force_figure(
+                    _ptloss3b2a_response_figure(
                         selected_response_rows,
-                        title=f"Crossbeam Axial / Shear — {response_case}",
+                        title=f"Crossbeam Axial Force — {response_case}",
+                        field="N compression-positive (kN)",
+                        y_title="Axial force N (kN; compression +)",
+                        trace_name="N comp.",
                     ),
                     use_container_width=True,
                     config=FIGURE_CONFIG,
                 )
                 st.caption(
-                    "N is compression-positive; V follows dM/ds. Jumps at frame joints or concentrated tendon-equivalent loads are retained for QA."
+                    "N is compression-positive. Axial force is separated from shear so the smaller shear trace remains readable for QA."
+                )
+                st.plotly_chart(
+                    _ptloss3b2a_response_figure(
+                        selected_response_rows,
+                        title=f"Crossbeam Shear Force — {response_case}",
+                        field="V (kN)",
+                        y_title="Shear force V (kN)",
+                        trace_name="V",
+                    ),
+                    use_container_width=True,
+                    config=FIGURE_CONFIG,
+                )
+                st.caption(
+                    "V follows dM/ds. Jumps at frame joints or concentrated tendon-equivalent loads are retained for QA."
                 )
                 st.plotly_chart(
                     _ptloss3b2a_response_figure(
@@ -7877,7 +8097,29 @@ def render_crossbeam_prestress_loss_page() -> None:
                     "Upward displacement is positive. The displacement is a no-contact linear QA bound, not the stressing-stage camber after falsework lift-off iteration."
                 )
 
-            with st.expander("PTLOSS3B2A reaction, column-action, and tendon-load audit", expanded=False):
+                if response_case == PTLOSS3B2A_PRESTRESS_CASE:
+                    primary_reference_rows = list(
+                        linear_stage_result.get("prestress_load_source", {}).get(
+                            "primary_reference_rows", []
+                        )
+                    )
+                    if primary_reference_rows:
+                        st.plotly_chart(
+                            _ptloss3b2a_response_figure(
+                                primary_reference_rows,
+                                title="Primary Prestress P·e Reference — After Anchorage Set",
+                                field="Primary P·e moment (kN-m; sagging +)",
+                                y_title="Primary moment -P·e (kN-m; sagging +)",
+                                trace_name="Primary -P·e",
+                            ),
+                            use_container_width=True,
+                            config=FIGURE_CONFIG,
+                        )
+                        st.caption(
+                            "This is an independent section-local primary P·e reference using e positive below the local section centroid, so a tendon below the centroid gives negative (hogging) moment when sagging is positive. It is not the solved restrained-frame moment and does not include Secondary Prestress."
+                        )
+
+            with st.expander("PTLOSS3B2A1 reaction, column-action, and tendon-load audit", expanded=False):
                 reaction_rows = [
                     {
                         "Node": row.get("label"),
@@ -7908,11 +8150,11 @@ def render_crossbeam_prestress_loss_page() -> None:
                     hide_index=True,
                 )
                 st.caption(
-                    "Each tendon path segment uses its actual endpoint P after Anchorage Set and profile eccentricity. Endpoint/deviator force vectors and eccentric moments are assembled on the Crossbeam centroid nodes; no fpj restart or generic equivalent uniform load is used."
+                    "Each tendon path segment uses its actual endpoint P after Anchorage Set and physical tendon elevation relative to the common frame reference axis. Loads are assembled with no fpj restart and no generic equivalent uniform load. Local e is reported positive below the active section centroid for the independent -P·e sign audit."
                 )
 
         st.warning(
-            "Solver boundary — PTLOSS3B2A is a fixed-base linear benchmark only. It does not represent the accepted continuous full-length compression-only support condition at stressing. Do not use these QA actions or displacements as f_cgp, final Elastic Shortening, Pe/Pe_eff, or reportable design results."
+            "Solver boundary — PTLOSS3B2A1 is a fixed-base linear benchmark only. It does not represent the accepted continuous full-length compression-only support condition at stressing. Do not use these QA actions or displacements as f_cgp, final Elastic Shortening, Pe/Pe_eff, or reportable design results."
         )
 
         if not current_es_group_summary.get("ready"):
@@ -7952,7 +8194,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         with st.expander("Calculation trace / QA — formula, stage source, and overrides", expanded=False):
             st.markdown("##### Code / methodology basis")
             st.write(
-                f"Published basis: **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B2A preserves the separate construction stressing-pair sequence for the future incremental contact/stage solver."
+                f"Published basis: **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B2A1 preserves the separate construction stressing-pair sequence for the future incremental contact/stage solver."
             )
             st.latex(r"\Delta f_{pES,avg}=\left(\frac{G-1}{2G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
             st.latex(r"\Delta f_{pES,g}=\left(\frac{G-g}{G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
@@ -7962,7 +8204,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
             st.markdown("##### Stage-stress source")
             st.warning(
-                "PTLOSS3B2A now provides a fixed-base gross-section linear Portal-Frame QA response, but it intentionally excludes the accepted continuous compression-only falsework contact and lift-off state. Source-derived f_cgp remains BLOCKED until the contact-aware incremental Primary/Secondary Prestress + gravity stage solver is validated. A manual f_cgp override below is QA-only and cannot release final effective prestress."
+                "PTLOSS3B2A1 now provides a fixed-base gross-section linear Portal-Frame QA response, but it intentionally excludes the accepted continuous compression-only falsework contact and lift-off state. Source-derived f_cgp remains BLOCKED until the contact-aware incremental Primary/Secondary Prestress + gravity stage solver is validated. A manual f_cgp override below is QA-only and cannot release final effective prestress."
             )
 
             st.checkbox(
@@ -8096,7 +8338,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                             if current_es_group_summary.get("ready")
                             else "PAIR SOURCE REVIEW"
                         ),
-                        "Feeds": "PTLOSS3B2A fixed-base linear QA only; contact-aware f_cgp and Pe/Pe_eff remain locked",
+                        "Feeds": "PTLOSS3B2A1 hardened fixed-base linear QA only; contact-aware f_cgp and Pe/Pe_eff remain locked",
                     },
                     {
                         "Order": 5,

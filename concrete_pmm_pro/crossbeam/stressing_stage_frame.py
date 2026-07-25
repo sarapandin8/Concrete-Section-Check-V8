@@ -1,14 +1,20 @@
-"""PTLOSS3B2A linear 2D stressing-stage Portal-Frame response foundation.
+"""PTLOSS3B2A1 hardened 2D stressing-stage Portal-Frame response foundation.
 
 The module provides a small, auditable Euler-Bernoulli 2D frame kernel for the
 Portal Frame Crossbeam in the longitudinal ``s``-vertical plane.  It is a
 *linear QA foundation* only:
 
-- Crossbeam and fixed-base columns are modeled with gross ``EA``/``EI``.
+- Crossbeam and fixed-base columns are modeled with auditable gross ``EA``/``EI``.
+- Crossbeam ``Eci`` is resolved at the adopted stressing strength; column
+  stiffness remains a separate stressing-stage source.
+- Section centroid changes use exact rigid-offset transformations to one
+  common reference axis instead of a straight-centroid approximation.
 - Crossbeam self-weight and the accepted post-anchorage tendon force state are
   solved as separate linear load cases and as a superposed QA case.
 - Tendon loads are assembled from the actual piecewise tendon profile and
   ``P after anchorage set``; no force is reconstructed from ``fpj``.
+- Independent centroid-tendon, ``P·e`` sign, symmetry, and optional mesh
+  sensitivity diagnostics harden the linear kernel without feeding results.
 - Continuous temporary support/contact, lift-off iteration, final
   Primary/Secondary Prestress decomposition, source-derived ``f_cgp``, and the
   final Elastic Shortening handoff remain explicitly outside this milestone.
@@ -19,7 +25,7 @@ Internal units are mm, MPa, N, and N-mm.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from math import ceil, hypot, isfinite
+from math import ceil, hypot, isfinite, sqrt
 from typing import Any
 
 import numpy as np
@@ -28,13 +34,16 @@ from concrete_pmm_pro.crossbeam.construction_stage import (
     canonical_column_stage_rows,
     column_section_properties,
 )
+from concrete_pmm_pro.core.concrete_materials import aci_concrete_ec_mpa
 from concrete_pmm_pro.crossbeam.section_library import (
     canonical_section_definitions,
     section_property_records,
 )
 from concrete_pmm_pro.crossbeam.tendon import canonical_tendon_profile_points
 
-PTLOSS3B2A_METHOD = "LINEAR 2D s-VERTICAL PORTAL-FRAME QA"
+PTLOSS3B2A1_METHOD = "STAGE-MODULUS + RIGID-OFFSET 2D PORTAL-FRAME QA"
+# Backward-compatible public name retained for tests/imports from B2A.
+PTLOSS3B2A_METHOD = PTLOSS3B2A1_METHOD
 PTLOSS3B2A_SELF_WEIGHT_CASE = "SELF-WEIGHT — PORTAL FRAME ONLY"
 PTLOSS3B2A_PRESTRESS_CASE = "PRESTRESS AFTER ANCHORAGE SET"
 PTLOSS3B2A_COMBINED_CASE = "LINEAR SUPERPOSITION QA"
@@ -45,6 +54,8 @@ PTLOSS3B2A_CASES = (
 )
 
 DEFAULT_MAX_BEAM_ELEMENT_LENGTH_M = 0.50
+DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO = 0.80
+DEFAULT_MESH_SENSITIVITY_LENGTHS_M = (0.50, 0.25, 0.125)
 GRAVITY_M_S2 = 9.80665
 
 
@@ -103,11 +114,13 @@ def _material_record(value: Any) -> dict[str, Any]:
             "fc_mpa": fc,
             "density_kg_m3": density,
             "ec_mpa": ec,
+            "ec_method": ec_method,
         }
     name = str(getattr(value, "name", "") or "").strip()
     fc = _float(getattr(value, "fc_MPa", getattr(value, "fc_mpa", 0.0)))
     density = _float(getattr(value, "density_kg_m3", 2400.0), 2400.0)
     ec = _float(getattr(value, "effective_Ec_MPa", 0.0))
+    ec_method = str(getattr(value, "Ec_method", "ACI auto") or "ACI auto")
     if ec <= 0.0 and fc > 0.0:
         ec = 4700.0 * fc**0.5
     return {
@@ -115,6 +128,7 @@ def _material_record(value: Any) -> dict[str, Any]:
         "fc_mpa": fc,
         "density_kg_m3": density,
         "ec_mpa": ec,
+        "ec_method": ec_method,
     }
 
 
@@ -174,6 +188,30 @@ def frame_transformation(*, c: float, s: float) -> np.ndarray:
         ],
         dtype=float,
     )
+
+
+def frame_rigid_offset_matrix(
+    *,
+    offset_i_y_mm: float = 0.0,
+    offset_j_y_mm: float = 0.0,
+) -> np.ndarray:
+    """Map reference-node DOFs to centroidal element-end DOFs.
+
+    The frame reference node and the member centroid may differ vertically.
+    For a rigid arm ``r = (0, y)`` and small rotation ``theta``:
+
+    ``u_centroid = u_reference - y * theta``
+    ``v_centroid = v_reference``
+
+    The transformation avoids artificial high-stiffness link elements and
+    permits adjacent section regions with different centroid depths to share
+    one auditable physical reference node.
+    """
+
+    matrix = np.eye(6, dtype=float)
+    matrix[0, 2] = -float(offset_i_y_mm)
+    matrix[3, 5] = -float(offset_j_y_mm)
+    return matrix
 
 
 def frame_uniform_local_y_load(*, q_n_per_mm: float, length_mm: float) -> np.ndarray:
@@ -264,13 +302,18 @@ def solve_linear_frame(
             issues.append(f"Element {element_id or '?'}: {exc}")
             continue
         transform = frame_transformation(c=c, s=s)
-        k_global = transform.T @ k_local @ transform
+        rigid_offset = frame_rigid_offset_matrix(
+            offset_i_y_mm=_float(element.get("offset_i_y_mm")),
+            offset_j_y_mm=_float(element.get("offset_j_y_mm")),
+        )
+        reference_to_local = transform @ rigid_offset
+        k_global = reference_to_local.T @ k_local @ reference_to_local
         dofs = _element_dofs(element)
         stiffness[np.ix_(dofs, dofs)] += k_global
 
         q_local_y = _float((uniform_local_y_by_element or {}).get(element_id), 0.0)
         f_local = frame_uniform_local_y_load(q_n_per_mm=q_local_y, length_mm=length)
-        f_global = transform.T @ f_local
+        f_global = reference_to_local.T @ f_local
         load[dofs] += f_global
         element_cache[element_id] = {
             "length_mm": length,
@@ -278,6 +321,8 @@ def solve_linear_frame(
             "s": s,
             "k_local": k_local,
             "transform": transform,
+            "rigid_offset": rigid_offset,
+            "reference_to_local": reference_to_local,
             "f_local": f_local,
             "dofs": dofs,
             "q_local_y": q_local_y,
@@ -312,7 +357,7 @@ def solve_linear_frame(
         if cache is None:
             continue
         d_global = displacement[cache["dofs"]]
-        d_local = cache["transform"] @ d_global
+        d_local = cache["reference_to_local"] @ d_global
         end_action_local = cache["k_local"] @ d_local - cache["f_local"]
         element_results.append(
             {
@@ -499,15 +544,34 @@ def build_crossbeam_linear_stage_model(
     concrete_materials: Any,
     column_rows: Any,
     profile_rows: Any,
+    crossbeam_stressing_strength_ratio: float = DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
     max_beam_element_length_m: float = DEFAULT_MAX_BEAM_ELEMENT_LENGTH_M,
 ) -> dict[str, Any]:
-    """Resolve a piecewise-gross Crossbeam + fixed-base column frame model."""
+    """Resolve a piecewise-gross Crossbeam + fixed-base column frame model.
+
+    Crossbeam stiffness is evaluated at the adopted stressing strength
+    ``f'ci = ratio * f'c`` using the app's ACI normal-weight concrete modulus
+    route.  Column ``f'c`` inputs are treated as the available column strength
+    at stressing because the current construction source does not define a
+    separate column-age ratio.
+
+    A common physical reference axis is placed at the centroid depth of the
+    first active Crossbeam region.  Other region centroids are connected to
+    that reference axis through exact small-displacement rigid-offset
+    transformations in the element stiffness assembly.
+    """
 
     length = max(_float(length_m), 0.0)
     issues: list[str] = []
     notes: list[str] = []
     if length <= 0.0:
         issues.append("Crossbeam length must be positive.")
+    stressing_ratio = _float(
+        crossbeam_stressing_strength_ratio,
+        DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
+    )
+    if stressing_ratio <= 0.0 or stressing_ratio > 1.0:
+        issues.append("Crossbeam stressing-strength ratio f'ci/f'c must be greater than 0 and not exceed 1.0.")
 
     ranges, range_issues = _canonical_ranges(segment_rows, length_m=length)
     issues.extend(range_issues)
@@ -535,12 +599,34 @@ def build_crossbeam_linear_stage_model(
         if material["ec_mpa"] <= 0.0 or material["density_kg_m3"] <= 0.0:
             issues.append(f"Section {section_id} material stiffness/density source is invalid.")
             continue
+        fci_mpa = material["fc_mpa"] * stressing_ratio
+        if (
+            str(material.get("ec_method") or "").casefold() == "manual"
+            and material["ec_mpa"] > 0.0
+            and material["fc_mpa"] > 0.0
+        ):
+            eci_mpa = material["ec_mpa"] * sqrt(fci_mpa / material["fc_mpa"])
+            modulus_source = (
+                "Manual Ec at f'c scaled by sqrt(f'ci/f'c) for stressing stage"
+            )
+        else:
+            eci_mpa = aci_concrete_ec_mpa(fci_mpa) if fci_mpa > 0.0 else 0.0
+            modulus_source = "ACI Ec = 4700 sqrt(f'ci); f'ci = ratio x f'c"
+        if eci_mpa <= 0.0:
+            issues.append(f"Section {section_id} stressing-stage Eci source is invalid.")
+            continue
         ctop = _float(prop.get("Centroid from top mm"))
         height = _float(definition.get("Parameters", {}).get("height_mm"))
         section_sources[section_id] = {
             "Section ID": section_id,
             "Material": material_name,
-            "E_MPa": material["ec_mpa"],
+            "fc_28_mpa": material["fc_mpa"],
+            "Ec_28_MPa": material["ec_mpa"],
+            "fci_mpa": fci_mpa,
+            "Eci_MPa": eci_mpa,
+            "E_MPa": eci_mpa,
+            "stressing_strength_ratio": stressing_ratio,
+            "modulus_source": modulus_source,
             "density_kg_m3": material["density_kg_m3"],
             "A_mm2": _float(prop.get("Area mm²")),
             "I_mm4": _float(prop.get("Ix mm4")),
@@ -572,7 +658,10 @@ def build_crossbeam_linear_stage_model(
                 **row,
                 "A_mm2": _float(props.get("Area (mm²)")),
                 "I_mm4": _float(props.get("I_perp_s (mm⁴)")),
+                "fc_stage_mpa": _float(row.get("f'c (MPa)")),
+                "E_stage_MPa": _float(props.get("Ec (MPa)")),
                 "E_MPa": _float(props.get("Ec (MPa)")),
+                "modulus_source": "ACI Ec = 4700 sqrt(column f'c input); column input treated as available stressing-stage strength",
             }
         )
 
@@ -588,6 +677,33 @@ def build_crossbeam_linear_stage_model(
         base_stations,
         max_length_m=max_beam_element_length_m,
     ) if length > 0.0 else []
+    mandatory_stations = sorted(
+        set(round(float(value), 9) for value in base_stations)
+    )
+    station_set = set(round(float(value), 9) for value in stations)
+    missing_mandatory_stations = [
+        value for value in mandatory_stations if value not in station_set
+    ]
+    if missing_mandatory_stations:
+        issues.append(
+            "Mandatory Section/Column/Tendon stations are missing from the beam mesh: "
+            + ", ".join(f"{value:.6f}" for value in missing_mandatory_stations)
+            + "."
+        )
+
+    reference_section_id = ranges[0]["section_id"] if ranges else ""
+    reference_section = section_sources.get(reference_section_id, {})
+    reference_centroid_from_top_mm = _float(
+        reference_section.get("centroid_from_top_mm")
+    )
+    if not reference_section:
+        issues.append("A Crossbeam reference-axis section could not be resolved from the first active region.")
+
+    for section in section_sources.values():
+        section["centroid_offset_from_reference_mm"] = (
+            reference_centroid_from_top_mm
+            - _float(section.get("centroid_from_top_mm"))
+        )
 
     nodes: list[dict[str, Any]] = []
     beam_node_by_station: dict[float, int] = {}
@@ -630,6 +746,8 @@ def build_crossbeam_linear_stage_model(
                 "E_MPa": section["E_MPa"],
                 "A_mm2": section["A_mm2"],
                 "I_mm4": section["I_mm4"],
+                "offset_i_y_mm": section["centroid_offset_from_reference_mm"],
+                "offset_j_y_mm": section["centroid_offset_from_reference_mm"],
             }
         )
         weight_n_per_mm = (
@@ -676,10 +794,14 @@ def build_crossbeam_linear_stage_model(
         )
 
     ctop_values = [source["centroid_from_top_mm"] for source in section_sources.values()]
-    if ctop_values and max(ctop_values) - min(ctop_values) > 1.0:
+    centroid_spread = max(ctop_values) - min(ctop_values) if ctop_values else 0.0
+    if centroid_spread > 1.0e-6:
         notes.append(
-            "Multiple section centroid-from-top values exist. PTLOSS3B2A uses a straight idealized beam reference axis and local section eccentricity; exact centroidal rigid offsets remain future solver scope."
+            "Multiple section centroid depths are active. PTLOSS3B2A1 uses exact element-end rigid-offset transformations to a common reference axis; no high-stiffness dummy links are used."
         )
+    notes.append(
+        "Closure/joint concrete is not modeled as a separate frame stiffness region in this gross-section QA. Its specified stressing strength remains a construction acceptance source only."
+    )
 
     issues = _dedupe(issues)
     return {
@@ -694,11 +816,39 @@ def build_crossbeam_linear_stage_model(
         "beam_node_by_station": beam_node_by_station,
         "ranges": ranges,
         "section_sources": section_sources,
+        "column_sources": column_sources,
+        "reference_axis": {
+            "status": "READY" if reference_section else "SOURCE BLOCKED",
+            "reference_section_id": reference_section_id,
+            "reference_centroid_from_top_mm": reference_centroid_from_top_mm,
+            "centroid_spread_mm": centroid_spread,
+            "method": "Common reference axis + exact centroidal rigid-offset transformation",
+        },
+        "stage_modulus": {
+            "crossbeam_stressing_strength_ratio": stressing_ratio,
+            "crossbeam_method": (
+                "Per-section material basis at f'ci = ratio x f'c: ACI auto uses "
+                "4700 sqrt(f'ci); Manual Ec uses Ec(f'c) sqrt(f'ci/f'c)"
+            ),
+            "column_method": "ACI Ec = 4700 sqrt(column f'c input)",
+            "closure_joint_model": "NOT MODELED AS SEPARATE FRAME STIFFNESS REGION",
+        },
+        "mesh": {
+            "target_max_element_length_m": max(float(max_beam_element_length_m), 0.05),
+            "beam_element_count": sum(str(row.get("kind")) == "beam" for row in elements),
+            "column_element_count": sum(str(row.get("kind")) == "column" for row in elements),
+            "mandatory_station_count": len(mandatory_stations),
+            "mandatory_stations_m": mandatory_stations,
+            "missing_mandatory_stations_m": missing_mandatory_stations,
+            "mandatory_station_status": (
+                "PASS" if not missing_mandatory_stations else "REVIEW"
+            ),
+        },
         "self_weight_uniform_N_per_mm": self_weight_uniform,
         "issues": issues,
         "notes": _dedupe(notes),
         "solver_boundary": (
-            "Fixed-base gross-section linear frame only; continuous temporary-support contact/lift-off is excluded, so this model does not release stressing-stage f_cgp or final Elastic Shortening."
+            "Fixed-base stressing-stage gross-section linear frame with stage Eci and centroidal rigid offsets only; continuous temporary-support contact/lift-off is excluded, so this model does not release stressing-stage f_cgp or final Elastic Shortening."
         ),
     }
 
@@ -723,6 +873,14 @@ def prestress_equivalent_nodal_loads(
     stations = [float(value) for value in model.get("stations_m", [])]
     ranges = list(model.get("ranges", []))
     section_sources = dict(model.get("section_sources", {}))
+    reference_centroid_value = model.get("reference_axis", {}).get(
+        "reference_centroid_from_top_mm"
+    )
+    if reference_centroid_value is None and section_sources:
+        reference_centroid_value = next(iter(section_sources.values())).get(
+            "centroid_from_top_mm"
+        )
+    reference_centroid_from_top_mm = _float(reference_centroid_value)
     node_by_station = dict(model.get("beam_node_by_station", {}))
     profiles = canonical_tendon_profile_points(profile_rows, length)
     force_rows = _records(anchorage_station_rows)
@@ -757,6 +915,7 @@ def prestress_equivalent_nodal_loads(
         for node_id in node_by_station.values()
     }
     audit_rows: list[dict[str, Any]] = []
+    station_reference: dict[float, dict[str, float]] = {}
     tendon_count = 0
     for tendon_id, profile_points in sorted(profile_by_tendon.items()):
         if active_by_tendon.get(tendon_id, True) is False:
@@ -779,21 +938,45 @@ def prestress_equivalent_nodal_loads(
                 issues.append(f"{tendon_id}: profile/force/section source is incomplete at s = {station:.6f} m.")
                 tendon_values = []
                 break
-            eccentricity = _float(section.get("centroid_from_top_mm")) - dtop
+            centroid_from_top = _float(section.get("centroid_from_top_mm"))
+            e_below_local = dtop - centroid_from_top
+            y_tendon_from_reference = reference_centroid_from_top_mm - dtop
             tendon_values.append(
                 {
                     "station_m": station,
                     "dtop_mm": dtop,
                     "force_N": force_kn * 1000.0,
-                    "eccentricity_mm": eccentricity,
+                    "centroid_from_top_mm": centroid_from_top,
+                    "e_below_local_mm": e_below_local,
+                    "y_tendon_from_reference_mm": y_tendon_from_reference,
+                    "primary_M_sagging_Nmm": -force_kn * 1000.0 * e_below_local,
                 }
             )
+            station_key = round(station, 9)
+            station_reference.setdefault(
+                station_key,
+                {
+                    "s (m)": station,
+                    "Total P after anchorage (kN)": 0.0,
+                    "Primary P·e moment (kN-m; sagging +)": 0.0,
+                    "Tendon vertical resultant (kN; up +)": 0.0,
+                    "Tendon count": 0.0,
+                },
+            )
+            station_reference[station_key]["Total P after anchorage (kN)"] += force_kn
+            station_reference[station_key][
+                "Primary P·e moment (kN-m; sagging +)"
+            ] += (-force_kn * e_below_local / 1000.0)
+            station_reference[station_key]["Tendon count"] += 1.0
         if not tendon_values:
             continue
 
         for index, (left, right) in enumerate(zip(tendon_values, tendon_values[1:]), start=1):
             dx = (right["station_m"] - left["station_m"]) * 1000.0
-            dy = right["eccentricity_mm"] - left["eccentricity_mm"]
+            dy = (
+                right["y_tendon_from_reference_mm"]
+                - left["y_tendon_from_reference_mm"]
+            )
             length_seg = hypot(dx, dy)
             if length_seg <= 1.0e-9:
                 issues.append(f"{tendon_id}: zero-length tendon load segment at s = {left['station_m']:.6f} m.")
@@ -804,7 +987,9 @@ def prestress_equivalent_nodal_loads(
                 [
                     left["force_N"] * ux,
                     left["force_N"] * uy,
-                    -left["eccentricity_mm"] * left["force_N"] * ux,
+                    -left["y_tendon_from_reference_mm"]
+                    * left["force_N"]
+                    * ux,
                 ],
                 dtype=float,
             )
@@ -812,7 +997,9 @@ def prestress_equivalent_nodal_loads(
                 [
                     -right["force_N"] * ux,
                     -right["force_N"] * uy,
-                    right["eccentricity_mm"] * right["force_N"] * ux,
+                    right["y_tendon_from_reference_mm"]
+                    * right["force_N"]
+                    * ux,
                 ],
                 dtype=float,
             )
@@ -828,8 +1015,22 @@ def prestress_equivalent_nodal_loads(
                     "s_j (m)": right["station_m"],
                     "P_i (kN)": left["force_N"] / 1000.0,
                     "P_j (kN)": right["force_N"] / 1000.0,
-                    "e_i (mm)": left["eccentricity_mm"],
-                    "e_j (mm)": right["eccentricity_mm"],
+                    "e_i below local centroid (mm)": left["e_below_local_mm"],
+                    "e_j below local centroid (mm)": right["e_below_local_mm"],
+                    "y_i from reference (mm; up +)": left[
+                        "y_tendon_from_reference_mm"
+                    ],
+                    "y_j from reference (mm; up +)": right[
+                        "y_tendon_from_reference_mm"
+                    ],
+                    "Primary M_i (kN-m; sagging +)": left[
+                        "primary_M_sagging_Nmm"
+                    ]
+                    / 1.0e6,
+                    "Primary M_j (kN-m; sagging +)": right[
+                        "primary_M_sagging_Nmm"
+                    ]
+                    / 1.0e6,
                     "Fx_i (kN)": force_i[0] / 1000.0,
                     "Fy_i (kN)": force_i[1] / 1000.0,
                     "M_i (kN-m)": force_i[2] / 1.0e6,
@@ -845,14 +1046,16 @@ def prestress_equivalent_nodal_loads(
         if np.linalg.norm(vector) > 1.0e-12
     }
     issues = _dedupe(issues)
+    primary_reference_rows = [station_reference[key] for key in sorted(station_reference)]
     return {
         "status": "LOAD SOURCE READY" if tendon_count > 0 and not issues else "SOURCE BLOCKED",
         "ready": tendon_count > 0 and not issues,
         "tendon_count": tendon_count,
         "nodal_loads": nodal_output,
         "audit_rows": audit_rows,
+        "primary_reference_rows": primary_reference_rows,
         "issues": issues,
-        "source": "Accepted P after Anchorage Set + adopted tendon profile",
+        "source": "Accepted P after Anchorage Set + adopted tendon profile + common physical reference axis",
     }
 
 
@@ -1035,6 +1238,499 @@ def run_crossbeam_linear_stage_response(
         ),
     }
 
+
+
+def linear_stage_stiffness_source_rows(model: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Return grouped stage-stiffness sources for UI/report QA."""
+
+    element_counts: dict[tuple[str, str], int] = {}
+    for element in model.get("elements", []):
+        kind = str(element.get("kind") or "")
+        source_id = (
+            str(element.get("region") or "")
+            if kind == "beam"
+            else str(element.get("column_id") or "")
+        )
+        element_counts[(kind, source_id)] = element_counts.get((kind, source_id), 0) + 1
+
+    rows: list[dict[str, Any]] = []
+    section_sources = dict(model.get("section_sources", {}))
+    for region in model.get("ranges", []):
+        section_id = str(region.get("section_id") or "")
+        source = section_sources.get(section_id, {})
+        e = _float(source.get("E_MPa"))
+        area = _float(source.get("A_mm2"))
+        inertia = _float(source.get("I_mm4"))
+        rows.append(
+            {
+                "Member": "Crossbeam",
+                "Region / Column": str(region.get("Region") or ""),
+                "Section / Shape": section_id,
+                "Strength source": (
+                    f"f'ci={_float(source.get('fci_mpa')):.3f} MPa "
+                    f"({_float(source.get('stressing_strength_ratio')):.3f} f'c)"
+                ),
+                "E used (MPa)": e,
+                "A (mm²)": area,
+                "I⊥s (mm⁴)": inertia,
+                "EA (N)": e * area,
+                "EI⊥s (N-mm²)": e * inertia,
+                "Centroid from top (mm)": _float(source.get("centroid_from_top_mm")),
+                "Rigid offset to reference (mm; up +)": _float(
+                    source.get("centroid_offset_from_reference_mm")
+                ),
+                "Element count": element_counts.get(
+                    ("beam", str(region.get("Region") or "")), 0
+                ),
+                "Source / axis": str(source.get("modulus_source") or ""),
+            }
+        )
+
+    for column in model.get("column_sources", []):
+        e = _float(column.get("E_MPa"))
+        area = _float(column.get("A_mm2"))
+        inertia = _float(column.get("I_mm4"))
+        column_id = str(column.get("Column ID") or "")
+        rows.append(
+            {
+                "Member": "Column",
+                "Region / Column": column_id,
+                "Section / Shape": str(column.get("Shape") or ""),
+                "Strength source": f"column f'c={_float(column.get('fc_stage_mpa')):.3f} MPa",
+                "E used (MPa)": e,
+                "A (mm²)": area,
+                "I⊥s (mm⁴)": inertia,
+                "EA (N)": e * area,
+                "EI⊥s (N-mm²)": e * inertia,
+                "Centroid from top (mm)": None,
+                "Rigid offset to reference (mm; up +)": 0.0,
+                "Element count": element_counts.get(("column", column_id), 0),
+                "Source / axis": (
+                    str(column.get("modulus_source") or "")
+                    + "; I⊥s = column I22 about axis normal to Crossbeam s"
+                ),
+            }
+        )
+    return rows
+
+
+def _response_metrics(solution: Mapping[str, Any]) -> dict[str, float]:
+    rows = _beam_response_rows(solution)
+    if not rows:
+        return {}
+    return {
+        "max_abs_N_kN": max(
+            abs(_float(row.get("N compression-positive (kN)"))) for row in rows
+        ),
+        "max_abs_V_kN": max(abs(_float(row.get("V (kN)"))) for row in rows),
+        "max_abs_M_kNm": max(
+            abs(_float(row.get("M sagging-positive (kN-m)"))) for row in rows
+        ),
+        "max_abs_v_mm": max(abs(_float(row.get("v_up (mm)"))) for row in rows),
+        "max_up_mm": max(_float(row.get("v_up (mm)")) for row in rows),
+        "max_down_mm": min(_float(row.get("v_up (mm)")) for row in rows),
+    }
+
+
+def run_crossbeam_linear_mesh_sensitivity(
+    *,
+    length_m: float,
+    segment_rows: Any,
+    section_definitions: Any,
+    concrete_materials: Any,
+    column_rows: Any,
+    profile_rows: Any,
+    anchorage_station_rows: Any,
+    crossbeam_stressing_strength_ratio: float = DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
+    mesh_lengths_m: tuple[float, ...] = DEFAULT_MESH_SENSITIVITY_LENGTHS_M,
+) -> dict[str, Any]:
+    """Run prestress-only linear QA on progressively refined beam meshes."""
+
+    rows: list[dict[str, Any]] = []
+    previous: dict[str, float] | None = None
+    issues: list[str] = []
+    for target in mesh_lengths_m:
+        model = build_crossbeam_linear_stage_model(
+            length_m=length_m,
+            segment_rows=segment_rows,
+            section_definitions=section_definitions,
+            concrete_materials=concrete_materials,
+            column_rows=column_rows,
+            profile_rows=profile_rows,
+            crossbeam_stressing_strength_ratio=crossbeam_stressing_strength_ratio,
+            max_beam_element_length_m=float(target),
+        )
+        if not model.get("ready"):
+            issues.extend(
+                f"Mesh {target:.3f} m: {issue}" for issue in model.get("issues", [])
+            )
+            rows.append(
+                {
+                    "Target max element (m)": float(target),
+                    "Beam elements": int(model.get("mesh", {}).get("beam_element_count") or 0),
+                    "Status": "SOURCE BLOCKED",
+                }
+            )
+            continue
+        prestress = prestress_equivalent_nodal_loads(
+            model=model,
+            profile_rows=profile_rows,
+            anchorage_station_rows=anchorage_station_rows,
+        )
+        if not prestress.get("ready"):
+            issues.extend(
+                f"Mesh {target:.3f} m: {issue}"
+                for issue in prestress.get("issues", [])
+            )
+            rows.append(
+                {
+                    "Target max element (m)": float(target),
+                    "Beam elements": int(model.get("mesh", {}).get("beam_element_count") or 0),
+                    "Status": "SOURCE BLOCKED",
+                }
+            )
+            continue
+        solution = solve_linear_frame(
+            nodes=list(model.get("nodes", [])),
+            elements=list(model.get("elements", [])),
+            nodal_loads=dict(prestress.get("nodal_loads", {})),
+            fixed_node_ids=list(model.get("fixed_node_ids", [])),
+        )
+        metrics = _response_metrics(solution)
+        row = {
+            "Target max element (m)": float(target),
+            "Beam elements": int(model.get("mesh", {}).get("beam_element_count") or 0),
+            "Max |N| (kN)": metrics.get("max_abs_N_kN"),
+            "Max |V| (kN)": metrics.get("max_abs_V_kN"),
+            "Max |M| (kN-m)": metrics.get("max_abs_M_kNm"),
+            "Max |v| (mm)": metrics.get("max_abs_v_mm"),
+            "Equilibrium residual": _float(
+                solution.get("equilibrium", {}).get("max_residual_ratio"), 1.0
+            ),
+            "Status": str(solution.get("status") or "REVIEW REQUIRED"),
+        }
+        if previous:
+            for key, output_key in (
+                ("max_abs_N_kN", "ΔN from coarser (%)"),
+                ("max_abs_V_kN", "ΔV from coarser (%)"),
+                ("max_abs_M_kNm", "ΔM from coarser (%)"),
+                ("max_abs_v_mm", "Δv from coarser (%)"),
+            ):
+                current_value = _float(metrics.get(key))
+                previous_value = _float(previous.get(key))
+                scale = max(abs(current_value), abs(previous_value), 1.0e-12)
+                row[output_key] = 100.0 * abs(current_value - previous_value) / scale
+        rows.append(row)
+        previous = metrics
+
+    final_deltas = []
+    if rows:
+        last = rows[-1]
+        final_deltas = [
+            _float(last.get(key))
+            for key in (
+                "ΔN from coarser (%)",
+                "ΔV from coarser (%)",
+                "ΔM from coarser (%)",
+                "Δv from coarser (%)",
+            )
+            if last.get(key) is not None
+        ]
+    max_delta = max(final_deltas, default=None)
+    ready = not issues and len(rows) == len(mesh_lengths_m) and all(
+        row.get("Status") == "LINEAR QA READY" for row in rows
+    )
+    return {
+        "status": (
+            "QA STABLE"
+            if ready and max_delta is not None and max_delta <= 1.0
+            else "MESH REVIEW"
+            if ready
+            else "SOURCE BLOCKED"
+        ),
+        "ready": ready,
+        "rows": rows,
+        "max_fine_mesh_delta_percent": max_delta,
+        "issues": _dedupe(issues),
+        "criterion": "Last refinement change <= 1.0% for N, V, M, and v (linear QA only)",
+    }
+
+
+def _manual_benchmark_model(
+    *,
+    stations_m: list[float],
+    column_stations_m: tuple[float, float] | None = None,
+) -> dict[str, Any]:
+    nodes: list[dict[str, Any]] = []
+    node_by_station: dict[float, int] = {}
+    for station in stations_m:
+        node_id = len(nodes)
+        nodes.append(
+            {
+                "id": node_id,
+                "label": f"B@{station:.3f}",
+                "kind": "beam",
+                "station_m": station,
+                "x_mm": station * 1000.0,
+                "y_mm": 0.0,
+            }
+        )
+        node_by_station[round(station, 9)] = node_id
+    elements: list[dict[str, Any]] = []
+    for index, (left, right) in enumerate(zip(stations_m, stations_m[1:]), start=1):
+        elements.append(
+            {
+                "id": f"B{index}",
+                "kind": "beam",
+                "region": "Z1",
+                "section_id": "S1",
+                "node_i": node_by_station[round(left, 9)],
+                "node_j": node_by_station[round(right, 9)],
+                "station_i_m": left,
+                "station_j_m": right,
+                "E_MPa": 30_000.0,
+                "A_mm2": 1.0e6,
+                "I_mm4": 2.0e11,
+                "offset_i_y_mm": 0.0,
+                "offset_j_y_mm": 0.0,
+            }
+        )
+    fixed: list[int] = []
+    if column_stations_m:
+        for index, station in enumerate(column_stations_m, start=1):
+            base = len(nodes)
+            nodes.append(
+                {
+                    "id": base,
+                    "label": f"C{index} base",
+                    "kind": "column_base",
+                    "column_id": f"C{index}",
+                    "station_m": station,
+                    "x_mm": station * 1000.0,
+                    "y_mm": -5_000.0,
+                }
+            )
+            fixed.append(base)
+            elements.append(
+                {
+                    "id": f"C{index}",
+                    "kind": "column",
+                    "column_id": f"C{index}",
+                    "node_i": base,
+                    "node_j": node_by_station[round(station, 9)],
+                    "station_i_m": station,
+                    "station_j_m": station,
+                    "E_MPa": 30_000.0,
+                    "A_mm2": 1.0e6,
+                    "I_mm4": 2.0e11,
+                }
+            )
+    return {
+        "ready": True,
+        "length_m": max(stations_m),
+        "stations_m": stations_m,
+        "nodes": nodes,
+        "elements": elements,
+        "fixed_node_ids": fixed,
+        "beam_node_by_station": node_by_station,
+        "ranges": [
+            {
+                "Region": "Z1",
+                "start_m": 0.0,
+                "end_m": max(stations_m),
+                "section_id": "S1",
+            }
+        ],
+        "section_sources": {
+            "S1": {
+                "centroid_from_top_mm": 750.0,
+                "centroid_offset_from_reference_mm": 0.0,
+            }
+        },
+        "reference_axis": {
+            "reference_centroid_from_top_mm": 750.0,
+            "method": "benchmark reference",
+        },
+    }
+
+
+def _station_mean(rows: list[dict[str, Any]], field: str) -> dict[float, float]:
+    values: dict[float, list[float]] = {}
+    for row in rows:
+        station = round(_float(row.get("s (m)")), 9)
+        values.setdefault(station, []).append(_float(row.get(field)))
+    return {
+        station: sum(items) / len(items)
+        for station, items in values.items()
+        if items
+    }
+
+
+def ptloss3b2a1_benchmark_rows() -> list[dict[str, Any]]:
+    """Return independent sign, P·e, and symmetry benchmarks."""
+
+    rows: list[dict[str, Any]] = []
+    force = [
+        {
+            "Tendon ID": "T1",
+            "Active": True,
+            "s (m)": station,
+            "P after anchorage set (kN)": 1000.0,
+        }
+        for station in (0.0, 10.0)
+    ]
+    base_model = _manual_benchmark_model(stations_m=[0.0, 10.0])
+    base_model["fixed_node_ids"] = [0]
+
+    centroid_profile = [
+        {"Tendon ID": "T1", "s (m)": 0.0, "dtop (mm)": 750.0},
+        {"Tendon ID": "T1", "s (m)": 10.0, "dtop (mm)": 750.0},
+    ]
+    centroid_source = prestress_equivalent_nodal_loads(
+        model=base_model,
+        profile_rows=centroid_profile,
+        anchorage_station_rows=force,
+    )
+    centroid_solution = solve_linear_frame(
+        nodes=list(base_model["nodes"]),
+        elements=list(base_model["elements"]),
+        nodal_loads=dict(centroid_source.get("nodal_loads", {})),
+        fixed_node_ids=[0],
+    )
+    centroid_metrics = _response_metrics(centroid_solution)
+    centroid_residual = max(
+        abs(_float(centroid_metrics.get("max_abs_M_kNm"))),
+        abs(_float(centroid_metrics.get("max_abs_v_mm"))),
+    )
+    rows.append(
+        {
+            "Benchmark": "Straight tendon through centroid",
+            "Expected": "N = P; M = 0; v = 0",
+            "Observed": (
+                f"N={_float(centroid_metrics.get('max_abs_N_kN')):.3f} kN; "
+                f"|M|max={_float(centroid_metrics.get('max_abs_M_kNm')):.3e} kN-m; "
+                f"|v|max={_float(centroid_metrics.get('max_abs_v_mm')):.3e} mm"
+            ),
+            "Residual": centroid_residual,
+            "Status": "PASS" if centroid_residual <= 1.0e-8 else "REVIEW",
+        }
+    )
+
+    below_profile = [
+        {"Tendon ID": "T1", "s (m)": 0.0, "dtop (mm)": 950.0},
+        {"Tendon ID": "T1", "s (m)": 10.0, "dtop (mm)": 950.0},
+    ]
+    below_source = prestress_equivalent_nodal_loads(
+        model=base_model,
+        profile_rows=below_profile,
+        anchorage_station_rows=force,
+    )
+    below_solution = solve_linear_frame(
+        nodes=list(base_model["nodes"]),
+        elements=list(base_model["elements"]),
+        nodal_loads=dict(below_source.get("nodal_loads", {})),
+        fixed_node_ids=[0],
+    )
+    below_rows = _beam_response_rows(below_solution)
+    observed_m = _station_mean(below_rows, "M sagging-positive (kN-m)")
+    mean_m = sum(observed_m.values()) / max(len(observed_m), 1)
+    expected_m = -200.0
+    tip_v = _float(below_solution.get("nodes", [])[-1].get("v_mm"))
+    residual = abs(mean_m - expected_m) / max(abs(expected_m), 1.0)
+    rows.append(
+        {
+            "Benchmark": "Straight tendon 200 mm below centroid",
+            "Expected": "Primary P·e = -200.000 kN-m (sagging +); cantilever tip v < 0",
+            "Observed": f"mean M={mean_m:.3f} kN-m; tip v={tip_v:.6f} mm",
+            "Residual": residual,
+            "Status": "PASS" if residual <= 1.0e-9 and tip_v < 0.0 else "REVIEW",
+        }
+    )
+
+    symmetric_model = _manual_benchmark_model(
+        stations_m=[0.0, 2.0, 5.0, 8.0, 10.0],
+        column_stations_m=(2.0, 8.0),
+    )
+    symmetric_profile = [
+        {"Tendon ID": "T1", "s (m)": 0.0, "dtop (mm)": 750.0},
+        {"Tendon ID": "T1", "s (m)": 5.0, "dtop (mm)": 1050.0},
+        {"Tendon ID": "T1", "s (m)": 10.0, "dtop (mm)": 750.0},
+    ]
+    symmetric_force = [
+        {
+            "Tendon ID": "T1",
+            "Active": True,
+            "s (m)": station,
+            "P after anchorage set (kN)": 1000.0,
+        }
+        for station in (0.0, 5.0, 10.0)
+    ]
+    symmetric_source = prestress_equivalent_nodal_loads(
+        model=symmetric_model,
+        profile_rows=symmetric_profile,
+        anchorage_station_rows=symmetric_force,
+    )
+    symmetric_solution = solve_linear_frame(
+        nodes=list(symmetric_model["nodes"]),
+        elements=list(symmetric_model["elements"]),
+        nodal_loads=dict(symmetric_source.get("nodal_loads", {})),
+        fixed_node_ids=list(symmetric_model["fixed_node_ids"]),
+    )
+    response = _beam_response_rows(symmetric_solution)
+    v_by_s = _station_mean(response, "v_up (mm)")
+    m_by_s = _station_mean(response, "M sagging-positive (kN-m)")
+    symmetry_errors: list[float] = []
+    for station, value in v_by_s.items():
+        mirror = round(10.0 - station, 9)
+        if mirror in v_by_s:
+            symmetry_errors.append(abs(value - v_by_s[mirror]))
+    for station, value in m_by_s.items():
+        mirror = round(10.0 - station, 9)
+        if mirror in m_by_s:
+            symmetry_errors.append(abs(value - m_by_s[mirror]))
+    fixed_rows = [
+        row for row in symmetric_solution.get("nodes", []) if bool(row.get("fixed"))
+    ]
+    if len(fixed_rows) == 2:
+        left_reaction, right_reaction = fixed_rows
+        symmetry_errors.extend(
+            [
+                abs(
+                    _float(left_reaction.get("reaction_fx_N"))
+                    + _float(right_reaction.get("reaction_fx_N"))
+                )
+                / 1000.0,
+                abs(
+                    _float(left_reaction.get("reaction_fy_N"))
+                    - _float(right_reaction.get("reaction_fy_N"))
+                )
+                / 1000.0,
+                abs(
+                    _float(left_reaction.get("reaction_moment_Nmm"))
+                    + _float(right_reaction.get("reaction_moment_Nmm"))
+                )
+                / 1.0e6,
+            ]
+        )
+    scale = max(
+        max((abs(value) for value in v_by_s.values()), default=0.0),
+        max((abs(value) for value in m_by_s.values()), default=0.0),
+        1.0,
+    )
+    symmetry_residual = max(symmetry_errors, default=0.0) / scale
+    rows.append(
+        {
+            "Benchmark": "Symmetric parabolic tendon in symmetric portal",
+            "Expected": "M(s)=M(L-s), v(s)=v(L-s), mirrored base reactions, equilibrium closed",
+            "Observed": (
+                f"symmetry residual={symmetry_residual:.3e}; "
+                f"equilibrium={_float(symmetric_solution.get('equilibrium', {}).get('max_residual_ratio')):.3e}"
+            ),
+            "Residual": symmetry_residual,
+            "Status": "PASS" if symmetry_residual <= 1.0e-9 else "REVIEW",
+        }
+    )
+    return rows
 
 def linear_stage_case_summary_rows(result: Mapping[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
