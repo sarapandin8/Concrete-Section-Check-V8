@@ -62,6 +62,6 @@ def test_section_name_save_uses_standard_blue_action_button_not_form_primary() -
     source = (root / "concrete_pmm_pro" / "ui" / "crossbeam_section_library.py").read_text(encoding="utf-8")
 
     assert 'save_name = st.button(' in source
-    assert '"Save name"' in source
+    assert '"Rename section"' in source
     assert 'type="primary"' in source
     assert 'st.form_submit_button("Save section name"' not in source

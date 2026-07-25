@@ -60,9 +60,9 @@ def test_seclib1b_surfaces_summary_rename_delete_and_keeps_id_advanced() -> None
     source = (root / "concrete_pmm_pro" / "ui" / "crossbeam_section_library.py").read_text(encoding="utf-8")
 
     assert '"#### Project Section Summary"' in source
-    assert '"#### Manage Selected Section"' in source
-    assert '"Save name"' in source
+    assert '"#### Selected Section Name"' in source
+    assert '"Rename section"' in source
     assert '"Delete selected section"' in source
-    assert '"Advanced Section ID management"' in source
+    assert '"Delete or change Section ID"' in source
     assert "assigned sections cannot be removed" in source
     assert "CB_SECLIB_PENDING_ACTIVE_ID_KEY" in source

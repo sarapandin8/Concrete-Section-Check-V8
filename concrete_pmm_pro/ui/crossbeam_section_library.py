@@ -522,12 +522,33 @@ def _rename_section_name_form(
     *,
     layout_label: str = "Segment Layout",
 ) -> None:
+    """Render a compact project-facing rename control for the selected section."""
+
     active = definition_map(definitions)[active_id]
     suggestions = _section_name_suggestions(str(active["Section role"]))
     name_key, suggestion_key = _prepare_name_editor_state(active)
 
-    suggestion_col, note_col = st.columns([0.46, 0.54], gap="small")
-    with suggestion_col:
+    name_col, action_col = st.columns([0.78, 0.22], gap="small")
+    with name_col:
+        proposed_name = st.text_input(
+            "Section name",
+            key=name_key,
+            help=f"Project-facing name only. Section ID {active_id} remains stable for {layout_label} and Project JSON references.",
+        )
+    clean_candidate = str(proposed_name or "").strip()
+    name_changed = bool(clean_candidate) and clean_candidate != str(active["Section name"]).strip()
+    with action_col:
+        st.write("")
+        save_name = st.button(
+            "Rename section",
+            key=f"crossbeam_seclib1f_save_name_{active_id}",
+            use_container_width=True,
+            type="primary",
+            disabled=not name_changed,
+            help="Save the edited project-facing name." if name_changed else "Edit the section name before saving.",
+        )
+
+    with st.expander("Optional name suggestions", expanded=False):
         st.selectbox(
             "Suggested section role / name",
             options=suggestions,
@@ -536,30 +557,10 @@ def _rename_section_name_form(
             args=(active_id,),
             help="Choose a common project role to fill the name field, or keep Custom project name for unrestricted text.",
         )
-    with note_col:
         st.caption(
-            "Suggestions reduce typing but do not control analysis. The Section ID remains the stable internal reference; the name is project-facing and fully editable."
+            "Suggestions reduce typing only. They do not control geometry, analysis, Section ID, or assignments."
         )
 
-    name_col, action_col = st.columns([0.78, 0.22], gap="small")
-    with name_col:
-        proposed_name = st.text_input(
-            "Section name",
-            key=name_key,
-            help=f"A concise project-facing name. Section ID remains stable for {layout_label} and Project JSON references.",
-        )
-    clean_candidate = str(proposed_name or "").strip()
-    name_changed = bool(clean_candidate) and clean_candidate != str(active["Section name"]).strip()
-    with action_col:
-        st.write("")
-        save_name = st.button(
-            "Save name",
-            key=f"crossbeam_seclib1f_save_name_{active_id}",
-            use_container_width=True,
-            type="primary",
-            disabled=not name_changed,
-            help="Save the edited project-facing name." if name_changed else "Edit the section name before saving.",
-        )
     if not save_name:
         return
     conflicts = _conflicting_section_name_ids(definitions, active_id, proposed_name)
@@ -708,85 +709,7 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
     usage = section_ids_used_by_segments(_records(st.session_state.get(CB_SEGMENT_ROWS_KEY)))
     section_map = definition_map(definitions)
 
-    if cip_mode:
-        select_col, duplicate_col, solid_col = st.columns([0.56, 0.22, 0.22], gap="small")
-        hollow_col = None
-    else:
-        select_col, duplicate_col, hollow_col, solid_col = st.columns([0.43, 0.19, 0.19, 0.19], gap="small")
-
-    with select_col:
-        selected_active_id = st.selectbox(
-            "Quick section switch",
-            options=ids,
-            format_func=lambda section_id: f"{section_id} · {section_map[section_id]['Section name']}",
-            key=CB_SECLIB_ACTIVE_ID_KEY,
-            on_change=_active_section_changed,
-            help="Optional quick switch. You can also click any row in Project Section Summary below.",
-        )
-    active_id = str(selected_active_id)
     active = section_map[active_id]
-
-    with duplicate_col:
-        st.write("")
-        active_is_hollow = str(active.get("Section role") or "") == "Hollow"
-        if st.button(
-            "Duplicate current",
-            key="crossbeam_seclib1_duplicate",
-            use_container_width=True,
-            type="primary",
-            disabled=cip_mode and active_is_hollow,
-            help=(
-                "Cast-in-Place permits Solid sections only; select a Solid Section ID before duplicating."
-                if cip_mode and active_is_hollow
-                else (
-                    "Create another Solid section with different dimensions."
-                    if cip_mode
-                    else "Recommended for creating another Hollow/Solid section with different dimensions."
-                )
-            ),
-        ):
-            updated, new_id = duplicate_definition(definitions, active_id)
-            _set_definitions(
-                updated,
-                new_id,
-                notice=f"Created {new_id} from {active_id}. Edit its dimensions below.",
-            )
-            st.rerun()
-
-    if not cip_mode and hollow_col is not None:
-        with hollow_col:
-            st.write("")
-            if st.button(
-                "New Hollow",
-                key="crossbeam_seclib1_add_hollow",
-                use_container_width=True,
-            ):
-                updated, new_id = add_default_definition(
-                    definitions,
-                    CROSSBEAM_HOLLOW_PRESET_KEY,
-                    _current_material_name(st.session_state),
-                )
-                _set_definitions(
-                    updated,
-                    new_id,
-                    notice=f"Created {new_id} — Hollow section. Edit its wall thicknesses below.",
-                )
-                st.rerun()
-
-    with solid_col:
-        st.write("")
-        if st.button("New Solid", key="crossbeam_seclib1_add_solid", use_container_width=True):
-            updated, new_id = add_default_definition(
-                definitions,
-                CROSSBEAM_SOLID_PRESET_KEY,
-                _current_material_name(st.session_state),
-            )
-            _set_definitions(
-                updated,
-                new_id,
-                notice=f"Created {new_id} — Solid section. Edit its dimensions below.",
-            )
-            st.rerun()
 
     assigned_segments = usage.get(active_id, [])
     assigned_text = ", ".join(assigned_segments) if assigned_segments else "Not assigned yet"
@@ -797,7 +720,7 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
         f"{active['Section role']} · {assignment_noun}: **{assigned_text}**"
     )
     st.info(
-        f"Fast workflow: select a section → **Duplicate current** → rename it below → change the geometry → assign the Section ID in **{layout_label}**. "
+        f"Select or create a Section ID in **Project Section Summary**, rename it directly below the table, then edit its geometry and assign it in **{layout_label}**. "
         "The preset family is fixed for each Section ID to prevent accidental topology changes."
     )
 
@@ -848,8 +771,90 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
 
     st.markdown("#### Project Section Summary")
     st.caption(
-        "Click **Edit** once to open a Section ID. The current row is highlighted; geometry, properties, live preview, and management controls update together."
+        "Select a Section ID, duplicate it, or create a new section directly beside the table. Click **Edit** in a row to open its geometry and preview."
     )
+
+    if cip_mode:
+        select_col, duplicate_col, solid_col = st.columns([0.56, 0.22, 0.22], gap="small")
+        hollow_col = None
+    else:
+        select_col, duplicate_col, hollow_col, solid_col = st.columns([0.43, 0.19, 0.19, 0.19], gap="small")
+
+    with select_col:
+        selected_active_id = st.selectbox(
+            "Selected section",
+            options=ids,
+            format_func=lambda section_id: f"{section_id} · {section_map[section_id]['Section name']}",
+            key=CB_SECLIB_ACTIVE_ID_KEY,
+            on_change=_active_section_changed,
+            help="Open a Section ID for geometry editing, preview, rename, duplication, or deletion review.",
+        )
+    active_id = str(selected_active_id)
+    active = section_map[active_id]
+    assigned_segments = usage.get(active_id, [])
+
+    with duplicate_col:
+        st.write("")
+        active_is_hollow = str(active.get("Section role") or "") == "Hollow"
+        if st.button(
+            "Duplicate current",
+            key="crossbeam_seclib1_duplicate",
+            use_container_width=True,
+            type="primary",
+            disabled=cip_mode and active_is_hollow,
+            help=(
+                "Cast-in-Place permits Solid sections only; select a Solid Section ID before duplicating."
+                if cip_mode and active_is_hollow
+                else (
+                    "Create another Solid section with the selected section's geometry as the starting point."
+                    if cip_mode
+                    else "Create another section with the selected section's geometry as the starting point."
+                )
+            ),
+        ):
+            updated, new_id = duplicate_definition(definitions, active_id)
+            _set_definitions(
+                updated,
+                new_id,
+                notice=f"Created {new_id} from {active_id}. Rename it below the table, then edit its dimensions.",
+            )
+            st.rerun()
+
+    if not cip_mode and hollow_col is not None:
+        with hollow_col:
+            st.write("")
+            if st.button(
+                "New Hollow",
+                key="crossbeam_seclib1_add_hollow",
+                use_container_width=True,
+            ):
+                updated, new_id = add_default_definition(
+                    definitions,
+                    CROSSBEAM_HOLLOW_PRESET_KEY,
+                    _current_material_name(st.session_state),
+                )
+                _set_definitions(
+                    updated,
+                    new_id,
+                    notice=f"Created {new_id} — Hollow section. Rename it below the table, then edit its wall thicknesses.",
+                )
+                st.rerun()
+
+    with solid_col:
+        st.write("")
+        if st.button("New Solid", key="crossbeam_seclib1_add_solid", use_container_width=True):
+            updated, new_id = add_default_definition(
+                definitions,
+                CROSSBEAM_SOLID_PRESET_KEY,
+                _current_material_name(st.session_state),
+            )
+            _set_definitions(
+                updated,
+                new_id,
+                notice=f"Created {new_id} — Solid section. Rename it below the table, then edit its dimensions.",
+            )
+            st.rerun()
+
     summary_rows = _project_section_summary_rows(applicable_definitions, usage, active_id)
     summary_revision = int(st.session_state.get(CB_SECLIB_REVISION_KEY, 0) or 0)
     summary_widget_key = f"crossbeam_seclib1f_project_section_summary_{summary_revision}"
@@ -907,25 +912,25 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
                 "Status": st.column_config.TextColumn(width="small"),
             },
         )
-        st.caption("Use Quick section switch above to open a section on Streamlit versions without table button columns.")
+        st.caption("Use the Selected section control above the table on Streamlit versions without table button columns.")
 
-    st.markdown("#### Manage Selected Section")
-    manage_name_col, manage_delete_col = st.columns([0.68, 0.32], gap="medium")
-    with manage_name_col:
-        st.caption(
-            f"Stable Section ID: **{active_id}** · Edit the user-facing name without breaking "
-            f"{'Section / Zone Layout' if cip_mode else 'Segment Layout'} references."
-        )
-        _rename_section_name_form(definitions, active_id, layout_label=layout_label)
-    with manage_delete_col:
-        st.caption("Deletion is guarded: assigned sections cannot be removed.")
-        _delete_current_section_control(definitions, active_id, assigned_segments, cip_mode=cip_mode)
+    st.markdown("#### Selected Section Name")
+    st.caption(
+        f"Rename **{active_id}** directly. The stable Section ID and all "
+        f"{'Section / Zone Layout' if cip_mode else 'Segment Layout'} references remain unchanged."
+    )
+    _rename_section_name_form(definitions, active_id, layout_label=layout_label)
 
-    with st.expander("Advanced Section ID management", expanded=False):
-        st.warning(
-            f"Changing a Section ID updates every current {'Section / Zone Layout' if cip_mode else 'Segment Layout'} reference. Use this only when the project naming convention requires it."
-        )
-        _advanced_identity_form(definitions, active_id, layout_label=layout_label)
+    with st.expander("Delete or change Section ID", expanded=False):
+        action_name_col, action_delete_col = st.columns([0.58, 0.42], gap="medium")
+        with action_name_col:
+            st.warning(
+                f"Changing a Section ID updates every current {'Section / Zone Layout' if cip_mode else 'Segment Layout'} reference. Use this only when the project naming convention requires it."
+            )
+            _advanced_identity_form(definitions, active_id, layout_label=layout_label)
+        with action_delete_col:
+            st.caption("Deletion is guarded: assigned sections cannot be removed.")
+            _delete_current_section_control(definitions, active_id, assigned_segments, cip_mode=cip_mode)
 
 
 def sync_crossbeam_section_library_after_builder(

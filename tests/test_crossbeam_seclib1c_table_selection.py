@@ -44,4 +44,4 @@ def test_seclib1c_selection_staging_remains_available_after_button_upgrade() -> 
 
     assert "_project_section_summary_button_click" in source
     assert "_stage_definition_selection(" in source
-    assert "geometry, properties, live preview, and management controls update together." in source
+    assert "Click **Edit** in a row to open its geometry and preview." in source
