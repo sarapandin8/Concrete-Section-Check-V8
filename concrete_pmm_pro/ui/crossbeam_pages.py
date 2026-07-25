@@ -31,6 +31,7 @@ from concrete_pmm_pro.core.concrete_materials import (
     concrete_materials_by_name,
     ensure_concrete_material_library,
 )
+from concrete_pmm_pro.core.design_code import workflow_project_code_label_from_session
 
 from concrete_pmm_pro.crossbeam.section_library import (
     build_geometry_for_definition,
@@ -5830,6 +5831,31 @@ def _ptloss3b2a_response_figure(
     return fig
 
 
+def _render_ptloss3b2a_print_figure(
+    figure: go.Figure,
+    *,
+    caption: str,
+) -> None:
+    """Render one PTLOSS response figure as an indivisible browser-print block.
+
+    The invisible anchor lets print CSS target the chart's Streamlit element
+    container without relying on a global Plotly selector that could affect
+    unrelated app figures. The chart title is owned by Plotly and therefore
+    remains with the plot when the browser moves the block to the next page.
+    """
+
+    st.markdown(
+        '<div class="ptloss3b2-print-figure-anchor" aria-hidden="true"></div>',
+        unsafe_allow_html=True,
+    )
+    st.plotly_chart(
+        figure,
+        use_container_width=True,
+        config=FIGURE_CONFIG,
+    )
+    st.caption(caption)
+
+
 def _ptloss3b2a_force_figure(
     response_rows: list[dict[str, Any]],
     *,
@@ -6517,7 +6543,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "Friction/Wobble and Anchorage Set preserve their accepted results. PTLOSS3B2A1 adds a stressing-stage-modulus, rigid-offset 2D Portal-Frame linear-response QA from the same Section Builder source while continuous contact/lift-off, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked.",
+        "Friction/Wobble and Anchorage Set preserve their accepted results. PTLOSS3B2A2 adds explicit member-code versus prestress-loss-basis traceability and browser-print figure integrity to the accepted PTLOSS3B2A1 stressing-stage linear-response QA while continuous contact/lift-off, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -7370,9 +7396,19 @@ def render_crossbeam_prestress_loss_page() -> None:
               div[data-testid="stNumberInput"],
               div[data-testid="stDataFrame"],
               div[data-testid="stHorizontalBlock"],
-              div[data-testid="stExpander"] {
-                break-inside: avoid !important;
+              div[data-testid="stExpander"],
+              div[data-testid="stPlotlyChart"],
+              div[data-testid="stElementContainer"]:has(.ptloss3b2-print-figure-anchor)
+                + div[data-testid="stElementContainer"] {
+                break-inside: avoid-page !important;
                 page-break-inside: avoid !important;
+              }
+
+              .ptloss3b2-print-figure-anchor {
+                display: block !important;
+                height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
               }
             }
             </style>
@@ -7381,7 +7417,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
         st.markdown("#### Elastic Shortening — construction/stressing-stage source foundation")
         st.caption(
-            "PTLOSS3B2A1 hardens the fixed-base 2D Portal-Frame linear-response QA with stressing-stage Eci, explicit EA/EI sources, exact centroidal rigid offsets, independent P·e/sign/symmetry benchmarks, and mesh-sensitivity review. Continuous compression-only falsework contact, lift-off, final Primary/Secondary decomposition, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked."
+            "PTLOSS3B2A2 preserves the accepted PTLOSS3B2A1 stressing-stage Eci, EA/EI, rigid-offset, P·e/sign/symmetry, and mesh-sensitivity foundation while making the dual code basis explicit and keeping each response figure intact in browser-print QA. Continuous compression-only falsework contact, lift-off, final Primary/Secondary decomposition, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked."
         )
 
         upstream_ready = bool(
@@ -7506,6 +7542,29 @@ def render_crossbeam_prestress_loss_page() -> None:
             min(_finite_float(row.get("P after ES (kN)")) for row in calculated_es_preview_rows)
             if calculated_es_preview_rows
             else None
+        )
+
+        member_design_code_label = workflow_project_code_label_from_session(
+            st.session_state
+        )
+        render_metric_cards(
+            [
+                {
+                    "title": "Member design code",
+                    "value": member_design_code_label,
+                    "detail": "Portal Frame Crossbeam member / strength workflow",
+                    "status": "ready",
+                },
+                {
+                    "title": "Prestress-loss basis",
+                    "value": "AASHTO LRFD 2020",
+                    "detail": "Prestress losses §5.9.3 · Elastic Shortening §5.9.3.2.3b",
+                    "status": "ready",
+                },
+            ]
+        )
+        st.caption(
+            f"The active member design code and the prestress-loss methodology are separate, explicit sources. {member_design_code_label} remains the Crossbeam member-design basis; AASHTO LRFD 2020 Section 5.9.3 governs this prestress-loss workflow."
         )
 
         render_metric_cards(
@@ -7733,9 +7792,9 @@ def render_crossbeam_prestress_loss_page() -> None:
             "PTLOSS3B2A1 does not assume temporary support remains active after prestress camber develops. The next contact milestone must discretize the full-length support as compression-only contact and automatically release any location whose reaction would become tensile."
         )
 
-        st.markdown("##### PTLOSS3B2A1 — Stage-Modulus / Rigid-Offset Linear Response QA")
+        st.markdown("##### PTLOSS3B2A2 — Code-Basis / Print-Integrity Linear Response QA")
         st.caption(
-            "Gross-section Crossbeam and fixed-base columns are solved in the s–vertical plane. Load cases are kept separate: Crossbeam self-weight, accepted tendon force after Anchorage Set, and their linear superposition. Continuous falsework contact is intentionally excluded, so these results are QA/benchmark outputs only and do not feed f_cgp, Elastic Shortening, Pe/Pe_eff, Result Summary, or Report/QA."
+            "The accepted PTLOSS3B2A1 gross-section Crossbeam and fixed-base column kernel is solved in the s–vertical plane. Load cases remain separate: Crossbeam self-weight, accepted tendon force after Anchorage Set, and their linear superposition. PTLOSS3B2A2 changes traceability and browser-print packaging only. Continuous falsework contact is intentionally excluded, and these QA outputs do not feed f_cgp, Elastic Shortening, Pe/Pe_eff, Result Summary, or Report/QA."
         )
 
         try:
@@ -8040,7 +8099,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 selected_linear_case.get("beam_response_rows") or []
             )
             if selected_response_rows:
-                st.plotly_chart(
+                _render_ptloss3b2a_print_figure(
                     _ptloss3b2a_response_figure(
                         selected_response_rows,
                         title=f"Crossbeam Moment — {response_case}",
@@ -8048,13 +8107,11 @@ def render_crossbeam_prestress_loss_page() -> None:
                         y_title="Moment M (kN-m; sagging +)",
                         trace_name="M",
                     ),
-                    use_container_width=True,
-                    config=FIGURE_CONFIG,
+                    caption=(
+                        "Moment is sagging-positive. This fixed-base linear frame trace includes gross-section stiffness and the selected linear load case, but excludes continuous falsework contact and is not a final Primary/Secondary Prestress decomposition."
+                    ),
                 )
-                st.caption(
-                    "Moment is sagging-positive. This fixed-base linear frame trace includes gross-section stiffness and the selected linear load case, but excludes continuous falsework contact and is not a final Primary/Secondary Prestress decomposition."
-                )
-                st.plotly_chart(
+                _render_ptloss3b2a_print_figure(
                     _ptloss3b2a_response_figure(
                         selected_response_rows,
                         title=f"Crossbeam Axial Force — {response_case}",
@@ -8062,13 +8119,11 @@ def render_crossbeam_prestress_loss_page() -> None:
                         y_title="Axial force N (kN; compression +)",
                         trace_name="N comp.",
                     ),
-                    use_container_width=True,
-                    config=FIGURE_CONFIG,
+                    caption=(
+                        "N is compression-positive. Axial force is separated from shear so the smaller shear trace remains readable for QA."
+                    ),
                 )
-                st.caption(
-                    "N is compression-positive. Axial force is separated from shear so the smaller shear trace remains readable for QA."
-                )
-                st.plotly_chart(
+                _render_ptloss3b2a_print_figure(
                     _ptloss3b2a_response_figure(
                         selected_response_rows,
                         title=f"Crossbeam Shear Force — {response_case}",
@@ -8076,13 +8131,11 @@ def render_crossbeam_prestress_loss_page() -> None:
                         y_title="Shear force V (kN)",
                         trace_name="V",
                     ),
-                    use_container_width=True,
-                    config=FIGURE_CONFIG,
+                    caption=(
+                        "V follows dM/ds. Jumps at frame joints or concentrated tendon-equivalent loads are retained for QA."
+                    ),
                 )
-                st.caption(
-                    "V follows dM/ds. Jumps at frame joints or concentrated tendon-equivalent loads are retained for QA."
-                )
-                st.plotly_chart(
+                _render_ptloss3b2a_print_figure(
                     _ptloss3b2a_response_figure(
                         selected_response_rows,
                         title=f"Crossbeam Vertical Displacement — {response_case}",
@@ -8090,11 +8143,9 @@ def render_crossbeam_prestress_loss_page() -> None:
                         y_title="Vertical displacement v (mm; upward +)",
                         trace_name="v",
                     ),
-                    use_container_width=True,
-                    config=FIGURE_CONFIG,
-                )
-                st.caption(
-                    "Upward displacement is positive. The displacement is a no-contact linear QA bound, not the stressing-stage camber after falsework lift-off iteration."
+                    caption=(
+                        "Upward displacement is positive. The displacement is a no-contact linear QA bound, not the stressing-stage camber after falsework lift-off iteration."
+                    ),
                 )
 
                 if response_case == PTLOSS3B2A_PRESTRESS_CASE:
@@ -8104,7 +8155,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                         )
                     )
                     if primary_reference_rows:
-                        st.plotly_chart(
+                        _render_ptloss3b2a_print_figure(
                             _ptloss3b2a_response_figure(
                                 primary_reference_rows,
                                 title="Primary Prestress P·e Reference — After Anchorage Set",
@@ -8112,11 +8163,9 @@ def render_crossbeam_prestress_loss_page() -> None:
                                 y_title="Primary moment -P·e (kN-m; sagging +)",
                                 trace_name="Primary -P·e",
                             ),
-                            use_container_width=True,
-                            config=FIGURE_CONFIG,
-                        )
-                        st.caption(
-                            "This is an independent section-local primary P·e reference using e positive below the local section centroid, so a tendon below the centroid gives negative (hogging) moment when sagging is positive. It is not the solved restrained-frame moment and does not include Secondary Prestress."
+                            caption=(
+                                "This is an independent section-local primary P·e reference using e positive below the local section centroid, so a tendon below the centroid gives negative (hogging) moment when sagging is positive. It is not the solved restrained-frame moment and does not include Secondary Prestress."
+                            ),
                         )
 
             with st.expander("PTLOSS3B2A1 reaction, column-action, and tendon-load audit", expanded=False):
@@ -8194,7 +8243,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         with st.expander("Calculation trace / QA — formula, stage source, and overrides", expanded=False):
             st.markdown("##### Code / methodology basis")
             st.write(
-                f"Published basis: **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B2A1 preserves the separate construction stressing-pair sequence for the future incremental contact/stage solver."
+                f"Member design basis: **{member_design_code_label}**. Prestress-loss basis: **AASHTO LRFD 2020 §5.9.3**, with Elastic Shortening at **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B2A2 preserves the separate construction stressing-pair sequence for the future incremental contact/stage solver."
             )
             st.latex(r"\Delta f_{pES,avg}=\left(\frac{G-1}{2G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
             st.latex(r"\Delta f_{pES,g}=\left(\frac{G-g}{G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
@@ -8204,7 +8253,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
             st.markdown("##### Stage-stress source")
             st.warning(
-                "PTLOSS3B2A1 now provides a fixed-base gross-section linear Portal-Frame QA response, but it intentionally excludes the accepted continuous compression-only falsework contact and lift-off state. Source-derived f_cgp remains BLOCKED until the contact-aware incremental Primary/Secondary Prestress + gravity stage solver is validated. A manual f_cgp override below is QA-only and cannot release final effective prestress."
+                "PTLOSS3B2A2 preserves the accepted fixed-base gross-section linear Portal-Frame QA response and makes its code basis and print packaging explicit, but it intentionally excludes the accepted continuous compression-only falsework contact and lift-off state. Source-derived f_cgp remains BLOCKED until the contact-aware incremental Primary/Secondary Prestress + gravity stage solver is validated. A manual f_cgp override below is QA-only and cannot release final effective prestress."
             )
 
             st.checkbox(
