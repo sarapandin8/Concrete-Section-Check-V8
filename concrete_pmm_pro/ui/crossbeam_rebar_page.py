@@ -2036,6 +2036,7 @@ def _render_combined_reinforcement_preview(
     section_id: str,
     segment_id: str,
     zone_id: str,
+    cip_mode: bool = False,
     outer_rebars: list[Rebar],
     inner_rebars: list[Rebar],
     outer_result: PerimeterRebarLayoutResult,
@@ -2098,23 +2099,36 @@ def _render_combined_reinforcement_preview(
     _layout_result_messages(outer_result, "Outer layout")
     if str(definition.get("Section role")) == "Hollow" and bool(longitudinal.get("Inner face bars")):
         _layout_result_messages(inner_result, "Inner layout")
-    st.caption(
-        "Scope guard — This preview does not certify ACI minimum transverse reinforcement, φVn, torsion, confinement, "
-        "anchorage/development, D-regions, or segment-joint shear transfer. Hollow flange U-bars and chamfer bars are "
-        "detailing geometry only. No solver credit is created."
-    )
+    if cip_mode:
+        st.caption(
+            "Scope guard — This preview does not certify ACI minimum reinforcement, φVn, torsion, confinement, "
+            "anchorage/development, splice/termination, D-regions, or construction-stage behavior. "
+            "No solver credit is created."
+        )
+    else:
+        st.caption(
+            "Scope guard — This preview does not certify ACI minimum transverse reinforcement, φVn, torsion, confinement, "
+            "anchorage/development, D-regions, or segment-joint shear transfer. Hollow flange U-bars and chamfer bars are "
+            "detailing geometry only. No solver credit is created."
+        )
     st.plotly_chart(
         transverse_full_elevation_figure(
             segment_rows,
             zone_rows,
             transverse_template_rows,
             selected_zone_id=zone_id,
+            cip_mode=cip_mode,
         ),
         use_container_width=True,
         config=FIGURE_CONFIG,
     )
     st.caption(
-        "Full-length transverse reinforcement elevation retained from CROSSBEAM.TR1A. Actual Zone spacing and first/last offsets remain segment-local; the selected Zone is highlighted."
+        (
+            "Full-length transverse reinforcement elevation. Actual spacing and first/last offsets remain Zone-local; "
+            "the selected Zone is highlighted."
+            if cip_mode
+            else "Full-length transverse reinforcement elevation retained from CROSSBEAM.TR1A. Actual Zone spacing and first/last offsets remain segment-local; the selected Zone is highlighted."
+        )
     )
 
 def _layout_result_messages(result: PerimeterRebarLayoutResult, label: str) -> None:
@@ -2322,6 +2336,7 @@ def _render_section_rebar_preview(
                 section_id=section_id,
                 segment_id=selected_segment_id,
                 zone_id=selected_zone_id,
+                cip_mode=cip_mode,
                 outer_rebars=outer_rebars,
                 inner_rebars=inner_rebars,
                 outer_result=outer_result,
@@ -2348,6 +2363,7 @@ def _render_section_rebar_preview(
             zone_rows=zone_rows,
             transverse_template_rows=transverse_template_rows,
             figure_config=FIGURE_CONFIG,
+            cip_mode=cip_mode,
         )
 
     if cip_mode:
@@ -3116,7 +3132,12 @@ def _cip_template_elevation_figure(segment_rows: list[dict[str, Any]], zone_rows
             fig.add_vline(x=x0, line_dash="dot", line_width=1)
     fig.update_xaxes(title="Crossbeam station s (m)", range=[0.0, max(float(length_m), 0.001)])
     fig.update_yaxes(visible=False, range=[-0.65, 0.65])
-    fig.update_layout(height=280, margin=dict(l=20,r=20,t=20,b=40), showlegend=False)
+    fig.update_layout(
+        title={"text": "Cast-in-Place Reinforcement Template Assignment", "x": 0.5, "xanchor": "center"},
+        height=280,
+        margin=dict(l=20, r=20, t=58, b=40),
+        showlegend=False,
+    )
     return fig
 
 
@@ -3150,7 +3171,13 @@ def _render_cip_template_aligned_workspace(*, length_m: float, segment_rows: lis
     for issue in segment_errors + errors:
         st.error(issue)
     if warnings:
-        st.caption(f"Input completeness: {len(warnings)} assigned CIP reinforcement item(s) remain incomplete/pending before any future solver handoff.")
+        count = len(warnings)
+        noun = "template requires" if count == 1 else "templates require"
+        st.warning(
+            f"Input completeness: {count} assigned reinforcement {noun} additional input before solver handoff."
+        )
+        for warning in warnings:
+            st.caption(f"• {warning}")
 
     active = _cip_subnavigation()
     if active == "Longitudinal":

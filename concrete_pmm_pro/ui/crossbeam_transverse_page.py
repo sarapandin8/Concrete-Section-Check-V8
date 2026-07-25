@@ -764,6 +764,7 @@ def transverse_full_elevation_figure(
     transverse_template_rows: list[dict[str, Any]],
     *,
     selected_zone_id: str = "",
+    cip_mode: bool = False,
 ) -> go.Figure:
     segments = sorted(segment_rows, key=lambda item: float(item.get("x_start_m") or 0.0))
     zones = canonical_rebar_zones(zone_rows)
@@ -779,9 +780,19 @@ def transverse_full_elevation_figure(
     transverse_line = "#d97706"
     transverse_line_muted = "rgba(217,119,6,0.65)"
 
-    fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker={"symbol":"square","size":14,"color":fills["Solid"],"line":{"color":outlines["Solid"],"width":1}}, name="Solid segment", hoverinfo="skip"))
-    fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker={"symbol":"square","size":14,"color":fills["Hollow"],"line":{"color":outlines["Hollow"],"width":1}}, name="Hollow segment", hoverinfo="skip"))
-    fig.add_trace(go.Scatter(x=[None,None], y=[None,None], mode="lines", line={"color":outlines["Hollow"],"width":1.5,"dash":"dash"}, name="Hidden void boundary", hoverinfo="skip"))
+    fig.add_trace(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="markers",
+            marker={"symbol":"square","size":14,"color":fills["Solid"],"line":{"color":outlines["Solid"],"width":1}},
+            name="Solid zone" if cip_mode else "Solid segment",
+            hoverinfo="skip",
+        )
+    )
+    if not cip_mode:
+        fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker={"symbol":"square","size":14,"color":fills["Hollow"],"line":{"color":outlines["Hollow"],"width":1}}, name="Hollow segment", hoverinfo="skip"))
+        fig.add_trace(go.Scatter(x=[None,None], y=[None,None], mode="lines", line={"color":outlines["Hollow"],"width":1.5,"dash":"dash"}, name="Hidden void boundary", hoverinfo="skip"))
     fig.add_trace(go.Scatter(x=[None,None], y=[None,None], mode="lines", line={"color":transverse_line,"width":2}, name="Transverse set", hoverinfo="skip"))
     fig.add_trace(go.Scatter(x=[None,None], y=[None,None], mode="lines", line={"color":selected_zone_outline,"width":5}, name="Selected zone", hoverinfo="skip"))
 
@@ -827,8 +838,15 @@ def transverse_full_elevation_figure(
         for station in stations:
             fig.add_trace(go.Scatter(x=[station, station], y=[0.08, 0.92], mode="lines", line={"color": line_color, "width": line_width}, showlegend=False, hovertemplate=(f"<b>{zone_id}</b><br>{template_id}<br>s={station:.3f} m<extra></extra>")))
 
-    for station in sorted({0.0, length_m, *[float(row.get("x_start_m") or 0.0) for row in segments], *[float(row.get("x_end_m") or 0.0) for row in segments]}):
-        fig.add_shape(type="line", x0=station, x1=station, y0=-0.02, y1=1.04, line={"color":"#9b1c31","width":1})
+    boundary_stations = sorted({0.0, length_m, *[float(row.get("x_start_m") or 0.0) for row in segments], *[float(row.get("x_end_m") or 0.0) for row in segments]})
+    for station in boundary_stations:
+        is_end = abs(station) <= 1e-9 or abs(station - length_m) <= 1e-9
+        line = (
+            {"color": "#64748b", "width": 1, "dash": "dot"}
+            if cip_mode and not is_end
+            else {"color": "#9b1c31", "width": 1}
+        )
+        fig.add_shape(type="line", x0=station, x1=station, y0=-0.02, y1=1.04, line=line)
 
     fig.add_trace(go.Scatter(x=[0.0, length_m], y=[0.5, 0.5], mode="markers", marker={"symbol": ["triangle-right", "triangle-left"], "size": 13, "color": "#1f6fb2"}, text=["Left anchorage", "Right anchorage"], name="Anchorage heads", showlegend=False, hovertemplate="%{text}<extra></extra>"))
     if length_m > 0:
@@ -845,6 +863,7 @@ def transverse_full_elevation_figure(
         yaxis={"title":"Transverse set schematic", "range":[-0.22, 1.28], "showticklabels":False, "showgrid":True, "gridcolor":"#e7edf4"},
         legend={"orientation":"h", "yanchor":"bottom", "y":1.02, "xanchor":"center", "x":0.5},
         hovermode="closest",
+        meta={"construction_semantics": "Cast-in-Place Section/Zone" if cip_mode else "Precast Segmental"},
     )
     return fig
 
@@ -862,6 +881,7 @@ def render_transverse_preview_summary(
     zone_rows: list[dict[str, Any]],
     transverse_template_rows: list[dict[str, Any]],
     figure_config: Mapping[str, Any],
+    cip_mode: bool = False,
 ) -> None:
     row = canonical_transverse_templates([dict(template)])[0]
     cages = build_transverse_cage_geometry(geometry, definition, row)
@@ -906,9 +926,18 @@ def render_transverse_preview_summary(
             zone_rows,
             transverse_template_rows,
             selected_zone_id=zone_id,
+            cip_mode=cip_mode,
         ),
         use_container_width=True,
         config=dict(figure_config),
     )
-    st.caption("Full-length transverse reinforcement elevation. Segment boundaries, Solid/Hollow regions, and transverse sets are plotted across the entire crossbeam using each Zone's actual template spacing and first/last offsets; the selected Zone is highlighted.")
-    st.warning("JOINT SHEAR GUARD — Transverse reinforcement remains local to each Segment/Zone and receives no automatic segment-joint shear-transfer credit. Shear keys, interface behavior, tendon clamping, decompression/opening, and joint shear remain separate future checks.")
+    if cip_mode:
+        st.caption(
+            "Full-length transverse reinforcement elevation. Solid Section/Zones and transverse sets are plotted across the entire Crossbeam using each Zone's actual spacing and first/last offsets; the selected Zone is highlighted."
+        )
+        st.info(
+            "CIP ZONE NOTE — Section/Zone boundaries are geometry/property boundaries, not physical joints. Transverse reinforcement remains Zone-local by assignment; continuity, anchorage, and construction-stage behavior remain separate QA."
+        )
+    else:
+        st.caption("Full-length transverse reinforcement elevation. Segment boundaries, Solid/Hollow regions, and transverse sets are plotted across the entire crossbeam using each Zone's actual template spacing and first/last offsets; the selected Zone is highlighted.")
+        st.warning("JOINT SHEAR GUARD — Transverse reinforcement remains local to each Segment/Zone and receives no automatic segment-joint shear-transfer credit. Shear keys, interface behavior, tendon clamping, decompression/opening, and joint shear remain separate future checks.")
