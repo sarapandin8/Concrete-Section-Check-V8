@@ -522,31 +522,50 @@ def _rename_section_name_form(
     *,
     layout_label: str = "Segment Layout",
 ) -> None:
-    """Render a compact project-facing rename control for the selected section."""
+    """Render a compact project-facing rename control for the selected section.
+
+    The field and action are intentionally grouped inside a narrow form so the
+    primary rename workflow reads as one control.  Streamlit forms also let the
+    user press Enter in the text field to submit the rename without reaching for
+    the button.
+    """
 
     active = definition_map(definitions)[active_id]
     suggestions = _section_name_suggestions(str(active["Section role"]))
     name_key, suggestion_key = _prepare_name_editor_state(active)
 
-    name_col, action_col = st.columns([0.78, 0.22], gap="small")
-    with name_col:
-        proposed_name = st.text_input(
-            "Section name",
-            key=name_key,
-            help=f"Project-facing name only. Section ID {active_id} remains stable for {layout_label} and Project JSON references.",
-        )
+    rename_row, rename_note = st.columns([0.76, 0.24], gap="medium")
+    with rename_row:
+        st.caption("Section name")
+        with st.form(
+            f"crossbeam_section_ui1a_rename_{active_id}",
+            clear_on_submit=False,
+            border=False,
+        ):
+            name_col, action_col = st.columns([0.74, 0.26], gap="small")
+            with name_col:
+                proposed_name = st.text_input(
+                    "Section name",
+                    key=name_key,
+                    label_visibility="collapsed",
+                    help=(
+                        f"Project-facing name only. Section ID {active_id} remains stable for "
+                        f"{layout_label} and Project JSON references."
+                    ),
+                )
+            with action_col:
+                save_name = st.form_submit_button(
+                    "Rename section",
+                    use_container_width=True,
+                    type="primary",
+                    help="Save the edited project-facing name. Press Enter in the name field for the same action.",
+                )
+    with rename_note:
+        st.caption("Stable reference")
+        st.markdown(f"**{active_id}**")
+        st.caption(f"{layout_label} references remain unchanged.")
+
     clean_candidate = str(proposed_name or "").strip()
-    name_changed = bool(clean_candidate) and clean_candidate != str(active["Section name"]).strip()
-    with action_col:
-        st.write("")
-        save_name = st.button(
-            "Rename section",
-            key=f"crossbeam_seclib1f_save_name_{active_id}",
-            use_container_width=True,
-            type="primary",
-            disabled=not name_changed,
-            help="Save the edited project-facing name." if name_changed else "Edit the section name before saving.",
-        )
 
     with st.expander("Optional name suggestions", expanded=False):
         st.selectbox(
@@ -562,6 +581,12 @@ def _rename_section_name_form(
         )
 
     if not save_name:
+        return
+    if not clean_candidate:
+        st.error("Section name is required.")
+        return
+    if clean_candidate == str(active["Section name"]).strip():
+        st.info("The section name is unchanged.")
         return
     conflicts = _conflicting_section_name_ids(definitions, active_id, proposed_name)
     if conflicts:
@@ -916,8 +941,8 @@ def render_crossbeam_section_library_panel(settings: Any) -> None:
 
     st.markdown("#### Selected Section Name")
     st.caption(
-        f"Rename **{active_id}** directly. The stable Section ID and all "
-        f"{'Section / Zone Layout' if cip_mode else 'Segment Layout'} references remain unchanged."
+        "Edit the project-facing name below, then press Enter or use the rename button. "
+        "Section identity and layout references remain preserved."
     )
     _rename_section_name_form(definitions, active_id, layout_label=layout_label)
 

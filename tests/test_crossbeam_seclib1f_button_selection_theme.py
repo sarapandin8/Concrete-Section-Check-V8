@@ -57,11 +57,13 @@ def test_seclib1f_replaces_selection_checkbox_with_one_click_edit_button() -> No
     assert "on_select=_project_section_summary_on_select" not in source
 
 
-def test_section_name_save_uses_standard_blue_action_button_not_form_primary() -> None:
+def test_section_name_save_uses_compact_enter_submit_form() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "concrete_pmm_pro" / "ui" / "crossbeam_section_library.py").read_text(encoding="utf-8")
 
-    assert 'save_name = st.button(' in source
+    assert 'f"crossbeam_section_ui1a_rename_{active_id}"' in source
+    assert 'save_name = st.form_submit_button(' in source
     assert '"Rename section"' in source
     assert 'type="primary"' in source
-    assert 'st.form_submit_button("Save section name"' not in source
+    assert 'label_visibility="collapsed"' in source
+    assert "Press Enter in the name field" in source
