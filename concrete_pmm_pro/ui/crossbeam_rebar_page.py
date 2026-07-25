@@ -3157,12 +3157,33 @@ def _cip_subnavigation() -> str:
 def _render_cip_template_aligned_workspace(*, length_m: float, segment_rows: list[dict[str, Any]], segment_errors: list[str]) -> None:
     long_rows, trans_rows, zone_rows = _ensure_cip_template_state(segment_rows)
     errors, warnings = validate_cip_template_model(layout_rows=segment_rows, longitudinal_templates=long_rows, transverse_templates=trans_rows, zone_assignments=zone_rows)
+    continuity_rows = cip_continuity_audit_rows(segment_rows, zone_rows, long_rows)
+    transition_review_count = sum(
+        1 for row in continuity_rows if str(row.get("Transition") or "") != "MATCHED LAYOUT"
+    )
     legacy_runs = canonical_cip_longitudinal_bar_runs(_records(st.session_state.get(CB_RB_CIP_RUN_ROWS_KEY)))
+
+    if errors:
+        continuity_value = "REVIEW"
+        continuity_detail = "Resolve input errors before transition QA"
+        continuity_status = "warning"
+    elif not continuity_rows:
+        continuity_value = "NO INTERNAL BOUNDARY"
+        continuity_detail = "One active Zone; no adjacent transition to classify"
+        continuity_status = "ready"
+    elif transition_review_count:
+        continuity_value = "TRANSITION REVIEW"
+        continuity_detail = f"{transition_review_count} boundary transition(s) require detailing review"
+        continuity_status = "warning"
+    else:
+        continuity_value = "MATCHED LAYOUTS"
+        continuity_detail = "Adjacent template layouts match; development/splice/termination remains separate"
+        continuity_status = "info"
 
     render_metric_cards([
         {"title":"Rebar model","value":"SOLID TEMPLATE / ZONE","detail":"Same interaction pattern as Precast Segmental; separate CIP canonical state","status":"ready"},
         {"title":"Zone boundary","value":"NOT A JOINT","detail":"Ordinary longitudinal bars may remain continuous across Section/Zone boundaries","status":"ready"},
-        {"title":"Continuity","value":"REVIEW" if errors else "DERIVED QA","detail":"Adjacent Zone layouts are compared; exact development/splice/termination remains separate","status":"warning" if errors else "info"},
+        {"title":"Continuity","value":continuity_value,"detail":continuity_detail,"status":continuity_status},
         {"title":"Solver handoff","value":"LOCKED","detail":"Input/preview only; no CIP rebar solver credit","status":"neutral"},
     ])
     st.info("Cast-in-Place uses the accepted Rebar Template Library pattern from Precast Segmental, limited to Solid sections. The key engineering difference is continuity: Section/Zone boundaries do not force ordinary longitudinal reinforcement to zero.")
@@ -3203,12 +3224,32 @@ def _render_cip_template_aligned_workspace(*, length_m: float, segment_rows: lis
             marker_mode_key="crossbeam_rb_cip2a_marker_mode",
         )
     else:
-        render_section_bar("Continuity across Section/Zone boundaries", "Derived QA compares adjacent longitudinal template arrangements without pretending that a property boundary is a physical joint.", mark="QA")
+        render_section_bar(
+            "Continuity Transition QA",
+            "Classify adjacent longitudinal layouts as matched, bar addition, bar reduction, or review required. This is topology/reference QA only; it does not certify development, splice, termination, anchorage, or exact bar identity.",
+            mark="QA",
+        )
         continuity = cip_continuity_audit_rows(segment_rows, zone_rows, long_rows)
         if continuity:
-            st.dataframe(pd.DataFrame(continuity), use_container_width=True, hide_index=True)
+            display_columns = [
+                "Boundary",
+                "s (m)",
+                "Left template",
+                "Right template",
+                "Transition",
+                "Quantity change",
+                "Required review",
+            ]
+            st.dataframe(
+                pd.DataFrame(continuity)[display_columns],
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption(
+                "MATCHED LAYOUT means adjacent template definitions agree. BAR ADDITION or BAR REDUCTION identifies a quantity transition only; the continuing bars and detailing location still require engineering definition."
+            )
         else:
-            st.info("No internal Section/Zone boundary exists in the current Cast-in-Place layout.")
+            st.info("No internal Section/Zone boundary exists in the current Cast-in-Place layout; transition QA is not applicable.")
         station = st.number_input("Review station s (m)", min_value=0.0, max_value=max(float(length_m),0.0), step=0.100, format="%.3f", key=CIP_RB_REVIEW_STATION_KEY)
         current = None
         for layout in sorted(segment_rows, key=lambda r:_number(r.get("x_start_m"),0.0)):
@@ -3223,7 +3264,7 @@ def _render_cip_template_aligned_workspace(*, length_m: float, segment_rows: lis
                 {"title":"Transverse template","value":str(assign.get("Transverse template") or "—"),"detail":"Local tie/shear arrangement source","status":"info"},
                 {"title":"Continuity certification","value":"NOT CERTIFIED","detail":"Development/splice/termination QA remains future scope","status":"warning"},
             ])
-    st.warning("SOLVER HANDOFF LOCKED — The aligned CIP template/Section-Zone workflow is input and review only. ULS/SLS/PMM, shear/torsion, prestress-loss, Result Summary, and Report/QA receive no CIP rebar solver credit from RB-CIP2B.")
+    st.warning("SOLVER HANDOFF LOCKED — CIP transition QA is input/review only. ULS/SLS/PMM, shear/torsion, prestress-loss, Result Summary, and Report/QA receive no CIP rebar solver credit from RB-CIP3A.")
 
 def render_crossbeam_rebar_page() -> None:
     length_m, segment_rows, segment_errors = crossbeam_segment_layout_from_state()

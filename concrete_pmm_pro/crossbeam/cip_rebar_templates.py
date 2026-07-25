@@ -6,6 +6,11 @@ CROSSBEAM.RB-CIP2B locks Section/Zone template assignment as the single adopted
 reinforcement source for Cast-in-Place.  A separate per-template ``Credit in
 zone`` switch is intentionally not part of CIP semantics.
 
+CROSSBEAM.RB-CIP3A adds conservative transition classification at adjacent CIP
+Zone boundaries.  It distinguishes matched layouts, exact-count bar additions,
+exact-count bar reductions, and unresolved layout changes without certifying
+bar identity, development, splice, termination, or anchorage.
+
 CIP uses Solid-only longitudinal/transverse templates assigned to Section/Zones.
 Zone boundaries are property boundaries, not physical joints, so longitudinal
 continuity is reviewed across adjacent Zones rather than forced to zero.
@@ -316,15 +321,151 @@ def _longitudinal_signature(template: Mapping[str, Any]) -> tuple[Any, ...]:
     )
 
 
+def _adopted_as_vector(template: Mapping[str, Any]) -> tuple[float, float, float]:
+    return tuple(
+        round(_float(template.get(field), 0.0), 6)
+        for field in ("Top As mm²", "Bottom As mm²", "Side As mm²")
+    )
+
+
+def _transition_identity_signature(template: Mapping[str, Any]) -> tuple[Any, ...]:
+    """Return bar-family attributes required for adopted-As comparison."""
+
+    return (
+        bool(template.get("Active")),
+        bool(template.get("Outer face bars")),
+        _text(template.get("Outer bar size")),
+        _text(template.get("Rebar material")),
+        round(_float(template.get("fy MPa"), 0.0), 6),
+        round(_float(template.get("Outer center offset mm"), 0.0), 6),
+    )
+
+
+def _transition_core_signature(template: Mapping[str, Any]) -> tuple[Any, ...]:
+    """Return attributes that must match before quantity-only comparison.
+
+    A quantity increase/reduction is identified only when the adjacent layouts
+    use the same bar family, material, face participation, layout method, and
+    center offset.  Otherwise the transition remains a general layout change.
+    """
+
+    return (
+        bool(template.get("Active")),
+        bool(template.get("Outer face bars")),
+        _text(template.get("Outer bar size")),
+        _text(template.get("Rebar material")),
+        round(_float(template.get("fy MPa"), 0.0), 6),
+        _text(template.get("Outer layout method")),
+        round(_float(template.get("Outer center offset mm"), 0.0), 6),
+    )
+
+
+def _classify_cip_longitudinal_transition(
+    left_template: Mapping[str, Any],
+    right_template: Mapping[str, Any],
+) -> tuple[str, str, str]:
+    """Classify one adjacent-Zone longitudinal transition conservatively.
+
+    Returns ``(status, quantity_change, interpretation)``.  The classification
+    is topology/reference QA only; it never certifies exact bar identity,
+    development, splice, termination, or anchorage.
+    """
+
+    if _longitudinal_signature(left_template) == _longitudinal_signature(right_template):
+        return (
+            "MATCHED LAYOUT",
+            "No template-level change",
+            "Adjacent Zone layouts match; bars may remain continuous. Exact bar identity and development/splice/termination remain separate QA.",
+        )
+
+    left_as = _adopted_as_vector(left_template)
+    right_as = _adopted_as_vector(right_template)
+    left_as_total = sum(left_as)
+    right_as_total = sum(right_as)
+    if left_as_total > 0.0 or right_as_total > 0.0:
+        if left_as_total <= 0.0 or right_as_total <= 0.0:
+            return (
+                "REVIEW REQUIRED",
+                "Adopted As is incomplete on one side",
+                "Both adjacent assigned templates need adopted longitudinal As before an increase/reduction can be classified safely.",
+            )
+        if _transition_identity_signature(left_template) != _transition_identity_signature(right_template):
+            return (
+                "REVIEW REQUIRED",
+                "Bar family changes with adopted As",
+                "Bar size, material, face participation, or center offset changes; adopted As alone cannot establish continuing-bar identity.",
+            )
+        increases = all(r >= l - 1e-6 for l, r in zip(left_as, right_as)) and any(
+            r > l + 1e-6 for l, r in zip(left_as, right_as)
+        )
+        reductions = all(r <= l + 1e-6 for l, r in zip(left_as, right_as)) and any(
+            r < l - 1e-6 for l, r in zip(left_as, right_as)
+        )
+        delta_total = right_as_total - left_as_total
+        if increases:
+            return (
+                "BAR ADDITION",
+                f"Adopted As increases by {delta_total:.1f} mm²",
+                "The right Zone requires additional adopted longitudinal reinforcement. Identify continuous bars and develop/anchor added bars before solver credit.",
+            )
+        if reductions:
+            return (
+                "BAR REDUCTION",
+                f"Adopted As reduces by {abs(delta_total):.1f} mm²",
+                "The right Zone uses less adopted longitudinal reinforcement. Define intentional cut-off/continuation and verify development before solver credit.",
+            )
+        return (
+            "REVIEW REQUIRED",
+            "Adopted As distribution changes",
+            "Top/bottom/side adopted reinforcement changes in different directions; explicit bar continuity mapping is required.",
+        )
+
+    if _transition_core_signature(left_template) == _transition_core_signature(right_template):
+        method = _text(left_template.get("Outer layout method"))
+        if method == "By exact bar count":
+            left_count = int(left_template.get("Outer exact bar count") or 0)
+            right_count = int(right_template.get("Outer exact bar count") or 0)
+            delta = right_count - left_count
+            if delta > 0:
+                return (
+                    "BAR ADDITION",
+                    f"+{delta} perimeter bar(s)",
+                    "The right Zone specifies more bars of the same size/material/layout basis. Exact continuing-bar identity and development/anchorage remain unverified.",
+                )
+            if delta < 0:
+                return (
+                    "BAR REDUCTION",
+                    f"{abs(delta)} fewer perimeter bar(s)",
+                    "The right Zone specifies fewer bars of the same size/material/layout basis. Intentional cut-off and development remain unverified.",
+                )
+        elif method == "By target spacing":
+            left_spacing = _float(left_template.get("Outer target spacing mm"), 0.0)
+            right_spacing = _float(right_template.get("Outer target spacing mm"), 0.0)
+            if abs(left_spacing - right_spacing) > 1e-6:
+                direction = "denser" if right_spacing < left_spacing else "wider"
+                return (
+                    "REVIEW REQUIRED",
+                    f"Target spacing changes {left_spacing:.1f} → {right_spacing:.1f} mm",
+                    f"The right Zone uses {direction} target spacing. Actual bar addition/reduction depends on section geometry and is not inferred at template level.",
+                )
+
+    return (
+        "REVIEW REQUIRED",
+        "Layout attributes change",
+        "Bar size, material, layout method, offset, or participation changes across this property boundary; explicit continuity mapping is required.",
+    )
+
+
 def cip_continuity_audit_rows(
     layout_rows: list[dict[str, Any]],
     zone_assignments: list[dict[str, Any]],
     longitudinal_templates: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Return conservative continuity review rows at each CIP Zone boundary.
+    """Return conservative transition QA rows at each CIP Zone boundary.
 
-    Matching adjacent template signatures are reported as ``MATCHED LAYOUT`` —
-    not as certified bar continuity.  Any change remains ``REVIEW REQUIRED``.
+    The audit classifies ``MATCHED LAYOUT``, ``BAR ADDITION``, ``BAR REDUCTION``,
+    or ``REVIEW REQUIRED``.  These are topology/reference classifications only,
+    never development/splice/termination or code-compliance certification.
     """
 
     zones = {str(row.get("Zone ID") or ""): row for row in canonical_rebar_zones(zone_assignments)}
@@ -342,21 +483,38 @@ def cip_continuity_audit_rows(
         right_template = templates.get(right_tid)
         if left_template is None or right_template is None:
             status = "REVIEW REQUIRED"
-            interpretation = "Missing active longitudinal template assignment"
-        elif _longitudinal_signature(left_template) == _longitudinal_signature(right_template):
-            status = "MATCHED LAYOUT"
-            interpretation = "Adjacent Zone layouts match; bars may remain continuous. Development/splice/termination QA is still required."
-        else:
+            legacy_status = status
+            quantity_change = "Not available"
+            interpretation = "Missing active longitudinal template assignment."
+        elif (
+            _longitudinal_signature(left_template) == _longitudinal_signature(right_template)
+            and _text(left.get("Section ID")) != _text(right.get("Section ID"))
+        ):
+            # Preserve the RB-CIP2A template-signature Status field for
+            # backward compatibility, while the production Transition field
+            # applies the safer geometry-aware review classification.
+            legacy_status = "MATCHED LAYOUT"
             status = "REVIEW REQUIRED"
-            interpretation = "Longitudinal arrangement changes across this property boundary; determine continuous bars and intentional additions/terminations."
+            quantity_change = "Section geometry changes"
+            interpretation = (
+                "The same template is assigned across different Section IDs. Generated bar count/coordinates and exact continuity must be reviewed for the geometry transition."
+            )
+        else:
+            status, quantity_change, interpretation = _classify_cip_longitudinal_transition(
+                left_template, right_template
+            )
+            legacy_status = status
         output.append(
             {
                 "Boundary": f"{left_id} / {right_id}",
                 "s (m)": _float(left.get("x_end_m"), 0.0),
                 "Left template": left_tid or "—",
                 "Right template": right_tid or "—",
-                "Status": status,
+                "Status": legacy_status,
+                "Transition": status,
+                "Quantity change": quantity_change,
                 "Continuity interpretation": interpretation,
+                "Required review": interpretation,
             }
         )
     return output
