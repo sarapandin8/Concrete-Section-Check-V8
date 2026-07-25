@@ -14,6 +14,15 @@ from concrete_pmm_pro.core.analysis import AnalysisModeSettings
 from concrete_pmm_pro.core.analysis_modes import analysis_mode_label, is_portal_frame_crossbeam_workflow
 from concrete_pmm_pro.core.design_code import workflow_project_code_label_from_session
 from concrete_pmm_pro.crossbeam.construction_stage import crossbeam_layout_navigation_label
+from concrete_pmm_pro.crossbeam.section_library import (
+    CB_SECLIB_ACTIVE_ID_KEY,
+    CB_SECLIB_DEFINITIONS_KEY,
+    CROSSBEAM_HOLLOW_PRESET_KEY,
+    CROSSBEAM_SOLID_PRESET_KEY,
+    canonical_section_definitions,
+    definition_map,
+    preset_display_name,
+)
 from concrete_pmm_pro.state.dirty_state import current_project_dirty_status, update_dirty_state_from_session
 from concrete_pmm_pro.io.project_io import (
     ProjectIOError,
@@ -1234,7 +1243,43 @@ def _analysis_mode_from_session_for_chrome() -> AnalysisModeSettings:
 
 
 def _current_section_label_for_chrome() -> str:
-    return str(st.session_state.get("section_preset_name") or st.session_state.get("section_preset_selector_key") or "Not selected")
+    """Return a workflow-consistent section label for the app chrome.
+
+    Portal Frame Crossbeam chrome follows the active Project Section definition,
+    not a stale generic preset widget value left from another workflow or rerun.
+    """
+
+    mode = _analysis_mode_from_session_for_chrome()
+    if is_portal_frame_crossbeam_workflow(mode):
+        definitions = canonical_section_definitions(
+            st.session_state.get(CB_SECLIB_DEFINITIONS_KEY)
+        )
+        active_id = str(st.session_state.get(CB_SECLIB_ACTIVE_ID_KEY) or "")
+        active = definition_map(definitions).get(active_id)
+        if active is not None:
+            return str(
+                active.get("Preset family")
+                or preset_display_name(str(active.get("Preset key") or ""))
+            )
+
+        preset_key = str(
+            st.session_state.get("section_preset_key")
+            or st.session_state.get("section_preset_selector_key")
+            or ""
+        )
+        if preset_key in {CROSSBEAM_SOLID_PRESET_KEY, CROSSBEAM_HOLLOW_PRESET_KEY}:
+            return preset_display_name(preset_key)
+
+        preset_name = str(st.session_state.get("section_preset_name") or "")
+        if preset_name.startswith("PC Crossbeam —"):
+            return preset_name
+        return "Crossbeam section not selected"
+
+    return str(
+        st.session_state.get("section_preset_name")
+        or st.session_state.get("section_preset_selector_key")
+        or "Not selected"
+    )
 
 
 def _project_code_label_for_chrome() -> str:
