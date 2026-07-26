@@ -1740,3 +1740,7 @@ Moves Crossbeam length plus construction/support controls to the top of Section 
 
 ## CROSSBEAM.CIP1B
 Cast-in-Place semantic cleanup: safer inboard default column stations, Solid-only Section Library wording/actions, Zone-aware references, generic gross-property terminology, and non-destructive material-source consistency warnings.
+
+## CROSSBEAM.PTLOSS3B2B1A — Contact-Reaction Semantics and Audit Completeness
+
+Converts mesh-dependent raw contact-node reactions into auditable tributary-length-equivalent line reactions for engineering plots, declares the rigid zero-settlement falsework idealization explicitly, prints every active-project contact station in static chunks, and normalizes negative-zero QA text without changing the accepted gravity contact equations or unlocking prestress stages. See `README_CROSSBEAM_PTLOSS3B2B1A.md`.

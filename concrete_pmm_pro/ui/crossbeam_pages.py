@@ -320,6 +320,13 @@ def _finite_float(value: Any, default: float = 0.0) -> float:
     return number if isfinite(number) else float(default)
 
 
+def _display_zero(value: Any, *, tolerance: float = 5.0e-13) -> float:
+    """Normalize floating-point negative zero for user-facing QA text."""
+
+    number = _finite_float(value)
+    return 0.0 if abs(number) <= abs(float(tolerance)) else number
+
+
 def _finite_int(value: Any, default: int = 0) -> int:
     try:
         return int(round(float(value)))
@@ -7588,6 +7595,16 @@ def render_crossbeam_prestress_loss_page() -> None:
                 break-after: avoid-page !important;
                 page-break-after: avoid !important;
               }
+
+              div[data-testid="stExpander"]:has(.ptloss3b2-contact-audit-anchor) {
+                break-inside: auto !important;
+                page-break-inside: auto !important;
+              }
+
+              div[data-testid="stTable"] {
+                break-inside: avoid-page !important;
+                page-break-inside: avoid !important;
+              }
             }
             </style>
             """,
@@ -7893,7 +7910,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {"title": "Support extent", "value": "FULL LENGTH", "detail": f"s = 0.000 to {float(length_m):.3f} m", "status": "ready"},
                 {"title": "Initial contact", "value": "IN CONTACT", "detail": "continuous support under Crossbeam", "status": "ready"},
                 {"title": "Vertical behavior", "value": "COMPRESSION-ONLY", "detail": "no tensile/uplift resistance", "status": "ready"},
-                {"title": "Lift-off", "value": "AUTOMATIC", "detail": "future stage solver iterates contact state", "status": "ready"},
+                {"title": "Lift-off", "value": "AUTOMATIC", "detail": "gravity active-set released; prestress updates locked", "status": "ready"},
             ]
         )
         st.caption(str(temp_support.get("note") or ""))
@@ -8382,11 +8399,42 @@ def render_crossbeam_prestress_loss_page() -> None:
         st.caption(
             "This isolated stage applies Crossbeam self-weight to the fixed-base Portal Frame while rigid vertical contact is available at every Crossbeam mesh node. The active-set solver releases tensile support reactions and re-closes penetrated open nodes. Tendon stressing groups are intentionally excluded, so this foundation cannot feed f_cgp or Elastic Shortening."
         )
+        render_metric_cards(
+            [
+                {
+                    "title": "Falsework vertical model",
+                    "value": "RIGID COMPRESSION-ONLY",
+                    "detail": "active contact enforces v = 0",
+                    "status": "info",
+                },
+                {
+                    "title": "Falsework settlement",
+                    "value": "ZERO",
+                    "detail": "no spring stiffness or support compression",
+                    "status": "info",
+                },
+                {
+                    "title": "Contact direction",
+                    "value": "VERTICAL ONLY",
+                    "detail": "contact does not restrain u or rotation",
+                    "status": "info",
+                },
+                {
+                    "title": "Interface friction",
+                    "value": "NOT MODELED",
+                    "detail": "no horizontal contact-force transfer",
+                    "status": "neutral",
+                },
+            ]
+        )
+        st.caption(
+            "Physical idealization — the current QA treats the full-length falsework as perfectly rigid vertically, with zero settlement and no finite spring stiffness. This assumption is explicit and is not a calibrated falsework-stiffness model."
+        )
         contact_equilibrium = gravity_contact_result.get("equilibrium_residual_ratio")
-        contact_max_tension_kn = _finite_float(
-            gravity_contact_result.get("max_tensile_violation_N")
-        ) / 1000.0
-        contact_max_penetration = _finite_float(
+        contact_max_tension_kn = _display_zero(
+            _finite_float(gravity_contact_result.get("max_tensile_violation_N")) / 1000.0
+        )
+        contact_max_penetration = _display_zero(
             gravity_contact_result.get("max_penetration_mm")
         )
         render_metric_cards(
@@ -8455,7 +8503,9 @@ def render_crossbeam_prestress_loss_page() -> None:
         contact_plot_rows = [
             {
                 "s (m)": row.get("station_m"),
-                "Contact reaction (kN; up +)": row.get("reaction_kN"),
+                "Equivalent line reaction (kN/m; up +)": row.get("line_reaction_kN_per_m"),
+                "Raw nodal reaction (kN; up +)": row.get("reaction_kN"),
+                "Tributary length (m)": row.get("tributary_length_m"),
                 "Gap (mm; up +)": row.get("gap_mm"),
             }
             for row in gravity_contact_result.get("contact_rows", [])
@@ -8464,13 +8514,13 @@ def render_crossbeam_prestress_loss_page() -> None:
             _render_ptloss3b2a_print_figure(
                 _ptloss3b2a_response_figure(
                     contact_plot_rows,
-                    title="Falsework Contact Reaction — Self-Weight Stage",
-                    field="Contact reaction (kN; up +)",
-                    y_title="Contact reaction R (kN; upward/compression +)",
-                    trace_name="Contact R",
+                    title="Equivalent Falsework Line Reaction — Self-Weight Stage",
+                    field="Equivalent line reaction (kN/m; up +)",
+                    y_title="Equivalent line reaction q (kN/m; upward/compression +)",
+                    trace_name="q = Rnode / Ltrib",
                 ),
                 caption=(
-                    "Positive reaction is compression/upward support. An OPEN node must have zero reaction; an ACTIVE node must not require tensile reaction. This is a discretized rigid-contact QA distribution, not a final construction-stage design reaction envelope."
+                    "Engineering plot: q_i = R_i / L_trib,i converts the mesh-dependent raw nodal reaction to a tributary-length-equivalent line reaction for comparison across contact meshes. Raw nodal R_i remains available in the solver-audit table. This is not a final construction-stage reaction envelope."
                 ),
             )
             _render_ptloss3b2a_print_figure(
@@ -8487,30 +8537,55 @@ def render_crossbeam_prestress_loss_page() -> None:
             )
 
         with st.expander("Compression-contact active-set, benchmark, and mesh audit", expanded=False):
-            st.markdown("**Active-project contact stations**")
-            st.dataframe(
-                pd.DataFrame(
-                    [
-                        {
-                            "s (m)": row.get("station_m"),
-                            "State": row.get("state"),
-                            "Gap (mm; up +)": row.get("gap_mm"),
-                            "Reaction (kN; up +)": row.get("reaction_kN"),
-                            "Tensile violation (kN)": _finite_float(row.get("tensile_violation_N")) / 1000.0,
-                            "Penetration (mm)": row.get("penetration_mm"),
-                        }
-                        for row in gravity_contact_result.get("contact_rows", [])
-                    ]
-                ),
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "s (m)": st.column_config.NumberColumn(format="%.3f"),
-                    "Gap (mm; up +)": st.column_config.NumberColumn(format="%.6e"),
-                    "Reaction (kN; up +)": st.column_config.NumberColumn(format="%.6f"),
-                    "Tensile violation (kN)": st.column_config.NumberColumn(format="%.3e"),
-                    "Penetration (mm)": st.column_config.NumberColumn(format="%.3e"),
-                },
+            st.markdown(
+                '<div class="ptloss3b2-contact-audit-anchor" aria-hidden="true"></div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown("**Active-project contact stations — complete static print audit**")
+            contact_station_rows = [
+                {
+                    "s (m)": f"{_finite_float(row.get('station_m')):.3f}",
+                    "State": str(row.get("state") or "—"),
+                    "Gap g (mm)": f"{_display_zero(row.get('gap_mm')):.3e}",
+                    "Ltrib (m)": f"{_finite_float(row.get('tributary_length_m')):.4f}",
+                    "Raw Rnode (kN)": f"{_display_zero(row.get('reaction_kN')):.6f}",
+                    "Equivalent q (kN/m)": (
+                        "—"
+                        if row.get("line_reaction_kN_per_m") is None
+                        else f"{_display_zero(row.get('line_reaction_kN_per_m')):.3f}"
+                    ),
+                }
+                for row in gravity_contact_result.get("contact_rows", [])
+            ]
+            contact_chunk_size = 14
+            for chunk_start in range(0, len(contact_station_rows), contact_chunk_size):
+                chunk = contact_station_rows[
+                    chunk_start : chunk_start + contact_chunk_size
+                ]
+                chunk_end = chunk_start + len(chunk)
+                st.markdown(
+                    f"*Contact stations {chunk_start + 1}–{chunk_end} of {len(contact_station_rows)}*"
+                )
+                st.table(pd.DataFrame(chunk))
+            contact_violation_rows = [
+                {
+                    "s (m)": f"{_finite_float(row.get('station_m')):.3f}",
+                    "Tensile violation (kN)": f"{_display_zero(_finite_float(row.get('tensile_violation_N')) / 1000.0):.3e}",
+                    "Penetration (mm)": f"{_display_zero(row.get('penetration_mm')):.3e}",
+                }
+                for row in gravity_contact_result.get("contact_rows", [])
+                if _finite_float(row.get("tensile_violation_N")) > 0.0
+                or _finite_float(row.get("penetration_mm")) > 0.0
+            ]
+            if contact_violation_rows:
+                st.markdown("**Station-level contact violations**")
+                st.table(pd.DataFrame(contact_violation_rows))
+            else:
+                st.caption(
+                    "All contact stations have zero tensile-reaction violation and zero support penetration within the adopted solver tolerances."
+                )
+            st.caption(
+                "Raw nodal reaction Rnode is solver output and changes with contact-node spacing. Equivalent line reaction q = Rnode/Ltrib is the engineering comparison quantity; Σ(q·Ltrib) = ΣRnode."
             )
             st.markdown("**Active-set iteration history**")
             st.dataframe(

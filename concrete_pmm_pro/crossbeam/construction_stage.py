@@ -11,7 +11,7 @@ The workflow assumptions accepted for PTLOSS3B1A are:
 - Column plan dimensions are defined relative to the Crossbeam axis: Btrans is transverse/normal to s, and Blong is parallel/along s.
 - Temporary erection support/falsework is continuous over the full Crossbeam
   length, initially in contact, vertical compression-only, and allowed to lift
-  off automatically in the future stage solver.
+  off automatically in the contact-aware stressing-stage solver.
 - Tendons are stressed as user-confirmed symmetric pairs/groups.
 """
 
@@ -347,7 +347,7 @@ def column_support_footprint_rows(
     Hollow segment is flagged for engineering review.  End columns whose
     physical footprint extends beyond the modeled member extent are also
     flagged so the user can verify the adopted member-end/column-centerline
-    convention before a future stage solver is released.
+    convention before the contact-aware stressing-stage solver is accepted.
     """
 
     length = max(_float(length_m), 0.0)
@@ -450,8 +450,8 @@ def temporary_support_source(length_m: float) -> dict[str, Any]:
         "lift_off": TEMP_SUPPORT_LIFTOFF,
         "vertical_model": TEMP_SUPPORT_VERTICAL_MODEL,
         "note": (
-            "Future stage solver must discretize the full supported range as compression-only vertical contact. "
-            "Any contact point requiring tensile reaction must lift off and be re-analysed."
+            "The released gravity-contact QA discretizes the full supported range as rigid compression-only vertical contact. "
+            "Incremental prestress stages remain locked and must repeat the active-set update after each stressing group; any point requiring tensile reaction must lift off and be re-analysed."
         ),
     }
 

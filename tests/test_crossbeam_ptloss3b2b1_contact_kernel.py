@@ -170,7 +170,7 @@ def test_ptloss3b2b1_ui_exposes_gravity_contact_without_releasing_fcgp() -> None
         "with time_dependent_tab:", 1
     )[0]
     assert "Compression-only falsework contact kernel — gravity-only QA" in elastic
-    assert "Falsework Contact Reaction — Self-Weight Stage" in elastic
+    assert "Equivalent Falsework Line Reaction — Self-Weight Stage" in elastic
     assert "Falsework Contact Gap — Self-Weight Stage" in elastic
     assert "Compression-contact active-set, benchmark, and mesh audit" in elastic
     assert "SELF-WEIGHT ONLY" in elastic

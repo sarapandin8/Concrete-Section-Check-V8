@@ -51,6 +51,56 @@ def _dedupe(messages: list[str]) -> list[str]:
     return list(dict.fromkeys(str(message).strip() for message in messages if str(message).strip()))
 
 
+def _with_contact_reaction_semantics(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Attach tributary length and equivalent line reaction to contact rows.
+
+    The active-set solver owns raw nodal reactions in ``N``/``kN``.  Those
+    nodal values depend on contact-node spacing and therefore must not be
+    presented as a mesh-independent distributed reaction.  For engineering
+    review, each node is assigned the half-distance to its neighboring contact
+    stations on each side.  The line-equivalent reaction is then
+    ``q_i = R_i / L_trib,i`` in kN/m.  Endpoint nodes receive one half of the
+    adjacent spacing, so the tributary lengths sum to the supported extent.
+    """
+
+    output = [dict(row) for row in rows]
+    ordered = sorted(
+        output,
+        key=lambda row: (_float(row.get("station_m")), int(row.get("node_id") or 0)),
+    )
+    if len(ordered) == 1:
+        ordered[0]["tributary_length_m"] = 0.0
+        ordered[0]["line_reaction_kN_per_m"] = None
+        return output
+
+    tributary_by_node: dict[int, float] = {}
+    for index, row in enumerate(ordered):
+        station = _float(row.get("station_m"))
+        left_half = 0.0
+        right_half = 0.0
+        if index > 0:
+            left_half = 0.5 * max(
+                station - _float(ordered[index - 1].get("station_m")), 0.0
+            )
+        if index + 1 < len(ordered):
+            right_half = 0.5 * max(
+                _float(ordered[index + 1].get("station_m")) - station, 0.0
+            )
+        tributary_by_node[int(row.get("node_id") or 0)] = left_half + right_half
+
+    for row in output:
+        tributary = tributary_by_node.get(int(row.get("node_id") or 0), 0.0)
+        row["tributary_length_m"] = tributary
+        row["line_reaction_kN_per_m"] = (
+            _float(row.get("reaction_kN")) / tributary
+            if tributary > 1.0e-12
+            else None
+        )
+    return output
+
+
 def _node_rows_by_id(solution: Mapping[str, Any]) -> dict[int, dict[str, Any]]:
     return {int(row.get("id")): dict(row) for row in solution.get("nodes", [])}
 
@@ -225,6 +275,8 @@ def solve_vertical_compression_contact(
             }
         )
 
+    final_rows = _with_contact_reaction_semantics(final_rows)
+
     max_tensile = max((row["tensile_violation_N"] for row in final_rows), default=0.0)
     max_penetration = max((row["penetration_mm"] for row in final_rows), default=0.0)
     max_complementarity = max((row["complementarity_Nmm"] for row in final_rows), default=0.0)
@@ -261,6 +313,9 @@ def solve_vertical_compression_contact(
         "active_node_ids": sorted(active),
         "open_node_ids": sorted(set(candidates) - active),
         "total_contact_reaction_N": sum(row["reaction_N"] for row in final_rows),
+        "total_contact_tributary_length_m": sum(
+            _float(row.get("tributary_length_m")) for row in final_rows
+        ),
         "max_gap_mm": max((row["gap_mm"] for row in final_rows), default=0.0),
         "min_gap_mm": min((row["gap_mm"] for row in final_rows), default=0.0),
         "min_active_reaction_N": min_active_reaction,
