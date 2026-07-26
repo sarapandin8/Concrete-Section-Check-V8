@@ -49,6 +49,9 @@ from concrete_pmm_pro.crossbeam.rebar_persistence import (
 )
 from concrete_pmm_pro.crossbeam.tendon import (
     DEFAULT_STRAND_SYSTEM,
+    DEFAULT_TENDON_BOND_STATE,
+    TENDON_BOND_STATE_OPTIONS,
+    TENDON_BOND_STATE_UNSPECIFIED,
     DEFAULT_TENDON_PROFILE_SUPPORT_WIDTH_M,
     PROFILE_ROLE_OPTIONS,
     TENDON_PROFILE_IMPORT_REQUIRED_COLUMNS,
@@ -72,6 +75,7 @@ from concrete_pmm_pro.crossbeam.tendon import (
     tendon_profile_preset_shape_preview,
     tendon_continuity_audit_rows,
     tendon_continuity_summary,
+    tendon_bond_state_summary,
     section_context_records,
     station_section_contexts,
     tendon_station_audit_rows,
@@ -249,6 +253,7 @@ CB_LENGTH_CHANGE_POLICIES = (CB_LENGTH_POLICY_KEEP, CB_LENGTH_POLICY_SCALE)
 CB_TENDON_REMOVE_SELECTION_KEY = "crossbeam_pt1d_remove_tendon_id"
 CB_TENDON_REMOVE_PENDING_KEY = "crossbeam_pt1d_remove_pending_id"
 CB_TENDON_MUTATION_NOTICE_KEY = "crossbeam_pt1d_tendon_mutation_notice"
+CB_TENDON_BOND_BULK_KEY = "crossbeam_ptloss3b2a4_bulk_bond_state"
 CB_TENDON_MIN_COUNT = 3
 CB_TENDON_MAX_COUNT = 64
 
@@ -398,6 +403,7 @@ def _system_rows_from_legacy(profile_rows: list[dict[str, Any]], tendon_count: i
                 "Tendon ID": tendon_id,
                 "Active": source.get("Active", True),
                 "Type": str(source.get("Type") or DEFAULT_TENDON_TYPE),
+                "Bond state": str(source.get("Bond state") or DEFAULT_TENDON_BOND_STATE),
                 "Strands": max(_finite_int(source.get("Strands"), DEFAULT_STRANDS_PER_TENDON), 1),
                 "Strand system": str(source.get("Strand system") or DEFAULT_STRAND_SYSTEM),
                 "Aps/strand mm²": _finite_float(source.get("Aps/strand mm²"), DEFAULT_STRAND_APS_MM2),
@@ -1444,6 +1450,7 @@ def _tendon_identity_editor_rows(rows: list[dict[str, Any]]) -> list[dict[str, A
             "Tendon ID": row["Tendon ID"],
             "Active": bool(row.get("Active", True)),
             "Type": row["Type"],
+            "Bond state": row["Bond state"],
             "Strands": row["Strands"],
             "Jacking end": row["Jacking end"],
         }
@@ -1473,6 +1480,7 @@ def _tendon_system_from_identity_editor(
                 "Tendon ID": _editor_text(item.get("Tendon ID")),
                 "Active": bool(item.get("Active", True)),
                 "Type": _editor_text(item.get("Type")) or DEFAULT_TENDON_TYPE,
+                "Bond state": _editor_text(item.get("Bond state")) or DEFAULT_TENDON_BOND_STATE,
                 "Strands": _finite_int(item.get("Strands"), DEFAULT_STRANDS_PER_TENDON),
                 "Jacking end": _editor_text(item.get("Jacking end")) or DEFAULT_JACKING_END,
             }
@@ -3098,6 +3106,35 @@ def _confirm_crossbeam_tendon_removal() -> None:
     st.session_state.pop(CB_TENDON_REMOVE_PENDING_KEY, None)
 
 
+def _apply_active_tendon_bond_state_from_ui() -> None:
+    """Apply one explicit bond-state choice to all active Tendon System rows."""
+
+    selected = str(
+        st.session_state.get(CB_TENDON_BOND_BULK_KEY)
+        or TENDON_BOND_STATE_UNSPECIFIED
+    )
+    rows = canonical_tendon_system_rows(
+        _records(st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
+    )
+    updated: list[dict[str, Any]] = []
+    changed = 0
+    for source in rows:
+        row = dict(source)
+        if bool(row.get("Active", True)) and row.get("Bond state") != selected:
+            row["Bond state"] = selected
+            changed += 1
+        updated.append(row)
+    st.session_state[CB_TENDON_SYSTEM_ROWS_KEY] = canonical_tendon_system_rows(updated)
+    st.session_state[CB_TENDON_SYSTEM_REV_KEY] = int(
+        st.session_state.get(CB_TENDON_SYSTEM_REV_KEY, 0)
+    ) + 1
+    st.session_state[CB_TENDON_MUTATION_NOTICE_KEY] = {
+        "action": "bond_state_bulk",
+        "bond_state": selected,
+        "changed_count": changed,
+    }
+
+
 def _reset_crossbeam_tendon_system_from_ui() -> None:
     length_m = max(
         _finite_float(
@@ -3907,6 +3944,11 @@ def render_crossbeam_tendon_system_page() -> None:
                 f"Reset Tendon System to {stored_count} default tendons and "
                 f"{profile_points} linked profile points."
             )
+        elif action == "bond_state_bulk":
+            st.success(
+                f"Applied Bond state '{notice.get('bond_state')}' to "
+                f"{_finite_int(notice.get('changed_count'), 0)} active tendon row(s)."
+            )
 
     stored_ids = [str(row.get("Tendon ID") or "").strip() for row in rows]
     unique_ids = list(dict.fromkeys(tendon_id for tendon_id in stored_ids if tendon_id))
@@ -4007,7 +4049,29 @@ def render_crossbeam_tendon_system_page() -> None:
             )
 
     revision = int(st.session_state.get(CB_TENDON_SYSTEM_REV_KEY, 0))
-    st.markdown("#### Tendon identity and stressing")
+    st.markdown("#### Tendon identity, bond state, and stressing")
+    st.caption(
+        "Location and Bond state are separate engineering sources. Use the bulk action only when every active tendon shares the same approved bond condition; individual rows remain editable below."
+    )
+    bond_choice_col, bond_apply_col, _ = st.columns([2.2, 1.3, 2.5])
+    with bond_choice_col:
+        st.selectbox(
+            "Bulk bond-state assignment",
+            options=[
+                option
+                for option in TENDON_BOND_STATE_OPTIONS
+                if option != TENDON_BOND_STATE_UNSPECIFIED
+            ] + [TENDON_BOND_STATE_UNSPECIFIED],
+            key=CB_TENDON_BOND_BULK_KEY,
+            help="This does not infer bond state from Internal/External. The value is applied only after pressing the action button.",
+        )
+    with bond_apply_col:
+        st.button(
+            "Apply to active tendons",
+            key="crossbeam_ptloss3b2a4_apply_bond_state",
+            on_click=_apply_active_tendon_bond_state_from_ui,
+            use_container_width=True,
+        )
     identity_rows = _tendon_identity_editor_rows(rows)
     identity_editor_key = f"crossbeam_pt1_tendon_identity_editor_{revision}"
     identity_edited = st.data_editor(
@@ -4022,7 +4086,13 @@ def render_crossbeam_tendon_system_page() -> None:
             "_Original ID": None,
             "Tendon ID": st.column_config.TextColumn("Tendon ID", required=True),
             "Active": st.column_config.CheckboxColumn("Active"),
-            "Type": st.column_config.SelectboxColumn("Type", options=list(TENDON_TYPE_OPTIONS), required=True),
+            "Type": st.column_config.SelectboxColumn(
+                "Location", options=list(TENDON_TYPE_OPTIONS), required=True
+            ),
+            "Bond state": st.column_config.SelectboxColumn(
+                "Bond state", options=list(TENDON_BOND_STATE_OPTIONS), required=True,
+                help="Explicit AASHTO Elastic Shortening source. Internal/External location does not define bonded or unbonded behavior.",
+            ),
             "Strands": st.column_config.NumberColumn("Strands", min_value=1, step=1, required=True),
             "Jacking end": st.column_config.SelectboxColumn("Jacking end", options=list(JACKING_END_OPTIONS), required=True),
         },
@@ -4091,6 +4161,7 @@ def render_crossbeam_tendon_system_page() -> None:
     st.session_state[CB_TENDON_COUNT_KEY] = len(system_rows)
     force_rows = tendon_force_source_rows(system_rows)
     force_summary = tendon_force_source_summary(force_rows)
+    bond_source_summary = tendon_bond_state_summary(system_rows)
     status = "SOURCE READY" if not system_errors else "REVIEW REQUIRED"
     status_kind = "ready" if not system_errors else "warning"
     active_rows = [row for row in system_rows if row["Active"]]
@@ -4110,6 +4181,15 @@ def render_crossbeam_tendon_system_page() -> None:
                 "detail": "Jacking force source before losses",
                 "status": str(force_summary["status"]),
             },
+            {
+                "title": "Bond-state source",
+                "value": str(bond_source_summary.get("status")),
+                "detail": (
+                    f"{int(bond_source_summary.get('specified_count') or 0)} / "
+                    f"{int(bond_source_summary.get('active_count') or 0)} active tendon(s) specified"
+                ),
+                "status": "ready" if bond_source_summary.get("ready") else "warning",
+            },
             {"title": "PT continuity", "value": "CHECK IN PROFILE", "detail": "Tendon Profile · Calculated Audit", "status": "info"},
         ]
     )
@@ -4121,6 +4201,7 @@ def render_crossbeam_tendon_system_page() -> None:
                     "Tendon ID": row["Tendon ID"],
                     "Active": row["Active"],
                     "Type": row["Type"],
+                    "Bond state": row.get("Bond state", TENDON_BOND_STATE_UNSPECIFIED),
                     "Jacking end": row["Jacking end"],
                     "Strands": row["Strands"],
                     "Area source": row["Area source"],
@@ -4146,8 +4227,12 @@ def render_crossbeam_tendon_system_page() -> None:
         st.error(message)
     for message in system_warnings:
         st.warning(message)
+    for message in bond_source_summary.get("issues", []):
+        st.warning(
+            f"Bond-state source — {message} This does not block the Tendon System force source, but final f_cgp and Elastic Shortening remain locked."
+        )
     st.info(
-        "Each tendon uses seven-wire low-relaxation strand. Anchorage heads are defined at s = 0 and s = L. Jacking end Left/Right/Both is stored for future loss distribution; both-end jacking will not double total Pj."
+        "Each tendon uses seven-wire low-relaxation strand. Anchorage heads are defined at s = 0 and s = L. Location and Bond state are separate sources; Internal does not imply Bonded. Jacking end Left/Right/Both is stored for loss distribution, and both-end jacking does not double total Pj."
     )
     st.caption(
         "CROSSBEAM.PTA1 force source only. Pj = Aps total x fpj / 1000 in kN. ACI 423.10R loss calculations, friction parameters, anchor set, elastic shortening, time-dependent losses, SLS/ULS checks, and FEA handoff remain future milestones."
@@ -6128,6 +6213,60 @@ def _cached_anchorage_independent_validation(
     return dict(stored_result), "CURRENT"
 
 
+CB_PTL_LINEAR_MESH_FINGERPRINT_KEY = "crossbeam_ptloss_linear_mesh_fingerprint_v1"
+CB_PTL_LINEAR_MESH_RESULT_KEY = "crossbeam_ptloss_linear_mesh_result_v1"
+
+
+def _linear_mesh_diagnostic_fingerprint(
+    *,
+    length_m: float,
+    segment_rows: Any,
+    section_definitions: Any,
+    concrete_materials: Any,
+    column_rows: Any,
+    profile_rows: Any,
+    anchorage_station_rows: Any,
+    stressing_strength_ratio: float,
+) -> str:
+    """Return a stable input signature for isolated mesh-sensitivity evidence."""
+
+    payload = {
+        "schema": 1,
+        "length_m": float(length_m),
+        "segment_rows": _records(segment_rows),
+        "section_definitions": canonical_section_definitions(section_definitions),
+        "concrete_materials": list(concrete_materials or []),
+        "column_rows": canonical_column_stage_rows(column_rows, length_m=float(length_m)),
+        "profile_rows": canonical_tendon_profile_points(profile_rows, float(length_m)),
+        "anchorage_station_rows": _records(anchorage_station_rows),
+        "stressing_strength_ratio": float(stressing_strength_ratio),
+    }
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=repr,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _cached_linear_mesh_diagnostic(
+    fingerprint: str,
+) -> tuple[dict[str, Any] | None, str]:
+    """Return only current-input mesh QA; stale diagnostics never retain PASS."""
+
+    stored_fingerprint = str(
+        st.session_state.get(CB_PTL_LINEAR_MESH_FINGERPRINT_KEY) or ""
+    )
+    stored_result = st.session_state.get(CB_PTL_LINEAR_MESH_RESULT_KEY)
+    if not isinstance(stored_result, Mapping):
+        return None, "NOT RUN"
+    if stored_fingerprint != str(fingerprint):
+        return None, "STALE"
+    return dict(stored_result), "CURRENT"
+
+
 def _render_anchorage_formula_unit_audit(
     end_rows: list[dict[str, Any]],
     equivalent_summary: dict[str, Any] | None = None,
@@ -6543,7 +6682,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "Friction/Wobble and Anchorage Set preserve their accepted results. PTLOSS3B2A2 adds explicit member-code versus prestress-loss-basis traceability and browser-print figure integrity to the accepted PTLOSS3B2A1 stressing-stage linear-response QA while continuous contact/lift-off, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked.",
+        "Friction/Wobble and Anchorage Set preserve their accepted results. The current linear stressing-stage response workspace audits stage stiffness, post-anchor tendon loads, equilibrium, symmetry, mesh sensitivity, and response events while contact/lift-off, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -7417,7 +7556,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
         st.markdown("#### Elastic Shortening — construction/stressing-stage source foundation")
         st.caption(
-            "PTLOSS3B2A3 preserves the accepted stressing-stage Eci, EA/EI, rigid-offset, P·e/sign/symmetry, and mesh-sensitivity foundation while hardening inactive manual overrides, active-model symmetry review, tendon bond-state traceability, and moment-jump interpretation. Continuous compression-only falsework contact, lift-off, final Primary/Secondary decomposition, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked. Continuous compression-only falsework contact, lift-off, final Primary/Secondary decomposition, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked."
+            "The fixed-base no-contact response foundation uses stressing-stage Eci, auditable EA/EI, exact centroidal rigid offsets, accepted post-anchor tendon loads, and independent sign/symmetry checks. Explicit tendon bond state, current-input mesh evidence, and response-event interpretation are reviewed here; continuous compression-only falsework contact, lift-off, final Primary/Secondary decomposition, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked."
         )
 
         upstream_ready = bool(
@@ -7641,7 +7780,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         st.markdown("##### Construction / stressing-stage source model")
         st.caption(
-            "PTLOSS3B2A1 reads the construction/support facts owned by Section Builder and exercises them in a fixed-base gross-section linear Portal-Frame QA model. The actual continuous falsework contact state is still excluded, so the result cannot release source-derived f_cgp or final Elastic Shortening."
+            "The linear stressing-stage response reads construction/support facts owned by Section Builder and exercises them in a fixed-base gross-section Portal-Frame QA model. The actual continuous falsework contact state is still excluded, so the result cannot release source-derived f_cgp or final Elastic Shortening."
         )
         _ensure_crossbeam_construction_support_source_state(length_m)
         construction_method = str(
@@ -7790,7 +7929,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Stage solver",
                     "value": "LINEAR QA / CONTACT LOCKED",
-                    "detail": "PTLOSS3B2A1 hardened fixed-base response only",
+                    "detail": "fixed-base no-contact response only",
                     "status": "warning",
                 },
             ]
@@ -7800,12 +7939,12 @@ def render_crossbeam_prestress_loss_page() -> None:
                 for issue in stage_source_summary.get("issues", []):
                     st.warning(str(issue))
         st.caption(
-            "PTLOSS3B2A1 does not assume temporary support remains active after prestress camber develops. The next contact milestone must discretize the full-length support as compression-only contact and automatically release any location whose reaction would become tensile."
+            "The current linear QA does not assume temporary support remains active after prestress camber develops. The next contact solver must discretize the full-length support as compression-only contact and automatically release any location whose reaction would become tensile."
         )
 
-        st.markdown("##### PTLOSS3B2A2 — Code-Basis / Print-Integrity Linear Response QA")
+        st.markdown("##### Linear stressing-stage response QA — fixed-base / no-contact")
         st.caption(
-            "The accepted PTLOSS3B2A1 gross-section Crossbeam and fixed-base column kernel is solved in the s–vertical plane. Load cases remain separate: Crossbeam self-weight, accepted tendon force after Anchorage Set, and their linear superposition. PTLOSS3B2A2 changes traceability and browser-print packaging only. Continuous falsework contact is intentionally excluded, and these QA outputs do not feed f_cgp, Elastic Shortening, Pe/Pe_eff, Result Summary, or Report/QA."
+            "The gross-section Crossbeam and fixed-base column kernel is solved in the s–vertical plane. Load cases remain separate: Crossbeam self-weight, accepted tendon force after Anchorage Set, and their linear superposition. Continuous falsework contact is intentionally excluded, and these diagnostic outputs do not feed f_cgp, Elastic Shortening, Pe/Pe_eff, Result Summary, or Report/QA."
         )
 
         try:
@@ -7825,6 +7964,12 @@ def render_crossbeam_prestress_loss_page() -> None:
             stage_materials = []
             stage_material_issue = str(exc)
 
+        linear_stressing_ratio = float(
+            st.session_state.get(
+                CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
+                DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
+            )
+        )
         linear_stage_model = build_crossbeam_linear_stage_model(
             length_m=length_m,
             segment_rows=current_segment_rows,
@@ -7832,12 +7977,7 @@ def render_crossbeam_prestress_loss_page() -> None:
             concrete_materials=stage_materials,
             column_rows=column_source_rows,
             profile_rows=profile_rows,
-            crossbeam_stressing_strength_ratio=float(
-                st.session_state.get(
-                    CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
-                    DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
-                )
-            ),
+            crossbeam_stressing_strength_ratio=linear_stressing_ratio,
         )
         if stage_material_issue:
             linear_stage_model = {
@@ -7869,6 +8009,39 @@ def render_crossbeam_prestress_loss_page() -> None:
                 "temporary_support_status": "EXCLUDED — PTLOSS3B2B CONTACT MILESTONE",
             }
 
+        mesh_fingerprint = _linear_mesh_diagnostic_fingerprint(
+            length_m=length_m,
+            segment_rows=current_segment_rows,
+            section_definitions=current_section_definitions,
+            concrete_materials=stage_materials,
+            column_rows=column_source_rows,
+            profile_rows=profile_rows,
+            anchorage_station_rows=current_anchorage_station_rows,
+            stressing_strength_ratio=linear_stressing_ratio,
+        )
+        mesh_audit, mesh_evidence_status = _cached_linear_mesh_diagnostic(
+            mesh_fingerprint
+        )
+        if (
+            upstream_ready
+            and bool(linear_stage_model.get("ready"))
+            and mesh_evidence_status != "CURRENT"
+        ):
+            with st.spinner("Running current-input linear mesh-sensitivity QA..."):
+                mesh_audit = run_crossbeam_linear_mesh_sensitivity(
+                    length_m=length_m,
+                    segment_rows=current_segment_rows,
+                    section_definitions=current_section_definitions,
+                    concrete_materials=stage_materials,
+                    column_rows=column_source_rows,
+                    profile_rows=profile_rows,
+                    anchorage_station_rows=current_anchorage_station_rows,
+                    crossbeam_stressing_strength_ratio=linear_stressing_ratio,
+                )
+            st.session_state[CB_PTL_LINEAR_MESH_FINGERPRINT_KEY] = mesh_fingerprint
+            st.session_state[CB_PTL_LINEAR_MESH_RESULT_KEY] = dict(mesh_audit)
+            mesh_evidence_status = "CURRENT"
+
         linear_elements = list(linear_stage_model.get("elements") or [])
         beam_element_count = sum(str(row.get("kind")) == "beam" for row in linear_elements)
         column_element_count = sum(str(row.get("kind")) == "column" for row in linear_elements)
@@ -7891,18 +8064,9 @@ def render_crossbeam_prestress_loss_page() -> None:
                 symmetry_terms.append(abs(a - b) / scale)
             active_symmetry_residual = max(symmetry_terms)
 
-        active_tendon_types = sorted({
-            str(row.get("Type") or "").strip()
-            for row in system_rows
-            if bool(row.get("Active")) and str(row.get("Type") or "").strip()
-        })
-        explicit_bond_states = sorted({
-            str(row.get("Bond state") or row.get("Bonded state") or "").strip()
-            for row in system_rows
-            if bool(row.get("Active"))
-            and str(row.get("Bond state") or row.get("Bonded state") or "").strip()
-        })
-        bond_state_ready = bool(explicit_bond_states)
+        bond_state_source = tendon_bond_state_summary(system_rows)
+        bond_state_ready = bool(bond_state_source.get("ready"))
+        explicit_bond_states = list(bond_state_source.get("labels") or [])
 
         render_metric_cards(
             [
@@ -7999,9 +8163,23 @@ def render_crossbeam_prestress_loss_page() -> None:
                 },
                 {
                     "title": "Mesh sensitivity",
-                    "value": "ON DEMAND",
-                    "detail": "0.50 / 0.25 / 0.125 m; diagnostic only",
-                    "status": "neutral",
+                    "value": (
+                        str(mesh_audit.get("status"))
+                        if isinstance(mesh_audit, Mapping)
+                        else mesh_evidence_status
+                    ),
+                    "detail": (
+                        f"0.50 / 0.25 / 0.125 m; fine-mesh Δmax = {_finite_float(mesh_audit.get('max_fine_mesh_delta_percent')):.4f}%"
+                        if isinstance(mesh_audit, Mapping)
+                        and mesh_audit.get("max_fine_mesh_delta_percent") is not None
+                        else "current-input diagnostic not available"
+                    ),
+                    "status": (
+                        "ready"
+                        if isinstance(mesh_audit, Mapping)
+                        and mesh_audit.get("status") == "QA STABLE"
+                        else "warning"
+                    ),
                 },
                 {
                     "title": "Active-model symmetry",
@@ -8021,11 +8199,13 @@ def render_crossbeam_prestress_loss_page() -> None:
                 },
                 {
                     "title": "Tendon bond-state source",
-                    "value": "READY" if bond_state_ready else "REVIEW REQUIRED",
+                    "value": "SOURCE READY" if bond_state_ready else "REVIEW REQUIRED",
                     "detail": (
                         ", ".join(explicit_bond_states)
                         if bond_state_ready
-                        else f"Type={', '.join(active_tendon_types) or '—'} does not define bonded/unbonded state"
+                        else (
+                            str((bond_state_source.get("issues") or ["Explicit Bond state is required."])[0])
+                        )
                     ),
                     "status": "ready" if bond_state_ready else "warning",
                 },
@@ -8033,8 +8213,13 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
 
         if not bond_state_ready:
-            st.warning(
-                "Tendon bond state is not yet a canonical Crossbeam input. Internal/External identifies tendon location, not whether the tendon is bonded, grouted, or unbonded. Final AASHTO f_cgp routing and Elastic Shortening handoff remain blocked until an explicit bond-state source is introduced."
+            for issue in bond_state_source.get("issues", []):
+                st.warning(
+                    f"Tendon bond-state source — {issue} Internal/External identifies tendon location only; final AASHTO f_cgp routing and Elastic Shortening handoff remain blocked."
+                )
+        else:
+            st.success(
+                "Tendon bond-state source is explicit for every active tendon. This completes the bond-state input gate only; contact-aware f_cgp and final Elastic Shortening remain locked."
             )
 
         with st.expander("Stage stiffness, reference-axis, and benchmark audit", expanded=False):
@@ -8081,54 +8266,40 @@ def render_crossbeam_prestress_loss_page() -> None:
                 "These are synthetic kernel benchmarks independent of the active project. PASS verifies the implemented sign and symmetry conventions only; it does not certify the active stressing stage or release f_cgp."
             )
 
-        run_mesh_sensitivity = st.checkbox(
-            "Run linear-response mesh-sensitivity diagnostic",
-            value=False,
-            key="crossbeam_ptloss3b2a3_run_mesh_sensitivity",
-            help="Runs the prestress-only linear QA at 0.50, 0.25, and 0.125 m target beam-element lengths. This diagnostic is isolated and does not feed engineering results.",
-        )
-        if run_mesh_sensitivity:
-            if upstream_ready and linear_stage_model.get("ready"):
-                mesh_audit = run_crossbeam_linear_mesh_sensitivity(
-                    length_m=length_m,
-                    segment_rows=current_segment_rows,
-                    section_definitions=current_section_definitions,
-                    concrete_materials=stage_materials,
-                    column_rows=column_source_rows,
-                    profile_rows=profile_rows,
-                    anchorage_station_rows=current_anchorage_station_rows,
-                    crossbeam_stressing_strength_ratio=float(
-                        st.session_state.get(
-                            CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
-                            DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
-                        )
-                    ),
-                )
-                st.markdown(f"**Mesh sensitivity status — {mesh_audit.get('status')}**")
-                st.dataframe(
-                    pd.DataFrame(mesh_audit.get("rows", [])),
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Target max element (m)": st.column_config.NumberColumn(format="%.3f"),
-                        "Max |N| (kN)": st.column_config.NumberColumn(format="%.3f"),
-                        "Max |V| (kN)": st.column_config.NumberColumn(format="%.3f"),
-                        "Max |M| (kN-m)": st.column_config.NumberColumn(format="%.3f"),
-                        "Max |v| (mm)": st.column_config.NumberColumn(format="%.5f"),
-                        "Equilibrium residual": st.column_config.NumberColumn(format="%.3e"),
-                        "ΔN from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
-                        "ΔV from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
-                        "ΔM from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
-                        "Δv from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
-                    },
-                )
-                st.caption(str(mesh_audit.get("criterion") or ""))
-                for issue in mesh_audit.get("issues", []):
-                    st.warning(str(issue))
-            else:
-                st.warning(
-                    "Mesh sensitivity requires a ready stage-stiffness model and accepted P after Anchorage Set."
-                )
+        st.markdown("##### Active-project mesh sensitivity")
+        if isinstance(mesh_audit, Mapping):
+            st.markdown(
+                f"**Mesh sensitivity status — {mesh_audit.get('status')}** "
+                f"({mesh_evidence_status}; diagnostic only)"
+            )
+            st.dataframe(
+                pd.DataFrame(mesh_audit.get("rows", [])),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Target max element (m)": st.column_config.NumberColumn(format="%.3f"),
+                    "Max |N| (kN)": st.column_config.NumberColumn(format="%.3f"),
+                    "Max |V| (kN)": st.column_config.NumberColumn(format="%.3f"),
+                    "Max |M| (kN-m)": st.column_config.NumberColumn(format="%.3f"),
+                    "Max |v| (mm)": st.column_config.NumberColumn(format="%.5f"),
+                    "Equilibrium residual": st.column_config.NumberColumn(format="%.3e"),
+                    "ΔN from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
+                    "ΔV from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
+                    "ΔM from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
+                    "Δv from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
+                },
+            )
+            st.caption(
+                str(mesh_audit.get("criterion") or "")
+                + " The diagnostic is recomputed automatically when its input fingerprint changes and is never written to Project JSON, Result Summary, Report/QA, or production solver results."
+            )
+            for issue in mesh_audit.get("issues", []):
+                st.warning(str(issue))
+        else:
+            st.warning(
+                "Current-input mesh evidence is unavailable because the stage-stiffness model or accepted post-anchor force source is not ready."
+            )
+
 
         for note in linear_stage_model.get("notes", []):
             st.info(str(note))
@@ -8270,9 +8441,31 @@ def render_crossbeam_prestress_loss_page() -> None:
                         f"({'PASS' if active_symmetry_residual <= 0.01 else 'REVIEW'}; QA tolerance = 1.000%). "
                         "This is an active-project diagnostic, separate from the synthetic symmetric-portal benchmark."
                     )
-                st.markdown("**Moment-jump interpretation guard**")
+                st.markdown("**Moment-jump / response-event audit**")
                 st.caption(
-                    "Moment steps may be generated by concentrated tendon-equivalent couples and by transforming actions between the common reference axis and local section centroids. Review Section/Zone boundaries, centroid offsets, and tendon deviation/anchorage stations before treating any plotted step as a physical discontinuity."
+                    "Moment steps may be generated by concentrated tendon-equivalent couples, frame joints, and transformation between the common reference axis and local section centroids. The table co-locates these sources; |N·Δy| is an axis-shift reference magnitude, not a stand-alone closure criterion."
+                )
+                st.dataframe(
+                    pd.DataFrame(
+                        linear_stage_result.get("response_event_rows", [])
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "s (m)": st.column_config.NumberColumn(format="%.3f"),
+                        "Centroid offset jump Δy (mm; up +)": st.column_config.NumberColumn(format="%.3f"),
+                        "N reference (kN; comp. +)": st.column_config.NumberColumn(format="%.3f"),
+                        "|N·Δy| axis-shift reference (kN-m)": st.column_config.NumberColumn(format="%.3f"),
+                        "M left local (kN-m; sagging +)": st.column_config.NumberColumn(format="%.3f"),
+                        "M right local (kN-m; sagging +)": st.column_config.NumberColumn(format="%.3f"),
+                        "Observed ΔM right-left (kN-m)": st.column_config.NumberColumn(format="%.3f"),
+                        "Equivalent nodal Fx (kN)": st.column_config.NumberColumn(format="%.3f"),
+                        "Equivalent nodal Fy (kN; up +)": st.column_config.NumberColumn(format="%.3f"),
+                        "Equivalent nodal couple (kN-m; CCW +)": st.column_config.NumberColumn(format="%.3f"),
+                    },
+                )
+                st.caption(
+                    "Review the event type, Section/Zone pair, tendon role, equivalent nodal force/couple, and local left/right moments together before treating any plotted step as a physical hinge, release, or member-action discontinuity."
                 )
                 st.markdown("**Equivalent tendon-load assembly**")
                 st.dataframe(
@@ -8289,7 +8482,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 )
 
         st.warning(
-            "Solver boundary — PTLOSS3B2A3 is a fixed-base linear benchmark only. It does not represent the accepted continuous full-length compression-only support condition at stressing. Do not use these QA actions or displacements as f_cgp, final Elastic Shortening, Pe/Pe_eff, or reportable design results."
+            "Solver boundary — this is a fixed-base linear benchmark only. It does not represent the accepted continuous full-length compression-only support condition at stressing. Do not use these QA actions or displacements as f_cgp, final Elastic Shortening, Pe/Pe_eff, or reportable design results."
         )
 
         if not current_es_group_summary.get("ready"):
@@ -8310,6 +8503,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                         "Geometry pair order": row.get("Sequence"),
                         "Symmetric tendons": row.get("Tendons"),
                         "Type": row.get("Type", ""),
+                        "Bond state": row.get("Bond state", ""),
                         "Group Pj (kN)": round(_finite_float(row.get("Group Pj (kN)")), 2),
                         "Depth mismatch (mm)": round(_finite_float(row.get("Depth mismatch (mm)")), 3),
                         "Mirror-x mismatch (mm)": round(_finite_float(row.get("Mirror-x mismatch (mm)")), 3),
@@ -8329,7 +8523,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         with st.expander("Calculation trace / QA — formula, stage source, and overrides", expanded=False):
             st.markdown("##### Code / methodology basis")
             st.write(
-                f"Member design basis: **{member_design_code_label}**. Prestress-loss basis: **AASHTO LRFD 2020 §5.9.3**, with Elastic Shortening at **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B2A3 preserves the separate construction stressing-pair sequence for the future incremental contact/stage solver."
+                f"Member design basis: **{member_design_code_label}**. Prestress-loss basis: **AASHTO LRFD 2020 §5.9.3**, with Elastic Shortening at **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the equal-group mapping only as a guarded reference/preview when every pair is geometrically valid, bond-state compatible, and group jacking forces are equivalent; the separate construction stressing-pair sequence is preserved for the future incremental contact/stage solver."
             )
             st.latex(r"\Delta f_{pES,avg}=\left(\frac{G-1}{2G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
             st.latex(r"\Delta f_{pES,g}=\left(\frac{G-g}{G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
@@ -8339,7 +8533,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
             st.markdown("##### Stage-stress source")
             st.warning(
-                "PTLOSS3B2A3 preserves the accepted fixed-base gross-section linear Portal-Frame QA response and adds source hardening, but it intentionally excludes the accepted continuous compression-only falsework contact and lift-off state. Source-derived f_cgp remains BLOCKED until the contact-aware incremental Primary/Secondary Prestress + gravity stage solver is validated. A manual f_cgp override below is QA-only and cannot release final effective prestress."
+                "The accepted fixed-base gross-section Portal-Frame QA response intentionally excludes continuous compression-only falsework contact and lift-off. Source-derived f_cgp remains BLOCKED until the contact-aware incremental Primary/Secondary Prestress + gravity stage solver is validated. A manual f_cgp override below is QA-only and cannot release final effective prestress."
             )
 
             st.checkbox(
@@ -8473,7 +8667,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                             if current_es_group_summary.get("ready")
                             else "PAIR SOURCE REVIEW"
                         ),
-                        "Feeds": "PTLOSS3B2A1 hardened fixed-base linear QA only; contact-aware f_cgp and Pe/Pe_eff remain locked",
+                        "Feeds": "Fixed-base no-contact linear QA only; contact-aware f_cgp and Pe/Pe_eff remain locked",
                     },
                     {
                         "Order": 5,

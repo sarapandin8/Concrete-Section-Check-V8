@@ -125,6 +125,7 @@ def symmetric_stressing_group_rows(
         return {
             "tendon_id": str(row.get("Tendon ID") or ""),
             "type": str(row.get("Type") or ""),
+            "bond_state": str(row.get("Bond state") or ""),
             "aps_total": strands * aps_per,
             "fpj": fpj,
             "pj": strands * aps_per * fpj / 1000.0,
@@ -172,6 +173,8 @@ def symmetric_stressing_group_rows(
                 issues.append("lateral mirror mismatch")
             if left_source["type"] != right_source["type"]:
                 issues.append("tendon type mismatch")
+            if left_source["bond_state"] != right_source["bond_state"]:
+                issues.append("tendon bond-state mismatch")
             max_pj = max(left_source["pj"], right_source["pj"], 1.0)
             if abs(left_source["pj"] - right_source["pj"]) / max_pj > force_tolerance_ratio:
                 issues.append("jacking-force mismatch")
@@ -188,6 +191,8 @@ def symmetric_stressing_group_rows(
                     "Right tendon": "",
                     "Tendons": left_id,
                     "Tendon count": 1,
+                    "Type": left_source["type"],
+                    "Bond state": left_source["bond_state"],
                     "Group Aps (mm²)": left_source["aps_total"],
                     "Group Pj (kN)": left_source["pj"],
                     "Status": "REVIEW REQUIRED",
@@ -210,6 +215,7 @@ def symmetric_stressing_group_rows(
                 "Tendons": f"{left_id} + {right_id}",
                 "Tendon count": 2,
                 "Type": left_source["type"],
+                "Bond state": left_source["bond_state"],
                 "Group Aps (mm²)": left_source["aps_total"] + right_source["aps_total"],
                 "Group Pj (kN)": left_source["pj"] + right_source["pj"],
                 "Station mismatch (m)": mismatch[0],
@@ -231,6 +237,8 @@ def symmetric_stressing_group_rows(
                 "Right tendon": right_id,
                 "Tendons": right_id,
                 "Tendon count": 1,
+                "Type": source.get("type", ""),
+                "Bond state": source.get("bond_state", ""),
                 "Group Aps (mm²)": source["aps_total"],
                 "Group Pj (kN)": source["pj"],
                 "Status": "REVIEW REQUIRED",
@@ -249,6 +257,8 @@ def symmetric_stressing_group_rows(
                 "Right tendon": "",
                 "Tendons": tendon_id,
                 "Tendon count": 1,
+                "Type": source.get("type", ""),
+                "Bond state": source.get("bond_state", ""),
                 "Group Aps (mm²)": source["aps_total"],
                 "Group Pj (kN)": source["pj"],
                 "Status": "REVIEW REQUIRED",

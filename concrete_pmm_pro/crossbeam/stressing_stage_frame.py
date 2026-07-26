@@ -1,4 +1,4 @@
-"""PTLOSS3B2A1 hardened 2D stressing-stage Portal-Frame response foundation.
+"""Linear 2D stressing-stage Portal-Frame response foundation.
 
 The module provides a small, auditable Euler-Bernoulli 2D frame kernel for the
 Portal Frame Crossbeam in the longitudinal ``s``-vertical plane.  It is a
@@ -797,7 +797,7 @@ def build_crossbeam_linear_stage_model(
     centroid_spread = max(ctop_values) - min(ctop_values) if ctop_values else 0.0
     if centroid_spread > 1.0e-6:
         notes.append(
-            "Multiple section centroid depths are active. PTLOSS3B2A1 uses exact element-end rigid-offset transformations to a common reference axis; no high-stiffness dummy links are used."
+            "Multiple section centroid depths are active. The linear stressing-stage model uses exact element-end rigid-offset transformations to a common reference axis; no high-stiffness dummy links are used."
         )
     notes.append(
         "Closure/joint concrete is not modeled as a separate frame stiffness region in this gross-section QA. Its specified stressing strength remains a construction acceptance source only."
@@ -1141,6 +1141,206 @@ def _column_action_rows(solution: Mapping[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+
+def linear_response_event_audit_rows(
+    *,
+    model: Mapping[str, Any],
+    profile_rows: Any,
+    prestress_load_source: Mapping[str, Any],
+    solution: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Return station events that explain apparent local-moment steps.
+
+    The audit does not certify a physical discontinuity.  It co-locates the
+    Section/Zone transition, column line, tendon control-point roles, assembled
+    equivalent nodal force/couple, and left/right section-local actions.  The
+    ``|N·Δy|`` value is a reference-axis shift magnitude only; concentrated
+    tendon couples and column-joint actions may coexist at the same station.
+    """
+
+    if not bool(model.get("ready")) or not solution:
+        return []
+    length = _float(model.get("length_m"))
+    tolerance = max(length * 1.0e-9, 1.0e-8)
+    ranges = list(model.get("ranges") or [])
+    section_sources = dict(model.get("section_sources") or {})
+    nodes_by_station = dict(model.get("beam_node_by_station") or {})
+    nodal_loads = dict(prestress_load_source.get("nodal_loads") or {})
+
+    events: dict[float, dict[str, Any]] = {}
+
+    def event(station: float) -> dict[str, Any]:
+        key = round(float(station), 9)
+        events.setdefault(
+            key,
+            {
+                "s (m)": float(station),
+                "event_types": set(),
+                "profile_roles": set(),
+                "tendon_ids": set(),
+            },
+        )
+        return events[key]
+
+    event(0.0)["event_types"].add("Left anchorage / member end")
+    event(length)["event_types"].add("Right anchorage / member end")
+
+    for left, right in zip(ranges, ranges[1:]):
+        station = _float(left.get("end_m"))
+        row = event(station)
+        row["event_types"].add("Section/Zone boundary")
+        row["left_region"] = str(left.get("Region") or "")
+        row["right_region"] = str(right.get("Region") or "")
+        row["left_section"] = str(left.get("section_id") or "")
+        row["right_section"] = str(right.get("section_id") or "")
+
+    for column in model.get("column_sources", []):
+        station = _float(column.get("Station s (m)"))
+        row = event(station)
+        row["event_types"].add("Column centerline")
+        row.setdefault("columns", set()).add(str(column.get("Column ID") or ""))
+
+    for point in canonical_tendon_profile_points(profile_rows, length):
+        station = _float(point.get("s (m)"))
+        row = event(station)
+        role = str(point.get("Curve role") or "Profile point").strip()
+        tendon_id = str(point.get("Tendon ID") or "").strip()
+        row["event_types"].add("Tendon profile control station")
+        if role:
+            row["profile_roles"].add(role)
+        if tendon_id:
+            row["tendon_ids"].add(tendon_id)
+
+    element_results = [
+        row for row in solution.get("elements", []) if str(row.get("kind")) == "beam"
+    ]
+
+    def end_action(element: Mapping[str, Any], *, at_right: bool) -> dict[str, float]:
+        actions = list(element.get("end_action_local") or [0.0] * 6)
+        length_mm = _float(element.get("length_mm"))
+        q = _float(element.get("q_local_y_N_per_mm"))
+        x = length_mm if at_right else 0.0
+        return {
+            "N": _float(actions[0]) / 1000.0,
+            "V": (_float(actions[1]) + q * x) / 1000.0,
+            "M": (
+                -_float(actions[2]) + _float(actions[1]) * x + 0.5 * q * x**2
+            )
+            / 1.0e6,
+        }
+
+    rows: list[dict[str, Any]] = []
+    for station_key in sorted(events):
+        source = events[station_key]
+        station = _float(source.get("s (m)"))
+        left_elements = [
+            row
+            for row in element_results
+            if abs(_float(row.get("station_j_m")) - station) <= tolerance
+        ]
+        right_elements = [
+            row
+            for row in element_results
+            if abs(_float(row.get("station_i_m")) - station) <= tolerance
+        ]
+        left_action = end_action(left_elements[-1], at_right=True) if left_elements else None
+        right_action = end_action(right_elements[0], at_right=False) if right_elements else None
+
+        eps = max(length * 1.0e-8, 1.0e-7)
+        left_range = _range_at_station(
+            ranges, max(0.0, station - eps), length_m=length
+        )
+        right_range = _range_at_station(
+            ranges, min(length, station + eps), length_m=length
+        )
+        left_section = str(
+            source.get("left_section")
+            or (left_range or {}).get("section_id")
+            or ""
+        )
+        right_section = str(
+            source.get("right_section")
+            or (right_range or {}).get("section_id")
+            or ""
+        )
+        left_offset = _float(
+            section_sources.get(left_section, {}).get(
+                "centroid_offset_from_reference_mm"
+            )
+        )
+        right_offset = _float(
+            section_sources.get(right_section, {}).get(
+                "centroid_offset_from_reference_mm"
+            )
+        )
+        offset_jump = right_offset - left_offset
+        n_values = [
+            value["N"]
+            for value in (left_action, right_action)
+            if value is not None
+        ]
+        n_reference = sum(n_values) / len(n_values) if n_values else 0.0
+        expected_axis_shift = abs(n_reference * offset_jump / 1000.0)
+
+        node_id = nodes_by_station.get(round(station, 9))
+        nodal = nodal_loads.get(int(node_id), (0.0, 0.0, 0.0)) if node_id is not None else (0.0, 0.0, 0.0)
+        fx, fy, moment = (list(nodal) + [0.0, 0.0, 0.0])[:3]
+        left_m = None if left_action is None else left_action["M"]
+        right_m = None if right_action is None else right_action["M"]
+        observed_jump = (
+            None if left_m is None or right_m is None else right_m - left_m
+        )
+
+        interpretation: list[str] = []
+        if abs(offset_jump) > 1.0e-9:
+            interpretation.append("local-centroid axis shift")
+        if abs(_float(moment)) > 1.0e-3:
+            interpretation.append("equivalent tendon couple")
+        if abs(_float(fy)) > 1.0e-3:
+            interpretation.append("equivalent tendon vertical force")
+        if "Column centerline" in source["event_types"]:
+            interpretation.append("frame joint / column restraint")
+        if not interpretation:
+            interpretation.append("station reference only")
+
+        rows.append(
+            {
+                "s (m)": station,
+                "Event type": "; ".join(sorted(source["event_types"])),
+                "Tendon roles": ", ".join(sorted(source["profile_roles"])),
+                "Tendons": ", ".join(sorted(source["tendon_ids"])),
+                "Column": ", ".join(sorted(source.get("columns", set()))),
+                "Left region / section": " / ".join(
+                    value
+                    for value in (
+                        str(source.get("left_region") or ""),
+                        left_section,
+                    )
+                    if value
+                ),
+                "Right region / section": " / ".join(
+                    value
+                    for value in (
+                        str(source.get("right_region") or ""),
+                        right_section,
+                    )
+                    if value
+                ),
+                "Centroid offset jump Δy (mm; up +)": offset_jump,
+                "N reference (kN; comp. +)": n_reference,
+                "|N·Δy| axis-shift reference (kN-m)": expected_axis_shift,
+                "M left local (kN-m; sagging +)": left_m,
+                "M right local (kN-m; sagging +)": right_m,
+                "Observed ΔM right-left (kN-m)": observed_jump,
+                "Equivalent nodal Fx (kN)": _float(fx) / 1000.0,
+                "Equivalent nodal Fy (kN; up +)": _float(fy) / 1000.0,
+                "Equivalent nodal couple (kN-m; CCW +)": _float(moment) / 1.0e6,
+                "Interpretation sources": "; ".join(interpretation),
+            }
+        )
+    return rows
+
+
 def run_crossbeam_linear_stage_response(
     *,
     model: Mapping[str, Any],
@@ -1210,6 +1410,14 @@ def run_crossbeam_linear_stage_response(
             solution["metrics"] = {}
         solutions[case_name] = solution
 
+    prestress_solution = solutions.get(PTLOSS3B2A_PRESTRESS_CASE, {})
+    response_event_rows = linear_response_event_audit_rows(
+        model=model,
+        profile_rows=profile_rows,
+        prestress_load_source=prestress,
+        solution=prestress_solution,
+    )
+
     issues = [
         f"{case_name}: {issue}"
         for case_name, solution in solutions.items()
@@ -1229,12 +1437,13 @@ def run_crossbeam_linear_stage_response(
         "model": model,
         "prestress_load_source": prestress,
         "cases": solutions,
+        "response_event_rows": response_event_rows,
         "max_equilibrium_residual_ratio": max_residual,
         "issues": _dedupe(issues),
         "fcgp_status": "LOCKED — CONTACT + STAGE STRESS EXTRACTION NOT RELEASED",
         "temporary_support_status": "EXCLUDED — PTLOSS3B2B CONTACT MILESTONE",
         "solver_boundary": (
-            "PTLOSS3B2A is a fixed-base gross-section linear response QA. It does not represent the final stressing stage while continuous compression-only falsework contact is active and therefore cannot feed f_cgp or Elastic Shortening."
+            "This is a fixed-base gross-section linear response QA. It does not represent the final stressing stage while continuous compression-only falsework contact is active and therefore cannot feed f_cgp or Elastic Shortening."
         ),
     }
 

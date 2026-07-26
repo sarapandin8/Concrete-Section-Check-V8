@@ -53,6 +53,15 @@ TENDON_PROFILE_SPAN_MODE_OPTIONS = ("Single Span", "2 Span")
 DEFAULT_TENDON_PROFILE_PRESET = TENDON_PROFILE_PRESET_OPTIONS[0]
 DEFAULT_TENDON_PROFILE_SPAN_MODE = TENDON_PROFILE_SPAN_MODE_OPTIONS[0]
 DEFAULT_STRAND_SYSTEM = "Seven-wire low-relaxation strand"
+TENDON_BOND_STATE_UNSPECIFIED = "Not specified"
+TENDON_BOND_STATE_BONDED = "Bonded / grouted"
+TENDON_BOND_STATE_UNBONDED = "Unbonded"
+TENDON_BOND_STATE_OPTIONS = (
+    TENDON_BOND_STATE_UNSPECIFIED,
+    TENDON_BOND_STATE_BONDED,
+    TENDON_BOND_STATE_UNBONDED,
+)
+DEFAULT_TENDON_BOND_STATE = TENDON_BOND_STATE_UNSPECIFIED
 DEFAULT_WEB_TENDONS_PER_SIDE = 4
 DEFAULT_TENDON_TOP_OFFSET_MM = 500.0
 DEFAULT_TENDON_BOTTOM_OFFSET_MM = 300.0
@@ -160,6 +169,76 @@ def _records(values: Any) -> list[dict[str, Any]]:
     return []
 
 
+
+
+def normalize_tendon_bond_state(value: Any) -> str:
+    """Return the canonical Crossbeam tendon bond-state label.
+
+    Tendon location (Internal/External) remains a separate source.  Missing or
+    legacy values deliberately migrate to ``Not specified`` rather than being
+    inferred from location.
+    """
+
+    text = str(value or "").strip().casefold()
+    aliases = {
+        "": TENDON_BOND_STATE_UNSPECIFIED,
+        "not specified": TENDON_BOND_STATE_UNSPECIFIED,
+        "unspecified": TENDON_BOND_STATE_UNSPECIFIED,
+        "unknown": TENDON_BOND_STATE_UNSPECIFIED,
+        "bonded": TENDON_BOND_STATE_BONDED,
+        "grouted": TENDON_BOND_STATE_BONDED,
+        "bonded / grouted": TENDON_BOND_STATE_BONDED,
+        "bonded/grouted": TENDON_BOND_STATE_BONDED,
+        "unbonded": TENDON_BOND_STATE_UNBONDED,
+    }
+    return aliases.get(text, str(value or DEFAULT_TENDON_BOND_STATE).strip())
+
+
+def tendon_bond_state_summary(values: Any) -> dict[str, Any]:
+    """Return a conservative active-tendon bond-state source summary."""
+
+    rows = canonical_tendon_system_rows(values)
+    active = [row for row in rows if bool(row.get("Active", True))]
+    unspecified = [
+        str(row.get("Tendon ID") or "Unnamed tendon")
+        for row in active
+        if row.get("Bond state") == TENDON_BOND_STATE_UNSPECIFIED
+    ]
+    incompatible = [
+        str(row.get("Tendon ID") or "Unnamed tendon")
+        for row in active
+        if str(row.get("Type") or "").casefold() == "external"
+        and row.get("Bond state") == TENDON_BOND_STATE_BONDED
+    ]
+    labels = sorted(
+        {
+            f"{row.get('Type')} — {row.get('Bond state')}"
+            for row in active
+            if row.get("Bond state") != TENDON_BOND_STATE_UNSPECIFIED
+        }
+    )
+    issues: list[str] = []
+    if not active:
+        issues.append("No active Tendon System rows are available.")
+    if unspecified:
+        issues.append(
+            "Bond state is not specified for: " + ", ".join(unspecified) + "."
+        )
+    if incompatible:
+        issues.append(
+            "External tendons cannot use the Bonded / grouted section-strain route: "
+            + ", ".join(incompatible)
+            + "."
+        )
+    return {
+        "ready": bool(active) and not issues,
+        "status": "SOURCE READY" if active and not issues else "REVIEW REQUIRED",
+        "active_count": len(active),
+        "specified_count": len(active) - len(unspecified),
+        "labels": labels,
+        "issues": issues,
+    }
+
 def default_tendon_system_rows(
     tendon_count: int = DEFAULT_TENDON_COUNT,
 ) -> list[dict[str, Any]]:
@@ -171,6 +250,7 @@ def default_tendon_system_rows(
             "Tendon ID": f"T{index + 1}",
             "Active": True,
             "Type": DEFAULT_TENDON_TYPE,
+            "Bond state": DEFAULT_TENDON_BOND_STATE,
             "Strands": DEFAULT_STRANDS_PER_TENDON,
             "Strand system": DEFAULT_STRAND_SYSTEM,
             "Aps/strand mm²": DEFAULT_STRAND_APS_MM2,
@@ -194,6 +274,7 @@ def canonical_tendon_system_rows(values: Any) -> list[dict[str, Any]]:
                 "Tendon ID": str(source.get("Tendon ID") or "").strip(),
                 "Active": _bool(source.get("Active"), True),
                 "Type": normalize_tendon_type(source.get("Type")),
+                "Bond state": normalize_tendon_bond_state(source.get("Bond state")),
                 "Strands": _int(source.get("Strands"), DEFAULT_STRANDS_PER_TENDON),
                 "Strand system": str(
                     source.get("Strand system") or DEFAULT_STRAND_SYSTEM
@@ -232,6 +313,19 @@ def validate_tendon_system(
         tendon_id = row["Tendon ID"] or "Unnamed tendon"
         if row["Type"] not in TENDON_TYPE_OPTIONS:
             errors.append(f"{tendon_id}: Type must be Internal or External.")
+        if row["Bond state"] not in TENDON_BOND_STATE_OPTIONS:
+            errors.append(
+                f"{tendon_id}: Bond state must be Not specified, Bonded / grouted, or Unbonded."
+            )
+        elif row["Bond state"] == TENDON_BOND_STATE_UNSPECIFIED:
+            # The Tendon System remains a valid force/geometry source.  The
+            # separate Elastic Shortening bond-state gate stays blocked until
+            # this explicit source is completed.
+            pass
+        elif row["Type"] == "External" and row["Bond state"] == TENDON_BOND_STATE_BONDED:
+            errors.append(
+                f"{tendon_id}: External tendon cannot use Bonded / grouted section-strain routing; select Unbonded or review tendon location."
+            )
         if row["Jacking end"] not in JACKING_END_OPTIONS:
             errors.append(f"{tendon_id}: Jacking end must be Left, Right, or Both.")
         if row["Strands"] <= 0:
@@ -1431,6 +1525,7 @@ def tendon_station_audit_rows(
                     "centroid from top (mm)": centroid,
                     "e(s) (mm)": point["dtop (mm)"] - centroid,
                     "Type": str(tendon.get("Type") or DEFAULT_TENDON_TYPE),
+                    "Bond state": str(tendon.get("Bond state") or DEFAULT_TENDON_BOND_STATE),
                     "Jacking end": str(tendon.get("Jacking end") or DEFAULT_JACKING_END),
                     "fpj (MPa)": calculated_fpj_mpa(fpu, ratio),
                     "Aps total (mm²)": strands * aps,

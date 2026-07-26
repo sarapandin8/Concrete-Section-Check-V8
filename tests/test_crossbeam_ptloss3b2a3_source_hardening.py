@@ -21,6 +21,6 @@ def test_ptloss3b2a3_exposes_active_model_symmetry_and_bond_state_guards():
 def test_ptloss3b2a3_explains_moment_steps_and_removes_stale_ui_labels():
     source = _source()
     assert "Apparent steps can occur at concentrated tendon-equivalent couples" in source
-    assert "Moment-jump interpretation guard" in source
+    assert "Moment-jump / response-event audit" in source
     assert "PTLOSS3B2A1 reaction, column-action, and tendon-load audit" not in source
     assert "Run PTLOSS3B2A1 mesh-sensitivity diagnostic" not in source

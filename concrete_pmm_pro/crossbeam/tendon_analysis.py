@@ -113,6 +113,7 @@ def tendon_force_source_rows(system_values: Any) -> list[dict[str, Any]]:
                 "Tendon ID": tendon_id,
                 "Active": active,
                 "Type": str(tendon.get("Type") or ""),
+                "Bond state": str(tendon.get("Bond state") or ""),
                 "Jacking end": str(tendon.get("Jacking end") or ""),
                 "Strands": strands,
                 "Strand system": str(tendon.get("Strand system") or ""),
@@ -205,6 +206,7 @@ def tendon_force_trace_rows(
             force = {
                 "Active": False,
                 "Type": str(station.get("Type") or ""),
+                "Bond state": str(station.get("Bond state") or ""),
                 "Jacking end": str(station.get("Jacking end") or ""),
                 "Aps total (mm²)": 0.0,
                 "fpj (MPa)": 0.0,
@@ -227,6 +229,7 @@ def tendon_force_trace_rows(
                 "dtop (mm)": _float(station.get("dtop (mm)"), 0.0),
                 "e(s) (mm)": _float(station.get("e(s) (mm)"), 0.0),
                 "Type": str(force.get("Type") or station.get("Type") or ""),
+                "Bond state": str(force.get("Bond state") or station.get("Bond state") or ""),
                 "Jacking end": str(force.get("Jacking end") or station.get("Jacking end") or ""),
                 "Aps total (mm²)": _float(force.get("Aps total (mm²)"), 0.0),
                 "fpj (MPa)": _float(force.get("fpj (MPa)"), 0.0),

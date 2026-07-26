@@ -272,7 +272,7 @@ def test_ptloss3b2a_ui_exposes_linear_qa_and_keeps_contact_fcgp_locked() -> None
     elastic_block = source.split("with elastic_shortening_tab:", maxsplit=1)[1].split(
         "with time_dependent_tab:", maxsplit=1
     )[0]
-    assert "PTLOSS3B2A2 — Code-Basis / Print-Integrity Linear Response QA" in elastic_block
+    assert "Linear stressing-stage response QA — fixed-base / no-contact" in elastic_block
     assert "P after Anchorage Set + adopted tendon profile" in elastic_block
     assert "LINEAR QA / CONTACT LOCKED" in elastic_block
     assert "Continuous falsework contact is intentionally excluded" in elastic_block
