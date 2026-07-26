@@ -7417,7 +7417,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
         st.markdown("#### Elastic Shortening — construction/stressing-stage source foundation")
         st.caption(
-            "PTLOSS3B2A2 preserves the accepted PTLOSS3B2A1 stressing-stage Eci, EA/EI, rigid-offset, P·e/sign/symmetry, and mesh-sensitivity foundation while making the dual code basis explicit and keeping each response figure intact in browser-print QA. Continuous compression-only falsework contact, lift-off, final Primary/Secondary decomposition, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked."
+            "PTLOSS3B2A3 preserves the accepted stressing-stage Eci, EA/EI, rigid-offset, P·e/sign/symmetry, and mesh-sensitivity foundation while hardening inactive manual overrides, active-model symmetry review, tendon bond-state traceability, and moment-jump interpretation. Continuous compression-only falsework contact, lift-off, final Primary/Secondary decomposition, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked. Continuous compression-only falsework contact, lift-off, final Primary/Secondary decomposition, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked."
         )
 
         upstream_ready = bool(
@@ -7481,6 +7481,17 @@ def render_crossbeam_prestress_loss_page() -> None:
         eci_override_enabled = bool(
             st.session_state.get(CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY, False)
         )
+        # An inactive QA override must not retain the legacy 31,500 MPa seed while
+        # the stage-derived Eci is different. Keep the dormant field aligned with
+        # the current source so enabling it is an explicit engineering action, not
+        # an accidental jump to a stale value.
+        if (
+            not eci_override_enabled
+            and material_eci is not None
+            and abs(float(st.session_state.get(CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY, DEFAULT_ES_ECI_OVERRIDE_MPA))
+                    - float(DEFAULT_ES_ECI_OVERRIDE_MPA)) <= 1.0e-9
+        ):
+            st.session_state[CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY] = float(material_eci)
         selected_eci = (
             float(st.session_state.get(CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY, DEFAULT_ES_ECI_OVERRIDE_MPA))
             if eci_override_enabled
@@ -7862,6 +7873,37 @@ def render_crossbeam_prestress_loss_page() -> None:
         beam_element_count = sum(str(row.get("kind")) == "beam" for row in linear_elements)
         column_element_count = sum(str(row.get("kind")) == "column" for row in linear_elements)
         linear_residual = linear_stage_result.get("max_equilibrium_residual_ratio")
+
+        prestress_case_for_symmetry = dict(
+            linear_stage_result.get("cases", {}).get(PTLOSS3B2A_PRESTRESS_CASE, {})
+        )
+        fixed_reactions_for_symmetry = [
+            row for row in prestress_case_for_symmetry.get("nodes", []) if bool(row.get("fixed"))
+        ]
+        active_symmetry_residual = None
+        if len(fixed_reactions_for_symmetry) == 2:
+            left, right = fixed_reactions_for_symmetry
+            symmetry_terms = []
+            for field in ("reaction_fx_N", "reaction_fy_N", "reaction_moment_Nmm"):
+                a = abs(_finite_float(left.get(field)))
+                b = abs(_finite_float(right.get(field)))
+                scale = max(a, b, 1.0)
+                symmetry_terms.append(abs(a - b) / scale)
+            active_symmetry_residual = max(symmetry_terms)
+
+        active_tendon_types = sorted({
+            str(row.get("Type") or "").strip()
+            for row in system_rows
+            if bool(row.get("Active")) and str(row.get("Type") or "").strip()
+        })
+        explicit_bond_states = sorted({
+            str(row.get("Bond state") or row.get("Bonded state") or "").strip()
+            for row in system_rows
+            if bool(row.get("Active"))
+            and str(row.get("Bond state") or row.get("Bonded state") or "").strip()
+        })
+        bond_state_ready = bool(explicit_bond_states)
+
         render_metric_cards(
             [
                 {
@@ -7961,8 +8003,39 @@ def render_crossbeam_prestress_loss_page() -> None:
                     "detail": "0.50 / 0.25 / 0.125 m; diagnostic only",
                     "status": "neutral",
                 },
+                {
+                    "title": "Active-model symmetry",
+                    "value": (
+                        "—" if active_symmetry_residual is None
+                        else ("PASS" if active_symmetry_residual <= 0.01 else "REVIEW")
+                    ),
+                    "detail": (
+                        "requires two fixed-base reactions"
+                        if active_symmetry_residual is None
+                        else f"paired |Rx|/|Ry|/|Mz| residual = {100.0*active_symmetry_residual:.3f}%"
+                    ),
+                    "status": (
+                        "neutral" if active_symmetry_residual is None
+                        else ("ready" if active_symmetry_residual <= 0.01 else "warning")
+                    ),
+                },
+                {
+                    "title": "Tendon bond-state source",
+                    "value": "READY" if bond_state_ready else "REVIEW REQUIRED",
+                    "detail": (
+                        ", ".join(explicit_bond_states)
+                        if bond_state_ready
+                        else f"Type={', '.join(active_tendon_types) or '—'} does not define bonded/unbonded state"
+                    ),
+                    "status": "ready" if bond_state_ready else "warning",
+                },
             ]
         )
+
+        if not bond_state_ready:
+            st.warning(
+                "Tendon bond state is not yet a canonical Crossbeam input. Internal/External identifies tendon location, not whether the tendon is bonded, grouted, or unbonded. Final AASHTO f_cgp routing and Elastic Shortening handoff remain blocked until an explicit bond-state source is introduced."
+            )
 
         with st.expander("Stage stiffness, reference-axis, and benchmark audit", expanded=False):
             mesh_source = dict(linear_stage_model.get("mesh") or {})
@@ -8009,9 +8082,9 @@ def render_crossbeam_prestress_loss_page() -> None:
             )
 
         run_mesh_sensitivity = st.checkbox(
-            "Run PTLOSS3B2A1 mesh-sensitivity diagnostic",
+            "Run linear-response mesh-sensitivity diagnostic",
             value=False,
-            key="crossbeam_ptloss3b2a1_run_mesh_sensitivity",
+            key="crossbeam_ptloss3b2a3_run_mesh_sensitivity",
             help="Runs the prestress-only linear QA at 0.50, 0.25, and 0.125 m target beam-element lengths. This diagnostic is isolated and does not feed engineering results.",
         )
         if run_mesh_sensitivity:
@@ -8108,7 +8181,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                         trace_name="M",
                     ),
                     caption=(
-                        "Moment is sagging-positive. This fixed-base linear frame trace includes gross-section stiffness and the selected linear load case, but excludes continuous falsework contact and is not a final Primary/Secondary Prestress decomposition."
+                        "Moment is sagging-positive. This fixed-base linear frame trace includes gross-section stiffness and the selected linear load case, but excludes continuous falsework contact and is not a final Primary/Secondary Prestress decomposition. Apparent steps can occur at concentrated tendon-equivalent couples and when reporting section-local moment across centroid/reference-axis transitions; they must not be read automatically as a physical hinge or released joint."
                     ),
                 )
                 _render_ptloss3b2a_print_figure(
@@ -8168,7 +8241,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                             ),
                         )
 
-            with st.expander("PTLOSS3B2A1 reaction, column-action, and tendon-load audit", expanded=False):
+            with st.expander("Linear-response reaction, column-action, and tendon-load audit", expanded=False):
                 reaction_rows = [
                     {
                         "Node": row.get("label"),
@@ -8188,6 +8261,19 @@ def render_crossbeam_prestress_loss_page() -> None:
                     use_container_width=True,
                     hide_index=True,
                 )
+                st.markdown("**Active-project symmetry review**")
+                if active_symmetry_residual is None:
+                    st.caption("Symmetry residual is unavailable because the selected model does not expose exactly two fixed-base reactions.")
+                else:
+                    st.write(
+                        f"Paired absolute reaction residual = **{100.0*active_symmetry_residual:.3f}%** "
+                        f"({'PASS' if active_symmetry_residual <= 0.01 else 'REVIEW'}; QA tolerance = 1.000%). "
+                        "This is an active-project diagnostic, separate from the synthetic symmetric-portal benchmark."
+                    )
+                st.markdown("**Moment-jump interpretation guard**")
+                st.caption(
+                    "Moment steps may be generated by concentrated tendon-equivalent couples and by transforming actions between the common reference axis and local section centroids. Review Section/Zone boundaries, centroid offsets, and tendon deviation/anchorage stations before treating any plotted step as a physical discontinuity."
+                )
                 st.markdown("**Equivalent tendon-load assembly**")
                 st.dataframe(
                     pd.DataFrame(
@@ -8203,7 +8289,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 )
 
         st.warning(
-            "Solver boundary — PTLOSS3B2A1 is a fixed-base linear benchmark only. It does not represent the accepted continuous full-length compression-only support condition at stressing. Do not use these QA actions or displacements as f_cgp, final Elastic Shortening, Pe/Pe_eff, or reportable design results."
+            "Solver boundary — PTLOSS3B2A3 is a fixed-base linear benchmark only. It does not represent the accepted continuous full-length compression-only support condition at stressing. Do not use these QA actions or displacements as f_cgp, final Elastic Shortening, Pe/Pe_eff, or reportable design results."
         )
 
         if not current_es_group_summary.get("ready"):
@@ -8243,7 +8329,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         with st.expander("Calculation trace / QA — formula, stage source, and overrides", expanded=False):
             st.markdown("##### Code / methodology basis")
             st.write(
-                f"Member design basis: **{member_design_code_label}**. Prestress-loss basis: **AASHTO LRFD 2020 §5.9.3**, with Elastic Shortening at **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B2A2 preserves the separate construction stressing-pair sequence for the future incremental contact/stage solver."
+                f"Member design basis: **{member_design_code_label}**. Prestress-loss basis: **AASHTO LRFD 2020 §5.9.3**, with Elastic Shortening at **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the PTLOSS3A equal-group mapping only as a guarded reference/preview when every pair is geometrically valid and group jacking forces are equivalent; PTLOSS3B2A3 preserves the separate construction stressing-pair sequence for the future incremental contact/stage solver."
             )
             st.latex(r"\Delta f_{pES,avg}=\left(\frac{G-1}{2G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
             st.latex(r"\Delta f_{pES,g}=\left(\frac{G-g}{G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
@@ -8253,7 +8339,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
             st.markdown("##### Stage-stress source")
             st.warning(
-                "PTLOSS3B2A2 preserves the accepted fixed-base gross-section linear Portal-Frame QA response and makes its code basis and print packaging explicit, but it intentionally excludes the accepted continuous compression-only falsework contact and lift-off state. Source-derived f_cgp remains BLOCKED until the contact-aware incremental Primary/Secondary Prestress + gravity stage solver is validated. A manual f_cgp override below is QA-only and cannot release final effective prestress."
+                "PTLOSS3B2A3 preserves the accepted fixed-base gross-section linear Portal-Frame QA response and adds source hardening, but it intentionally excludes the accepted continuous compression-only falsework contact and lift-off state. Source-derived f_cgp remains BLOCKED until the contact-aware incremental Primary/Secondary Prestress + gravity stage solver is validated. A manual f_cgp override below is QA-only and cannot release final effective prestress."
             )
 
             st.checkbox(
@@ -8282,7 +8368,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 format="%.0f",
                 key=CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY,
                 disabled=not bool(st.session_state.get(CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY)),
-                help="Use only when the actual stressing-age concrete modulus is supported by an engineering source. The assigned material Ec is otherwise shown as the preview source with stage review required.",
+                help="Use only when the actual stressing-age concrete modulus is supported by an engineering source. While this override is disabled, its dormant value is synchronized to the current stage-derived Eci so enabling it cannot silently reactivate the legacy 31,500 MPa seed.",
             )
 
             group_count = int(current_es_group_summary.get("group_count") or 0)

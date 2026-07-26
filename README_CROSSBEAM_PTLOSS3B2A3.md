@@ -1,0 +1,3 @@
+# CROSSBEAM.PTLOSS3B2A3 — Source and response audit hardening
+
+This milestone keeps the accepted fixed-base linear response equations unchanged while hardening the Elastic Shortening QA workflow. It synchronizes a disabled manual Eci override with the current stage-derived Eci, adds active-project reaction-symmetry review, makes the missing bonded/unbonded tendon source explicit, explains apparent moment steps at concentrated couples/reference-axis transitions, and removes stale milestone-specific UI labels. Compression-only contact, automatic lift-off, source-derived f_cgp, final Elastic Shortening, Pe/Pe_eff, and downstream solver credit remain locked.

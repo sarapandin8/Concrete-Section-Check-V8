@@ -257,5 +257,5 @@ def test_ptloss3b2a1_ui_separates_axial_shear_and_adds_print_guard() -> None:
     assert "Crossbeam Axial / Shear —" not in elastic
     assert "Primary Prestress P·e Reference" in elastic
     assert "Stage stiffness, reference-axis, and benchmark audit" in elastic
-    assert "Run PTLOSS3B2A1 mesh-sensitivity diagnostic" in elastic
+    assert "Run linear-response mesh-sensitivity diagnostic" in elastic
     assert "@media print" in elastic and "break-inside: avoid" in elastic
