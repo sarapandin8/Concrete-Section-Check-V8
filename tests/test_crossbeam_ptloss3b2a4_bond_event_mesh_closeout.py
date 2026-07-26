@@ -37,7 +37,7 @@ def test_ptloss3b2a4_bond_state_is_explicit_and_not_inferred_from_location() -> 
     assert not warnings
     summary = tendon_bond_state_summary(canonical)
     assert summary["ready"] is True
-    assert summary["labels"] == ["Internal — Bonded / grouted"]
+    assert summary["labels"] == ["Internal — Bonded after grouting"]
 
     canonical[0]["Type"] = "External"
     canonical[0]["Bond state"] = TENDON_BOND_STATE_UNBONDED
@@ -49,12 +49,12 @@ def test_ptloss3b2a4_external_bonded_combination_is_blocked() -> None:
     rows[0]["Type"] = "External"
     rows[0]["Bond state"] = TENDON_BOND_STATE_BONDED
     _canonical, errors, _warnings = validate_tendon_system(rows)
-    assert any("External tendon cannot use Bonded / grouted" in issue for issue in errors)
+    assert any("External tendon cannot use Bonded after grouting" in issue for issue in errors)
     assert tendon_bond_state_summary(rows)["ready"] is False
 
 
 def test_ptloss3b2a4_tendon_schema_records_new_bond_state_source() -> None:
-    assert CROSSBEAM_TENDON_SCHEMA_VERSION == 2
+    assert CROSSBEAM_TENDON_SCHEMA_VERSION == 3
     assert "Bond state" in default_tendon_system_rows(3)[0]
 
 
@@ -74,7 +74,7 @@ def test_ptloss3b2a4_schema1_project_migrates_without_inventing_bond_state() -> 
     )
     assert migrated is True
     assert not issues
-    assert block is not None and block["schema_version"] == 2
+    assert block is not None and block["schema_version"] == 3
     assert all(row["Bond state"] == "Not specified" for row in block["tendon_system"])
 
 
@@ -120,7 +120,7 @@ def test_ptloss3b2a4_ui_uses_generic_labels_current_mesh_and_event_audit() -> No
     assert "PTLOSS3B2A1 hardened fixed-base response only" not in source
     assert "continuous compression-only falsework contact, lift-off" in elastic
     assert elastic.count("continuous compression-only falsework contact, lift-off") == 1
-    assert "Tendon identity, bond state, and stressing" in source
+    assert "Tendon identity, final bond system, and stressing" in source
     assert "Apply to active tendons" in source
     assert '"Bond state": st.column_config.SelectboxColumn' in source
     assert "Moment-jump / response-event audit" in elastic

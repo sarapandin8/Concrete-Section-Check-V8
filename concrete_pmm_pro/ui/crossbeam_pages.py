@@ -253,7 +253,8 @@ CB_LENGTH_CHANGE_POLICIES = (CB_LENGTH_POLICY_KEEP, CB_LENGTH_POLICY_SCALE)
 CB_TENDON_REMOVE_SELECTION_KEY = "crossbeam_pt1d_remove_tendon_id"
 CB_TENDON_REMOVE_PENDING_KEY = "crossbeam_pt1d_remove_pending_id"
 CB_TENDON_MUTATION_NOTICE_KEY = "crossbeam_pt1d_tendon_mutation_notice"
-CB_TENDON_BOND_BULK_KEY = "crossbeam_ptloss3b2a4_bulk_bond_state"
+CB_TENDON_BOND_BULK_KEY = "crossbeam_tendon_bulk_final_bond_system"
+CB_TENDON_BOND_BULK_PLACEHOLDER = "Select final bond system…"
 CB_TENDON_MIN_COUNT = 3
 CB_TENDON_MAX_COUNT = 64
 
@@ -3107,12 +3108,14 @@ def _confirm_crossbeam_tendon_removal() -> None:
 
 
 def _apply_active_tendon_bond_state_from_ui() -> None:
-    """Apply one explicit bond-state choice to all active Tendon System rows."""
+    """Apply one explicit final bond-system choice to active Tendon rows."""
 
     selected = str(
         st.session_state.get(CB_TENDON_BOND_BULK_KEY)
-        or TENDON_BOND_STATE_UNSPECIFIED
+        or CB_TENDON_BOND_BULK_PLACEHOLDER
     )
+    if selected not in TENDON_BOND_STATE_OPTIONS or selected == TENDON_BOND_STATE_UNSPECIFIED:
+        return
     rows = canonical_tendon_system_rows(
         _records(st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
     )
@@ -3946,7 +3949,7 @@ def render_crossbeam_tendon_system_page() -> None:
             )
         elif action == "bond_state_bulk":
             st.success(
-                f"Applied Bond state '{notice.get('bond_state')}' to "
+                f"Applied final bond system '{notice.get('bond_state')}' to "
                 f"{_finite_int(notice.get('changed_count'), 0)} active tendon row(s)."
             )
 
@@ -4049,27 +4052,36 @@ def render_crossbeam_tendon_system_page() -> None:
             )
 
     revision = int(st.session_state.get(CB_TENDON_SYSTEM_REV_KEY, 0))
-    st.markdown("#### Tendon identity, bond state, and stressing")
+    st.markdown("#### Tendon identity, final bond system, and stressing")
     st.caption(
-        "Location and Bond state are separate engineering sources. Use the bulk action only when every active tendon shares the same approved bond condition; individual rows remain editable below."
+        "Tendon location and the final bond system are separate engineering sources. "
+        "‘Bonded after grouting’ describes the intended completed tendon system; it does not imply grout is present during stressing. "
+        "Use the bulk action only when every active tendon shares the same approved final bond system; individual rows remain editable below."
     )
+    bulk_options = [
+        CB_TENDON_BOND_BULK_PLACEHOLDER,
+        *[
+            option
+            for option in TENDON_BOND_STATE_OPTIONS
+            if option != TENDON_BOND_STATE_UNSPECIFIED
+        ],
+    ]
+    if st.session_state.get(CB_TENDON_BOND_BULK_KEY) not in bulk_options:
+        st.session_state[CB_TENDON_BOND_BULK_KEY] = CB_TENDON_BOND_BULK_PLACEHOLDER
     bond_choice_col, bond_apply_col, _ = st.columns([2.2, 1.3, 2.5])
     with bond_choice_col:
-        st.selectbox(
-            "Bulk bond-state assignment",
-            options=[
-                option
-                for option in TENDON_BOND_STATE_OPTIONS
-                if option != TENDON_BOND_STATE_UNSPECIFIED
-            ] + [TENDON_BOND_STATE_UNSPECIFIED],
+        bulk_bond_system = st.selectbox(
+            "Bulk final bond-system assignment",
+            options=bulk_options,
             key=CB_TENDON_BOND_BULK_KEY,
-            help="This does not infer bond state from Internal/External. The value is applied only after pressing the action button.",
+            help="No value is inferred from Internal/External location. Select an explicit final system, then apply it to active tendons.",
         )
     with bond_apply_col:
         st.button(
             "Apply to active tendons",
-            key="crossbeam_ptloss3b2a4_apply_bond_state",
+            key="crossbeam_ptloss3b2a4a_apply_final_bond_system",
             on_click=_apply_active_tendon_bond_state_from_ui,
+            disabled=bulk_bond_system == CB_TENDON_BOND_BULK_PLACEHOLDER,
             use_container_width=True,
         )
     identity_rows = _tendon_identity_editor_rows(rows)
@@ -4090,8 +4102,8 @@ def render_crossbeam_tendon_system_page() -> None:
                 "Location", options=list(TENDON_TYPE_OPTIONS), required=True
             ),
             "Bond state": st.column_config.SelectboxColumn(
-                "Bond state", options=list(TENDON_BOND_STATE_OPTIONS), required=True,
-                help="Explicit AASHTO Elastic Shortening source. Internal/External location does not define bonded or unbonded behavior.",
+                "Final bond system", options=list(TENDON_BOND_STATE_OPTIONS), required=True,
+                help="Intended completed tendon system. ‘Bonded after grouting’ does not imply grout is present during stressing; Internal/External location remains a separate source.",
             ),
             "Strands": st.column_config.NumberColumn("Strands", min_value=1, step=1, required=True),
             "Jacking end": st.column_config.SelectboxColumn("Jacking end", options=list(JACKING_END_OPTIONS), required=True),
@@ -4182,7 +4194,7 @@ def render_crossbeam_tendon_system_page() -> None:
                 "status": str(force_summary["status"]),
             },
             {
-                "title": "Bond-state source",
+                "title": "Final bond-system source",
                 "value": str(bond_source_summary.get("status")),
                 "detail": (
                     f"{int(bond_source_summary.get('specified_count') or 0)} / "
@@ -4201,7 +4213,7 @@ def render_crossbeam_tendon_system_page() -> None:
                     "Tendon ID": row["Tendon ID"],
                     "Active": row["Active"],
                     "Type": row["Type"],
-                    "Bond state": row.get("Bond state", TENDON_BOND_STATE_UNSPECIFIED),
+                    "Final bond system": row.get("Bond state", TENDON_BOND_STATE_UNSPECIFIED),
                     "Jacking end": row["Jacking end"],
                     "Strands": row["Strands"],
                     "Area source": row["Area source"],
@@ -4229,13 +4241,13 @@ def render_crossbeam_tendon_system_page() -> None:
         st.warning(message)
     for message in bond_source_summary.get("issues", []):
         st.warning(
-            f"Bond-state source — {message} This does not block the Tendon System force source, but final f_cgp and Elastic Shortening remain locked."
+            f"Final bond-system source — {message} This does not block the Tendon System force source, but final f_cgp and Elastic Shortening remain locked."
         )
     st.info(
-        "Each tendon uses seven-wire low-relaxation strand. Anchorage heads are defined at s = 0 and s = L. Location and Bond state are separate sources; Internal does not imply Bonded. Jacking end Left/Right/Both is stored for loss distribution, and both-end jacking does not double total Pj."
+        "Each tendon uses seven-wire low-relaxation strand. Anchorage heads are defined at s = 0 and s = L. Tendon location and final bond system are separate sources; Internal does not imply bonded, and ‘Bonded after grouting’ describes the completed system after stressing. Jacking end Left/Right/Both is stored for loss distribution, and both-end jacking does not double total Pj."
     )
     st.caption(
-        "CROSSBEAM.PTA1 force source only. Pj = Aps total x fpj / 1000 in kN. ACI 423.10R loss calculations, friction parameters, anchor set, elastic shortening, time-dependent losses, SLS/ULS checks, and FEA handoff remain future milestones."
+        "Tendon System owns tendon identity, material, location, final bond system, jacking source, and anchorage inputs. Prestress-loss calculations and their code basis are owned by the Prestress Loss workspace; SLS/ULS checks and analysis handoff are owned by downstream workspaces. Pj = Aps total x fpj / 1000 in kN."
     )
 
 
@@ -8006,7 +8018,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 "cases": {},
                 "model": linear_stage_model,
                 "fcgp_status": "LOCKED — UPSTREAM FORCE STATE REQUIRED",
-                "temporary_support_status": "EXCLUDED — PTLOSS3B2B CONTACT MILESTONE",
+                "temporary_support_status": "EXCLUDED — CONTACT-AWARE SOLVER NOT RELEASED",
             }
 
         mesh_fingerprint = _linear_mesh_diagnostic_fingerprint(
@@ -8105,7 +8117,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Temporary support",
                     "value": "EXCLUDED",
-                    "detail": "continuous compression-only contact is PTLOSS3B2B",
+                    "detail": "contact-aware stressing-stage solver not yet released",
                     "status": "warning",
                 },
                 {
@@ -8198,13 +8210,13 @@ def render_crossbeam_prestress_loss_page() -> None:
                     ),
                 },
                 {
-                    "title": "Tendon bond-state source",
+                    "title": "Tendon final bond-system source",
                     "value": "SOURCE READY" if bond_state_ready else "REVIEW REQUIRED",
                     "detail": (
                         ", ".join(explicit_bond_states)
                         if bond_state_ready
                         else (
-                            str((bond_state_source.get("issues") or ["Explicit Bond state is required."])[0])
+                            str((bond_state_source.get("issues") or ["An explicit final bond system is required."])[0])
                         )
                     ),
                     "status": "ready" if bond_state_ready else "warning",
@@ -8215,11 +8227,11 @@ def render_crossbeam_prestress_loss_page() -> None:
         if not bond_state_ready:
             for issue in bond_state_source.get("issues", []):
                 st.warning(
-                    f"Tendon bond-state source — {issue} Internal/External identifies tendon location only; final AASHTO f_cgp routing and Elastic Shortening handoff remain blocked."
+                    f"Final tendon bond-system source — {issue} Internal/External identifies tendon location only; final AASHTO f_cgp routing and Elastic Shortening handoff remain blocked."
                 )
         else:
             st.success(
-                "Tendon bond-state source is explicit for every active tendon. This completes the bond-state input gate only; contact-aware f_cgp and final Elastic Shortening remain locked."
+                "The final tendon bond system is explicit for every active tendon. This completes the bond-system input gate only; contact-aware f_cgp and final Elastic Shortening remain locked."
             )
 
         with st.expander("Stage stiffness, reference-axis, and benchmark audit", expanded=False):
@@ -8443,29 +8455,85 @@ def render_crossbeam_prestress_loss_page() -> None:
                     )
                 st.markdown("**Moment-jump / response-event audit**")
                 st.caption(
-                    "Moment steps may be generated by concentrated tendon-equivalent couples, frame joints, and transformation between the common reference axis and local section centroids. The table co-locates these sources; |N·Δy| is an axis-shift reference magnitude, not a stand-alone closure criterion."
+                    "Moment steps may be generated by concentrated tendon-equivalent couples, frame joints, and transformation between the common reference axis and local section centroids. The audit is split into compact tables so the station source, local-moment interpretation, and equivalent nodal actions remain readable in browser print."
                 )
+                event_rows = list(linear_stage_result.get("response_event_rows", []))
+                st.markdown("**A. Station and source map**")
                 st.dataframe(
                     pd.DataFrame(
-                        linear_stage_result.get("response_event_rows", [])
+                        [
+                            {
+                                "s (m)": row.get("s (m)"),
+                                "Event type": row.get("Event type"),
+                                "Tendon roles": row.get("Tendon roles"),
+                                "Tendons": row.get("Tendons"),
+                                "Column": row.get("Column"),
+                                "Left region / section": row.get("Left region / section"),
+                                "Right region / section": row.get("Right region / section"),
+                            }
+                            for row in event_rows
+                        ]
                     ),
                     use_container_width=True,
                     hide_index=True,
                     column_config={
                         "s (m)": st.column_config.NumberColumn(format="%.3f"),
-                        "Centroid offset jump Δy (mm; up +)": st.column_config.NumberColumn(format="%.3f"),
-                        "N reference (kN; comp. +)": st.column_config.NumberColumn(format="%.3f"),
-                        "|N·Δy| axis-shift reference (kN-m)": st.column_config.NumberColumn(format="%.3f"),
-                        "M left local (kN-m; sagging +)": st.column_config.NumberColumn(format="%.3f"),
-                        "M right local (kN-m; sagging +)": st.column_config.NumberColumn(format="%.3f"),
-                        "Observed ΔM right-left (kN-m)": st.column_config.NumberColumn(format="%.3f"),
-                        "Equivalent nodal Fx (kN)": st.column_config.NumberColumn(format="%.3f"),
-                        "Equivalent nodal Fy (kN; up +)": st.column_config.NumberColumn(format="%.3f"),
-                        "Equivalent nodal couple (kN-m; CCW +)": st.column_config.NumberColumn(format="%.3f"),
+                    },
+                )
+                st.markdown("**B. Local-moment and reference-axis audit**")
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {
+                                "s (m)": row.get("s (m)"),
+                                "Δy (mm; up +)": row.get("Centroid offset jump Δy (mm; up +)"),
+                                "N ref. (kN; comp. +)": row.get("N reference (kN; comp. +)"),
+                                "|N·Δy| ref. (kN-m)": row.get("|N·Δy| axis-shift reference (kN-m)"),
+                                "M left (kN-m)": row.get("M left local (kN-m; sagging +)"),
+                                "M right (kN-m)": row.get("M right local (kN-m; sagging +)"),
+                                "Observed ΔM (kN-m)": row.get("Observed ΔM right-left (kN-m)"),
+                                "Interpretation": row.get("Interpretation sources"),
+                            }
+                            for row in event_rows
+                        ]
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "s (m)": st.column_config.NumberColumn(format="%.3f"),
+                        "Δy (mm; up +)": st.column_config.NumberColumn(format="%.3f"),
+                        "N ref. (kN; comp. +)": st.column_config.NumberColumn(format="%.3f"),
+                        "|N·Δy| ref. (kN-m)": st.column_config.NumberColumn(format="%.3f"),
+                        "M left (kN-m)": st.column_config.NumberColumn(format="%.3f"),
+                        "M right (kN-m)": st.column_config.NumberColumn(format="%.3f"),
+                        "Observed ΔM (kN-m)": st.column_config.NumberColumn(format="%.3f"),
+                    },
+                )
+                st.markdown("**C. Equivalent tendon nodal actions**")
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {
+                                "s (m)": row.get("s (m)"),
+                                "Fx (kN)": row.get("Equivalent nodal Fx (kN)"),
+                                "Fy (kN; up +)": row.get("Equivalent nodal Fy (kN; up +)"),
+                                "Couple (kN-m; CCW +)": row.get("Equivalent nodal couple (kN-m; CCW +)"),
+                                "Event type": row.get("Event type"),
+                            }
+                            for row in event_rows
+                        ]
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "s (m)": st.column_config.NumberColumn(format="%.3f"),
+                        "Fx (kN)": st.column_config.NumberColumn(format="%.3f"),
+                        "Fy (kN; up +)": st.column_config.NumberColumn(format="%.3f"),
+                        "Couple (kN-m; CCW +)": st.column_config.NumberColumn(format="%.3f"),
                     },
                 )
                 st.caption(
-                    "Review the event type, Section/Zone pair, tendon role, equivalent nodal force/couple, and local left/right moments together before treating any plotted step as a physical hinge, release, or member-action discontinuity."
+                    "Review all three tables together before treating a plotted step as a physical hinge, release, or member-action discontinuity. |N·Δy| remains a reference-axis interpretation magnitude, not a stand-alone closure criterion."
                 )
                 st.markdown("**Equivalent tendon-load assembly**")
                 st.dataframe(
@@ -8503,7 +8571,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                         "Geometry pair order": row.get("Sequence"),
                         "Symmetric tendons": row.get("Tendons"),
                         "Type": row.get("Type", ""),
-                        "Bond state": row.get("Bond state", ""),
+                        "Final bond system": row.get("Bond state", ""),
                         "Group Pj (kN)": round(_finite_float(row.get("Group Pj (kN)")), 2),
                         "Depth mismatch (mm)": round(_finite_float(row.get("Depth mismatch (mm)")), 3),
                         "Mirror-x mismatch (mm)": round(_finite_float(row.get("Mirror-x mismatch (mm)")), 3),
@@ -8523,7 +8591,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         with st.expander("Calculation trace / QA — formula, stage source, and overrides", expanded=False):
             st.markdown("##### Code / methodology basis")
             st.write(
-                f"Member design basis: **{member_design_code_label}**. Prestress-loss basis: **AASHTO LRFD 2020 §5.9.3**, with Elastic Shortening at **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the equal-group mapping only as a guarded reference/preview when every pair is geometrically valid, bond-state compatible, and group jacking forces are equivalent; the separate construction stressing-pair sequence is preserved for the future incremental contact/stage solver."
+                f"Member design basis: **{member_design_code_label}**. Prestress-loss basis: **AASHTO LRFD 2020 §5.9.3**, with Elastic Shortening at **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the equal-group mapping only as a guarded reference/preview when every pair is geometrically valid, final-bond-system compatible, and group jacking forces are equivalent; the separate construction stressing-pair sequence is preserved for the future incremental contact/stage solver."
             )
             st.latex(r"\Delta f_{pES,avg}=\left(\frac{G-1}{2G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
             st.latex(r"\Delta f_{pES,g}=\left(\frac{G-g}{G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")

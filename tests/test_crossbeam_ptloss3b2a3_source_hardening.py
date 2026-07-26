@@ -14,7 +14,7 @@ def test_ptloss3b2a3_resets_inactive_legacy_eci_override_to_stage_source():
 def test_ptloss3b2a3_exposes_active_model_symmetry_and_bond_state_guards():
     source = _source()
     assert '"title": "Active-model symmetry"' in source
-    assert '"title": "Tendon bond-state source"' in source
+    assert '"title": "Tendon final bond-system source"' in source
     assert "Internal/External identifies tendon location" in source
 
 

@@ -54,8 +54,8 @@ DEFAULT_TENDON_PROFILE_PRESET = TENDON_PROFILE_PRESET_OPTIONS[0]
 DEFAULT_TENDON_PROFILE_SPAN_MODE = TENDON_PROFILE_SPAN_MODE_OPTIONS[0]
 DEFAULT_STRAND_SYSTEM = "Seven-wire low-relaxation strand"
 TENDON_BOND_STATE_UNSPECIFIED = "Not specified"
-TENDON_BOND_STATE_BONDED = "Bonded / grouted"
-TENDON_BOND_STATE_UNBONDED = "Unbonded"
+TENDON_BOND_STATE_BONDED = "Bonded after grouting"
+TENDON_BOND_STATE_UNBONDED = "Permanently unbonded"
 TENDON_BOND_STATE_OPTIONS = (
     TENDON_BOND_STATE_UNSPECIFIED,
     TENDON_BOND_STATE_BONDED,
@@ -172,11 +172,13 @@ def _records(values: Any) -> list[dict[str, Any]]:
 
 
 def normalize_tendon_bond_state(value: Any) -> str:
-    """Return the canonical Crossbeam tendon bond-state label.
+    """Return the canonical final tendon bond-system label.
 
-    Tendon location (Internal/External) remains a separate source.  Missing or
+    Tendon location (Internal/External) remains a separate source. Missing or
     legacy values deliberately migrate to ``Not specified`` rather than being
-    inferred from location.
+    inferred from location. Legacy ``Bonded / grouted`` means the tendon is
+    intended to become bonded after post-stressing grout installation; it does
+    not imply grout is present during stressing.
     """
 
     text = str(value or "").strip().casefold()
@@ -189,13 +191,17 @@ def normalize_tendon_bond_state(value: Any) -> str:
         "grouted": TENDON_BOND_STATE_BONDED,
         "bonded / grouted": TENDON_BOND_STATE_BONDED,
         "bonded/grouted": TENDON_BOND_STATE_BONDED,
+        "bonded after grouting": TENDON_BOND_STATE_BONDED,
+        "internal bonded after grouting": TENDON_BOND_STATE_BONDED,
         "unbonded": TENDON_BOND_STATE_UNBONDED,
+        "permanently unbonded": TENDON_BOND_STATE_UNBONDED,
+        "external unbonded": TENDON_BOND_STATE_UNBONDED,
     }
     return aliases.get(text, str(value or DEFAULT_TENDON_BOND_STATE).strip())
 
 
 def tendon_bond_state_summary(values: Any) -> dict[str, Any]:
-    """Return a conservative active-tendon bond-state source summary."""
+    """Return a conservative active-tendon final bond-system summary."""
 
     rows = canonical_tendon_system_rows(values)
     active = [row for row in rows if bool(row.get("Active", True))]
@@ -222,11 +228,11 @@ def tendon_bond_state_summary(values: Any) -> dict[str, Any]:
         issues.append("No active Tendon System rows are available.")
     if unspecified:
         issues.append(
-            "Bond state is not specified for: " + ", ".join(unspecified) + "."
+            "Final bond system is not specified for: " + ", ".join(unspecified) + "."
         )
     if incompatible:
         issues.append(
-            "External tendons cannot use the Bonded / grouted section-strain route: "
+            "External tendons cannot use the Bonded after grouting section-strain route: "
             + ", ".join(incompatible)
             + "."
         )
@@ -315,7 +321,7 @@ def validate_tendon_system(
             errors.append(f"{tendon_id}: Type must be Internal or External.")
         if row["Bond state"] not in TENDON_BOND_STATE_OPTIONS:
             errors.append(
-                f"{tendon_id}: Bond state must be Not specified, Bonded / grouted, or Unbonded."
+                f"{tendon_id}: Final bond system must be Not specified, Bonded after grouting, or Permanently unbonded."
             )
         elif row["Bond state"] == TENDON_BOND_STATE_UNSPECIFIED:
             # The Tendon System remains a valid force/geometry source.  The
@@ -324,7 +330,7 @@ def validate_tendon_system(
             pass
         elif row["Type"] == "External" and row["Bond state"] == TENDON_BOND_STATE_BONDED:
             errors.append(
-                f"{tendon_id}: External tendon cannot use Bonded / grouted section-strain routing; select Unbonded or review tendon location."
+                f"{tendon_id}: External tendon cannot use Bonded after grouting section-strain routing; select Permanently unbonded or review tendon location."
             )
         if row["Jacking end"] not in JACKING_END_OPTIONS:
             errors.append(f"{tendon_id}: Jacking end must be Left, Right, or Both.")

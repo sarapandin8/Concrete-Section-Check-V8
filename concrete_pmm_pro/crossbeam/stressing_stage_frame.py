@@ -1441,7 +1441,7 @@ def run_crossbeam_linear_stage_response(
         "max_equilibrium_residual_ratio": max_residual,
         "issues": _dedupe(issues),
         "fcgp_status": "LOCKED — CONTACT + STAGE STRESS EXTRACTION NOT RELEASED",
-        "temporary_support_status": "EXCLUDED — PTLOSS3B2B CONTACT MILESTONE",
+        "temporary_support_status": "EXCLUDED — CONTACT-AWARE SOLVER NOT RELEASED",
         "solver_boundary": (
             "This is a fixed-base gross-section linear response QA. It does not represent the final stressing stage while continuous compression-only falsework contact is active and therefore cannot feed f_cgp or Elastic Shortening."
         ),

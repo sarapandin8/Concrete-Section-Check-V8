@@ -1,7 +1,7 @@
 """Project-JSON persistence for Crossbeam tendon input state.
 
 ``CROSSBEAM.PT1`` stores only engineer-entered tendon-system (including the
-explicit bond-state source) and top-referenced profile inputs.  The block is workflow-scoped and deliberately excludes loss,
+explicit final bond-system source) and top-referenced profile inputs.  The block is workflow-scoped and deliberately excludes loss,
 stress, strength, continuity, anchorage-zone, and analysis-result data.
 """
 
@@ -22,7 +22,7 @@ from concrete_pmm_pro.crossbeam.tendon import (
 
 
 CROSSBEAM_TENDON_METADATA_KEY = "crossbeam_tendon_input_model"
-CROSSBEAM_TENDON_SCHEMA_VERSION = 2
+CROSSBEAM_TENDON_SCHEMA_VERSION = 3
 
 CB_TENDON_COUNT_KEY = "crossbeam_ui1_tendon_count"
 CB_TENDON_SYSTEM_ROWS_KEY = "crossbeam_ui1_tendon_system_rows"
