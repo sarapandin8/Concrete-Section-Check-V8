@@ -95,5 +95,5 @@ def test_ptloss3b2a4a_response_event_audit_is_split_for_print_readability() -> N
     )[0]
     assert "**A. Station and source map**" in elastic_ui
     assert "**B. Local-moment and reference-axis audit**" in elastic_ui
-    assert "**C. Equivalent tendon nodal actions**" in elastic_ui
+    assert "C. Equivalent tendon nodal actions" in elastic_ui
     assert 'event_rows = list(linear_stage_result.get("response_event_rows", []))' in elastic_ui

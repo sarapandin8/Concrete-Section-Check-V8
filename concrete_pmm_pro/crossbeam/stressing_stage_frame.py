@@ -245,6 +245,7 @@ def solve_linear_frame(
     nodal_loads: Mapping[int, tuple[float, float, float]] | None = None,
     uniform_local_y_by_element: Mapping[str, float] | None = None,
     fixed_node_ids: list[int] | tuple[int, ...] | None = None,
+    restrained_dofs: list[int] | tuple[int, ...] | None = None,
 ) -> dict[str, Any]:
     """Solve a small linear 2D frame and return auditable reactions/actions.
 
@@ -334,7 +335,18 @@ def solve_linear_frame(
     restrained: list[int] = []
     for node_id in fixed_node_ids or []:
         restrained.extend([3 * int(node_id), 3 * int(node_id) + 1, 3 * int(node_id) + 2])
+    restrained.extend(int(value) for value in (restrained_dofs or []))
     restrained = sorted(set(restrained))
+    invalid_restrained = [value for value in restrained if value < 0 or value >= dof_count]
+    if invalid_restrained:
+        return {
+            "status": "SOURCE BLOCKED",
+            "issues": [
+                "Restrained DOF index is outside the assembled frame range: "
+                + ", ".join(str(value) for value in invalid_restrained)
+                + "."
+            ],
+        }
     free = [index for index in range(dof_count) if index not in restrained]
     displacement = np.zeros(dof_count, dtype=float)
 
@@ -373,9 +385,13 @@ def solve_linear_frame(
 
     node_rows: list[dict[str, Any]] = []
     fixed_set = set(fixed_node_ids or [])
+    restrained_set = set(restrained)
     for node in nodes:
         node_id = int(node["id"])
         base = 3 * node_id
+        restrained_u = base in restrained_set
+        restrained_v = base + 1 in restrained_set
+        restrained_theta = base + 2 in restrained_set
         node_rows.append(
             {
                 **node,
@@ -385,9 +401,12 @@ def solve_linear_frame(
                 "applied_fx_N": load[base],
                 "applied_fy_N": load[base + 1],
                 "applied_moment_Nmm": load[base + 2],
-                "reaction_fx_N": reaction[base] if node_id in fixed_set else 0.0,
-                "reaction_fy_N": reaction[base + 1] if node_id in fixed_set else 0.0,
-                "reaction_moment_Nmm": reaction[base + 2] if node_id in fixed_set else 0.0,
+                "reaction_fx_N": reaction[base] if restrained_u else 0.0,
+                "reaction_fy_N": reaction[base + 1] if restrained_v else 0.0,
+                "reaction_moment_Nmm": reaction[base + 2] if restrained_theta else 0.0,
+                "restrained_u": restrained_u,
+                "restrained_v": restrained_v,
+                "restrained_theta": restrained_theta,
                 "fixed": node_id in fixed_set,
             }
         )
