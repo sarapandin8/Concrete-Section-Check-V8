@@ -6013,6 +6013,66 @@ def _render_ptloss3b2a_print_figure(
     st.caption(caption)
 
 
+
+def _render_ptloss4a_static_table(
+    rows: Iterable[Mapping[str, Any]] | pd.DataFrame,
+    *,
+    columns: list[tuple[str, str]],
+    formats: Mapping[str, Any] | None = None,
+    widths: list[float] | None = None,
+) -> None:
+    """Render a compact, print-safe PTLOSS4A audit table.
+
+    Streamlit dataframes use a scrollable grid whose right-side cells may sit
+    outside the browser-print viewport.  PTLOSS4A audit tables are intentionally
+    small, so a static HTML table is the safer evidence format: every selected
+    column is present in the DOM, headings can wrap, and the whole table can be
+    kept together during PDF printing.
+    """
+
+    frame = rows.copy() if isinstance(rows, pd.DataFrame) else pd.DataFrame(list(rows))
+    selected = pd.DataFrame(index=frame.index)
+    format_map = dict(formats or {})
+
+    def _format_cell(value: Any, formatter: Any) -> str:
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return "—"
+        if callable(formatter):
+            return str(formatter(value))
+        if isinstance(formatter, str):
+            try:
+                return formatter.format(value)
+            except (TypeError, ValueError):
+                return str(value)
+        return str(value)
+
+    for source_name, display_name in columns:
+        if source_name in frame.columns:
+            formatter = format_map.get(source_name)
+            selected[display_name] = [
+                _format_cell(value, formatter) for value in frame[source_name].tolist()
+            ]
+        else:
+            selected[display_name] = ["—"] * len(frame.index)
+
+    html = selected.to_html(
+        index=False,
+        escape=True,
+        border=0,
+        classes=["ptloss4a-audit-table"],
+        justify="left",
+    )
+    if widths and len(widths) == len(columns):
+        colgroup = "<colgroup>" + "".join(
+            f'<col style="width:{float(width):.3f}%">' for width in widths
+        ) + "</colgroup>"
+        html = html.replace(">", ">" + colgroup, 1)
+    st.markdown(
+        f'<div class="ptloss4a-audit-table-shell">{html}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def _ptloss3b2a_force_figure(
     response_rows: list[dict[str, Any]],
     *,
@@ -8965,6 +9025,51 @@ def render_crossbeam_prestress_loss_page() -> None:
         st.markdown(
             """
             <style>
+            .ptloss4a-audit-table-shell {
+              width: 100%;
+              margin: 0.20rem 0 0.70rem 0;
+              overflow: visible;
+              border: 1px solid #d8e2ec;
+              border-radius: 8px;
+              background: #ffffff;
+            }
+
+            .ptloss4a-audit-table {
+              width: 100%;
+              border-collapse: collapse;
+              table-layout: fixed;
+            }
+
+            .ptloss4a-audit-table thead th {
+              background: #f4f7fb;
+              color: #40566f;
+              font-size: 0.70rem;
+              font-weight: 800;
+              line-height: 1.25;
+              padding: 0.42rem 0.44rem;
+              text-align: left;
+              vertical-align: bottom;
+              border-bottom: 1px solid #d8e2ec;
+              white-space: normal;
+              overflow-wrap: anywhere;
+            }
+
+            .ptloss4a-audit-table tbody td {
+              color: #172b3f;
+              font-size: 0.72rem;
+              line-height: 1.25;
+              padding: 0.36rem 0.44rem;
+              text-align: left;
+              vertical-align: top;
+              border-bottom: 1px solid #e8eef4;
+              white-space: normal;
+              overflow-wrap: anywhere;
+            }
+
+            .ptloss4a-audit-table tbody tr:last-child td {
+              border-bottom: 0;
+            }
+
             @media print {
               .ptloss4a-print-table-heading {
                 display: block !important;
@@ -8979,9 +9084,23 @@ def render_crossbeam_prestress_loss_page() -> None:
                 page-break-after: avoid !important;
               }
 
-              div[data-testid="stDataFrame"] {
+              .ptloss4a-audit-table-shell,
+              div[data-testid="stDataFrame"],
+              div[data-testid="stLatex"] {
                 break-inside: avoid-page !important;
                 page-break-inside: avoid !important;
+              }
+
+              .ptloss4a-audit-table-shell {
+                border-radius: 0 !important;
+                margin: 0.10rem 0 0.42rem 0 !important;
+              }
+
+              .ptloss4a-audit-table thead th,
+              .ptloss4a-audit-table tbody td {
+                font-size: 7.8pt !important;
+                line-height: 1.18 !important;
+                padding: 2.6px 3.2px !important;
               }
             }
             </style>
@@ -9349,53 +9468,68 @@ def render_crossbeam_prestress_loss_page() -> None:
                 drying_source = dict(current_td.get("drying_geometry") or {})
                 local_summary = pd.DataFrame(drying_source.get("section_summary_rows") or [])
                 if not local_summary.empty:
-                    geometry_columns = [
-                        "Section ID",
-                        "Section role",
-                        "Area (m²)",
-                        "Outer perimeter (m)",
-                        "Inner perimeter (m)",
-                        "Interior exposure factor",
-                        "Adopted exposed perimeter (m)",
-                    ]
-                    st.dataframe(
-                        local_summary[
-                            [column for column in geometry_columns if column in local_summary.columns]
+                    st.markdown("###### Section geometry")
+                    _render_ptloss4a_static_table(
+                        local_summary,
+                        columns=[
+                            ("Section ID", "Section"),
+                            ("Section role", "Role"),
+                            ("Area (m²)", "Ac (m²)"),
+                            ("Outer perimeter (m)", "u outer (m)"),
+                            ("Inner perimeter (m)", "u inner (m)"),
                         ],
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "Area (m²)": st.column_config.NumberColumn(format="%.4f"),
-                            "Outer perimeter (m)": st.column_config.NumberColumn(format="%.4f"),
-                            "Inner perimeter (m)": st.column_config.NumberColumn(format="%.4f"),
-                            "Interior exposure factor": st.column_config.NumberColumn(format="%.2f"),
-                            "Adopted exposed perimeter (m)": st.column_config.NumberColumn(format="%.4f"),
+                        formats={
+                            "Area (m²)": "{:.4f}",
+                            "Outer perimeter (m)": "{:.4f}",
+                            "Inner perimeter (m)": "{:.4f}",
                         },
+                        widths=[17, 15, 20, 24, 24],
                     )
-                    local_ratio_columns = [
-                        "Section ID",
-                        "Section role",
-                        "Total length (m)",
-                        "Local V/S (mm)",
-                        "Local V/S (in.)",
-                        "Local ks",
-                        "Volume share (%)",
-                        "Drying-surface share (%)",
-                    ]
-                    st.dataframe(
-                        local_summary[
-                            [column for column in local_ratio_columns if column in local_summary.columns]
+                    st.markdown("###### Drying exposure and adopted perimeter")
+                    _render_ptloss4a_static_table(
+                        local_summary,
+                        columns=[
+                            ("Section ID", "Section"),
+                            ("Interior exposure factor", "Inner exposure"),
+                            ("Adopted exposed perimeter (m)", "u dry (m)"),
                         ],
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "Total length (m)": st.column_config.NumberColumn(format="%.3f"),
-                            "Local V/S (mm)": st.column_config.NumberColumn(format="%.2f"),
-                            "Local V/S (in.)": st.column_config.NumberColumn(format="%.3f"),
-                            "Local ks": st.column_config.NumberColumn(format="%.4f"),
-                            "Volume share (%)": st.column_config.NumberColumn(format="%.2f"),
-                            "Drying-surface share (%)": st.column_config.NumberColumn(format="%.2f"),
+                        formats={
+                            "Interior exposure factor": "{:.2f}",
+                            "Adopted exposed perimeter (m)": "{:.4f}",
                         },
+                        widths=[28, 34, 38],
+                    )
+                    st.markdown("###### Local Section-type V/S")
+                    _render_ptloss4a_static_table(
+                        local_summary,
+                        columns=[
+                            ("Section ID", "Section"),
+                            ("Total length (m)", "ΣL (m)"),
+                            ("Local V/S (mm)", "V/S (mm)"),
+                            ("Local V/S (in.)", "V/S (in.)"),
+                            ("Local ks", "ks"),
+                        ],
+                        formats={
+                            "Total length (m)": "{:.3f}",
+                            "Local V/S (mm)": "{:.2f}",
+                            "Local V/S (in.)": "{:.3f}",
+                            "Local ks": "{:.4f}",
+                        },
+                        widths=[22, 18, 22, 22, 16],
+                    )
+                    st.markdown("###### Section-type contribution shares")
+                    _render_ptloss4a_static_table(
+                        local_summary,
+                        columns=[
+                            ("Section ID", "Section"),
+                            ("Volume share (%)", "Volume share (%)"),
+                            ("Drying-surface share (%)", "S dry share (%)"),
+                        ],
+                        formats={
+                            "Volume share (%)": "{:.2f}",
+                            "Drying-surface share (%)": "{:.2f}",
+                        },
+                        widths=[28, 36, 36],
                     )
                 st.caption(
                     "Local V/S = Ac/u_dry for each Section type. The AASHTO preview uses the member-equivalent "
@@ -9408,25 +9542,22 @@ def render_crossbeam_prestress_loss_page() -> None:
                         unsafe_allow_html=True,
                     )
                     st.markdown("##### Drying geometry — station and section source")
-                    source_columns = [
-                        "Segment",
-                        "s start (m)",
-                        "s end (m)",
-                        "Length (m)",
-                        "Section ID",
-                        "Section role",
-                    ]
-                    st.dataframe(
-                        contribution_rows[
-                            [column for column in source_columns if column in contribution_rows.columns]
+                    _render_ptloss4a_static_table(
+                        contribution_rows,
+                        columns=[
+                            ("Segment", "Seg."),
+                            ("s start (m)", "s0 (m)"),
+                            ("s end (m)", "s1 (m)"),
+                            ("Length (m)", "L (m)"),
+                            ("Section ID", "Section"),
+                            ("Section role", "Role"),
                         ],
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "s start (m)": st.column_config.NumberColumn(format="%.3f"),
-                            "s end (m)": st.column_config.NumberColumn(format="%.3f"),
-                            "Length (m)": st.column_config.NumberColumn(format="%.3f"),
+                        formats={
+                            "s start (m)": "{:.3f}",
+                            "s end (m)": "{:.3f}",
+                            "Length (m)": "{:.3f}",
                         },
+                        widths=[12, 16, 16, 14, 21, 21],
                     )
 
                     contribution_audit = contribution_rows.copy()
@@ -9447,25 +9578,22 @@ def render_crossbeam_prestress_loss_page() -> None:
                         unsafe_allow_html=True,
                     )
                     st.markdown("##### Drying geometry — volume and drying-surface contributions")
-                    contribution_columns = [
-                        "Segment",
-                        "Concrete volume (m³)",
-                        "Drying surface (m²)",
-                        "Volume share (%)",
-                        "Drying-surface share (%)",
-                    ]
-                    st.dataframe(
-                        contribution_audit[
-                            [column for column in contribution_columns if column in contribution_audit.columns]
+                    _render_ptloss4a_static_table(
+                        contribution_audit,
+                        columns=[
+                            ("Segment", "Seg."),
+                            ("Concrete volume (m³)", "V (m³)"),
+                            ("Drying surface (m²)", "S dry (m²)"),
+                            ("Volume share (%)", "V share (%)"),
+                            ("Drying-surface share (%)", "S share (%)"),
                         ],
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "Concrete volume (m³)": st.column_config.NumberColumn(format="%.4f"),
-                            "Drying surface (m²)": st.column_config.NumberColumn(format="%.4f"),
-                            "Volume share (%)": st.column_config.NumberColumn(format="%.2f"),
-                            "Drying-surface share (%)": st.column_config.NumberColumn(format="%.2f"),
+                        formats={
+                            "Concrete volume (m³)": "{:.4f}",
+                            "Drying surface (m²)": "{:.4f}",
+                            "Volume share (%)": "{:.2f}",
+                            "Drying-surface share (%)": "{:.2f}",
                         },
+                        widths=[14, 22, 22, 21, 21],
                     )
                 creep_source = dict(current_td.get("creep_source") or {})
                 shrinkage_source = dict(current_td.get("shrinkage_source") or {})
@@ -9477,22 +9605,27 @@ def render_crossbeam_prestress_loss_page() -> None:
                 )
                 st.markdown("##### AASHTO material and time factors")
                 shrinkage_strain = float(shrinkage_source.get("shrinkage_strain") or 0.0)
-                st.dataframe(
-                    pd.DataFrame(
-                        [
-                            {"Quantity": "ks", "Value": f"{float(creep_source.get('ks') or 0.0):.6f}", "Basis": "1.45 − 0.13(V/S in) ≥ 1.0"},
-                            {"Quantity": "khc", "Value": f"{float(creep_source.get('khc') or 0.0):.6f}", "Basis": "1.56 − 0.008RH"},
-                            {"Quantity": "khs", "Value": f"{float(shrinkage_source.get('khs') or 0.0):.6f}", "Basis": "2.00 − 0.014RH"},
-                            {"Quantity": "kf", "Value": f"{float(creep_source.get('kf') or 0.0):.6f}", "Basis": "5/(1 + f'ci ksi)"},
-                            {"Quantity": "ktd creep", "Value": f"{float(creep_source.get('ktd_creep') or 0.0):.6f}", "Basis": "elapsed tf − ti"},
-                            {"Quantity": "Δktd shrinkage", "Value": f"{float(shrinkage_source.get('delta_ktd_shrinkage') or 0.0):.6f}", "Basis": "maturity after end of curing"},
-                            {"Quantity": "ψ(tf,ti)", "Value": f"{float(creep_source.get('psi') or 0.0):.6f}", "Basis": "AASHTO 5.4.2.3.2-1"},
-                            {"Quantity": "εsh increment", "Value": f"{shrinkage_strain:.6e} ({shrinkage_strain * 1.0e6:.1f} με)", "Basis": "AASHTO 5.4.2.3.3-1"},
-                            {"Quantity": "Kdf", "Value": f"{float(interaction.get('Kdf') or 0.0):.6f}", "Basis": "AASHTO 5.9.3.4.3a-2"},
-                        ]
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
+                factor_rows = pd.DataFrame(
+                    [
+                        {"Quantity": "ks", "Value": f"{float(creep_source.get('ks') or 0.0):.6f}", "Basis": "1.45 − 0.13(V/S in) ≥ 1.0"},
+                        {"Quantity": "khc", "Value": f"{float(creep_source.get('khc') or 0.0):.6f}", "Basis": "1.56 − 0.008RH"},
+                        {"Quantity": "khs", "Value": f"{float(shrinkage_source.get('khs') or 0.0):.6f}", "Basis": "2.00 − 0.014RH"},
+                        {"Quantity": "kf", "Value": f"{float(creep_source.get('kf') or 0.0):.6f}", "Basis": "5/(1 + f'ci ksi)"},
+                        {"Quantity": "ktd creep", "Value": f"{float(creep_source.get('ktd_creep') or 0.0):.6f}", "Basis": "elapsed tf − ti"},
+                        {"Quantity": "Δktd shrinkage", "Value": f"{float(shrinkage_source.get('delta_ktd_shrinkage') or 0.0):.6f}", "Basis": "maturity after end of curing"},
+                        {"Quantity": "ψ(tf,ti)", "Value": f"{float(creep_source.get('psi') or 0.0):.6f}", "Basis": "AASHTO 5.4.2.3.2-1"},
+                        {"Quantity": "εsh increment", "Value": f"{shrinkage_strain:.6e} ({shrinkage_strain * 1.0e6:.1f} με)", "Basis": "AASHTO 5.4.2.3.3-1"},
+                        {"Quantity": "Kdf", "Value": f"{float(interaction.get('Kdf') or 0.0):.6f}", "Basis": "AASHTO 5.9.3.4.3a-2"},
+                    ]
+                )
+                _render_ptloss4a_static_table(
+                    factor_rows,
+                    columns=[
+                        ("Quantity", "Quantity"),
+                        ("Value", "Value"),
+                        ("Basis", "Basis"),
+                    ],
+                    widths=[24, 26, 50],
                 )
                 st.markdown(
                     '<div class="ptloss4a-print-table-heading" aria-hidden="true"></div>',
@@ -9511,10 +9644,14 @@ def render_crossbeam_prestress_loss_page() -> None:
                     {"Quantity": "1 + Ac·epc²/Ic", "Value": f"{float(interaction.get('section_term') or 0.0):.6f}", "Basis": "bonded-steel interaction term"},
                     {"Quantity": "Kdf", "Value": f"{float(interaction.get('Kdf') or 0.0):.6f}", "Basis": "AASHTO 5.9.3.4.3a-2"},
                 ]
-                st.dataframe(
-                    pd.DataFrame(representative_rows),
-                    use_container_width=True,
-                    hide_index=True,
+                _render_ptloss4a_static_table(
+                    representative_rows,
+                    columns=[
+                        ("Quantity", "Quantity"),
+                        ("Value", "Value"),
+                        ("Basis", "Basis"),
+                    ],
+                    widths=[24, 31, 45],
                 )
                 st.markdown(
                     '<div class="ptloss4a-print-table-heading" aria-hidden="true"></div>',
@@ -9523,54 +9660,54 @@ def render_crossbeam_prestress_loss_page() -> None:
                 st.markdown("##### Post-ES tendon stress and relaxation source")
                 steel_rows = pd.DataFrame((current_td.get("steel_source") or {}).get("rows") or [])
                 if not steel_rows.empty:
-                    stress_columns = [
-                        "Tendon",
-                        "Aps (mm²)",
-                        "Length-average stress after ES (MPa)",
-                        "Stations",
-                    ]
-                    st.dataframe(
-                        steel_rows[
-                            [column for column in stress_columns if column in steel_rows.columns]
+                    _render_ptloss4a_static_table(
+                        steel_rows,
+                        columns=[
+                            ("Tendon", "Tendon"),
+                            ("Aps (mm²)", "Aps (mm²)"),
+                            ("Length-average stress after ES (MPa)", "Avg stress after ES (MPa)"),
+                            ("Stations", "Stations"),
                         ],
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "Aps (mm²)": st.column_config.NumberColumn(format="%.1f"),
-                            "Length-average stress after ES (MPa)": st.column_config.NumberColumn(format="%.4f"),
-                            "Stations": st.column_config.NumberColumn(format="%d"),
+                        formats={
+                            "Aps (mm²)": "{:.1f}",
+                            "Length-average stress after ES (MPa)": "{:.4f}",
+                            "Stations": "{:.0f}",
                         },
+                        widths=[18, 22, 42, 18],
                     )
                     st.markdown(
                         '<div class="ptloss4a-print-table-heading" aria-hidden="true"></div>',
                         unsafe_allow_html=True,
                     )
                     st.markdown("##### Prestressing-steel properties by Tendon")
-                    steel_property_columns = [
-                        "Tendon",
-                        "fpu (MPa)",
-                        "fpy adopted = 0.90 fpu (MPa)",
-                    ]
-                    st.dataframe(
-                        steel_rows[
-                            [column for column in steel_property_columns if column in steel_rows.columns]
+                    _render_ptloss4a_static_table(
+                        steel_rows,
+                        columns=[
+                            ("Tendon", "Tendon"),
+                            ("fpu (MPa)", "fpu (MPa)"),
+                            ("fpy adopted = 0.90 fpu (MPa)", "fpy = 0.90fpu (MPa)"),
                         ],
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "fpu (MPa)": st.column_config.NumberColumn(format="%.1f"),
-                            "fpy adopted = 0.90 fpu (MPa)": st.column_config.NumberColumn(format="%.1f"),
+                        formats={
+                            "fpu (MPa)": "{:.1f}",
+                            "fpy adopted = 0.90 fpu (MPa)": "{:.1f}",
                         },
+                        widths=[24, 32, 44],
                     )
                 st.write(
                     f"Relaxation: **KL = {float(relaxation.get('KL') or 0.0):g}**, "
                     f"fpt = **{float(relaxation.get('fpt_mpa') or 0.0):.3f} MPa**, "
                     f"fpy = **{float(relaxation.get('fpy_mpa') or 0.0):.3f} MPa**."
                 )
-                st.latex(r"K_{df}=\frac{1}{1+\frac{E_pA_{ps}}{E_{ci}A_c}\left(1+\frac{A_ce_{pc}^{2}}{I_c}\right)\left[1+0.7\psi_b(t_f,t_i)\right]}")
-                st.latex(r"\Delta f_{pCD}=\frac{E_p}{E_{ci}}f_{cgp}\psi_b(t_f,t_i)K_{df}")
-                st.latex(r"\Delta f_{pSD}=\varepsilon_{sh}E_pK_{df}")
-                st.latex(r"\Delta f_{pR2}=\Delta f_{pR1}=\frac{f_{pt}}{K_L}\left(\frac{f_{pt}}{f_{py}}-0.55\right)")
+                st.latex(
+                    r"""
+                    \begin{aligned}
+                    K_{df}&=\frac{1}{1+\frac{E_pA_{ps}}{E_{ci}A_c}\left(1+\frac{A_ce_{pc}^{2}}{I_c}\right)\left[1+0.7\psi_b(t_f,t_i)\right]} \\[2pt]
+                    \Delta f_{pCD}&=\frac{E_p}{E_{ci}}f_{cgp}\psi_b(t_f,t_i)K_{df} \\[2pt]
+                    \Delta f_{pSD}&=\varepsilon_{sh}E_pK_{df} \\[2pt]
+                    \Delta f_{pR2}&=\Delta f_{pR1}=\frac{f_{pt}}{K_L}\left(\frac{f_{pt}}{f_{py}}-0.55\right)
+                    \end{aligned}
+                    """
+                )
                 st.caption(
                     "PTLOSS4A does not add component percentages and does not assemble Pe/Pe_eff. The downstream Effective Prestress milestone must combine station-dependent instantaneous losses, sequence-dependent ES, and the reviewed TD component in one force/stress chain."
                 )

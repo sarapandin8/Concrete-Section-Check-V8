@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from concrete_pmm_pro.crossbeam.anchorage_set import (
@@ -53,6 +54,7 @@ from concrete_pmm_pro.crossbeam.time_dependent_loss import (
 )
 from concrete_pmm_pro.crossbeam.workflow import default_crossbeam_segment_rows
 from concrete_pmm_pro.core.concrete_materials import default_concrete_materials
+from concrete_pmm_pro.ui import crossbeam_pages
 
 
 def _sources(bond_state: str = TENDON_BOND_STATE_BONDED):
@@ -326,3 +328,58 @@ def test_time_dependent_ui_is_on_demand_and_contains_no_structural_solver_call()
     assert "run_crossbeam_incremental_contact_qa" not in block
     assert "run_crossbeam_incremental_contact_mesh_sensitivity" not in block
     assert "Effective Prestress assembly remains locked" in block
+
+
+def test_ptloss4a1a1_print_audit_uses_static_compact_tables_and_one_equation_block() -> None:
+    source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
+    block = source.split("with time_dependent_tab:", 1)[1].split("with audit_tab:", 1)[0]
+    assert "ptloss4a-audit-table-shell" in block
+    assert "ptloss4a-audit-table" in block
+    assert block.count("_render_ptloss4a_static_table(") >= 10
+    assert "Avg stress after ES (MPa)" in block
+    assert "fpy = 0.90fpu (MPa)" in block
+    assert "S share (%)" in block
+    assert "Section-type contribution shares" in block
+    assert "st.dataframe(" not in block
+    assert r"\begin{aligned}" in block
+    assert block.count("st.latex(") == 1
+
+
+def test_ptloss4a_static_table_keeps_right_side_audit_values_in_print_dom(monkeypatch) -> None:
+    rendered: list[str] = []
+
+    def _capture(body: str, **_kwargs) -> None:
+        rendered.append(body)
+
+    monkeypatch.setattr(crossbeam_pages.st, "markdown", _capture)
+    crossbeam_pages._render_ptloss4a_static_table(
+        pd.DataFrame(
+            [
+                {
+                    "Tendon": "T1",
+                    "Aps (mm²)": 2660.0,
+                    "Length-average stress after ES (MPa)": 1206.8655,
+                    "Stations": 41,
+                }
+            ]
+        ),
+        columns=[
+            ("Tendon", "Tendon"),
+            ("Aps (mm²)", "Aps (mm²)"),
+            ("Length-average stress after ES (MPa)", "Avg stress after ES (MPa)"),
+            ("Stations", "Stations"),
+        ],
+        formats={
+            "Aps (mm²)": "{:.1f}",
+            "Length-average stress after ES (MPa)": "{:.4f}",
+            "Stations": "{:.0f}",
+        },
+        widths=[18, 22, 42, 18],
+    )
+    html = "".join(rendered)
+    assert "Avg stress after ES (MPa)" in html
+    assert "1206.8655" in html
+    assert "2660.0" in html
+    assert "41" in html
+    assert "<colgroup>" in html
+    assert "ptloss4a-audit-table-shell" in html
