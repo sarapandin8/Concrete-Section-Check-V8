@@ -254,8 +254,11 @@ def test_ptloss3b2a1_ui_retains_print_guard_and_display_only_response_audit() ->
     )[0]
     assert "Cumulative structural-response audit — display only" in elastic
     assert "Opening this expander does not rerun the solver" in elastic
-    assert 'response="M"' in elastic
-    assert 'response="N"' in elastic
+    assert 'field="M sagging-positive (kN-m)"' in elastic
+    assert 'field="N compression-positive (kN)"' in elastic
+    assert "case_label=" not in elastic.split(
+        '"Cumulative structural-response audit — display only", expanded=False', 1
+    )[1].split("advanced_fingerprint =", 1)[0]
     assert "LIGHTWEIGHT CUMULATIVE ES STAGE" in elastic
     assert "@media print" in elastic and "break-inside: avoid" in elastic
 

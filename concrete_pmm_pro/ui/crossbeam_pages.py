@@ -8568,18 +8568,22 @@ def render_crossbeam_prestress_loss_page() -> None:
                     _render_ptloss3b2a_print_figure(
                         _ptloss3b2a_response_figure(
                             response_rows,
-                            case_label="LIGHTWEIGHT CUMULATIVE ES STAGE",
-                            response="M",
+                            title="Crossbeam Moment — LIGHTWEIGHT CUMULATIVE ES STAGE",
+                            field="M sagging-positive (kN-m)",
+                            y_title="Moment M (kN-m; sagging +)",
+                            trace_name="Moment M",
                         ),
-                        "One cumulative contact-aware moment trace used only to derive the representative AASHTO stage stress.",
+                        caption="One cumulative contact-aware moment trace used only to derive the representative AASHTO stage stress.",
                     )
                     _render_ptloss3b2a_print_figure(
                         _ptloss3b2a_response_figure(
                             response_rows,
-                            case_label="LIGHTWEIGHT CUMULATIVE ES STAGE",
-                            response="N",
+                            title="Crossbeam Axial Force — LIGHTWEIGHT CUMULATIVE ES STAGE",
+                            field="N compression-positive (kN)",
+                            y_title="Axial force N (kN; compression +)",
+                            trace_name="Axial force N",
                         ),
-                        "Compression-positive axial response from the same stored cumulative solution.",
+                        caption="Compression-positive axial response from the same stored cumulative solution.",
                     )
 
         advanced_fingerprint = hashlib.sha256(
