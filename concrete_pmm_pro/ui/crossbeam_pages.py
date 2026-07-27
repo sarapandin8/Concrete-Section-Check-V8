@@ -8962,6 +8962,32 @@ def render_crossbeam_prestress_loss_page() -> None:
             )
 
     with time_dependent_tab:
+        st.markdown(
+            """
+            <style>
+            @media print {
+              .ptloss4a-print-table-heading {
+                display: block !important;
+                height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+              }
+
+              div[data-testid="stElementContainer"]:has(.ptloss4a-print-table-heading)
+                + div[data-testid="stElementContainer"] {
+                break-after: avoid-page !important;
+                page-break-after: avoid !important;
+              }
+
+              div[data-testid="stDataFrame"] {
+                break-inside: avoid-page !important;
+                page-break-inside: avoid !important;
+              }
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
         st.markdown("#### Lightweight Time-Dependent Losses — on-demand source preview")
         st.caption(
             "PTLOSS4A calculates creep, shrinkage, and relaxation only after a CURRENT source-derived Elastic Shortening result exists. Opening this tab, editing inputs, or opening an expander performs 0 structural solves."
@@ -9066,12 +9092,42 @@ def render_crossbeam_prestress_loss_page() -> None:
             section_definitions=current_section_definitions,
             inner_perimeter_factor=float(td_settings["td_inner_perimeter_factor"]),
         )
+        drying_section_rows = list(drying_preview.get("section_summary_rows") or [])
+        drying_zone_rows = list(drying_preview.get("rows") or [])
+        drying_section_ids = sorted(
+            {
+                str(row.get("Section ID") or "").strip()
+                for row in drying_section_rows
+                if str(row.get("Section ID") or "").strip()
+            }
+        )
+        drying_roles = sorted(
+            {
+                str(row.get("Section role") or "").strip()
+                for row in drying_section_rows
+                if str(row.get("Section role") or "").strip()
+            }
+        )
+        if {role.lower() for role in drying_roles} == {"solid", "hollow"}:
+            loss_geometry_value = "MIXED SOLID + HOLLOW"
+        elif len(drying_roles) == 1:
+            loss_geometry_value = drying_roles[0].upper()
+        elif drying_roles:
+            loss_geometry_value = "VARIABLE SECTIONS"
+        else:
+            loss_geometry_value = "SOURCE BLOCKED"
+        loss_geometry_detail = (
+            f"Segment Layout · {len(drying_section_ids)} Section ID"
+            f"{'s' if len(drying_section_ids) != 1 else ''} across {len(drying_zone_rows)} zones"
+            if drying_preview.get("ready")
+            else "complete Segment Layout and Section Library sources"
+        )
         render_metric_cards(
             [
                 {
-                    "title": "Drying geometry",
-                    "value": "READY" if drying_preview.get("ready") else "SOURCE BLOCKED",
-                    "detail": "length-weighted variable-section source",
+                    "title": "Loss geometry source",
+                    "value": loss_geometry_value,
+                    "detail": loss_geometry_detail,
                     "status": "ready" if drying_preview.get("ready") else "warning",
                 },
                 {
@@ -9345,22 +9401,24 @@ def render_crossbeam_prestress_loss_page() -> None:
                     "Local V/S = Ac/u_dry for each Section type. The AASHTO preview uses the member-equivalent "
                     "V/S = Σ(AᵢLᵢ)/Σ(u_dry,ᵢLᵢ), not an arithmetic average."
                 )
-                st.markdown("##### Drying geometry — volume and surface contributions")
                 contribution_rows = pd.DataFrame(drying_source.get("rows") or [])
                 if not contribution_rows.empty:
-                    contribution_columns = [
+                    st.markdown(
+                        '<div class="ptloss4a-print-table-heading" aria-hidden="true"></div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown("##### Drying geometry — station and section source")
+                    source_columns = [
                         "Segment",
                         "s start (m)",
                         "s end (m)",
                         "Length (m)",
                         "Section ID",
                         "Section role",
-                        "Concrete volume (m³)",
-                        "Drying surface (m²)",
                     ]
                     st.dataframe(
                         contribution_rows[
-                            [column for column in contribution_columns if column in contribution_rows.columns]
+                            [column for column in source_columns if column in contribution_rows.columns]
                         ],
                         use_container_width=True,
                         hide_index=True,
@@ -9368,14 +9426,55 @@ def render_crossbeam_prestress_loss_page() -> None:
                             "s start (m)": st.column_config.NumberColumn(format="%.3f"),
                             "s end (m)": st.column_config.NumberColumn(format="%.3f"),
                             "Length (m)": st.column_config.NumberColumn(format="%.3f"),
+                        },
+                    )
+
+                    contribution_audit = contribution_rows.copy()
+                    total_volume = float(drying_source.get("total_volume_m3") or 0.0)
+                    total_surface = float(drying_source.get("total_drying_surface_m2") or 0.0)
+                    contribution_audit["Volume share (%)"] = (
+                        100.0 * contribution_audit["Concrete volume (m³)"] / total_volume
+                        if total_volume > 0.0 and "Concrete volume (m³)" in contribution_audit.columns
+                        else 0.0
+                    )
+                    contribution_audit["Drying-surface share (%)"] = (
+                        100.0 * contribution_audit["Drying surface (m²)"] / total_surface
+                        if total_surface > 0.0 and "Drying surface (m²)" in contribution_audit.columns
+                        else 0.0
+                    )
+                    st.markdown(
+                        '<div class="ptloss4a-print-table-heading" aria-hidden="true"></div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown("##### Drying geometry — volume and drying-surface contributions")
+                    contribution_columns = [
+                        "Segment",
+                        "Concrete volume (m³)",
+                        "Drying surface (m²)",
+                        "Volume share (%)",
+                        "Drying-surface share (%)",
+                    ]
+                    st.dataframe(
+                        contribution_audit[
+                            [column for column in contribution_columns if column in contribution_audit.columns]
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
                             "Concrete volume (m³)": st.column_config.NumberColumn(format="%.4f"),
                             "Drying surface (m²)": st.column_config.NumberColumn(format="%.4f"),
+                            "Volume share (%)": st.column_config.NumberColumn(format="%.2f"),
+                            "Drying-surface share (%)": st.column_config.NumberColumn(format="%.2f"),
                         },
                     )
                 creep_source = dict(current_td.get("creep_source") or {})
                 shrinkage_source = dict(current_td.get("shrinkage_source") or {})
                 interaction = dict(current_td.get("interaction") or {})
                 relaxation = dict(current_td.get("relaxation_source") or {})
+                st.markdown(
+                    '<div class="ptloss4a-print-table-heading" aria-hidden="true"></div>',
+                    unsafe_allow_html=True,
+                )
                 st.markdown("##### AASHTO material and time factors")
                 shrinkage_strain = float(shrinkage_source.get("shrinkage_strain") or 0.0)
                 st.dataframe(
@@ -9395,6 +9494,10 @@ def render_crossbeam_prestress_loss_page() -> None:
                     use_container_width=True,
                     hide_index=True,
                 )
+                st.markdown(
+                    '<div class="ptloss4a-print-table-heading" aria-hidden="true"></div>',
+                    unsafe_allow_html=True,
+                )
                 st.markdown("##### Representative section / interaction source")
                 section_source = dict(current_td.get("section_source") or {})
                 representative_rows = [
@@ -9413,12 +9516,52 @@ def render_crossbeam_prestress_loss_page() -> None:
                     use_container_width=True,
                     hide_index=True,
                 )
-                st.markdown("##### Post-ES tendon stress and relaxation source")
-                st.dataframe(
-                    pd.DataFrame((current_td.get("steel_source") or {}).get("rows") or []),
-                    use_container_width=True,
-                    hide_index=True,
+                st.markdown(
+                    '<div class="ptloss4a-print-table-heading" aria-hidden="true"></div>',
+                    unsafe_allow_html=True,
                 )
+                st.markdown("##### Post-ES tendon stress and relaxation source")
+                steel_rows = pd.DataFrame((current_td.get("steel_source") or {}).get("rows") or [])
+                if not steel_rows.empty:
+                    stress_columns = [
+                        "Tendon",
+                        "Aps (mm²)",
+                        "Length-average stress after ES (MPa)",
+                        "Stations",
+                    ]
+                    st.dataframe(
+                        steel_rows[
+                            [column for column in stress_columns if column in steel_rows.columns]
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Aps (mm²)": st.column_config.NumberColumn(format="%.1f"),
+                            "Length-average stress after ES (MPa)": st.column_config.NumberColumn(format="%.4f"),
+                            "Stations": st.column_config.NumberColumn(format="%d"),
+                        },
+                    )
+                    st.markdown(
+                        '<div class="ptloss4a-print-table-heading" aria-hidden="true"></div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown("##### Prestressing-steel properties by Tendon")
+                    steel_property_columns = [
+                        "Tendon",
+                        "fpu (MPa)",
+                        "fpy adopted = 0.90 fpu (MPa)",
+                    ]
+                    st.dataframe(
+                        steel_rows[
+                            [column for column in steel_property_columns if column in steel_rows.columns]
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "fpu (MPa)": st.column_config.NumberColumn(format="%.1f"),
+                            "fpy adopted = 0.90 fpu (MPa)": st.column_config.NumberColumn(format="%.1f"),
+                        },
+                    )
                 st.write(
                     f"Relaxation: **KL = {float(relaxation.get('KL') or 0.0):g}**, "
                     f"fpt = **{float(relaxation.get('fpt_mpa') or 0.0):.3f} MPa**, "

@@ -226,6 +226,8 @@ def test_precast_segmental_route_is_preview_only_and_runs_zero_structural_solves
     assert result["relaxation_loss_mpa"] == pytest.approx(7.8886818546, rel=1.0e-9)
     assert result["time_dependent_loss_mpa"] == pytest.approx(127.1491147199, rel=1.0e-9)
     assert result["interaction"]["Kdf"] == pytest.approx(0.8942766001, rel=1.0e-9)
+    assert result["route"] == "PRECAST SEGMENTAL — REPRESENTATIVE INTERVAL PREVIEW"
+    assert "TIME-STEP PREVIEW" not in result["route"]
     assert any("construction-schedule time-step" in note for note in result["review_notes"])
     assert result["v_over_s_commentary_advisory"] is True
     assert any("Specification lower bound ks = 1.0 is applied" in note for note in result["calibration_advisories"])
@@ -306,8 +308,17 @@ def test_time_dependent_ui_is_on_demand_and_contains_no_structural_solver_call()
     assert "BG40 relaxation interaction cap are not reused" in block
     assert "Member-equivalent V/S" in block
     assert "Local V/S range" in block
+    assert "Loss geometry source" in block
+    assert "MIXED SOLID + HOLLOW" in block
+    assert "Segment Layout ·" in block
     assert "Σ(AᵢLᵢ) / Σ(u_dry,ᵢLᵢ)" in block
+    assert "Drying geometry — station and section source" in block
+    assert "Drying geometry — volume and drying-surface contributions" in block
+    assert "Volume share (%)" in block
+    assert "Drying-surface share (%)" in block
     assert "Representative section / interaction source" in block
+    assert "Prestressing-steel properties by Tendon" in block
+    assert "ptloss4a-print-table-heading" in block
     assert "st.json(current_td.get(\"section_source\")" not in block
     assert "εsh increment" in block and "με" in block
     assert block.index("run_crossbeam_lightweight_time_dependent_loss") > block.index("if run_td:")

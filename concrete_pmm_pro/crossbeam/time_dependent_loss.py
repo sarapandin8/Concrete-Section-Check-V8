@@ -605,7 +605,7 @@ def run_crossbeam_lightweight_time_dependent_loss(
         "issues": [],
         "construction_method": method,
         "route": (
-            "PRECAST SEGMENTAL — REPRESENTATIVE PRELIMINARY TIME-STEP PREVIEW"
+            "PRECAST SEGMENTAL — REPRESENTATIVE INTERVAL PREVIEW"
             if segmental
             else "CAST-IN-PLACE NONSEGMENTAL — AASHTO 5.9.3.4.5 REPRESENTATIVE DESIGN ESTIMATE"
         ),
