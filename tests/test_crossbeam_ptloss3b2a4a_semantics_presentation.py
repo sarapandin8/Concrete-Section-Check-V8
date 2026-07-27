@@ -84,16 +84,17 @@ def test_ptloss3b2a4a_ui_uses_intentional_bulk_selection_and_generic_scope_text(
     assert "Bonded after grouting’ describes the intended completed tendon system" in tendon_ui
     assert "CROSSBEAM.PTA1 force source only" not in tendon_ui
     assert "ACI 423.10R loss calculations" not in tendon_ui
-    assert "contact-aware stressing-stage solver not yet released" in elastic_ui
+    assert "Run Advanced Construction-Stage QA" in elastic_ui
     assert "continuous compression-only contact is PTLOSS3B2B" not in elastic_ui
 
 
-def test_ptloss3b2a4a_response_event_audit_is_split_for_print_readability() -> None:
+def test_ptloss3b2a4a_normal_runtime_uses_compact_fcgp_audit_instead_of_full_event_tables() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
     elastic_ui = source.split("with elastic_shortening_tab:", 1)[1].split(
         "with time_dependent_tab:", 1
     )[0]
-    assert "**A. Station and source map**" in elastic_ui
-    assert "**B. Local-moment and reference-axis audit**" in elastic_ui
-    assert "C. Equivalent tendon nodal actions" in elastic_ui
-    assert 'event_rows = list(linear_stage_result.get("response_event_rows", []))' in elastic_ui
+    assert "f_cgp evaluation audit" in elastic_ui
+    assert "preferred_columns" in elastic_ui
+    assert "Cumulative structural-response audit — display only" in elastic_ui
+    assert "Moment-jump / response-event audit" not in elastic_ui
+

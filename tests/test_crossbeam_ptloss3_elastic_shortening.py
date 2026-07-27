@@ -139,7 +139,7 @@ def test_post_es_station_chain_starts_from_post_anchorage_state_not_fpj() -> Non
     assert not math.isclose(rows[0]["Stress after ES (MPa)"], 1395.0 - 20.0)
 
 
-def test_ptloss3_ui_exposes_pair_stressing_and_keeps_fcgp_source_gated() -> None:
+def test_ptloss3_ui_exposes_pair_stressing_and_on_demand_fcgp_route() -> None:
     from pathlib import Path
 
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
@@ -148,11 +148,11 @@ def test_ptloss3_ui_exposes_pair_stressing_and_keeps_fcgp_source_gated() -> None
     )[0]
     assert "Elastic Shortening — construction/stressing-stage source foundation" in elastic_block
     assert "symmetric tendon pair is one simultaneous stressing group" in elastic_block
-    assert "Source-derived f_cgp remains BLOCKED" in elastic_block
+    assert "Run Lightweight ES Analysis" in elastic_block
+    assert "AASHTO f_cgp route" in elastic_block
     assert "P after anchorage set" in elastic_block
     assert "it never restarts from fpj" in elastic_block
     assert "Pe/Pe_eff" in elastic_block
-
 
 def test_ptloss3_override_settings_round_trip_in_project_metadata() -> None:
     import pytest

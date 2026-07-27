@@ -247,16 +247,15 @@ def test_ptloss3b2a1_stiffness_audit_exposes_ea_ei_axis_and_offsets() -> None:
     assert any("I⊥s" in row["Source / axis"] for row in rows if row["Member"] == "Column")
 
 
-def test_ptloss3b2a1_ui_separates_axial_shear_and_adds_print_guard() -> None:
+def test_ptloss3b2a1_ui_retains_print_guard_and_display_only_response_audit() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
     elastic = source.split("with elastic_shortening_tab:", 1)[1].split(
         "with time_dependent_tab:", 1
     )[0]
-    assert "Crossbeam Axial Force —" in elastic
-    assert "Crossbeam Shear Force —" in elastic
-    assert "Crossbeam Axial / Shear —" not in elastic
-    assert "Primary Prestress P·e Reference" in elastic
-    assert "Stage stiffness, reference-axis, and benchmark audit" in elastic
-    assert "Active-project mesh sensitivity" in elastic
-    assert "recomputed automatically when its input fingerprint changes" in elastic
+    assert "Cumulative structural-response audit — display only" in elastic
+    assert "Opening this expander does not rerun the solver" in elastic
+    assert 'response="M"' in elastic
+    assert 'response="N"' in elastic
+    assert "LIGHTWEIGHT CUMULATIVE ES STAGE" in elastic
     assert "@media print" in elastic and "break-inside: avoid" in elastic
+

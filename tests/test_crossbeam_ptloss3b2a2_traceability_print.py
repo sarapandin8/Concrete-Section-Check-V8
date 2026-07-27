@@ -27,12 +27,13 @@ def test_ptloss3b2a2_print_css_targets_each_plotly_figure_container() -> None:
     assert ':has(.ptloss3b2-print-figure-anchor)' in elastic
     assert "break-inside: avoid-page" in elastic
     assert "page-break-inside: avoid" in elastic
-    assert elastic.count("_render_ptloss3b2a_print_figure(") >= 5
+    assert elastic.count("_render_ptloss3b2a_print_figure(") >= 2
 
 
-def test_ptloss3b2a2_keeps_solver_and_fcgp_handoffs_locked() -> None:
+def test_ptloss3b2a2_uses_on_demand_lightweight_fcgp_and_keeps_downstream_handoffs_locked() -> None:
     elastic = _elastic_source()
-    assert "Continuous falsework contact is intentionally excluded" in elastic
-    assert '"title": "f_cgp handoff"' in elastic
-    assert '"value": "LOCKED"' in elastic
-    assert "do not feed f_cgp, Elastic Shortening, Pe/Pe_eff" in elastic
+    assert "Run Lightweight ES Analysis" in elastic
+    assert "single cumulative AASHTO design route" in elastic
+    assert "AASHTO f_cgp route" in elastic
+    assert "Pe/Pe_eff assembly and Time-Dependent losses remain locked" in elastic
+

@@ -214,25 +214,20 @@ def test_ptloss3b2b2_incremental_contact_mesh_global_response_is_stable() -> Non
     assert result["last_open_length_delta_percent"] > 1.0
     assert "informational" in result["criterion"]
 
-def test_ptloss3b2b2_ui_exposes_incremental_contact_and_keeps_fcgp_locked() -> None:
+def test_ptloss3b2b2_ui_moves_incremental_contact_to_explicit_advanced_run() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(
         encoding="utf-8"
     )
     elastic = source.split("with elastic_shortening_tab:", 1)[1].split(
         "with time_dependent_tab:", 1
     )[0]
-    assert "Incremental tendon-group contact stages — post-anchor QA" in elastic
-    assert "G0 → " in elastic
-    assert "Prestress-induced lift-off" in elastic
-    assert "Final cumulative consistency" in elastic
-    assert "Stage mesh sensitivity" in elastic
-    assert "Current-input incremental contact mesh sensitivity" in elastic
-    assert "Selected incremental-stage structural response" in elastic
-    assert "Incremental contact source, active-set, and consistency audit" in elastic
-    assert "P AFTER ANCHORAGE SET" in elastic
-    assert "f_cgp + ES force feedback remain locked" in elastic
-    assert "incremental_contact_chunk_size = 14" in elastic
+    assert "Detailed Gravity → G1 → G2 → G3 → G4 contact history is retained only as optional" in elastic
+    assert "Run Advanced Construction-Stage QA" in elastic
+    assert "run_crossbeam_incremental_contact_qa" in elastic
+    assert "run_crossbeam_incremental_contact_mesh_sensitivity" in elastic
+    assert elastic.index("run_crossbeam_incremental_contact_qa") > elastic.index("if run_advanced:")
+    assert "Automated pytest regression suite; not rerun in the user session." in elastic
 
     support = temporary_support_source(20.0)
-    assert "incremental post-anchor tendon-group QA" in support["note"]
-    assert "Source-derived f_cgp and Elastic Shortening remain locked" in support["note"]
+    assert "one cumulative self-weight + accepted post-anchor tendon solve" in support["note"]
+    assert "optional construction-stage QA" in support["note"]

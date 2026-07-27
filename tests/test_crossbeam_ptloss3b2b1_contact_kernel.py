@@ -164,17 +164,17 @@ def test_ptloss3b2b1_contact_mesh_audit_accepts_full_contact_continuum_refinemen
     assert result["rows"][2]["Max |v| (mm)"] < result["rows"][1]["Max |v| (mm)"]
 
 
-def test_ptloss3b2b1_ui_exposes_gravity_contact_without_releasing_fcgp() -> None:
+def test_ptloss3b2b1_ui_keeps_gravity_contact_as_optional_advanced_qa() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
     elastic = source.split("with elastic_shortening_tab:", 1)[1].split(
         "with time_dependent_tab:", 1
     )[0]
-    assert "Compression-only falsework contact kernel — gravity-only QA" in elastic
-    assert "Equivalent Falsework Line Reaction — Self-Weight Stage" in elastic
-    assert "Falsework Contact Gap — Self-Weight Stage" in elastic
-    assert "Compression-contact active-set, benchmark, and mesh audit" in elastic
-    assert "SELF-WEIGHT ONLY" in elastic
-    assert "prestress groups + f_cgp remain locked" in elastic
+    assert "Run Lightweight ES Analysis" in elastic
+    assert "Advanced Construction-Stage QA — optional and computationally heavy" in elastic
+    assert "Run Advanced Construction-Stage QA" in elastic
+    assert "run_crossbeam_gravity_contact_qa" in elastic
+    assert elastic.index("run_crossbeam_gravity_contact_qa") > elastic.index("if run_advanced:")
+    assert "never runs automatically" in elastic
     contact_source = Path("concrete_pmm_pro/crossbeam/stressing_stage_contact.py").read_text(encoding="utf-8")
     assert "Gravity-only rigid vertical contact QA" in contact_source
     assert "ptloss3b2-print-table-heading" in elastic

@@ -110,21 +110,17 @@ def test_ptloss3b2a4_response_event_audit_closes_centroid_axis_step() -> None:
     assert "frame joint / column restraint" in column["Interpretation sources"]
 
 
-def test_ptloss3b2a4_ui_uses_generic_labels_current_mesh_and_event_audit() -> None:
+def test_ptloss3b2a4_ui_uses_lightweight_route_and_optional_advanced_verification() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
     elastic = source.split("with elastic_shortening_tab:", 1)[1].split(
         "with time_dependent_tab:", 1
     )[0]
-    assert "Linear stressing-stage response QA — fixed-base / no-contact" in elastic
-    assert "PTLOSS3B2A2 adds explicit" not in source
-    assert "PTLOSS3B2A1 hardened fixed-base response only" not in source
-    assert "incremental tendon-group contact stages — post-anchor qa" in elastic.lower()
-    assert "incremental tendon-group contact" in elastic.lower()
+    assert "Lightweight Elastic Shortening design estimate" in elastic
+    assert "Run Lightweight ES Analysis" in elastic
+    assert "Run Advanced Construction-Stage QA" in elastic
     assert "Tendon identity, final bond system, and stressing" in source
     assert "Apply to active tendons" in source
     assert '"Bond state": st.column_config.SelectboxColumn' in source
-    assert "Moment-jump / response-event audit" in elastic
-    assert 'linear_stage_result.get("response_event_rows", [])' in elastic
-    assert "Active-project mesh sensitivity" in elastic
-    assert "recomputed automatically when its input fingerprint changes" in elastic
+    assert "recomputed automatically when its input fingerprint changes" not in elastic
     assert "Run linear-response mesh-sensitivity diagnostic" not in elastic
+

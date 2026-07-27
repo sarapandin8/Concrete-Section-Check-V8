@@ -19,6 +19,7 @@ from datetime import datetime
 import hashlib
 import json
 from math import cos, isfinite, pi, sin, sqrt
+from time import perf_counter
 from typing import Any
 
 import pandas as pd
@@ -124,6 +125,10 @@ from concrete_pmm_pro.crossbeam.stressing_stage_sequence import (
     incremental_contact_benchmark_rows,
     run_crossbeam_incremental_contact_mesh_sensitivity,
     run_crossbeam_incremental_contact_qa,
+)
+from concrete_pmm_pro.crossbeam.lightweight_elastic_shortening import (
+    LIGHTWEIGHT_ES_METHOD,
+    run_crossbeam_lightweight_elastic_shortening,
 )
 from concrete_pmm_pro.crossbeam.construction_stage import (
     COLUMN_BASE_ASSUMPTION,
@@ -6250,6 +6255,10 @@ CB_PTL_INCREMENTAL_CONTACT_FINGERPRINT_KEY = "crossbeam_ptloss_incremental_conta
 CB_PTL_INCREMENTAL_CONTACT_RESULT_KEY = "crossbeam_ptloss_incremental_contact_result_v1"
 CB_PTL_INCREMENTAL_CONTACT_MESH_FINGERPRINT_KEY = "crossbeam_ptloss_incremental_contact_mesh_fingerprint_v1"
 CB_PTL_INCREMENTAL_CONTACT_MESH_RESULT_KEY = "crossbeam_ptloss_incremental_contact_mesh_result_v1"
+CB_PTL_LIGHTWEIGHT_ES_FINGERPRINT_KEY = "crossbeam_ptloss_lightweight_es_fingerprint_v1"
+CB_PTL_LIGHTWEIGHT_ES_RESULT_KEY = "crossbeam_ptloss_lightweight_es_result_v1"
+CB_PTL_ADVANCED_QA_FINGERPRINT_KEY = "crossbeam_ptloss_advanced_qa_fingerprint_v1"
+CB_PTL_ADVANCED_QA_RESULT_KEY = "crossbeam_ptloss_advanced_qa_result_v1"
 
 
 def _linear_mesh_diagnostic_fingerprint(
@@ -6371,6 +6380,73 @@ def _cached_incremental_contact_mesh_diagnostic(
         return None, "NOT RUN"
     if stored_fingerprint != str(fingerprint):
         return None, "STALE"
+    return dict(stored_result), "CURRENT"
+
+
+def _lightweight_es_fingerprint(
+    *,
+    length_m: float,
+    segment_rows: Any,
+    section_definitions: Any,
+    concrete_materials: Any,
+    column_rows: Any,
+    profile_rows: Any,
+    system_rows: Any,
+    anchorage_station_rows: Any,
+    group_rows: Any,
+    pair_sequence: Any,
+    stressing_strength_ratio: float,
+    ep_mpa: float,
+    eci_mpa: float,
+) -> str:
+    payload = {
+        "schema": 1,
+        "solver": "lightweight-es-v1",
+        "length_m": float(length_m),
+        "segment_rows": _records(segment_rows),
+        "section_definitions": canonical_section_definitions(section_definitions),
+        "concrete_materials": list(concrete_materials or []),
+        "column_rows": canonical_column_stage_rows(column_rows, length_m=float(length_m)),
+        "profile_rows": canonical_tendon_profile_points(profile_rows, float(length_m)),
+        "system_rows": canonical_tendon_system_rows(system_rows),
+        "anchorage_station_rows": _records(anchorage_station_rows),
+        "group_rows": _records(group_rows),
+        "pair_sequence": list(pair_sequence or []),
+        "stressing_strength_ratio": float(stressing_strength_ratio),
+        "ep_mpa": float(ep_mpa),
+        "eci_mpa": float(eci_mpa),
+    }
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=repr
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _cached_lightweight_es_result(
+    fingerprint: str,
+) -> tuple[dict[str, Any] | None, str]:
+    stored_fingerprint = str(
+        st.session_state.get(CB_PTL_LIGHTWEIGHT_ES_FINGERPRINT_KEY) or ""
+    )
+    stored_result = st.session_state.get(CB_PTL_LIGHTWEIGHT_ES_RESULT_KEY)
+    if not isinstance(stored_result, Mapping):
+        return None, "NOT RUN"
+    if stored_fingerprint != str(fingerprint):
+        return dict(stored_result), "STALE"
+    return dict(stored_result), "CURRENT"
+
+
+def _cached_advanced_qa_result(
+    fingerprint: str,
+) -> tuple[dict[str, Any] | None, str]:
+    stored_fingerprint = str(
+        st.session_state.get(CB_PTL_ADVANCED_QA_FINGERPRINT_KEY) or ""
+    )
+    stored_result = st.session_state.get(CB_PTL_ADVANCED_QA_RESULT_KEY)
+    if not isinstance(stored_result, Mapping):
+        return None, "NOT RUN"
+    if stored_fingerprint != str(fingerprint):
+        return dict(stored_result), "STALE"
     return dict(stored_result), "CURRENT"
 
 
@@ -6789,7 +6865,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "Friction/Wobble and Anchorage Set preserve their accepted results. The stressing-stage workspace now advances the rigid compression-contact active set through Gravity and the user-confirmed G1 → G2 → G3 → G4 post-anchor tendon sequence. Source-derived f_cgp, Elastic Shortening force feedback, Pe/Pe_eff, and later losses remain locked.",
+        "Friction/Wobble and Anchorage Set preserve their accepted results. The ordinary Elastic Shortening route now uses one on-demand cumulative stressing-stage solve plus the AASHTO identical-group factor. Detailed Gravity → G1 → G2 → G3 → G4 contact history is optional Advanced Construction-Stage QA and never runs automatically.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -7678,7 +7754,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
         st.markdown("#### Elastic Shortening — construction/stressing-stage source foundation")
         st.caption(
-            "The accepted fixed-base response foundation uses stressing-stage Eci, auditable EA/EI, exact centroidal rigid offsets, and accepted post-anchor tendon loads. The contact-aware QA now preserves earlier tendon groups and repeats the rigid compression-only active-set solve after every user-confirmed stressing group. Final Primary/Secondary decomposition, source-derived f_cgp, Elastic Shortening force feedback, Pe/Pe_eff, and later losses remain locked."
+            "The ordinary design route uses stressing-stage Eci, accepted post-anchor tendon loads, and one cumulative rigid compression-contact solve to derive the AASHTO f_cgp source. Detailed incremental contact history remains available only as optional Advanced Construction-Stage QA."
         )
 
         upstream_ready = bool(
@@ -7758,13 +7834,56 @@ def render_crossbeam_prestress_loss_page() -> None:
             if eci_override_enabled
             else (float(material_eci) if material_eci is not None else None)
         )
+        try:
+            early_stage_materials = ensure_concrete_material_library(
+                concrete_material=st.session_state.get("concrete_material"),
+                concrete_materials=st.session_state.get("concrete_materials"),
+                active_concrete_material_name=st.session_state.get(
+                    "active_concrete_material_name"
+                ),
+                deck_topping_material_name=st.session_state.get(
+                    "deck_topping_material_name"
+                ),
+            ).materials
+        except Exception:
+            early_stage_materials = []
+        lightweight_fingerprint = _lightweight_es_fingerprint(
+            length_m=length_m,
+            segment_rows=current_segment_rows,
+            section_definitions=current_section_definitions,
+            concrete_materials=early_stage_materials,
+            column_rows=st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY),
+            profile_rows=profile_rows,
+            system_rows=system_rows,
+            anchorage_station_rows=current_anchorage_station_rows,
+            group_rows=ordered_es_group_rows,
+            pair_sequence=active_pair_sequence,
+            stressing_strength_ratio=float(
+                st.session_state.get(
+                    CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
+                    DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
+                )
+            ),
+            ep_mpa=float(current_assumptions["ep_mpa"]),
+            eci_mpa=float(selected_eci or 0.0),
+        )
+        lightweight_result, lightweight_evidence_status = _cached_lightweight_es_result(
+            lightweight_fingerprint
+        )
+        derived_fcgp = (
+            lightweight_result.get("fcgp_mpa")
+            if lightweight_evidence_status == "CURRENT"
+            and isinstance(lightweight_result, Mapping)
+            and lightweight_result.get("ready")
+            else None
+        )
         fcgp_override_enabled = bool(
             st.session_state.get(CB_LOSS_ES_FCGP_OVERRIDE_ENABLED_KEY, False)
         )
         selected_fcgp = (
             float(st.session_state.get(CB_LOSS_ES_FCGP_OVERRIDE_MPA_KEY, DEFAULT_ES_FCGP_OVERRIDE_MPA))
             if fcgp_override_enabled
-            else None
+            else (float(derived_fcgp) if derived_fcgp is not None else None)
         )
 
         es_summary = elastic_shortening_summary(
@@ -7866,14 +7985,22 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Stage stress f_cgp",
                     "value": f"{float(selected_fcgp):.3f} MPa" if selected_fcgp is not None else "SOURCE BLOCKED",
-                    "detail": "manual QA override" if fcgp_override_enabled else "source-derived stressing-stage stress not yet available",
-                    "status": "warning",
+                    "detail": (
+                        "manual QA override"
+                        if fcgp_override_enabled
+                        else (
+                            "single cumulative AASHTO design route"
+                            if derived_fcgp is not None
+                            else f"lightweight analysis {lightweight_evidence_status.lower()}"
+                        )
+                    ),
+                    "status": "warning" if selected_fcgp is None or fcgp_override_enabled else "ready",
                 },
                 {
                     "title": "Average ES loss",
                     "value": f"{float(avg_loss):.2f} MPa" if avg_loss is not None else "—",
                     "detail": f"{avg_percent:.2f}% of area-weighted fpj" if avg_percent is not None else "blocked until stage source is resolved",
-                    "status": "warning" if fcgp_override_enabled and avg_loss is not None else "neutral",
+                    "status": "ready" if avg_loss is not None and not fcgp_override_enabled else ("warning" if avg_loss is not None else "neutral"),
                 },
                 {
                     "title": "Max pair-sequence ES",
@@ -7890,8 +8017,8 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Component status",
                     "value": str(es_summary.get("component_status") or "SOURCE BLOCKED"),
-                    "detail": "manual overrides remain QA-only; Pe/Pe_eff locked",
-                    "status": "warning",
+                    "detail": "ordinary ES estimate is on-demand; detailed construction-stage QA is optional",
+                    "status": "ready" if avg_loss is not None and not fcgp_override_enabled else "warning",
                 },
             ]
         )
@@ -7902,7 +8029,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         st.markdown("##### Construction / stressing-stage source model")
         st.caption(
-            "The fixed-base no-contact trace and the contact-aware stressing sequence are separate QA routes. Continuous falsework contact is excluded only from the fixed-base response trace; the rigid compression-only active set is solved separately for Gravity and after every post-anchor tendon group. Neither route releases source-derived f_cgp or final Elastic Shortening."
+            "The ordinary Elastic Shortening route uses one cumulative self-weight + post-anchor tendon solve and the AASHTO identical-group sequence factor. Detailed Gravity → G1 → G2 → G3 → G4 contact history is retained only as optional construction-stage QA and does not run automatically."
         )
         _ensure_crossbeam_construction_support_source_state(length_m)
         construction_method = str(
@@ -7976,7 +8103,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {"title": "Support extent", "value": "FULL LENGTH", "detail": f"s = 0.000 to {float(length_m):.3f} m", "status": "ready"},
                 {"title": "Initial contact", "value": "IN CONTACT", "detail": "continuous support under Crossbeam", "status": "ready"},
                 {"title": "Vertical behavior", "value": "COMPRESSION-ONLY", "detail": "no tensile/uplift resistance", "status": "ready"},
-                {"title": "Lift-off", "value": "AUTOMATIC", "detail": "gravity + incremental prestress active-set released; f_cgp locked", "status": "ready"},
+                {"title": "Lift-off", "value": "AUTOMATIC", "detail": "one cumulative contact solve in normal ES mode", "status": "ready"},
             ]
         )
         st.caption(str(temp_support.get("note") or ""))
@@ -8050,8 +8177,8 @@ def render_crossbeam_prestress_loss_page() -> None:
                 },
                 {
                     "title": "Stage solver",
-                    "value": "INCREMENTAL CONTACT QA",
-                    "detail": "Gravity + G1 → G2 → G3 → G4; f_cgp extraction locked",
+                    "value": "LIGHTWEIGHT ES DESIGN ROUTE",
+                    "detail": "one cumulative solve; detailed G0→G4 QA is optional",
                     "status": "ready",
                 },
             ]
@@ -8061,12 +8188,12 @@ def render_crossbeam_prestress_loss_page() -> None:
                 for issue in stage_source_summary.get("issues", []):
                     st.warning(str(issue))
         st.caption(
-            "The contact-aware QA starts from Gravity and then preserves accepted P after Anchorage Set from each earlier group while adding the next group. The active set is re-solved after G1, G2, G3, and G4. This validates prestress-induced lift-off mechanics only; f_cgp extraction and Elastic Shortening remain locked."
+            "The ordinary ES calculation does not replay every stressing stage. It solves one cumulative contact state and applies the AASHTO identical-group factor; the explicit G0→G4 active-set history is available only when Advanced Construction-Stage QA is requested."
         )
 
-        st.markdown("##### Linear stressing-stage response QA — fixed-base / no-contact")
+        st.markdown("##### Lightweight Elastic Shortening design estimate")
         st.caption(
-            "The gross-section Crossbeam and fixed-base column kernel is solved in the s–vertical plane. Load cases remain separate: Crossbeam self-weight, accepted tendon force after Anchorage Set, and their linear superposition. Continuous falsework contact is intentionally excluded, and these diagnostic outputs do not feed f_cgp, Elastic Shortening, Pe/Pe_eff, Result Summary, or Report/QA."
+            "Normal use is intentionally lightweight: one cumulative self-weight + accepted post-anchor tendon solve at the design mesh, followed by the AASHTO identical-group sequence factor. The detailed Gravity → G1 → G2 → G3 → G4 history, mesh studies, and developer benchmarks are not prerequisites for the ordinary ES estimate."
         )
 
         try:
@@ -8112,161 +8239,366 @@ def render_crossbeam_prestress_loss_page() -> None:
                 ],
             }
 
-        if upstream_ready:
-            linear_stage_result = run_crossbeam_linear_stage_response(
-                model=linear_stage_model,
-                profile_rows=profile_rows,
-                anchorage_station_rows=current_anchorage_station_rows,
-            )
-        else:
-            linear_stage_result = {
-                "status": "SOURCE BLOCKED",
-                "ready": False,
-                "issues": [
-                    "Accepted P after Anchorage Set is required before the prestress load case can be assembled."
-                ],
-                "cases": {},
-                "model": linear_stage_model,
-                "fcgp_status": "LOCKED — UPSTREAM FORCE STATE REQUIRED",
-                "temporary_support_status": "EXCLUDED — CONTACT-AWARE SOLVER NOT RELEASED",
-            }
-
-        mesh_fingerprint = _linear_mesh_diagnostic_fingerprint(
+        # Recompute with the canonical material library used by the frame model.
+        lightweight_fingerprint = _lightweight_es_fingerprint(
             length_m=length_m,
             segment_rows=current_segment_rows,
             section_definitions=current_section_definitions,
             concrete_materials=stage_materials,
             column_rows=column_source_rows,
             profile_rows=profile_rows,
+            system_rows=system_rows,
             anchorage_station_rows=current_anchorage_station_rows,
-            stressing_strength_ratio=linear_stressing_ratio,
-        )
-        mesh_audit, mesh_evidence_status = _cached_linear_mesh_diagnostic(
-            mesh_fingerprint
-        )
-        if (
-            upstream_ready
-            and bool(linear_stage_model.get("ready"))
-            and mesh_evidence_status != "CURRENT"
-        ):
-            with st.spinner("Running current-input linear mesh-sensitivity QA..."):
-                mesh_audit = run_crossbeam_linear_mesh_sensitivity(
-                    length_m=length_m,
-                    segment_rows=current_segment_rows,
-                    section_definitions=current_section_definitions,
-                    concrete_materials=stage_materials,
-                    column_rows=column_source_rows,
-                    profile_rows=profile_rows,
-                    anchorage_station_rows=current_anchorage_station_rows,
-                    crossbeam_stressing_strength_ratio=linear_stressing_ratio,
-                )
-            st.session_state[CB_PTL_LINEAR_MESH_FINGERPRINT_KEY] = mesh_fingerprint
-            st.session_state[CB_PTL_LINEAR_MESH_RESULT_KEY] = dict(mesh_audit)
-            mesh_evidence_status = "CURRENT"
-
-        gravity_contact_result = run_crossbeam_gravity_contact_qa(
-            model=linear_stage_model
-        )
-        contact_benchmark_rows = compression_contact_benchmark_rows()
-        contact_benchmark_pass = bool(contact_benchmark_rows) and all(
-            str(row.get("Status")) == "PASS" for row in contact_benchmark_rows
-        )
-        contact_mesh_fingerprint = hashlib.sha256(
-            ("gravity-contact-v1:" + mesh_fingerprint).encode("utf-8")
-        ).hexdigest()
-        contact_mesh_audit, contact_mesh_evidence_status = _cached_contact_mesh_diagnostic(
-            contact_mesh_fingerprint
-        )
-        if (
-            bool(linear_stage_model.get("ready"))
-            and contact_mesh_evidence_status != "CURRENT"
-        ):
-            with st.spinner("Running current-input gravity/contact mesh QA..."):
-                contact_mesh_audit = run_crossbeam_gravity_contact_mesh_sensitivity(
-                    length_m=length_m,
-                    segment_rows=current_segment_rows,
-                    section_definitions=current_section_definitions,
-                    concrete_materials=stage_materials,
-                    column_rows=column_source_rows,
-                    profile_rows=profile_rows,
-                    crossbeam_stressing_strength_ratio=linear_stressing_ratio,
-                )
-            st.session_state[CB_PTL_CONTACT_MESH_FINGERPRINT_KEY] = contact_mesh_fingerprint
-            st.session_state[CB_PTL_CONTACT_MESH_RESULT_KEY] = dict(contact_mesh_audit)
-            contact_mesh_evidence_status = "CURRENT"
-
-        incremental_contact_fingerprint = _incremental_contact_diagnostic_fingerprint(
-            base_mesh_fingerprint=mesh_fingerprint,
-            group_rows=current_es_group_rows,
+            group_rows=ordered_es_group_rows,
             pair_sequence=current_pair_sequence,
+            stressing_strength_ratio=linear_stressing_ratio,
+            ep_mpa=float(current_assumptions["ep_mpa"]),
+            eci_mpa=float(selected_eci or 0.0),
         )
-        incremental_contact_result, incremental_contact_evidence_status = (
-            _cached_incremental_contact_diagnostic(incremental_contact_fingerprint)
+        lightweight_result, lightweight_evidence_status = _cached_lightweight_es_result(
+            lightweight_fingerprint
         )
-        if (
+        bond_state_source = tendon_bond_state_summary(system_rows)
+        lightweight_sources_ready = bool(
             upstream_ready
-            and bool(linear_stage_model.get("ready"))
-            and incremental_contact_evidence_status != "CURRENT"
-        ):
-            with st.spinner(
-                "Running Gravity → tendon-group incremental contact QA..."
-            ):
-                incremental_contact_result = run_crossbeam_incremental_contact_qa(
+            and linear_stage_model.get("ready")
+            and current_es_group_summary.get("ready")
+            and bond_state_source.get("ready")
+            and selected_eci is not None
+            and float(selected_eci) > 0.0
+        )
+
+        action_col, clear_col = st.columns([3, 1])
+        with action_col:
+            run_lightweight = st.button(
+                "Run Lightweight ES Analysis",
+                type="primary",
+                use_container_width=True,
+                disabled=not lightweight_sources_ready,
+                help=(
+                    "Runs one cumulative rigid compression-contact solve using self-weight and every accepted tendon force after Anchorage Set. It does not run G0→G4 history, mesh sensitivity, or synthetic benchmarks."
+                ),
+            )
+        with clear_col:
+            clear_lightweight = st.button(
+                "Clear ES Result",
+                use_container_width=True,
+                disabled=lightweight_result is None,
+            )
+
+        if clear_lightweight:
+            st.session_state.pop(CB_PTL_LIGHTWEIGHT_ES_FINGERPRINT_KEY, None)
+            st.session_state.pop(CB_PTL_LIGHTWEIGHT_ES_RESULT_KEY, None)
+            st.rerun()
+
+        if run_lightweight:
+            started = perf_counter()
+            with st.spinner("Running one cumulative Elastic Shortening design-stage solve..."):
+                lightweight_result = run_crossbeam_lightweight_elastic_shortening(
                     model=linear_stage_model,
                     profile_rows=profile_rows,
+                    system_rows=system_rows,
                     anchorage_station_rows=current_anchorage_station_rows,
-                    group_rows=current_es_group_rows,
-                    pair_sequence=current_pair_sequence,
+                    ordered_group_rows=ordered_es_group_rows,
+                    ep_mpa=float(current_assumptions["ep_mpa"]),
+                    eci_mpa=float(selected_eci or 0.0),
                 )
-            st.session_state[CB_PTL_INCREMENTAL_CONTACT_FINGERPRINT_KEY] = (
-                incremental_contact_fingerprint
-            )
-            st.session_state[CB_PTL_INCREMENTAL_CONTACT_RESULT_KEY] = dict(
-                incremental_contact_result
-            )
-            incremental_contact_evidence_status = "CURRENT"
-        elif not isinstance(incremental_contact_result, Mapping):
-            incremental_contact_result = {
-                "status": "SOURCE BLOCKED",
-                "ready": False,
-                "issues": [
-                    "Accepted post-anchor force, frame, and stressing-pair sequence sources are required before incremental contact stages can run."
-                ],
-                "stages": [],
-                "stage_rows": [],
-                "group_source_rows": [],
-                "fcgp_status": "LOCKED — INCREMENTAL CONTACT SOURCE REQUIRED",
-                "elastic_shortening_status": "LOCKED — INCREMENTAL CONTACT SOURCE REQUIRED",
+            lightweight_result = {
+                **dict(lightweight_result),
+                "elapsed_seconds": perf_counter() - started,
+                "fingerprint": lightweight_fingerprint,
             }
-        incremental_contact_benchmarks = incremental_contact_benchmark_rows()
-        incremental_contact_benchmark_pass = bool(
-            incremental_contact_benchmarks
-        ) and all(
-            str(row.get("Status")) == "PASS"
-            for row in incremental_contact_benchmarks
+            st.session_state[CB_PTL_LIGHTWEIGHT_ES_FINGERPRINT_KEY] = (
+                lightweight_fingerprint
+            )
+            st.session_state[CB_PTL_LIGHTWEIGHT_ES_RESULT_KEY] = dict(
+                lightweight_result
+            )
+            st.rerun()
+
+        if not lightweight_sources_ready:
+            source_issues = [
+                *list(linear_stage_model.get("issues") or []),
+                *list(bond_state_source.get("issues") or []),
+            ]
+            if not upstream_ready:
+                source_issues.append(
+                    "Accepted P after Friction and Anchorage Set is required."
+                )
+            if not current_es_group_summary.get("ready"):
+                source_issues.extend(current_es_group_summary.get("issues") or [])
+            st.warning(
+                "Lightweight ES analysis is blocked until the required sources are complete. "
+                + (" ".join(dict.fromkeys(str(item) for item in source_issues if item)) or "Review the source cards above.")
+            )
+
+        current_lightweight = (
+            lightweight_result
+            if lightweight_evidence_status == "CURRENT"
+            and isinstance(lightweight_result, Mapping)
+            else None
         )
-        incremental_contact_mesh_fingerprint = hashlib.sha256(
-            (
-                "incremental-contact-mesh-v1:"
-                + incremental_contact_fingerprint
-            ).encode("utf-8")
-        ).hexdigest()
-        (
-            incremental_contact_mesh_audit,
-            incremental_contact_mesh_evidence_status,
-        ) = _cached_incremental_contact_mesh_diagnostic(
-            incremental_contact_mesh_fingerprint
+        current_contact = dict(
+            (current_lightweight or {}).get("contact_result") or {}
         )
-        if (
-            upstream_ready
-            and bool(linear_stage_model.get("ready"))
-            and incremental_contact_mesh_evidence_status != "CURRENT"
-        ):
-            with st.spinner(
-                "Running current-input incremental contact mesh QA..."
+        current_es = dict((current_lightweight or {}).get("es_summary") or {})
+        current_route = dict((current_lightweight or {}).get("fcgp_route") or {})
+        render_metric_cards(
+            [
+                {
+                    "title": "Runtime mode",
+                    "value": "ON DEMAND",
+                    "detail": "no FEA solve when opening the page, changing Stage views, or opening an expander",
+                    "status": "ready",
+                },
+                {
+                    "title": "Design route",
+                    "value": "SINGLE CUMULATIVE STAGE",
+                    "detail": "self-weight + all accepted post-anchor tendon loads",
+                    "status": "ready",
+                },
+                {
+                    "title": "Result status",
+                    "value": lightweight_evidence_status,
+                    "detail": (
+                        str((current_lightweight or {}).get("status") or "Run analysis when sources are ready")
+                    ),
+                    "status": (
+                        "ready"
+                        if current_lightweight and current_lightweight.get("ready")
+                        else ("warning" if lightweight_evidence_status == "STALE" else "neutral")
+                    ),
+                },
+                {
+                    "title": "Actual structural solves",
+                    "value": str(int((current_lightweight or {}).get("solve_count") or 0)),
+                    "detail": (
+                        f"{float((current_lightweight or {}).get('elapsed_seconds') or 0.0):.3f} s on last run"
+                        if current_lightweight
+                        else "zero until Run is pressed"
+                    ),
+                    "status": "ready" if current_lightweight else "neutral",
+                },
+                {
+                    "title": "Final contact state",
+                    "value": (
+                        f"{int(current_contact.get('active_count') or 0)} ACTIVE / {int(current_contact.get('candidate_count') or 0)}"
+                        if current_lightweight
+                        else "—"
+                    ),
+                    "detail": (
+                        f"{int(current_contact.get('open_count') or 0)} open · {int(current_contact.get('iterations') or 0)} active-set iteration(s)"
+                        if current_lightweight
+                        else "one final cumulative contact state only"
+                    ),
+                    "status": "ready" if current_contact.get("ready") else "neutral",
+                },
+                {
+                    "title": "AASHTO f_cgp route",
+                    "value": (
+                        f"{float((current_lightweight or {}).get('fcgp_mpa')):.3f} MPa"
+                        if current_lightweight and (current_lightweight or {}).get("fcgp_mpa") is not None
+                        else "—"
+                    ),
+                    "detail": str(current_route.get("route") or "bond-system source required"),
+                    "status": "ready" if current_lightweight and current_lightweight.get("ready") else "neutral",
+                },
+                {
+                    "title": "Average ES estimate",
+                    "value": (
+                        f"{float(current_es.get('average_loss_mpa')):.2f} MPa"
+                        if current_es.get("average_loss_mpa") is not None
+                        else "—"
+                    ),
+                    "detail": "AASHTO identical-group average sequence factor",
+                    "status": "ready" if current_es.get("average_loss_mpa") is not None else "neutral",
+                },
+            ]
+        )
+
+        if current_lightweight:
+            if current_lightweight.get("issues"):
+                for issue in current_lightweight.get("issues", []):
+                    st.warning(str(issue))
+            st.info(str(current_lightweight.get("solver_boundary") or ""))
+
+            evaluation_rows = list(current_route.get("evaluation_rows") or [])
+            if evaluation_rows:
+                st.markdown("###### f_cgp evaluation audit")
+                evaluation_df = pd.DataFrame(evaluation_rows)
+                preferred_columns = [
+                    "Evaluation role",
+                    "s (m)",
+                    "Region",
+                    "Section ID",
+                    "N (kN; compression +)",
+                    "M (kN-m; sagging +)",
+                    "Tendon CG dtop (mm)",
+                    "y_p below section centroid (mm)",
+                    "N/A (MPa; compression +)",
+                    "-M*y/I (MPa; compression +)",
+                    "f_cgp (MPa; compression +)",
+                ]
+                shown_columns = [
+                    column for column in preferred_columns if column in evaluation_df.columns
+                ]
+                st.dataframe(
+                    evaluation_df[shown_columns],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                st.caption(str(current_route.get("note") or ""))
+
+            sequence_rows = list(current_es.get("sequence_rows") or [])
+            if sequence_rows:
+                st.markdown("###### Elastic Shortening by simultaneous stressing group")
+                st.dataframe(
+                    pd.DataFrame(sequence_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            after_es_rows = list(
+                current_lightweight.get("after_es_station_rows") or []
+            )
+            tendon_summary_rows: list[dict[str, Any]] = []
+            for tendon_id in sorted(
+                {
+                    str(row.get("Tendon ID") or "")
+                    for row in after_es_rows
+                    if str(row.get("Tendon ID") or "")
+                }
             ):
-                incremental_contact_mesh_audit = (
-                    run_crossbeam_incremental_contact_mesh_sensitivity(
+                tendon_rows = [
+                    row
+                    for row in after_es_rows
+                    if str(row.get("Tendon ID") or "") == tendon_id
+                    and row.get("P after ES (kN)") is not None
+                ]
+                if not tendon_rows:
+                    continue
+                tendon_summary_rows.append(
+                    {
+                        "Tendon": tendon_id,
+                        "ES group": str(tendon_rows[0].get("ES Group ID") or ""),
+                        "ΔfpES (MPa)": _finite_float(
+                            tendon_rows[0].get("Elastic-shortening loss (MPa)")
+                        ),
+                        "Min P after anchor (kN)": min(
+                            _finite_float(row.get("P after anchorage set (kN)"))
+                            for row in tendon_rows
+                        ),
+                        "Min P after ES (kN)": min(
+                            _finite_float(row.get("P after ES (kN)"))
+                            for row in tendon_rows
+                        ),
+                    }
+                )
+            if tendon_summary_rows:
+                st.markdown("###### Tendon force after Elastic Shortening")
+                st.dataframe(
+                    pd.DataFrame(tendon_summary_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            with st.expander(
+                "Cumulative structural-response audit — display only", expanded=False
+            ):
+                st.caption(
+                    "Opening this expander does not rerun the solver. It reads the stored result from the last lightweight analysis."
+                )
+                response_rows = list(
+                    current_contact.get("beam_response_rows")
+                    or current_contact.get("solution", {}).get("beam_response_rows")
+                    or []
+                )
+                if response_rows:
+                    _render_ptloss3b2a_print_figure(
+                        _ptloss3b2a_response_figure(
+                            response_rows,
+                            case_label="LIGHTWEIGHT CUMULATIVE ES STAGE",
+                            response="M",
+                        ),
+                        "One cumulative contact-aware moment trace used only to derive the representative AASHTO stage stress.",
+                    )
+                    _render_ptloss3b2a_print_figure(
+                        _ptloss3b2a_response_figure(
+                            response_rows,
+                            case_label="LIGHTWEIGHT CUMULATIVE ES STAGE",
+                            response="N",
+                        ),
+                        "Compression-positive axial response from the same stored cumulative solution.",
+                    )
+
+        advanced_fingerprint = hashlib.sha256(
+            ("advanced-construction-qa-v1:" + lightweight_fingerprint).encode("utf-8")
+        ).hexdigest()
+        advanced_bundle, advanced_evidence_status = _cached_advanced_qa_result(
+            advanced_fingerprint
+        )
+        with st.expander(
+            "Advanced Construction-Stage QA — optional and computationally heavy",
+            expanded=False,
+        ):
+            st.warning(
+                "This optional route reproduces the detailed fixed-base, gravity-contact, Gravity→G4, one-shot consistency, and three-mesh verification evidence. It is not required for the ordinary Elastic Shortening estimate and never runs automatically."
+            )
+            adv_run_col, adv_clear_col = st.columns([3, 1])
+            with adv_run_col:
+                run_advanced = st.button(
+                    "Run Advanced Construction-Stage QA",
+                    use_container_width=True,
+                    disabled=not bool(upstream_ready and linear_stage_model.get("ready")),
+                )
+            with adv_clear_col:
+                clear_advanced = st.button(
+                    "Clear Advanced QA",
+                    use_container_width=True,
+                    disabled=advanced_bundle is None,
+                )
+            if clear_advanced:
+                st.session_state.pop(CB_PTL_ADVANCED_QA_FINGERPRINT_KEY, None)
+                st.session_state.pop(CB_PTL_ADVANCED_QA_RESULT_KEY, None)
+                st.rerun()
+            if run_advanced:
+                started = perf_counter()
+                with st.spinner("Running optional detailed construction-stage QA..."):
+                    advanced_linear = run_crossbeam_linear_stage_response(
+                        model=linear_stage_model,
+                        profile_rows=profile_rows,
+                        anchorage_station_rows=current_anchorage_station_rows,
+                    )
+                    advanced_linear_mesh = run_crossbeam_linear_mesh_sensitivity(
+                        length_m=length_m,
+                        segment_rows=current_segment_rows,
+                        section_definitions=current_section_definitions,
+                        concrete_materials=stage_materials,
+                        column_rows=column_source_rows,
+                        profile_rows=profile_rows,
+                        anchorage_station_rows=current_anchorage_station_rows,
+                        crossbeam_stressing_strength_ratio=linear_stressing_ratio,
+                    )
+                    advanced_gravity = run_crossbeam_gravity_contact_qa(
+                        model=linear_stage_model
+                    )
+                    advanced_gravity_mesh = run_crossbeam_gravity_contact_mesh_sensitivity(
+                        length_m=length_m,
+                        segment_rows=current_segment_rows,
+                        section_definitions=current_section_definitions,
+                        concrete_materials=stage_materials,
+                        column_rows=column_source_rows,
+                        profile_rows=profile_rows,
+                        crossbeam_stressing_strength_ratio=linear_stressing_ratio,
+                    )
+                    advanced_incremental = run_crossbeam_incremental_contact_qa(
+                        model=linear_stage_model,
+                        profile_rows=profile_rows,
+                        anchorage_station_rows=current_anchorage_station_rows,
+                        group_rows=current_es_group_rows,
+                        pair_sequence=current_pair_sequence,
+                    )
+                    advanced_incremental_mesh = run_crossbeam_incremental_contact_mesh_sensitivity(
                         length_m=length_m,
                         segment_rows=current_segment_rows,
                         section_definitions=current_section_definitions,
@@ -8278,1281 +8610,86 @@ def render_crossbeam_prestress_loss_page() -> None:
                         pair_sequence=current_pair_sequence,
                         crossbeam_stressing_strength_ratio=linear_stressing_ratio,
                     )
+                advanced_bundle = {
+                    "status": "CURRENT",
+                    "elapsed_seconds": perf_counter() - started,
+                    "linear": advanced_linear,
+                    "linear_mesh": advanced_linear_mesh,
+                    "gravity": advanced_gravity,
+                    "gravity_mesh": advanced_gravity_mesh,
+                    "incremental": advanced_incremental,
+                    "incremental_mesh": advanced_incremental_mesh,
+                    "benchmark_evidence": "Automated pytest regression suite; not rerun in the user session.",
+                }
+                st.session_state[CB_PTL_ADVANCED_QA_FINGERPRINT_KEY] = (
+                    advanced_fingerprint
                 )
-            st.session_state[
-                CB_PTL_INCREMENTAL_CONTACT_MESH_FINGERPRINT_KEY
-            ] = incremental_contact_mesh_fingerprint
-            st.session_state[CB_PTL_INCREMENTAL_CONTACT_MESH_RESULT_KEY] = dict(
-                incremental_contact_mesh_audit
-            )
-            incremental_contact_mesh_evidence_status = "CURRENT"
+                st.session_state[CB_PTL_ADVANCED_QA_RESULT_KEY] = dict(
+                    advanced_bundle
+                )
+                st.rerun()
 
-        linear_elements = list(linear_stage_model.get("elements") or [])
-        beam_element_count = sum(str(row.get("kind")) == "beam" for row in linear_elements)
-        column_element_count = sum(str(row.get("kind")) == "column" for row in linear_elements)
-        linear_residual = linear_stage_result.get("max_equilibrium_residual_ratio")
-
-        prestress_case_for_symmetry = dict(
-            linear_stage_result.get("cases", {}).get(PTLOSS3B2A_PRESTRESS_CASE, {})
-        )
-        fixed_reactions_for_symmetry = [
-            row for row in prestress_case_for_symmetry.get("nodes", []) if bool(row.get("fixed"))
-        ]
-        active_symmetry_residual = None
-        if len(fixed_reactions_for_symmetry) == 2:
-            left, right = fixed_reactions_for_symmetry
-            symmetry_terms = []
-            for field in ("reaction_fx_N", "reaction_fy_N", "reaction_moment_Nmm"):
-                a = abs(_finite_float(left.get(field)))
-                b = abs(_finite_float(right.get(field)))
-                scale = max(a, b, 1.0)
-                symmetry_terms.append(abs(a - b) / scale)
-            active_symmetry_residual = max(symmetry_terms)
-
-        bond_state_source = tendon_bond_state_summary(system_rows)
-        bond_state_ready = bool(bond_state_source.get("ready"))
-        explicit_bond_states = list(bond_state_source.get("labels") or [])
-
-        render_metric_cards(
-            [
-                {
-                    "title": "Linear frame model",
-                    "value": str(linear_stage_model.get("status") or "SOURCE BLOCKED"),
-                    "detail": f"{beam_element_count} beam + {column_element_count} column element(s)",
-                    "status": "ready" if linear_stage_model.get("ready") else "warning",
-                },
-                {
-                    "title": "Post-anchor load source",
-                    "value": str(
-                        linear_stage_result.get("prestress_load_source", {}).get(
-                            "status", "SOURCE BLOCKED"
-                        )
-                    ),
-                    "detail": "P after Anchorage Set + adopted tendon profile",
-                    "status": "ready"
-                    if linear_stage_result.get("prestress_load_source", {}).get("ready")
-                    else "warning",
-                },
-                {
-                    "title": "Global equilibrium",
-                    "value": "—"
-                    if linear_residual is None
-                    else (
-                        "PASS" if float(linear_residual) <= 1.0e-8 else "REVIEW"
-                    ),
-                    "detail": "not solved"
-                    if linear_residual is None
-                    else f"max residual ratio = {float(linear_residual):.3e}",
-                    "status": "ready"
-                    if linear_residual is not None and float(linear_residual) <= 1.0e-8
-                    else "warning",
-                },
-                {
-                    "title": "Temporary support",
-                    "value": "EXCLUDED",
-                    "detail": "contact-aware stressing-stage solver not yet released",
-                    "status": "warning",
-                },
-                {
-                    "title": "f_cgp handoff",
-                    "value": "LOCKED",
-                    "detail": "linear QA cannot release stressing-stage concrete stress",
-                    "status": "warning",
-                },
-            ]
-        )
-
-        reference_axis = dict(linear_stage_model.get("reference_axis") or {})
-        stage_modulus = dict(linear_stage_model.get("stage_modulus") or {})
-        benchmark_rows = ptloss3b2a1_benchmark_rows()
-        benchmark_pass = bool(benchmark_rows) and all(
-            str(row.get("Status")) == "PASS" for row in benchmark_rows
-        )
-        render_metric_cards(
-            [
-                {
-                    "title": "Crossbeam stage modulus",
-                    "value": (
-                        f"Eci {float(material_eci):,.0f} MPa"
-                        if material_eci is not None
-                        else "SOURCE BLOCKED"
-                    ),
-                    "detail": (
-                        f"f'ci={_finite_float(current_es_material_source.get('fci_mpa')):.2f} MPa "
-                        f"= {_finite_float(current_es_material_source.get('stressing_strength_ratio')):.3f} f'c"
-                        if current_es_material_source.get("fci_mpa") is not None
-                        else "stressing-stage strength source required"
-                    ),
-                    "status": "ready" if material_eci is not None else "warning",
-                },
-                {
-                    "title": "Reference axis",
-                    "value": str(reference_axis.get("status") or "SOURCE BLOCKED"),
-                    "detail": (
-                        f"{reference_axis.get('reference_section_id') or '—'}; "
-                        f"centroid spread={_finite_float(reference_axis.get('centroid_spread_mm')):.3f} mm"
-                    ),
-                    "status": "ready" if reference_axis.get("status") == "READY" else "warning",
-                },
-                {
-                    "title": "Centroid transitions",
-                    "value": "RIGID-OFFSET QA",
-                    "detail": "exact element-end transformation; no stiff dummy links",
-                    "status": "ready" if linear_stage_model.get("ready") else "warning",
-                },
-                {
-                    "title": "Independent benchmarks",
-                    "value": "PASS" if benchmark_pass else "REVIEW",
-                    "detail": "centroid tendon · P·e sign · symmetric portal",
-                    "status": "ready" if benchmark_pass else "warning",
-                },
-                {
-                    "title": "Mesh sensitivity",
-                    "value": (
-                        str(mesh_audit.get("status"))
-                        if isinstance(mesh_audit, Mapping)
-                        else mesh_evidence_status
-                    ),
-                    "detail": (
-                        f"0.50 / 0.25 / 0.125 m; fine-mesh Δmax = {_finite_float(mesh_audit.get('max_fine_mesh_delta_percent')):.4f}%"
-                        if isinstance(mesh_audit, Mapping)
-                        and mesh_audit.get("max_fine_mesh_delta_percent") is not None
-                        else "current-input diagnostic not available"
-                    ),
-                    "status": (
-                        "ready"
-                        if isinstance(mesh_audit, Mapping)
-                        and mesh_audit.get("status") == "QA STABLE"
-                        else "warning"
-                    ),
-                },
-                {
-                    "title": "Active-model symmetry",
-                    "value": (
-                        "—" if active_symmetry_residual is None
-                        else ("PASS" if active_symmetry_residual <= 0.01 else "REVIEW")
-                    ),
-                    "detail": (
-                        "requires two fixed-base reactions"
-                        if active_symmetry_residual is None
-                        else f"paired |Rx|/|Ry|/|Mz| residual = {100.0*active_symmetry_residual:.3f}%"
-                    ),
-                    "status": (
-                        "neutral" if active_symmetry_residual is None
-                        else ("ready" if active_symmetry_residual <= 0.01 else "warning")
-                    ),
-                },
-                {
-                    "title": "Tendon final bond-system source",
-                    "value": "SOURCE READY" if bond_state_ready else "REVIEW REQUIRED",
-                    "detail": (
-                        ", ".join(explicit_bond_states)
-                        if bond_state_ready
-                        else (
-                            str((bond_state_source.get("issues") or ["An explicit final bond system is required."])[0])
-                        )
-                    ),
-                    "status": "ready" if bond_state_ready else "warning",
-                },
-            ]
-        )
-
-        if not bond_state_ready:
-            for issue in bond_state_source.get("issues", []):
+            st.markdown(f"**Advanced QA status — {advanced_evidence_status}**")
+            if advanced_evidence_status == "STALE":
                 st.warning(
-                    f"Final tendon bond-system source — {issue} Internal/External identifies tendon location only; final AASHTO f_cgp routing and Elastic Shortening handoff remain blocked."
+                    "Stored Advanced QA belongs to older inputs. It is retained for comparison but has no current PASS credit."
                 )
-        else:
-            st.success(
-                "The final tendon bond system is explicit for every active tendon. This completes the bond-system input gate only; contact-aware f_cgp and final Elastic Shortening remain locked."
-            )
-
-        with st.expander("Stage stiffness, reference-axis, and benchmark audit", expanded=False):
-            mesh_source = dict(linear_stage_model.get("mesh") or {})
-            st.markdown("**Crossbeam / column EA–EI sources**")
-            st.dataframe(
-                pd.DataFrame(linear_stage_stiffness_source_rows(linear_stage_model)),
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "E used (MPa)": st.column_config.NumberColumn(format="%.1f"),
-                    "A (mm²)": st.column_config.NumberColumn(format="%.1f"),
-                    "I⊥s (mm⁴)": st.column_config.NumberColumn(format="%.4e"),
-                    "EA (N)": st.column_config.NumberColumn(format="%.4e"),
-                    "EI⊥s (N-mm²)": st.column_config.NumberColumn(format="%.4e"),
-                    "Centroid from top (mm)": st.column_config.NumberColumn(format="%.3f"),
-                    "Rigid offset to reference (mm; up +)": st.column_config.NumberColumn(format="%.3f"),
-                },
-            )
-            st.caption(
-                f"Reference axis method: {reference_axis.get('method') or '—'}. "
-                f"Reference centroid from top = {_finite_float(reference_axis.get('reference_centroid_from_top_mm')):.3f} mm. "
-                f"Crossbeam modulus route: {stage_modulus.get('crossbeam_method') or '—'}. "
-                f"Column route: {stage_modulus.get('column_method') or '—'}."
-            )
-            st.caption(
-                f"Mandatory mesh stations: {int(mesh_source.get('mandatory_station_count') or 0)}; "
-                f"status = {mesh_source.get('mandatory_station_status') or 'REVIEW'}. "
-                "Segment/Zone boundaries, column centerlines, and tendon profile control stations are inserted as exact frame nodes before subdivision."
-            )
-            st.markdown("**Independent analytical/sign benchmarks**")
-            st.dataframe(
-                pd.DataFrame(benchmark_rows),
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Benchmark": st.column_config.TextColumn(width="large"),
-                    "Expected": st.column_config.TextColumn(width="large"),
-                    "Observed": st.column_config.TextColumn(width="large"),
-                    "Residual": st.column_config.NumberColumn(format="%.3e"),
-                },
-            )
-            st.caption(
-                "These are synthetic kernel benchmarks independent of the active project. PASS verifies the implemented sign and symmetry conventions only; it does not certify the active stressing stage or release f_cgp."
-            )
-
-        st.markdown("##### Active-project mesh sensitivity")
-        if isinstance(mesh_audit, Mapping):
-            st.markdown(
-                f"**Mesh sensitivity status — {mesh_audit.get('status')}** "
-                f"({mesh_evidence_status}; diagnostic only)"
-            )
-            st.dataframe(
-                pd.DataFrame(mesh_audit.get("rows", [])),
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Target max element (m)": st.column_config.NumberColumn(format="%.3f"),
-                    "Max |N| (kN)": st.column_config.NumberColumn(format="%.3f"),
-                    "Max |V| (kN)": st.column_config.NumberColumn(format="%.3f"),
-                    "Max |M| (kN-m)": st.column_config.NumberColumn(format="%.3f"),
-                    "Max |v| (mm)": st.column_config.NumberColumn(format="%.5f"),
-                    "Equilibrium residual": st.column_config.NumberColumn(format="%.3e"),
-                    "ΔN from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
-                    "ΔV from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
-                    "ΔM from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
-                    "Δv from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
-                },
-            )
-            st.caption(
-                str(mesh_audit.get("criterion") or "")
-                + " The diagnostic is recomputed automatically when its input fingerprint changes and is never written to Project JSON, Result Summary, Report/QA, or production solver results."
-            )
-            for issue in mesh_audit.get("issues", []):
-                st.warning(str(issue))
-        else:
-            st.warning(
-                "Current-input mesh evidence is unavailable because the stage-stiffness model or accepted post-anchor force source is not ready."
-            )
-
-
-        for note in linear_stage_model.get("notes", []):
-            st.info(str(note))
-        if linear_stage_result.get("issues"):
-            with st.expander("Linear frame source / solver issues", expanded=True):
-                for issue in linear_stage_result.get("issues", []):
-                    st.warning(str(issue))
-
-        st.markdown("##### Compression-only falsework contact kernel — gravity-only QA")
-        st.caption(
-            "This isolated stage applies Crossbeam self-weight to the fixed-base Portal Frame while rigid vertical contact is available at every Crossbeam mesh node. The active-set solver releases tensile support reactions and re-closes penetrated open nodes. Tendon stressing groups are intentionally excluded, so this foundation cannot feed f_cgp or Elastic Shortening."
-        )
-        render_metric_cards(
-            [
-                {
-                    "title": "Falsework vertical model",
-                    "value": "RIGID COMPRESSION-ONLY",
-                    "detail": "active contact enforces v = 0",
-                    "status": "info",
-                },
-                {
-                    "title": "Falsework settlement",
-                    "value": "ZERO",
-                    "detail": "no spring stiffness or support compression",
-                    "status": "info",
-                },
-                {
-                    "title": "Contact direction",
-                    "value": "VERTICAL ONLY",
-                    "detail": "contact does not restrain u or rotation",
-                    "status": "info",
-                },
-                {
-                    "title": "Interface friction",
-                    "value": "NOT MODELED",
-                    "detail": "no horizontal contact-force transfer",
-                    "status": "neutral",
-                },
-            ]
-        )
-        st.caption(
-            "Physical idealization — the current QA treats the full-length falsework as perfectly rigid vertically, with zero settlement and no finite spring stiffness. This assumption is explicit and is not a calibrated falsework-stiffness model."
-        )
-        contact_equilibrium = gravity_contact_result.get("equilibrium_residual_ratio")
-        contact_max_tension_kn = _display_zero(
-            _finite_float(gravity_contact_result.get("max_tensile_violation_N")) / 1000.0
-        )
-        contact_max_penetration = _display_zero(
-            gravity_contact_result.get("max_penetration_mm")
-        )
-        render_metric_cards(
-            [
-                {
-                    "title": "Contact kernel",
-                    "value": str(gravity_contact_result.get("status") or "SOURCE BLOCKED"),
-                    "detail": f"{int(gravity_contact_result.get('iterations') or 0)} active-set iteration(s)",
-                    "status": "ready" if gravity_contact_result.get("ready") else "warning",
-                },
-                {
-                    "title": "Contact state",
-                    "value": (
-                        f"{int(gravity_contact_result.get('active_count') or 0)} ACTIVE / "
-                        f"{int(gravity_contact_result.get('candidate_count') or 0)}"
-                    ),
-                    "detail": f"{int(gravity_contact_result.get('open_count') or 0)} open node(s)",
-                    "status": "ready" if gravity_contact_result.get("ready") else "warning",
-                },
-                {
-                    "title": "Complementarity",
-                    "value": str(gravity_contact_result.get("complementarity_status") or "REVIEW"),
-                    "detail": (
-                        f"max tension={contact_max_tension_kn:.3e} kN; "
-                        f"penetration={contact_max_penetration:.3e} mm"
-                    ),
-                    "status": "ready" if gravity_contact_result.get("complementarity_status") == "PASS" else "warning",
-                },
-                {
-                    "title": "Contact equilibrium",
-                    "value": (
-                        "PASS"
-                        if contact_equilibrium is not None and float(contact_equilibrium) <= 1.0e-8
-                        else "REVIEW"
-                    ),
-                    "detail": (
-                        "not solved"
-                        if contact_equilibrium is None
-                        else f"max residual ratio = {float(contact_equilibrium):.3e}"
-                    ),
-                    "status": (
-                        "ready"
-                        if contact_equilibrium is not None and float(contact_equilibrium) <= 1.0e-8
-                        else "warning"
-                    ),
-                },
-                {
-                    "title": "Contact benchmarks",
-                    "value": "PASS" if contact_benchmark_pass else "REVIEW",
-                    "detail": "closure · lift-off · re-close · symmetry",
-                    "status": "ready" if contact_benchmark_pass else "warning",
-                },
-                {
-                    "title": "Stage scope",
-                    "value": "SELF-WEIGHT ONLY",
-                    "detail": "prestress groups + f_cgp remain locked",
-                    "status": "warning",
-                },
-            ]
-        )
-
-        if gravity_contact_result.get("issues"):
-            for issue in gravity_contact_result.get("issues", []):
-                st.warning(str(issue))
-
-        contact_plot_rows = [
-            {
-                "s (m)": row.get("station_m"),
-                "Equivalent line reaction (kN/m; up +)": row.get("line_reaction_kN_per_m"),
-                "Raw nodal reaction (kN; up +)": row.get("reaction_kN"),
-                "Tributary length (m)": row.get("tributary_length_m"),
-                "Gap (mm; up +)": row.get("gap_mm"),
-            }
-            for row in gravity_contact_result.get("contact_rows", [])
-        ]
-        if contact_plot_rows:
-            _render_ptloss3b2a_print_figure(
-                _ptloss3b2a_response_figure(
-                    contact_plot_rows,
-                    title="Equivalent Falsework Line Reaction — Self-Weight Stage",
-                    field="Equivalent line reaction (kN/m; up +)",
-                    y_title="Equivalent line reaction q (kN/m; upward/compression +)",
-                    trace_name="q = Rnode / Ltrib",
-                ),
-                caption=(
-                    "Engineering plot: q_i = R_i / L_trib,i converts the mesh-dependent raw nodal reaction to a tributary-length-equivalent line reaction for comparison across contact meshes. Raw nodal R_i remains available in the solver-audit table. This is not a final construction-stage reaction envelope."
-                ),
-            )
-            _render_ptloss3b2a_print_figure(
-                _ptloss3b2a_response_figure(
-                    contact_plot_rows,
-                    title="Falsework Contact Gap — Self-Weight Stage",
-                    field="Gap (mm; up +)",
-                    y_title="Contact gap g (mm; separation/upward +)",
-                    trace_name="Gap",
-                ),
-                caption=(
-                    "Gap is measured upward from the falsework datum. ACTIVE contact has g = 0; OPEN contact requires g ≥ 0. Negative gap would be support penetration and forces re-closure in the active-set iteration."
-                ),
-            )
-
-        with st.expander("Compression-contact active-set, benchmark, and mesh audit", expanded=False):
-            st.markdown(
-                '<div class="ptloss3b2-contact-audit-anchor" aria-hidden="true"></div>',
-                unsafe_allow_html=True,
-            )
-            st.markdown("**Active-project contact stations — complete static print audit**")
-            contact_station_rows = [
-                {
-                    "s (m)": f"{_finite_float(row.get('station_m')):.3f}",
-                    "State": str(row.get("state") or "—"),
-                    "Gap g (mm)": f"{_display_zero(row.get('gap_mm')):.3e}",
-                    "Ltrib (m)": f"{_finite_float(row.get('tributary_length_m')):.4f}",
-                    "Raw Rnode (kN)": f"{_display_zero(row.get('reaction_kN')):.6f}",
-                    "Equivalent q (kN/m)": (
-                        "—"
-                        if row.get("line_reaction_kN_per_m") is None
-                        else f"{_display_zero(row.get('line_reaction_kN_per_m')):.3f}"
-                    ),
-                }
-                for row in gravity_contact_result.get("contact_rows", [])
-            ]
-            contact_chunk_size = 14
-            for chunk_start in range(0, len(contact_station_rows), contact_chunk_size):
-                chunk = contact_station_rows[
-                    chunk_start : chunk_start + contact_chunk_size
-                ]
-                chunk_end = chunk_start + len(chunk)
-                st.markdown(
-                    '<div class="ptloss3b2-print-table-heading">'
-                    f'<em>Contact stations {chunk_start + 1}–{chunk_end} of {len(contact_station_rows)}</em>'
-                    "</div>",
-                    unsafe_allow_html=True,
-                )
-                st.table(pd.DataFrame(chunk))
-            contact_violation_rows = [
-                {
-                    "s (m)": f"{_finite_float(row.get('station_m')):.3f}",
-                    "Tensile violation (kN)": f"{_display_zero(_finite_float(row.get('tensile_violation_N')) / 1000.0):.3e}",
-                    "Penetration (mm)": f"{_display_zero(row.get('penetration_mm')):.3e}",
-                }
-                for row in gravity_contact_result.get("contact_rows", [])
-                if _finite_float(row.get("tensile_violation_N")) > 0.0
-                or _finite_float(row.get("penetration_mm")) > 0.0
-            ]
-            if contact_violation_rows:
-                st.markdown("**Station-level contact violations**")
-                st.table(pd.DataFrame(contact_violation_rows))
-            else:
-                st.caption(
-                    "All contact stations have zero tensile-reaction violation and zero support penetration within the adopted solver tolerances."
-                )
-            st.caption(
-                "Raw nodal reaction Rnode is solver output and changes with contact-node spacing. Equivalent line reaction q = Rnode/Ltrib is the engineering comparison quantity; Σ(q·Ltrib) = ΣRnode."
-            )
-            st.markdown("**Active-set iteration history**")
-            st.dataframe(
-                pd.DataFrame(gravity_contact_result.get("iteration_rows", [])),
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Equilibrium residual": st.column_config.NumberColumn(format="%.3e"),
-                },
-            )
-            st.markdown("**Independent unilateral-contact benchmarks**")
-            st.dataframe(
-                pd.DataFrame(contact_benchmark_rows),
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Benchmark": st.column_config.TextColumn(width="large"),
-                    "Expected": st.column_config.TextColumn(width="large"),
-                    "Observed": st.column_config.TextColumn(width="large"),
-                    "Residual": st.column_config.NumberColumn(format="%.3e"),
-                },
-            )
-            st.caption(
-                "Synthetic benchmarks are independent of the active project. PASS verifies unilateral closure, automatic lift-off, penetration re-closure, and symmetry logic only; it does not release the incremental prestress stage."
-            )
-            st.markdown("**Current-input gravity/contact mesh sensitivity**")
-            if isinstance(contact_mesh_audit, Mapping):
-                st.markdown(
-                    f"**Contact mesh status — {contact_mesh_audit.get('status')}** "
-                    f"({contact_mesh_evidence_status}; diagnostic only)"
-                )
-                st.dataframe(
-                    pd.DataFrame(contact_mesh_audit.get("rows", [])),
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Target max element (m)": st.column_config.NumberColumn(format="%.3f"),
-                        "Total contact R (kN)": st.column_config.NumberColumn(format="%.6f"),
-                        "Max gap (mm)": st.column_config.NumberColumn(format="%.6e"),
-                        "Max |M| (kN-m)": st.column_config.NumberColumn(format="%.6f"),
-                        "Max |v| (mm)": st.column_config.NumberColumn(format="%.6e"),
-                        "Equilibrium residual": st.column_config.NumberColumn(format="%.3e"),
-                        "ΔR from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
-                        "Δgap from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
-                        "ΔM from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
-                        "Δv from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
-                    },
-                )
-                st.caption(
-                    str(contact_mesh_audit.get("criterion") or "")
-                    + " The contact diagnostic is recomputed only when its isolated input fingerprint changes and is never written to Project JSON, Result Summary, Report/QA, or production solver results."
-                )
-                for issue in contact_mesh_audit.get("issues", []):
-                    st.warning(str(issue))
-            else:
-                st.warning("Current-input gravity/contact mesh evidence is unavailable.")
-            st.warning(str(gravity_contact_result.get("solver_boundary") or ""))
-
-        st.markdown("##### Incremental tendon-group contact stages — post-anchor QA")
-        st.caption(
-            "The solver starts from Gravity contact, preserves every earlier group's accepted P(s) after Friction + Anchorage Set, adds the next user-confirmed symmetric group, and repeats the rigid compression-only active-set solve. This is a response/contact QA route only; no Elastic Shortening force reduction is fed back yet."
-        )
-        incremental_stages = list(incremental_contact_result.get("stages") or [])
-        incremental_final_stage = dict(
-            incremental_contact_result.get("final_stage") or {}
-        )
-        incremental_final_contact = dict(
-            incremental_final_stage.get("contact_result") or {}
-        )
-        incremental_final_consistency = dict(
-            incremental_contact_result.get("final_consistency") or {}
-        )
-        prestress_liftoff_stage_count = sum(
-            int(stage.get("contact_result", {}).get("open_count") or 0) > 0
-            for stage in incremental_stages[1:]
-        )
-        final_incremental_residual = incremental_final_contact.get(
-            "equilibrium_residual_ratio"
-        )
-        render_metric_cards(
-            [
-                {
-                    "title": "Incremental contact solver",
-                    "value": str(
-                        incremental_contact_result.get("status")
-                        or "SOURCE BLOCKED"
-                    ),
-                    "detail": (
-                        f"{int(incremental_contact_result.get('stage_count') or 0)} stage(s) · {incremental_contact_evidence_status}"
-                    ),
-                    "status": "ready"
-                    if incremental_contact_result.get("ready")
-                    else "warning",
-                },
-                {
-                    "title": "Stage sequence",
-                    "value": "G0 → "
-                    + " → ".join(
-                        str(row.get("Group") or "")
-                        for row in incremental_contact_result.get(
-                            "group_source_rows", []
-                        )
-                    ),
-                    "detail": "accepted post-anchor group loads accumulate",
-                    "status": "ready"
-                    if incremental_contact_result.get("ready")
-                    else "warning",
-                },
-                {
-                    "title": "Prestress-induced lift-off",
-                    "value": (
-                        "DETECTED"
-                        if prestress_liftoff_stage_count > 0
-                        else (
-                            "NOT DETECTED"
-                            if incremental_contact_result.get("ready")
-                            else "—"
-                        )
-                    ),
-                    "detail": f"{prestress_liftoff_stage_count} tendon stage(s) with OPEN contact",
-                    "status": "ready"
-                    if incremental_contact_result.get("ready")
-                    else "warning",
-                },
-                {
-                    "title": "Final contact state",
-                    "value": (
-                        f"{int(incremental_final_contact.get('active_count') or 0)} ACTIVE / "
-                        f"{int(incremental_final_contact.get('candidate_count') or 0)}"
-                    ),
-                    "detail": f"{int(incremental_final_contact.get('open_count') or 0)} open node(s) after final group",
-                    "status": "ready"
-                    if incremental_final_contact.get("ready")
-                    else "warning",
-                },
-                {
-                    "title": "Complementarity",
-                    "value": str(
-                        incremental_final_contact.get("complementarity_status")
-                        or "REVIEW"
-                    ),
-                    "detail": (
-                        f"gap max={_display_zero(incremental_final_contact.get('max_gap_mm')):.3e} mm"
-                    ),
-                    "status": "ready"
-                    if incremental_final_contact.get("complementarity_status")
-                    == "PASS"
-                    else "warning",
-                },
-                {
-                    "title": "Stage equilibrium",
-                    "value": (
-                        "—"
-                        if final_incremental_residual is None
-                        else (
-                            "PASS"
-                            if float(final_incremental_residual) <= 1.0e-8
-                            else "REVIEW"
-                        )
-                    ),
-                    "detail": (
-                        "final stage not solved"
-                        if final_incremental_residual is None
-                        else f"max residual ratio = {float(final_incremental_residual):.3e}"
-                    ),
-                    "status": "ready"
-                    if final_incremental_residual is not None
-                    and float(final_incremental_residual) <= 1.0e-8
-                    else "warning",
-                },
-                {
-                    "title": "Final cumulative consistency",
-                    "value": str(
-                        incremental_final_consistency.get("status") or "REVIEW"
-                    ),
-                    "detail": "staged warm-start vs independent one-shot cumulative solve",
-                    "status": "ready"
-                    if incremental_final_consistency.get("ready")
-                    else "warning",
-                },
-                {
-                    "title": "Stage mesh sensitivity",
-                    "value": (
-                        str(incremental_contact_mesh_audit.get("status"))
-                        if isinstance(incremental_contact_mesh_audit, Mapping)
-                        else "NOT RUN"
-                    ),
-                    "detail": (
-                        f"0.50 / 0.25 / 0.125 m · {incremental_contact_mesh_evidence_status}"
-                    ),
-                    "status": "ready"
-                    if isinstance(incremental_contact_mesh_audit, Mapping)
-                    and incremental_contact_mesh_audit.get("ready")
-                    else "warning",
-                },
-                {
-                    "title": "Stage scope",
-                    "value": "P AFTER ANCHORAGE SET",
-                    "detail": "f_cgp + ES force feedback remain locked",
-                    "status": "warning",
-                },
-            ]
-        )
-        for issue in incremental_contact_result.get("issues", []):
-            st.warning(f"Incremental contact QA — {issue}")
-
-        if incremental_stages:
-            st.markdown("**Incremental stage summary**")
-            st.dataframe(
-                pd.DataFrame(incremental_contact_result.get("stage_rows", [])),
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Stage": st.column_config.TextColumn(width="small"),
-                    "Added group": st.column_config.TextColumn(width="small"),
-                    "Tendons added": st.column_config.TextColumn(width="medium"),
-                    "Max gap (mm)": st.column_config.NumberColumn(format="%.6f"),
-                    "Total contact R (kN)": st.column_config.NumberColumn(format="%.3f"),
-                    "Fixed-base Ry (kN)": st.column_config.NumberColumn(format="%.3f"),
-                    "Max |N| (kN)": st.column_config.NumberColumn(format="%.3f"),
-                    "Max |V| (kN)": st.column_config.NumberColumn(format="%.3f"),
-                    "Max |M| (kN-m)": st.column_config.NumberColumn(format="%.3f"),
-                    "Max |v| (mm)": st.column_config.NumberColumn(format="%.6f"),
-                    "Equilibrium residual": st.column_config.NumberColumn(format="%.3e"),
-                },
-            )
-            st.caption(
-                "After tendon stressing, total falsework contact reaction need not equal self-weight by itself. The fixed column bases may develop downward vertical reaction while the globally self-equilibrated tendon loads redistribute support actions; stage equilibrium is checked using contact plus fixed-base reactions together."
-            )
-            incremental_stage_labels = [
-                str(stage.get("stage_label") or stage.get("stage_id") or "—")
-                for stage in incremental_stages
-            ]
-            selected_incremental_stage_label = st.selectbox(
-                "Incremental contact stage",
-                options=incremental_stage_labels,
-                index=len(incremental_stage_labels) - 1,
-                key="crossbeam_ptloss3b2b2_selected_stage",
-            )
-            selected_incremental_stage = next(
-                (
-                    stage
-                    for stage in incremental_stages
-                    if str(
-                        stage.get("stage_label")
-                        or stage.get("stage_id")
-                        or "—"
-                    )
-                    == selected_incremental_stage_label
-                ),
-                incremental_stages[-1],
-            )
-            selected_incremental_contact = dict(
-                selected_incremental_stage.get("contact_result") or {}
-            )
-            selected_incremental_contact_rows = list(
-                selected_incremental_stage.get("contact_rows") or []
-            )
-            selected_incremental_plot_rows = [
-                {
-                    "s (m)": _finite_float(row.get("station_m")),
-                    "Equivalent line reaction (kN/m; up +)": (
-                        0.0
-                        if str(row.get("state")) == "OPEN"
-                        else _finite_float(row.get("line_reaction_kN_per_m"))
-                    ),
-                    "Gap (mm; up +)": _finite_float(row.get("gap_mm")),
-                }
-                for row in selected_incremental_contact_rows
-            ]
-            if selected_incremental_plot_rows:
-                _render_ptloss3b2a_print_figure(
-                    _ptloss3b2a_response_figure(
-                        selected_incremental_plot_rows,
-                        title=(
-                            "Equivalent Falsework Line Reaction — "
-                            + selected_incremental_stage_label
-                        ),
-                        field="Equivalent line reaction (kN/m; up +)",
-                        y_title="Equivalent line reaction q (kN/m; upward/compression +)",
-                        trace_name="q = Rnode / Ltrib",
-                    ),
-                    caption=(
-                        "OPEN contact nodes are plotted at q = 0. Raw nodal reactions remain available in the selected-stage audit. The reaction is based on the cumulative accepted post-anchor tendon groups active at this stage."
-                    ),
-                )
-                _render_ptloss3b2a_print_figure(
-                    _ptloss3b2a_response_figure(
-                        selected_incremental_plot_rows,
-                        title="Falsework Contact Gap — "
-                        + selected_incremental_stage_label,
-                        field="Gap (mm; up +)",
-                        y_title="Contact gap g (mm; separation/upward +)",
-                        trace_name="Gap",
-                    ),
-                    caption=(
-                        "ACTIVE contact has g = 0; OPEN contact requires g ≥ 0. The active set is updated after the selected tendon group is added while all earlier groups remain active."
-                    ),
-                )
-
-            with st.expander(
-                "Selected incremental-stage structural response", expanded=False
+            if advanced_evidence_status == "CURRENT" and isinstance(
+                advanced_bundle, Mapping
             ):
-                selected_incremental_response_rows = list(
-                    selected_incremental_stage.get("beam_response_rows") or []
+                advanced_incremental = dict(
+                    advanced_bundle.get("incremental") or {}
                 )
-                for response_title, response_field, response_axis, response_trace in (
-                    (
-                        "Crossbeam Moment",
-                        "M sagging-positive (kN-m)",
-                        "Moment M (kN-m; sagging +)",
-                        "M",
-                    ),
-                    (
-                        "Crossbeam Axial Force",
-                        "N compression-positive (kN)",
-                        "Axial force N (kN; compression +)",
-                        "N",
-                    ),
-                    (
-                        "Crossbeam Shear Force",
-                        "V (kN)",
-                        "Shear force V (kN)",
-                        "V",
-                    ),
-                    (
-                        "Crossbeam Vertical Displacement",
-                        "v_up (mm)",
-                        "Vertical displacement v (mm; upward +)",
-                        "v",
-                    ),
-                ):
-                    if selected_incremental_response_rows:
-                        _render_ptloss3b2a_print_figure(
-                            _ptloss3b2a_response_figure(
-                                selected_incremental_response_rows,
-                                title=f"{response_title} — {selected_incremental_stage_label}",
-                                field=response_field,
-                                y_title=response_axis,
-                                trace_name=response_trace,
-                            ),
-                            caption=(
-                                "Contact-aware cumulative stage response. This remains diagnostic and cannot feed f_cgp or Elastic Shortening until the stage-stress extraction milestone is validated."
-                            ),
-                        )
-
-            with st.expander(
-                "Incremental contact source, active-set, and consistency audit",
-                expanded=False,
-            ):
-                st.markdown(
-                    '<div class="ptloss3b2-contact-audit-anchor" aria-hidden="true"></div>',
-                    unsafe_allow_html=True,
+                advanced_final = dict(
+                    advanced_incremental.get("final_stage") or {}
                 )
-                st.markdown("**Post-anchor stressing-group load sources**")
-                st.dataframe(
-                    pd.DataFrame(
-                        incremental_contact_result.get("group_source_rows", [])
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Group Pj (kN)": st.column_config.NumberColumn(
-                            format="%.3f"
-                        ),
-                        "Min P after anchor (kN)": st.column_config.NumberColumn(
-                            format="%.3f"
-                        ),
-                        "Max P after anchor (kN)": st.column_config.NumberColumn(
-                            format="%.3f"
-                        ),
-                    },
+                advanced_final_contact = dict(
+                    advanced_final.get("contact_result") or {}
                 )
-                st.caption(
-                    "Group Pj is shown for source traceability only. The structural stage loads use each Tendon's accepted station-by-station P after Anchorage Set; no fpj restart is permitted."
+                advanced_mesh = dict(
+                    advanced_bundle.get("incremental_mesh") or {}
                 )
-                st.markdown("**Stage-wise contact and frame summary**")
-                st.dataframe(
-                    pd.DataFrame(incremental_contact_result.get("stage_rows", [])),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-                st.markdown("**Selected-stage contact intervals**")
-                st.table(
-                    pd.DataFrame(
-                        selected_incremental_stage.get(
-                            "contact_interval_rows", []
-                        )
-                    )
-                )
-                st.markdown("**Selected-stage active-set iteration history**")
-                st.dataframe(
-                    pd.DataFrame(
-                        selected_incremental_contact.get("iteration_rows", [])
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Equilibrium residual": st.column_config.NumberColumn(
-                            format="%.3e"
-                        )
-                    },
-                )
-                st.markdown(
-                    '<div class="ptloss3b2-print-table-heading"><strong>Selected-stage contact stations</strong></div>',
-                    unsafe_allow_html=True,
-                )
-                incremental_station_rows = [
-                    {
-                        "s (m)": f"{_finite_float(row.get('station_m')):.3f}",
-                        "State": str(row.get("state") or "—"),
-                        "Gap g (mm)": f"{_display_zero(row.get('gap_mm')):.6e}",
-                        "Ltrib (m)": f"{_finite_float(row.get('tributary_length_m')):.4f}",
-                        "Raw Rnode (kN)": f"{_display_zero(row.get('reaction_kN')):.6f}",
-                        "Equivalent q (kN/m)": (
-                            "—"
-                            if row.get("line_reaction_kN_per_m") is None
-                            else f"{_display_zero(row.get('line_reaction_kN_per_m')):.3f}"
-                        ),
-                    }
-                    for row in selected_incremental_contact_rows
-                ]
-                incremental_contact_chunk_size = 14
-                for chunk_start in range(
-                    0,
-                    len(incremental_station_rows),
-                    incremental_contact_chunk_size,
-                ):
-                    chunk = incremental_station_rows[
-                        chunk_start : chunk_start
-                        + incremental_contact_chunk_size
+                render_metric_cards(
+                    [
+                        {
+                            "title": "Advanced elapsed time",
+                            "value": f"{float(advanced_bundle.get('elapsed_seconds') or 0.0):.2f} s",
+                            "detail": "explicit user-requested verification run",
+                            "status": "warning",
+                        },
+                        {
+                            "title": "Incremental stages",
+                            "value": str(advanced_incremental.get("status") or "REVIEW"),
+                            "detail": f"{int(advanced_incremental.get('stage_count') or 0)} stage(s)",
+                            "status": "ready" if advanced_incremental.get("ready") else "warning",
+                        },
+                        {
+                            "title": "Final contact",
+                            "value": f"{int(advanced_final_contact.get('active_count') or 0)} ACTIVE / {int(advanced_final_contact.get('candidate_count') or 0)}",
+                            "detail": f"{int(advanced_final_contact.get('open_count') or 0)} open",
+                            "status": "ready" if advanced_final_contact.get("ready") else "warning",
+                        },
+                        {
+                            "title": "Stage mesh",
+                            "value": str(advanced_mesh.get("status") or "NOT RUN"),
+                            "detail": "0.50 / 0.25 / 0.125 m",
+                            "status": "ready" if advanced_mesh.get("ready") else "warning",
+                        },
                     ]
-                    chunk_end = chunk_start + len(chunk)
-                    st.markdown(
-                        '<div class="ptloss3b2-print-table-heading">'
-                        f'<em>Contact stations {chunk_start + 1}–{chunk_end} of {len(incremental_station_rows)}</em>'
-                        "</div>",
-                        unsafe_allow_html=True,
-                    )
-                    st.table(pd.DataFrame(chunk))
-                st.markdown("**Final cumulative staged-versus-one-shot check**")
-                st.table(
-                    pd.DataFrame(
-                        [
-                            {
-                                "Status": incremental_final_consistency.get(
-                                    "status", "REVIEW"
-                                ),
-                                "Contact state match": bool(
-                                    incremental_final_consistency.get(
-                                        "state_match"
-                                    )
-                                ),
-                                "Max Δgap (mm)": _display_zero(
-                                    incremental_final_consistency.get(
-                                        "max_gap_delta_mm"
-                                    )
-                                ),
-                                "Max Δreaction (kN)": _display_zero(
-                                    incremental_final_consistency.get(
-                                        "max_reaction_delta_kN"
-                                    )
-                                ),
-                                "Max Δv (mm)": _display_zero(
-                                    incremental_final_consistency.get(
-                                        "max_displacement_delta_mm"
-                                    )
-                                ),
-                            }
-                        ]
-                    )
                 )
-                st.markdown("**Independent incremental-contact benchmarks**")
-                st.dataframe(
-                    pd.DataFrame(incremental_contact_benchmarks),
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Benchmark": st.column_config.TextColumn(width="large"),
-                        "Expected": st.column_config.TextColumn(width="large"),
-                        "Observed": st.column_config.TextColumn(width="large"),
-                        "Residual": st.column_config.NumberColumn(format="%.3e"),
-                    },
-                )
-                st.caption(
-                    "Synthetic benchmarks validate cumulative load retention, prestress-induced lift-off, mirrored contact behavior, and staged-versus-one-shot consistency. They do not certify f_cgp or Elastic Shortening."
-                )
-                if not incremental_contact_benchmark_pass:
-                    st.warning(
-                        "One or more independent incremental-contact benchmarks require review."
-                    )
-                st.markdown("**Current-input incremental contact mesh sensitivity**")
-                if isinstance(incremental_contact_mesh_audit, Mapping):
-                    st.markdown(
-                        f"**Stage mesh status — {incremental_contact_mesh_audit.get('status')}** "
-                        f"({incremental_contact_mesh_evidence_status}; diagnostic only)"
-                    )
+                stage_rows = list(advanced_incremental.get("stage_rows") or [])
+                if stage_rows:
                     st.dataframe(
-                        pd.DataFrame(
-                            incremental_contact_mesh_audit.get("rows", [])
-                        ),
+                        pd.DataFrame(stage_rows),
                         use_container_width=True,
                         hide_index=True,
-                        column_config={
-                            "Target max element (m)": st.column_config.NumberColumn(format="%.3f"),
-                            "Open tributary length (m)": st.column_config.NumberColumn(format="%.4f"),
-                            "Total contact R (kN)": st.column_config.NumberColumn(format="%.3f"),
-                            "Max gap (mm)": st.column_config.NumberColumn(format="%.6f"),
-                            "Max |M| (kN-m)": st.column_config.NumberColumn(format="%.3f"),
-                            "Max |v| (mm)": st.column_config.NumberColumn(format="%.6f"),
-                            "Equilibrium residual": st.column_config.NumberColumn(format="%.3e"),
-                            "ΔR from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
-                            "Δgap from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
-                            "ΔM from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
-                            "Δv from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
-                            "Δopen length from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
-                        },
                     )
-                    st.caption(
-                        str(incremental_contact_mesh_audit.get("criterion") or "")
-                    )
-                    st.info(
-                        str(incremental_contact_mesh_audit.get("boundary_note") or "")
-                    )
-                    for issue in incremental_contact_mesh_audit.get("issues", []):
-                        st.warning(str(issue))
-                else:
-                    st.warning(
-                        "Current-input incremental contact mesh evidence is unavailable."
-                    )
-                st.warning(
-                    str(incremental_contact_result.get("solver_boundary") or "")
-                )
-
-        if linear_stage_result.get("cases"):
-            st.markdown("###### Linear load-case summary")
-            case_summary_rows = linear_stage_case_summary_rows(linear_stage_result)
-            st.dataframe(
-                pd.DataFrame(case_summary_rows),
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Load case": st.column_config.TextColumn(width="large"),
-                    "Status": st.column_config.TextColumn(width="medium"),
-                    "Applied Fx (kN)": st.column_config.NumberColumn(format="%.3f"),
-                    "Applied Fy (kN)": st.column_config.NumberColumn(format="%.3f"),
-                    "Reaction Fx (kN)": st.column_config.NumberColumn(format="%.3f"),
-                    "Reaction Fy (kN)": st.column_config.NumberColumn(format="%.3f"),
-                    "Max |N| (kN)": st.column_config.NumberColumn(format="%.3f"),
-                    "Max |V| (kN)": st.column_config.NumberColumn(format="%.3f"),
-                    "Max |M| (kN-m)": st.column_config.NumberColumn(format="%.3f"),
-                    "Max |v| (mm)": st.column_config.NumberColumn(format="%.4f"),
-                    "Equilibrium residual": st.column_config.NumberColumn(format="%.3e"),
-                },
-            )
-
-            response_case = st.selectbox(
-                "Linear QA load case",
-                options=list(PTLOSS3B2A_CASES),
-                index=list(PTLOSS3B2A_CASES).index(PTLOSS3B2A_PRESTRESS_CASE),
-                key="crossbeam_ptloss3b2a_response_case",
-            )
-            selected_linear_case = linear_stage_result.get("cases", {}).get(
-                response_case, {}
-            )
-            selected_response_rows = list(
-                selected_linear_case.get("beam_response_rows") or []
-            )
-            if selected_response_rows:
-                _render_ptloss3b2a_print_figure(
-                    _ptloss3b2a_response_figure(
-                        selected_response_rows,
-                        title=f"Crossbeam Moment — {response_case}",
-                        field="M sagging-positive (kN-m)",
-                        y_title="Moment M (kN-m; sagging +)",
-                        trace_name="M",
-                    ),
-                    caption=(
-                        "Moment is sagging-positive. This fixed-base linear frame trace includes gross-section stiffness and the selected linear load case, but excludes continuous falsework contact and is not a final Primary/Secondary Prestress decomposition. Apparent steps can occur at concentrated tendon-equivalent couples and when reporting section-local moment across centroid/reference-axis transitions; they must not be read automatically as a physical hinge or released joint."
-                    ),
-                )
-                _render_ptloss3b2a_print_figure(
-                    _ptloss3b2a_response_figure(
-                        selected_response_rows,
-                        title=f"Crossbeam Axial Force — {response_case}",
-                        field="N compression-positive (kN)",
-                        y_title="Axial force N (kN; compression +)",
-                        trace_name="N comp.",
-                    ),
-                    caption=(
-                        "N is compression-positive. Axial force is separated from shear so the smaller shear trace remains readable for QA."
-                    ),
-                )
-                _render_ptloss3b2a_print_figure(
-                    _ptloss3b2a_response_figure(
-                        selected_response_rows,
-                        title=f"Crossbeam Shear Force — {response_case}",
-                        field="V (kN)",
-                        y_title="Shear force V (kN)",
-                        trace_name="V",
-                    ),
-                    caption=(
-                        "V follows dM/ds. Jumps at frame joints or concentrated tendon-equivalent loads are retained for QA."
-                    ),
-                )
-                _render_ptloss3b2a_print_figure(
-                    _ptloss3b2a_response_figure(
-                        selected_response_rows,
-                        title=f"Crossbeam Vertical Displacement — {response_case}",
-                        field="v_up (mm)",
-                        y_title="Vertical displacement v (mm; upward +)",
-                        trace_name="v",
-                    ),
-                    caption=(
-                        "Upward displacement is positive. The displacement is a no-contact linear QA bound, not the stressing-stage camber after falsework lift-off iteration."
-                    ),
-                )
-
-                if response_case == PTLOSS3B2A_PRESTRESS_CASE:
-                    primary_reference_rows = list(
-                        linear_stage_result.get("prestress_load_source", {}).get(
-                            "primary_reference_rows", []
-                        )
-                    )
-                    if primary_reference_rows:
-                        _render_ptloss3b2a_print_figure(
-                            _ptloss3b2a_response_figure(
-                                primary_reference_rows,
-                                title="Primary Prestress P·e Reference — After Anchorage Set",
-                                field="Primary P·e moment (kN-m; sagging +)",
-                                y_title="Primary moment -P·e (kN-m; sagging +)",
-                                trace_name="Primary -P·e",
-                            ),
-                            caption=(
-                                "This is an independent section-local primary P·e reference using e positive below the local section centroid, so a tendon below the centroid gives negative (hogging) moment when sagging is positive. It is not the solved restrained-frame moment and does not include Secondary Prestress."
-                            ),
-                        )
-
-            with st.expander("Linear-response reaction, column-action, and tendon-load audit", expanded=False):
-                reaction_rows = [
-                    {
-                        "Node": row.get("label"),
-                        "Column": row.get("column_id", ""),
-                        "Rx (kN)": _finite_float(row.get("reaction_fx_N")) / 1000.0,
-                        "Ry (kN)": _finite_float(row.get("reaction_fy_N")) / 1000.0,
-                        "Mz (kN-m)": _finite_float(row.get("reaction_moment_Nmm")) / 1.0e6,
-                    }
-                    for row in selected_linear_case.get("nodes", [])
-                    if bool(row.get("fixed"))
-                ]
-                st.markdown("**Fixed-base reactions**")
-                st.dataframe(pd.DataFrame(reaction_rows), use_container_width=True, hide_index=True)
-                st.markdown("**Column end actions**")
-                st.dataframe(
-                    pd.DataFrame(selected_linear_case.get("column_action_rows", [])),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-                st.markdown("**Active-project symmetry review**")
-                if active_symmetry_residual is None:
-                    st.caption("Symmetry residual is unavailable because the selected model does not expose exactly two fixed-base reactions.")
-                else:
-                    st.write(
-                        f"Paired absolute reaction residual = **{100.0*active_symmetry_residual:.3f}%** "
-                        f"({'PASS' if active_symmetry_residual <= 0.01 else 'REVIEW'}; QA tolerance = 1.000%). "
-                        "This is an active-project diagnostic, separate from the synthetic symmetric-portal benchmark."
-                    )
-                st.markdown("**Moment-jump / response-event audit**")
-                st.caption(
-                    "Moment steps may be generated by concentrated tendon-equivalent couples, frame joints, and transformation between the common reference axis and local section centroids. The audit is split into compact tables so the station source, local-moment interpretation, and equivalent nodal actions remain readable in browser print."
-                )
-                event_rows = list(linear_stage_result.get("response_event_rows", []))
-                st.markdown("**A. Station and source map**")
-                st.dataframe(
-                    pd.DataFrame(
-                        [
-                            {
-                                "s (m)": row.get("s (m)"),
-                                "Event type": row.get("Event type"),
-                                "Tendon roles": row.get("Tendon roles"),
-                                "Tendons": row.get("Tendons"),
-                                "Column": row.get("Column"),
-                                "Left region / section": row.get("Left region / section"),
-                                "Right region / section": row.get("Right region / section"),
-                            }
-                            for row in event_rows
-                        ]
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "s (m)": st.column_config.NumberColumn(format="%.3f"),
-                    },
-                )
-                st.markdown("**B. Local-moment and reference-axis audit**")
-                st.dataframe(
-                    pd.DataFrame(
-                        [
-                            {
-                                "s (m)": row.get("s (m)"),
-                                "Δy (mm; up +)": row.get("Centroid offset jump Δy (mm; up +)"),
-                                "N ref. (kN; comp. +)": row.get("N reference (kN; comp. +)"),
-                                "|N·Δy| ref. (kN-m)": row.get("|N·Δy| axis-shift reference (kN-m)"),
-                                "M left (kN-m)": row.get("M left local (kN-m; sagging +)"),
-                                "M right (kN-m)": row.get("M right local (kN-m; sagging +)"),
-                                "Observed ΔM (kN-m)": row.get("Observed ΔM right-left (kN-m)"),
-                                "Interpretation": row.get("Interpretation sources"),
-                            }
-                            for row in event_rows
-                        ]
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "s (m)": st.column_config.NumberColumn(format="%.3f"),
-                        "Δy (mm; up +)": st.column_config.NumberColumn(format="%.3f"),
-                        "N ref. (kN; comp. +)": st.column_config.NumberColumn(format="%.3f"),
-                        "|N·Δy| ref. (kN-m)": st.column_config.NumberColumn(format="%.3f"),
-                        "M left (kN-m)": st.column_config.NumberColumn(format="%.3f"),
-                        "M right (kN-m)": st.column_config.NumberColumn(format="%.3f"),
-                        "Observed ΔM (kN-m)": st.column_config.NumberColumn(format="%.3f"),
-                    },
-                )
-                st.markdown('<div class="ptloss3b2-print-table-heading"><strong>C. Equivalent tendon nodal actions</strong></div>', unsafe_allow_html=True)
-                st.dataframe(
-                    pd.DataFrame(
-                        [
-                            {
-                                "s (m)": row.get("s (m)"),
-                                "Fx (kN)": row.get("Equivalent nodal Fx (kN)"),
-                                "Fy (kN; up +)": row.get("Equivalent nodal Fy (kN; up +)"),
-                                "Couple (kN-m; CCW +)": row.get("Equivalent nodal couple (kN-m; CCW +)"),
-                                "Event type": row.get("Event type"),
-                            }
-                            for row in event_rows
-                        ]
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "s (m)": st.column_config.NumberColumn(format="%.3f"),
-                        "Fx (kN)": st.column_config.NumberColumn(format="%.3f"),
-                        "Fy (kN; up +)": st.column_config.NumberColumn(format="%.3f"),
-                        "Couple (kN-m; CCW +)": st.column_config.NumberColumn(format="%.3f"),
-                    },
-                )
-                st.caption(
-                    "Review all three tables together before treating a plotted step as a physical hinge, release, or member-action discontinuity. |N·Δy| remains a reference-axis interpretation magnitude, not a stand-alone closure criterion."
-                )
-                st.markdown("**Equivalent tendon-load assembly**")
-                st.dataframe(
-                    pd.DataFrame(
-                        linear_stage_result.get("prestress_load_source", {}).get(
-                            "audit_rows", []
-                        )
-                    ),
-                    use_container_width=True,
-                    hide_index=True,
-                )
-                st.caption(
-                    "Each tendon path segment uses its actual endpoint P after Anchorage Set and physical tendon elevation relative to the common frame reference axis. Loads are assembled with no fpj restart and no generic equivalent uniform load. Local e is reported positive below the active section centroid for the independent -P·e sign audit."
-                )
-
-        st.warning(
-            "Solver boundary — this is a fixed-base linear benchmark only. It does not represent the accepted continuous full-length compression-only support condition at stressing. Do not use these QA actions or displacements as f_cgp, final Elastic Shortening, Pe/Pe_eff, or reportable design results."
-        )
-
-        if not current_es_group_summary.get("ready"):
-            for issue in current_es_group_summary.get("issues", []):
-                st.warning(str(issue))
-        if current_es_material_source.get("issues"):
-            for issue in current_es_material_source.get("issues", []):
-                st.warning(str(issue))
-        elif current_es_material_source.get("note"):
-            st.caption(str(current_es_material_source.get("note")))
-
-        st.markdown("#### Symmetric stressing-pair source")
-        st.dataframe(
-            pd.DataFrame(
-                [
-                    {
-                        "Group": row.get("Group ID"),
-                        "Geometry pair order": row.get("Sequence"),
-                        "Symmetric tendons": row.get("Tendons"),
-                        "Type": row.get("Type", ""),
-                        "Final bond system": row.get("Bond state", ""),
-                        "Group Pj (kN)": round(_finite_float(row.get("Group Pj (kN)")), 2),
-                        "Depth mismatch (mm)": round(_finite_float(row.get("Depth mismatch (mm)")), 3),
-                        "Mirror-x mismatch (mm)": round(_finite_float(row.get("Mirror-x mismatch (mm)")), 3),
-                        "Status": row.get("Status"),
-                        "Issue": row.get("Issue"),
-                    }
-                    for row in current_es_group_rows
-                ]
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
-        st.caption(
-            "Pairing is derived from the adopted tendon geometry, not tendon names. Construction stressing-pair order is a separate user-confirmed source above; geometry order must not be treated as the final stressing sequence."
-        )
+                st.caption(str(advanced_bundle.get("benchmark_evidence") or ""))
 
         with st.expander("Calculation trace / QA — formula, stage source, and overrides", expanded=False):
             st.markdown("##### Code / methodology basis")
             st.write(
-                f"Member design basis: **{member_design_code_label}**. Prestress-loss basis: **AASHTO LRFD 2020 §5.9.3**, with Elastic Shortening at **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 uses the equal-group mapping only as a guarded reference/preview when every pair is geometrically valid, final-bond-system compatible, and group jacking forces are equivalent; the separate construction stressing-pair sequence is preserved for the future incremental contact/stage solver."
+                f"Member design basis: **{member_design_code_label}**. Prestress-loss basis: **AASHTO LRFD 2020 §5.9.3**, with Elastic Shortening at **{AASHTO_PTL_ELASTIC_SHORTENING_BASIS}** for post-tensioned members. The published N-factor applies to identical sequential tendon stressing. Crossbeam PTLOSS3 maps each verified simultaneous symmetric pair to one equivalent group for the ordinary design estimate; the explicit construction sequence is retained only for optional Advanced Construction-Stage QA."
             )
             st.latex(r"\Delta f_{pES,avg}=\left(\frac{G-1}{2G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
             st.latex(r"\Delta f_{pES,g}=\left(\frac{G-g}{G}\right)\left(\frac{E_p}{E_{ci}}\right)f_{cgp}")
@@ -9562,7 +8699,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
             st.markdown("##### Stage-stress source")
             st.warning(
-                "The accepted fixed-base gross-section Portal-Frame QA response intentionally excludes continuous compression-only falsework contact and lift-off. Source-derived f_cgp remains BLOCKED until the contact-aware incremental Primary/Secondary Prestress + gravity stage solver is validated. A manual f_cgp override below is QA-only and cannot release final effective prestress."
+                "The source-derived f_cgp route uses one cumulative self-weight + accepted post-anchor tendon contact solve. Bonded tendons use representative continuous-member sections; permanently unbonded tendons use a member-length average. Manual f_cgp below remains an engineer-QA override and does not replace the on-demand source route."
             )
 
             st.checkbox(
@@ -9655,7 +8792,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                     )
 
             st.caption(
-                "QA boundary: manual f_cgp/Eci overrides are preview-only. Pe/Pe_eff and Time-Dependent losses remain locked. No AASHTO code-certified final ES result is released until the source-derived stressing-stage f_cgp route is validated."
+                "QA boundary: the source-derived lightweight result is an AASHTO design estimate, while manual f_cgp/Eci overrides remain engineer-QA previews. Pe/Pe_eff assembly and Time-Dependent losses remain locked until their own downstream milestones are released."
             )
 
     with time_dependent_tab:
@@ -9692,11 +8829,17 @@ def render_crossbeam_prestress_loss_page() -> None:
                         "Order": 4,
                         "Source / component": "Elastic shortening",
                         "Current state": (
-                            "LINEAR FRAME QA / f_cgp CONTACT BLOCKED"
-                            if current_es_group_summary.get("ready")
-                            else "PAIR SOURCE REVIEW"
+                            "DESIGN ESTIMATE READY"
+                            if lightweight_evidence_status == "CURRENT"
+                            and isinstance(lightweight_result, Mapping)
+                            and lightweight_result.get("ready")
+                            else (
+                                f"ON-DEMAND {lightweight_evidence_status}"
+                                if current_es_group_summary.get("ready")
+                                else "PAIR SOURCE REVIEW"
+                            )
                         ),
-                        "Feeds": "Fixed-base no-contact linear QA only; contact-aware f_cgp and Pe/Pe_eff remain locked",
+                        "Feeds": "Elastic Shortening component and P after ES preview; Pe/Pe_eff assembly remains locked",
                     },
                     {
                         "Order": 5,

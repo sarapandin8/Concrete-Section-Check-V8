@@ -267,15 +267,15 @@ def test_ptloss3b2a_uses_post_anchorage_force_values_not_fpj_restart() -> None:
     assert not math.isclose(first["P_i (kN)"], 3710.7)
 
 
-def test_ptloss3b2a_ui_exposes_linear_qa_and_keeps_contact_fcgp_locked() -> None:
+def test_ptloss3b2a_ui_uses_one_cumulative_stage_and_preserves_post_anchor_chain() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
     elastic_block = source.split("with elastic_shortening_tab:", maxsplit=1)[1].split(
         "with time_dependent_tab:", maxsplit=1
     )[0]
-    assert "Linear stressing-stage response QA — fixed-base / no-contact" in elastic_block
-    assert "P after Anchorage Set + adopted tendon profile" in elastic_block
-    assert "INCREMENTAL CONTACT QA" in elastic_block
-    assert "Continuous falsework contact is intentionally excluded" in elastic_block
-    assert "f_cgp handoff" in elastic_block and '"value": "LOCKED"' in elastic_block
-    assert "do not feed f_cgp, Elastic Shortening, Pe/Pe_eff, Result Summary, or Report/QA" in elastic_block
-    assert "no fpj restart" in elastic_block
+    assert "SINGLE CUMULATIVE STAGE" in elastic_block
+    assert "accepted post-anchor tendon loads" in elastic_block
+    assert "Run Lightweight ES Analysis" in elastic_block
+    assert "run_crossbeam_lightweight_elastic_shortening" in elastic_block
+    assert "it never restarts from fpj" in elastic_block
+    assert "Pe/Pe_eff" in elastic_block
+

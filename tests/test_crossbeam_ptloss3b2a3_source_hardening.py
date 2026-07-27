@@ -11,16 +11,17 @@ def test_ptloss3b2a3_resets_inactive_legacy_eci_override_to_stage_source():
     assert "st.session_state[CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY] = float(material_eci)" in source
 
 
-def test_ptloss3b2a3_exposes_active_model_symmetry_and_bond_state_guards():
+def test_ptloss3b2a3_exposes_bond_state_guard_and_lightweight_runtime_status():
     source = _source()
-    assert '"title": "Active-model symmetry"' in source
-    assert '"title": "Tendon final bond-system source"' in source
-    assert "Internal/External identifies tendon location" in source
+    assert '"title": "Final bond-system source"' in source
+    assert "Internal/External location remains a separate source" in source
+    assert '"title": "Runtime mode"' in source
+    assert '"value": "ON DEMAND"' in source
 
-
-def test_ptloss3b2a3_explains_moment_steps_and_removes_stale_ui_labels():
+def test_ptloss3b2a3_moves_detailed_response_events_out_of_normal_runtime():
     source = _source()
-    assert "Apparent steps can occur at concentrated tendon-equivalent couples" in source
-    assert "Moment-jump / response-event audit" in source
+    assert "Advanced Construction-Stage QA — optional and computationally heavy" in source
+    assert "Automated pytest regression suite; not rerun in the user session." in source
     assert "PTLOSS3B2A1 reaction, column-action, and tendon-load audit" not in source
     assert "Run PTLOSS3B2A1 mesh-sensitivity diagnostic" not in source
+

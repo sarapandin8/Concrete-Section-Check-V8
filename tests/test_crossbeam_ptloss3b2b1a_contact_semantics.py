@@ -68,33 +68,27 @@ def test_ptloss3b2b1a_contact_rows_expose_mesh_aware_line_reaction() -> None:
     )
 
 
-def test_ptloss3b2b1a_support_source_declares_released_gravity_route_and_locked_prestress() -> None:
+def test_ptloss3b2b1a_support_source_declares_lightweight_route_and_optional_stage_qa() -> None:
     source = temporary_support_source(20.0)
     assert source["vertical_model"] == "RIGID VERTICAL CONTACT"
-    assert "released gravity and incremental post-anchor tendon-group QA" in source["note"]
-    assert "Source-derived f_cgp and Elastic Shortening remain locked" in source["note"]
+    assert "ordinary Elastic Shortening design route uses one cumulative" in source["note"]
+    assert "optional construction-stage QA" in source["note"]
     assert "future stage solver" not in source["note"]
 
 
-def test_ptloss3b2b1a_ui_uses_line_reaction_and_complete_static_contact_audit() -> None:
+def test_ptloss3b2b1a_ui_keeps_contact_semantics_inside_on_demand_routes() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
     elastic = source.split("with elastic_shortening_tab:", 1)[1].split(
         "with time_dependent_tab:", 1
     )[0]
-    assert "Equivalent Falsework Line Reaction — Self-Weight Stage" in elastic
-    assert "q_i = R_i / L_trib,i" in elastic
-    assert "Raw nodal reaction Rnode" in elastic
-    assert "Active-project contact stations — complete static print audit" in elastic
-    assert "contact_chunk_size = 14" in elastic
-    assert "st.table(pd.DataFrame(chunk))" in elastic
-    assert "ptloss3b2-contact-audit-anchor" in elastic
-    assert "RIGID COMPRESSION-ONLY" in elastic
-    assert "no spring stiffness or support compression" in elastic
-    assert "gravity + incremental prestress active-set released; f_cgp locked" in elastic
-    assert "Falsework Contact Reaction — Self-Weight Stage" not in elastic
+    assert "one cumulative rigid compression-contact solve" in elastic
+    assert "Final contact state" in elastic
+    assert "Cumulative structural-response audit — display only" in elastic
+    assert "Opening this expander does not rerun the solver" in elastic
+    assert "Run Advanced Construction-Stage QA" in elastic
+    assert "Clear Advanced QA" in elastic
 
 
-def test_ptloss3b2b1a_display_zero_normalizes_negative_zero() -> None:
+def test_ptloss3b2b1a_display_zero_helper_is_retained_for_advanced_qa() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
     assert "def _display_zero" in source
-    assert "contact_max_penetration = _display_zero" in source
