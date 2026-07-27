@@ -6259,6 +6259,7 @@ CB_PTL_LIGHTWEIGHT_ES_FINGERPRINT_KEY = "crossbeam_ptloss_lightweight_es_fingerp
 CB_PTL_LIGHTWEIGHT_ES_RESULT_KEY = "crossbeam_ptloss_lightweight_es_result_v1"
 CB_PTL_ADVANCED_QA_FINGERPRINT_KEY = "crossbeam_ptloss_advanced_qa_fingerprint_v1"
 CB_PTL_ADVANCED_QA_RESULT_KEY = "crossbeam_ptloss_advanced_qa_result_v1"
+CB_PTL_ADVANCED_QA_CONFIRM_KEY = "crossbeam_ptloss_advanced_qa_confirm_v1"
 
 
 def _linear_mesh_diagnostic_fingerprint(
@@ -7885,6 +7886,7 @@ def render_crossbeam_prestress_loss_page() -> None:
             if fcgp_override_enabled
             else (float(derived_fcgp) if derived_fcgp is not None else None)
         )
+        bond_state_source = tendon_bond_state_summary(system_rows)
 
         es_summary = elastic_shortening_summary(
             ordered_es_group_rows,
@@ -7934,6 +7936,51 @@ def render_crossbeam_prestress_loss_page() -> None:
             if calculated_es_preview_rows
             else None
         )
+
+        if not upstream_ready:
+            displayed_component_status = "UPSTREAM FORCE REQUIRED"
+            displayed_component_detail = "Complete Friction and Anchorage Set sources"
+            displayed_component_tone = "warning"
+        elif not current_es_group_summary.get("ready"):
+            displayed_component_status = "GROUP SOURCE REQUIRED"
+            displayed_component_detail = "Resolve stressing-pair geometry and sequence"
+            displayed_component_tone = "warning"
+        elif not bond_state_source.get("ready"):
+            displayed_component_status = "SOURCE INPUT REQUIRED"
+            displayed_component_detail = "Final tendon bond system"
+            displayed_component_tone = "warning"
+        elif selected_eci is None or float(selected_eci) <= 0.0:
+            displayed_component_status = "MATERIAL SOURCE REQUIRED"
+            displayed_component_detail = "Valid stressing-stage Eci"
+            displayed_component_tone = "warning"
+        elif selected_fcgp is None:
+            if lightweight_evidence_status == "STALE":
+                displayed_component_status = "RERUN REQUIRED"
+                displayed_component_detail = "Inputs changed after the stored Lightweight ES result"
+                displayed_component_tone = "warning"
+            else:
+                displayed_component_status = "READY TO RUN"
+                displayed_component_detail = "Press Run Lightweight ES Analysis"
+                displayed_component_tone = "ready"
+        elif fcgp_override_enabled:
+            displayed_component_status = "ENGINEER-QA PREVIEW"
+            displayed_component_detail = "Manual f_cgp override is active"
+            displayed_component_tone = "warning"
+        else:
+            displayed_component_status = "ES ESTIMATE CURRENT"
+            displayed_component_detail = "Source-derived lightweight result"
+            displayed_component_tone = "ready"
+
+        if max_percent is not None:
+            max_sequence_detail = (
+                f"{max_percent:.2f}% of area-weighted fpj · sequence estimate"
+            )
+        elif not bond_state_source.get("ready"):
+            max_sequence_detail = "available after final bond system is specified and analysis is run"
+        elif lightweight_evidence_status == "STALE":
+            max_sequence_detail = "stored result is stale · rerun Lightweight ES Analysis"
+        else:
+            max_sequence_detail = "not run · available after Lightweight ES Analysis"
 
         member_design_code_label = workflow_project_code_label_from_session(
             st.session_state
@@ -8005,7 +8052,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Max pair-sequence ES",
                     "value": f"{float(max_loss):.2f} MPa" if max_loss is not None else "—",
-                    "detail": f"{max_percent:.2f}% of area-weighted fpj · diagnostic" if max_percent is not None else "sequence diagnostic not released",
+                    "detail": max_sequence_detail,
                     "status": "warning" if max_loss is not None else "neutral",
                 },
                 {
@@ -8016,9 +8063,9 @@ def render_crossbeam_prestress_loss_page() -> None:
                 },
                 {
                     "title": "Component status",
-                    "value": str(es_summary.get("component_status") or "SOURCE BLOCKED"),
-                    "detail": "ordinary ES estimate is on-demand; detailed construction-stage QA is optional",
-                    "status": "ready" if avg_loss is not None and not fcgp_override_enabled else "warning",
+                    "value": displayed_component_status,
+                    "detail": displayed_component_detail,
+                    "status": displayed_component_tone,
                 },
             ]
         )
@@ -8154,7 +8201,11 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Construction source",
                     "value": str(stage_source_summary.get("construction_method")),
-                    "detail": str(stage_source_summary.get("status")),
+                    "detail": (
+                        "SOURCE READY — RUN ON DEMAND"
+                        if stage_source_summary.get("ready")
+                        else str(stage_source_summary.get("status"))
+                    ),
                     "status": "ready" if stage_source_summary.get("ready") else "warning",
                 },
                 {
@@ -8544,12 +8595,29 @@ def render_crossbeam_prestress_loss_page() -> None:
             st.warning(
                 "This optional route reproduces the detailed fixed-base, gravity-contact, Gravity→G4, one-shot consistency, and three-mesh verification evidence. It is not required for the ordinary Elastic Shortening estimate and never runs automatically."
             )
+            advanced_confirmed = st.checkbox(
+                "I understand that Advanced QA is optional, computationally heavy, and may be slow or trigger cloud throttling.",
+                key=CB_PTL_ADVANCED_QA_CONFIRM_KEY,
+                disabled=not bool(upstream_ready and linear_stage_model.get("ready")),
+            )
             adv_run_col, adv_clear_col = st.columns([3, 1])
             with adv_run_col:
                 run_advanced = st.button(
-                    "Run Advanced Construction-Stage QA",
+                    (
+                        "Advanced QA Current — clear to rerun"
+                        if advanced_evidence_status == "CURRENT"
+                        else "Run Advanced Construction-Stage QA — computationally heavy"
+                    ),
                     use_container_width=True,
-                    disabled=not bool(upstream_ready and linear_stage_model.get("ready")),
+                    disabled=bool(
+                        not (upstream_ready and linear_stage_model.get("ready"))
+                        or not advanced_confirmed
+                        or advanced_evidence_status == "CURRENT"
+                    ),
+                    help=(
+                        "Runs the optional detailed fixed-base/contact/incremental and three-mesh verification bundle. "
+                        "Use only for engineering verification, not ordinary Elastic Shortening design."
+                    ),
                 )
             with adv_clear_col:
                 clear_advanced = st.button(
@@ -8560,6 +8628,7 @@ def render_crossbeam_prestress_loss_page() -> None:
             if clear_advanced:
                 st.session_state.pop(CB_PTL_ADVANCED_QA_FINGERPRINT_KEY, None)
                 st.session_state.pop(CB_PTL_ADVANCED_QA_RESULT_KEY, None)
+                st.session_state[CB_PTL_ADVANCED_QA_CONFIRM_KEY] = False
                 st.rerun()
             if run_advanced:
                 started = perf_counter()
