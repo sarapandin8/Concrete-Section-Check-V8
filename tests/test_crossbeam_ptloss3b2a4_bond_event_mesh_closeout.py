@@ -118,8 +118,8 @@ def test_ptloss3b2a4_ui_uses_generic_labels_current_mesh_and_event_audit() -> No
     assert "Linear stressing-stage response QA — fixed-base / no-contact" in elastic
     assert "PTLOSS3B2A2 adds explicit" not in source
     assert "PTLOSS3B2A1 hardened fixed-base response only" not in source
-    assert "gravity-only compression-contact" in elastic
-    assert "Incremental tendon-group stressing" in elastic
+    assert "incremental tendon-group contact stages — post-anchor qa" in elastic.lower()
+    assert "incremental tendon-group contact" in elastic.lower()
     assert "Tendon identity, final bond system, and stressing" in source
     assert "Apply to active tendons" in source
     assert '"Bond state": st.column_config.SelectboxColumn' in source

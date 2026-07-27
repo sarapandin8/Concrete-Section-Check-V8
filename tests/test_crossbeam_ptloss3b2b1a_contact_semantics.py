@@ -71,8 +71,8 @@ def test_ptloss3b2b1a_contact_rows_expose_mesh_aware_line_reaction() -> None:
 def test_ptloss3b2b1a_support_source_declares_released_gravity_route_and_locked_prestress() -> None:
     source = temporary_support_source(20.0)
     assert source["vertical_model"] == "RIGID VERTICAL CONTACT"
-    assert "released gravity-contact QA" in source["note"]
-    assert "Incremental prestress stages remain locked" in source["note"]
+    assert "released gravity and incremental post-anchor tendon-group QA" in source["note"]
+    assert "Source-derived f_cgp and Elastic Shortening remain locked" in source["note"]
     assert "future stage solver" not in source["note"]
 
 
@@ -90,7 +90,7 @@ def test_ptloss3b2b1a_ui_uses_line_reaction_and_complete_static_contact_audit() 
     assert "ptloss3b2-contact-audit-anchor" in elastic
     assert "RIGID COMPRESSION-ONLY" in elastic
     assert "no spring stiffness or support compression" in elastic
-    assert "gravity active-set released; prestress updates locked" in elastic
+    assert "gravity + incremental prestress active-set released; f_cgp locked" in elastic
     assert "Falsework Contact Reaction — Self-Weight Stage" not in elastic
 
 

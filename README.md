@@ -1744,3 +1744,7 @@ Cast-in-Place semantic cleanup: safer inboard default column stations, Solid-onl
 ## CROSSBEAM.PTLOSS3B2B1A — Contact-Reaction Semantics and Audit Completeness
 
 Converts mesh-dependent raw contact-node reactions into auditable tributary-length-equivalent line reactions for engineering plots, declares the rigid zero-settlement falsework idealization explicitly, prints every active-project contact station in static chunks, and normalizes negative-zero QA text without changing the accepted gravity contact equations or unlocking prestress stages. See `README_CROSSBEAM_PTLOSS3B2B1A.md`.
+
+## CROSSBEAM.PTLOSS3B2B2 — Incremental Tendon-Group Compression-Contact Stages
+
+Advances the rigid compression-only falsework active set through Gravity and the user-confirmed G1→G2→G3→G4 post-anchor tendon sequence, preserving prior groups, auditing lift-off/re-closure, frame response, staged-versus-one-shot consistency, and global mesh convergence while keeping `f_cgp`, Elastic Shortening force feedback, `P after ES`, and `Pe/Pe_eff` locked. See `README_CROSSBEAM_PTLOSS3B2B2.md`.

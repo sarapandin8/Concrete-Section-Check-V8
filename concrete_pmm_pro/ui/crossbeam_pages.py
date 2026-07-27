@@ -120,6 +120,11 @@ from concrete_pmm_pro.crossbeam.stressing_stage_contact import (
     run_crossbeam_gravity_contact_mesh_sensitivity,
     run_crossbeam_gravity_contact_qa,
 )
+from concrete_pmm_pro.crossbeam.stressing_stage_sequence import (
+    incremental_contact_benchmark_rows,
+    run_crossbeam_incremental_contact_mesh_sensitivity,
+    run_crossbeam_incremental_contact_qa,
+)
 from concrete_pmm_pro.crossbeam.construction_stage import (
     COLUMN_BASE_ASSUMPTION,
     COLUMN_SHAPE_OPTIONS,
@@ -6241,6 +6246,10 @@ CB_PTL_LINEAR_MESH_FINGERPRINT_KEY = "crossbeam_ptloss_linear_mesh_fingerprint_v
 CB_PTL_LINEAR_MESH_RESULT_KEY = "crossbeam_ptloss_linear_mesh_result_v1"
 CB_PTL_CONTACT_MESH_FINGERPRINT_KEY = "crossbeam_ptloss_contact_mesh_fingerprint_v1"
 CB_PTL_CONTACT_MESH_RESULT_KEY = "crossbeam_ptloss_contact_mesh_result_v1"
+CB_PTL_INCREMENTAL_CONTACT_FINGERPRINT_KEY = "crossbeam_ptloss_incremental_contact_fingerprint_v1"
+CB_PTL_INCREMENTAL_CONTACT_RESULT_KEY = "crossbeam_ptloss_incremental_contact_result_v1"
+CB_PTL_INCREMENTAL_CONTACT_MESH_FINGERPRINT_KEY = "crossbeam_ptloss_incremental_contact_mesh_fingerprint_v1"
+CB_PTL_INCREMENTAL_CONTACT_MESH_RESULT_KEY = "crossbeam_ptloss_incremental_contact_mesh_result_v1"
 
 
 def _linear_mesh_diagnostic_fingerprint(
@@ -6301,6 +6310,63 @@ def _cached_contact_mesh_diagnostic(
         st.session_state.get(CB_PTL_CONTACT_MESH_FINGERPRINT_KEY) or ""
     )
     stored_result = st.session_state.get(CB_PTL_CONTACT_MESH_RESULT_KEY)
+    if not isinstance(stored_result, Mapping):
+        return None, "NOT RUN"
+    if stored_fingerprint != str(fingerprint):
+        return None, "STALE"
+    return dict(stored_result), "CURRENT"
+
+def _incremental_contact_diagnostic_fingerprint(
+    *,
+    base_mesh_fingerprint: str,
+    group_rows: Any,
+    pair_sequence: Any,
+) -> str:
+    """Return the current-input signature for cumulative contact-stage QA."""
+
+    payload = {
+        "schema": 1,
+        "base_mesh_fingerprint": str(base_mesh_fingerprint),
+        "group_rows": _records(group_rows),
+        "pair_sequence": list(pair_sequence or []),
+    }
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=repr,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _cached_incremental_contact_diagnostic(
+    fingerprint: str,
+) -> tuple[dict[str, Any] | None, str]:
+    """Return only current-input incremental-stage QA; stale results never pass."""
+
+    stored_fingerprint = str(
+        st.session_state.get(CB_PTL_INCREMENTAL_CONTACT_FINGERPRINT_KEY) or ""
+    )
+    stored_result = st.session_state.get(CB_PTL_INCREMENTAL_CONTACT_RESULT_KEY)
+    if not isinstance(stored_result, Mapping):
+        return None, "NOT RUN"
+    if stored_fingerprint != str(fingerprint):
+        return None, "STALE"
+    return dict(stored_result), "CURRENT"
+
+def _cached_incremental_contact_mesh_diagnostic(
+    fingerprint: str,
+) -> tuple[dict[str, Any] | None, str]:
+    """Return current-input incremental contact mesh evidence only."""
+
+    stored_fingerprint = str(
+        st.session_state.get(CB_PTL_INCREMENTAL_CONTACT_MESH_FINGERPRINT_KEY)
+        or ""
+    )
+    stored_result = st.session_state.get(
+        CB_PTL_INCREMENTAL_CONTACT_MESH_RESULT_KEY
+    )
     if not isinstance(stored_result, Mapping):
         return None, "NOT RUN"
     if stored_fingerprint != str(fingerprint):
@@ -6723,7 +6789,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
     render_section_bar(
         "Prestress-loss component workspace",
-        "Friction/Wobble and Anchorage Set preserve their accepted results. The stressing-stage workspace now includes a gravity-only compression-contact active-set foundation alongside the accepted fixed-base linear response QA. Incremental tendon-group stressing, contact updates under prestress, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked.",
+        "Friction/Wobble and Anchorage Set preserve their accepted results. The stressing-stage workspace now advances the rigid compression-contact active set through Gravity and the user-confirmed G1 → G2 → G3 → G4 post-anchor tendon sequence. Source-derived f_cgp, Elastic Shortening force feedback, Pe/Pe_eff, and later losses remain locked.",
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
@@ -7612,7 +7678,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
         st.markdown("#### Elastic Shortening — construction/stressing-stage source foundation")
         st.caption(
-            "The accepted fixed-base response foundation uses stressing-stage Eci, auditable EA/EI, exact centroidal rigid offsets, accepted post-anchor tendon loads, and independent sign/symmetry checks. A separate gravity-only compression-contact kernel now validates unilateral falsework reactions and automatic lift-off mechanics. Incremental tendon-group stressing, contact updates under prestress, final Primary/Secondary decomposition, source-derived f_cgp, Pe/Pe_eff, and later losses remain locked."
+            "The accepted fixed-base response foundation uses stressing-stage Eci, auditable EA/EI, exact centroidal rigid offsets, and accepted post-anchor tendon loads. The contact-aware QA now preserves earlier tendon groups and repeats the rigid compression-only active-set solve after every user-confirmed stressing group. Final Primary/Secondary decomposition, source-derived f_cgp, Elastic Shortening force feedback, Pe/Pe_eff, and later losses remain locked."
         )
 
         upstream_ready = bool(
@@ -7836,7 +7902,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         st.markdown("##### Construction / stressing-stage source model")
         st.caption(
-            "The linear stressing-stage response reads construction/support facts owned by Section Builder and exercises them in a fixed-base gross-section Portal-Frame QA model. The actual continuous falsework contact state is still excluded, so the result cannot release source-derived f_cgp or final Elastic Shortening."
+            "The fixed-base no-contact trace and the contact-aware stressing sequence are separate QA routes. Continuous falsework contact is excluded only from the fixed-base response trace; the rigid compression-only active set is solved separately for Gravity and after every post-anchor tendon group. Neither route releases source-derived f_cgp or final Elastic Shortening."
         )
         _ensure_crossbeam_construction_support_source_state(length_m)
         construction_method = str(
@@ -7910,7 +7976,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {"title": "Support extent", "value": "FULL LENGTH", "detail": f"s = 0.000 to {float(length_m):.3f} m", "status": "ready"},
                 {"title": "Initial contact", "value": "IN CONTACT", "detail": "continuous support under Crossbeam", "status": "ready"},
                 {"title": "Vertical behavior", "value": "COMPRESSION-ONLY", "detail": "no tensile/uplift resistance", "status": "ready"},
-                {"title": "Lift-off", "value": "AUTOMATIC", "detail": "gravity active-set released; prestress updates locked", "status": "ready"},
+                {"title": "Lift-off", "value": "AUTOMATIC", "detail": "gravity + incremental prestress active-set released; f_cgp locked", "status": "ready"},
             ]
         )
         st.caption(str(temp_support.get("note") or ""))
@@ -7984,8 +8050,8 @@ def render_crossbeam_prestress_loss_page() -> None:
                 },
                 {
                     "title": "Stage solver",
-                    "value": "GRAVITY CONTACT QA",
-                    "detail": "incremental prestress stages remain locked",
+                    "value": "INCREMENTAL CONTACT QA",
+                    "detail": "Gravity + G1 → G2 → G3 → G4; f_cgp extraction locked",
                     "status": "ready",
                 },
             ]
@@ -7995,7 +8061,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 for issue in stage_source_summary.get("issues", []):
                     st.warning(str(issue))
         st.caption(
-            "The gravity-only contact foundation discretizes the full supported length as compression-only vertical contact and releases tensile reactions automatically. Prestress-induced lift-off must still be solved incrementally after each stressing group before f_cgp or Elastic Shortening can be released."
+            "The contact-aware QA starts from Gravity and then preserves accepted P after Anchorage Set from each earlier group while adding the next group. The active set is re-solved after G1, G2, G3, and G4. This validates prestress-induced lift-off mechanics only; f_cgp extraction and Elastic Shortening remain locked."
         )
 
         st.markdown("##### Linear stressing-stage response QA — fixed-base / no-contact")
@@ -8128,6 +8194,98 @@ def render_crossbeam_prestress_loss_page() -> None:
             st.session_state[CB_PTL_CONTACT_MESH_FINGERPRINT_KEY] = contact_mesh_fingerprint
             st.session_state[CB_PTL_CONTACT_MESH_RESULT_KEY] = dict(contact_mesh_audit)
             contact_mesh_evidence_status = "CURRENT"
+
+        incremental_contact_fingerprint = _incremental_contact_diagnostic_fingerprint(
+            base_mesh_fingerprint=mesh_fingerprint,
+            group_rows=current_es_group_rows,
+            pair_sequence=current_pair_sequence,
+        )
+        incremental_contact_result, incremental_contact_evidence_status = (
+            _cached_incremental_contact_diagnostic(incremental_contact_fingerprint)
+        )
+        if (
+            upstream_ready
+            and bool(linear_stage_model.get("ready"))
+            and incremental_contact_evidence_status != "CURRENT"
+        ):
+            with st.spinner(
+                "Running Gravity → tendon-group incremental contact QA..."
+            ):
+                incremental_contact_result = run_crossbeam_incremental_contact_qa(
+                    model=linear_stage_model,
+                    profile_rows=profile_rows,
+                    anchorage_station_rows=current_anchorage_station_rows,
+                    group_rows=current_es_group_rows,
+                    pair_sequence=current_pair_sequence,
+                )
+            st.session_state[CB_PTL_INCREMENTAL_CONTACT_FINGERPRINT_KEY] = (
+                incremental_contact_fingerprint
+            )
+            st.session_state[CB_PTL_INCREMENTAL_CONTACT_RESULT_KEY] = dict(
+                incremental_contact_result
+            )
+            incremental_contact_evidence_status = "CURRENT"
+        elif not isinstance(incremental_contact_result, Mapping):
+            incremental_contact_result = {
+                "status": "SOURCE BLOCKED",
+                "ready": False,
+                "issues": [
+                    "Accepted post-anchor force, frame, and stressing-pair sequence sources are required before incremental contact stages can run."
+                ],
+                "stages": [],
+                "stage_rows": [],
+                "group_source_rows": [],
+                "fcgp_status": "LOCKED — INCREMENTAL CONTACT SOURCE REQUIRED",
+                "elastic_shortening_status": "LOCKED — INCREMENTAL CONTACT SOURCE REQUIRED",
+            }
+        incremental_contact_benchmarks = incremental_contact_benchmark_rows()
+        incremental_contact_benchmark_pass = bool(
+            incremental_contact_benchmarks
+        ) and all(
+            str(row.get("Status")) == "PASS"
+            for row in incremental_contact_benchmarks
+        )
+        incremental_contact_mesh_fingerprint = hashlib.sha256(
+            (
+                "incremental-contact-mesh-v1:"
+                + incremental_contact_fingerprint
+            ).encode("utf-8")
+        ).hexdigest()
+        (
+            incremental_contact_mesh_audit,
+            incremental_contact_mesh_evidence_status,
+        ) = _cached_incremental_contact_mesh_diagnostic(
+            incremental_contact_mesh_fingerprint
+        )
+        if (
+            upstream_ready
+            and bool(linear_stage_model.get("ready"))
+            and incremental_contact_mesh_evidence_status != "CURRENT"
+        ):
+            with st.spinner(
+                "Running current-input incremental contact mesh QA..."
+            ):
+                incremental_contact_mesh_audit = (
+                    run_crossbeam_incremental_contact_mesh_sensitivity(
+                        length_m=length_m,
+                        segment_rows=current_segment_rows,
+                        section_definitions=current_section_definitions,
+                        concrete_materials=stage_materials,
+                        column_rows=column_source_rows,
+                        profile_rows=profile_rows,
+                        anchorage_station_rows=current_anchorage_station_rows,
+                        group_rows=current_es_group_rows,
+                        pair_sequence=current_pair_sequence,
+                        crossbeam_stressing_strength_ratio=linear_stressing_ratio,
+                    )
+                )
+            st.session_state[
+                CB_PTL_INCREMENTAL_CONTACT_MESH_FINGERPRINT_KEY
+            ] = incremental_contact_mesh_fingerprint
+            st.session_state[CB_PTL_INCREMENTAL_CONTACT_MESH_RESULT_KEY] = dict(
+                incremental_contact_mesh_audit
+            )
+            incremental_contact_mesh_evidence_status = "CURRENT"
 
         linear_elements = list(linear_stage_model.get("elements") or [])
         beam_element_count = sum(str(row.get("kind")) == "beam" for row in linear_elements)
@@ -8564,7 +8722,10 @@ def render_crossbeam_prestress_loss_page() -> None:
                 ]
                 chunk_end = chunk_start + len(chunk)
                 st.markdown(
-                    f"*Contact stations {chunk_start + 1}–{chunk_end} of {len(contact_station_rows)}*"
+                    '<div class="ptloss3b2-print-table-heading">'
+                    f'<em>Contact stations {chunk_start + 1}–{chunk_end} of {len(contact_station_rows)}</em>'
+                    "</div>",
+                    unsafe_allow_html=True,
                 )
                 st.table(pd.DataFrame(chunk))
             contact_violation_rows = [
@@ -8643,6 +8804,482 @@ def render_crossbeam_prestress_loss_page() -> None:
             else:
                 st.warning("Current-input gravity/contact mesh evidence is unavailable.")
             st.warning(str(gravity_contact_result.get("solver_boundary") or ""))
+
+        st.markdown("##### Incremental tendon-group contact stages — post-anchor QA")
+        st.caption(
+            "The solver starts from Gravity contact, preserves every earlier group's accepted P(s) after Friction + Anchorage Set, adds the next user-confirmed symmetric group, and repeats the rigid compression-only active-set solve. This is a response/contact QA route only; no Elastic Shortening force reduction is fed back yet."
+        )
+        incremental_stages = list(incremental_contact_result.get("stages") or [])
+        incremental_final_stage = dict(
+            incremental_contact_result.get("final_stage") or {}
+        )
+        incremental_final_contact = dict(
+            incremental_final_stage.get("contact_result") or {}
+        )
+        incremental_final_consistency = dict(
+            incremental_contact_result.get("final_consistency") or {}
+        )
+        prestress_liftoff_stage_count = sum(
+            int(stage.get("contact_result", {}).get("open_count") or 0) > 0
+            for stage in incremental_stages[1:]
+        )
+        final_incremental_residual = incremental_final_contact.get(
+            "equilibrium_residual_ratio"
+        )
+        render_metric_cards(
+            [
+                {
+                    "title": "Incremental contact solver",
+                    "value": str(
+                        incremental_contact_result.get("status")
+                        or "SOURCE BLOCKED"
+                    ),
+                    "detail": (
+                        f"{int(incremental_contact_result.get('stage_count') or 0)} stage(s) · {incremental_contact_evidence_status}"
+                    ),
+                    "status": "ready"
+                    if incremental_contact_result.get("ready")
+                    else "warning",
+                },
+                {
+                    "title": "Stage sequence",
+                    "value": "G0 → "
+                    + " → ".join(
+                        str(row.get("Group") or "")
+                        for row in incremental_contact_result.get(
+                            "group_source_rows", []
+                        )
+                    ),
+                    "detail": "accepted post-anchor group loads accumulate",
+                    "status": "ready"
+                    if incremental_contact_result.get("ready")
+                    else "warning",
+                },
+                {
+                    "title": "Prestress-induced lift-off",
+                    "value": (
+                        "DETECTED"
+                        if prestress_liftoff_stage_count > 0
+                        else (
+                            "NOT DETECTED"
+                            if incremental_contact_result.get("ready")
+                            else "—"
+                        )
+                    ),
+                    "detail": f"{prestress_liftoff_stage_count} tendon stage(s) with OPEN contact",
+                    "status": "ready"
+                    if incremental_contact_result.get("ready")
+                    else "warning",
+                },
+                {
+                    "title": "Final contact state",
+                    "value": (
+                        f"{int(incremental_final_contact.get('active_count') or 0)} ACTIVE / "
+                        f"{int(incremental_final_contact.get('candidate_count') or 0)}"
+                    ),
+                    "detail": f"{int(incremental_final_contact.get('open_count') or 0)} open node(s) after final group",
+                    "status": "ready"
+                    if incremental_final_contact.get("ready")
+                    else "warning",
+                },
+                {
+                    "title": "Complementarity",
+                    "value": str(
+                        incremental_final_contact.get("complementarity_status")
+                        or "REVIEW"
+                    ),
+                    "detail": (
+                        f"gap max={_display_zero(incremental_final_contact.get('max_gap_mm')):.3e} mm"
+                    ),
+                    "status": "ready"
+                    if incremental_final_contact.get("complementarity_status")
+                    == "PASS"
+                    else "warning",
+                },
+                {
+                    "title": "Stage equilibrium",
+                    "value": (
+                        "—"
+                        if final_incremental_residual is None
+                        else (
+                            "PASS"
+                            if float(final_incremental_residual) <= 1.0e-8
+                            else "REVIEW"
+                        )
+                    ),
+                    "detail": (
+                        "final stage not solved"
+                        if final_incremental_residual is None
+                        else f"max residual ratio = {float(final_incremental_residual):.3e}"
+                    ),
+                    "status": "ready"
+                    if final_incremental_residual is not None
+                    and float(final_incremental_residual) <= 1.0e-8
+                    else "warning",
+                },
+                {
+                    "title": "Final cumulative consistency",
+                    "value": str(
+                        incremental_final_consistency.get("status") or "REVIEW"
+                    ),
+                    "detail": "staged warm-start vs independent one-shot cumulative solve",
+                    "status": "ready"
+                    if incremental_final_consistency.get("ready")
+                    else "warning",
+                },
+                {
+                    "title": "Stage mesh sensitivity",
+                    "value": (
+                        str(incremental_contact_mesh_audit.get("status"))
+                        if isinstance(incremental_contact_mesh_audit, Mapping)
+                        else "NOT RUN"
+                    ),
+                    "detail": (
+                        f"0.50 / 0.25 / 0.125 m · {incremental_contact_mesh_evidence_status}"
+                    ),
+                    "status": "ready"
+                    if isinstance(incremental_contact_mesh_audit, Mapping)
+                    and incremental_contact_mesh_audit.get("ready")
+                    else "warning",
+                },
+                {
+                    "title": "Stage scope",
+                    "value": "P AFTER ANCHORAGE SET",
+                    "detail": "f_cgp + ES force feedback remain locked",
+                    "status": "warning",
+                },
+            ]
+        )
+        for issue in incremental_contact_result.get("issues", []):
+            st.warning(f"Incremental contact QA — {issue}")
+
+        if incremental_stages:
+            st.markdown("**Incremental stage summary**")
+            st.dataframe(
+                pd.DataFrame(incremental_contact_result.get("stage_rows", [])),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Stage": st.column_config.TextColumn(width="small"),
+                    "Added group": st.column_config.TextColumn(width="small"),
+                    "Tendons added": st.column_config.TextColumn(width="medium"),
+                    "Max gap (mm)": st.column_config.NumberColumn(format="%.6f"),
+                    "Total contact R (kN)": st.column_config.NumberColumn(format="%.3f"),
+                    "Fixed-base Ry (kN)": st.column_config.NumberColumn(format="%.3f"),
+                    "Max |N| (kN)": st.column_config.NumberColumn(format="%.3f"),
+                    "Max |V| (kN)": st.column_config.NumberColumn(format="%.3f"),
+                    "Max |M| (kN-m)": st.column_config.NumberColumn(format="%.3f"),
+                    "Max |v| (mm)": st.column_config.NumberColumn(format="%.6f"),
+                    "Equilibrium residual": st.column_config.NumberColumn(format="%.3e"),
+                },
+            )
+            st.caption(
+                "After tendon stressing, total falsework contact reaction need not equal self-weight by itself. The fixed column bases may develop downward vertical reaction while the globally self-equilibrated tendon loads redistribute support actions; stage equilibrium is checked using contact plus fixed-base reactions together."
+            )
+            incremental_stage_labels = [
+                str(stage.get("stage_label") or stage.get("stage_id") or "—")
+                for stage in incremental_stages
+            ]
+            selected_incremental_stage_label = st.selectbox(
+                "Incremental contact stage",
+                options=incremental_stage_labels,
+                index=len(incremental_stage_labels) - 1,
+                key="crossbeam_ptloss3b2b2_selected_stage",
+            )
+            selected_incremental_stage = next(
+                (
+                    stage
+                    for stage in incremental_stages
+                    if str(
+                        stage.get("stage_label")
+                        or stage.get("stage_id")
+                        or "—"
+                    )
+                    == selected_incremental_stage_label
+                ),
+                incremental_stages[-1],
+            )
+            selected_incremental_contact = dict(
+                selected_incremental_stage.get("contact_result") or {}
+            )
+            selected_incremental_contact_rows = list(
+                selected_incremental_stage.get("contact_rows") or []
+            )
+            selected_incremental_plot_rows = [
+                {
+                    "s (m)": _finite_float(row.get("station_m")),
+                    "Equivalent line reaction (kN/m; up +)": (
+                        0.0
+                        if str(row.get("state")) == "OPEN"
+                        else _finite_float(row.get("line_reaction_kN_per_m"))
+                    ),
+                    "Gap (mm; up +)": _finite_float(row.get("gap_mm")),
+                }
+                for row in selected_incremental_contact_rows
+            ]
+            if selected_incremental_plot_rows:
+                _render_ptloss3b2a_print_figure(
+                    _ptloss3b2a_response_figure(
+                        selected_incremental_plot_rows,
+                        title=(
+                            "Equivalent Falsework Line Reaction — "
+                            + selected_incremental_stage_label
+                        ),
+                        field="Equivalent line reaction (kN/m; up +)",
+                        y_title="Equivalent line reaction q (kN/m; upward/compression +)",
+                        trace_name="q = Rnode / Ltrib",
+                    ),
+                    caption=(
+                        "OPEN contact nodes are plotted at q = 0. Raw nodal reactions remain available in the selected-stage audit. The reaction is based on the cumulative accepted post-anchor tendon groups active at this stage."
+                    ),
+                )
+                _render_ptloss3b2a_print_figure(
+                    _ptloss3b2a_response_figure(
+                        selected_incremental_plot_rows,
+                        title="Falsework Contact Gap — "
+                        + selected_incremental_stage_label,
+                        field="Gap (mm; up +)",
+                        y_title="Contact gap g (mm; separation/upward +)",
+                        trace_name="Gap",
+                    ),
+                    caption=(
+                        "ACTIVE contact has g = 0; OPEN contact requires g ≥ 0. The active set is updated after the selected tendon group is added while all earlier groups remain active."
+                    ),
+                )
+
+            with st.expander(
+                "Selected incremental-stage structural response", expanded=False
+            ):
+                selected_incremental_response_rows = list(
+                    selected_incremental_stage.get("beam_response_rows") or []
+                )
+                for response_title, response_field, response_axis, response_trace in (
+                    (
+                        "Crossbeam Moment",
+                        "M sagging-positive (kN-m)",
+                        "Moment M (kN-m; sagging +)",
+                        "M",
+                    ),
+                    (
+                        "Crossbeam Axial Force",
+                        "N compression-positive (kN)",
+                        "Axial force N (kN; compression +)",
+                        "N",
+                    ),
+                    (
+                        "Crossbeam Shear Force",
+                        "V (kN)",
+                        "Shear force V (kN)",
+                        "V",
+                    ),
+                    (
+                        "Crossbeam Vertical Displacement",
+                        "v_up (mm)",
+                        "Vertical displacement v (mm; upward +)",
+                        "v",
+                    ),
+                ):
+                    if selected_incremental_response_rows:
+                        _render_ptloss3b2a_print_figure(
+                            _ptloss3b2a_response_figure(
+                                selected_incremental_response_rows,
+                                title=f"{response_title} — {selected_incremental_stage_label}",
+                                field=response_field,
+                                y_title=response_axis,
+                                trace_name=response_trace,
+                            ),
+                            caption=(
+                                "Contact-aware cumulative stage response. This remains diagnostic and cannot feed f_cgp or Elastic Shortening until the stage-stress extraction milestone is validated."
+                            ),
+                        )
+
+            with st.expander(
+                "Incremental contact source, active-set, and consistency audit",
+                expanded=False,
+            ):
+                st.markdown(
+                    '<div class="ptloss3b2-contact-audit-anchor" aria-hidden="true"></div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown("**Post-anchor stressing-group load sources**")
+                st.dataframe(
+                    pd.DataFrame(
+                        incremental_contact_result.get("group_source_rows", [])
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Group Pj (kN)": st.column_config.NumberColumn(
+                            format="%.3f"
+                        ),
+                        "Min P after anchor (kN)": st.column_config.NumberColumn(
+                            format="%.3f"
+                        ),
+                        "Max P after anchor (kN)": st.column_config.NumberColumn(
+                            format="%.3f"
+                        ),
+                    },
+                )
+                st.caption(
+                    "Group Pj is shown for source traceability only. The structural stage loads use each Tendon's accepted station-by-station P after Anchorage Set; no fpj restart is permitted."
+                )
+                st.markdown("**Stage-wise contact and frame summary**")
+                st.dataframe(
+                    pd.DataFrame(incremental_contact_result.get("stage_rows", [])),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                st.markdown("**Selected-stage contact intervals**")
+                st.table(
+                    pd.DataFrame(
+                        selected_incremental_stage.get(
+                            "contact_interval_rows", []
+                        )
+                    )
+                )
+                st.markdown("**Selected-stage active-set iteration history**")
+                st.dataframe(
+                    pd.DataFrame(
+                        selected_incremental_contact.get("iteration_rows", [])
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Equilibrium residual": st.column_config.NumberColumn(
+                            format="%.3e"
+                        )
+                    },
+                )
+                st.markdown(
+                    '<div class="ptloss3b2-print-table-heading"><strong>Selected-stage contact stations</strong></div>',
+                    unsafe_allow_html=True,
+                )
+                incremental_station_rows = [
+                    {
+                        "s (m)": f"{_finite_float(row.get('station_m')):.3f}",
+                        "State": str(row.get("state") or "—"),
+                        "Gap g (mm)": f"{_display_zero(row.get('gap_mm')):.6e}",
+                        "Ltrib (m)": f"{_finite_float(row.get('tributary_length_m')):.4f}",
+                        "Raw Rnode (kN)": f"{_display_zero(row.get('reaction_kN')):.6f}",
+                        "Equivalent q (kN/m)": (
+                            "—"
+                            if row.get("line_reaction_kN_per_m") is None
+                            else f"{_display_zero(row.get('line_reaction_kN_per_m')):.3f}"
+                        ),
+                    }
+                    for row in selected_incremental_contact_rows
+                ]
+                incremental_contact_chunk_size = 14
+                for chunk_start in range(
+                    0,
+                    len(incremental_station_rows),
+                    incremental_contact_chunk_size,
+                ):
+                    chunk = incremental_station_rows[
+                        chunk_start : chunk_start
+                        + incremental_contact_chunk_size
+                    ]
+                    chunk_end = chunk_start + len(chunk)
+                    st.markdown(
+                        '<div class="ptloss3b2-print-table-heading">'
+                        f'<em>Contact stations {chunk_start + 1}–{chunk_end} of {len(incremental_station_rows)}</em>'
+                        "</div>",
+                        unsafe_allow_html=True,
+                    )
+                    st.table(pd.DataFrame(chunk))
+                st.markdown("**Final cumulative staged-versus-one-shot check**")
+                st.table(
+                    pd.DataFrame(
+                        [
+                            {
+                                "Status": incremental_final_consistency.get(
+                                    "status", "REVIEW"
+                                ),
+                                "Contact state match": bool(
+                                    incremental_final_consistency.get(
+                                        "state_match"
+                                    )
+                                ),
+                                "Max Δgap (mm)": _display_zero(
+                                    incremental_final_consistency.get(
+                                        "max_gap_delta_mm"
+                                    )
+                                ),
+                                "Max Δreaction (kN)": _display_zero(
+                                    incremental_final_consistency.get(
+                                        "max_reaction_delta_kN"
+                                    )
+                                ),
+                                "Max Δv (mm)": _display_zero(
+                                    incremental_final_consistency.get(
+                                        "max_displacement_delta_mm"
+                                    )
+                                ),
+                            }
+                        ]
+                    )
+                )
+                st.markdown("**Independent incremental-contact benchmarks**")
+                st.dataframe(
+                    pd.DataFrame(incremental_contact_benchmarks),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Benchmark": st.column_config.TextColumn(width="large"),
+                        "Expected": st.column_config.TextColumn(width="large"),
+                        "Observed": st.column_config.TextColumn(width="large"),
+                        "Residual": st.column_config.NumberColumn(format="%.3e"),
+                    },
+                )
+                st.caption(
+                    "Synthetic benchmarks validate cumulative load retention, prestress-induced lift-off, mirrored contact behavior, and staged-versus-one-shot consistency. They do not certify f_cgp or Elastic Shortening."
+                )
+                if not incremental_contact_benchmark_pass:
+                    st.warning(
+                        "One or more independent incremental-contact benchmarks require review."
+                    )
+                st.markdown("**Current-input incremental contact mesh sensitivity**")
+                if isinstance(incremental_contact_mesh_audit, Mapping):
+                    st.markdown(
+                        f"**Stage mesh status — {incremental_contact_mesh_audit.get('status')}** "
+                        f"({incremental_contact_mesh_evidence_status}; diagnostic only)"
+                    )
+                    st.dataframe(
+                        pd.DataFrame(
+                            incremental_contact_mesh_audit.get("rows", [])
+                        ),
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Target max element (m)": st.column_config.NumberColumn(format="%.3f"),
+                            "Open tributary length (m)": st.column_config.NumberColumn(format="%.4f"),
+                            "Total contact R (kN)": st.column_config.NumberColumn(format="%.3f"),
+                            "Max gap (mm)": st.column_config.NumberColumn(format="%.6f"),
+                            "Max |M| (kN-m)": st.column_config.NumberColumn(format="%.3f"),
+                            "Max |v| (mm)": st.column_config.NumberColumn(format="%.6f"),
+                            "Equilibrium residual": st.column_config.NumberColumn(format="%.3e"),
+                            "ΔR from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
+                            "Δgap from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
+                            "ΔM from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
+                            "Δv from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
+                            "Δopen length from coarser (%)": st.column_config.NumberColumn(format="%.4f"),
+                        },
+                    )
+                    st.caption(
+                        str(incremental_contact_mesh_audit.get("criterion") or "")
+                    )
+                    st.info(
+                        str(incremental_contact_mesh_audit.get("boundary_note") or "")
+                    )
+                    for issue in incremental_contact_mesh_audit.get("issues", []):
+                        st.warning(str(issue))
+                else:
+                    st.warning(
+                        "Current-input incremental contact mesh evidence is unavailable."
+                    )
+                st.warning(
+                    str(incremental_contact_result.get("solver_boundary") or "")
+                )
 
         if linear_stage_result.get("cases"):
             st.markdown("###### Linear load-case summary")

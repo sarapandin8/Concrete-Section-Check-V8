@@ -274,7 +274,7 @@ def test_ptloss3b2a_ui_exposes_linear_qa_and_keeps_contact_fcgp_locked() -> None
     )[0]
     assert "Linear stressing-stage response QA — fixed-base / no-contact" in elastic_block
     assert "P after Anchorage Set + adopted tendon profile" in elastic_block
-    assert "GRAVITY CONTACT QA" in elastic_block
+    assert "INCREMENTAL CONTACT QA" in elastic_block
     assert "Continuous falsework contact is intentionally excluded" in elastic_block
     assert "f_cgp handoff" in elastic_block and '"value": "LOCKED"' in elastic_block
     assert "do not feed f_cgp, Elastic Shortening, Pe/Pe_eff, Result Summary, or Report/QA" in elastic_block

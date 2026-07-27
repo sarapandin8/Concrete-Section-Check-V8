@@ -450,8 +450,9 @@ def temporary_support_source(length_m: float) -> dict[str, Any]:
         "lift_off": TEMP_SUPPORT_LIFTOFF,
         "vertical_model": TEMP_SUPPORT_VERTICAL_MODEL,
         "note": (
-            "The released gravity-contact QA discretizes the full supported range as rigid compression-only vertical contact. "
-            "Incremental prestress stages remain locked and must repeat the active-set update after each stressing group; any point requiring tensile reaction must lift off and be re-analysed."
+            "The released gravity and incremental post-anchor tendon-group QA discretize the full supported range as rigid compression-only vertical contact. "
+            "The active set is updated after each stressing group; any point requiring tensile reaction lifts off and is re-analysed. "
+            "Source-derived f_cgp and Elastic Shortening remain locked."
         ),
     }
 
