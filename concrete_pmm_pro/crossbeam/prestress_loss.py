@@ -23,7 +23,7 @@ from concrete_pmm_pro.crossbeam.construction_stage import (
 
 
 CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY = "crossbeam_prestress_loss_settings"
-CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION = 5
+CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION = 6
 
 CB_LOSS_INTERNAL_MU_KEY = "crossbeam_ptloss1_internal_mu"
 CB_LOSS_INTERNAL_K_PER_M_KEY = "crossbeam_ptloss1_internal_k_per_m"
@@ -40,6 +40,12 @@ CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY = "crossbeam_ptloss3b1_stressing_strengt
 CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY = "crossbeam_ptloss3b1_closure_required_mpa"
 CB_LOSS_ES_COLUMN_ROWS_KEY = "crossbeam_ptloss3b1_column_rows"
 CB_LOSS_ES_PAIR_SEQUENCE_KEY = "crossbeam_ptloss3b1_pair_sequence"
+CB_LOSS_TD_RH_PERCENT_KEY = "crossbeam_ptloss4a_rh_percent"
+CB_LOSS_TD_LOAD_AGE_DAYS_KEY = "crossbeam_ptloss4a_load_age_days"
+CB_LOSS_TD_CURING_END_AGE_DAYS_KEY = "crossbeam_ptloss4a_curing_end_age_days"
+CB_LOSS_TD_FINAL_AGE_DAYS_KEY = "crossbeam_ptloss4a_final_age_days"
+CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY = "crossbeam_ptloss4a_inner_perimeter_factor"
+CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY = "crossbeam_ptloss4a_relaxation_steel_class"
 
 AASHTO_PTL_FRICTION_BASIS = "AASHTO LRFD 5.9.3.2.2b"
 AASHTO_INTERNAL_WOBBLE_K_PER_FT = 0.0002
@@ -55,6 +61,12 @@ DEFAULT_ANCHORAGE_SET_MM = 6.0
 DEFAULT_PRESTRESS_STEEL_EP_MPA = 195000.0
 DEFAULT_ES_FCGP_OVERRIDE_MPA = 0.0
 DEFAULT_ES_ECI_OVERRIDE_MPA = 31500.0
+DEFAULT_TD_RH_PERCENT = 75.0
+DEFAULT_TD_LOAD_AGE_DAYS = 28.0
+DEFAULT_TD_CURING_END_AGE_DAYS = 7.0
+DEFAULT_TD_FINAL_AGE_DAYS = 18250.0
+DEFAULT_TD_INNER_PERIMETER_FACTOR = 0.50
+DEFAULT_TD_RELAXATION_STEEL_CLASS = "Low-relaxation seven-wire strand"
 EXTERNAL_HDPE_REVIEW_NOTE = "HDPE note: verify PT supplier, angle tolerances, sequence."
 EXTERNAL_NO_DEVIATOR_ISSUE = "No Deviator point: +0.04 rad not applied."
 
@@ -117,6 +129,12 @@ def default_crossbeam_prestress_loss_settings() -> dict[str, Any]:
         "es_closure_required_mpa": DEFAULT_PRECAST_CLOSURE_STRENGTH_MPA,
         "es_column_rows": [],
         "es_pair_sequence": [],
+        "td_rh_percent": DEFAULT_TD_RH_PERCENT,
+        "td_load_age_days": DEFAULT_TD_LOAD_AGE_DAYS,
+        "td_curing_end_age_days": DEFAULT_TD_CURING_END_AGE_DAYS,
+        "td_final_age_days": DEFAULT_TD_FINAL_AGE_DAYS,
+        "td_inner_perimeter_factor": DEFAULT_TD_INNER_PERIMETER_FACTOR,
+        "td_relaxation_steel_class": DEFAULT_TD_RELAXATION_STEEL_CLASS,
     }
 
 
@@ -188,6 +206,24 @@ def normalize_crossbeam_prestress_loss_settings(value: Any) -> dict[str, Any]:
         "es_pair_sequence": [
             str(item) for item in (source.get("es_pair_sequence") or []) if str(item).strip()
         ] if isinstance(source.get("es_pair_sequence"), (list, tuple)) else [],
+        "td_rh_percent": _clamp(
+            _float(source.get("td_rh_percent"), float(defaults["td_rh_percent"])), 1.0, 100.0
+        ),
+        "td_load_age_days": _clamp(
+            _float(source.get("td_load_age_days"), float(defaults["td_load_age_days"])), 0.01, 100000.0
+        ),
+        "td_curing_end_age_days": _clamp(
+            _float(source.get("td_curing_end_age_days"), float(defaults["td_curing_end_age_days"])), 0.0, 100000.0
+        ),
+        "td_final_age_days": _clamp(
+            _float(source.get("td_final_age_days"), float(defaults["td_final_age_days"])), 0.02, 1000000.0
+        ),
+        "td_inner_perimeter_factor": _clamp(
+            _float(source.get("td_inner_perimeter_factor"), float(defaults["td_inner_perimeter_factor"])), 0.0, 1.0
+        ),
+        "td_relaxation_steel_class": str(
+            source.get("td_relaxation_steel_class") or defaults["td_relaxation_steel_class"]
+        ),
     }
 
 
@@ -212,6 +248,12 @@ def crossbeam_prestress_loss_settings_from_session_state(session_state: Any) -> 
             CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY,
             CB_LOSS_ES_COLUMN_ROWS_KEY,
             CB_LOSS_ES_PAIR_SEQUENCE_KEY,
+            CB_LOSS_TD_RH_PERCENT_KEY,
+            CB_LOSS_TD_LOAD_AGE_DAYS_KEY,
+            CB_LOSS_TD_CURING_END_AGE_DAYS_KEY,
+            CB_LOSS_TD_FINAL_AGE_DAYS_KEY,
+            CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY,
+            CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY,
         )
     ):
         return {}
@@ -232,6 +274,12 @@ def crossbeam_prestress_loss_settings_from_session_state(session_state: Any) -> 
             "es_closure_required_mpa": session_state.get(CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY),
             "es_column_rows": session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY),
             "es_pair_sequence": session_state.get(CB_LOSS_ES_PAIR_SEQUENCE_KEY),
+            "td_rh_percent": session_state.get(CB_LOSS_TD_RH_PERCENT_KEY),
+            "td_load_age_days": session_state.get(CB_LOSS_TD_LOAD_AGE_DAYS_KEY),
+            "td_curing_end_age_days": session_state.get(CB_LOSS_TD_CURING_END_AGE_DAYS_KEY),
+            "td_final_age_days": session_state.get(CB_LOSS_TD_FINAL_AGE_DAYS_KEY),
+            "td_inner_perimeter_factor": session_state.get(CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY),
+            "td_relaxation_steel_class": session_state.get(CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY),
         }
     )
     return dict(settings)
@@ -259,6 +307,12 @@ def restore_crossbeam_prestress_loss_project_state(
         CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY,
         CB_LOSS_ES_COLUMN_ROWS_KEY,
         CB_LOSS_ES_PAIR_SEQUENCE_KEY,
+        CB_LOSS_TD_RH_PERCENT_KEY,
+        CB_LOSS_TD_LOAD_AGE_DAYS_KEY,
+        CB_LOSS_TD_CURING_END_AGE_DAYS_KEY,
+        CB_LOSS_TD_FINAL_AGE_DAYS_KEY,
+        CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY,
+        CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY,
     ):
         session_state.pop(key, None)
 
@@ -285,6 +339,12 @@ def restore_crossbeam_prestress_loss_project_state(
     session_state[CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY] = float(settings["es_closure_required_mpa"])
     session_state[CB_LOSS_ES_COLUMN_ROWS_KEY] = [dict(row) for row in settings["es_column_rows"]]
     session_state[CB_LOSS_ES_PAIR_SEQUENCE_KEY] = list(settings["es_pair_sequence"])
+    session_state[CB_LOSS_TD_RH_PERCENT_KEY] = float(settings["td_rh_percent"])
+    session_state[CB_LOSS_TD_LOAD_AGE_DAYS_KEY] = float(settings["td_load_age_days"])
+    session_state[CB_LOSS_TD_CURING_END_AGE_DAYS_KEY] = float(settings["td_curing_end_age_days"])
+    session_state[CB_LOSS_TD_FINAL_AGE_DAYS_KEY] = float(settings["td_final_age_days"])
+    session_state[CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY] = float(settings["td_inner_perimeter_factor"])
+    session_state[CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY] = str(settings["td_relaxation_steel_class"])
     return settings
 
 

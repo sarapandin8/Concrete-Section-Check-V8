@@ -130,6 +130,14 @@ from concrete_pmm_pro.crossbeam.lightweight_elastic_shortening import (
     LIGHTWEIGHT_ES_METHOD,
     run_crossbeam_lightweight_elastic_shortening,
 )
+from concrete_pmm_pro.crossbeam.time_dependent_loss import (
+    AASHTO_TIME_DEPENDENT_BASIS,
+    LIGHTWEIGHT_TD_METHOD,
+    LOW_RELAXATION_STEEL,
+    RELAXATION_STEEL_OPTIONS,
+    crossbeam_drying_geometry,
+    run_crossbeam_lightweight_time_dependent_loss,
+)
 from concrete_pmm_pro.crossbeam.construction_stage import (
     COLUMN_BASE_ASSUMPTION,
     COLUMN_SHAPE_OPTIONS,
@@ -166,6 +174,12 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY,
     CB_LOSS_ES_COLUMN_ROWS_KEY,
     CB_LOSS_ES_PAIR_SEQUENCE_KEY,
+    CB_LOSS_TD_RH_PERCENT_KEY,
+    CB_LOSS_TD_LOAD_AGE_DAYS_KEY,
+    CB_LOSS_TD_CURING_END_AGE_DAYS_KEY,
+    CB_LOSS_TD_FINAL_AGE_DAYS_KEY,
+    CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY,
+    CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY,
     CB_LOSS_EXTERNAL_MU_KEY,
     CB_LOSS_INTERNAL_K_PER_M_KEY,
     CB_LOSS_INTERNAL_MU_KEY,
@@ -176,6 +190,12 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     DEFAULT_PRESTRESS_STEEL_EP_MPA,
     DEFAULT_ES_ECI_OVERRIDE_MPA,
     DEFAULT_ES_FCGP_OVERRIDE_MPA,
+    DEFAULT_TD_RH_PERCENT,
+    DEFAULT_TD_LOAD_AGE_DAYS,
+    DEFAULT_TD_CURING_END_AGE_DAYS,
+    DEFAULT_TD_FINAL_AGE_DAYS,
+    DEFAULT_TD_INNER_PERIMETER_FACTOR,
+    DEFAULT_TD_RELAXATION_STEEL_CLASS,
     DEFAULT_INTERNAL_FRICTION_MU,
     DEFAULT_INTERNAL_WOBBLE_K_PER_M,
     aashto_friction_wobble_station_rows,
@@ -5131,6 +5151,24 @@ def _loss_setting_defaults_from_state() -> dict[str, Any]:
             ),
             "es_column_rows": st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY, []),
             "es_pair_sequence": st.session_state.get(CB_LOSS_ES_PAIR_SEQUENCE_KEY, []),
+            "td_rh_percent": st.session_state.get(
+                CB_LOSS_TD_RH_PERCENT_KEY, DEFAULT_TD_RH_PERCENT
+            ),
+            "td_load_age_days": st.session_state.get(
+                CB_LOSS_TD_LOAD_AGE_DAYS_KEY, DEFAULT_TD_LOAD_AGE_DAYS
+            ),
+            "td_curing_end_age_days": st.session_state.get(
+                CB_LOSS_TD_CURING_END_AGE_DAYS_KEY, DEFAULT_TD_CURING_END_AGE_DAYS
+            ),
+            "td_final_age_days": st.session_state.get(
+                CB_LOSS_TD_FINAL_AGE_DAYS_KEY, DEFAULT_TD_FINAL_AGE_DAYS
+            ),
+            "td_inner_perimeter_factor": st.session_state.get(
+                CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY, DEFAULT_TD_INNER_PERIMETER_FACTOR
+            ),
+            "td_relaxation_steel_class": st.session_state.get(
+                CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY, DEFAULT_TD_RELAXATION_STEEL_CLASS
+            ),
         }
     )
 
@@ -6257,6 +6295,8 @@ CB_PTL_INCREMENTAL_CONTACT_MESH_FINGERPRINT_KEY = "crossbeam_ptloss_incremental_
 CB_PTL_INCREMENTAL_CONTACT_MESH_RESULT_KEY = "crossbeam_ptloss_incremental_contact_mesh_result_v1"
 CB_PTL_LIGHTWEIGHT_ES_FINGERPRINT_KEY = "crossbeam_ptloss_lightweight_es_fingerprint_v1"
 CB_PTL_LIGHTWEIGHT_ES_RESULT_KEY = "crossbeam_ptloss_lightweight_es_result_v1"
+CB_PTL_TIME_DEPENDENT_FINGERPRINT_KEY = "crossbeam_ptloss4a_time_dependent_fingerprint_v1"
+CB_PTL_TIME_DEPENDENT_RESULT_KEY = "crossbeam_ptloss4a_time_dependent_result_v1"
 CB_PTL_ADVANCED_QA_FINGERPRINT_KEY = "crossbeam_ptloss_advanced_qa_fingerprint_v1"
 CB_PTL_ADVANCED_QA_RESULT_KEY = "crossbeam_ptloss_advanced_qa_result_v1"
 CB_PTL_ADVANCED_QA_CONFIRM_KEY = "crossbeam_ptloss_advanced_qa_confirm_v1"
@@ -6430,6 +6470,59 @@ def _cached_lightweight_es_result(
         st.session_state.get(CB_PTL_LIGHTWEIGHT_ES_FINGERPRINT_KEY) or ""
     )
     stored_result = st.session_state.get(CB_PTL_LIGHTWEIGHT_ES_RESULT_KEY)
+    if not isinstance(stored_result, Mapping):
+        return None, "NOT RUN"
+    if stored_fingerprint != str(fingerprint):
+        return dict(stored_result), "STALE"
+    return dict(stored_result), "CURRENT"
+
+
+def _time_dependent_fingerprint(
+    *,
+    lightweight_es_fingerprint: str,
+    length_m: float,
+    segment_rows: Any,
+    section_definitions: Any,
+    system_rows: Any,
+    construction_method: str,
+    settings: Mapping[str, Any],
+    eci_mpa: float,
+    fci_mpa: float,
+) -> str:
+    payload = {
+        "schema": 1,
+        "solver": "crossbeam-ptloss4a-v1",
+        "lightweight_es_fingerprint": str(lightweight_es_fingerprint),
+        "length_m": float(length_m),
+        "segment_rows": _records(segment_rows),
+        "section_definitions": canonical_section_definitions(section_definitions),
+        "system_rows": canonical_tendon_system_rows(system_rows),
+        "construction_method": str(construction_method),
+        "td_inputs": {
+            "rh_percent": float(settings["td_rh_percent"]),
+            "load_age_days": float(settings["td_load_age_days"]),
+            "curing_end_age_days": float(settings["td_curing_end_age_days"]),
+            "final_age_days": float(settings["td_final_age_days"]),
+            "inner_perimeter_factor": float(settings["td_inner_perimeter_factor"]),
+            "relaxation_steel_class": str(settings["td_relaxation_steel_class"]),
+        },
+        "ep_mpa": float(settings["ep_mpa"]),
+        "eci_mpa": float(eci_mpa),
+        "fci_mpa": float(fci_mpa),
+    }
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=repr
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _cached_time_dependent_result(
+    fingerprint: str,
+) -> tuple[dict[str, Any] | None, str]:
+    stored_fingerprint = str(
+        st.session_state.get(CB_PTL_TIME_DEPENDENT_FINGERPRINT_KEY) or ""
+    )
+    stored_result = st.session_state.get(CB_PTL_TIME_DEPENDENT_RESULT_KEY)
     if not isinstance(stored_result, Mapping):
         return None, "NOT RUN"
     if stored_fingerprint != str(fingerprint):
@@ -7032,8 +7125,8 @@ def render_crossbeam_prestress_loss_page() -> None:
                     {
                         "Component": "Creep + shrinkage + relaxation",
                         "AASHTO article": "5.9.3.3 / 5.9.3.4",
-                        "Current status": "Guarded future component",
-                        "Dependency": "Age/stage/material/environment + prior losses",
+                        "Current status": "On-demand source preview",
+                        "Dependency": "CURRENT post-ES state + age/material/environment/drying geometry",
                     },
                 ]
             ),
@@ -8869,11 +8962,368 @@ def render_crossbeam_prestress_loss_page() -> None:
             )
 
     with time_dependent_tab:
-        st.markdown("#### Time-Dependent Losses")
-        st.info(
-            "Guarded future component — creep, shrinkage, and relaxation are not calculated in PTLOSS1G. "
-            "These effects require explicit age/stage, material, environmental, section, and prior-loss assumptions and will not be represented by a generic lump-sum percentage."
+        st.markdown("#### Lightweight Time-Dependent Losses — on-demand source preview")
+        st.caption(
+            "PTLOSS4A calculates creep, shrinkage, and relaxation only after a CURRENT source-derived Elastic Shortening result exists. Opening this tab, editing inputs, or opening an expander performs 0 structural solves."
         )
+        render_metric_cards(
+            [
+                {
+                    "title": "Member design code",
+                    "value": workflow_project_code_label_from_session(st.session_state),
+                    "detail": "Portal Frame Crossbeam member / strength workflow",
+                    "status": "info",
+                },
+                {
+                    "title": "Prestress-loss basis",
+                    "value": "AASHTO LRFD 2020",
+                    "detail": "§5.4.2.3 · §5.9.3.4 · §5.9.3.4.5 / §5.9.3.5 routing",
+                    "status": "info",
+                },
+                {
+                    "title": "Runtime mode",
+                    "value": "ON DEMAND",
+                    "detail": "arithmetic-only after stored ES · 0 structural solves",
+                    "status": "ready",
+                },
+            ]
+        )
+        st.info(
+            "Source transfer from Segmental Box Girder Pro is limited to unit-safe AASHTO material factors, drying-geometry traceability, age reconciliation, and component separation. BG40 f_cgp, external/unbonded routing, report-match constants, and the BG40 relaxation interaction cap are not reused."
+        )
+
+        td_settings = _loss_setting_defaults_from_state()
+        for key, value in (
+            (CB_LOSS_TD_RH_PERCENT_KEY, td_settings["td_rh_percent"]),
+            (CB_LOSS_TD_LOAD_AGE_DAYS_KEY, td_settings["td_load_age_days"]),
+            (CB_LOSS_TD_CURING_END_AGE_DAYS_KEY, td_settings["td_curing_end_age_days"]),
+            (CB_LOSS_TD_FINAL_AGE_DAYS_KEY, td_settings["td_final_age_days"]),
+            (CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY, td_settings["td_inner_perimeter_factor"]),
+            (CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY, td_settings["td_relaxation_steel_class"]),
+        ):
+            if key not in st.session_state:
+                st.session_state[key] = value
+
+        st.markdown("##### Environmental, age, drying, and steel sources")
+        source_a, source_b, source_c = st.columns(3)
+        with source_a:
+            st.number_input(
+                "Average annual relative humidity RH (%)",
+                min_value=1.0,
+                max_value=100.0,
+                step=1.0,
+                format="%.1f",
+                key=CB_LOSS_TD_RH_PERCENT_KEY,
+            )
+            st.number_input(
+                "End-of-curing age (days)",
+                min_value=0.0,
+                max_value=100000.0,
+                step=1.0,
+                format="%.1f",
+                key=CB_LOSS_TD_CURING_END_AGE_DAYS_KEY,
+                help="Shrinkage maturity is measured from the end of curing. This is separate from the prestress/load application age.",
+            )
+        with source_b:
+            st.number_input(
+                "Prestress / long-term load application age ti (days)",
+                min_value=0.01,
+                max_value=100000.0,
+                step=1.0,
+                format="%.1f",
+                key=CB_LOSS_TD_LOAD_AGE_DAYS_KEY,
+            )
+            st.number_input(
+                "Final age tf (days)",
+                min_value=0.02,
+                max_value=1000000.0,
+                step=365.0,
+                format="%.1f",
+                key=CB_LOSS_TD_FINAL_AGE_DAYS_KEY,
+            )
+        with source_c:
+            st.selectbox(
+                "Interior void perimeter exposed to drying",
+                options=[0.0, 0.5, 1.0],
+                format_func=lambda value: {
+                    0.0: "0% — sealed / not exposed",
+                    0.5: "50% — poorly ventilated enclosed cell",
+                    1.0: "100% — ventilated / exposed",
+                }[float(value)],
+                key=CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY,
+                help="AASHTO commentary permits 50% of the interior perimeter for poorly ventilated enclosed cells. Solid sections have zero interior perimeter.",
+            )
+            st.selectbox(
+                "Prestressing-steel relaxation class",
+                options=list(RELAXATION_STEEL_OPTIONS),
+                key=CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY,
+            )
+
+        td_settings = _loss_setting_defaults_from_state()
+        drying_preview = crossbeam_drying_geometry(
+            length_m=length_m,
+            segment_rows=current_segment_rows,
+            section_definitions=current_section_definitions,
+            inner_perimeter_factor=float(td_settings["td_inner_perimeter_factor"]),
+        )
+        render_metric_cards(
+            [
+                {
+                    "title": "Drying geometry",
+                    "value": "READY" if drying_preview.get("ready") else "SOURCE BLOCKED",
+                    "detail": "length-weighted variable-section source",
+                    "status": "ready" if drying_preview.get("ready") else "warning",
+                },
+                {
+                    "title": "Concrete volume",
+                    "value": f"{float(drying_preview.get('total_volume_m3') or 0.0):.3f} m³",
+                    "detail": f"over {float(drying_preview.get('covered_length_m') or 0.0):.3f} m",
+                    "status": "neutral",
+                },
+                {
+                    "title": "Drying surface",
+                    "value": f"{float(drying_preview.get('total_drying_surface_m2') or 0.0):.3f} m²",
+                    "detail": "longitudinal faces; member end faces excluded",
+                    "status": "neutral",
+                },
+                {
+                    "title": "V/S",
+                    "value": (
+                        f"{float(drying_preview.get('v_over_s_mm')):.2f} mm"
+                        if drying_preview.get("v_over_s_mm") is not None
+                        else "—"
+                    ),
+                    "detail": (
+                        f"{float(drying_preview.get('v_over_s_in')):.3f} in · AASHTO equation input"
+                        if drying_preview.get("v_over_s_in") is not None
+                        else "source required"
+                    ),
+                    "status": "ready" if drying_preview.get("ready") else "warning",
+                },
+                {
+                    "title": "Notional size h0",
+                    "value": (
+                        f"{float(drying_preview.get('h0_m')):.4f} m"
+                        if drying_preview.get("h0_m") is not None
+                        else "—"
+                    ),
+                    "detail": "h0 = 2V/S · traceability only",
+                    "status": "neutral",
+                },
+            ]
+        )
+        for issue in drying_preview.get("issues") or []:
+            st.warning(str(issue))
+
+        current_es_for_td = (
+            dict(lightweight_result)
+            if lightweight_evidence_status == "CURRENT"
+            and isinstance(lightweight_result, Mapping)
+            and lightweight_result.get("ready")
+            else None
+        )
+        td_eci = float(selected_eci or 0.0)
+        td_fci = float(current_es_material_source.get("fci_mpa") or 0.0)
+        td_construction_method = str(
+            st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
+            or CONSTRUCTION_METHOD_PRECAST
+        )
+        td_fingerprint = _time_dependent_fingerprint(
+            lightweight_es_fingerprint=str(lightweight_fingerprint),
+            length_m=length_m,
+            segment_rows=current_segment_rows,
+            section_definitions=current_section_definitions,
+            system_rows=system_rows,
+            construction_method=td_construction_method,
+            settings=td_settings,
+            eci_mpa=td_eci,
+            fci_mpa=td_fci,
+        )
+        td_result, td_evidence_status = _cached_time_dependent_result(td_fingerprint)
+        td_sources_ready = bool(
+            current_es_for_td
+            and drying_preview.get("ready")
+            and td_eci > 0.0
+            and td_fci > 0.0
+            and not bool(st.session_state.get(CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY))
+        )
+
+        run_col, clear_col = st.columns([3, 1])
+        with run_col:
+            run_td = st.button(
+                "Run Lightweight Time-Dependent Preview",
+                type="primary",
+                use_container_width=True,
+                disabled=not td_sources_ready,
+                help="Calculates creep, shrinkage, and relaxation from stored post-ES results. It does not call the frame/contact solver.",
+            )
+        with clear_col:
+            clear_td = st.button(
+                "Clear TD Result",
+                use_container_width=True,
+                disabled=td_result is None,
+            )
+        if clear_td:
+            st.session_state.pop(CB_PTL_TIME_DEPENDENT_FINGERPRINT_KEY, None)
+            st.session_state.pop(CB_PTL_TIME_DEPENDENT_RESULT_KEY, None)
+            st.rerun()
+        if run_td:
+            started = perf_counter()
+            td_result = run_crossbeam_lightweight_time_dependent_loss(
+                lightweight_es_result=current_es_for_td,
+                length_m=length_m,
+                segment_rows=current_segment_rows,
+                section_definitions=current_section_definitions,
+                system_rows=system_rows,
+                construction_method=td_construction_method,
+                rh_percent=float(td_settings["td_rh_percent"]),
+                load_age_days=float(td_settings["td_load_age_days"]),
+                curing_end_age_days=float(td_settings["td_curing_end_age_days"]),
+                final_age_days=float(td_settings["td_final_age_days"]),
+                inner_perimeter_factor=float(td_settings["td_inner_perimeter_factor"]),
+                relaxation_steel_class=str(td_settings["td_relaxation_steel_class"]),
+                ep_mpa=float(td_settings["ep_mpa"]),
+                eci_mpa=td_eci,
+                fci_mpa=td_fci,
+            )
+            td_result = {
+                **dict(td_result),
+                "elapsed_seconds": perf_counter() - started,
+                "fingerprint": td_fingerprint,
+            }
+            st.session_state[CB_PTL_TIME_DEPENDENT_FINGERPRINT_KEY] = td_fingerprint
+            st.session_state[CB_PTL_TIME_DEPENDENT_RESULT_KEY] = dict(td_result)
+            st.rerun()
+
+        if not td_sources_ready:
+            source_messages = []
+            if lightweight_evidence_status != "CURRENT":
+                source_messages.append(
+                    f"Lightweight Elastic Shortening result is {lightweight_evidence_status}; run or refresh ES first."
+                )
+            if not drying_preview.get("ready"):
+                source_messages.extend(drying_preview.get("issues") or [])
+            if td_eci <= 0.0 or td_fci <= 0.0:
+                source_messages.append("Stressing-age Eci and f'ci sources are required.")
+            if bool(st.session_state.get(CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY)):
+                source_messages.append(
+                    "Manual Eci override is active; PTLOSS4A requires the source-derived stressing-age modulus."
+                )
+            st.warning(
+                "Time-Dependent preview is blocked until the source chain is complete. "
+                + " ".join(dict.fromkeys(str(item) for item in source_messages if item))
+            )
+
+        current_td = (
+            dict(td_result)
+            if td_evidence_status == "CURRENT"
+            and isinstance(td_result, Mapping)
+            else None
+        )
+        render_metric_cards(
+            [
+                {
+                    "title": "Result status",
+                    "value": td_evidence_status,
+                    "detail": str((current_td or {}).get("status") or "Run preview when sources are ready"),
+                    "status": "ready" if current_td and current_td.get("ready") else ("warning" if td_evidence_status == "STALE" else "neutral"),
+                },
+                {
+                    "title": "Construction route",
+                    "value": str((current_td or {}).get("construction_method") or td_construction_method),
+                    "detail": str((current_td or {}).get("route") or "route resolved at Run"),
+                    "status": "warning" if td_construction_method == CONSTRUCTION_METHOD_PRECAST else "ready",
+                },
+                {
+                    "title": "Structural solves",
+                    "value": str(int((current_td or {}).get("solve_count") or 0)),
+                    "detail": "stored post-ES source only",
+                    "status": "ready",
+                },
+                {
+                    "title": "Creep loss",
+                    "value": f"{float((current_td or {}).get('creep_loss_mpa')):.2f} MPa" if current_td and current_td.get("creep_loss_mpa") is not None else "—",
+                    "detail": "representative post-grouting interval",
+                    "status": "neutral",
+                },
+                {
+                    "title": "Shrinkage loss",
+                    "value": f"{float((current_td or {}).get('shrinkage_loss_mpa')):.2f} MPa" if current_td and current_td.get("shrinkage_loss_mpa") is not None else "—",
+                    "detail": "increment after ti",
+                    "status": "neutral",
+                },
+                {
+                    "title": "Relaxation loss",
+                    "value": f"{float((current_td or {}).get('relaxation_loss_mpa')):.2f} MPa" if current_td and current_td.get("relaxation_loss_mpa") is not None else "—",
+                    "detail": "AASHTO R2 representative expression",
+                    "status": "neutral",
+                },
+                {
+                    "title": "TD subtotal",
+                    "value": f"{float((current_td or {}).get('time_dependent_loss_mpa')):.2f} MPa" if current_td and current_td.get("time_dependent_loss_mpa") is not None else "—",
+                    "detail": str((current_td or {}).get("handoff_status") or "Effective Prestress assembly remains locked"),
+                    "status": "warning" if current_td and not current_td.get("adoptable") else ("ready" if current_td else "neutral"),
+                },
+            ]
+        )
+        if current_td:
+            if not current_td.get("adoptable"):
+                for note in current_td.get("review_notes") or [
+                    current_td.get("route_note") or "Engineering review is required before adoption."
+                ]:
+                    st.warning(str(note))
+            else:
+                st.success(str(current_td.get("route_note") or "Representative design estimate is ready."))
+            st.caption(str(current_td.get("scope_guard") or ""))
+            with st.expander("Calculation trace / QA — drying geometry, factors, interaction, and steel source", expanded=False):
+                st.markdown("##### Drying geometry by Section / Zone")
+                st.dataframe(
+                    pd.DataFrame((current_td.get("drying_geometry") or {}).get("rows") or []),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                creep_source = dict(current_td.get("creep_source") or {})
+                shrinkage_source = dict(current_td.get("shrinkage_source") or {})
+                interaction = dict(current_td.get("interaction") or {})
+                relaxation = dict(current_td.get("relaxation_source") or {})
+                st.markdown("##### AASHTO material and time factors")
+                st.dataframe(
+                    pd.DataFrame(
+                        [
+                            {"Quantity": "ks", "Value": creep_source.get("ks"), "Basis": "1.45 − 0.13(V/S in) ≥ 1.0"},
+                            {"Quantity": "khc", "Value": creep_source.get("khc"), "Basis": "1.56 − 0.008RH"},
+                            {"Quantity": "khs", "Value": shrinkage_source.get("khs"), "Basis": "2.00 − 0.014RH"},
+                            {"Quantity": "kf", "Value": creep_source.get("kf"), "Basis": "5/(1 + f'ci ksi)"},
+                            {"Quantity": "ktd creep", "Value": creep_source.get("ktd_creep"), "Basis": "elapsed tf − ti"},
+                            {"Quantity": "Δktd shrinkage", "Value": shrinkage_source.get("delta_ktd_shrinkage"), "Basis": "maturity after end of curing"},
+                            {"Quantity": "ψ(tf,ti)", "Value": creep_source.get("psi"), "Basis": "AASHTO 5.4.2.3.2-1"},
+                            {"Quantity": "εsh increment", "Value": shrinkage_source.get("shrinkage_strain"), "Basis": "AASHTO 5.4.2.3.3-1"},
+                            {"Quantity": "Kdf", "Value": interaction.get("Kdf"), "Basis": "AASHTO 5.9.3.4.3a-2"},
+                        ]
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                st.markdown("##### Representative section / interaction source")
+                st.json(current_td.get("section_source") or {}, expanded=False)
+                st.markdown("##### Post-ES tendon stress and relaxation source")
+                st.dataframe(
+                    pd.DataFrame((current_td.get("steel_source") or {}).get("rows") or []),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                st.write(
+                    f"Relaxation: **KL = {float(relaxation.get('KL') or 0.0):g}**, "
+                    f"fpt = **{float(relaxation.get('fpt_mpa') or 0.0):.3f} MPa**, "
+                    f"fpy = **{float(relaxation.get('fpy_mpa') or 0.0):.3f} MPa**."
+                )
+                st.latex(r"K_{df}=\frac{1}{1+\frac{E_pA_{ps}}{E_{ci}A_c}\left(1+\frac{A_ce_{pc}^{2}}{I_c}\right)\left[1+0.7\psi_b(t_f,t_i)\right]}")
+                st.latex(r"\Delta f_{pCD}=\frac{E_p}{E_{ci}}f_{cgp}\psi_b(t_f,t_i)K_{df}")
+                st.latex(r"\Delta f_{pSD}=\varepsilon_{sh}E_pK_{df}")
+                st.latex(r"\Delta f_{pR2}=\Delta f_{pR1}=\frac{f_{pt}}{K_L}\left(\frac{f_{pt}}{f_{py}}-0.55\right)")
+                st.caption(
+                    "PTLOSS4A does not add component percentages and does not assemble Pe/Pe_eff. The downstream Effective Prestress milestone must combine station-dependent instantaneous losses, sequence-dependent ES, and the reviewed TD component in one force/stress chain."
+                )
 
     with audit_tab:
         st.markdown("#### Prestress-loss dependency audit")
@@ -8917,8 +9367,8 @@ def render_crossbeam_prestress_loss_page() -> None:
                     {
                         "Order": 5,
                         "Source / component": "Time-dependent losses",
-                        "Current state": "Locked",
-                        "Feeds": "Future final-stage force state",
+                        "Current state": f"ON-DEMAND {td_evidence_status}",
+                        "Feeds": "Creep + shrinkage + relaxation component preview; Pe/Pe_eff assembly remains locked",
                     },
                     {
                         "Order": 6,
