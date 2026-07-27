@@ -169,6 +169,25 @@ def test_drying_geometry_is_length_weighted_and_conservative() -> None:
     assert result_0["total_drying_surface_m2"] < result_50["total_drying_surface_m2"] < result_100["total_drying_surface_m2"]
     assert result_0["v_over_s_mm"] > result_50["v_over_s_mm"] > result_100["v_over_s_mm"]
     assert result_50["h0_m"] == pytest.approx(2.0 * result_50["v_over_s_m"])
+    assert result_50["formula"] == "Σ(AiLi) / Σ(udry,iLi)"
+    assert len(result_50["section_summary_rows"]) == 2
+    local_by_role = {
+        row["Section role"]: row for row in result_50["section_summary_rows"]
+    }
+    assert local_by_role["Solid"]["Local V/S (in.)"] == pytest.approx(18.77320756535903, rel=1.0e-8)
+    assert local_by_role["Hollow"]["Local V/S (in.)"] == pytest.approx(8.185366751370205, rel=1.0e-8)
+    arithmetic_mean = 0.5 * (
+        local_by_role["Solid"]["Local V/S (in.)"]
+        + local_by_role["Hollow"]["Local V/S (in.)"]
+    )
+    assert result_50["v_over_s_in"] == pytest.approx(12.73174724, rel=1.0e-8)
+    assert result_50["v_over_s_in"] != pytest.approx(arithmetic_mean)
+    assert result_50["local_v_over_s_min_in"] == pytest.approx(
+        local_by_role["Hollow"]["Local V/S (in.)"]
+    )
+    assert result_50["local_v_over_s_max_in"] == pytest.approx(
+        local_by_role["Solid"]["Local V/S (in.)"]
+    )
 
 
 def test_time_factor_routes_use_elapsed_creep_and_incremental_shrinkage_maturity() -> None:
@@ -208,17 +227,21 @@ def test_precast_segmental_route_is_preview_only_and_runs_zero_structural_solves
     assert result["time_dependent_loss_mpa"] == pytest.approx(127.1491147199, rel=1.0e-9)
     assert result["interaction"]["Kdf"] == pytest.approx(0.8942766001, rel=1.0e-9)
     assert any("construction-schedule time-step" in note for note in result["review_notes"])
-    assert any("V/S exceeds 6.0 in." in note for note in result["review_notes"])
+    assert result["v_over_s_commentary_advisory"] is True
+    assert any("Specification lower bound ks = 1.0 is applied" in note for note in result["calibration_advisories"])
 
 
-def test_cip_route_still_requires_review_when_size_factor_is_outside_commentary_range() -> None:
+def test_cip_route_keeps_commentary_range_as_advisory_not_hard_code_block() -> None:
     result = _run_td(CONSTRUCTION_METHOD_CIP)
     assert result["ready"] is True
     assert result["construction_method"] == CONSTRUCTION_METHOD_CIP
     assert result["route"].startswith("CAST-IN-PLACE NONSEGMENTAL")
-    assert result["adoptable"] is False
-    assert result["status"] == "PRELIMINARY PREVIEW — REVIEW REQUIRED"
-    assert any("V/S exceeds 6.0 in." in note for note in result["review_notes"])
+    assert result["adoptable"] is True
+    assert result["status"] == "DESIGN ESTIMATE READY"
+    assert result["blocking_review_notes"] == []
+    assert result["v_over_s_commentary_advisory"] is True
+    assert any("6.0-in. range considered" in note for note in result["calibration_advisories"])
+    assert any("engineering review" in note for note in result["calibration_advisories"])
 
 
 def test_unbonded_route_is_source_blocked_in_ptloss4a() -> None:
@@ -281,6 +304,12 @@ def test_time_dependent_ui_is_on_demand_and_contains_no_structural_solver_call()
     assert "Run Lightweight Time-Dependent Preview" in block
     assert "0 structural solves" in block
     assert "BG40 relaxation interaction cap are not reused" in block
+    assert "Member-equivalent V/S" in block
+    assert "Local V/S range" in block
+    assert "Σ(AᵢLᵢ) / Σ(u_dry,ᵢLᵢ)" in block
+    assert "Representative section / interaction source" in block
+    assert "st.json(current_td.get(\"section_source\")" not in block
+    assert "εsh increment" in block and "με" in block
     assert block.index("run_crossbeam_lightweight_time_dependent_loss") > block.index("if run_td:")
     assert "run_crossbeam_linear_stage_response" not in block
     assert "run_crossbeam_incremental_contact_qa" not in block

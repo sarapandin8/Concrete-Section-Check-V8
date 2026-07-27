@@ -9087,31 +9087,42 @@ def render_crossbeam_prestress_loss_page() -> None:
                     "status": "neutral",
                 },
                 {
-                    "title": "V/S",
+                    "title": "Member-equivalent V/S",
                     "value": (
                         f"{float(drying_preview.get('v_over_s_mm')):.2f} mm"
                         if drying_preview.get("v_over_s_mm") is not None
                         else "—"
                     ),
                     "detail": (
-                        f"{float(drying_preview.get('v_over_s_in')):.3f} in · AASHTO equation input"
+                        f"{float(drying_preview.get('v_over_s_in')):.3f} in · ΣV/ΣS across Solid + Hollow zones"
                         if drying_preview.get("v_over_s_in") is not None
                         else "source required"
                     ),
                     "status": "ready" if drying_preview.get("ready") else "warning",
                 },
                 {
-                    "title": "Notional size h0",
+                    "title": "Local V/S range",
                     "value": (
-                        f"{float(drying_preview.get('h0_m')):.4f} m"
-                        if drying_preview.get("h0_m") is not None
+                        f"{float(drying_preview.get('local_v_over_s_min_in')):.3f}–"
+                        f"{float(drying_preview.get('local_v_over_s_max_in')):.3f} in"
+                        if drying_preview.get("local_v_over_s_min_in") is not None
+                        and drying_preview.get("local_v_over_s_max_in") is not None
                         else "—"
                     ),
-                    "detail": "h0 = 2V/S · traceability only",
+                    "detail": (
+                        f"h0 = {float(drying_preview.get('h0_m')):.4f} m · local Section/Zone values retained for audit"
+                        if drying_preview.get("h0_m") is not None
+                        else "local source required"
+                    ),
                     "status": "neutral",
                 },
             ]
         )
+        if drying_preview.get("ready"):
+            st.caption(
+                "Member-equivalent V/S is calculated as Σ(AᵢLᵢ) / Σ(u_dry,ᵢLᵢ). "
+                "It is not the arithmetic average of the Solid and Hollow local V/S values."
+            )
         for issue in drying_preview.get("issues") or []:
             st.warning(str(issue))
 
@@ -9267,8 +9278,10 @@ def render_crossbeam_prestress_loss_page() -> None:
             ]
         )
         if current_td:
+            for note in current_td.get("calibration_advisories") or []:
+                st.warning(str(note))
             if not current_td.get("adoptable"):
-                for note in current_td.get("review_notes") or [
+                for note in current_td.get("blocking_review_notes") or [
                     current_td.get("route_note") or "Engineering review is required before adoption."
                 ]:
                     st.warning(str(note))
@@ -9276,36 +9289,130 @@ def render_crossbeam_prestress_loss_page() -> None:
                 st.success(str(current_td.get("route_note") or "Representative design estimate is ready."))
             st.caption(str(current_td.get("scope_guard") or ""))
             with st.expander("Calculation trace / QA — drying geometry, factors, interaction, and steel source", expanded=False):
-                st.markdown("##### Drying geometry by Section / Zone")
-                st.dataframe(
-                    pd.DataFrame((current_td.get("drying_geometry") or {}).get("rows") or []),
-                    use_container_width=True,
-                    hide_index=True,
+                st.markdown("##### Drying geometry — local Section/Zone V/S")
+                drying_source = dict(current_td.get("drying_geometry") or {})
+                local_summary = pd.DataFrame(drying_source.get("section_summary_rows") or [])
+                if not local_summary.empty:
+                    geometry_columns = [
+                        "Section ID",
+                        "Section role",
+                        "Area (m²)",
+                        "Outer perimeter (m)",
+                        "Inner perimeter (m)",
+                        "Interior exposure factor",
+                        "Adopted exposed perimeter (m)",
+                    ]
+                    st.dataframe(
+                        local_summary[
+                            [column for column in geometry_columns if column in local_summary.columns]
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Area (m²)": st.column_config.NumberColumn(format="%.4f"),
+                            "Outer perimeter (m)": st.column_config.NumberColumn(format="%.4f"),
+                            "Inner perimeter (m)": st.column_config.NumberColumn(format="%.4f"),
+                            "Interior exposure factor": st.column_config.NumberColumn(format="%.2f"),
+                            "Adopted exposed perimeter (m)": st.column_config.NumberColumn(format="%.4f"),
+                        },
+                    )
+                    local_ratio_columns = [
+                        "Section ID",
+                        "Section role",
+                        "Total length (m)",
+                        "Local V/S (mm)",
+                        "Local V/S (in.)",
+                        "Local ks",
+                        "Volume share (%)",
+                        "Drying-surface share (%)",
+                    ]
+                    st.dataframe(
+                        local_summary[
+                            [column for column in local_ratio_columns if column in local_summary.columns]
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Total length (m)": st.column_config.NumberColumn(format="%.3f"),
+                            "Local V/S (mm)": st.column_config.NumberColumn(format="%.2f"),
+                            "Local V/S (in.)": st.column_config.NumberColumn(format="%.3f"),
+                            "Local ks": st.column_config.NumberColumn(format="%.4f"),
+                            "Volume share (%)": st.column_config.NumberColumn(format="%.2f"),
+                            "Drying-surface share (%)": st.column_config.NumberColumn(format="%.2f"),
+                        },
+                    )
+                st.caption(
+                    "Local V/S = Ac/u_dry for each Section type. The AASHTO preview uses the member-equivalent "
+                    "V/S = Σ(AᵢLᵢ)/Σ(u_dry,ᵢLᵢ), not an arithmetic average."
                 )
+                st.markdown("##### Drying geometry — volume and surface contributions")
+                contribution_rows = pd.DataFrame(drying_source.get("rows") or [])
+                if not contribution_rows.empty:
+                    contribution_columns = [
+                        "Segment",
+                        "s start (m)",
+                        "s end (m)",
+                        "Length (m)",
+                        "Section ID",
+                        "Section role",
+                        "Concrete volume (m³)",
+                        "Drying surface (m²)",
+                    ]
+                    st.dataframe(
+                        contribution_rows[
+                            [column for column in contribution_columns if column in contribution_rows.columns]
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "s start (m)": st.column_config.NumberColumn(format="%.3f"),
+                            "s end (m)": st.column_config.NumberColumn(format="%.3f"),
+                            "Length (m)": st.column_config.NumberColumn(format="%.3f"),
+                            "Concrete volume (m³)": st.column_config.NumberColumn(format="%.4f"),
+                            "Drying surface (m²)": st.column_config.NumberColumn(format="%.4f"),
+                        },
+                    )
                 creep_source = dict(current_td.get("creep_source") or {})
                 shrinkage_source = dict(current_td.get("shrinkage_source") or {})
                 interaction = dict(current_td.get("interaction") or {})
                 relaxation = dict(current_td.get("relaxation_source") or {})
                 st.markdown("##### AASHTO material and time factors")
+                shrinkage_strain = float(shrinkage_source.get("shrinkage_strain") or 0.0)
                 st.dataframe(
                     pd.DataFrame(
                         [
-                            {"Quantity": "ks", "Value": creep_source.get("ks"), "Basis": "1.45 − 0.13(V/S in) ≥ 1.0"},
-                            {"Quantity": "khc", "Value": creep_source.get("khc"), "Basis": "1.56 − 0.008RH"},
-                            {"Quantity": "khs", "Value": shrinkage_source.get("khs"), "Basis": "2.00 − 0.014RH"},
-                            {"Quantity": "kf", "Value": creep_source.get("kf"), "Basis": "5/(1 + f'ci ksi)"},
-                            {"Quantity": "ktd creep", "Value": creep_source.get("ktd_creep"), "Basis": "elapsed tf − ti"},
-                            {"Quantity": "Δktd shrinkage", "Value": shrinkage_source.get("delta_ktd_shrinkage"), "Basis": "maturity after end of curing"},
-                            {"Quantity": "ψ(tf,ti)", "Value": creep_source.get("psi"), "Basis": "AASHTO 5.4.2.3.2-1"},
-                            {"Quantity": "εsh increment", "Value": shrinkage_source.get("shrinkage_strain"), "Basis": "AASHTO 5.4.2.3.3-1"},
-                            {"Quantity": "Kdf", "Value": interaction.get("Kdf"), "Basis": "AASHTO 5.9.3.4.3a-2"},
+                            {"Quantity": "ks", "Value": f"{float(creep_source.get('ks') or 0.0):.6f}", "Basis": "1.45 − 0.13(V/S in) ≥ 1.0"},
+                            {"Quantity": "khc", "Value": f"{float(creep_source.get('khc') or 0.0):.6f}", "Basis": "1.56 − 0.008RH"},
+                            {"Quantity": "khs", "Value": f"{float(shrinkage_source.get('khs') or 0.0):.6f}", "Basis": "2.00 − 0.014RH"},
+                            {"Quantity": "kf", "Value": f"{float(creep_source.get('kf') or 0.0):.6f}", "Basis": "5/(1 + f'ci ksi)"},
+                            {"Quantity": "ktd creep", "Value": f"{float(creep_source.get('ktd_creep') or 0.0):.6f}", "Basis": "elapsed tf − ti"},
+                            {"Quantity": "Δktd shrinkage", "Value": f"{float(shrinkage_source.get('delta_ktd_shrinkage') or 0.0):.6f}", "Basis": "maturity after end of curing"},
+                            {"Quantity": "ψ(tf,ti)", "Value": f"{float(creep_source.get('psi') or 0.0):.6f}", "Basis": "AASHTO 5.4.2.3.2-1"},
+                            {"Quantity": "εsh increment", "Value": f"{shrinkage_strain:.6e} ({shrinkage_strain * 1.0e6:.1f} με)", "Basis": "AASHTO 5.4.2.3.3-1"},
+                            {"Quantity": "Kdf", "Value": f"{float(interaction.get('Kdf') or 0.0):.6f}", "Basis": "AASHTO 5.9.3.4.3a-2"},
                         ]
                     ),
                     use_container_width=True,
                     hide_index=True,
                 )
                 st.markdown("##### Representative section / interaction source")
-                st.json(current_td.get("section_source") or {}, expanded=False)
+                section_source = dict(current_td.get("section_source") or {})
+                representative_rows = [
+                    {"Quantity": "Evaluation role", "Value": section_source.get("evaluation_role"), "Basis": "governing bonded f_cgp source"},
+                    {"Quantity": "Station s", "Value": f"{float(section_source.get('station_m') or 0.0):.3f} m", "Basis": "Lightweight ES evaluation audit"},
+                    {"Quantity": "Section ID", "Value": section_source.get("section_id"), "Basis": "Section Library source"},
+                    {"Quantity": "Ac", "Value": f"{float(interaction.get('Ac_mm2') or 0.0):,.1f} mm²", "Basis": "gross concrete area"},
+                    {"Quantity": "Ic", "Value": f"{float(interaction.get('Ic_mm4') or 0.0):.6e} mm⁴", "Basis": "gross centroidal Ix"},
+                    {"Quantity": "epc", "Value": f"{float(interaction.get('epc_mm') or 0.0):.3f} mm", "Basis": "Tendon CG eccentricity at governing source"},
+                    {"Quantity": "Aps,total", "Value": f"{float(interaction.get('Aps_total_mm2') or 0.0):,.1f} mm²", "Basis": "active bonded Tendons"},
+                    {"Quantity": "1 + Ac·epc²/Ic", "Value": f"{float(interaction.get('section_term') or 0.0):.6f}", "Basis": "bonded-steel interaction term"},
+                    {"Quantity": "Kdf", "Value": f"{float(interaction.get('Kdf') or 0.0):.6f}", "Basis": "AASHTO 5.9.3.4.3a-2"},
+                ]
+                st.dataframe(
+                    pd.DataFrame(representative_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                )
                 st.markdown("##### Post-ES tendon stress and relaxation source")
                 st.dataframe(
                     pd.DataFrame((current_td.get("steel_source") or {}).get("rows") or []),

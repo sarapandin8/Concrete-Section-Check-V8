@@ -235,6 +235,15 @@ def crossbeam_drying_geometry(
             issues.append(f"Section {section_id}: drying geometry could not be resolved: {exc}")
             continue
         exposed_mm = outer_mm + factor * inner_mm
+        local_v_over_s_mm = area_mm2 / exposed_mm if exposed_mm > 0.0 else None
+        local_v_over_s_in = (
+            local_v_over_s_mm * IN_PER_MM if local_v_over_s_mm is not None else None
+        )
+        local_ks = (
+            max(1.45 - 0.13 * local_v_over_s_in, 1.0)
+            if local_v_over_s_in is not None
+            else None
+        )
         volume_m3 = area_mm2 * 1.0e-6 * seg_length
         surface_m2 = exposed_mm * 1.0e-3 * seg_length
         total_volume_m3 += volume_m3
@@ -251,7 +260,11 @@ def crossbeam_drying_geometry(
                 "Area (m²)": area_mm2 * 1.0e-6,
                 "Outer perimeter (m)": outer_mm * 1.0e-3,
                 "Inner perimeter (m)": inner_mm * 1.0e-3,
+                "Interior exposure factor": factor,
                 "Adopted exposed perimeter (m)": exposed_mm * 1.0e-3,
+                "Local V/S (mm)": local_v_over_s_mm,
+                "Local V/S (in.)": local_v_over_s_in,
+                "Local ks": local_ks,
                 "Concrete volume (m³)": volume_m3,
                 "Drying surface (m²)": surface_m2,
             }
@@ -262,10 +275,61 @@ def crossbeam_drying_geometry(
             f"Segment coverage is {covered_length_m:.6g} m but Crossbeam length is {target_length:.6g} m."
         )
     v_over_s_m = total_volume_m3 / total_surface_m2 if total_surface_m2 > 0.0 else None
+    section_groups: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in rows:
+        key = (str(row.get("Section ID") or ""), str(row.get("Section role") or ""))
+        grouped = section_groups.setdefault(
+            key,
+            {
+                "Section ID": key[0],
+                "Section role": key[1],
+                "Total length (m)": 0.0,
+                "Concrete volume (m³)": 0.0,
+                "Drying surface (m²)": 0.0,
+                "Area (m²)": row.get("Area (m²)"),
+                "Outer perimeter (m)": row.get("Outer perimeter (m)"),
+                "Inner perimeter (m)": row.get("Inner perimeter (m)"),
+                "Interior exposure factor": factor,
+                "Adopted exposed perimeter (m)": row.get("Adopted exposed perimeter (m)"),
+            },
+        )
+        grouped["Total length (m)"] += _float(row.get("Length (m)"))
+        grouped["Concrete volume (m³)"] += _float(row.get("Concrete volume (m³)"))
+        grouped["Drying surface (m²)"] += _float(row.get("Drying surface (m²)"))
+    section_summary_rows: list[dict[str, Any]] = []
+    for grouped in section_groups.values():
+        local_m = (
+            _float(grouped.get("Concrete volume (m³)"))
+            / _float(grouped.get("Drying surface (m²)"))
+            if _float(grouped.get("Drying surface (m²)")) > 0.0
+            else None
+        )
+        local_in = local_m * 1000.0 * IN_PER_MM if local_m is not None else None
+        grouped["Local V/S (mm)"] = local_m * 1000.0 if local_m is not None else None
+        grouped["Local V/S (in.)"] = local_in
+        grouped["Local ks"] = max(1.45 - 0.13 * local_in, 1.0) if local_in is not None else None
+        grouped["Volume share (%)"] = (
+            100.0 * _float(grouped.get("Concrete volume (m³)")) / total_volume_m3
+            if total_volume_m3 > 0.0
+            else None
+        )
+        grouped["Drying-surface share (%)"] = (
+            100.0 * _float(grouped.get("Drying surface (m²)")) / total_surface_m2
+            if total_surface_m2 > 0.0
+            else None
+        )
+        section_summary_rows.append(grouped)
+    section_summary_rows.sort(key=lambda row: (str(row.get("Section role")), str(row.get("Section ID"))))
+    local_values_in = [
+        _float(row.get("Local V/S (in.)"))
+        for row in section_summary_rows
+        if row.get("Local V/S (in.)") is not None
+    ]
     return {
         "ready": bool(rows) and not issues and v_over_s_m is not None,
         "issues": _dedupe(issues),
         "rows": rows,
+        "section_summary_rows": section_summary_rows,
         "inner_perimeter_factor": factor,
         "covered_length_m": covered_length_m,
         "total_volume_m3": total_volume_m3,
@@ -273,10 +337,14 @@ def crossbeam_drying_geometry(
         "v_over_s_m": v_over_s_m,
         "v_over_s_mm": None if v_over_s_m is None else v_over_s_m * 1000.0,
         "v_over_s_in": None if v_over_s_m is None else v_over_s_m * 1000.0 * IN_PER_MM,
+        "local_v_over_s_min_in": min(local_values_in) if local_values_in else None,
+        "local_v_over_s_max_in": max(local_values_in) if local_values_in else None,
         "h0_m": None if v_over_s_m is None else 2.0 * v_over_s_m,
         "basis": (
-            "Length-weighted concrete volume / exposed longitudinal drying surface; member end faces excluded."
+            "Member-equivalent V/S = Σ(AiLi) / Σ(udry,iLi) using exposed longitudinal faces; "
+            "member end faces excluded. Local Section/Zone V/S values remain visible for audit."
         ),
+        "formula": "Σ(AiLi) / Σ(udry,iLi)",
     }
 
 
@@ -506,22 +574,31 @@ def run_crossbeam_lightweight_time_dependent_loss(
     method = normalize_construction_method(construction_method)
     segmental = method == CONSTRUCTION_METHOD_PRECAST
     review_notes: list[str] = []
+    calibration_advisories: list[str] = []
+    blocking_review_notes: list[str] = []
     v_over_s_outside_development = _float(drying.get("v_over_s_in")) > 6.0
     if v_over_s_outside_development:
-        review_notes.append(
-            "Calculated V/S exceeds 6.0 in., the maximum ratio noted in the development of the AASHTO commentary size-factor approximations; project-specific material data or an engineer-approved treatment is required before adoption."
+        calibration_advisories.append(
+            "Member-equivalent V/S exceeds the 6.0-in. range considered in developing the AASHTO Commentary size-effect relationships. "
+            "The Specification lower bound ks = 1.0 is applied; engineering review or project-specific material data is recommended "
+            "when accurate intermediate-age behavior is important."
         )
     if segmental:
-        review_notes.append(
+        blocking_review_notes.append(
             "Precast Segmental construction requires a construction-schedule time-step analysis under AASHTO 5.9.3.4.1 and 5.9.3.5 for final adoption."
         )
-    adoptable = not segmental and not v_over_s_outside_development
+    review_notes.extend(calibration_advisories)
+    review_notes.extend(blocking_review_notes)
+    adoptable = not segmental
     status = "DESIGN ESTIMATE READY" if adoptable else "PRELIMINARY PREVIEW — REVIEW REQUIRED"
     return {
         "status": status,
         "ready": True,
         "adoptable": adoptable,
         "review_notes": review_notes,
+        "calibration_advisories": calibration_advisories,
+        "blocking_review_notes": blocking_review_notes,
+        "v_over_s_commentary_advisory": v_over_s_outside_development,
         "method": LIGHTWEIGHT_TD_METHOD,
         "basis": AASHTO_TIME_DEPENDENT_BASIS,
         "solve_count": 0,
