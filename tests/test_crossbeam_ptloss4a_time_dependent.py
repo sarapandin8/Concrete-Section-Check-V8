@@ -119,11 +119,11 @@ def _sources(bond_state: str = TENDON_BOND_STATE_BONDED):
         eci_mpa=28200.0,
     )
     assert es["ready"] is True
-    return length_m, definitions, segments, system, settings, es
+    return length_m, definitions, segments, system, settings, es, model, profile
 
 
 def _run_td(construction_method: str = CONSTRUCTION_METHOD_PRECAST):
-    length_m, definitions, segments, system, settings, es = _sources()
+    length_m, definitions, segments, system, settings, es, model, profile = _sources()
     return run_crossbeam_lightweight_time_dependent_loss(
         lightweight_es_result=es,
         length_m=length_m,
@@ -138,6 +138,9 @@ def _run_td(construction_method: str = CONSTRUCTION_METHOD_PRECAST):
         grout_age_days=28.0,
         falsework_removal_age_days=35.0,
         permanent_load_age_days=90.0,
+        linear_stage_model=model,
+        profile_rows=profile,
+        later_permanent_load_delta_fcgp_mpa=0.0,
         inner_perimeter_factor=0.5,
         relaxation_steel_class=LOW_RELAXATION_STEEL,
         ep_mpa=settings["ep_mpa"],
@@ -147,7 +150,7 @@ def _run_td(construction_method: str = CONSTRUCTION_METHOD_PRECAST):
 
 
 def test_drying_geometry_is_length_weighted_and_conservative() -> None:
-    length_m, definitions, segments, _system, _settings, _es = _sources()
+    length_m, definitions, segments, _system, _settings, _es, _model, _profile = _sources()
     result_0 = crossbeam_drying_geometry(
         length_m=length_m,
         segment_rows=segments,
@@ -223,18 +226,20 @@ def test_time_factor_routes_use_elapsed_creep_and_incremental_shrinkage_maturity
     assert shrinkage["shrinkage_strain"] > 0.0
 
 
-def test_precast_segmental_route_is_preview_only_and_runs_zero_structural_solves() -> None:
+def test_precast_segmental_route_uses_one_event_solve_and_interval_stress_sources() -> None:
     result = _run_td(CONSTRUCTION_METHOD_PRECAST)
     assert result["ready"] is True
     assert result["adoptable"] is False
-    assert result["status"] == "SCHEDULE TIME-STEP QA READY — FINAL ADOPTION BLOCKED"
-    assert result["solve_count"] == 0
-    assert result["creep_loss_mpa"] == pytest.approx(78.3698432688, rel=1.0e-9)
+    assert result["status"] == "EVENT-BASED TIME-STEP QA READY — FINAL ADOPTION BLOCKED"
+    assert result["solve_count"] == 1
+    assert result["creep_loss_mpa"] > 0.0
     assert result["shrinkage_loss_mpa"] == pytest.approx(40.8905895965, rel=1.0e-9)
     assert result["relaxation_loss_mpa"] == pytest.approx(7.8886818546, rel=1.0e-9)
-    assert result["time_dependent_loss_mpa"] == pytest.approx(127.1491147199, rel=1.0e-9)
+    assert result["time_dependent_loss_mpa"] == pytest.approx(
+        result["creep_loss_mpa"] + result["shrinkage_loss_mpa"] + result["relaxation_loss_mpa"]
+    )
     assert result["interaction"]["Kdf"] == pytest.approx(0.8942766001, rel=1.0e-9)
-    assert result["route"] == "PRECAST SEGMENTAL — CONSTRUCTION-SCHEDULE TIME-STEP QA"
+    assert result["route"] == "PRECAST SEGMENTAL — EVENT-BASED TIME-STEP QA"
     assert result["schedule_source"]["ready"] is True
     assert result["schedule_source"]["immediate_grout"] is True
     assert result["schedule_time_step"]["interval_count"] == 3
@@ -253,7 +258,9 @@ def test_precast_segmental_route_is_preview_only_and_runs_zero_structural_solves
     assert result["schedule_time_step"]["closure"]["total_residual_mpa"] == pytest.approx(
         0.0, abs=1.0e-12
     )
-    assert any("stage stress redistribution" in note for note in result["review_notes"])
+    assert any("Falsework-removal stress redistribution" in note for note in result["review_notes"])
+    assert result["event_stress_source"]["ready"] is True
+    assert all(row["f_cgp interval (MPa)"] >= 0.0 for row in result["schedule_time_step"]["rows"])
     assert result["v_over_s_commentary_advisory"] is True
     assert any("Specification lower bound ks = 1.0 is applied" in note for note in result["calibration_advisories"])
 
@@ -272,7 +279,7 @@ def test_cip_route_keeps_commentary_range_as_advisory_not_hard_code_block() -> N
 
 
 def test_unbonded_route_is_source_blocked_in_ptloss4a() -> None:
-    length_m, definitions, segments, system, settings, es = _sources(
+    length_m, definitions, segments, system, settings, es, model, profile = _sources(
         TENDON_BOND_STATE_UNBONDED
     )
     result = run_crossbeam_lightweight_time_dependent_loss(
@@ -315,7 +322,7 @@ def test_ptloss4a_inputs_round_trip_in_project_metadata_without_results() -> Non
     restored = restore_crossbeam_prestress_loss_project_state(
         {CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY: metadata}, restored_state
     )
-    assert metadata["schema_version"] == CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION == 7
+    assert metadata["schema_version"] == CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION == 8
     assert metadata["td_rh_percent"] == pytest.approx(68.0)
     assert metadata["td_load_age_days"] == pytest.approx(35.0)
     assert metadata["td_curing_end_age_days"] == pytest.approx(5.0)
@@ -336,9 +343,10 @@ def test_ptloss4a_inputs_round_trip_in_project_metadata_without_results() -> Non
 def test_time_dependent_ui_is_on_demand_and_contains_no_structural_solver_call() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
     block = source.split("with time_dependent_tab:", 1)[1].split("with audit_tab:", 1)[0]
-    assert "Lightweight Time-Dependent Losses — on-demand schedule preview" in block
-    assert "Run Segmental Schedule Time-Step Preview" in block
-    assert "0 structural solves" in block
+    assert "Lightweight Time-Dependent Losses — event-based schedule preview" in block
+    assert "Run Event-Based Time-Step Preview" in block
+    assert "0 solves on open" in block
+    assert "one no-contact frame solve" in block
     assert "BG40 relaxation interaction cap are not reused" in block
     assert "Member-equivalent V/S" in block
     assert "Local V/S range" in block
@@ -422,7 +430,7 @@ def test_ptloss4a_static_table_keeps_right_side_audit_values_in_print_dom(monkey
 
 
 def test_segmental_schedule_delayed_grouting_is_explicitly_partial() -> None:
-    length_m, definitions, segments, system, settings, es = _sources()
+    length_m, definitions, segments, system, settings, es, model, profile = _sources()
     result = run_crossbeam_lightweight_time_dependent_loss(
         lightweight_es_result=es,
         length_m=length_m,
@@ -437,6 +445,9 @@ def test_segmental_schedule_delayed_grouting_is_explicitly_partial() -> None:
         grout_age_days=35.0,
         falsework_removal_age_days=42.0,
         permanent_load_age_days=90.0,
+        linear_stage_model=model,
+        profile_rows=profile,
+        later_permanent_load_delta_fcgp_mpa=0.0,
         inner_perimeter_factor=0.5,
         relaxation_steel_class=LOW_RELAXATION_STEEL,
         ep_mpa=settings["ep_mpa"],
@@ -453,7 +464,7 @@ def test_segmental_schedule_delayed_grouting_is_explicitly_partial() -> None:
 
 
 def test_segmental_schedule_rejects_nonchronological_ages() -> None:
-    length_m, definitions, segments, system, settings, es = _sources()
+    length_m, definitions, segments, system, settings, es, model, profile = _sources()
     result = run_crossbeam_lightweight_time_dependent_loss(
         lightweight_es_result=es,
         length_m=length_m,
@@ -468,6 +479,9 @@ def test_segmental_schedule_rejects_nonchronological_ages() -> None:
         grout_age_days=35.0,
         falsework_removal_age_days=30.0,
         permanent_load_age_days=90.0,
+        linear_stage_model=model,
+        profile_rows=profile,
+        later_permanent_load_delta_fcgp_mpa=0.0,
         inner_perimeter_factor=0.5,
         relaxation_steel_class=LOW_RELAXATION_STEEL,
         ep_mpa=settings["ep_mpa"],

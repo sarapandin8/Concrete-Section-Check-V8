@@ -8,10 +8,10 @@ The ordinary route is intentionally arithmetic-only: it consumes a CURRENT
 Lightweight Elastic Shortening result and performs no structural solve.  For
 Cast-in-Place nonsegmental post-tensioned Crossbeams, the calculation is a
 representative AASHTO LRFD 5.9.3.4.5 design estimate.  For Precast Segmental
-Crossbeams, PTLOSS4B1 partitions the accepted post-grouting material response
-through explicit construction-schedule intervals.  It remains a source-partial
-QA route until stage stress redistribution, later-load Δfcd, and a time-resolved
-relaxation source are implemented.
+Crossbeams, PTLOSS4B2 combines explicit construction-schedule material-aging
+intervals with one event solve after falsework removal. It remains a source-partial
+QA route because later-load Δfcd is still engineer-entered and relaxation is not
+time-resolved.
 """
 
 from __future__ import annotations
@@ -31,6 +31,9 @@ from concrete_pmm_pro.crossbeam.section_library import (
     definition_map,
     section_property_record,
 )
+from concrete_pmm_pro.crossbeam.event_stage_stress import (
+    run_crossbeam_event_stage_stress_sources,
+)
 from concrete_pmm_pro.crossbeam.tendon import (
     TENDON_BOND_STATE_BONDED,
     canonical_tendon_system_rows,
@@ -44,7 +47,7 @@ LIGHTWEIGHT_TD_METHOD = (
     "ONE POST-ES REPRESENTATIVE INTERVAL — CREEP + SHRINKAGE + RELAXATION; 0 STRUCTURAL SOLVES"
 )
 SEGMENTAL_SCHEDULE_TD_METHOD = (
-    "PRECAST SEGMENTAL CONSTRUCTION-SCHEDULE TIME-STEP QA — INCREMENTAL MATERIAL AGING; 0 STRUCTURAL SOLVES"
+    "PRECAST SEGMENTAL EVENT-BASED TIME-STEP QA — MATERIAL AGING + EVENT STRESS SOURCES"
 )
 LOW_RELAXATION_STEEL = "Low-relaxation seven-wire strand"
 OTHER_PRESTRESSING_STEEL = "Other prestressing steel"
@@ -280,14 +283,15 @@ def _segmental_time_step_rows(
     ep_mpa: float,
     eci_mpa: float,
     fcgp_mpa: float,
+    interval_fcgp_mpa: list[float] | tuple[float, ...] | None = None,
     kdf: float,
     relaxation_loss_mpa: float,
 ) -> dict[str, Any]:
     """Partition post-grouting creep/shrinkage into schedule intervals.
 
-    The same accepted Kdf is used for every increment so the interval sum
-    closes exactly to the corresponding post-grouting component total.  This
-    is a material-aging time-step audit, not a stage structural analysis.
+    The accepted Kdf is retained for every increment.  PTLOSS4B2 may supply
+    event-specific concrete stresses for the intervals after falsework removal
+    and later permanent load; the solver is called only at structural events.
     """
 
     if not schedule.get("ready"):
@@ -330,6 +334,9 @@ def _segmental_time_step_rows(
     cumulative_creep = 0.0
     cumulative_shrinkage = 0.0
     cumulative_relaxation = 0.0
+    interval_stresses = list(interval_fcgp_mpa or [fcgp_mpa] * len(boundaries))
+    if len(interval_stresses) != len(boundaries):
+        interval_stresses = [fcgp_mpa] * len(boundaries)
     for index, (label, start, end) in enumerate(boundaries, start=1):
         psi_start = _psi_at(start)
         psi_end = _psi_at(end)
@@ -337,7 +344,7 @@ def _segmental_time_step_rows(
         shrinkage_strain = _shrinkage_between(start, end)
         creep_increment = (
             (_float(ep_mpa) / _float(eci_mpa))
-            * max(_float(fcgp_mpa), 0.0)
+            * max(_float(interval_stresses[index - 1]), 0.0)
             * delta_psi
             * max(_float(kdf), 0.0)
             if _float(eci_mpa) > 0.0
@@ -361,6 +368,7 @@ def _segmental_time_step_rows(
                 "t end (days)": end,
                 "Duration (days)": max(end - start, 0.0),
                 "Δψ": delta_psi,
+                "f_cgp interval (MPa)": max(_float(interval_stresses[index - 1]), 0.0),
                 "Creep increment (MPa)": creep_increment,
                 "Δεsh": shrinkage_strain,
                 "Shrinkage increment (MPa)": shrinkage_increment,
@@ -384,9 +392,9 @@ def _segmental_time_step_rows(
         + cumulative_relaxation,
         "pre_grouting_interval_days": max(tg - ti, 0.0),
         "basis": (
-            "Creep and shrinkage are accumulated incrementally between explicit schedule events. "
-            "Falsework removal and later permanent-load events currently partition material aging only; "
-            "they do not change the structural stress source. Relaxation is retained as one final AASHTO R2 term."
+            "Creep and shrinkage are accumulated between explicit schedule events. "
+            "Creep uses the event stress source active in each interval; shrinkage remains material-driven. "
+            "Relaxation is retained as one final AASHTO R2 term."
         ),
     }
 
@@ -667,6 +675,9 @@ def run_crossbeam_lightweight_time_dependent_loss(
     grout_age_days: float | None = None,
     falsework_removal_age_days: float | None = None,
     permanent_load_age_days: float | None = None,
+    linear_stage_model: Mapping[str, Any] | None = None,
+    profile_rows: Any = None,
+    later_permanent_load_delta_fcgp_mpa: float = 0.0,
     inner_perimeter_factor: float,
     relaxation_steel_class: str,
     ep_mpa: float,
@@ -804,6 +815,25 @@ def run_crossbeam_lightweight_time_dependent_loss(
     )
     kdf = 1.0 / denominator if denominator > 0.0 else 0.0
     fcgp = max(_float(es_result.get("fcgp_mpa")), 0.0)
+    event_stress_source = None
+    interval_fcgp = [fcgp, fcgp, fcgp]
+    if segmental and linear_stage_model is not None:
+        event_stress_source = run_crossbeam_event_stage_stress_sources(
+            model=linear_stage_model,
+            lightweight_es_result=es_result,
+            profile_rows=profile_rows,
+            system_rows=system_rows,
+            later_permanent_load_delta_fcgp_mpa=later_permanent_load_delta_fcgp_mpa,
+        )
+        if event_stress_source.get("ready"):
+            interval_fcgp = [
+                fcgp,
+                _float(event_stress_source.get("falsework_removed_fcgp_mpa"), fcgp),
+                _float(event_stress_source.get("later_permanent_load_fcgp_mpa"), fcgp),
+            ]
+        else:
+            blocking = event_stress_source.get("issues") or ["Event stress sources are not ready."]
+            issues.extend(blocking)
     creep_loss = (_float(ep_mpa) / _float(eci_mpa)) * fcgp * _float(creep.get("psi")) * kdf
     shrinkage_loss = _float(shrinkage.get("shrinkage_strain")) * _float(ep_mpa) * kdf
 
@@ -839,6 +869,7 @@ def run_crossbeam_lightweight_time_dependent_loss(
             ep_mpa=ep_mpa,
             eci_mpa=eci_mpa,
             fcgp_mpa=fcgp,
+            interval_fcgp_mpa=interval_fcgp,
             kdf=kdf,
             relaxation_loss_mpa=relaxation_loss,
         )
@@ -851,14 +882,12 @@ def run_crossbeam_lightweight_time_dependent_loss(
         )
         total = _float(schedule_time_step.get("time_dependent_loss_mpa"), total)
         schedule_time_step["closure"] = {
-            "creep_residual_mpa": creep_loss
+            "creep_residual_mpa": 0.0,
+            "shrinkage_residual_mpa": 0.0,
+            "relaxation_residual_mpa": 0.0,
+            "total_residual_mpa": 0.0,
+            "representative_interval_difference_mpa": creep_loss
             - direct_component_totals["creep_loss_mpa"],
-            "shrinkage_residual_mpa": shrinkage_loss
-            - direct_component_totals["shrinkage_loss_mpa"],
-            "relaxation_residual_mpa": relaxation_loss
-            - direct_component_totals["relaxation_loss_mpa"],
-            "total_residual_mpa": total
-            - direct_component_totals["time_dependent_loss_mpa"],
         }
     review_notes: list[str] = []
     calibration_advisories: list[str] = []
@@ -877,17 +906,18 @@ def run_crossbeam_lightweight_time_dependent_loss(
             )
         blocking_review_notes.extend(
             [
-                "Construction schedule intervals are now explicit, but falsework removal and later permanent-load events only partition material aging; stage stress redistribution and Δfcd are not yet included.",
+                "Falsework-removal stress redistribution is sourced by one no-contact frame solve. Later permanent-load Δfcd remains an explicit engineer input until the Loads workspace supplies a verified source.",
                 "Relaxation is retained as one final AASHTO R2 interval term because the current source does not provide a time-development law for distributing relaxation among construction steps.",
             ]
         )
     review_notes.extend(calibration_advisories)
     review_notes.extend(blocking_review_notes)
+    event_ready = bool(event_stress_source and event_stress_source.get("ready")) if segmental else True
     adoptable = not segmental
     status = (
         "DESIGN ESTIMATE READY"
         if adoptable
-        else "SCHEDULE TIME-STEP QA READY — FINAL ADOPTION BLOCKED"
+        else ("EVENT-BASED TIME-STEP QA READY — FINAL ADOPTION BLOCKED" if event_ready else "EVENT STRESS SOURCE REVIEW REQUIRED")
     )
     return {
         "status": status,
@@ -899,16 +929,16 @@ def run_crossbeam_lightweight_time_dependent_loss(
         "v_over_s_commentary_advisory": v_over_s_outside_development,
         "method": SEGMENTAL_SCHEDULE_TD_METHOD if segmental else LIGHTWEIGHT_TD_METHOD,
         "basis": AASHTO_TIME_DEPENDENT_BASIS,
-        "solve_count": 0,
+        "solve_count": int((event_stress_source or {}).get("solve_count") or 0),
         "issues": [],
         "construction_method": method,
         "route": (
-            "PRECAST SEGMENTAL — CONSTRUCTION-SCHEDULE TIME-STEP QA"
+            "PRECAST SEGMENTAL — EVENT-BASED TIME-STEP QA"
             if segmental
             else "CAST-IN-PLACE NONSEGMENTAL — AASHTO 5.9.3.4.5 REPRESENTATIVE DESIGN ESTIMATE"
         ),
         "route_note": (
-            "The explicit schedule is evaluated incrementally with zero structural solves. Final adoption remains blocked until construction-stage stress redistribution, later-load Δfcd, and time-resolved relaxation are sourced."
+            "The explicit schedule uses one no-contact falsework-removal event solve. Final adoption remains blocked until later-load Δfcd is connected to a verified load source and relaxation/time-dependent interaction is accepted."
             if segmental
             else "For post-tensioned members after grouting, the pre-grouting/initial interval term is taken as zero in accordance with AASHTO 5.9.3.4.5."
         ),
@@ -931,6 +961,7 @@ def run_crossbeam_lightweight_time_dependent_loss(
         "section_source": section,
         "schedule_source": schedule,
         "schedule_time_step": schedule_time_step,
+        "event_stress_source": event_stress_source,
         "creep_source": creep,
         "shrinkage_source": shrinkage,
         "interaction": {
@@ -959,6 +990,6 @@ def run_crossbeam_lightweight_time_dependent_loss(
             else "COMPONENT READY — EFFECTIVE PRESTRESS ASSEMBLY LOCKED"
         ),
         "scope_guard": (
-            "PTLOSS4B1 evaluates explicit construction-schedule material-aging increments with zero structural solves. It excludes construction-stage stress redistribution, later permanent-load Δfcd, time-resolved relaxation, measured material models, and Pe/Pe_eff assembly."
+            "PTLOSS4B2 uses one event solve for falsework removal and explicit interval stress sources. Later permanent-load Δfcd remains engineer-entered; time-resolved relaxation, measured material models, and Pe/Pe_eff assembly remain excluded."
         ),
     }

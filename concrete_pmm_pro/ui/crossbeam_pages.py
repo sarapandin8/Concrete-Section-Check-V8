@@ -184,6 +184,7 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     CB_LOSS_TD_GROUT_AGE_DAYS_KEY,
     CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY,
     CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
+    CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY,
     CB_LOSS_EXTERNAL_MU_KEY,
     CB_LOSS_INTERNAL_K_PER_M_KEY,
     CB_LOSS_INTERNAL_MU_KEY,
@@ -203,6 +204,7 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     DEFAULT_TD_GROUT_AGE_DAYS,
     DEFAULT_TD_FALSEWORK_REMOVAL_AGE_DAYS,
     DEFAULT_TD_PERMANENT_LOAD_AGE_DAYS,
+    DEFAULT_TD_LATER_LOAD_DELTA_FCGP_MPA,
     DEFAULT_INTERNAL_FRICTION_MU,
     DEFAULT_INTERNAL_WOBBLE_K_PER_M,
     aashto_friction_wobble_station_rows,
@@ -5187,6 +5189,10 @@ def _loss_setting_defaults_from_state() -> dict[str, Any]:
                 CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
                 DEFAULT_TD_PERMANENT_LOAD_AGE_DAYS,
             ),
+            "td_later_load_delta_fcgp_mpa": st.session_state.get(
+                CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY,
+                DEFAULT_TD_LATER_LOAD_DELTA_FCGP_MPA,
+            ),
         }
     )
 
@@ -6568,8 +6574,8 @@ def _time_dependent_fingerprint(
     fci_mpa: float,
 ) -> str:
     payload = {
-        "schema": 2,
-        "solver": "crossbeam-ptloss4b1-schedule-v1",
+        "schema": 3,
+        "solver": "crossbeam-ptloss4b2-event-stress-v1",
         "lightweight_es_fingerprint": str(lightweight_es_fingerprint),
         "length_m": float(length_m),
         "segment_rows": _records(segment_rows),
@@ -6588,6 +6594,7 @@ def _time_dependent_fingerprint(
                 settings["td_falsework_removal_age_days"]
             ),
             "permanent_load_age_days": float(settings["td_permanent_load_age_days"]),
+            "later_load_delta_fcgp_mpa": float(settings["td_later_load_delta_fcgp_mpa"]),
         },
         "ep_mpa": float(settings["ep_mpa"]),
         "eci_mpa": float(eci_mpa),
@@ -9130,9 +9137,9 @@ def render_crossbeam_prestress_loss_page() -> None:
             """,
             unsafe_allow_html=True,
         )
-        st.markdown("#### Lightweight Time-Dependent Losses — on-demand schedule preview")
+        st.markdown("#### Lightweight Time-Dependent Losses — event-based schedule preview")
         st.caption(
-            "PTLOSS4B1 keeps the ordinary route lightweight. Cast-in-Place uses one representative post-grouting interval; Precast Segmental uses explicit construction-schedule material-aging increments. Opening this tab, editing inputs, or opening an expander performs 0 structural solves."
+            "PTLOSS4B2 keeps the route event-based and lightweight. Opening the tab performs 0 solves; a Precast Segmental run uses one no-contact frame solve at falsework removal, while material aging between events remains arithmetic-only."
         )
         render_metric_cards(
             [
@@ -9151,7 +9158,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Runtime mode",
                     "value": "ON DEMAND",
-                    "detail": "schedule arithmetic after stored ES · 0 structural solves",
+                    "detail": "0 solves on open · 1 event solve on Segmental Run",
                     "status": "ready",
                 },
             ]
@@ -9180,6 +9187,7 @@ def render_crossbeam_prestress_loss_page() -> None:
             ),
             (
                 CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
+    CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY,
                 td_settings["td_permanent_load_age_days"],
             ),
         ):
@@ -9244,7 +9252,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         if td_construction_method == CONSTRUCTION_METHOD_PRECAST:
             st.markdown("##### Precast Segmental construction schedule")
             st.caption(
-                "All values are representative concrete ages in days. The bonded time-dependent route begins at tendon grouting. Falsework-removal and later-load events currently partition material aging only; they do not trigger a structural solve."
+                "All values are representative concrete ages in days. The bonded route begins at grouting. Falsework removal triggers one no-contact event solve; later permanent load uses the explicit Δfcd input until a verified Loads-workspace source is connected."
             )
             schedule_a, schedule_b, schedule_c = st.columns(3)
             with schedule_a:
@@ -9274,7 +9282,16 @@ def render_crossbeam_prestress_loss_page() -> None:
                     step=1.0,
                     format="%.1f",
                     key=CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
-                    help="This event partitions the time steps. The associated concrete-stress change Δfcd is not yet included in PTLOSS4B1.",
+                    help="Age when the later permanent-load stress increment becomes active.",
+                )
+                st.number_input(
+                    "Later-load Δfcd at Tendon CG (MPa; compression +)",
+                    min_value=-100.0,
+                    max_value=100.0,
+                    step=0.1,
+                    format="%.3f",
+                    key=CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY,
+                    help="Engineer-entered concrete-stress increment until a verified Loads-workspace source is connected. Positive values increase compression at the Tendon CG.",
                 )
 
         td_settings = _loss_setting_defaults_from_state()
@@ -9418,14 +9435,14 @@ def render_crossbeam_prestress_loss_page() -> None:
         with run_col:
             run_td = st.button(
                 (
-                    "Run Segmental Schedule Time-Step Preview"
+                    "Run Event-Based Time-Step Preview"
                     if td_construction_method == CONSTRUCTION_METHOD_PRECAST
                     else "Run Lightweight Time-Dependent Preview"
                 ),
                 type="primary",
                 use_container_width=True,
                 disabled=not td_sources_ready,
-                help="Calculates creep, shrinkage, and relaxation from stored post-ES results. It does not call the frame/contact solver.",
+                help="Uses stored post-ES results and one no-contact frame solve for falsework removal. It does not solve every time step.",
             )
         with clear_col:
             clear_td = st.button(
@@ -9455,6 +9472,9 @@ def render_crossbeam_prestress_loss_page() -> None:
                     td_settings["td_falsework_removal_age_days"]
                 ),
                 permanent_load_age_days=float(td_settings["td_permanent_load_age_days"]),
+                linear_stage_model=linear_stage_model,
+                profile_rows=profile_rows,
+                later_permanent_load_delta_fcgp_mpa=float(td_settings["td_later_load_delta_fcgp_mpa"]),
                 inner_perimeter_factor=float(td_settings["td_inner_perimeter_factor"]),
                 relaxation_steel_class=str(td_settings["td_relaxation_steel_class"]),
                 ep_mpa=float(td_settings["ep_mpa"]),
@@ -9516,7 +9536,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Structural solves",
                     "value": str(int((current_td or {}).get("solve_count") or 0)),
-                    "detail": "stored post-ES source only",
+                    "detail": "falsework-removal event solve only",
                     "status": "ready",
                 },
                 {
@@ -9534,7 +9554,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                         else "1"
                     ),
                     "detail": (
-                        "tg → tr → tp → tf · material aging only"
+                        "tg → tr → tp → tf · event stress by interval"
                         if td_construction_method == CONSTRUCTION_METHOD_PRECAST
                         else "representative post-grouting interval"
                     ),
@@ -9611,6 +9631,25 @@ def render_crossbeam_prestress_loss_page() -> None:
                     st.caption(
                         "The bonded route starts at tendon grouting. Equal-age stressing and grouting represent immediate grouting."
                     )
+                    event_source = dict(current_td.get("event_stress_source") or {})
+                    st.markdown("##### Event-based concrete-stress sources")
+                    _render_ptloss4a_static_table(
+                        pd.DataFrame(event_source.get("event_rows") or []),
+                        columns=[
+                            ("Event", "Event"),
+                            ("Stress source", "Stress source"),
+                            ("f_cgp (MPa; compression +)", "f_cgp (MPa)"),
+                            ("Δf_cgp from prior event (MPa)", "Δf_cgp (MPa)"),
+                            ("Structural solves", "Solves"),
+                        ],
+                        formats={
+                            "f_cgp (MPa; compression +)": "{:.4f}",
+                            "Δf_cgp from prior event (MPa)": "{:.4f}",
+                            "Structural solves": "{:.0f}",
+                        },
+                        widths=[20, 38, 16, 16, 10],
+                    )
+                    st.caption(str(event_source.get("scope_guard") or ""))
                     st.markdown("##### Incremental construction-schedule loss audit")
                     _render_ptloss4a_static_table(
                         pd.DataFrame(schedule_steps.get("rows") or []),
@@ -9620,6 +9659,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                             ("t start (days)", "t0"),
                             ("t end (days)", "t1"),
                             ("Δψ", "Δψ"),
+                            ("f_cgp interval (MPa)", "f_cgp"),
                             ("Creep increment (MPa)", "Creep"),
                             ("Δεsh", "Δεsh"),
                             ("Shrinkage increment (MPa)", "Shrink."),
@@ -9631,13 +9671,14 @@ def render_crossbeam_prestress_loss_page() -> None:
                             "t start (days)": "{:.1f}",
                             "t end (days)": "{:.1f}",
                             "Δψ": "{:.6f}",
+                            "f_cgp interval (MPa)": "{:.4f}",
                             "Creep increment (MPa)": "{:.4f}",
                             "Δεsh": "{:.6e}",
                             "Shrinkage increment (MPa)": "{:.4f}",
                             "Relaxation increment (MPa)": "{:.4f}",
                             "Cumulative TD (MPa)": "{:.4f}",
                         },
-                        widths=[6, 22, 8, 8, 9, 10, 10, 10, 9, 8],
+                        widths=[5, 19, 7, 7, 7, 9, 9, 9, 9, 8, 7],
                     )
                     closure = dict(schedule_steps.get("closure") or {})
                     st.markdown("###### Time-step component closure")

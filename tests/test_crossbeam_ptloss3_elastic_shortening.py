@@ -178,7 +178,7 @@ def test_ptloss3_override_settings_round_trip_in_project_metadata() -> None:
     restored = restore_crossbeam_prestress_loss_project_state(
         {CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY: metadata}, restored_state
     )
-    assert metadata["schema_version"] == 7
+    assert metadata["schema_version"] == 8
     assert metadata["es_fcgp_override_enabled"] is True
     assert metadata["es_fcgp_override_mpa"] == pytest.approx(32.5)
     assert metadata["es_eci_override_enabled"] is True
@@ -329,7 +329,7 @@ def test_ptloss3b1_project_metadata_round_trip_includes_stage_source() -> None:
         CB_LOSS_ES_PAIR_SEQUENCE_KEY: ["G2", "G1"],
     }
     metadata = crossbeam_prestress_loss_settings_from_session_state(state)
-    assert metadata["schema_version"] == 7
+    assert metadata["schema_version"] == 8
     assert metadata["es_column_rows"] == columns
     assert metadata["es_pair_sequence"] == ["G2", "G1"]
     restored: dict[str, object] = {}
