@@ -9159,6 +9159,20 @@ def render_crossbeam_prestress_loss_page() -> None:
                 margin: 0.10rem 0 0.42rem 0 !important;
               }
 
+              div[data-testid="stExpander"]:has(.ptloss4b2b-event-audit-anchor) {
+                break-inside: auto !important;
+                page-break-inside: auto !important;
+                margin-bottom: 0 !important;
+                padding-bottom: 0 !important;
+              }
+
+              .ptloss4b2b-event-audit-anchor {
+                display: block !important;
+                height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+              }
+
               .ptloss4a-audit-table thead th,
               .ptloss4a-audit-table tbody td {
                 font-size: 7.8pt !important;
@@ -9172,7 +9186,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
         st.markdown("#### Lightweight Time-Dependent Losses — event-based schedule preview")
         st.caption(
-            "PTLOSS4B2 keeps the route event-based and lightweight. Opening the tab performs 0 solves; a Precast Segmental run uses one no-contact frame solve at falsework removal, while material aging between events remains arithmetic-only."
+            "PTLOSS4B2B keeps the route event-based and lightweight. Opening the tab performs 0 solves; a Precast Segmental run uses one no-contact frame solve at falsework removal and verifies that the released response, not the stored contact response, feeds the event stress source."
         )
         render_metric_cards(
             [
@@ -9664,6 +9678,96 @@ def render_crossbeam_prestress_loss_page() -> None:
                         widths=[20, 38, 16, 16, 10],
                     )
                     st.caption(str(event_source.get("scope_guard") or ""))
+                    st.markdown(
+                        '<div class="ptloss4b2b-event-audit-anchor" aria-hidden="true"></div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown("##### Event-stage governing concrete-stress source")
+                    stress_audit = pd.DataFrame(event_source.get("stress_audit_rows") or [])
+                    if not stress_audit.empty:
+                        _render_ptloss4a_static_table(
+                            stress_audit,
+                            columns=[
+                                ("Event", "Event"),
+                                ("Evaluation role", "Evaluation role"),
+                                ("Station s (m)", "s (m)"),
+                                ("Limit side", "Limit side"),
+                                ("Element", "Element"),
+                                ("Section ID", "Section"),
+                            ],
+                            formats={"Station s (m)": "{:.3f}"},
+                            widths=[22, 27, 10, 17, 10, 14],
+                        )
+                        _render_ptloss4a_static_table(
+                            stress_audit,
+                            columns=[
+                                ("Event", "Event"),
+                                ("N/A (MPa; compression +)", "N/A (MPa)"),
+                                ("-M*y/I (MPa; compression +)", "-M·y/I (MPa)"),
+                                ("Engineer Δf_cd (MPa)", "Δf_cd (MPa)"),
+                                ("f_cgp (MPa; compression +)", "f_cgp (MPa)"),
+                            ],
+                            formats={
+                                "N/A (MPa; compression +)": "{:.6f}",
+                                "-M*y/I (MPa; compression +)": "{:.6f}",
+                                "Engineer Δf_cd (MPa)": "{:.4f}",
+                                "f_cgp (MPa; compression +)": "{:.6f}",
+                            },
+                            widths=[28, 18, 20, 16, 18],
+                        )
+                    response_verification = dict(event_source.get("response_verification") or {})
+                    st.markdown("##### Falsework-removal response-source verification")
+                    verification_status = str(response_verification.get("status") or "NOT AVAILABLE")
+                    if response_verification.get("ready"):
+                        st.success(verification_status)
+                    else:
+                        st.warning(verification_status)
+                    _render_ptloss4a_static_table(
+                        pd.DataFrame(response_verification.get("summary_rows") or []),
+                        columns=[
+                            ("Quantity", "Quantity"),
+                            ("Post-ES contact state", "Post-ES / contact"),
+                            ("After falsework removal", "After release"),
+                            ("Change / evidence", "Change / evidence"),
+                            ("Basis", "Basis"),
+                        ],
+                        formats={
+                            "Post-ES contact state": "{:.4f}",
+                            "After falsework removal": "{:.4f}",
+                            "Change / evidence": "{:.4f}",
+                        },
+                        widths=[25, 16, 16, 17, 26],
+                    )
+                    _render_ptloss4a_static_table(
+                        pd.DataFrame(response_verification.get("delta_rows") or []),
+                        columns=[
+                            ("Response", "Response"),
+                            ("Units", "Units"),
+                            ("Station s (m)", "s (m)"),
+                            ("Element", "Element"),
+                            ("Before", "Before"),
+                            ("After", "After"),
+                            ("Change", "Change"),
+                            ("Max |change|", "Max |change|"),
+                        ],
+                        formats={
+                            "Station s (m)": "{:.3f}",
+                            "Before": "{:.6f}",
+                            "After": "{:.6f}",
+                            "Change": "{:.6f}",
+                            "Max |change|": "{:.6f}",
+                        },
+                        widths=[20, 8, 10, 10, 13, 13, 13, 13],
+                    )
+                    for note in response_verification.get("notes") or []:
+                        st.info(str(note))
+                    before_fp = str(response_verification.get("initial_response_fingerprint") or "")
+                    after_fp = str(response_verification.get("released_response_fingerprint") or "")
+                    if before_fp or after_fp:
+                        st.caption(
+                            f"Response fingerprints · contact {before_fp[:12] or '—'} · released {after_fp[:12] or '—'} · "
+                            f"different = {'YES' if response_verification.get('fingerprints_differ') else 'NO'}"
+                        )
                     st.markdown("##### Incremental construction-schedule loss audit")
                     _render_ptloss4a_static_table(
                         pd.DataFrame(schedule_steps.get("rows") or []),
@@ -9970,7 +10074,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                     """
                 )
                 st.caption(
-                    "PTLOSS4A does not add component percentages and does not assemble Pe/Pe_eff. The downstream Effective Prestress milestone must combine station-dependent instantaneous losses, sequence-dependent ES, and the reviewed TD component in one force/stress chain."
+                    "PTLOSS4B2B does not assemble Pe/Pe_eff. Event stress sources remain a QA preview until later-load sourcing and the downstream station-dependent force/stress chain are validated."
                 )
 
     with audit_tab:

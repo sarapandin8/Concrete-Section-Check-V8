@@ -245,13 +245,13 @@ def _segmental_schedule_source(
             "Event": "Falsework removal",
             "Symbol": "tr",
             "Age (days)": tr,
-            "Calculation role": "Schedule partition; stress redistribution not yet solved",
+            "Calculation role": "Event structural solve; temporary vertical contact removed",
         },
         {
             "Event": "Later permanent load",
             "Symbol": "tp",
             "Age (days)": tp,
-            "Calculation role": "Schedule partition; Δfcd source not yet implemented",
+            "Calculation role": "Engineer-entered Δfcd source; Loads-workspace handoff not yet connected",
         },
         {
             "Event": "Final time",
@@ -906,7 +906,7 @@ def run_crossbeam_lightweight_time_dependent_loss(
             )
         blocking_review_notes.extend(
             [
-                "Falsework-removal stress redistribution is sourced by one no-contact frame solve. Later permanent-load Δfcd remains an explicit engineer input until the Loads workspace supplies a verified source.",
+                "Falsework-removal stress redistribution is sourced and response-verified by one no-contact frame solve. Later permanent-load Δfcd remains an explicit engineer input until the Loads workspace supplies a verified source.",
                 "Relaxation is retained as one final AASHTO R2 interval term because the current source does not provide a time-development law for distributing relaxation among construction steps.",
             ]
         )
@@ -938,7 +938,7 @@ def run_crossbeam_lightweight_time_dependent_loss(
             else "CAST-IN-PLACE NONSEGMENTAL — AASHTO 5.9.3.4.5 REPRESENTATIVE DESIGN ESTIMATE"
         ),
         "route_note": (
-            "The explicit schedule uses one no-contact falsework-removal event solve. Final adoption remains blocked until later-load Δfcd is connected to a verified load source and relaxation/time-dependent interaction is accepted."
+            "The explicit schedule uses one no-contact falsework-removal event solve with response-source verification. Final adoption remains blocked until later-load Δfcd is connected to a verified load source and relaxation/time-dependent interaction is accepted."
             if segmental
             else "For post-tensioned members after grouting, the pre-grouting/initial interval term is taken as zero in accordance with AASHTO 5.9.3.4.5."
         ),
