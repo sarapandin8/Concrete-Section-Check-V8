@@ -24,6 +24,7 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY,
     CB_LOSS_TD_GROUT_AGE_DAYS_KEY,
     CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY,
+    CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY,
     CB_LOSS_TD_LOAD_AGE_DAYS_KEY,
     CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
     CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY,
@@ -339,6 +340,22 @@ def test_ptloss4a_inputs_round_trip_in_project_metadata_without_results() -> Non
     assert restored_state[CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY] == pytest.approx(42.0)
     assert restored_state[CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY] == pytest.approx(120.0)
 
+
+
+def test_ptloss4b2_time_dependent_widget_defaults_include_later_load_delta_without_unpack_error() -> None:
+    settings = default_crossbeam_prestress_loss_settings()
+    state: dict[str, object] = {CB_LOSS_TD_RH_PERCENT_KEY: 68.0}
+
+    crossbeam_pages._initialize_crossbeam_td_session_defaults(state, settings)
+
+    assert state[CB_LOSS_TD_RH_PERCENT_KEY] == pytest.approx(68.0)
+    assert state[CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY] == pytest.approx(
+        settings["td_permanent_load_age_days"]
+    )
+    assert state[CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY] == pytest.approx(
+        settings["td_later_load_delta_fcgp_mpa"]
+    )
+    assert len(state) == 10
 
 def test_time_dependent_ui_is_on_demand_and_contains_no_structural_solver_call() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")

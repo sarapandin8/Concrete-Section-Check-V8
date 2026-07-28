@@ -5114,6 +5114,39 @@ def render_crossbeam_tendon_profile_page() -> None:
         )
 
 
+def _initialize_crossbeam_td_session_defaults(
+    session_state: MutableMapping[str, Any],
+    td_settings: Mapping[str, Any],
+) -> None:
+    """Seed all Time-Dependent widget keys without overwriting user inputs."""
+
+    defaults_by_key = {
+        CB_LOSS_TD_RH_PERCENT_KEY: td_settings["td_rh_percent"],
+        CB_LOSS_TD_LOAD_AGE_DAYS_KEY: td_settings["td_load_age_days"],
+        CB_LOSS_TD_CURING_END_AGE_DAYS_KEY: td_settings["td_curing_end_age_days"],
+        CB_LOSS_TD_FINAL_AGE_DAYS_KEY: td_settings["td_final_age_days"],
+        CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY: td_settings[
+            "td_inner_perimeter_factor"
+        ],
+        CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY: td_settings[
+            "td_relaxation_steel_class"
+        ],
+        CB_LOSS_TD_GROUT_AGE_DAYS_KEY: td_settings["td_grout_age_days"],
+        CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY: td_settings[
+            "td_falsework_removal_age_days"
+        ],
+        CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY: td_settings[
+            "td_permanent_load_age_days"
+        ],
+        CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY: td_settings[
+            "td_later_load_delta_fcgp_mpa"
+        ],
+    }
+    for key, value in defaults_by_key.items():
+        if key not in session_state:
+            session_state[key] = value
+
+
 def _loss_setting_defaults_from_state() -> dict[str, Any]:
     return normalize_crossbeam_prestress_loss_settings(
         {
@@ -9173,26 +9206,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
 
         td_settings = _loss_setting_defaults_from_state()
-        for key, value in (
-            (CB_LOSS_TD_RH_PERCENT_KEY, td_settings["td_rh_percent"]),
-            (CB_LOSS_TD_LOAD_AGE_DAYS_KEY, td_settings["td_load_age_days"]),
-            (CB_LOSS_TD_CURING_END_AGE_DAYS_KEY, td_settings["td_curing_end_age_days"]),
-            (CB_LOSS_TD_FINAL_AGE_DAYS_KEY, td_settings["td_final_age_days"]),
-            (CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY, td_settings["td_inner_perimeter_factor"]),
-            (CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY, td_settings["td_relaxation_steel_class"]),
-            (CB_LOSS_TD_GROUT_AGE_DAYS_KEY, td_settings["td_grout_age_days"]),
-            (
-                CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY,
-                td_settings["td_falsework_removal_age_days"],
-            ),
-            (
-                CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
-    CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY,
-                td_settings["td_permanent_load_age_days"],
-            ),
-        ):
-            if key not in st.session_state:
-                st.session_state[key] = value
+        _initialize_crossbeam_td_session_defaults(st.session_state, td_settings)
 
         st.markdown("##### Environmental, age, drying, and steel sources")
         source_a, source_b, source_c = st.columns(3)
