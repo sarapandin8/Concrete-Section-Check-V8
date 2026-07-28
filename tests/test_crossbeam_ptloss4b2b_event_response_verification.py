@@ -137,7 +137,7 @@ def test_active_falsework_with_identical_released_response_is_source_review(monk
 def test_ptloss4b2b_ui_exposes_event_source_components_and_response_fingerprints() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
     block = source.split("with time_dependent_tab:", 1)[1].split("with audit_tab:", 1)[0]
-    assert "PTLOSS4B2B keeps the route event-based and lightweight" in block
+    assert "PTLOSS4B2B1 keeps the route event-based and lightweight" in block
     assert "Event-stage governing concrete-stress source" in block
     assert "Falsework-removal response-source verification" in block
     assert "N/A (MPa)" in block
@@ -145,5 +145,5 @@ def test_ptloss4b2b_ui_exposes_event_source_components_and_response_fingerprints
     assert "Limit side" in block
     assert "Response fingerprints" in block
     assert "EVENT EFFECT NEGLIGIBLE" not in block  # status is data-driven, not hard-coded UI output
-    assert "PTLOSS4B2B does not assemble Pe/Pe_eff" in block
+    assert "PTLOSS4B2B1 does not assemble Pe/Pe_eff" in block
     assert "ptloss4b2b-event-audit-anchor" in block

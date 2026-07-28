@@ -990,6 +990,6 @@ def run_crossbeam_lightweight_time_dependent_loss(
             else "COMPONENT READY — EFFECTIVE PRESTRESS ASSEMBLY LOCKED"
         ),
         "scope_guard": (
-            "PTLOSS4B2 uses one event solve for falsework removal and explicit interval stress sources. Later permanent-load Δfcd remains engineer-entered; time-resolved relaxation, measured material models, and Pe/Pe_eff assembly remain excluded."
+            "PTLOSS4B2B1 uses one event solve for falsework removal and explicit interval stress sources. Later permanent-load Δfcd remains engineer-entered; time-resolved relaxation, measured material models, and Pe/Pe_eff assembly remain excluded."
         ),
     }

@@ -5114,6 +5114,20 @@ def render_crossbeam_tendon_profile_page() -> None:
         )
 
 
+def _crossbeam_td_loss_basis_detail(construction_method: str) -> str:
+    """Return construction-route-specific AASHTO traceability wording."""
+
+    if str(construction_method) == CONSTRUCTION_METHOD_PRECAST:
+        return (
+            "§5.4.2.3 · §5.9.3.4 refined framework · "
+            "Precast Segmental event-based construction-schedule QA"
+        )
+    return (
+        "§5.4.2.3 · §5.9.3.4.5 · "
+        "Post-tensioned nonsegmental member route"
+    )
+
+
 def _initialize_crossbeam_td_session_defaults(
     session_state: MutableMapping[str, Any],
     td_settings: Mapping[str, Any],
@@ -9184,9 +9198,15 @@ def render_crossbeam_prestress_loss_page() -> None:
             """,
             unsafe_allow_html=True,
         )
+        td_construction_method = str(
+            st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
+            or CONSTRUCTION_METHOD_PRECAST
+        )
+        td_loss_basis_detail = _crossbeam_td_loss_basis_detail(td_construction_method)
+
         st.markdown("#### Lightweight Time-Dependent Losses — event-based schedule preview")
         st.caption(
-            "PTLOSS4B2B keeps the route event-based and lightweight. Opening the tab performs 0 solves; a Precast Segmental run uses one no-contact frame solve at falsework removal and verifies that the released response, not the stored contact response, feeds the event stress source."
+            "PTLOSS4B2B1 keeps the route event-based and lightweight. Opening the tab performs 0 solves; a Precast Segmental run uses one no-contact frame solve at falsework removal and verifies that the released response, not the stored contact response, feeds the event stress source."
         )
         render_metric_cards(
             [
@@ -9199,7 +9219,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Prestress-loss basis",
                     "value": "AASHTO LRFD 2020",
-                    "detail": "§5.4.2.3 · §5.9.3.4 · §5.9.3.4.5 / §5.9.3.5 routing",
+                    "detail": td_loss_basis_detail,
                     "status": "info",
                 },
                 {
@@ -9212,11 +9232,6 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
         st.info(
             "Source transfer from Segmental Box Girder Pro is limited to unit-safe AASHTO material factors, drying-geometry traceability, age reconciliation, and component separation. BG40 f_cgp, external/unbonded routing, report-match constants, and the BG40 relaxation interaction cap are not reused."
-        )
-
-        td_construction_method = str(
-            st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
-            or CONSTRUCTION_METHOD_PRECAST
         )
 
         td_settings = _loss_setting_defaults_from_state()
@@ -9702,18 +9717,31 @@ def render_crossbeam_prestress_loss_page() -> None:
                             stress_audit,
                             columns=[
                                 ("Event", "Event"),
+                                ("N (kN; compression +)", "N (kN; comp. +)"),
+                                ("M (kN-m; sagging +)", "M (kN·m; sag. +)"),
+                                ("Engineer Δf_cd (MPa)", "Δf_cd (MPa)"),
+                            ],
+                            formats={
+                                "N (kN; compression +)": "{:.6f}",
+                                "M (kN-m; sagging +)": "{:.6f}",
+                                "Engineer Δf_cd (MPa)": "{:.4f}",
+                            },
+                            widths=[30, 24, 26, 20],
+                        )
+                        _render_ptloss4a_static_table(
+                            stress_audit,
+                            columns=[
+                                ("Event", "Event"),
                                 ("N/A (MPa; compression +)", "N/A (MPa)"),
                                 ("-M*y/I (MPa; compression +)", "-M·y/I (MPa)"),
-                                ("Engineer Δf_cd (MPa)", "Δf_cd (MPa)"),
                                 ("f_cgp (MPa; compression +)", "f_cgp (MPa)"),
                             ],
                             formats={
                                 "N/A (MPa; compression +)": "{:.6f}",
                                 "-M*y/I (MPa; compression +)": "{:.6f}",
-                                "Engineer Δf_cd (MPa)": "{:.4f}",
                                 "f_cgp (MPa; compression +)": "{:.6f}",
                             },
-                            widths=[28, 18, 20, 16, 18],
+                            widths=[34, 22, 24, 20],
                         )
                     response_verification = dict(event_source.get("response_verification") or {})
                     st.markdown("##### Falsework-removal response-source verification")
@@ -9728,7 +9756,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                             ("Quantity", "Quantity"),
                             ("Post-ES contact state", "Post-ES / contact"),
                             ("After falsework removal", "After release"),
-                            ("Change / evidence", "Change / evidence"),
+                            ("Change / evidence", "Event Δ / max stationwise |Δ|"),
                             ("Basis", "Basis"),
                         ],
                         formats={
@@ -10074,7 +10102,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                     """
                 )
                 st.caption(
-                    "PTLOSS4B2B does not assemble Pe/Pe_eff. Event stress sources remain a QA preview until later-load sourcing and the downstream station-dependent force/stress chain are validated."
+                    "PTLOSS4B2B1 does not assemble Pe/Pe_eff. Event stress sources remain a QA preview until later-load sourcing and the downstream station-dependent force/stress chain are validated."
                 )
 
     with audit_tab:

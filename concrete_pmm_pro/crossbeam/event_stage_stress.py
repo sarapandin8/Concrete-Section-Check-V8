@@ -1,6 +1,6 @@
 """Lightweight event-based concrete-stress sources for Crossbeam PT losses.
 
-PTLOSS4B2B solves only structural events that change the support/load state. It
+PTLOSS4B2B1 solves only structural events that change the support/load state. It
 reuses the accepted stressing-stage frame model and stored post-ES source; it
 does not run a structural solver at every material-aging time step. The B2B
 hardening adds explicit response-source verification so a completed solve is not
@@ -235,7 +235,7 @@ def _event_response_verification(
             "Basis": "compression-only contact reaction removed",
         },
         {
-            "Quantity": "Max |M| (kN-m)",
+            "Quantity": "Stage max |M| (kN-m)",
             "Post-ES contact state": _max_abs_value(
                 before_response_rows, "M sagging-positive (kN-m)"
             ),
@@ -243,21 +243,21 @@ def _event_response_verification(
                 after_response_rows, "M sagging-positive (kN-m)"
             ),
             "Change / evidence": _float(moment_delta.get("Absolute change")),
-            "Basis": "last column is max stationwise |ΔM|",
+            "Basis": "event columns are stage maxima; evidence is max stationwise |ΔM|",
         },
         {
-            "Quantity": "Max |V| (kN)",
+            "Quantity": "Stage max |V| (kN)",
             "Post-ES contact state": _max_abs_value(before_response_rows, "V (kN)"),
             "After falsework removal": _max_abs_value(after_response_rows, "V (kN)"),
             "Change / evidence": _float(shear_delta.get("Absolute change")),
-            "Basis": "last column is max stationwise |ΔV|",
+            "Basis": "event columns are stage maxima; evidence is max stationwise |ΔV|",
         },
         {
-            "Quantity": "Max |v| (mm)",
+            "Quantity": "Stage max |v| (mm)",
             "Post-ES contact state": _max_abs_value(before_response_rows, "v_up (mm)"),
             "After falsework removal": _max_abs_value(after_response_rows, "v_up (mm)"),
             "Change / evidence": _float(displacement_delta.get("Absolute change")),
-            "Basis": "last column is max stationwise |Δv|",
+            "Basis": "event columns are stage maxima; evidence is max stationwise |Δv|",
         },
         {
             "Quantity": "Governing f_cgp (MPa)",
@@ -267,11 +267,12 @@ def _event_response_verification(
             "Basis": "event-specific bonded representative route",
         },
         {
-            "Quantity": "Max stationwise |Δf_cgp| (MPa)",
+            "Quantity": "f_cgp at max-change row (MPa)",
             "Post-ES contact state": _float(stress_delta.get("Before")),
             "After falsework removal": _float(stress_delta.get("After")),
             "Change / evidence": _float(stress_delta.get("Absolute change")),
             "Basis": (
+                "evidence is max stationwise |Δf_cgp|; "
                 f"{stress_delta.get('Element') or '—'} at s = "
                 f"{_float(stress_delta.get('Station s (m)')):.3f} m"
             ),
