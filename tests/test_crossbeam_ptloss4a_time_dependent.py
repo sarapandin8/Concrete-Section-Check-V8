@@ -21,8 +21,11 @@ from concrete_pmm_pro.crossbeam.lightweight_elastic_shortening import (
 from concrete_pmm_pro.crossbeam.prestress_loss import (
     CB_LOSS_TD_CURING_END_AGE_DAYS_KEY,
     CB_LOSS_TD_FINAL_AGE_DAYS_KEY,
+    CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY,
+    CB_LOSS_TD_GROUT_AGE_DAYS_KEY,
     CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY,
     CB_LOSS_TD_LOAD_AGE_DAYS_KEY,
+    CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
     CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY,
     CB_LOSS_TD_RH_PERCENT_KEY,
     CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY,
@@ -132,6 +135,9 @@ def _run_td(construction_method: str = CONSTRUCTION_METHOD_PRECAST):
         load_age_days=28.0,
         curing_end_age_days=7.0,
         final_age_days=18250.0,
+        grout_age_days=28.0,
+        falsework_removal_age_days=35.0,
+        permanent_load_age_days=90.0,
         inner_perimeter_factor=0.5,
         relaxation_steel_class=LOW_RELAXATION_STEEL,
         ep_mpa=settings["ep_mpa"],
@@ -221,16 +227,33 @@ def test_precast_segmental_route_is_preview_only_and_runs_zero_structural_solves
     result = _run_td(CONSTRUCTION_METHOD_PRECAST)
     assert result["ready"] is True
     assert result["adoptable"] is False
-    assert result["status"] == "PRELIMINARY PREVIEW — REVIEW REQUIRED"
+    assert result["status"] == "SCHEDULE TIME-STEP QA READY — FINAL ADOPTION BLOCKED"
     assert result["solve_count"] == 0
     assert result["creep_loss_mpa"] == pytest.approx(78.3698432688, rel=1.0e-9)
     assert result["shrinkage_loss_mpa"] == pytest.approx(40.8905895965, rel=1.0e-9)
     assert result["relaxation_loss_mpa"] == pytest.approx(7.8886818546, rel=1.0e-9)
     assert result["time_dependent_loss_mpa"] == pytest.approx(127.1491147199, rel=1.0e-9)
     assert result["interaction"]["Kdf"] == pytest.approx(0.8942766001, rel=1.0e-9)
-    assert result["route"] == "PRECAST SEGMENTAL — REPRESENTATIVE INTERVAL PREVIEW"
-    assert "TIME-STEP PREVIEW" not in result["route"]
-    assert any("construction-schedule time-step" in note for note in result["review_notes"])
+    assert result["route"] == "PRECAST SEGMENTAL — CONSTRUCTION-SCHEDULE TIME-STEP QA"
+    assert result["schedule_source"]["ready"] is True
+    assert result["schedule_source"]["immediate_grout"] is True
+    assert result["schedule_time_step"]["interval_count"] == 3
+    assert sum(
+        row["Creep increment (MPa)"]
+        for row in result["schedule_time_step"]["rows"]
+    ) == pytest.approx(result["creep_loss_mpa"], rel=1.0e-12)
+    assert sum(
+        row["Shrinkage increment (MPa)"]
+        for row in result["schedule_time_step"]["rows"]
+    ) == pytest.approx(result["shrinkage_loss_mpa"], rel=1.0e-12)
+    assert sum(
+        row["Relaxation increment (MPa)"]
+        for row in result["schedule_time_step"]["rows"]
+    ) == pytest.approx(result["relaxation_loss_mpa"], rel=1.0e-12)
+    assert result["schedule_time_step"]["closure"]["total_residual_mpa"] == pytest.approx(
+        0.0, abs=1.0e-12
+    )
+    assert any("stage stress redistribution" in note for note in result["review_notes"])
     assert result["v_over_s_commentary_advisory"] is True
     assert any("Specification lower bound ks = 1.0 is applied" in note for note in result["calibration_advisories"])
 
@@ -283,29 +306,38 @@ def test_ptloss4a_inputs_round_trip_in_project_metadata_without_results() -> Non
         CB_LOSS_TD_FINAL_AGE_DAYS_KEY: 36500.0,
         CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY: 1.0,
         CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY: LOW_RELAXATION_STEEL,
+        CB_LOSS_TD_GROUT_AGE_DAYS_KEY: 35.0,
+        CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY: 42.0,
+        CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY: 120.0,
     }
     metadata = crossbeam_prestress_loss_settings_from_session_state(state)
     restored_state: dict[str, object] = {}
     restored = restore_crossbeam_prestress_loss_project_state(
         {CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY: metadata}, restored_state
     )
-    assert metadata["schema_version"] == CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION == 6
+    assert metadata["schema_version"] == CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION == 7
     assert metadata["td_rh_percent"] == pytest.approx(68.0)
     assert metadata["td_load_age_days"] == pytest.approx(35.0)
     assert metadata["td_curing_end_age_days"] == pytest.approx(5.0)
     assert metadata["td_final_age_days"] == pytest.approx(36500.0)
     assert metadata["td_inner_perimeter_factor"] == pytest.approx(1.0)
+    assert metadata["td_grout_age_days"] == pytest.approx(35.0)
+    assert metadata["td_falsework_removal_age_days"] == pytest.approx(42.0)
+    assert metadata["td_permanent_load_age_days"] == pytest.approx(120.0)
     assert "time_dependent_result" not in metadata
     assert restored is not None
     assert restored_state[CB_LOSS_TD_RH_PERCENT_KEY] == pytest.approx(68.0)
     assert restored_state[CB_LOSS_TD_FINAL_AGE_DAYS_KEY] == pytest.approx(36500.0)
+    assert restored_state[CB_LOSS_TD_GROUT_AGE_DAYS_KEY] == pytest.approx(35.0)
+    assert restored_state[CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY] == pytest.approx(42.0)
+    assert restored_state[CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY] == pytest.approx(120.0)
 
 
 def test_time_dependent_ui_is_on_demand_and_contains_no_structural_solver_call() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
     block = source.split("with time_dependent_tab:", 1)[1].split("with audit_tab:", 1)[0]
-    assert "Lightweight Time-Dependent Losses — on-demand source preview" in block
-    assert "Run Lightweight Time-Dependent Preview" in block
+    assert "Lightweight Time-Dependent Losses — on-demand schedule preview" in block
+    assert "Run Segmental Schedule Time-Step Preview" in block
     assert "0 structural solves" in block
     assert "BG40 relaxation interaction cap are not reused" in block
     assert "Member-equivalent V/S" in block
@@ -328,6 +360,10 @@ def test_time_dependent_ui_is_on_demand_and_contains_no_structural_solver_call()
     assert "run_crossbeam_incremental_contact_qa" not in block
     assert "run_crossbeam_incremental_contact_mesh_sensitivity" not in block
     assert "Effective Prestress assembly remains locked" in block
+    assert "Precast Segmental construction schedule" in block
+    assert "Incremental construction-schedule loss audit" in block
+    assert "Time-step component closure" in block
+    assert "tg → tr → tp → tf" in block
 
 
 def test_ptloss4a1a1_print_audit_uses_static_compact_tables_and_one_equation_block() -> None:
@@ -383,3 +419,61 @@ def test_ptloss4a_static_table_keeps_right_side_audit_values_in_print_dom(monkey
     assert "41" in html
     assert "<colgroup>" in html
     assert "ptloss4a-audit-table-shell" in html
+
+
+def test_segmental_schedule_delayed_grouting_is_explicitly_partial() -> None:
+    length_m, definitions, segments, system, settings, es = _sources()
+    result = run_crossbeam_lightweight_time_dependent_loss(
+        lightweight_es_result=es,
+        length_m=length_m,
+        segment_rows=segments,
+        section_definitions=definitions,
+        system_rows=system,
+        construction_method=CONSTRUCTION_METHOD_PRECAST,
+        rh_percent=75.0,
+        load_age_days=28.0,
+        curing_end_age_days=7.0,
+        final_age_days=18250.0,
+        grout_age_days=35.0,
+        falsework_removal_age_days=42.0,
+        permanent_load_age_days=90.0,
+        inner_perimeter_factor=0.5,
+        relaxation_steel_class=LOW_RELAXATION_STEEL,
+        ep_mpa=settings["ep_mpa"],
+        eci_mpa=28200.0,
+        fci_mpa=36.0,
+    )
+    baseline = _run_td(CONSTRUCTION_METHOD_PRECAST)
+    assert result["ready"] is True
+    assert result["schedule_source"]["immediate_grout"] is False
+    assert result["schedule_time_step"]["pre_grouting_interval_days"] == pytest.approx(7.0)
+    assert result["creep_loss_mpa"] < baseline["creep_loss_mpa"]
+    assert result["shrinkage_loss_mpa"] < baseline["shrinkage_loss_mpa"]
+    assert any("pre-grouting interval" in note for note in result["blocking_review_notes"])
+
+
+def test_segmental_schedule_rejects_nonchronological_ages() -> None:
+    length_m, definitions, segments, system, settings, es = _sources()
+    result = run_crossbeam_lightweight_time_dependent_loss(
+        lightweight_es_result=es,
+        length_m=length_m,
+        segment_rows=segments,
+        section_definitions=definitions,
+        system_rows=system,
+        construction_method=CONSTRUCTION_METHOD_PRECAST,
+        rh_percent=75.0,
+        load_age_days=28.0,
+        curing_end_age_days=7.0,
+        final_age_days=18250.0,
+        grout_age_days=35.0,
+        falsework_removal_age_days=30.0,
+        permanent_load_age_days=90.0,
+        inner_perimeter_factor=0.5,
+        relaxation_steel_class=LOW_RELAXATION_STEEL,
+        ep_mpa=settings["ep_mpa"],
+        eci_mpa=28200.0,
+        fci_mpa=36.0,
+    )
+    assert result["ready"] is False
+    assert result["status"] == "SOURCE BLOCKED"
+    assert any("Falsework removal age" in issue for issue in result["issues"])

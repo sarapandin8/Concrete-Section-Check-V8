@@ -260,7 +260,7 @@ def test_ptloss1_settings_are_project_json_metadata_safe() -> None:
         restored_state,
     )
 
-    assert metadata["schema_version"] == 6
+    assert metadata["schema_version"] == 7
     assert restored is not None
     assert restored_state[CB_LOSS_INTERNAL_MU_KEY] == pytest.approx(0.18)
     assert restored_state[CB_LOSS_INTERNAL_K_PER_M_KEY] == pytest.approx(0.0007)
@@ -306,7 +306,7 @@ def test_ptloss1g_component_subtabs_are_scoped_and_future_losses_are_guarded() -
     assert '"Audit",' in source
     assert "Anchorage Set / Draw-in — engineering preview + optional independent QA" in source
     assert "Elastic Shortening — construction/stressing-stage source foundation" in source
-    assert "Lightweight Time-Dependent Losses — on-demand source preview" in source
+    assert "Lightweight Time-Dependent Losses — on-demand schedule preview" in source
     assert "Effective Prestress assembly remains locked" in source
     assert '"Pe / Pe_eff assembly"' in source
     assert '"Current state": "LOCKED — not certified"' in source

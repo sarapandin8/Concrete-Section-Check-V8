@@ -23,7 +23,7 @@ from concrete_pmm_pro.crossbeam.construction_stage import (
 
 
 CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY = "crossbeam_prestress_loss_settings"
-CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION = 6
+CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION = 7
 
 CB_LOSS_INTERNAL_MU_KEY = "crossbeam_ptloss1_internal_mu"
 CB_LOSS_INTERNAL_K_PER_M_KEY = "crossbeam_ptloss1_internal_k_per_m"
@@ -46,6 +46,9 @@ CB_LOSS_TD_CURING_END_AGE_DAYS_KEY = "crossbeam_ptloss4a_curing_end_age_days"
 CB_LOSS_TD_FINAL_AGE_DAYS_KEY = "crossbeam_ptloss4a_final_age_days"
 CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY = "crossbeam_ptloss4a_inner_perimeter_factor"
 CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY = "crossbeam_ptloss4a_relaxation_steel_class"
+CB_LOSS_TD_GROUT_AGE_DAYS_KEY = "crossbeam_ptloss4b1_grout_age_days"
+CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY = "crossbeam_ptloss4b1_falsework_removal_age_days"
+CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY = "crossbeam_ptloss4b1_permanent_load_age_days"
 
 AASHTO_PTL_FRICTION_BASIS = "AASHTO LRFD 5.9.3.2.2b"
 AASHTO_INTERNAL_WOBBLE_K_PER_FT = 0.0002
@@ -67,6 +70,9 @@ DEFAULT_TD_CURING_END_AGE_DAYS = 7.0
 DEFAULT_TD_FINAL_AGE_DAYS = 18250.0
 DEFAULT_TD_INNER_PERIMETER_FACTOR = 0.50
 DEFAULT_TD_RELAXATION_STEEL_CLASS = "Low-relaxation seven-wire strand"
+DEFAULT_TD_GROUT_AGE_DAYS = DEFAULT_TD_LOAD_AGE_DAYS
+DEFAULT_TD_FALSEWORK_REMOVAL_AGE_DAYS = 35.0
+DEFAULT_TD_PERMANENT_LOAD_AGE_DAYS = 90.0
 EXTERNAL_HDPE_REVIEW_NOTE = "HDPE note: verify PT supplier, angle tolerances, sequence."
 EXTERNAL_NO_DEVIATOR_ISSUE = "No Deviator point: +0.04 rad not applied."
 
@@ -135,6 +141,9 @@ def default_crossbeam_prestress_loss_settings() -> dict[str, Any]:
         "td_final_age_days": DEFAULT_TD_FINAL_AGE_DAYS,
         "td_inner_perimeter_factor": DEFAULT_TD_INNER_PERIMETER_FACTOR,
         "td_relaxation_steel_class": DEFAULT_TD_RELAXATION_STEEL_CLASS,
+        "td_grout_age_days": DEFAULT_TD_GROUT_AGE_DAYS,
+        "td_falsework_removal_age_days": DEFAULT_TD_FALSEWORK_REMOVAL_AGE_DAYS,
+        "td_permanent_load_age_days": DEFAULT_TD_PERMANENT_LOAD_AGE_DAYS,
     }
 
 
@@ -224,6 +233,27 @@ def normalize_crossbeam_prestress_loss_settings(value: Any) -> dict[str, Any]:
         "td_relaxation_steel_class": str(
             source.get("td_relaxation_steel_class") or defaults["td_relaxation_steel_class"]
         ),
+        "td_grout_age_days": _clamp(
+            _float(source.get("td_grout_age_days"), float(defaults["td_grout_age_days"])),
+            0.01,
+            1000000.0,
+        ),
+        "td_falsework_removal_age_days": _clamp(
+            _float(
+                source.get("td_falsework_removal_age_days"),
+                float(defaults["td_falsework_removal_age_days"]),
+            ),
+            0.01,
+            1000000.0,
+        ),
+        "td_permanent_load_age_days": _clamp(
+            _float(
+                source.get("td_permanent_load_age_days"),
+                float(defaults["td_permanent_load_age_days"]),
+            ),
+            0.01,
+            1000000.0,
+        ),
     }
 
 
@@ -254,6 +284,9 @@ def crossbeam_prestress_loss_settings_from_session_state(session_state: Any) -> 
             CB_LOSS_TD_FINAL_AGE_DAYS_KEY,
             CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY,
             CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY,
+            CB_LOSS_TD_GROUT_AGE_DAYS_KEY,
+            CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY,
+            CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
         )
     ):
         return {}
@@ -280,6 +313,13 @@ def crossbeam_prestress_loss_settings_from_session_state(session_state: Any) -> 
             "td_final_age_days": session_state.get(CB_LOSS_TD_FINAL_AGE_DAYS_KEY),
             "td_inner_perimeter_factor": session_state.get(CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY),
             "td_relaxation_steel_class": session_state.get(CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY),
+            "td_grout_age_days": session_state.get(CB_LOSS_TD_GROUT_AGE_DAYS_KEY),
+            "td_falsework_removal_age_days": session_state.get(
+                CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY
+            ),
+            "td_permanent_load_age_days": session_state.get(
+                CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY
+            ),
         }
     )
     return dict(settings)
@@ -313,6 +353,9 @@ def restore_crossbeam_prestress_loss_project_state(
         CB_LOSS_TD_FINAL_AGE_DAYS_KEY,
         CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY,
         CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY,
+        CB_LOSS_TD_GROUT_AGE_DAYS_KEY,
+        CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY,
+        CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
     ):
         session_state.pop(key, None)
 
@@ -345,6 +388,13 @@ def restore_crossbeam_prestress_loss_project_state(
     session_state[CB_LOSS_TD_FINAL_AGE_DAYS_KEY] = float(settings["td_final_age_days"])
     session_state[CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY] = float(settings["td_inner_perimeter_factor"])
     session_state[CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY] = str(settings["td_relaxation_steel_class"])
+    session_state[CB_LOSS_TD_GROUT_AGE_DAYS_KEY] = float(settings["td_grout_age_days"])
+    session_state[CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY] = float(
+        settings["td_falsework_removal_age_days"]
+    )
+    session_state[CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY] = float(
+        settings["td_permanent_load_age_days"]
+    )
     return settings
 
 

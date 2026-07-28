@@ -8,9 +8,10 @@ The ordinary route is intentionally arithmetic-only: it consumes a CURRENT
 Lightweight Elastic Shortening result and performs no structural solve.  For
 Cast-in-Place nonsegmental post-tensioned Crossbeams, the calculation is a
 representative AASHTO LRFD 5.9.3.4.5 design estimate.  For Precast Segmental
-Crossbeams, the same calculation is retained as a preliminary representative
-preview only because AASHTO 5.9.3.4.1 and 5.9.3.5 require a construction-
-schedule time-step analysis for final adoption.
+Crossbeams, PTLOSS4B1 partitions the accepted post-grouting material response
+through explicit construction-schedule intervals.  It remains a source-partial
+QA route until stage stress redistribution, later-load Δfcd, and a time-resolved
+relaxation source are implemented.
 """
 
 from __future__ import annotations
@@ -41,6 +42,9 @@ AASHTO_TIME_DEPENDENT_BASIS = (
 )
 LIGHTWEIGHT_TD_METHOD = (
     "ONE POST-ES REPRESENTATIVE INTERVAL — CREEP + SHRINKAGE + RELAXATION; 0 STRUCTURAL SOLVES"
+)
+SEGMENTAL_SCHEDULE_TD_METHOD = (
+    "PRECAST SEGMENTAL CONSTRUCTION-SCHEDULE TIME-STEP QA — INCREMENTAL MATERIAL AGING; 0 STRUCTURAL SOLVES"
 )
 LOW_RELAXATION_STEEL = "Low-relaxation seven-wire strand"
 OTHER_PRESTRESSING_STEEL = "Other prestressing steel"
@@ -187,6 +191,203 @@ def aashto_incremental_shrinkage_strain(
         "ktd_shrinkage_final": ktd_final,
         "delta_ktd_shrinkage": delta_ktd,
         "shrinkage_strain": max(strain, 0.0),
+    }
+
+
+def _segmental_schedule_source(
+    *,
+    stressing_age_days: float,
+    grout_age_days: float,
+    falsework_removal_age_days: float,
+    permanent_load_age_days: float,
+    final_age_days: float,
+) -> dict[str, Any]:
+    """Return a validated member-level construction schedule.
+
+    Ages are concrete ages in days.  Equal-age events are permitted because
+    stressing, grouting, and falsework operations may be specified on the same
+    day in a design schedule.  The current bonded route begins at grouting.
+    """
+
+    ti = _float(stressing_age_days)
+    tg = _float(grout_age_days)
+    tr = _float(falsework_removal_age_days)
+    tp = _float(permanent_load_age_days)
+    tf = _float(final_age_days)
+    issues: list[str] = []
+    if ti <= 0.0:
+        issues.append("Tendon stressing age ti must be positive.")
+    if tg < ti:
+        issues.append("Tendon grouting age tg must not precede stressing age ti.")
+    if tr < tg:
+        issues.append("Falsework removal age tr must not precede tendon grouting age tg.")
+    if tp < tr:
+        issues.append("Later permanent-load age tp must not precede falsework removal age tr.")
+    if tf <= tp:
+        issues.append("Final age tf must be greater than later permanent-load age tp.")
+    events = [
+        {
+            "Event": "Tendon stressing",
+            "Symbol": "ti",
+            "Age (days)": ti,
+            "Calculation role": "Post-ES force and fcgp source",
+        },
+        {
+            "Event": "Tendon grouting",
+            "Symbol": "tg",
+            "Age (days)": tg,
+            "Calculation role": "Start of bonded time-dependent route",
+        },
+        {
+            "Event": "Falsework removal",
+            "Symbol": "tr",
+            "Age (days)": tr,
+            "Calculation role": "Schedule partition; stress redistribution not yet solved",
+        },
+        {
+            "Event": "Later permanent load",
+            "Symbol": "tp",
+            "Age (days)": tp,
+            "Calculation role": "Schedule partition; Δfcd source not yet implemented",
+        },
+        {
+            "Event": "Final time",
+            "Symbol": "tf",
+            "Age (days)": tf,
+            "Calculation role": "End of adopted loss interval",
+        },
+    ]
+    return {
+        "ready": not issues,
+        "issues": _dedupe(issues),
+        "events": events,
+        "stressing_age_days": ti,
+        "grout_age_days": tg,
+        "falsework_removal_age_days": tr,
+        "permanent_load_age_days": tp,
+        "final_age_days": tf,
+        "immediate_grout": abs(tg - ti) <= 1.0e-9,
+    }
+
+
+def _segmental_time_step_rows(
+    *,
+    schedule: Mapping[str, Any],
+    rh_percent: float,
+    v_over_s_mm: float,
+    fci_mpa: float,
+    curing_end_age_days: float,
+    ep_mpa: float,
+    eci_mpa: float,
+    fcgp_mpa: float,
+    kdf: float,
+    relaxation_loss_mpa: float,
+) -> dict[str, Any]:
+    """Partition post-grouting creep/shrinkage into schedule intervals.
+
+    The same accepted Kdf is used for every increment so the interval sum
+    closes exactly to the corresponding post-grouting component total.  This
+    is a material-aging time-step audit, not a stage structural analysis.
+    """
+
+    if not schedule.get("ready"):
+        return {"ready": False, "issues": list(schedule.get("issues") or [])}
+    ti = _float(schedule.get("stressing_age_days"))
+    tg = _float(schedule.get("grout_age_days"))
+    tr = _float(schedule.get("falsework_removal_age_days"))
+    tp = _float(schedule.get("permanent_load_age_days"))
+    tf = _float(schedule.get("final_age_days"))
+    boundaries = [
+        ("Post-grouting → falsework removal", tg, tr),
+        ("Falsework removal → later permanent load", tr, tp),
+        ("Later permanent load → final time", tp, tf),
+    ]
+
+    def _psi_at(age: float) -> float:
+        return _float(
+            aashto_creep_coefficient(
+                rh_percent=rh_percent,
+                v_over_s_mm=v_over_s_mm,
+                fci_mpa=fci_mpa,
+                load_age_days=ti,
+                final_age_days=max(age, ti),
+            ).get("psi")
+        )
+
+    def _shrinkage_between(start: float, end: float) -> float:
+        return _float(
+            aashto_incremental_shrinkage_strain(
+                rh_percent=rh_percent,
+                v_over_s_mm=v_over_s_mm,
+                fci_mpa=fci_mpa,
+                curing_end_age_days=curing_end_age_days,
+                interval_start_age_days=start,
+                final_age_days=end,
+            ).get("shrinkage_strain")
+        )
+
+    rows: list[dict[str, Any]] = []
+    cumulative_creep = 0.0
+    cumulative_shrinkage = 0.0
+    cumulative_relaxation = 0.0
+    for index, (label, start, end) in enumerate(boundaries, start=1):
+        psi_start = _psi_at(start)
+        psi_end = _psi_at(end)
+        delta_psi = max(psi_end - psi_start, 0.0)
+        shrinkage_strain = _shrinkage_between(start, end)
+        creep_increment = (
+            (_float(ep_mpa) / _float(eci_mpa))
+            * max(_float(fcgp_mpa), 0.0)
+            * delta_psi
+            * max(_float(kdf), 0.0)
+            if _float(eci_mpa) > 0.0
+            else 0.0
+        )
+        shrinkage_increment = (
+            shrinkage_strain * max(_float(ep_mpa), 0.0) * max(_float(kdf), 0.0)
+        )
+        relaxation_increment = (
+            max(_float(relaxation_loss_mpa), 0.0) if index == len(boundaries) else 0.0
+        )
+        cumulative_creep += creep_increment
+        cumulative_shrinkage += shrinkage_increment
+        cumulative_relaxation += relaxation_increment
+        subtotal = creep_increment + shrinkage_increment + relaxation_increment
+        rows.append(
+            {
+                "Step": index,
+                "Interval": label,
+                "t start (days)": start,
+                "t end (days)": end,
+                "Duration (days)": max(end - start, 0.0),
+                "Δψ": delta_psi,
+                "Creep increment (MPa)": creep_increment,
+                "Δεsh": shrinkage_strain,
+                "Shrinkage increment (MPa)": shrinkage_increment,
+                "Relaxation increment (MPa)": relaxation_increment,
+                "TD increment (MPa)": subtotal,
+                "Cumulative TD (MPa)": cumulative_creep
+                + cumulative_shrinkage
+                + cumulative_relaxation,
+            }
+        )
+    return {
+        "ready": True,
+        "issues": [],
+        "rows": rows,
+        "interval_count": len(rows),
+        "creep_loss_mpa": cumulative_creep,
+        "shrinkage_loss_mpa": cumulative_shrinkage,
+        "relaxation_loss_mpa": cumulative_relaxation,
+        "time_dependent_loss_mpa": cumulative_creep
+        + cumulative_shrinkage
+        + cumulative_relaxation,
+        "pre_grouting_interval_days": max(tg - ti, 0.0),
+        "basis": (
+            "Creep and shrinkage are accumulated incrementally between explicit schedule events. "
+            "Falsework removal and later permanent-load events currently partition material aging only; "
+            "they do not change the structural stress source. Relaxation is retained as one final AASHTO R2 term."
+        ),
     }
 
 
@@ -463,6 +664,9 @@ def run_crossbeam_lightweight_time_dependent_loss(
     load_age_days: float,
     curing_end_age_days: float,
     final_age_days: float,
+    grout_age_days: float | None = None,
+    falsework_removal_age_days: float | None = None,
+    permanent_load_age_days: float | None = None,
     inner_perimeter_factor: float,
     relaxation_steel_class: str,
     ep_mpa: float,
@@ -482,6 +686,9 @@ def run_crossbeam_lightweight_time_dependent_loss(
     ti = _float(load_age_days)
     curing_end = _float(curing_end_age_days)
     tf = _float(final_age_days)
+    tg = _float(grout_age_days, ti)
+    tr = _float(falsework_removal_age_days, max(tg, ti))
+    tp = _float(permanent_load_age_days, max(tr, tg, ti))
     if ti <= 0.0:
         issues.append("Time-dependent load/prestress application age ti must be positive.")
     if curing_end < 0.0 or curing_end > ti:
@@ -524,20 +731,64 @@ def run_crossbeam_lightweight_time_dependent_loss(
             "section_source": section,
         }
 
+    method = normalize_construction_method(construction_method)
+    segmental = method == CONSTRUCTION_METHOD_PRECAST
+    schedule = _segmental_schedule_source(
+        stressing_age_days=ti,
+        grout_age_days=tg,
+        falsework_removal_age_days=tr,
+        permanent_load_age_days=tp,
+        final_age_days=tf,
+    )
+    if segmental and not schedule.get("ready"):
+        issues.extend(schedule.get("issues") or ["Precast Segmental construction schedule is not ready."])
+    if issues:
+        return {
+            "status": "SOURCE BLOCKED",
+            "ready": False,
+            "adoptable": False,
+            "method": SEGMENTAL_SCHEDULE_TD_METHOD if segmental else LIGHTWEIGHT_TD_METHOD,
+            "basis": AASHTO_TIME_DEPENDENT_BASIS,
+            "solve_count": 0,
+            "issues": _dedupe(issues),
+            "drying_geometry": drying,
+            "steel_source": steel,
+            "section_source": section,
+            "schedule_source": schedule,
+        }
+
     v_over_s_mm = _float(drying.get("v_over_s_mm"))
-    creep = aashto_creep_coefficient(
+    creep_interval_start = tg if segmental else ti
+    creep_full = aashto_creep_coefficient(
         rh_percent=rh_percent,
         v_over_s_mm=v_over_s_mm,
         fci_mpa=fci_mpa,
         load_age_days=ti,
         final_age_days=tf,
     )
+    creep_at_start = aashto_creep_coefficient(
+        rh_percent=rh_percent,
+        v_over_s_mm=v_over_s_mm,
+        fci_mpa=fci_mpa,
+        load_age_days=ti,
+        final_age_days=creep_interval_start,
+    )
+    creep = {
+        **dict(creep_full),
+        "interval_start_age_days": creep_interval_start,
+        "psi_full_from_stressing": _float(creep_full.get("psi")),
+        "psi_at_interval_start": _float(creep_at_start.get("psi")),
+        "psi": max(
+            _float(creep_full.get("psi")) - _float(creep_at_start.get("psi")),
+            0.0,
+        ),
+    }
     shrinkage = aashto_incremental_shrinkage_strain(
         rh_percent=rh_percent,
         v_over_s_mm=v_over_s_mm,
         fci_mpa=fci_mpa,
         curing_end_age_days=curing_end,
-        interval_start_age_days=ti,
+        interval_start_age_days=creep_interval_start,
         final_age_days=tf,
     )
     aps = _float(steel.get("aps_total_mm2"))
@@ -571,8 +822,44 @@ def run_crossbeam_lightweight_time_dependent_loss(
         else 0.0
     )
     total = max(creep_loss, 0.0) + max(shrinkage_loss, 0.0) + max(relaxation_loss, 0.0)
-    method = normalize_construction_method(construction_method)
-    segmental = method == CONSTRUCTION_METHOD_PRECAST
+    direct_component_totals = {
+        "creep_loss_mpa": max(creep_loss, 0.0),
+        "shrinkage_loss_mpa": max(shrinkage_loss, 0.0),
+        "relaxation_loss_mpa": max(relaxation_loss, 0.0),
+        "time_dependent_loss_mpa": total,
+    }
+    schedule_time_step = None
+    if segmental:
+        schedule_time_step = _segmental_time_step_rows(
+            schedule=schedule,
+            rh_percent=rh_percent,
+            v_over_s_mm=v_over_s_mm,
+            fci_mpa=fci_mpa,
+            curing_end_age_days=curing_end,
+            ep_mpa=ep_mpa,
+            eci_mpa=eci_mpa,
+            fcgp_mpa=fcgp,
+            kdf=kdf,
+            relaxation_loss_mpa=relaxation_loss,
+        )
+        creep_loss = _float(schedule_time_step.get("creep_loss_mpa"), creep_loss)
+        shrinkage_loss = _float(
+            schedule_time_step.get("shrinkage_loss_mpa"), shrinkage_loss
+        )
+        relaxation_loss = _float(
+            schedule_time_step.get("relaxation_loss_mpa"), relaxation_loss
+        )
+        total = _float(schedule_time_step.get("time_dependent_loss_mpa"), total)
+        schedule_time_step["closure"] = {
+            "creep_residual_mpa": creep_loss
+            - direct_component_totals["creep_loss_mpa"],
+            "shrinkage_residual_mpa": shrinkage_loss
+            - direct_component_totals["shrinkage_loss_mpa"],
+            "relaxation_residual_mpa": relaxation_loss
+            - direct_component_totals["relaxation_loss_mpa"],
+            "total_residual_mpa": total
+            - direct_component_totals["time_dependent_loss_mpa"],
+        }
     review_notes: list[str] = []
     calibration_advisories: list[str] = []
     blocking_review_notes: list[str] = []
@@ -584,13 +871,24 @@ def run_crossbeam_lightweight_time_dependent_loss(
             "when accurate intermediate-age behavior is important."
         )
     if segmental:
-        blocking_review_notes.append(
-            "Precast Segmental construction requires a construction-schedule time-step analysis under AASHTO 5.9.3.4.1 and 5.9.3.5 for final adoption."
+        if not schedule.get("immediate_grout"):
+            blocking_review_notes.append(
+                "The current bonded schedule route excludes the pre-grouting interval; set tg = ti for immediate grouting or provide a separate pre-grouting loss model."
+            )
+        blocking_review_notes.extend(
+            [
+                "Construction schedule intervals are now explicit, but falsework removal and later permanent-load events only partition material aging; stage stress redistribution and Δfcd are not yet included.",
+                "Relaxation is retained as one final AASHTO R2 interval term because the current source does not provide a time-development law for distributing relaxation among construction steps.",
+            ]
         )
     review_notes.extend(calibration_advisories)
     review_notes.extend(blocking_review_notes)
     adoptable = not segmental
-    status = "DESIGN ESTIMATE READY" if adoptable else "PRELIMINARY PREVIEW — REVIEW REQUIRED"
+    status = (
+        "DESIGN ESTIMATE READY"
+        if adoptable
+        else "SCHEDULE TIME-STEP QA READY — FINAL ADOPTION BLOCKED"
+    )
     return {
         "status": status,
         "ready": True,
@@ -599,18 +897,18 @@ def run_crossbeam_lightweight_time_dependent_loss(
         "calibration_advisories": calibration_advisories,
         "blocking_review_notes": blocking_review_notes,
         "v_over_s_commentary_advisory": v_over_s_outside_development,
-        "method": LIGHTWEIGHT_TD_METHOD,
+        "method": SEGMENTAL_SCHEDULE_TD_METHOD if segmental else LIGHTWEIGHT_TD_METHOD,
         "basis": AASHTO_TIME_DEPENDENT_BASIS,
         "solve_count": 0,
         "issues": [],
         "construction_method": method,
         "route": (
-            "PRECAST SEGMENTAL — REPRESENTATIVE INTERVAL PREVIEW"
+            "PRECAST SEGMENTAL — CONSTRUCTION-SCHEDULE TIME-STEP QA"
             if segmental
             else "CAST-IN-PLACE NONSEGMENTAL — AASHTO 5.9.3.4.5 REPRESENTATIVE DESIGN ESTIMATE"
         ),
         "route_note": (
-            "Final adoption for Precast Segmental construction requires a construction-schedule time-step analysis under AASHTO 5.9.3.4.1 and 5.9.3.5."
+            "The explicit schedule is evaluated incrementally with zero structural solves. Final adoption remains blocked until construction-stage stress redistribution, later-load Δfcd, and time-resolved relaxation are sourced."
             if segmental
             else "For post-tensioned members after grouting, the pre-grouting/initial interval term is taken as zero in accordance with AASHTO 5.9.3.4.5."
         ),
@@ -619,6 +917,9 @@ def run_crossbeam_lightweight_time_dependent_loss(
             "load_age_days": ti,
             "curing_end_age_days": curing_end,
             "final_age_days": tf,
+            "grout_age_days": tg,
+            "falsework_removal_age_days": tr,
+            "permanent_load_age_days": tp,
             "inner_perimeter_factor": _float(inner_perimeter_factor),
             "relaxation_steel_class": steel_class,
             "ep_mpa": _float(ep_mpa),
@@ -628,6 +929,8 @@ def run_crossbeam_lightweight_time_dependent_loss(
         "drying_geometry": drying,
         "steel_source": steel,
         "section_source": section,
+        "schedule_source": schedule,
+        "schedule_time_step": schedule_time_step,
         "creep_source": creep,
         "shrinkage_source": shrinkage,
         "interaction": {
@@ -651,11 +954,11 @@ def run_crossbeam_lightweight_time_dependent_loss(
         "relaxation_loss_mpa": max(relaxation_loss, 0.0),
         "time_dependent_loss_mpa": total,
         "handoff_status": (
-            "PREVIEW ONLY — EFFECTIVE PRESTRESS ASSEMBLY LOCKED"
+            "SCHEDULE QA ONLY — EFFECTIVE PRESTRESS ASSEMBLY LOCKED"
             if segmental
             else "COMPONENT READY — EFFECTIVE PRESTRESS ASSEMBLY LOCKED"
         ),
         "scope_guard": (
-            "PTLOSS4A excludes explicit construction-stage stress redistribution, later permanent-load Δfcd, temperature-dependent relaxation, measured material models, and Pe/Pe_eff assembly."
+            "PTLOSS4B1 evaluates explicit construction-schedule material-aging increments with zero structural solves. It excludes construction-stage stress redistribution, later permanent-load Δfcd, time-resolved relaxation, measured material models, and Pe/Pe_eff assembly."
         ),
     }
