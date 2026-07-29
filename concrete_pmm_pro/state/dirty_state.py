@@ -12,7 +12,10 @@ import hashlib
 import json
 from dataclasses import dataclass
 
-from concrete_pmm_pro.crossbeam.later_permanent_response import CB_LATER_FEA_RESPONSE_TABLE_KEY
+from concrete_pmm_pro.crossbeam.later_permanent_response import (
+    CB_LATER_FEA_RESPONSE_TABLE_KEY,
+    CB_TD_FEA_SOURCE_DECLARATION_KEY,
+)
 from typing import Any, Mapping, MutableMapping
 
 CURRENT_INPUT_HASH_KEY = "_perf_current_input_hash"
@@ -76,6 +79,8 @@ INPUT_GROUP_KEYS: dict[str, tuple[str, ...]] = {
         "girder_prestress_force_states_table",
         "girder_prestress_code_loss_settings",
         "prestress_loss_settings",
+        CB_LATER_FEA_RESPONSE_TABLE_KEY,
+        CB_TD_FEA_SOURCE_DECLARATION_KEY,
     ),
     "Loads": (
         "load_cases",
@@ -86,7 +91,8 @@ INPUT_GROUP_KEYS: dict[str, tuple[str, ...]] = {
         "beam_sls_transfer_loads_table",
         "beam_sls_construction_loads_table",
         "beam_sls_service_loads_table",
-        CB_LATER_FEA_RESPONSE_TABLE_KEY,
+        "crossbeam_uls_loads_table",
+        "crossbeam_sls_loads_table",
         "girder_sls_load_components",
         "beam_girder_sls_auto_load_settings",
         "building_beam_girder_service_load_settings",

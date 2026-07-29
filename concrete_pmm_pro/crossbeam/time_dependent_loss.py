@@ -679,6 +679,7 @@ def run_crossbeam_lightweight_time_dependent_loss(
     profile_rows: Any = None,
     later_permanent_load_delta_fcgp_mpa: float = 0.0,
     later_fea_response_rows: Any = None,
+    later_fea_source_declaration: Any = None,
     inner_perimeter_factor: float,
     relaxation_steel_class: str,
     ep_mpa: float,
@@ -826,12 +827,13 @@ def run_crossbeam_lightweight_time_dependent_loss(
             system_rows=system_rows,
             later_permanent_load_delta_fcgp_mpa=later_permanent_load_delta_fcgp_mpa,
             later_fea_response_rows=later_fea_response_rows,
+            later_fea_source_declaration=later_fea_source_declaration,
         )
         imported_source = dict(event_stress_source.get("later_fea_response_source") or {})
         if imported_source.get("ready"):
             for event in schedule.get("events", []):
                 if str(event.get("Event") or "") == "Later permanent load":
-                    event["Calculation role"] = "Imported FEA P/V2/M3 response; no internal structural solve"
+                    event["Calculation role"] = "Imported incremental FEA P/V2/M3 response at tp; no internal structural solve"
         if event_stress_source.get("ready"):
             interval_fcgp = [
                 fcgp,
@@ -952,7 +954,7 @@ def run_crossbeam_lightweight_time_dependent_loss(
         ),
         "route_note": (
             (
-                "The explicit schedule uses one no-contact falsework-removal event solve and imported FEA Later Permanent Load response. "
+                "The explicit schedule uses one no-contact falsework-removal event solve and the in-page incremental FEA response at tp. "
                 "Final adoption remains blocked until station/tendon-dependent effective-prestress assembly and relaxation/time-dependent interaction are accepted."
                 if bool(dict((event_stress_source or {}).get("later_fea_response_source") or {}).get("ready"))
                 else "The explicit schedule uses one no-contact falsework-removal event solve with response-source verification. "
@@ -1010,11 +1012,11 @@ def run_crossbeam_lightweight_time_dependent_loss(
         ),
         "scope_guard": (
             (
-                "PTLOSS4B3 uses one event solve for falsework removal and a verified imported FEA Later Permanent Load response. "
+                "PTLOSS4B3A uses one event solve for falsework removal and a verified in-page incremental FEA response at tp. "
                 "Time-resolved relaxation, measured material models, and station/tendon-dependent Pe/Pe_eff assembly remain excluded."
                 if bool(dict((event_stress_source or {}).get("later_fea_response_source") or {}).get("ready"))
                 else "PTLOSS4B2B1 uses one event solve for falsework removal and explicit interval stress sources. "
-                "PTLOSS4B3 imported FEA sourcing is not active; time-resolved relaxation, measured material models, and Pe/Pe_eff assembly remain excluded."
+                "PTLOSS4B3A in-page FEA sourcing is not active; time-resolved relaxation, measured material models, and Pe/Pe_eff assembly remain excluded."
             )
         ),
     }

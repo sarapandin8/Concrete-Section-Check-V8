@@ -341,6 +341,7 @@ def run_crossbeam_event_stage_stress_sources(
     system_rows: Any,
     later_permanent_load_delta_fcgp_mpa: float = 0.0,
     later_fea_response_rows: Any = None,
+    later_fea_source_declaration: Any = None,
 ) -> dict[str, Any]:
     """Resolve and verify stress sources at grouting, release, and later load.
 
@@ -418,6 +419,7 @@ def run_crossbeam_event_stage_stress_sources(
         load_rows=later_fea_response_rows,
         profile_rows=profile_rows,
         system_rows=system_rows,
+        source_declaration=later_fea_source_declaration,
     )
     imported_active_count = int(imported_later_source.get("active_count") or 0)
     imported_ready = bool(imported_later_source.get("ready"))
@@ -428,8 +430,8 @@ def run_crossbeam_event_stage_stress_sources(
 
     if imported_ready:
         later_delta = _float(imported_later_source.get("delta_fcgp_mpa"))
-        later_source_label = "Imported FEA P/V2/M3 response"
-        later_audit_source = "Released-stage source + imported FEA Δf_cd"
+        later_source_label = "Imported incremental FEA P/V2/M3 response at tp"
+        later_audit_source = "Released-stage source + imported tp Δf_cd"
         later_source_mode = "VERIFIED IMPORTED FEA SOURCE"
     else:
         later_delta = _float(later_permanent_load_delta_fcgp_mpa)

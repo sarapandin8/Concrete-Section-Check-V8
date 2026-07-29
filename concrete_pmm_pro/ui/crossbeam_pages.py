@@ -131,8 +131,16 @@ from concrete_pmm_pro.crossbeam.lightweight_elastic_shortening import (
     run_crossbeam_lightweight_elastic_shortening,
 )
 from concrete_pmm_pro.crossbeam.later_permanent_response import (
+    CB_LATER_FEA_RESPONSE_EDITOR_KEY,
     CB_LATER_FEA_RESPONSE_TABLE_KEY,
+    CB_TD_FEA_SOURCE_DECLARATION_KEY,
+    LATER_FEA_RESPONSE_COLUMNS,
+    TD_FEA_IMPORT_MODE_INCREMENTAL,
     canonical_later_fea_response_rows,
+    canonical_td_fea_source_declaration,
+    default_later_fea_response_template,
+    default_td_fea_source_declaration,
+    td_fea_source_declaration_status,
 )
 from concrete_pmm_pro.crossbeam.time_dependent_loss import (
     AASHTO_TIME_DEPENDENT_BASIS,
@@ -6622,12 +6630,13 @@ def _time_dependent_fingerprint(
     construction_method: str,
     settings: Mapping[str, Any],
     later_fea_response_rows: Any,
+    later_fea_source_declaration: Any,
     eci_mpa: float,
     fci_mpa: float,
 ) -> str:
     payload = {
-        "schema": 4,
-        "solver": "crossbeam-ptloss4b3-imported-fea-later-response-v1",
+        "schema": 5,
+        "solver": "crossbeam-ptloss4b3a-in-page-td-fea-response-v1",
         "lightweight_es_fingerprint": str(lightweight_es_fingerprint),
         "length_m": float(length_m),
         "segment_rows": _records(segment_rows),
@@ -6635,6 +6644,7 @@ def _time_dependent_fingerprint(
         "system_rows": canonical_tendon_system_rows(system_rows),
         "construction_method": str(construction_method),
         "later_fea_response_rows": canonical_later_fea_response_rows(later_fea_response_rows),
+        "later_fea_source_declaration": canonical_td_fea_source_declaration(later_fea_source_declaration),
         "td_inputs": {
             "rh_percent": float(settings["td_rh_percent"]),
             "load_age_days": float(settings["td_load_age_days"]),
@@ -7089,6 +7099,320 @@ def _render_anchorage_optional_independent_qa(
             "Independent QA PASS confirms agreement between two numerical implementations within tolerance; "
             "it does not by itself constitute code certification or alter the calculated prestress-loss results."
         )
+
+
+def _crossbeam_td_fea_syntax_status(table: pd.DataFrame, *, length_m: float) -> dict[str, Any]:
+    rows = canonical_later_fea_response_rows(table)
+    active = [row for row in rows if bool(row.get("Active"))]
+    issues: list[str] = []
+    cases: set[str] = set()
+    for index, row in enumerate(active, start=1):
+        case_name = str(row.get("Case Name") or "").strip()
+        if not case_name:
+            issues.append(f"Row {index}: Case Name is required.")
+        else:
+            cases.add(case_name)
+        try:
+            station = float(row.get("Station x (m)"))
+        except (TypeError, ValueError):
+            station = None
+        if station is None or station < 0.0 or station > float(length_m):
+            issues.append(f"Row {index}: Station x must lie within 0 to {float(length_m):.3f} m.")
+        for column in ("P", "V2", "M3"):
+            try:
+                float(row.get(column))
+            except (TypeError, ValueError):
+                issues.append(f"Row {index}: {column} must be numeric.")
+    if len(cases) > 1:
+        issues.append("Active rows must use one adopted incremental FEA case/stage only.")
+    return {
+        "ready": bool(active) and not issues,
+        "status": "IMPORT READY" if active and not issues else ("REVIEW REQUIRED" if issues else "IMPORT REQUIRED"),
+        "active_count": len(active),
+        "case_count": len(cases),
+        "case_name": next(iter(cases), "—"),
+        "issues": list(dict.fromkeys(issues)),
+    }
+
+
+def _render_crossbeam_td_fea_response_import(*, length_m: float, activation_age_days: float) -> dict[str, Any]:
+    """Render the PTLOSS-owned construction-stage FEA response import.
+
+    PTLOSS4B3A deliberately keeps this source out of the main Loads workspace.
+    The main Loads page owns ULS/SLS demands; this import belongs only to the
+    time-dependent prestress-loss construction schedule.
+    """
+
+    from concrete_pmm_pro.ui.loads_page import (
+        _render_workflow_import_tools,
+        _store_editor_table_and_rerun_on_change,
+        _stringify_table,
+        _sync_simple_load_editor_to_table,
+    )
+
+    if CB_LATER_FEA_RESPONSE_TABLE_KEY not in st.session_state:
+        st.session_state[CB_LATER_FEA_RESPONSE_TABLE_KEY] = pd.DataFrame(
+            default_later_fea_response_template(length_m),
+            columns=list(LATER_FEA_RESPONSE_COLUMNS),
+        )
+    if CB_TD_FEA_SOURCE_DECLARATION_KEY not in st.session_state:
+        st.session_state[CB_TD_FEA_SOURCE_DECLARATION_KEY] = default_td_fea_source_declaration()
+
+    declaration = canonical_td_fea_source_declaration(
+        st.session_state.get(CB_TD_FEA_SOURCE_DECLARATION_KEY)
+    )
+    current = _stringify_table(
+        pd.DataFrame(st.session_state.get(CB_LATER_FEA_RESPONSE_TABLE_KEY)),
+        list(LATER_FEA_RESPONSE_COLUMNS),
+    )
+    syntax = _crossbeam_td_fea_syntax_status(current, length_m=length_m)
+    declaration_status = td_fea_source_declaration_status(declaration)
+
+    st.markdown("##### Construction-Stage FEA Response at tp")
+    st.info(
+        "This source belongs only to Prestress Loss → Time-Dependent. The main Loads workspace remains reserved for ULS/SLS demand imports. "
+        "Import unfactored incremental P/V2/M3 response caused only by permanent loads first activated at tp."
+    )
+    migration_status = str(st.session_state.get("crossbeam_ptloss4b3a_td_fea_migration_status") or "")
+    if migration_status.startswith("MIGRATED FROM PTLOSS4B3"):
+        st.warning(
+            "Existing PTLOSS4B3 response rows were preserved and moved from Loads ownership into Time-Dependent. "
+            "Complete the mandatory source declaration before treating the migrated source as verified."
+        )
+    render_metric_cards(
+        [
+            {
+                "title": "Event",
+                "value": f"tp = {float(activation_age_days):.1f} days",
+                "detail": "permanent-load activation age",
+                "status": "neutral",
+            },
+            {
+                "title": "Response source",
+                "value": syntax["status"],
+                "detail": f"{syntax['active_count']} active row(s)",
+                "status": "ready" if syntax["ready"] else "warning",
+            },
+            {
+                "title": "Source declaration",
+                "value": declaration_status["status"],
+                "detail": "FEA/stage/load scope confirmation",
+                "status": "ready" if declaration_status["ready"] else "warning",
+            },
+            {
+                "title": "Runtime",
+                "value": "0 IMPORT SOLVES",
+                "detail": "one internal solve remains falsework removal only",
+                "status": "ready",
+            },
+        ]
+    )
+
+    with st.expander("What this tp import must include / exclude", expanded=True):
+        include_col, exclude_col = st.columns(2)
+        with include_col:
+            st.markdown("**INCLUDE — only permanent loads first activated at tp**")
+            st.write("- Girder or superstructure permanent reactions first transferred to the Crossbeam at this event")
+            st.write("- Added permanent concrete or structural components placed after stressing")
+            st.write("- Track/plinth/rails, parapets/barriers, utilities, cable troughs, or permanent equipment activated at this event")
+            st.write("- Other sustained permanent load groups explicitly identified in the source declaration")
+        with exclude_col:
+            st.markdown("**EXCLUDE — prevents double counting**")
+            st.write("- Crossbeam/column self-weight already present in the stressing-stage model")
+            st.write("- Prestress effects and falsework-removal redistribution")
+            st.write("- Live load, wind, earthquake, temperature, impact, and ULS/SLS factored combinations")
+            st.write("- Creep, shrinkage, relaxation, or other time-dependent effects already calculated by FEA")
+            st.write("- Total Final Stage response unless a future Before/After-stage import route calculates the difference")
+        st.warning(
+            "PTLOSS4B3A supports one incremental permanent-load event at tp. If included load groups activate at materially different ages, do not combine them under one representative tp; a future multi-event schedule is required."
+        )
+
+    st.markdown("**Mandatory FEA source declaration**")
+    decl_a, decl_b = st.columns(2)
+    with decl_a:
+        import_mode = st.selectbox(
+            "Import mode",
+            options=[TD_FEA_IMPORT_MODE_INCREMENTAL],
+            index=0,
+            disabled=True,
+            key="crossbeam_ptloss4b3a_import_mode_widget",
+        )
+        fea_program = st.text_input(
+            "FEA Program",
+            value=declaration["fea_program"],
+            placeholder="e.g. CSiBridge / SAP2000 / MIDAS Civil",
+            key="crossbeam_ptloss4b3a_fea_program_widget",
+        )
+        source_case_stage = st.text_input(
+            "FEA Load Case / Construction Stage",
+            value=declaration["source_case_stage"],
+            placeholder="Exact case or stage name used for the incremental response",
+            key="crossbeam_ptloss4b3a_source_case_stage_widget",
+        )
+    with decl_b:
+        permanent_load_groups = st.text_area(
+            "Permanent load groups included at tp",
+            value=declaration["permanent_load_groups"],
+            placeholder="e.g. GIRDER_REACTION + TRACK_PLINTH + PARAPET",
+            height=112,
+            key="crossbeam_ptloss4b3a_permanent_groups_widget",
+        )
+        st.caption("Exchange units are locked to station m, P/V2 kN, and M3 kN·m. P is compression-positive; M3 is sagging-positive in the Crossbeam s–vertical plane.")
+
+    confirm_a, confirm_b = st.columns(2)
+    with confirm_a:
+        unfactored_confirmed = st.checkbox(
+            "Unfactored permanent-load response only",
+            value=bool(declaration["unfactored_confirmed"]),
+            key="crossbeam_ptloss4b3a_unfactored_widget",
+        )
+        incremental_not_total_confirmed = st.checkbox(
+            "Incremental response — not total Final Stage forces",
+            value=bool(declaration["incremental_not_total_confirmed"]),
+            key="crossbeam_ptloss4b3a_incremental_widget",
+        )
+    with confirm_b:
+        excluded_transient_confirmed = st.checkbox(
+            "Live/Wind/Seismic/Temperature/Prestress/TD effects excluded",
+            value=bool(declaration["excluded_transient_confirmed"]),
+            key="crossbeam_ptloss4b3a_exclusions_widget",
+        )
+        common_activation_age_confirmed = st.checkbox(
+            "All included load groups are represented by the same tp",
+            value=bool(declaration["common_activation_age_confirmed"]),
+            key="crossbeam_ptloss4b3a_common_age_widget",
+        )
+
+    declaration = canonical_td_fea_source_declaration(
+        {
+            "import_mode": import_mode,
+            "fea_program": fea_program,
+            "source_case_stage": source_case_stage,
+            "permanent_load_groups": permanent_load_groups,
+            "unfactored_confirmed": unfactored_confirmed,
+            "incremental_not_total_confirmed": incremental_not_total_confirmed,
+            "excluded_transient_confirmed": excluded_transient_confirmed,
+            "common_activation_age_confirmed": common_activation_age_confirmed,
+        }
+    )
+    st.session_state[CB_TD_FEA_SOURCE_DECLARATION_KEY] = declaration
+    declaration_status = td_fea_source_declaration_status(declaration)
+    if declaration_status["issues"]:
+        with st.expander("Source declaration review", expanded=False):
+            for issue in declaration_status["issues"]:
+                st.warning(str(issue))
+
+    template = pd.DataFrame(
+        default_later_fea_response_template(length_m),
+        columns=list(LATER_FEA_RESPONSE_COLUMNS),
+    )
+
+    def _replace_rows(imported: pd.DataFrame) -> None:
+        st.session_state[CB_LATER_FEA_RESPONSE_TABLE_KEY] = pd.DataFrame(
+            canonical_later_fea_response_rows(imported),
+            columns=list(LATER_FEA_RESPONSE_COLUMNS),
+        )
+
+    def _append_rows(imported: pd.DataFrame) -> None:
+        old_rows = canonical_later_fea_response_rows(
+            st.session_state.get(CB_LATER_FEA_RESPONSE_TABLE_KEY, [])
+        )
+        new_rows = canonical_later_fea_response_rows(imported)
+        st.session_state[CB_LATER_FEA_RESPONSE_TABLE_KEY] = pd.DataFrame(
+            old_rows + new_rows,
+            columns=list(LATER_FEA_RESPONSE_COLUMNS),
+        )
+
+    with st.expander("Import tp permanent-load incremental FEA response from Excel / CSV", expanded=True):
+        st.warning(
+            "Do not import independent maxima for P, V2, and M3. Each active row must retain the force tuple from the same FEA case/stage, station, element/end, and section side."
+        )
+        _render_workflow_import_tools(
+            title="tp permanent-load incremental FEA response import",
+            table_name="Crossbeam TD Event Response",
+            columns=list(LATER_FEA_RESPONSE_COLUMNS),
+            numeric_columns=["Station x (m)", "P", "V2", "M3"],
+            state_key=CB_LATER_FEA_RESPONSE_TABLE_KEY,
+            editor_key=CB_LATER_FEA_RESPONSE_EDITOR_KEY,
+            key_prefix="crossbeam_ptloss4b3a_td_fea_response",
+            unique_key_columns=["Case Name", "Station x (m)", "FEA Element", "End / Side", "Section ID"],
+            replace_callback=_replace_rows,
+            append_callback=_append_rows,
+            template_df=template,
+        )
+
+    current = _stringify_table(
+        pd.DataFrame(st.session_state.get(CB_LATER_FEA_RESPONSE_TABLE_KEY)),
+        list(LATER_FEA_RESPONSE_COLUMNS),
+    )
+    edited = st.data_editor(
+        current,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Active": st.column_config.CheckboxColumn("Active"),
+            "Station x (m)": st.column_config.TextColumn("Station s (m)", help="Physical Crossbeam station s = 0 to L."),
+            "Case Name": st.column_config.TextColumn("Case / Stage", help="Must match the declared incremental FEA case/stage."),
+            "Step Type": st.column_config.TextColumn("Step Type", help="Optional FEA step metadata."),
+            "Step Num": st.column_config.TextColumn("Step Num", help="Optional FEA step number/time metadata."),
+            "FEA Object": st.column_config.TextColumn("FEA Object"),
+            "FEA Element": st.column_config.TextColumn("FEA Element"),
+            "End / Side": st.column_config.SelectboxColumn(
+                "End / Side",
+                options=["", "Left-side limit", "Right-side limit", "Interior sample"],
+                help="Required where one station has two element/property limits.",
+            ),
+            "Section ID": st.column_config.TextColumn("Section ID"),
+            "P": st.column_config.TextColumn("P (kN; compression +)"),
+            "V2": st.column_config.TextColumn("V2 (kN)"),
+            "M3": st.column_config.TextColumn("M3 (kN·m; sagging +)"),
+            "Note": st.column_config.TextColumn("Note"),
+        },
+        key=CB_LATER_FEA_RESPONSE_EDITOR_KEY,
+        on_change=_sync_simple_load_editor_to_table,
+        args=(CB_LATER_FEA_RESPONSE_TABLE_KEY, CB_LATER_FEA_RESPONSE_EDITOR_KEY, list(LATER_FEA_RESPONSE_COLUMNS)),
+    )
+    edited = _stringify_table(edited, list(LATER_FEA_RESPONSE_COLUMNS))
+    _store_editor_table_and_rerun_on_change(
+        CB_LATER_FEA_RESPONSE_TABLE_KEY,
+        edited,
+        current,
+        list(LATER_FEA_RESPONSE_COLUMNS),
+    )
+
+    syntax = _crossbeam_td_fea_syntax_status(edited, length_m=length_m)
+    if syntax["ready"] and declaration_status["ready"]:
+        declared_case = str(declaration.get("source_case_stage") or "").strip()
+        if declared_case.casefold() != str(syntax.get("case_name") or "").strip().casefold():
+            syntax = {
+                **syntax,
+                "ready": False,
+                "status": "REVIEW REQUIRED",
+                "issues": list(syntax.get("issues") or [])
+                + [f"Declared FEA Load Case / Construction Stage '{declared_case}' does not match active imported Case Name '{syntax.get('case_name')}'."],
+            }
+    if syntax["issues"]:
+        with st.expander("Imported response review", expanded=True):
+            for issue in syntax["issues"]:
+                st.warning(str(issue))
+    elif syntax["ready"] and declaration_status["ready"]:
+        st.success(
+            "Construction-stage source is ready for detailed section/tendon validation during the Time-Dependent Run. Importing or editing this source performs 0 structural solves."
+        )
+    else:
+        st.warning(
+            "The tp permanent-load source is not yet verified. A schedule QA run may remain available, but the later-load event cannot be adopted until both the declaration and imported response are complete."
+        )
+
+    return {
+        "ready": bool(syntax["ready"] and declaration_status["ready"]),
+        "syntax": syntax,
+        "declaration_status": declaration_status,
+        "declaration": declaration,
+        "rows": canonical_later_fea_response_rows(edited),
+    }
+
 
 def render_crossbeam_prestress_loss_page() -> None:
     _ensure_state()
@@ -9212,7 +9536,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         st.markdown("#### Lightweight Time-Dependent Losses — event-based schedule preview")
         st.caption(
-            "PTLOSS4B3 extends the accepted PTLOSS4B2B1 route. PTLOSS4B2B1 keeps the route event-based and lightweight; opening the tab performs 0 solves, falsework removal uses one no-contact frame solve, and the Later Permanent Load response is now imported from FEA with no additional internal solve."
+            "PTLOSS4B3A supersedes the deployed PTLOSS4B3 workspace ownership while preserving the accepted PTLOSS4B2B1 calculation route. PTLOSS4B2B1 keeps the route event-based and lightweight; opening the tab performs 0 solves, falsework removal uses one no-contact frame solve, and the Later Permanent Load response is now imported from FEA with no additional internal solve."
         )
         render_metric_cards(
             [
@@ -9240,7 +9564,7 @@ def render_crossbeam_prestress_loss_page() -> None:
             "Source transfer from Segmental Box Girder Pro is limited to unit-safe AASHTO material factors, drying-geometry traceability, age reconciliation, and component separation. BG40 f_cgp, external/unbonded routing, report-match constants, and the BG40 relaxation interaction cap are not reused."
         )
         st.caption(
-            "Baseline continuity: PTLOSS4B2B1 does not assemble Pe/Pe_eff; PTLOSS4B3 changes only the Later Permanent Load source handoff and keeps the downstream station-dependent force/stress chain locked."
+            "Baseline continuity: PTLOSS4B2B1 does not assemble Pe/Pe_eff; PTLOSS4B3A relocates the tp construction-stage FEA response source into Time-Dependent and keeps the downstream station-dependent force/stress chain locked."
         )
 
         td_settings = _loss_setting_defaults_from_state()
@@ -9304,7 +9628,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         if td_construction_method == CONSTRUCTION_METHOD_PRECAST:
             st.markdown("##### Precast Segmental construction schedule")
             st.caption(
-                "All values are representative concrete ages in days. The bonded route begins at grouting. Falsework removal triggers one no-contact event solve; Later Permanent Load Δfcd is calculated from the adopted FEA response imported on the Loads page."
+                "All values are representative concrete ages in days. The bonded route begins at grouting. Falsework removal triggers one no-contact event solve; the tp permanent-load increment is imported and declared below within this Time-Dependent workspace."
             )
             schedule_a, schedule_b, schedule_c = st.columns(3)
             with schedule_a:
@@ -9328,26 +9652,27 @@ def render_crossbeam_prestress_loss_page() -> None:
                 )
             with schedule_c:
                 st.number_input(
-                    "Later permanent-load age tp (days)",
+                    "Permanent-load event age tp (days)",
                     min_value=0.01,
                     max_value=1000000.0,
                     step=1.0,
                     format="%.1f",
                     key=CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
-                    help="Age when the later permanent-load stress increment becomes active.",
+                    help="Representative concrete age when the imported permanent-load increment becomes active.",
                 )
-                later_fea_rows_preview = canonical_later_fea_response_rows(
-                    st.session_state.get(CB_LATER_FEA_RESPONSE_TABLE_KEY, [])
-                )
-                active_later_fea_rows = [row for row in later_fea_rows_preview if bool(row.get("Active"))]
-                st.metric(
-                    "Later-load FEA source",
-                    "IMPORTED" if active_later_fea_rows else "IMPORT REQUIRED",
-                    f"{len(active_later_fea_rows)} active row(s) · edit in Loads",
-                )
-                st.caption(
-                    "The legacy manual Δfcd value is preserved in Project JSON for backward compatibility but is not the intended PTLOSS4B3 source."
-                )
+
+            td_fea_source_ui = _render_crossbeam_td_fea_response_import(
+                length_m=length_m,
+                activation_age_days=float(st.session_state.get(CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY, 90.0) or 90.0),
+            )
+        else:
+            td_fea_source_ui = {
+                "ready": True,
+                "rows": [],
+                "declaration": default_td_fea_source_declaration(),
+                "syntax": {"ready": True, "status": "NOT APPLICABLE", "active_count": 0},
+                "declaration_status": {"ready": True, "status": "NOT APPLICABLE", "issues": []},
+            }
 
         td_settings = _loss_setting_defaults_from_state()
         drying_preview = crossbeam_drying_geometry(
@@ -9455,8 +9780,12 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
         td_eci = float(selected_eci or 0.0)
         td_fci = float(current_es_material_source.get("fci_mpa") or 0.0)
-        later_fea_response_rows = st.session_state.get(
+        later_fea_response_rows = td_fea_source_ui.get("rows", st.session_state.get(
             CB_LATER_FEA_RESPONSE_TABLE_KEY, []
+        ))
+        later_fea_source_declaration = td_fea_source_ui.get(
+            "declaration",
+            st.session_state.get(CB_TD_FEA_SOURCE_DECLARATION_KEY, {}),
         )
         td_fingerprint = _time_dependent_fingerprint(
             lightweight_es_fingerprint=str(lightweight_fingerprint),
@@ -9467,6 +9796,7 @@ def render_crossbeam_prestress_loss_page() -> None:
             construction_method=td_construction_method,
             settings=td_settings,
             later_fea_response_rows=later_fea_response_rows,
+            later_fea_source_declaration=later_fea_source_declaration,
             eci_mpa=td_eci,
             fci_mpa=td_fci,
         )
@@ -9501,7 +9831,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 type="primary",
                 use_container_width=True,
                 disabled=not td_sources_ready,
-                help="Uses stored post-ES results and one no-contact frame solve for falsework removal. Later Permanent Load response is read from the imported FEA table and does not trigger another solve.",
+                help="Uses stored post-ES results and one no-contact frame solve for falsework removal. The tp permanent-load increment is read from the in-page construction-stage FEA response source and adds no internal solve.",
             )
         with clear_col:
             clear_td = st.button(
@@ -9535,6 +9865,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 profile_rows=profile_rows,
                 later_permanent_load_delta_fcgp_mpa=0.0,
                 later_fea_response_rows=later_fea_response_rows,
+                later_fea_source_declaration=later_fea_source_declaration,
                 inner_perimeter_factor=float(td_settings["td_inner_perimeter_factor"]),
                 relaxation_steel_class=str(td_settings["td_relaxation_steel_class"]),
                 ep_mpa=float(td_settings["ep_mpa"]),
@@ -9711,8 +10042,8 @@ def render_crossbeam_prestress_loss_page() -> None:
                     )
                     st.caption(str(event_source.get("scope_guard") or ""))
                     imported_later_source = dict(event_source.get("later_fea_response_source") or {})
-                    st.markdown("##### Imported FEA Later Permanent Load source")
-                    imported_status = str(imported_later_source.get("status") or "LOAD IMPORT REQUIRED")
+                    st.markdown("##### tp permanent-load incremental FEA response source")
+                    imported_status = str(imported_later_source.get("status") or "TD EVENT RESPONSE IMPORT REQUIRED")
                     if imported_later_source.get("ready"):
                         st.success(
                             f"{imported_status} · {imported_later_source.get('case_name') or '—'} · "
@@ -10161,7 +10492,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                     """
                 )
                 st.caption(
-                    "PTLOSS4B3 does not assemble Pe/Pe_eff. Event stress sources remain a QA preview until later-load sourcing and the downstream station-dependent force/stress chain are validated."
+                    "PTLOSS4B3A does not assemble Pe/Pe_eff. Event stress sources remain a QA preview until later-load sourcing and the downstream station-dependent force/stress chain are validated."
                 )
 
     with audit_tab:

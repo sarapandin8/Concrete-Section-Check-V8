@@ -1,3 +1,7 @@
+### CROSSBEAM.PTLOSS4B3A — In-Page Construction-Stage FEA Response Import
+
+Relocates the Crossbeam `tp` incremental FEA response import from the main Loads workspace into `Sections → Prestress Loss → Time-Dependent`, restores Loads to dedicated Crossbeam ULS/SLS demand imports, adds mandatory source-scope declarations, and safely migrates deployed PTLOSS4B3 Project JSON data without changing accepted prestress-loss equations or releasing `Pe / Pe_eff`. See `README_CROSSBEAM_PTLOSS4B3A.md`.
+
 ### CROSSBEAM.PTLOSS2R3B - Prestress Loss Rerun Performance Hotfix
 
 Moves the heavy independent dense-grid both-end QA out of the normal Streamlit rerun path and makes it explicit, input-fingerprint-gated validation evidence without changing accepted prestress-loss solver equations or releasing `Pe / Pe_eff`. See `README_CROSSBEAM_PTLOSS2R3B.md`.

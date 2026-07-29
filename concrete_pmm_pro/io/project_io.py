@@ -32,7 +32,15 @@ from concrete_pmm_pro.core.reinforcement_system import (
 from concrete_pmm_pro.core.models import LoadCase, PrestressElement, Rebar
 from concrete_pmm_pro.core.project import ProjectModel
 from concrete_pmm_pro.core.units import N_to_kN, Nmm_to_kNm
-from concrete_pmm_pro.crossbeam.later_permanent_response import CB_LATER_FEA_RESPONSE_TABLE_KEY
+from concrete_pmm_pro.crossbeam.later_permanent_response import (
+    CB_LATER_FEA_RESPONSE_TABLE_KEY,
+    CB_TD_FEA_SOURCE_DECLARATION_KEY,
+    CB_TD_FEA_RESPONSE_METADATA_KEY,
+    CB_TD_FEA_RESPONSE_SCHEMA_VERSION,
+    canonical_later_fea_response_rows,
+    canonical_td_fea_source_declaration,
+    default_td_fea_source_declaration,
+)
 from concrete_pmm_pro.crossbeam.section_library import (
     CB_SECLIB_ACTIVE_ID_KEY,
     CB_SECLIB_DEFINITIONS_KEY,
@@ -194,12 +202,16 @@ PRESTRESS_TABLE_METADATA_COLUMNS = [
 ANALYSIS_RESULTS_METADATA_KEY = "analysis_results"
 ANALYSIS_RESULTS_SCHEMA_VERSION = 1
 
+CROSSBEAM_ULS_LOAD_TABLE_KEY = "crossbeam_uls_loads_table"
+CROSSBEAM_SLS_LOAD_TABLE_KEY = "crossbeam_sls_loads_table"
+
 WORKFLOW_LOAD_TABLE_METADATA_KEYS = (
     "column_uls_loads_table",
     "column_sls_loads_table",
     "beam_uls_loads_table",
     "beam_sls_loads_table",
-    CB_LATER_FEA_RESPONSE_TABLE_KEY,
+    CROSSBEAM_ULS_LOAD_TABLE_KEY,
+    CROSSBEAM_SLS_LOAD_TABLE_KEY,
 )
 
 CROSSBEAM_LENGTH_STATE_KEY = "crossbeam_ui1_length_m"
@@ -208,6 +220,23 @@ CROSSBEAM_SEGMENT_REVISION_STATE_KEY = "crossbeam_ui1_segment_editor_revision"
 CROSSBEAM_PRECAST_LAYOUT_STATE_KEY = "crossbeam_cip1_precast_segment_rows"
 CROSSBEAM_CIP_LAYOUT_STATE_KEY = "crossbeam_cip1_cast_in_place_zone_rows"
 CROSSBEAM_CONSTRUCTION_METHOD_LAST_STATE_KEY = "crossbeam_cip1_last_construction_method"
+
+
+def _crossbeam_td_fea_response_metadata_from_session(session_state: Any) -> dict[str, Any]:
+    rows = canonical_later_fea_response_rows(
+        _get_session_value(session_state, CB_LATER_FEA_RESPONSE_TABLE_KEY, [])
+    )
+    declaration = canonical_td_fea_source_declaration(
+        _get_session_value(session_state, CB_TD_FEA_SOURCE_DECLARATION_KEY, {})
+    )
+    if not rows and declaration == default_td_fea_source_declaration():
+        return {}
+    return {
+        "schema_version": CB_TD_FEA_RESPONSE_SCHEMA_VERSION,
+        "owner": "Sections/Prestress Loss/Time-Dependent",
+        "rows": _clean_table_value(rows),
+        "source_declaration": _clean_table_value(declaration),
+    }
 
 
 def _crossbeam_input_metadata_from_session(session_state: Any) -> dict[str, Any]:
@@ -770,6 +799,18 @@ def project_from_session_state(session_state: Any) -> ProjectModel:
     workflow_load_tables = _workflow_load_table_metadata_from_session(session_state)
     if workflow_load_tables:
         metadata["workflow_load_tables"] = workflow_load_tables
+    else:
+        legacy_workflow_tables = dict(metadata.get("workflow_load_tables") or {})
+        legacy_workflow_tables.pop(CB_LATER_FEA_RESPONSE_TABLE_KEY, None)
+        if legacy_workflow_tables:
+            metadata["workflow_load_tables"] = legacy_workflow_tables
+        else:
+            metadata.pop("workflow_load_tables", None)
+    td_fea_response = _crossbeam_td_fea_response_metadata_from_session(session_state)
+    if td_fea_response:
+        metadata[CB_TD_FEA_RESPONSE_METADATA_KEY] = td_fea_response
+    else:
+        metadata.pop(CB_TD_FEA_RESPONSE_METADATA_KEY, None)
     if _session_has_key(session_state, "rebar_table"):
         metadata[LONGITUDINAL_REBAR_TABLE_METADATA_KEY] = _longitudinal_rebar_table_metadata_from_session(session_state)
     if _session_has_key(session_state, SHEAR_REINFORCEMENT_TABLE_KEY):
@@ -1304,6 +1345,27 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
         for key in WORKFLOW_LOAD_TABLE_METADATA_KEYS:
             if key in workflow_load_tables:
                 session_state[key] = pd.DataFrame(workflow_load_tables.get(key) or [])
+
+    td_fea_response = project.metadata.get(CB_TD_FEA_RESPONSE_METADATA_KEY)
+    if isinstance(td_fea_response, dict):
+        session_state[CB_LATER_FEA_RESPONSE_TABLE_KEY] = pd.DataFrame(
+            canonical_later_fea_response_rows(td_fea_response.get("rows") or [])
+        )
+        session_state[CB_TD_FEA_SOURCE_DECLARATION_KEY] = canonical_td_fea_source_declaration(
+            td_fea_response.get("source_declaration") or {}
+        )
+        session_state["crossbeam_ptloss4b3a_td_fea_migration_status"] = "CURRENT PTLOSS OWNERSHIP"
+    elif isinstance(workflow_load_tables, dict) and CB_LATER_FEA_RESPONSE_TABLE_KEY in workflow_load_tables:
+        # Forward migration from deployed PTLOSS4B3, where the same table was
+        # incorrectly owned by the main Loads workspace. Preserve rows but do
+        # not invent the mandatory source declaration.
+        session_state[CB_LATER_FEA_RESPONSE_TABLE_KEY] = pd.DataFrame(
+            canonical_later_fea_response_rows(
+                workflow_load_tables.get(CB_LATER_FEA_RESPONSE_TABLE_KEY) or []
+            )
+        )
+        session_state[CB_TD_FEA_SOURCE_DECLARATION_KEY] = default_td_fea_source_declaration()
+        session_state["crossbeam_ptloss4b3a_td_fea_migration_status"] = "MIGRATED FROM PTLOSS4B3 LOADS OWNERSHIP — SOURCE DECLARATION REQUIRED"
     shear_reinforcement = project.metadata.get(SHEAR_REINFORCEMENT_TABLE_KEY)
     if isinstance(shear_reinforcement, list):
         session_state[SHEAR_REINFORCEMENT_TABLE_KEY] = pd.DataFrame(shear_reinforcement)

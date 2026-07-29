@@ -1,13 +1,13 @@
 """Imported FEA later-permanent-load response for Crossbeam time-dependent losses.
 
-PTLOSS4B3 reuses the app's established Excel/CSV import workflow.  Active rows
+PTLOSS4B3A reuses the app's established Excel/CSV import workflow inside Time-Dependent.  Active rows
 represent one adopted incremental FEA case/combination for the permanent loads
 that become active at age ``tp``.  The imported force tuple P/V2/M3 remains
 row-coupled; the module never builds an artificial envelope by mixing force
 components from different rows or cases.
 
-Input convention (display units are converted by the Loads page before this
-module is called):
+Input convention (the Time-Dependent construction-stage import uses this locked
+SI exchange basis before the module is called):
 - station: metres along the physical Crossbeam, s = 0 .. L;
 - P/N: kN, compression positive;
 - V2: kN, retained for response/source audit;
@@ -28,7 +28,13 @@ from concrete_pmm_pro.crossbeam.lightweight_elastic_shortening import (
 
 
 CB_LATER_FEA_RESPONSE_TABLE_KEY = "crossbeam_ptloss4b3_later_fea_response_table"
-CB_LATER_FEA_RESPONSE_EDITOR_KEY = "crossbeam_ptloss4b3_later_fea_response_editor"
+CB_LATER_FEA_RESPONSE_EDITOR_KEY = "crossbeam_ptloss4b3a_td_fea_response_editor"
+CB_TD_FEA_SOURCE_DECLARATION_KEY = "crossbeam_ptloss4b3a_td_fea_source_declaration"
+CB_TD_FEA_RESPONSE_METADATA_KEY = "crossbeam_time_dependent_fea_response"
+CB_TD_FEA_RESPONSE_SCHEMA_VERSION = 1
+
+TD_FEA_IMPORT_MODE_INCREMENTAL = "Incremental response — permanent loads activated at tp"
+
 
 LATER_FEA_RESPONSE_COLUMNS = (
     "Active",
@@ -129,6 +135,66 @@ def canonical_later_fea_response_rows(values: Any) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+
+
+def default_td_fea_source_declaration() -> dict[str, Any]:
+    """Return the safe default source declaration for the tp FEA response import."""
+
+    return {
+        "import_mode": TD_FEA_IMPORT_MODE_INCREMENTAL,
+        "fea_program": "",
+        "source_case_stage": "",
+        "permanent_load_groups": "",
+        "unfactored_confirmed": False,
+        "incremental_not_total_confirmed": False,
+        "excluded_transient_confirmed": False,
+        "common_activation_age_confirmed": False,
+    }
+
+
+def canonical_td_fea_source_declaration(value: Any) -> dict[str, Any]:
+    raw = dict(value) if isinstance(value, Mapping) else {}
+    default = default_td_fea_source_declaration()
+    return {
+        "import_mode": str(raw.get("import_mode") or default["import_mode"]).strip(),
+        "fea_program": str(raw.get("fea_program") or "").strip(),
+        "source_case_stage": str(raw.get("source_case_stage") or "").strip(),
+        "permanent_load_groups": str(raw.get("permanent_load_groups") or "").strip(),
+        "unfactored_confirmed": _bool(raw.get("unfactored_confirmed"), False),
+        "incremental_not_total_confirmed": _bool(raw.get("incremental_not_total_confirmed"), False),
+        "excluded_transient_confirmed": _bool(raw.get("excluded_transient_confirmed"), False),
+        "common_activation_age_confirmed": _bool(raw.get("common_activation_age_confirmed"), False),
+    }
+
+
+def td_fea_source_declaration_status(value: Any) -> dict[str, Any]:
+    declaration = canonical_td_fea_source_declaration(value)
+    issues: list[str] = []
+    if declaration["import_mode"] != TD_FEA_IMPORT_MODE_INCREMENTAL:
+        issues.append("Only incremental FEA response for permanent loads activated at tp is supported in PTLOSS4B3A.")
+    if not declaration["fea_program"]:
+        issues.append("FEA Program is required for source traceability.")
+    if not declaration["source_case_stage"]:
+        issues.append("FEA Load Case / Construction Stage name is required.")
+    if not declaration["permanent_load_groups"]:
+        issues.append("Permanent load groups included at tp must be identified.")
+    confirmations = [
+        ("unfactored_confirmed", "Confirm that the imported response is unfactored permanent load only."),
+        ("incremental_not_total_confirmed", "Confirm that the response is incremental, not a total Final Stage response."),
+        ("excluded_transient_confirmed", "Confirm that Live, Wind, Seismic, Temperature, Prestress, and time-dependent effects are excluded."),
+        ("common_activation_age_confirmed", "Confirm that all included permanent load groups are reasonably represented by the same activation age tp."),
+    ]
+    for key, message in confirmations:
+        if not declaration[key]:
+            issues.append(message)
+    return {
+        "ready": not issues,
+        "status": "SOURCE DECLARATION VERIFIED" if not issues else "SOURCE DECLARATION REQUIRED",
+        "issues": issues,
+        "declaration": declaration,
+    }
 
 
 def default_later_fea_response_template(length_m: float = 20.0) -> list[dict[str, Any]]:
@@ -246,6 +312,7 @@ def resolve_imported_later_fea_response(
     load_rows: Any,
     profile_rows: Any,
     system_rows: Any,
+    source_declaration: Any = None,
 ) -> dict[str, Any]:
     """Validate imported incremental FEA resultants and calculate Δfcd.
 
@@ -259,7 +326,7 @@ def resolve_imported_later_fea_response(
     if not active:
         return {
             "ready": False,
-            "status": "LOAD IMPORT REQUIRED",
+            "status": "TD EVENT RESPONSE IMPORT REQUIRED",
             "issues": [],
             "warnings": ["No active imported Later Permanent Load FEA response rows are available."],
             "canonical_rows": rows,
@@ -273,6 +340,9 @@ def resolve_imported_later_fea_response(
 
     issues: list[str] = []
     warnings: list[str] = []
+    declaration_status = td_fea_source_declaration_status(source_declaration) if source_declaration is not None else None
+    if declaration_status is not None and not declaration_status["ready"]:
+        issues.extend(declaration_status["issues"])
     length_m = float(_float(model.get("length_m"), 0.0) or 0.0)
     if not bool(model.get("ready")) or length_m <= 0.0:
         issues.extend(model.get("issues") or ["Crossbeam analysis model is not ready."])
@@ -282,6 +352,12 @@ def resolve_imported_later_fea_response(
             "Active imported rows must belong to exactly one adopted FEA case/combination; "
             f"found {len(cases)} ({', '.join(cases) if cases else 'none'})."
         )
+    if declaration_status is not None and declaration_status.get("ready") and len(cases) == 1:
+        declared_case = str(declaration_status["declaration"].get("source_case_stage") or "").strip()
+        if declared_case.casefold() != cases[0].casefold():
+            issues.append(
+                f"Declared FEA Load Case / Construction Stage '{declared_case}' does not match active imported Case Name '{cases[0]}'."
+            )
 
     cg_source = _tendon_cg_depth_source(profile_rows=profile_rows, system_rows=system_rows, length_m=length_m)
     if not bool(cg_source.get("ready")):
@@ -396,6 +472,7 @@ def resolve_imported_later_fea_response(
             )
     payload = {
         "case": cases[0] if cases else "",
+        "source_declaration": (declaration_status or {}).get("declaration", {}),
         "rows": [
             {
                 key: (round(float(value), 10) if isinstance(value, (int, float)) else value)
@@ -420,9 +497,12 @@ def resolve_imported_later_fea_response(
         "governing_row": governing,
         "delta_fcgp_mpa": delta_fcgp,
         "fingerprint": fingerprint,
+        "source_declaration": (declaration_status or {}).get("declaration", {}),
+        "source_declaration_status": (declaration_status or {}).get("status", "LEGACY SOURCE DECLARATION NOT PROVIDED"),
         "basis": (
-            "Imported P/V2/M3 are incremental resultants from one adopted Later Permanent Load FEA case. "
-            "P and M3 remain paired by row; Δfcd = P/A − M3·yp/I at the tendon CG."
+            "Imported P/V2/M3 are unfactored incremental resultants from one adopted permanent-load event at tp. "
+            "P and M3 remain paired by row; Δfcd = P/A − M3·yp/I at the tendon CG. "
+            "Total Final Stage response is not accepted as an incremental source."
         ),
         "scope_guard": (
             "The current Time-Dependent schedule uses one governing representative-route Δfcd scalar. "
