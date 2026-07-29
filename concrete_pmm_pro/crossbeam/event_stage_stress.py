@@ -1,10 +1,10 @@
 """Lightweight event-based concrete-stress sources for Crossbeam PT losses.
 
-PTLOSS4B2B1 solves only structural events that change the support/load state. It
+PTLOSS4B3 solves only structural events that change the support/load state. It
 reuses the accepted stressing-stage frame model and stored post-ES source; it
-does not run a structural solver at every material-aging time step. The B2B
-hardening adds explicit response-source verification so a completed solve is not
-mistaken for a verified event effect.
+does not run a structural solver at every material-aging time step. The release
+and later-load events include explicit response-source verification so a
+completed solve is not mistaken for a verified event effect.
 """
 
 from __future__ import annotations
@@ -24,6 +24,9 @@ from concrete_pmm_pro.crossbeam.stressing_stage_frame import (
     prestress_equivalent_nodal_loads,
     solve_linear_frame,
 )
+from concrete_pmm_pro.crossbeam.later_permanent_load import (
+    later_permanent_load_source,
+)
 
 
 def _float(value: Any, default: float = 0.0) -> float:
@@ -38,6 +41,28 @@ def _dedupe(messages: list[str]) -> list[str]:
     return list(
         dict.fromkeys(str(message).strip() for message in messages if str(message).strip())
     )
+
+
+def _merge_nodal_loads(
+    *sources: Mapping[int, tuple[float, float, float]]
+) -> dict[int, tuple[float, float, float]]:
+    output: dict[int, list[float]] = {}
+    for source in sources:
+        for node_id, values in source.items():
+            vector = output.setdefault(int(node_id), [0.0, 0.0, 0.0])
+            for index, value in enumerate(tuple(values)[:3]):
+                vector[index] += _float(value)
+    return {node_id: tuple(values) for node_id, values in output.items()}
+
+
+def _merge_uniform_loads(
+    *sources: Mapping[str, float]
+) -> dict[str, float]:
+    output: dict[str, float] = {}
+    for source in sources:
+        for element_id, value in source.items():
+            output[str(element_id)] = output.get(str(element_id), 0.0) + _float(value)
+    return output
 
 
 def _response_key(row: Mapping[str, Any]) -> tuple[str, float]:
@@ -332,6 +357,165 @@ def _event_response_verification(
     }
 
 
+
+def _later_load_response_verification(
+    *,
+    released_response_rows: list[dict[str, Any]],
+    later_response_rows: list[dict[str, Any]],
+    released_stress_rows: list[dict[str, Any]],
+    later_stress_rows: list[dict[str, Any]],
+    released_fcgp_mpa: float,
+    later_fcgp_mpa: float,
+    load_source: Mapping[str, Any],
+) -> dict[str, Any]:
+    moment_delta = _max_paired_delta(
+        released_response_rows, later_response_rows, "M sagging-positive (kN-m)"
+    )
+    axial_delta = _max_paired_delta(
+        released_response_rows, later_response_rows, "N compression-positive (kN)"
+    )
+    shear_delta = _max_paired_delta(
+        released_response_rows, later_response_rows, "V (kN)"
+    )
+    displacement_delta = _max_paired_delta(
+        released_response_rows, later_response_rows, "v_up (mm)"
+    )
+    stress_delta = _max_stress_delta(released_stress_rows, later_stress_rows)
+    total_downward = _float(load_source.get("total_downward_load_kN"))
+    response_changed = any(
+        (
+            _float(moment_delta.get("Absolute change")) > 1.0e-3,
+            _float(axial_delta.get("Absolute change")) > 1.0e-3,
+            _float(shear_delta.get("Absolute change")) > 1.0e-3,
+            _float(displacement_delta.get("Absolute change")) > 1.0e-6,
+            _float(stress_delta.get("Absolute change")) > 1.0e-6,
+        )
+    )
+    governing_delta = _float(later_fcgp_mpa) - _float(released_fcgp_mpa)
+    governing_changed = abs(governing_delta) > 1.0e-6
+    ready = bool(load_source.get("ready")) and total_downward > 0.0 and response_changed
+    if not ready:
+        status = "LATER LOAD EFFECT NEGLIGIBLE — VERIFY LOAD SOURCE"
+    elif governing_changed:
+        status = "LATER LOAD RESPONSE EFFECT VERIFIED"
+    else:
+        status = "LATER LOAD RESPONSE VERIFIED — GOVERNING f_cgp UNCHANGED"
+
+    released_fingerprint = _response_fingerprint(released_response_rows)
+    later_fingerprint = _response_fingerprint(later_response_rows)
+    summary_rows = [
+        {
+            "Quantity": "Active Loads-workspace rows",
+            "Before later load": 0.0,
+            "After later load": float(load_source.get("active_count") or 0),
+            "Change / evidence": float(load_source.get("active_count") or 0),
+            "Basis": "validated active Point / Uniform rows",
+        },
+        {
+            "Quantity": "Applied downward resultant (kN)",
+            "Before later load": 0.0,
+            "After later load": total_downward,
+            "Change / evidence": total_downward,
+            "Basis": "Loads workspace source; downward-positive input",
+        },
+        {
+            "Quantity": "Stage max |M| (kN-m)",
+            "Before later load": _max_abs_value(
+                released_response_rows, "M sagging-positive (kN-m)"
+            ),
+            "After later load": _max_abs_value(
+                later_response_rows, "M sagging-positive (kN-m)"
+            ),
+            "Change / evidence": _float(moment_delta.get("Absolute change")),
+            "Basis": "event columns are stage maxima; evidence is max stationwise |ΔM|",
+        },
+        {
+            "Quantity": "Stage max |V| (kN)",
+            "Before later load": _max_abs_value(released_response_rows, "V (kN)"),
+            "After later load": _max_abs_value(later_response_rows, "V (kN)"),
+            "Change / evidence": _float(shear_delta.get("Absolute change")),
+            "Basis": "event columns are stage maxima; evidence is max stationwise |ΔV|",
+        },
+        {
+            "Quantity": "Stage max |v| (mm)",
+            "Before later load": _max_abs_value(released_response_rows, "v_up (mm)"),
+            "After later load": _max_abs_value(later_response_rows, "v_up (mm)"),
+            "Change / evidence": _float(displacement_delta.get("Absolute change")),
+            "Basis": "event columns are stage maxima; evidence is max stationwise |Δv|",
+        },
+        {
+            "Quantity": "Governing f_cgp (MPa)",
+            "Before later load": _float(released_fcgp_mpa),
+            "After later load": _float(later_fcgp_mpa),
+            "Change / evidence": governing_delta,
+            "Basis": "event-specific bonded representative route",
+        },
+        {
+            "Quantity": "f_cgp at max-change row (MPa)",
+            "Before later load": _float(stress_delta.get("Before")),
+            "After later load": _float(stress_delta.get("After")),
+            "Change / evidence": _float(stress_delta.get("Absolute change")),
+            "Basis": (
+                "evidence is max stationwise |Δf_cgp|; "
+                f"{stress_delta.get('Element') or '—'} at s = "
+                f"{_float(stress_delta.get('Station s (m)')):.3f} m"
+            ),
+        },
+    ]
+    delta_rows: list[dict[str, Any]] = []
+    for label, units, row in (
+        ("Moment M", "kN-m", moment_delta),
+        ("Axial N", "kN", axial_delta),
+        ("Shear V", "kN", shear_delta),
+        ("Vertical displacement v", "mm", displacement_delta),
+        ("Concrete stress f_cgp", "MPa", stress_delta),
+    ):
+        delta_rows.append(
+            {
+                "Response": label,
+                "Units": units,
+                "Station s (m)": _float(row.get("Station s (m)")),
+                "Element": str(row.get("Element") or "—"),
+                "Before": _float(row.get("Before")),
+                "After": _float(row.get("After")),
+                "Change": _float(row.get("Change")),
+                "Max |change|": _float(row.get("Absolute change")),
+            }
+        )
+    notes: list[str] = []
+    if ready and not governing_changed:
+        notes.append(
+            "The verified later permanent load changes the frame response and local tendon-CG stresses, but the same representative limit row remains governing; therefore the scalar governing f_cgp is unchanged within tolerance."
+        )
+    if not ready:
+        notes.append(
+            "Active later permanent load is present, but the released and loaded responses are unchanged within tolerance; verify load magnitude, stations, equivalent nodal assembly, and cumulative load-case routing."
+        )
+    return {
+        "ready": ready,
+        "status": status,
+        "response_changed": response_changed,
+        "governing_fcgp_changed": governing_changed,
+        "released_response_fingerprint": released_fingerprint,
+        "later_load_response_fingerprint": later_fingerprint,
+        "fingerprints_differ": released_fingerprint != later_fingerprint,
+        "load_source_fingerprint": str(load_source.get("fingerprint") or ""),
+        "summary_rows": summary_rows,
+        "delta_rows": delta_rows,
+        "notes": notes,
+        "max_response_deltas": {
+            "moment_kNm": _float(moment_delta.get("Absolute change")),
+            "axial_kN": _float(axial_delta.get("Absolute change")),
+            "shear_kN": _float(shear_delta.get("Absolute change")),
+            "vertical_displacement_mm": _float(
+                displacement_delta.get("Absolute change")
+            ),
+            "fcgp_mpa": _float(stress_delta.get("Absolute change")),
+            "governing_fcgp_mpa": governing_delta,
+        },
+    }
+
+
 def run_crossbeam_event_stage_stress_sources(
     *,
     model: Mapping[str, Any],
@@ -339,14 +523,14 @@ def run_crossbeam_event_stage_stress_sources(
     profile_rows: Any,
     system_rows: Any,
     later_permanent_load_delta_fcgp_mpa: float = 0.0,
+    later_permanent_load_rows: Any = None,
 ) -> dict[str, Any]:
-    """Resolve and verify stress sources at grouting, release, and later load.
+    """Resolve stress sources at grouting, falsework release, and later load.
 
-    Falsework removal is represented by one fixed-base frame solve with all
-    temporary vertical contact removed, while preserving self-weight and the
-    accepted tendon force distribution after Elastic Shortening. A later
-    permanent-load stress increment is an explicit engineering input until the
-    Loads workspace supplies a verified load case.
+    The release event uses one cumulative no-contact solve.  PTLOSS4B3 adds a
+    second cumulative solve when validated Loads-workspace rows are available.
+    When no active rows exist, the prior engineer-entered Δf_cd remains a
+    backward-compatible QA fallback and is explicitly non-verified.
     """
 
     issues: list[str] = []
@@ -356,12 +540,12 @@ def run_crossbeam_event_stage_stress_sources(
     if not bool(es_result.get("ready")):
         issues.append("A CURRENT source-derived Lightweight ES result is required.")
     after_es_rows = list(es_result.get("after_es_station_rows") or [])
-    load_source = prestress_equivalent_nodal_loads(
+    prestress_source = prestress_equivalent_nodal_loads(
         model=model,
         profile_rows=profile_rows,
         anchorage_station_rows=after_es_rows,
     )
-    if not bool(load_source.get("ready")):
+    if not bool(prestress_source.get("ready")):
         issues.append("Stored post-ES tendon equivalent loads are not ready.")
     if issues:
         return {
@@ -376,48 +560,168 @@ def run_crossbeam_event_stage_stress_sources(
     initial_response_rows = list(contact_result.get("beam_response_rows") or [])
     initial_stress_rows = list(es_result.get("stress_rows") or [])
     initial_route = dict(es_result.get("fcgp_route") or {})
-    solution = solve_linear_frame(
+
+    released_solution = solve_linear_frame(
         nodes=list(model.get("nodes") or []),
         elements=list(model.get("elements") or []),
-        nodal_loads=dict(load_source.get("nodal_loads") or {}),
+        nodal_loads=dict(prestress_source.get("nodal_loads") or {}),
         uniform_local_y_by_element=dict(model.get("self_weight_uniform_N_per_mm") or {}),
         fixed_node_ids=list(model.get("fixed_node_ids") or []),
     )
-    response_rows = _beam_response_rows(solution)
-    stress_rows = _stress_rows_at_tendon_cg(
+    released_response_rows = _beam_response_rows(released_solution)
+    released_stress_rows = _stress_rows_at_tendon_cg(
         model=model,
-        response_rows=response_rows,
+        response_rows=released_response_rows,
         profile_rows=profile_rows,
         system_rows=system_rows,
     )
-    released_route = _bonded_fcgp_route(model, stress_rows) if stress_rows else {}
+    released_route = _bonded_fcgp_route(model, released_stress_rows) if released_stress_rows else {}
     released_fcgp = released_route.get("fcgp_mpa")
-    if solution.get("status") != "LINEAR QA READY":
-        issues.extend(solution.get("issues") or ["Falsework-removal frame solve requires review."])
+    if released_solution.get("status") != "LINEAR QA READY":
+        issues.extend(
+            released_solution.get("issues")
+            or ["Falsework-removal frame solve requires review."]
+        )
     if released_fcgp is None:
         issues.append("Concrete stress after falsework removal could not be evaluated.")
 
-    verification: dict[str, Any] = {}
+    release_verification: dict[str, Any] = {}
     if released_fcgp is not None:
-        verification = _event_response_verification(
+        release_verification = _event_response_verification(
             contact_result=contact_result,
             before_response_rows=initial_response_rows,
-            after_response_rows=response_rows,
+            after_response_rows=released_response_rows,
             before_stress_rows=initial_stress_rows,
-            after_stress_rows=stress_rows,
+            after_stress_rows=released_stress_rows,
             initial_fcgp_mpa=initial_fcgp,
             released_fcgp_mpa=_float(released_fcgp),
         )
-        if not verification.get("ready"):
-            issues.append(str(verification.get("status") or "Event response source requires review."))
+        if not release_verification.get("ready"):
+            issues.append(
+                str(
+                    release_verification.get("status")
+                    or "Falsework-removal response source requires review."
+                )
+            )
 
-    later_delta = _float(later_permanent_load_delta_fcgp_mpa)
+    load_source = later_permanent_load_source(
+        model=model, load_rows=later_permanent_load_rows
+    )
+    active_later_rows = int(load_source.get("active_count") or 0)
+    verified_later_source = bool(load_source.get("ready"))
+    later_solution: dict[str, Any] | None = None
+    later_response_rows: list[dict[str, Any]] = []
+    later_stress_rows: list[dict[str, Any]] = []
+    later_route: dict[str, Any] = {}
+    later_verification: dict[str, Any] = {}
+    manual_delta = _float(later_permanent_load_delta_fcgp_mpa)
+    later_delta = manual_delta
     later_fcgp = (
-        max(_float(released_fcgp) + later_delta, 0.0)
+        max(_float(released_fcgp) + manual_delta, 0.0)
         if released_fcgp is not None
         else None
     )
-    ready = not issues and released_fcgp is not None
+    later_source_mode = "ENGINEER Δf_cd QA FALLBACK"
+    solve_count = 1
+
+    if verified_later_source and released_fcgp is not None:
+        cumulative_nodal = _merge_nodal_loads(
+            dict(prestress_source.get("nodal_loads") or {}),
+            dict(load_source.get("nodal_loads") or {}),
+        )
+        cumulative_uniform = _merge_uniform_loads(
+            dict(model.get("self_weight_uniform_N_per_mm") or {}),
+            dict(load_source.get("uniform_local_y_by_element") or {}),
+        )
+        later_solution = solve_linear_frame(
+            nodes=list(model.get("nodes") or []),
+            elements=list(model.get("elements") or []),
+            nodal_loads=cumulative_nodal,
+            uniform_local_y_by_element=cumulative_uniform,
+            fixed_node_ids=list(model.get("fixed_node_ids") or []),
+        )
+        solve_count = 2
+        later_response_rows = _beam_response_rows(later_solution)
+        later_stress_rows = _stress_rows_at_tendon_cg(
+            model=model,
+            response_rows=later_response_rows,
+            profile_rows=profile_rows,
+            system_rows=system_rows,
+        )
+        later_route = (
+            _bonded_fcgp_route(model, later_stress_rows) if later_stress_rows else {}
+        )
+        later_fcgp_value = later_route.get("fcgp_mpa")
+        if later_solution.get("status") != "LINEAR QA READY":
+            issues.extend(
+                later_solution.get("issues")
+                or ["Later permanent-load cumulative frame solve requires review."]
+            )
+        if later_fcgp_value is None:
+            issues.append(
+                "Concrete stress after verified later permanent load could not be evaluated."
+            )
+        else:
+            later_fcgp = _float(later_fcgp_value)
+            later_delta = later_fcgp - _float(released_fcgp)
+            later_source_mode = "VERIFIED LOADS WORKSPACE EVENT SOLVE"
+            later_verification = _later_load_response_verification(
+                released_response_rows=released_response_rows,
+                later_response_rows=later_response_rows,
+                released_stress_rows=released_stress_rows,
+                later_stress_rows=later_stress_rows,
+                released_fcgp_mpa=_float(released_fcgp),
+                later_fcgp_mpa=later_fcgp,
+                load_source=load_source,
+            )
+            if not later_verification.get("ready"):
+                issues.append(
+                    str(
+                        later_verification.get("status")
+                        or "Later permanent-load response source requires review."
+                    )
+                )
+    elif active_later_rows > 0:
+        issues.extend(
+            load_source.get("issues")
+            or ["Active Loads-workspace later permanent-load rows require review."]
+        )
+
+    ready = not issues and released_fcgp is not None and later_fcgp is not None
+    initial_audit = _governing_stress_audit_row(
+        event="Post-ES / grouting",
+        source="Stored cumulative contact solution",
+        model=model,
+        route=initial_route,
+    )
+    released_audit = _governing_stress_audit_row(
+        event="After falsework removal",
+        source="One no-contact fixed-base frame solve",
+        model=model,
+        route=released_route,
+    )
+    if verified_later_source and later_route:
+        later_audit = _governing_stress_audit_row(
+            event="After later permanent load",
+            source="Verified Loads workspace cumulative event solve",
+            model=model,
+            route=later_route,
+        )
+        later_audit["Engineer Δf_cd (MPa)"] = 0.0
+    else:
+        later_audit = _governing_stress_audit_row(
+            event="After later permanent load",
+            source="Released-stage source + engineer Δf_cd QA fallback",
+            model=model,
+            route=released_route,
+            later_delta_fcgp_mpa=manual_delta,
+        )
+    for audit in (initial_audit, released_audit):
+        audit["Δf_cd source"] = "—"
+        audit["Δf_cd (MPa)"] = 0.0
+    later_audit["Δf_cd source"] = later_source_mode
+    later_audit["Δf_cd (MPa)"] = later_delta
+
     event_rows = [
         {
             "Event": "Post-ES / grouting",
@@ -441,53 +745,50 @@ def run_crossbeam_event_stage_stress_sources(
         },
         {
             "Event": "After later permanent load",
-            "Stress source": "Engineer input Δf_cd at tendon CG",
+            "Stress source": (
+                "Verified Loads workspace cumulative event solve"
+                if verified_later_source
+                else "Engineer input Δf_cd at tendon CG — QA fallback"
+            ),
             "f_cgp (MPa; compression +)": later_fcgp,
             "Δf_cgp from prior event (MPa)": later_delta,
-            "Structural solves": 0,
+            "Structural solves": 1 if verified_later_source else 0,
         },
     ]
-    stress_audit_rows = [
-        _governing_stress_audit_row(
-            event="Post-ES / grouting",
-            source="Stored cumulative contact solution",
-            model=model,
-            route=initial_route,
-        ),
-        _governing_stress_audit_row(
-            event="After falsework removal",
-            source="One no-contact fixed-base frame solve",
-            model=model,
-            route=released_route,
-        ),
-        _governing_stress_audit_row(
-            event="After later permanent load",
-            source="Released-stage source + engineer Δf_cd",
-            model=model,
-            route=released_route,
-            later_delta_fcgp_mpa=later_delta,
-        ),
-    ]
+    scope_guard = (
+        "PTLOSS4B3 uses one no-contact solve for falsework removal and one cumulative released-frame solve for verified Loads-workspace later permanent loads. "
+        "The event source is response-verified; station-dependent/tendon-dependent creep integration, time-resolved relaxation, and Pe/Pe_eff assembly remain excluded."
+        if verified_later_source
+        else (
+            "Falsework removal is solved once with temporary vertical contact removed and is verified against the stored contact response. "
+            "Later permanent-load Δf_cd remains an explicit engineer QA fallback because no active verified Loads-workspace source is available."
+        )
+    )
     return {
         "ready": ready,
         "status": "EVENT STRESS SOURCES VERIFIED" if ready else "REVIEW REQUIRED",
         "issues": _dedupe(issues),
-        "solve_count": 1,
+        "solve_count": solve_count,
         "event_rows": event_rows,
-        "stress_audit_rows": stress_audit_rows,
-        "response_verification": verification,
+        "stress_audit_rows": [initial_audit, released_audit, later_audit],
+        "response_verification": release_verification,
+        "later_load_response_verification": later_verification,
+        "later_permanent_load_source": load_source,
+        "later_load_source_mode": later_source_mode,
+        "later_load_source_verified": verified_later_source,
         "initial_fcgp_mpa": initial_fcgp,
         "falsework_removed_fcgp_mpa": (
             _float(released_fcgp) if released_fcgp is not None else None
         ),
         "later_permanent_load_delta_fcgp_mpa": later_delta,
         "later_permanent_load_fcgp_mpa": later_fcgp,
-        "falsework_solution": solution,
-        "falsework_response_rows": response_rows,
-        "falsework_stress_rows": stress_rows,
+        "falsework_solution": released_solution,
+        "falsework_response_rows": released_response_rows,
+        "falsework_stress_rows": released_stress_rows,
         "falsework_fcgp_route": released_route,
-        "scope_guard": (
-            "Falsework removal is solved once with temporary vertical contact removed and is verified against the stored contact response. "
-            "Later permanent-load Δf_cd remains an explicit engineer input until a verified Loads-workspace source is available."
-        ),
+        "later_permanent_load_solution": later_solution,
+        "later_permanent_load_response_rows": later_response_rows,
+        "later_permanent_load_stress_rows": later_stress_rows,
+        "later_permanent_load_fcgp_route": later_route,
+        "scope_guard": scope_guard,
     }

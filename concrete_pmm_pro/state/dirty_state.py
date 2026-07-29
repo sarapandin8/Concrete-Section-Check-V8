@@ -81,6 +81,7 @@ INPUT_GROUP_KEYS: dict[str, tuple[str, ...]] = {
         "column_sls_loads_table",
         "beam_uls_loads_table",
         "beam_sls_loads_table",
+        "crossbeam_ptloss4b3_later_permanent_load_table",
         "beam_sls_transfer_loads_table",
         "beam_sls_construction_loads_table",
         "beam_sls_service_loads_table",

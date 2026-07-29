@@ -64,6 +64,9 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     crossbeam_prestress_loss_settings_from_session_state,
     restore_crossbeam_prestress_loss_project_state,
 )
+from concrete_pmm_pro.crossbeam.later_permanent_load import (
+    CB_LATER_PERMANENT_LOAD_TABLE_KEY,
+)
 from concrete_pmm_pro.data.prestress_tendon_products import (
     DEFAULT_STRAND_DIAMETER_MM,
     DEFAULT_STRAND_EP_MPA,
@@ -198,6 +201,7 @@ WORKFLOW_LOAD_TABLE_METADATA_KEYS = (
     "column_sls_loads_table",
     "beam_uls_loads_table",
     "beam_sls_loads_table",
+    CB_LATER_PERMANENT_LOAD_TABLE_KEY,
 )
 
 CROSSBEAM_LENGTH_STATE_KEY = "crossbeam_ui1_length_m"

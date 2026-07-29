@@ -678,6 +678,7 @@ def run_crossbeam_lightweight_time_dependent_loss(
     linear_stage_model: Mapping[str, Any] | None = None,
     profile_rows: Any = None,
     later_permanent_load_delta_fcgp_mpa: float = 0.0,
+    later_permanent_load_rows: Any = None,
     inner_perimeter_factor: float,
     relaxation_steel_class: str,
     ep_mpa: float,
@@ -824,7 +825,14 @@ def run_crossbeam_lightweight_time_dependent_loss(
             profile_rows=profile_rows,
             system_rows=system_rows,
             later_permanent_load_delta_fcgp_mpa=later_permanent_load_delta_fcgp_mpa,
+            later_permanent_load_rows=later_permanent_load_rows,
         )
+        if event_stress_source.get("later_load_source_verified"):
+            for event in schedule.get("events", []):
+                if str(event.get("Event")) == "Later permanent load":
+                    event["Calculation role"] = (
+                        "Verified Loads-workspace cumulative event solve; response-derived Δfcd"
+                    )
         if event_stress_source.get("ready"):
             interval_fcgp = [
                 fcgp,
@@ -904,20 +912,36 @@ def run_crossbeam_lightweight_time_dependent_loss(
             blocking_review_notes.append(
                 "The current bonded schedule route excludes the pre-grouting interval; set tg = ti for immediate grouting or provide a separate pre-grouting loss model."
             )
-        blocking_review_notes.extend(
-            [
-                "Falsework-removal stress redistribution is sourced and response-verified by one no-contact frame solve. Later permanent-load Δfcd remains an explicit engineer input until the Loads workspace supplies a verified source.",
-                "Relaxation is retained as one final AASHTO R2 interval term because the current source does not provide a time-development law for distributing relaxation among construction steps.",
-            ]
+        if event_stress_source and event_stress_source.get("later_load_source_verified"):
+            blocking_review_notes.append(
+                "Falsework removal and later permanent load are both sourced from cumulative, response-verified frame event solves. Final adoption remains blocked by station-dependent/tendon-dependent creep integration, time-resolved relaxation, and downstream Pe/Pe_eff assembly."
+            )
+        else:
+            blocking_review_notes.append(
+                "Falsework-removal stress redistribution is sourced and response-verified by one no-contact frame solve. Later permanent-load Δfcd remains an explicit engineer QA fallback until active Loads-workspace rows are validated."
+            )
+        blocking_review_notes.append(
+            "Relaxation is retained as one final AASHTO R2 interval term because the current source does not provide a time-development law for distributing relaxation among construction steps."
         )
     review_notes.extend(calibration_advisories)
     review_notes.extend(blocking_review_notes)
     event_ready = bool(event_stress_source and event_stress_source.get("ready")) if segmental else True
     adoptable = not segmental
+    later_source_verified = bool(
+        event_stress_source and event_stress_source.get("later_load_source_verified")
+    )
     status = (
         "DESIGN ESTIMATE READY"
         if adoptable
-        else ("EVENT-BASED TIME-STEP QA READY — FINAL ADOPTION BLOCKED" if event_ready else "EVENT STRESS SOURCE REVIEW REQUIRED")
+        else (
+            (
+                "EVENT-BASED TIME-STEP QA READY — LATER LOAD VERIFIED · FINAL ADOPTION BLOCKED"
+                if later_source_verified
+                else "EVENT-BASED TIME-STEP QA READY — FINAL ADOPTION BLOCKED"
+            )
+            if event_ready
+            else "EVENT STRESS SOURCE REVIEW REQUIRED"
+        )
     )
     return {
         "status": status,
@@ -938,7 +962,11 @@ def run_crossbeam_lightweight_time_dependent_loss(
             else "CAST-IN-PLACE NONSEGMENTAL — AASHTO 5.9.3.4.5 REPRESENTATIVE DESIGN ESTIMATE"
         ),
         "route_note": (
-            "The explicit schedule uses one no-contact falsework-removal event solve with response-source verification. Final adoption remains blocked until later-load Δfcd is connected to a verified load source and relaxation/time-dependent interaction is accepted."
+            (
+                "The explicit schedule uses two cumulative event solves: falsework removal and verified Loads-workspace later permanent load. Final adoption remains blocked until station-dependent/tendon-dependent creep integration, relaxation/time-dependent interaction, and downstream Pe/Pe_eff assembly are accepted."
+                if later_source_verified
+                else "The explicit schedule uses one no-contact falsework-removal event solve with response-source verification. Later-load Δfcd remains an engineer QA fallback until active Loads-workspace rows are validated."
+            )
             if segmental
             else "For post-tensioned members after grouting, the pre-grouting/initial interval term is taken as zero in accordance with AASHTO 5.9.3.4.5."
         ),
@@ -990,6 +1018,10 @@ def run_crossbeam_lightweight_time_dependent_loss(
             else "COMPONENT READY — EFFECTIVE PRESTRESS ASSEMBLY LOCKED"
         ),
         "scope_guard": (
-            "PTLOSS4B2B1 uses one event solve for falsework removal and explicit interval stress sources. Later permanent-load Δfcd remains engineer-entered; time-resolved relaxation, measured material models, and Pe/Pe_eff assembly remain excluded."
+            (
+                "PTLOSS4B3 uses two cumulative event solves for falsework removal and verified Loads-workspace later permanent load; station-dependent/tendon-dependent creep integration, time-resolved relaxation, measured material models, and Pe/Pe_eff assembly remain excluded."
+                if later_source_verified
+                else "PTLOSS4B2B1 uses one event solve for falsework removal and explicit interval stress sources. Later permanent-load Δfcd remains engineer-entered as a QA fallback; time-resolved relaxation, measured material models, and Pe/Pe_eff assembly remain excluded."
+            )
         ),
     }

@@ -139,6 +139,11 @@ from concrete_pmm_pro.crossbeam.time_dependent_loss import (
     crossbeam_drying_geometry,
     run_crossbeam_lightweight_time_dependent_loss,
 )
+from concrete_pmm_pro.crossbeam.later_permanent_load import (
+    CB_LATER_PERMANENT_LOAD_TABLE_KEY,
+    default_later_permanent_load_rows,
+    later_permanent_load_source,
+)
 from concrete_pmm_pro.crossbeam.construction_stage import (
     COLUMN_BASE_ASSUMPTION,
     COLUMN_SHAPE_OPTIONS,
@@ -6617,18 +6622,20 @@ def _time_dependent_fingerprint(
     system_rows: Any,
     construction_method: str,
     settings: Mapping[str, Any],
+    later_permanent_load_rows: Any,
     eci_mpa: float,
     fci_mpa: float,
 ) -> str:
     payload = {
-        "schema": 3,
-        "solver": "crossbeam-ptloss4b2-event-stress-v1",
+        "schema": 4,
+        "solver": "crossbeam-ptloss4b3-verified-later-load-v1",
         "lightweight_es_fingerprint": str(lightweight_es_fingerprint),
         "length_m": float(length_m),
         "segment_rows": _records(segment_rows),
         "section_definitions": canonical_section_definitions(section_definitions),
         "system_rows": canonical_tendon_system_rows(system_rows),
         "construction_method": str(construction_method),
+        "later_permanent_load_rows": _records(later_permanent_load_rows),
         "td_inputs": {
             "rh_percent": float(settings["td_rh_percent"]),
             "load_age_days": float(settings["td_load_age_days"]),
@@ -9206,7 +9213,8 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         st.markdown("#### Lightweight Time-Dependent Losses — event-based schedule preview")
         st.caption(
-            "PTLOSS4B2B1 keeps the route event-based and lightweight. Opening the tab performs 0 solves; a Precast Segmental run uses one no-contact frame solve at falsework removal and verifies that the released response, not the stored contact response, feeds the event stress source."
+            "PTLOSS4B2B1 keeps the route event-based and lightweight. Opening the tab performs 0 solves; a Precast Segmental run uses one no-contact frame solve at falsework removal and verifies that the released response, not the stored contact response, feeds the event stress source. "
+            "PTLOSS4B3 adds one cumulative released-frame solve when active Later Permanent Load rows from the Loads workspace are valid."
         )
         render_metric_cards(
             [
@@ -9225,7 +9233,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Runtime mode",
                     "value": "ON DEMAND",
-                    "detail": "0 solves on open · 1 event solve on Segmental Run",
+                    "detail": "0 solves on open · 1 release solve + 1 later-load solve when verified",
                     "status": "ready",
                 },
             ]
@@ -9236,6 +9244,13 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         td_settings = _loss_setting_defaults_from_state()
         _initialize_crossbeam_td_session_defaults(st.session_state, td_settings)
+        if CB_LATER_PERMANENT_LOAD_TABLE_KEY not in st.session_state:
+            st.session_state[CB_LATER_PERMANENT_LOAD_TABLE_KEY] = pd.DataFrame(
+                default_later_permanent_load_rows(length_m)
+            )
+        later_permanent_load_rows = st.session_state.get(
+            CB_LATER_PERMANENT_LOAD_TABLE_KEY, []
+        )
 
         st.markdown("##### Environmental, age, drying, and steel sources")
         source_a, source_b, source_c = st.columns(3)
@@ -9294,9 +9309,46 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         if td_construction_method == CONSTRUCTION_METHOD_PRECAST:
             st.markdown("##### Precast Segmental construction schedule")
-            st.caption(
-                "All values are representative concrete ages in days. The bonded route begins at grouting. Falsework removal triggers one no-contact event solve; later permanent load uses the explicit Δfcd input until a verified Loads-workspace source is connected."
+            later_load_preview = later_permanent_load_source(
+                model=linear_stage_model, load_rows=later_permanent_load_rows
             )
+            st.caption(
+                "All values are representative concrete ages in days. The bonded route begins at grouting. Falsework removal triggers one no-contact event solve. "
+                "When Loads workspace rows are verified, the later permanent load triggers one cumulative released-frame event solve; otherwise the explicit Δfcd remains a QA fallback only."
+            )
+            render_metric_cards(
+                [
+                    {
+                        "title": "Later-load source",
+                        "value": str(later_load_preview.get("status") or "LAYOUT REQUIRED"),
+                        "detail": f"{int(later_load_preview.get('active_count') or 0)} active row(s) · Loads workspace",
+                        "status": "ready" if later_load_preview.get("ready") else "warning",
+                    },
+                    {
+                        "title": "Downward resultant",
+                        "value": f"{float(later_load_preview.get('total_downward_load_kN') or 0.0):,.3f} kN",
+                        "detail": "validated Point + Uniform loads",
+                        "status": "neutral",
+                    },
+                    {
+                        "title": "Expected event solves",
+                        "value": "2" if later_load_preview.get("ready") else "1",
+                        "detail": "release + later load when verified",
+                        "status": "ready" if later_load_preview.get("ready") else "neutral",
+                    },
+                ]
+            )
+            if later_load_preview.get("ready"):
+                st.success(
+                    "Verified Loads-workspace source is ready. The engineer Δfcd field below is retained for backward-compatible QA but will not feed the event solve."
+                )
+            elif int(later_load_preview.get("active_count") or 0) > 0:
+                for issue in later_load_preview.get("issues") or []:
+                    st.warning(str(issue))
+            else:
+                st.warning(
+                    "No active verified Later Permanent Load rows exist. Define them in Loads; until then, Δfcd below is an engineer QA fallback and final adoption stays blocked."
+                )
             schedule_a, schedule_b, schedule_c = st.columns(3)
             with schedule_a:
                 st.number_input(
@@ -9328,13 +9380,13 @@ def render_crossbeam_prestress_loss_page() -> None:
                     help="Age when the later permanent-load stress increment becomes active.",
                 )
                 st.number_input(
-                    "Later-load Δfcd at Tendon CG (MPa; compression +)",
+                    "Later-load Δfcd QA fallback at Tendon CG (MPa; compression +)",
                     min_value=-100.0,
                     max_value=100.0,
                     step=0.1,
                     format="%.3f",
                     key=CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY,
-                    help="Engineer-entered concrete-stress increment until a verified Loads-workspace source is connected. Positive values increase compression at the Tendon CG.",
+                    help="Backward-compatible QA fallback only. Active verified Loads-workspace rows supersede this value. Positive values increase compression at the Tendon CG.",
                 )
 
         td_settings = _loss_setting_defaults_from_state()
@@ -9451,6 +9503,7 @@ def render_crossbeam_prestress_loss_page() -> None:
             system_rows=system_rows,
             construction_method=td_construction_method,
             settings=td_settings,
+            later_permanent_load_rows=later_permanent_load_rows,
             eci_mpa=td_eci,
             fci_mpa=td_fci,
         )
@@ -9485,7 +9538,9 @@ def render_crossbeam_prestress_loss_page() -> None:
                 type="primary",
                 use_container_width=True,
                 disabled=not td_sources_ready,
-                help="Uses stored post-ES results and one no-contact frame solve for falsework removal. It does not solve every time step.",
+                help=(
+                    "Uses stored post-ES results, one no-contact falsework-removal solve, and one additional cumulative later-load solve when the Loads source is verified. It does not solve every material-aging time step."
+                ),
             )
         with clear_col:
             clear_td = st.button(
@@ -9518,6 +9573,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 linear_stage_model=linear_stage_model,
                 profile_rows=profile_rows,
                 later_permanent_load_delta_fcgp_mpa=float(td_settings["td_later_load_delta_fcgp_mpa"]),
+                later_permanent_load_rows=later_permanent_load_rows,
                 inner_perimeter_factor=float(td_settings["td_inner_perimeter_factor"]),
                 relaxation_steel_class=str(td_settings["td_relaxation_steel_class"]),
                 ep_mpa=float(td_settings["ep_mpa"]),
@@ -9579,7 +9635,14 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Structural solves",
                     "value": str(int((current_td or {}).get("solve_count") or 0)),
-                    "detail": "falsework-removal event solve only",
+                    "detail": (
+                        "falsework removal + verified later-load event"
+                        if current_td
+                        and dict(current_td.get("event_stress_source") or {}).get(
+                            "later_load_source_verified"
+                        )
+                        else "falsework-removal event solve only"
+                    ),
                     "status": "ready",
                 },
                 {
@@ -9719,14 +9782,15 @@ def render_crossbeam_prestress_loss_page() -> None:
                                 ("Event", "Event"),
                                 ("N (kN; compression +)", "N (kN; comp. +)"),
                                 ("M (kN-m; sagging +)", "M (kN·m; sag. +)"),
-                                ("Engineer Δf_cd (MPa)", "Δf_cd (MPa)"),
+                                ("Δf_cd (MPa)", "Δf_cd (MPa)"),
+                                ("Δf_cd source", "Δf_cd source"),
                             ],
                             formats={
                                 "N (kN; compression +)": "{:.6f}",
                                 "M (kN-m; sagging +)": "{:.6f}",
-                                "Engineer Δf_cd (MPa)": "{:.4f}",
+                                "Δf_cd (MPa)": "{:.4f}",
                             },
-                            widths=[30, 24, 26, 20],
+                            widths=[25, 21, 20, 14, 20],
                         )
                         _render_ptloss4a_static_table(
                             stress_audit,
@@ -9796,6 +9860,232 @@ def render_crossbeam_prestress_loss_page() -> None:
                             f"Response fingerprints · contact {before_fp[:12] or '—'} · released {after_fp[:12] or '—'} · "
                             f"different = {'YES' if response_verification.get('fingerprints_differ') else 'NO'}"
                         )
+                    later_load_source = dict(
+                        event_source.get("later_permanent_load_source") or {}
+                    )
+                    st.markdown("##### Later permanent-load source — Loads workspace")
+                    source_status = str(
+                        later_load_source.get("status") or "LAYOUT REQUIRED"
+                    )
+                    if later_load_source.get("ready"):
+                        st.success(source_status)
+                    elif int(later_load_source.get("active_count") or 0) > 0:
+                        st.warning(source_status)
+                    else:
+                        st.info(source_status)
+                    _render_ptloss4a_static_table(
+                        pd.DataFrame(
+                            [
+                                {
+                                    "Active rows": int(
+                                        later_load_source.get("active_count") or 0
+                                    ),
+                                    "Valid rows": int(
+                                        later_load_source.get("valid_count") or 0
+                                    ),
+                                    "Downward resultant (kN)": float(
+                                        later_load_source.get(
+                                            "total_downward_load_kN"
+                                        )
+                                        or 0.0
+                                    ),
+                                    "Frame-load closure residual (kN)": float(
+                                        later_load_source.get(
+                                            "vertical_force_residual_kN"
+                                        )
+                                        or 0.0
+                                    ),
+                                    "Source mode": str(
+                                        event_source.get("later_load_source_mode")
+                                        or "—"
+                                    ),
+                                }
+                            ]
+                        ),
+                        columns=[
+                            ("Active rows", "Active rows"),
+                            ("Valid rows", "Valid rows"),
+                            ("Downward resultant (kN)", "Downward (kN)"),
+                            (
+                                "Frame-load closure residual (kN)",
+                                "Frame residual (kN)",
+                            ),
+                            ("Source mode", "Source mode"),
+                        ],
+                        formats={
+                            "Active rows": "{:.0f}",
+                            "Valid rows": "{:.0f}",
+                            "Downward resultant (kN)": "{:.4f}",
+                            "Frame-load closure residual (kN)": "{:.3e}",
+                        },
+                        widths=[12, 12, 19, 19, 38],
+                    )
+                    load_audit_rows = pd.DataFrame(
+                        later_load_source.get("audit_rows") or []
+                    )
+                    if not load_audit_rows.empty:
+                        _render_ptloss4a_static_table(
+                            load_audit_rows,
+                            columns=[
+                                ("Load ID", "Load ID"),
+                                ("Load Type", "Type"),
+                                ("Start s (m)", "s0 (m)"),
+                                ("End s (m)", "s1 (m)"),
+                                ("Magnitude", "Magnitude"),
+                                ("Magnitude unit", "Unit"),
+                                (
+                                    "Total downward load (kN)",
+                                    "Total down (kN)",
+                                ),
+                                (
+                                    "Vertical closure residual (kN)",
+                                    "Residual (kN)",
+                                ),
+                            ],
+                            formats={
+                                "Start s (m)": "{:.3f}",
+                                "End s (m)": "{:.3f}",
+                                "Magnitude": "{:.4f}",
+                                "Total downward load (kN)": "{:.4f}",
+                                "Vertical closure residual (kN)": "{:.3e}",
+                            },
+                            widths=[11, 16, 10, 10, 13, 9, 16, 15],
+                        )
+                    equivalent_rows = pd.DataFrame(
+                        later_load_source.get("equivalent_nodal_rows") or []
+                    )
+                    if not equivalent_rows.empty:
+                        st.markdown("###### Point loads assigned to frame nodes")
+                        _render_ptloss4a_static_table(
+                            equivalent_rows,
+                            columns=[
+                                ("Node", "Node"),
+                                ("Station s (m)", "s (m)"),
+                                ("Fy (kN; up +)", "Fy (kN; up +)"),
+                                (
+                                    "Moment (kN-m; CCW +)",
+                                    "M (kN·m; CCW +)",
+                                ),
+                            ],
+                            formats={
+                                "Station s (m)": "{:.3f}",
+                                "Fy (kN; up +)": "{:.6f}",
+                                "Moment (kN-m; CCW +)": "{:.6f}",
+                            },
+                            widths=[24, 18, 27, 31],
+                        )
+                    uniform_rows = pd.DataFrame(
+                        later_load_source.get("uniform_element_rows") or []
+                    )
+                    if not uniform_rows.empty:
+                        st.markdown("###### Uniform line loads assigned to frame elements")
+                        _render_ptloss4a_static_table(
+                            uniform_rows,
+                            columns=[
+                                ("Load ID", "Load ID"),
+                                ("Element", "Element"),
+                                ("s0 (m)", "s0 (m)"),
+                                ("s1 (m)", "s1 (m)"),
+                                (
+                                    "q local-y (N/mm; up +)",
+                                    "q local-y (N/mm; up +)",
+                                ),
+                                (
+                                    "Downward element load (kN)",
+                                    "Downward (kN)",
+                                ),
+                            ],
+                            formats={
+                                "s0 (m)": "{:.3f}",
+                                "s1 (m)": "{:.3f}",
+                                "q local-y (N/mm; up +)": "{:.6f}",
+                                "Downward element load (kN)": "{:.6f}",
+                            },
+                            widths=[13, 13, 13, 13, 27, 21],
+                        )
+                    for issue in later_load_source.get("issues") or []:
+                        st.warning(str(issue))
+                    load_fp = str(later_load_source.get("fingerprint") or "")
+                    if load_fp:
+                        st.caption(f"Later-load source fingerprint · {load_fp[:12]}")
+
+                    later_verification = dict(
+                        event_source.get("later_load_response_verification") or {}
+                    )
+                    if later_verification:
+                        st.markdown(
+                            "##### Later permanent-load response-source verification"
+                        )
+                        later_status = str(
+                            later_verification.get("status") or "NOT AVAILABLE"
+                        )
+                        if later_verification.get("ready"):
+                            st.success(later_status)
+                        else:
+                            st.warning(later_status)
+                        _render_ptloss4a_static_table(
+                            pd.DataFrame(
+                                later_verification.get("summary_rows") or []
+                            ),
+                            columns=[
+                                ("Quantity", "Quantity"),
+                                ("Before later load", "Before later load"),
+                                ("After later load", "After later load"),
+                                (
+                                    "Change / evidence",
+                                    "Event Δ / max stationwise |Δ|",
+                                ),
+                                ("Basis", "Basis"),
+                            ],
+                            formats={
+                                "Before later load": "{:.4f}",
+                                "After later load": "{:.4f}",
+                                "Change / evidence": "{:.4f}",
+                            },
+                            widths=[25, 16, 16, 17, 26],
+                        )
+                        _render_ptloss4a_static_table(
+                            pd.DataFrame(
+                                later_verification.get("delta_rows") or []
+                            ),
+                            columns=[
+                                ("Response", "Response"),
+                                ("Units", "Units"),
+                                ("Station s (m)", "s (m)"),
+                                ("Element", "Element"),
+                                ("Before", "Before"),
+                                ("After", "After"),
+                                ("Change", "Change"),
+                                ("Max |change|", "Max |change|"),
+                            ],
+                            formats={
+                                "Station s (m)": "{:.3f}",
+                                "Before": "{:.6f}",
+                                "After": "{:.6f}",
+                                "Change": "{:.6f}",
+                                "Max |change|": "{:.6f}",
+                            },
+                            widths=[20, 8, 10, 10, 13, 13, 13, 13],
+                        )
+                        for note in later_verification.get("notes") or []:
+                            st.info(str(note))
+                        released_fp = str(
+                            later_verification.get(
+                                "released_response_fingerprint"
+                            )
+                            or ""
+                        )
+                        later_fp = str(
+                            later_verification.get(
+                                "later_load_response_fingerprint"
+                            )
+                            or ""
+                        )
+                        st.caption(
+                            f"Response fingerprints · released {released_fp[:12] or '—'} · later load {later_fp[:12] or '—'} · "
+                            f"different = {'YES' if later_verification.get('fingerprints_differ') else 'NO'}"
+                        )
+
                     st.markdown("##### Incremental construction-schedule loss audit")
                     _render_ptloss4a_static_table(
                         pd.DataFrame(schedule_steps.get("rows") or []),
@@ -10102,7 +10392,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                     """
                 )
                 st.caption(
-                    "PTLOSS4B2B1 does not assemble Pe/Pe_eff. Event stress sources remain a QA preview until later-load sourcing and the downstream station-dependent force/stress chain are validated."
+                    "PTLOSS4B2B1 does not assemble Pe/Pe_eff. PTLOSS4B3 verifies the Loads-workspace later permanent-load event when active rows are valid; station-dependent/tendon-dependent creep integration, downstream force/stress assembly, and final Pe/Pe_eff remain locked."
                 )
 
     with audit_tab:
