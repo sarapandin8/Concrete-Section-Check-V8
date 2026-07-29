@@ -331,14 +331,36 @@ def _render_axis_convention_panel() -> None:
 
 
 def _stringify_table(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    """Normalize a keyed data-editor table without assuming every table uses ``Active``.
+
+    The shared load editors use an ``Active`` checkbox, while the Crossbeam
+    time-dependent permanent-event schedule intentionally uses ``Adopt``.
+    PTLOSS4B3B originally reused this helper but it unconditionally indexed
+    ``normalized["Active"]``, causing the deployed schedule editor to raise a
+    ``KeyError`` before the import controls rendered.  Boolean columns are now
+    inferred from the requested schema and retain safe per-column defaults.
+    """
+
     normalized = df.copy()
+    boolean_defaults = {
+        "Active": True,
+        "Adopt": False,
+    }
+    boolean_columns = [column for column in columns if column in boolean_defaults]
+
     for column in columns:
         if column not in normalized.columns:
-            normalized[column] = True if column == "Active" else ""
+            normalized[column] = boolean_defaults.get(column, "")
     normalized = normalized[columns].copy()
-    normalized["Active"] = normalized["Active"].map(lambda value: _to_bool(value, default=True)).astype(bool)
+
+    for column in boolean_columns:
+        default = boolean_defaults[column]
+        normalized[column] = normalized[column].map(
+            lambda value, *, _default=default: _to_bool(value, default=_default)
+        ).astype(bool)
+
     for column in columns:
-        if column == "Active":
+        if column in boolean_columns:
             continue
         normalized[column] = normalized[column].map(lambda value: "" if _is_blank(value) else str(value))
     return normalized
