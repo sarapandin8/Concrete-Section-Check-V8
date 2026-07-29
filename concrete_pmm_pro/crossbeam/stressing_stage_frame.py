@@ -55,6 +55,7 @@ PTLOSS3B2A_CASES = (
 
 DEFAULT_MAX_BEAM_ELEMENT_LENGTH_M = 0.50
 DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO = 0.80
+MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO = 0.50
 DEFAULT_MESH_SENSITIVITY_LENGTHS_M = (0.50, 0.25, 0.125)
 GRAVITY_M_S2 = 9.80665
 
@@ -589,8 +590,11 @@ def build_crossbeam_linear_stage_model(
         crossbeam_stressing_strength_ratio,
         DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
     )
-    if stressing_ratio <= 0.0 or stressing_ratio > 1.0:
-        issues.append("Crossbeam stressing-strength ratio f'ci/f'c must be greater than 0 and not exceed 1.0.")
+    if stressing_ratio < MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO or stressing_ratio > 1.0:
+        issues.append(
+            "Crossbeam stressing-strength ratio f'ci/f'c must be between "
+            f"{MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO:.2f} and 1.00."
+        )
 
     ranges, range_issues = _canonical_ranges(segment_rows, length_m=length)
     issues.extend(range_issues)

@@ -231,6 +231,8 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     friction_wobble_formula_audit_rows,
     friction_wobble_unit_audit,
     normalize_crossbeam_prestress_loss_settings,
+    normalize_stressing_strength_ratio,
+    MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO,
 )
 from concrete_pmm_pro.crossbeam.tendon_persistence import (
     CB_3D_TRANSPARENT_KEY,
@@ -5146,6 +5148,25 @@ def _crossbeam_td_loss_basis_detail(construction_method: str) -> str:
     )
 
 
+CB_LOSS_ES_STRENGTH_RATIO_GUARD_NOTICE_KEY = "crossbeam_ptloss4b3b2_stressing_ratio_guard_notice"
+
+
+def _guard_crossbeam_stressing_strength_ratio_state(
+    session_state: MutableMapping[str, Any],
+) -> bool:
+    """Repair the legacy 0.10 Streamlit fallback before any ES/TD source is built."""
+
+    raw = session_state.get(
+        CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
+        DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
+    )
+    safe, migrated = normalize_stressing_strength_ratio(raw)
+    session_state[CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY] = float(safe)
+    if migrated:
+        session_state[CB_LOSS_ES_STRENGTH_RATIO_GUARD_NOTICE_KEY] = True
+    return bool(migrated)
+
+
 def _initialize_crossbeam_td_session_defaults(
     session_state: MutableMapping[str, Any],
     td_settings: Mapping[str, Any],
@@ -5335,13 +5356,14 @@ def _crossbeam_es_material_source(
             DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
         )
     )
-    if stressing_ratio <= 0.0 or stressing_ratio > 1.0:
+    if stressing_ratio < MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO or stressing_ratio > 1.0:
         return {
             "status": "SOURCE BLOCKED",
             "eci_mpa": None,
             "material_names": unique_materials,
             "issues": [
-                "Crossbeam stressing-strength ratio f'ci/f'c must be greater than 0 and not exceed 1.0."
+                "Crossbeam stressing-strength ratio f'ci/f'c must be between "
+                f"{MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO:.2f} and 1.00."
             ],
         }
     fc_mpa = float(material.fc_MPa)
@@ -7408,6 +7430,254 @@ def _render_crossbeam_td_fea_response_import(
     }
 
 
+
+def _tendon_path_average_mpa(
+    rows: list[dict[str, Any]],
+    value_key: str,
+    *,
+    length_m: float,
+) -> float | None:
+    """Return a station-path average without double-counting joint-face duplicates."""
+
+    station_values: dict[float, list[float]] = {}
+    for row in rows:
+        value = row.get(value_key)
+        if value is None:
+            continue
+        station = round(_finite_float(row.get("s (m)")), 9)
+        station_values.setdefault(station, []).append(_finite_float(value))
+    points = sorted(
+        (station, sum(values) / len(values))
+        for station, values in station_values.items()
+        if values
+    )
+    if not points:
+        return None
+    if len(points) == 1:
+        return float(points[0][1])
+    integral = 0.0
+    covered = 0.0
+    for (s0, v0), (s1, v1) in zip(points, points[1:]):
+        ds = max(float(s1) - float(s0), 0.0)
+        integral += 0.5 * (float(v0) + float(v1)) * ds
+        covered += ds
+    divisor = covered if covered > 1.0e-12 else max(float(length_m), 1.0)
+    return integral / divisor
+
+
+def _crossbeam_loss_summary_payload(
+    *,
+    length_m: float,
+    friction_rows: Any,
+    anchorage_station_rows: Any,
+    lightweight_result: Mapping[str, Any] | None,
+    lightweight_status: str,
+    td_result: Mapping[str, Any] | None,
+    td_status: str,
+) -> dict[str, Any]:
+    """Build a compact, traceable prestress-loss summary without assembling Pe/Pe_eff."""
+
+    friction = [
+        dict(row)
+        for row in _records(friction_rows)
+        if bool(row.get("Active")) and row.get("fpj (MPa)") is not None
+    ]
+    anchorage = [dict(row) for row in _records(anchorage_station_rows)]
+    after_es = (
+        [dict(row) for row in _records(lightweight_result.get("after_es_station_rows"))]
+        if lightweight_status == "CURRENT" and isinstance(lightweight_result, Mapping)
+        else []
+    )
+    tendon_ids = sorted(
+        {
+            str(row.get("Tendon ID") or "").strip()
+            for row in friction
+            if str(row.get("Tendon ID") or "").strip()
+        }
+    )
+    tendon_meta: dict[str, dict[str, float]] = {}
+    for tendon_id in tendon_ids:
+        source = next(
+            (
+                row
+                for row in friction
+                if str(row.get("Tendon ID") or "").strip() == tendon_id
+            ),
+            {},
+        )
+        tendon_meta[tendon_id] = {
+            "aps": max(_finite_float(source.get("Aps total (mm²)")), 0.0),
+            "fpj": max(_finite_float(source.get("fpj (MPa)")), 0.0),
+        }
+
+    total_area = sum(meta["aps"] for meta in tendon_meta.values())
+    weighted_fpj = (
+        sum(meta["aps"] * meta["fpj"] for meta in tendon_meta.values()) / total_area
+        if total_area > 0.0
+        else None
+    )
+
+    def weighted_component(rows: list[dict[str, Any]], key: str) -> float | None:
+        numerator = 0.0
+        denominator = 0.0
+        for tendon_id, meta in tendon_meta.items():
+            tendon_rows = [
+                row
+                for row in rows
+                if str(row.get("Tendon ID") or "").strip() == tendon_id
+            ]
+            average = _tendon_path_average_mpa(
+                tendon_rows,
+                key,
+                length_m=length_m,
+            )
+            if average is None or meta["aps"] <= 0.0:
+                continue
+            numerator += meta["aps"] * float(average)
+            denominator += meta["aps"]
+        return numerator / denominator if denominator > 0.0 else None
+
+    friction_mpa = weighted_component(friction, "Friction loss (MPa)")
+    anchorage_mpa = weighted_component(anchorage, "Anchorage-set loss (MPa)")
+    es_mpa = weighted_component(after_es, "Elastic-shortening loss (MPa)")
+
+    current_td = (
+        dict(td_result)
+        if td_status == "CURRENT" and isinstance(td_result, Mapping) and td_result.get("ready")
+        else None
+    )
+    creep_mpa = (
+        _finite_float(current_td.get("creep_loss_mpa")) if current_td else None
+    )
+    shrinkage_mpa = (
+        _finite_float(current_td.get("shrinkage_loss_mpa")) if current_td else None
+    )
+    relaxation_mpa = (
+        _finite_float(current_td.get("relaxation_loss_mpa")) if current_td else None
+    )
+
+    component_specs = [
+        ("Friction / wobble", "ΔfpF", friction_mpa, "Path-average of the current tendon force profile"),
+        ("Anchorage set / draw-in", "ΔfpA", anchorage_mpa, "Path-average of the accepted seating distribution"),
+        ("Elastic shortening", "ΔfpES", es_mpa, "Current simultaneous stressing-group result"),
+        ("Creep", "ΔfpCD", creep_mpa, "Current event-based TD schedule"),
+        ("Shrinkage", "ΔfpSD", shrinkage_mpa, "Current event-based TD schedule"),
+        ("Relaxation", "ΔfpR", relaxation_mpa, "Current steel / TD source"),
+    ]
+    component_rows: list[dict[str, Any]] = []
+    for component, symbol, loss, basis in component_specs:
+        component_rows.append(
+            {
+                "Loss component": component,
+                "Symbol": symbol,
+                "Loss (MPa)": loss,
+                "% of fpj": (
+                    100.0 * float(loss) / float(weighted_fpj)
+                    if loss is not None and weighted_fpj and weighted_fpj > 0.0
+                    else None
+                ),
+                "Basis": basis,
+                "Status": "CURRENT" if loss is not None else "NOT CALCULATED",
+            }
+        )
+
+    instantaneous_values = [friction_mpa, anchorage_mpa, es_mpa]
+    td_values = [creep_mpa, shrinkage_mpa, relaxation_mpa]
+    instantaneous_mpa = (
+        sum(float(value) for value in instantaneous_values)
+        if all(value is not None for value in instantaneous_values)
+        else None
+    )
+    time_dependent_mpa = (
+        sum(float(value) for value in td_values)
+        if all(value is not None for value in td_values)
+        else None
+    )
+    total_mpa = (
+        float(instantaneous_mpa) + float(time_dependent_mpa)
+        if instantaneous_mpa is not None and time_dependent_mpa is not None
+        else None
+    )
+    total_percent = (
+        100.0 * total_mpa / weighted_fpj
+        if total_mpa is not None and weighted_fpj and weighted_fpj > 0.0
+        else None
+    )
+
+    governing_rows: list[dict[str, Any]] = []
+    if after_es:
+        td_scalar = float(time_dependent_mpa or 0.0)
+        for tendon_id in tendon_ids:
+            candidates: list[dict[str, Any]] = []
+            for row in after_es:
+                if str(row.get("Tendon ID") or "").strip() != tendon_id:
+                    continue
+                fpj = _finite_float(row.get("fpj (MPa)"))
+                stress_after_es = row.get("Stress after ES (MPa)")
+                if fpj <= 0.0 or stress_after_es is None:
+                    continue
+                friction_loss = max(_finite_float(row.get("Friction loss (MPa)")), 0.0)
+                anchorage_loss = max(_finite_float(row.get("Anchorage-set loss (MPa)")), 0.0)
+                es_loss = max(_finite_float(row.get("Elastic-shortening loss (MPa)")), 0.0)
+                instantaneous = friction_loss + anchorage_loss + es_loss
+                accounted = instantaneous + td_scalar
+                candidates.append(
+                    {
+                        "Tendon": tendon_id,
+                        "Governing station s (m)": _finite_float(row.get("s (m)")),
+                        "Point": str(row.get("Point") or ""),
+                        "fpj (MPa)": fpj,
+                        "Instantaneous loss (MPa)": instantaneous,
+                        "TD loss (MPa)": time_dependent_mpa,
+                        "Total accounted loss (MPa)": accounted if time_dependent_mpa is not None else None,
+                        "Loss (% fpj)": (
+                            100.0 * accounted / fpj
+                            if time_dependent_mpa is not None and fpj > 0.0
+                            else None
+                        ),
+                        "Remaining stress (MPa)": (
+                            max(fpj - accounted, 0.0)
+                            if time_dependent_mpa is not None
+                            else None
+                        ),
+                    }
+                )
+            if candidates:
+                governing_rows.append(
+                    max(
+                        candidates,
+                        key=lambda row: float(
+                            row.get("Total accounted loss (MPa)")
+                            if row.get("Total accounted loss (MPa)") is not None
+                            else row.get("Instantaneous loss (MPa)")
+                            or 0.0
+                        ),
+                    )
+                )
+
+    ready = bool(total_mpa is not None and governing_rows)
+    return {
+        "ready": ready,
+        "weighted_fpj_mpa": weighted_fpj,
+        "component_rows": component_rows,
+        "instantaneous_loss_mpa": instantaneous_mpa,
+        "time_dependent_loss_mpa": time_dependent_mpa,
+        "total_loss_mpa": total_mpa,
+        "total_loss_percent": total_percent,
+        "remaining_stress_mpa": (
+            max(float(weighted_fpj) - float(total_mpa), 0.0)
+            if weighted_fpj is not None and total_mpa is not None
+            else None
+        ),
+        "governing_rows": governing_rows,
+        "status": "ACCOUNTED QA SUBTOTAL" if ready else "INCOMPLETE",
+        "scope_guard": (
+            "The summary is an area-weighted/path-average QA subtotal. Instantaneous losses preserve the accepted station chain; "
+            "the current time-dependent loss remains a representative event-stress scalar. Pe(s)/Pe_eff(s) and final adopted station-dependent total loss remain locked."
+        ),
+    }
+
+
 def render_crossbeam_prestress_loss_page() -> None:
     _ensure_state()
     render_page_header(
@@ -7433,6 +7703,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         st.warning("Define Tendon Profile geometry before calculating prestress losses.")
         return
 
+    _guard_crossbeam_stressing_strength_ratio_state(st.session_state)
     current_assumptions = _loss_setting_defaults_from_state()
     current_loss_rows = aashto_friction_wobble_station_rows(
         profile_rows,
@@ -7501,7 +7772,7 @@ def render_crossbeam_prestress_loss_page() -> None:
         audit_tab,
     ) = st.tabs(
         [
-            "Overview",
+            "Loss Summary",
             "Friction & Wobble",
             "Anchorage Set / Draw-in",
             "Elastic Shortening",
@@ -7511,94 +7782,7 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
 
     with overview_tab:
-        st.markdown("#### Current loss status")
-        render_metric_cards(
-            [
-                {
-                    "title": "Active calculation",
-                    "value": "Friction + Anchorage Set",
-                    "detail": "Elastic Shortening source gate active",
-                    "status": str(current_summary["status"]),
-                },
-                {
-                    "title": "Active tendons",
-                    "value": int(current_summary["active_tendon_count"]),
-                    "detail": f"{int(current_summary['station_row_count'])} traced station row(s)",
-                    "status": "info",
-                },
-                {
-                    "title": "Worst traced loss",
-                    "value": f"{float(current_summary['worst_loss_percent']):.2f}%",
-                    "detail": "friction/wobble preview only",
-                    "status": "neutral",
-                },
-                {
-                    "title": "Minimum P/Pj",
-                    "value": f"{float(current_summary['minimum_p_over_pj']):.4f}",
-                    "detail": "not final Pe or Pe_eff",
-                    "status": "neutral",
-                },
-                {
-                    "title": "Anchorage set",
-                    "value": str(current_anchorage_summary["value"]),
-                    "detail": f"{int(current_anchorage_summary['calculated_end_count'])}/{int(current_anchorage_summary['active_seating_end_count'])} seating end(s) calculated",
-                    "status": str(current_anchorage_summary["status"]),
-                },
-                {
-                    "title": "Overall loss status",
-                    "value": "INCOMPLETE",
-                    "detail": "Pe/Pe_eff and later loss components remain locked",
-                    "status": "warning",
-                },
-            ]
-        )
-        for issue in current_summary["blocking_issues"]:
-            st.warning(issue)
-        for note in current_summary["review_notes"]:
-            st.info(note)
-
-        st.markdown("#### Loss component roadmap")
-        st.dataframe(
-            pd.DataFrame(
-                [
-                    {
-                        "Component": "Friction + wobble",
-                        "AASHTO article": "5.9.3.2.2b",
-                        "Current status": "Calculated preview",
-                        "Dependency": "Pj + tendon profile geometry",
-                    },
-                    {
-                        "Component": "Anchorage set / draw-in",
-                        "AASHTO article": "5.9.3.2.1",
-                        "Current status": str(current_anchorage_summary["value"]),
-                        "Dependency": "Accepted friction profile + Δa + Ep + influence length",
-                    },
-                    {
-                        "Component": "Elastic shortening",
-                        "AASHTO article": "5.9.3.2.3b",
-                        "Current status": (
-                            "Pair source ready / stage stress blocked"
-                            if current_es_group_summary.get("ready")
-                            else "Stressing-pair source review"
-                        ),
-                        "Dependency": "Verified symmetric stressing pairs + Eci + source-derived f_cgp",
-                    },
-                    {
-                        "Component": "Creep + shrinkage + relaxation",
-                        "AASHTO article": "5.9.3.3 / 5.9.3.4",
-                        "Current status": "On-demand source preview",
-                        "Dependency": "CURRENT post-ES state + age/material/environment/drying geometry",
-                    },
-                ]
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
-        st.warning(
-            "Do not interpret the current friction/wobble result as final effective prestress. "
-            "PTLOSS2 deliberately keeps Pe and Pe_eff assembly locked until the required loss "
-            "components and stage logic are validated in named solver milestones."
-        )
+        loss_summary_container = st.container()
 
     with friction_tab:
         st.markdown("#### Friction & Wobble — active calculation")
@@ -8644,9 +8828,10 @@ def render_crossbeam_prestress_loss_page() -> None:
                 "Sections → Section Builder → Crossbeam Construction & Support Configuration."
             )
         with ratio_col:
+            _guard_crossbeam_stressing_strength_ratio_state(st.session_state)
             st.number_input(
                 "Design stressing-strength criterion f'ci / f'c",
-                min_value=0.10,
+                min_value=MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO,
                 max_value=1.50,
                 step=0.05,
                 format="%.2f",
@@ -9530,7 +9715,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         st.markdown("#### Lightweight Time-Dependent Losses — event-based schedule preview")
         st.caption(
-            "PTLOSS4B2B1 keeps the route event-based and lightweight. PTLOSS4B3B preserves that accepted route while replacing the verbose single-tp declaration with a compact multi-event permanent-load schedule. Opening the tab performs 0 solves; falsework removal uses one no-contact frame solve, and all imported permanent-load events add 0 internal solves."
+            "PTLOSS4B2B1 keeps the route event-based and lightweight. PTLOSS4B3B2 guards the stressing-strength source, while PTLOSS4C1 adds a compact loss summary without changing the accepted equations. Opening the tab performs 0 solves; falsework removal uses one no-contact frame solve, and all imported permanent-load events add 0 internal solves."
         )
         render_metric_cards(
             [
@@ -9558,7 +9743,43 @@ def render_crossbeam_prestress_loss_page() -> None:
             "Source transfer from Segmental Box Girder Pro is limited to unit-safe AASHTO material factors, drying-geometry traceability, age reconciliation, and component separation. BG40 f_cgp, external/unbonded routing, report-match constants, and the BG40 relaxation interaction cap are not reused."
         )
         st.caption(
-            "Baseline continuity: PTLOSS4B2B1 does not assemble Pe/Pe_eff; PTLOSS4B3B keeps construction-stage FEA response ownership inside Time-Dependent, supports several activation ages, and keeps the downstream station-dependent force/stress chain locked."
+            "Baseline continuity: PTLOSS4B2B1 does not assemble Pe/Pe_eff; PTLOSS4B3B2 protects f'ci/Eci source integrity and PTLOSS4C1 summarizes accounted losses while keeping the downstream station-dependent force/stress chain locked."
+        )
+        if bool(st.session_state.get(CB_LOSS_ES_STRENGTH_RATIO_GUARD_NOTICE_KEY)):
+            st.info(
+                "Legacy stressing-strength value 0.10 was repaired to the established design default f'ci/f'c = 0.80 before ES/Time-Dependent calculations. Save Project JSON to persist the corrected source."
+            )
+        stage_fc = current_es_material_source.get("fc_mpa")
+        stage_ratio = current_es_material_source.get("stressing_strength_ratio")
+        stage_fci = current_es_material_source.get("fci_mpa")
+        stage_eci = current_es_material_source.get("eci_mpa")
+        render_metric_cards(
+            [
+                {
+                    "title": "Concrete f'c source",
+                    "value": f"{float(stage_fc):.2f} MPa" if stage_fc is not None else "—",
+                    "detail": ", ".join(current_es_material_source.get("material_names") or []) or "material source required",
+                    "status": "ready" if stage_fc is not None else "warning",
+                },
+                {
+                    "title": "Stressing criterion",
+                    "value": f"{float(stage_ratio):.2f} f'c" if stage_ratio is not None else "—",
+                    "detail": "design default 0.80 · edit in Elastic Shortening",
+                    "status": "ready" if stage_ratio is not None and float(stage_ratio) >= MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO else "warning",
+                },
+                {
+                    "title": "Stressing strength f'ci",
+                    "value": f"{float(stage_fci):.2f} MPa" if stage_fci is not None else "—",
+                    "detail": "f'ci = ratio × f'c",
+                    "status": "ready" if stage_fci is not None else "warning",
+                },
+                {
+                    "title": "Stressing modulus Eci",
+                    "value": f"{float(stage_eci):,.0f} MPa" if stage_eci is not None else "—",
+                    "detail": str(current_es_material_source.get("eci_method") or "source required"),
+                    "status": "ready" if stage_eci is not None else "warning",
+                },
+            ]
         )
 
         td_settings = _loss_setting_defaults_from_state()
@@ -9908,6 +10129,28 @@ def render_crossbeam_prestress_loss_page() -> None:
             and isinstance(td_result, Mapping)
             else None
         )
+        current_event_source = dict((current_td or {}).get("event_stress_source") or {})
+        current_later_source = dict(current_event_source.get("later_fea_response_source") or {})
+        adopted_event_count = len(list(current_later_source.get("events") or []))
+        structural_solve_detail = (
+            "falsework-removal solve only · no permanent-load events"
+            if adopted_event_count == 0
+            else f"falsework-removal solve only · {adopted_event_count} imported permanent-load event(s)"
+        )
+        schedule_symbols = [
+            str(row.get("Symbol") or "").strip()
+            for row in list(dict((current_td or {}).get("schedule_source") or {}).get("events") or [])
+            if str(row.get("Symbol") or "").strip()
+        ]
+        schedule_detail = (
+            " → ".join(schedule_symbols) + " · event stress by interval"
+            if schedule_symbols
+            else (
+                "tg → tr → tf · no permanent-load events"
+                if adopted_event_count == 0
+                else "tg → tr → tp… → tf · event stress by interval"
+            )
+        )
         render_metric_cards(
             [
                 {
@@ -9925,7 +10168,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 {
                     "title": "Structural solves",
                     "value": str(int((current_td or {}).get("solve_count") or 0)),
-                    "detail": "falsework-removal solve only · later load imported",
+                    "detail": structural_solve_detail,
                     "status": "ready",
                 },
                 {
@@ -9943,7 +10186,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                         else "1"
                     ),
                     "detail": (
-                        "tg → tr → tp → tf · event stress by interval"
+                        schedule_detail
                         if td_construction_method == CONSTRUCTION_METHOD_PRECAST
                         else "representative post-grouting interval"
                     ),
@@ -10519,7 +10762,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                     """
                 )
                 st.caption(
-                    "PTLOSS4B3B does not assemble Pe/Pe_eff. Multi-event stress sources remain a QA preview until the downstream station-dependent force/stress chain is validated."
+                    "PTLOSS4C1 does not assemble Pe/Pe_eff. Multi-event stress sources and the loss summary remain QA previews until the downstream station-dependent force/stress chain is validated."
                 )
 
     with audit_tab:
@@ -10582,3 +10825,115 @@ def render_crossbeam_prestress_loss_page() -> None:
             "QA gate: PTLOSS2 activates anchorage set only as an isolated downstream component. Subtab separation does not make the loss components independent mathematically. "
             "Solver dependencies, sign conventions, stressing sequence, and stage definitions must remain explicit before final effective prestress is released to downstream checks."
         )
+
+
+    with loss_summary_container:
+        st.markdown("#### Prestress Loss Summary")
+        st.caption(
+            "Compact component summary in MPa and percent of area-weighted fpj. The current source chain remains a QA subtotal until station-dependent Time-Dependent loss and Pe(s)/Pe_eff(s) assembly are released."
+        )
+        summary_payload = _crossbeam_loss_summary_payload(
+            length_m=length_m,
+            friction_rows=current_loss_rows,
+            anchorage_station_rows=current_anchorage_station_rows,
+            lightweight_result=(
+                lightweight_result if lightweight_evidence_status == "CURRENT" else None
+            ),
+            lightweight_status=lightweight_evidence_status,
+            td_result=(td_result if td_evidence_status == "CURRENT" else None),
+            td_status=td_evidence_status,
+        )
+        weighted_fpj = summary_payload.get("weighted_fpj_mpa")
+        instantaneous_loss = summary_payload.get("instantaneous_loss_mpa")
+        td_loss = summary_payload.get("time_dependent_loss_mpa")
+        total_loss = summary_payload.get("total_loss_mpa")
+        total_percent = summary_payload.get("total_loss_percent")
+        remaining_stress = summary_payload.get("remaining_stress_mpa")
+        render_metric_cards(
+            [
+                {
+                    "title": "Reference fpj",
+                    "value": f"{float(weighted_fpj):.2f} MPa" if weighted_fpj is not None else "—",
+                    "detail": "Aps-weighted active tendon jacking stress",
+                    "status": "info",
+                },
+                {
+                    "title": "Instantaneous losses",
+                    "value": f"{float(instantaneous_loss):.2f} MPa" if instantaneous_loss is not None else "—",
+                    "detail": (
+                        f"{100.0 * float(instantaneous_loss) / float(weighted_fpj):.2f}% of fpj · friction + anchorage + ES"
+                        if instantaneous_loss is not None and weighted_fpj
+                        else "run/refresh Elastic Shortening"
+                    ),
+                    "status": "ready" if instantaneous_loss is not None else "warning",
+                },
+                {
+                    "title": "Time-dependent losses",
+                    "value": f"{float(td_loss):.2f} MPa" if td_loss is not None else "—",
+                    "detail": (
+                        f"{100.0 * float(td_loss) / float(weighted_fpj):.2f}% of fpj · creep + shrinkage + relaxation"
+                        if td_loss is not None and weighted_fpj
+                        else "run/refresh Time-Dependent"
+                    ),
+                    "status": "ready" if td_loss is not None else "warning",
+                },
+                {
+                    "title": "Total accounted losses",
+                    "value": f"{float(total_loss):.2f} MPa" if total_loss is not None else "SOURCE BLOCKED",
+                    "detail": f"{float(total_percent):.2f}% of fpj" if total_percent is not None else "all component sources must be CURRENT",
+                    "status": "warning" if total_loss is not None else "warning",
+                },
+                {
+                    "title": "Stress after accounted losses",
+                    "value": f"{float(remaining_stress):.2f} MPa" if remaining_stress is not None else "—",
+                    "detail": "QA subtotal only · not final Pe_eff",
+                    "status": "neutral",
+                },
+                {
+                    "title": "Assembly status",
+                    "value": str(summary_payload.get("status") or "INCOMPLETE"),
+                    "detail": "Pe(s)/Pe_eff(s) remains locked",
+                    "status": "warning",
+                },
+            ]
+        )
+        component_rows = list(summary_payload.get("component_rows") or [])
+        if component_rows:
+            st.markdown("##### Losses by cause")
+            component_table = pd.DataFrame(component_rows)
+            st.dataframe(
+                component_table,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Loss (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                    "% of fpj": st.column_config.NumberColumn(format="%.3f%%"),
+                    "Status": st.column_config.TextColumn(width="small"),
+                    "Basis": st.column_config.TextColumn(width="large"),
+                },
+            )
+        governing_rows = list(summary_payload.get("governing_rows") or [])
+        if governing_rows:
+            st.markdown("##### Tendon governing accounted-loss row")
+            st.dataframe(
+                pd.DataFrame(governing_rows),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Governing station s (m)": st.column_config.NumberColumn(format="%.3f"),
+                    "fpj (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                    "Instantaneous loss (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                    "TD loss (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                    "Total accounted loss (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                    "Loss (% fpj)": st.column_config.NumberColumn(format="%.3f%%"),
+                    "Remaining stress (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                },
+            )
+            st.caption(
+                "Instantaneous losses are evaluated on the same tendon/station chain. The current TD component is still a representative scalar and is identified as such; this table is not the final station-dependent effective-prestress handoff."
+            )
+        if lightweight_evidence_status != "CURRENT" or td_evidence_status != "CURRENT":
+            st.warning(
+                f"Summary is incomplete: Elastic Shortening = {lightweight_evidence_status}; Time-Dependent = {td_evidence_status}. Run the missing/stale component before using the accounted subtotal."
+            )
+        st.warning(str(summary_payload.get("scope_guard") or ""))

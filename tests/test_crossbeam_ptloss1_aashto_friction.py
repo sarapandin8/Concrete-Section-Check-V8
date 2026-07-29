@@ -298,7 +298,7 @@ def test_ptloss1_ui_uses_greek_symbols_and_separate_review_notes_table() -> None
 def test_ptloss1g_component_subtabs_are_scoped_and_future_losses_are_guarded() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
 
-    assert '"Overview",' in source
+    assert '"Loss Summary",' in source
     assert '"Friction & Wobble",' in source
     assert '"Anchorage Set / Draw-in",' in source
     assert '"Elastic Shortening",' in source

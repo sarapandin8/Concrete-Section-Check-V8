@@ -47,6 +47,7 @@ TEMP_SUPPORT_LIFTOFF = "AUTOMATIC"
 TEMP_SUPPORT_VERTICAL_MODEL = "RIGID VERTICAL CONTACT"
 
 DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO = 0.80
+MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO = 0.50
 DEFAULT_COLUMN_FC_MPA = 35.0
 DEFAULT_COLUMN_HEIGHT_M = 10.0
 DEFAULT_COLUMN_BTRANS_MM = 2000.0
@@ -520,8 +521,9 @@ def construction_stage_readiness(
 ) -> dict[str, Any]:
     method = normalize_construction_method(construction_method)
     fc = max(_float(crossbeam_fc_mpa), 0.0)
-    ratio = min(max(_float(stressing_strength_ratio, DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO), 0.1), 1.5)
-    target = fc * ratio if fc > 0.0 else None
+    ratio = _float(stressing_strength_ratio, DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO)
+    ratio_valid = MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO <= ratio <= 1.0
+    target = fc * ratio if fc > 0.0 and ratio_valid else None
     closure_required = max(_float(closure_required_mpa), 0.0)
     columns = column_stage_summary(column_rows, length_m=length_m)
     sequence = stressing_pair_sequence_summary(group_rows, pair_sequence)
@@ -529,7 +531,12 @@ def construction_stage_readiness(
 
     issues: list[str] = []
     strength_status = "REVIEW REQUIRED"
-    if target is None:
+    if not ratio_valid:
+        issues.append(
+            "Crossbeam stressing-strength ratio f'ci/f'c must be between "
+            f"{MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO:.2f} and 1.00 for this design route."
+        )
+    elif target is None:
         issues.append("Crossbeam f'c source is not available for the stressing-strength criterion.")
     else:
         strength_status = "DESIGN CRITERION DEFINED"

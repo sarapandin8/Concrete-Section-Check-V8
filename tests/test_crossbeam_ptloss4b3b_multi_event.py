@@ -189,6 +189,10 @@ def test_no_later_permanent_events_remains_a_valid_schedule() -> None:
     assert result["solve_count"] == 1
     assert result["schedule_time_step"]["interval_count"] == 2
     assert result["event_stress_source"]["later_permanent_load_source_mode"] == "NO LATER PERMANENT EVENTS"
+    assert result["creep_loss_mpa"] == pytest.approx(78.3698, abs=5.0e-3)
+    assert result["shrinkage_loss_mpa"] == pytest.approx(40.8906, abs=5.0e-3)
+    assert result["relaxation_loss_mpa"] == pytest.approx(7.8887, abs=5.0e-3)
+    assert result["time_dependent_loss_mpa"] == pytest.approx(127.1491, abs=1.0e-2)
 
 
 def test_earlier_permanent_event_increases_creep_duration_vs_same_total_load_applied_later() -> None:

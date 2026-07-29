@@ -78,6 +78,24 @@ DEFAULT_TD_LATER_LOAD_DELTA_FCGP_MPA = 0.0
 EXTERNAL_HDPE_REVIEW_NOTE = "HDPE note: verify PT supplier, angle tolerances, sequence."
 EXTERNAL_NO_DEVIATOR_ISSUE = "No Deviator point: +0.04 rad not applied."
 
+MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO = 0.50
+LEGACY_WIDGET_FALLBACK_STRESSING_STRENGTH_RATIO = 0.10
+
+
+def normalize_stressing_strength_ratio(value: Any) -> tuple[float, bool]:
+    """Return a safe stressing-strength ratio and whether legacy fallback was repaired.
+
+    PTLOSS4B3B1 exposed ``0.10`` when the Streamlit widget key was recreated
+    without a seeded value.  A design-stage stressing criterion below 0.50 is
+    not accepted by this workflow; legacy/invalid values are migrated to the
+    established 0.80 default instead of silently feeding Eci and TD losses.
+    """
+
+    raw = _float(value, DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO)
+    if raw < MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO:
+        return float(DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO), True
+    return _clamp(raw, MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO, 1.50), False
+
 
 def _float(value: Any, default: float = 0.0) -> float:
     try:
@@ -206,11 +224,12 @@ def normalize_crossbeam_prestress_loss_settings(value: Any) -> dict[str, Any]:
         "es_construction_method": normalize_construction_method(
             source.get("es_construction_method") or defaults["es_construction_method"]
         ),
-        "es_stressing_strength_ratio": _clamp(
-            _float(source.get("es_stressing_strength_ratio"), float(defaults["es_stressing_strength_ratio"])),
-            0.1,
-            1.5,
-        ),
+        "es_stressing_strength_ratio": normalize_stressing_strength_ratio(
+            source.get("es_stressing_strength_ratio", defaults["es_stressing_strength_ratio"])
+        )[0],
+        "es_stressing_strength_ratio_migrated": normalize_stressing_strength_ratio(
+            source.get("es_stressing_strength_ratio", defaults["es_stressing_strength_ratio"])
+        )[1],
         "es_closure_required_mpa": _clamp(
             _float(source.get("es_closure_required_mpa"), 0.0), 0.0, 200.0
         ),

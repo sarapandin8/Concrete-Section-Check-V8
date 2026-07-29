@@ -388,7 +388,8 @@ def test_time_dependent_ui_is_on_demand_and_contains_no_structural_solver_call()
     assert "Precast Segmental construction schedule" in block
     assert "Incremental construction-schedule loss audit" in block
     assert "Time-step component closure" in block
-    assert "tg → tr → tp → tf" in block
+    assert "tg → tr → tf · no permanent-load events" in block
+    assert "tg → tr → tp… → tf · event stress by interval" in block
 
 
 def test_ptloss4a1a1_print_audit_uses_static_compact_tables_and_one_equation_block() -> None:
