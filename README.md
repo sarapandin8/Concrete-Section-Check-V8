@@ -1756,3 +1756,7 @@ Advances the rigid compression-only falsework active set through Gravity and the
 ## CROSSBEAM.PTLOSS4B3 — Imported FEA Later Permanent Load Response
 
 Reuses the established Loads-workspace Excel/CSV import workflow to connect one adopted row-coupled incremental FEA P/V2/M3 response case to the Crossbeam Later Permanent Load event, derives auditable tendon-CG Delta f_cd without a second internal solve, persists the source in Project JSON, and keeps final station-dependent Pe(s)/Pe_eff(s) assembly locked. See `README_CROSSBEAM_PTLOSS4B3.md`.
+
+## CROSSBEAM.PTLOSS4D1 — Reordered Loss Workflow and Source-Gated Effective Prestress Preview
+
+Moves Loss Summary after Time-Dependent, separates system-average and maximum-local loss semantics, and adds a row-consistent `fpe(s)` / `Pe(s)` QA preview with formula, stress-closure, and force-closure traces while keeping station-dependent TD, secondary prestress, and final SLS handoff locked. See `README_CROSSBEAM_PTLOSS4D1.md`.

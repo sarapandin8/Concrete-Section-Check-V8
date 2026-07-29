@@ -7475,7 +7475,7 @@ def _crossbeam_loss_summary_payload(
     td_result: Mapping[str, Any] | None,
     td_status: str,
 ) -> dict[str, Any]:
-    """Build a compact, traceable prestress-loss summary without assembling Pe/Pe_eff."""
+    """Build average/local loss summaries and a source-gated effective-prestress preview."""
 
     friction = [
         dict(row)
@@ -7546,23 +7546,17 @@ def _crossbeam_loss_summary_payload(
         if td_status == "CURRENT" and isinstance(td_result, Mapping) and td_result.get("ready")
         else None
     )
-    creep_mpa = (
-        _finite_float(current_td.get("creep_loss_mpa")) if current_td else None
-    )
-    shrinkage_mpa = (
-        _finite_float(current_td.get("shrinkage_loss_mpa")) if current_td else None
-    )
-    relaxation_mpa = (
-        _finite_float(current_td.get("relaxation_loss_mpa")) if current_td else None
-    )
+    creep_mpa = _finite_float(current_td.get("creep_loss_mpa")) if current_td else None
+    shrinkage_mpa = _finite_float(current_td.get("shrinkage_loss_mpa")) if current_td else None
+    relaxation_mpa = _finite_float(current_td.get("relaxation_loss_mpa")) if current_td else None
 
     component_specs = [
-        ("Friction / wobble", "ΔfpF", friction_mpa, "Path-average of the current tendon force profile"),
-        ("Anchorage set / draw-in", "ΔfpA", anchorage_mpa, "Path-average of the accepted seating distribution"),
-        ("Elastic shortening", "ΔfpES", es_mpa, "Current simultaneous stressing-group result"),
-        ("Creep", "ΔfpCD", creep_mpa, "Current event-based TD schedule"),
-        ("Shrinkage", "ΔfpSD", shrinkage_mpa, "Current event-based TD schedule"),
-        ("Relaxation", "ΔfpR", relaxation_mpa, "Current steel / TD source"),
+        ("Friction / wobble", "ΔfpF", friction_mpa, "Aps-weighted tendon path average"),
+        ("Anchorage set / draw-in", "ΔfpA", anchorage_mpa, "Aps-weighted seating path average"),
+        ("Elastic shortening", "ΔfpES", es_mpa, "Aps-weighted current stressing-group result"),
+        ("Creep", "ΔfpCD", creep_mpa, "Current event-based TD schedule · representative scalar"),
+        ("Shrinkage", "ΔfpSD", shrinkage_mpa, "Current event-based TD schedule · representative scalar"),
+        ("Relaxation", "ΔfpR", relaxation_mpa, "Current steel / TD source · representative scalar"),
     ]
     component_rows: list[dict[str, Any]] = []
     for component, symbol, loss, basis in component_specs:
@@ -7593,90 +7587,568 @@ def _crossbeam_loss_summary_payload(
         if all(value is not None for value in td_values)
         else None
     )
-    total_mpa = (
+    average_total_mpa = (
         float(instantaneous_mpa) + float(time_dependent_mpa)
         if instantaneous_mpa is not None and time_dependent_mpa is not None
         else None
     )
-    total_percent = (
-        100.0 * total_mpa / weighted_fpj
-        if total_mpa is not None and weighted_fpj and weighted_fpj > 0.0
+    average_total_percent = (
+        100.0 * average_total_mpa / weighted_fpj
+        if average_total_mpa is not None and weighted_fpj and weighted_fpj > 0.0
         else None
     )
 
+    effective_station_rows: list[dict[str, Any]] = []
     governing_rows: list[dict[str, Any]] = []
-    if after_es:
-        td_scalar = float(time_dependent_mpa or 0.0)
+    if after_es and time_dependent_mpa is not None:
+        for row in after_es:
+            tendon_id = str(row.get("Tendon ID") or "").strip()
+            fpj = _finite_float(row.get("fpj (MPa)"))
+            aps = max(_finite_float(row.get("Aps total (mm²)")), 0.0)
+            source_after_es = row.get("Stress after ES (MPa)")
+            if not tendon_id or fpj <= 0.0 or aps <= 0.0 or source_after_es is None:
+                continue
+            friction_loss = max(_finite_float(row.get("Friction loss (MPa)")), 0.0)
+            anchorage_loss = max(_finite_float(row.get("Anchorage-set loss (MPa)")), 0.0)
+            es_loss = max(_finite_float(row.get("Elastic-shortening loss (MPa)")), 0.0)
+            after_friction = fpj - friction_loss
+            after_anchorage = after_friction - anchorage_loss
+            after_es_calc = after_anchorage - es_loss
+            after_es_source = _finite_float(source_after_es)
+            fpe = after_es_source - float(time_dependent_mpa)
+            total_loss = fpj - fpe
+            initial_force = aps * fpj / 1000.0
+            effective_force = aps * fpe / 1000.0
+            stress_closure = fpj - (
+                friction_loss
+                + anchorage_loss
+                + es_loss
+                + float(time_dependent_mpa)
+                + fpe
+            )
+            force_closure = initial_force - effective_force - aps * total_loss / 1000.0
+            effective_station_rows.append(
+                {
+                    "Tendon": tendon_id,
+                    "Station s (m)": _finite_float(row.get("s (m)")),
+                    "Point": str(row.get("Point") or ""),
+                    "Aps (mm²)": aps,
+                    "fpj (MPa)": fpj,
+                    "Friction (MPa)": friction_loss,
+                    "After friction (MPa)": after_friction,
+                    "Anchorage (MPa)": anchorage_loss,
+                    "After anchorage (MPa)": after_anchorage,
+                    "ES (MPa)": es_loss,
+                    "After ES source (MPa)": after_es_source,
+                    "After ES calc. (MPa)": after_es_calc,
+                    "Creep (MPa)": creep_mpa,
+                    "Shrinkage (MPa)": shrinkage_mpa,
+                    "Relaxation (MPa)": relaxation_mpa,
+                    "TD total (MPa)": time_dependent_mpa,
+                    "Total loss (MPa)": total_loss,
+                    "Loss (% fpj)": 100.0 * total_loss / fpj,
+                    "fpe preview (MPa)": fpe,
+                    "Pj (kN)": initial_force,
+                    "Pe preview (kN)": effective_force,
+                    "Stress closure (MPa)": stress_closure,
+                    "Force closure (kN)": force_closure,
+                }
+            )
+
         for tendon_id in tendon_ids:
-            candidates: list[dict[str, Any]] = []
-            for row in after_es:
-                if str(row.get("Tendon ID") or "").strip() != tendon_id:
-                    continue
-                fpj = _finite_float(row.get("fpj (MPa)"))
-                stress_after_es = row.get("Stress after ES (MPa)")
-                if fpj <= 0.0 or stress_after_es is None:
-                    continue
-                friction_loss = max(_finite_float(row.get("Friction loss (MPa)")), 0.0)
-                anchorage_loss = max(_finite_float(row.get("Anchorage-set loss (MPa)")), 0.0)
-                es_loss = max(_finite_float(row.get("Elastic-shortening loss (MPa)")), 0.0)
-                instantaneous = friction_loss + anchorage_loss + es_loss
-                accounted = instantaneous + td_scalar
-                candidates.append(
+            candidates = [
+                row for row in effective_station_rows if row.get("Tendon") == tendon_id
+            ]
+            if candidates:
+                governing = max(candidates, key=lambda item: float(item["Total loss (MPa)"]))
+                governing_rows.append(
                     {
                         "Tendon": tendon_id,
-                        "Governing station s (m)": _finite_float(row.get("s (m)")),
-                        "Point": str(row.get("Point") or ""),
-                        "fpj (MPa)": fpj,
-                        "Instantaneous loss (MPa)": instantaneous,
-                        "TD loss (MPa)": time_dependent_mpa,
-                        "Total accounted loss (MPa)": accounted if time_dependent_mpa is not None else None,
-                        "Loss (% fpj)": (
-                            100.0 * accounted / fpj
-                            if time_dependent_mpa is not None and fpj > 0.0
-                            else None
+                        "Governing station s (m)": governing["Station s (m)"],
+                        "Point": governing["Point"],
+                        "fpj (MPa)": governing["fpj (MPa)"],
+                        "Instantaneous loss (MPa)": (
+                            governing["Friction (MPa)"]
+                            + governing["Anchorage (MPa)"]
+                            + governing["ES (MPa)"]
                         ),
-                        "Remaining stress (MPa)": (
-                            max(fpj - accounted, 0.0)
-                            if time_dependent_mpa is not None
-                            else None
-                        ),
+                        "TD loss (MPa)": governing["TD total (MPa)"],
+                        "Total accounted loss (MPa)": governing["Total loss (MPa)"],
+                        "Loss (% fpj)": governing["Loss (% fpj)"],
+                        "Remaining stress (MPa)": governing["fpe preview (MPa)"],
                     }
                 )
-            if candidates:
-                governing_rows.append(
-                    max(
-                        candidates,
-                        key=lambda row: float(
-                            row.get("Total accounted loss (MPa)")
-                            if row.get("Total accounted loss (MPa)") is not None
-                            else row.get("Instantaneous loss (MPa)")
-                            or 0.0
-                        ),
-                    )
-                )
 
-    ready = bool(total_mpa is not None and governing_rows)
+    effective_station_rows.sort(
+        key=lambda row: (str(row.get("Tendon") or ""), float(row.get("Station s (m)") or 0.0), str(row.get("Point") or ""))
+    )
+    governing_rows.sort(
+        key=lambda row: float(row.get("Total accounted loss (MPa)") or 0.0),
+        reverse=True,
+    )
+
+    average_effective_stress = None
+    if effective_station_rows and total_area > 0.0:
+        numerator = 0.0
+        denominator = 0.0
+        for tendon_id, meta in tendon_meta.items():
+            tendon_rows = [
+                row for row in effective_station_rows if row.get("Tendon") == tendon_id
+            ]
+            average = _tendon_path_average_mpa(
+                tendon_rows,
+                "fpe preview (MPa)",
+                length_m=length_m,
+            )
+            if average is None or meta["aps"] <= 0.0:
+                continue
+            numerator += meta["aps"] * average
+            denominator += meta["aps"]
+        if denominator > 0.0:
+            average_effective_stress = numerator / denominator
+
+    initial_total_force = (
+        sum(meta["aps"] * meta["fpj"] for meta in tendon_meta.values()) / 1000.0
+        if total_area > 0.0
+        else None
+    )
+    average_effective_force = (
+        total_area * average_effective_stress / 1000.0
+        if average_effective_stress is not None
+        else None
+    )
+    average_force_loss = (
+        initial_total_force - average_effective_force
+        if initial_total_force is not None and average_effective_force is not None
+        else None
+    )
+
+    system_station_rows: list[dict[str, Any]] = []
+    stations = sorted(
+        {round(_finite_float(row.get("Station s (m)")), 9) for row in effective_station_rows}
+    )
+    for station in stations:
+        station_rows = [
+            row
+            for row in effective_station_rows
+            if abs(_finite_float(row.get("Station s (m)")) - station) <= 1.0e-9
+        ]
+        per_tendon: dict[str, list[dict[str, Any]]] = {}
+        for row in station_rows:
+            per_tendon.setdefault(str(row.get("Tendon") or ""), []).append(row)
+        pj_sum = 0.0
+        pe_sum = 0.0
+        loss_force_sum = 0.0
+        area_sum = 0.0
+        for tendon_rows in per_tendon.values():
+            aps = sum(_finite_float(row.get("Aps (mm²)")) for row in tendon_rows) / len(tendon_rows)
+            fpj = sum(_finite_float(row.get("fpj (MPa)")) for row in tendon_rows) / len(tendon_rows)
+            fpe = sum(_finite_float(row.get("fpe preview (MPa)")) for row in tendon_rows) / len(tendon_rows)
+            total_loss = sum(_finite_float(row.get("Total loss (MPa)")) for row in tendon_rows) / len(tendon_rows)
+            area_sum += aps
+            pj_sum += aps * fpj / 1000.0
+            pe_sum += aps * fpe / 1000.0
+            loss_force_sum += aps * total_loss / 1000.0
+        system_station_rows.append(
+            {
+                "Station s (m)": station,
+                "Tendons represented": len(per_tendon),
+                "Aps represented (mm²)": area_sum,
+                "ΣPj (kN)": pj_sum,
+                "ΣPe preview (kN)": pe_sum,
+                "Σ loss force (kN)": loss_force_sum,
+                "Force closure (kN)": pj_sum - pe_sum - loss_force_sum,
+            }
+        )
+
+    max_local_loss = max(
+        (_finite_float(row.get("Total loss (MPa)")) for row in effective_station_rows),
+        default=None,
+    )
+    max_local_rows = []
+    if max_local_loss is not None:
+        max_local_rows = [
+            row
+            for row in effective_station_rows
+            if abs(_finite_float(row.get("Total loss (MPa)")) - max_local_loss) <= 1.0e-6
+        ]
+    max_local_percent = (
+        max((_finite_float(row.get("Loss (% fpj)")) for row in max_local_rows), default=None)
+        if max_local_rows
+        else None
+    )
+    min_local_fpe = min(
+        (_finite_float(row.get("fpe preview (MPa)")) for row in effective_station_rows),
+        default=None,
+    )
+    max_stress_closure = max(
+        (abs(_finite_float(row.get("Stress closure (MPa)"))) for row in effective_station_rows),
+        default=None,
+    )
+    max_force_closure = max(
+        (abs(_finite_float(row.get("Force closure (kN)"))) for row in effective_station_rows),
+        default=None,
+    )
+    preview_ready = bool(
+        average_total_mpa is not None
+        and average_effective_stress is not None
+        and effective_station_rows
+        and max_stress_closure is not None
+        and max_force_closure is not None
+        and max_stress_closure <= 1.0e-6
+        and max_force_closure <= 1.0e-6
+        and all(
+            -1.0e-9 <= _finite_float(row.get("fpe preview (MPa)")) <= _finite_float(row.get("fpj (MPa)")) + 1.0e-9
+            for row in effective_station_rows
+        )
+    )
+
     return {
-        "ready": ready,
+        "ready": bool(average_total_mpa is not None and governing_rows),
+        "effective_preview_ready": preview_ready,
         "weighted_fpj_mpa": weighted_fpj,
+        "total_aps_mm2": total_area,
         "component_rows": component_rows,
         "instantaneous_loss_mpa": instantaneous_mpa,
         "time_dependent_loss_mpa": time_dependent_mpa,
-        "total_loss_mpa": total_mpa,
-        "total_loss_percent": total_percent,
-        "remaining_stress_mpa": (
-            max(float(weighted_fpj) - float(total_mpa), 0.0)
-            if weighted_fpj is not None and total_mpa is not None
-            else None
-        ),
+        "total_loss_mpa": average_total_mpa,
+        "average_total_loss_mpa": average_total_mpa,
+        "total_loss_percent": average_total_percent,
+        "average_total_loss_percent": average_total_percent,
+        "remaining_stress_mpa": average_effective_stress,
+        "average_effective_stress_mpa": average_effective_stress,
+        "initial_total_force_kn": initial_total_force,
+        "average_effective_force_kn": average_effective_force,
+        "average_force_loss_kn": average_force_loss,
         "governing_rows": governing_rows,
-        "status": "ACCOUNTED QA SUBTOTAL" if ready else "INCOMPLETE",
+        "max_local_loss_mpa": max_local_loss,
+        "max_local_loss_percent": max_local_percent,
+        "min_local_fpe_mpa": min_local_fpe,
+        "max_local_rows": max_local_rows,
+        "effective_station_rows": effective_station_rows,
+        "system_station_rows": system_station_rows,
+        "max_stress_closure_mpa": max_stress_closure,
+        "max_force_closure_kn": max_force_closure,
+        "status": "ACCOUNTED QA SUBTOTAL" if average_total_mpa is not None else "INCOMPLETE",
+        "effective_status": (
+            "PREVIEW READY — FINAL SLS HANDOFF BLOCKED"
+            if preview_ready
+            else "SOURCE BLOCKED"
+        ),
         "scope_guard": (
-            "The summary is an area-weighted/path-average QA subtotal. Instantaneous losses preserve the accepted station chain; "
-            "the current time-dependent loss remains a representative event-stress scalar. Pe(s)/Pe_eff(s) and final adopted station-dependent total loss remain locked."
+            "Average values are Aps-weighted tendon path averages. Maximum local values remain separate. "
+            "Time-dependent loss is still a representative event-stress scalar; secondary prestress response, "
+            "final station-dependent TD loss, and the SLS handoff remain locked."
         ),
     }
 
+
+def _render_crossbeam_loss_summary(
+    *,
+    summary_payload: Mapping[str, Any],
+    lightweight_status: str,
+    td_status: str,
+) -> None:
+    st.markdown("#### Prestress Loss Summary")
+    st.caption(
+        "Compact loss summary after all component tabs. Average system loss and maximum local loss are reported separately; both remain QA results until Effective Prestress sources are released."
+    )
+    weighted_fpj = summary_payload.get("weighted_fpj_mpa")
+    instantaneous_loss = summary_payload.get("instantaneous_loss_mpa")
+    td_loss = summary_payload.get("time_dependent_loss_mpa")
+    average_total_loss = summary_payload.get("average_total_loss_mpa")
+    average_total_percent = summary_payload.get("average_total_loss_percent")
+    average_effective_stress = summary_payload.get("average_effective_stress_mpa")
+    max_local_loss = summary_payload.get("max_local_loss_mpa")
+    max_local_percent = summary_payload.get("max_local_loss_percent")
+    max_local_rows = list(summary_payload.get("max_local_rows") or [])
+    local_source = "—"
+    if max_local_rows:
+        tendons = ", ".join(sorted({str(row.get("Tendon") or "") for row in max_local_rows}))
+        stations = ", ".join(
+            sorted({f"{_finite_float(row.get('Station s (m)')):.3f} m" for row in max_local_rows})
+        )
+        local_source = f"{tendons} · s = {stations}"
+
+    render_metric_cards(
+        [
+            {
+                "title": "Reference fpj",
+                "value": f"{float(weighted_fpj):.2f} MPa" if weighted_fpj is not None else "—",
+                "detail": "Aps-weighted active tendon jacking stress",
+                "status": "info",
+            },
+            {
+                "title": "Average instantaneous loss",
+                "value": f"{float(instantaneous_loss):.2f} MPa" if instantaneous_loss is not None else "—",
+                "detail": (
+                    f"{100.0 * float(instantaneous_loss) / float(weighted_fpj):.2f}% of fpj · friction + anchorage + ES"
+                    if instantaneous_loss is not None and weighted_fpj
+                    else "run/refresh Elastic Shortening"
+                ),
+                "status": "ready" if instantaneous_loss is not None else "warning",
+            },
+            {
+                "title": "Time-dependent loss",
+                "value": f"{float(td_loss):.2f} MPa" if td_loss is not None else "—",
+                "detail": (
+                    f"{100.0 * float(td_loss) / float(weighted_fpj):.2f}% of fpj · representative scalar"
+                    if td_loss is not None and weighted_fpj
+                    else "run/refresh Time-Dependent"
+                ),
+                "status": "ready" if td_loss is not None else "warning",
+            },
+            {
+                "title": "Average total accounted loss — QA",
+                "value": f"{float(average_total_loss):.2f} MPa" if average_total_loss is not None else "SOURCE BLOCKED",
+                "detail": (
+                    f"{float(average_total_percent):.2f}% of fpj · average fpe = {float(average_effective_stress):.2f} MPa"
+                    if average_total_percent is not None and average_effective_stress is not None
+                    else "all component sources must be CURRENT"
+                ),
+                "status": "warning",
+            },
+            {
+                "title": "Maximum local accounted loss",
+                "value": f"{float(max_local_loss):.2f} MPa" if max_local_loss is not None else "—",
+                "detail": (
+                    f"{float(max_local_percent):.2f}% of local fpj · {local_source}"
+                    if max_local_percent is not None
+                    else "local station chain required"
+                ),
+                "status": "warning" if max_local_loss is not None else "neutral",
+            },
+            {
+                "title": "Assembly status",
+                "value": str(summary_payload.get("status") or "INCOMPLETE"),
+                "detail": "Effective Prestress preview follows; final SLS handoff remains locked",
+                "status": "warning",
+            },
+        ]
+    )
+
+    component_rows = list(summary_payload.get("component_rows") or [])
+    if component_rows:
+        st.markdown("##### Losses by cause")
+        st.dataframe(
+            pd.DataFrame(component_rows),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Loss (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "% of fpj": st.column_config.NumberColumn(format="%.3f%%"),
+                "Status": st.column_config.TextColumn(width="small"),
+                "Basis": st.column_config.TextColumn(width="large"),
+            },
+        )
+
+    governing_rows = list(summary_payload.get("governing_rows") or [])
+    if governing_rows:
+        st.markdown("##### Local governing accounted loss by Tendon")
+        st.dataframe(
+            pd.DataFrame(governing_rows),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Governing station s (m)": st.column_config.NumberColumn(format="%.3f"),
+                "fpj (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "Instantaneous loss (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "TD loss (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "Total accounted loss (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "Loss (% fpj)": st.column_config.NumberColumn(format="%.3f%%"),
+                "Remaining stress (MPa)": st.column_config.NumberColumn(format="%.3f"),
+            },
+        )
+        st.caption(
+            "Rows are sorted by local total loss. They are local audit results and do not replace the Aps-weighted system average."
+        )
+
+    if lightweight_status != "CURRENT" or td_status != "CURRENT":
+        st.warning(
+            f"Summary is incomplete: Elastic Shortening = {lightweight_status}; Time-Dependent = {td_status}. Run the missing/stale component before using the accounted subtotal."
+        )
+    st.warning(str(summary_payload.get("scope_guard") or ""))
+
+
+def _render_crossbeam_effective_prestress_preview(
+    summary_payload: Mapping[str, Any],
+) -> None:
+    st.markdown("#### Effective Prestress — source-gated preview")
+    st.caption(
+        "Sequentially assembles the current Friction, Anchorage Set, Elastic Shortening, and representative Time-Dependent losses into fpe and Pe without releasing any SLS or final design handoff."
+    )
+    ready = bool(summary_payload.get("effective_preview_ready"))
+    average_fpj = summary_payload.get("weighted_fpj_mpa")
+    average_loss = summary_payload.get("average_total_loss_mpa")
+    average_loss_percent = summary_payload.get("average_total_loss_percent")
+    average_fpe = summary_payload.get("average_effective_stress_mpa")
+    pj_total = summary_payload.get("initial_total_force_kn")
+    pe_total = summary_payload.get("average_effective_force_kn")
+    max_local_loss = summary_payload.get("max_local_loss_mpa")
+    min_local_fpe = summary_payload.get("min_local_fpe_mpa")
+
+    render_metric_cards(
+        [
+            {
+                "title": "Source readiness",
+                "value": str(summary_payload.get("effective_status") or "SOURCE BLOCKED"),
+                "detail": "Current component fingerprints and row-consistent stress chain",
+                "status": "warning" if ready else "critical",
+            },
+            {
+                "title": "Average initial stress",
+                "value": f"{float(average_fpj):.2f} MPa" if average_fpj is not None else "—",
+                "detail": f"ΣPj = {float(pj_total):,.2f} kN" if pj_total is not None else "source required",
+                "status": "info",
+            },
+            {
+                "title": "Average total loss — QA",
+                "value": f"{float(average_loss):.2f} MPa" if average_loss is not None else "—",
+                "detail": f"{float(average_loss_percent):.2f}% of fpj" if average_loss_percent is not None else "source required",
+                "status": "warning",
+            },
+            {
+                "title": "Average effective stress",
+                "value": f"{float(average_fpe):.2f} MPa" if average_fpe is not None else "—",
+                "detail": f"ΣPe,avg = {float(pe_total):,.2f} kN" if pe_total is not None else "source required",
+                "status": "ready" if ready else "warning",
+            },
+            {
+                "title": "Maximum local loss",
+                "value": f"{float(max_local_loss):.2f} MPa" if max_local_loss is not None else "—",
+                "detail": f"minimum local fpe = {float(min_local_fpe):.2f} MPa" if min_local_fpe is not None else "source required",
+                "status": "warning",
+            },
+            {
+                "title": "Final handoff",
+                "value": "BLOCKED",
+                "detail": "station-dependent TD + secondary prestress + SLS routing not released",
+                "status": "critical",
+            },
+        ]
+    )
+
+    if ready:
+        st.info(
+            "PREVIEW ONLY: fpe(s) and Pe(s) below use the current representative TD scalar. They are suitable for source-chain QA, not final service-stress adoption."
+        )
+    else:
+        st.warning(
+            "Effective Prestress preview is source-blocked. Refresh every upstream loss component and resolve stress/force closure before review."
+        )
+
+    with st.expander("Formula and sequential stress-chain trace", expanded=True):
+        st.latex(
+            r"""
+            \begin{aligned}
+            f_{p,F,j}(s)&=f_{pj,j}-\Delta f_{pF,j}(s)\\
+            f_{p,A,j}(s)&=f_{p,F,j}(s)-\Delta f_{pA,j}(s)\\
+            f_{p,ES,j}(s)&=f_{p,A,j}(s)-\Delta f_{pES,j}(s)\\
+            \Delta f_{pTD}&=\Delta f_{pCD}+\Delta f_{pSD}+\Delta f_{pR}\\
+            f_{pe,j}^{\mathrm{preview}}(s)&=f_{p,ES,j}(s)-\Delta f_{pTD}\\
+            P_{e,j}^{\mathrm{preview}}(s)&=\frac{A_{ps,j}f_{pe,j}^{\mathrm{preview}}(s)}{1000}\\
+            \bar f_{pe,\mathrm{sys}}&=\frac{\sum_j A_{ps,j}\bar f_{pe,j}}{\sum_j A_{ps,j}}
+            \end{aligned}
+            """
+        )
+        st.caption(
+            "Aps is in mm² and stress is in MPa, so division by 1000 gives tendon force in kN. The current ΔfpTD is representative, not yet tendon/station dependent."
+        )
+
+    render_metric_cards(
+        [
+            {
+                "title": "Maximum stress closure",
+                "value": (
+                    f"{float(summary_payload.get('max_stress_closure_mpa')):.3e} MPa"
+                    if summary_payload.get("max_stress_closure_mpa") is not None
+                    else "—"
+                ),
+                "detail": "fpj − Σloss − fpe",
+                "status": "ready" if ready else "warning",
+            },
+            {
+                "title": "Maximum force closure",
+                "value": (
+                    f"{float(summary_payload.get('max_force_closure_kn')):.3e} kN"
+                    if summary_payload.get("max_force_closure_kn") is not None
+                    else "—"
+                ),
+                "detail": "Pj − Pe − Σ(Aps·loss/1000)",
+                "status": "ready" if ready else "warning",
+            },
+            {
+                "title": "Force loss — average",
+                "value": (
+                    f"{float(summary_payload.get('average_force_loss_kn')):,.2f} kN"
+                    if summary_payload.get("average_force_loss_kn") is not None
+                    else "—"
+                ),
+                "detail": "ΣPj − ΣPe,avg",
+                "status": "neutral",
+            },
+        ]
+    )
+
+    station_rows = list(summary_payload.get("system_station_rows") or [])
+    if station_rows:
+        st.markdown("##### System tendon-force distribution by station")
+        st.dataframe(
+            pd.DataFrame(station_rows),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Station s (m)": st.column_config.NumberColumn(format="%.3f"),
+                "Aps represented (mm²)": st.column_config.NumberColumn(format="%.1f"),
+                "ΣPj (kN)": st.column_config.NumberColumn(format="%.3f"),
+                "ΣPe preview (kN)": st.column_config.NumberColumn(format="%.3f"),
+                "Σ loss force (kN)": st.column_config.NumberColumn(format="%.3f"),
+                "Force closure (kN)": st.column_config.NumberColumn(format="%.3e"),
+            },
+        )
+
+    effective_rows = list(summary_payload.get("effective_station_rows") or [])
+    if effective_rows:
+        st.markdown("##### Tendon / station sequential Effective Prestress preview")
+        compact_columns = [
+            "Tendon",
+            "Station s (m)",
+            "Point",
+            "fpj (MPa)",
+            "Friction (MPa)",
+            "Anchorage (MPa)",
+            "ES (MPa)",
+            "TD total (MPa)",
+            "Total loss (MPa)",
+            "Loss (% fpj)",
+            "fpe preview (MPa)",
+            "Pe preview (kN)",
+        ]
+        st.dataframe(
+            pd.DataFrame(effective_rows)[compact_columns],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Station s (m)": st.column_config.NumberColumn(format="%.3f"),
+                "fpj (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "Friction (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "Anchorage (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "ES (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "TD total (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "Total loss (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "Loss (% fpj)": st.column_config.NumberColumn(format="%.3f%%"),
+                "fpe preview (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "Pe preview (kN)": st.column_config.NumberColumn(format="%.3f"),
+            },
+        )
+        with st.expander("Detailed sequential source and closure rows", expanded=False):
+            st.dataframe(
+                pd.DataFrame(effective_rows),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    st.warning(str(summary_payload.get("scope_guard") or ""))
 
 def render_crossbeam_prestress_loss_page() -> None:
     _ensure_state()
@@ -7764,25 +8236,24 @@ def render_crossbeam_prestress_loss_page() -> None:
     )
 
     (
-        overview_tab,
         friction_tab,
         anchorage_set_tab,
         elastic_shortening_tab,
         time_dependent_tab,
+        loss_summary_tab,
+        effective_prestress_tab,
         audit_tab,
     ) = st.tabs(
         [
-            "Loss Summary",
             "Friction & Wobble",
             "Anchorage Set / Draw-in",
             "Elastic Shortening",
             "Time-Dependent",
+            "Loss Summary",
+            "Effective Prestress",
             "Audit",
         ]
     )
-
-    with overview_tab:
-        loss_summary_container = st.container()
 
     with friction_tab:
         st.markdown("#### Friction & Wobble — active calculation")
@@ -9715,7 +10186,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         st.markdown("#### Lightweight Time-Dependent Losses — event-based schedule preview")
         st.caption(
-            "PTLOSS4B2B1 keeps the route event-based and lightweight. PTLOSS4B3B2 guards the stressing-strength source, while PTLOSS4C1 adds a compact loss summary without changing the accepted equations. Opening the tab performs 0 solves; falsework removal uses one no-contact frame solve, and all imported permanent-load events add 0 internal solves."
+            "PTLOSS4B2B1 keeps the route event-based and lightweight. PTLOSS4B3B2 guards the stressing-strength source, while PTLOSS4D1 reorders the loss workflow and adds a source-gated Effective Prestress preview without changing the accepted equations. Opening the tab performs 0 solves; falsework removal uses one no-contact frame solve, and all imported permanent-load events add 0 internal solves."
         )
         render_metric_cards(
             [
@@ -9743,7 +10214,7 @@ def render_crossbeam_prestress_loss_page() -> None:
             "Source transfer from Segmental Box Girder Pro is limited to unit-safe AASHTO material factors, drying-geometry traceability, age reconciliation, and component separation. BG40 f_cgp, external/unbonded routing, report-match constants, and the BG40 relaxation interaction cap are not reused."
         )
         st.caption(
-            "Baseline continuity: PTLOSS4B2B1 does not assemble Pe/Pe_eff; PTLOSS4B3B2 protects f'ci/Eci source integrity and PTLOSS4C1 summarizes accounted losses while keeping the downstream station-dependent force/stress chain locked."
+            "Baseline continuity: PTLOSS4B2B1 does not assemble Pe/Pe_eff; PTLOSS4B3B2 protects f'ci/Eci source integrity and PTLOSS4D1 summarizes and previews Effective Prestress while keeping the downstream station-dependent force/stress chain locked."
         )
         if bool(st.session_state.get(CB_LOSS_ES_STRENGTH_RATIO_GUARD_NOTICE_KEY)):
             st.info(
@@ -10762,7 +11233,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                     """
                 )
                 st.caption(
-                    "PTLOSS4C1 does not assemble Pe/Pe_eff. Multi-event stress sources and the loss summary remain QA previews until the downstream station-dependent force/stress chain is validated."
+                    "PTLOSS4D1 assembles a source-gated fpe/Pe preview but does not release the final Pe/Pe_eff SLS handoff. Multi-event stress sources and the loss summary remain QA previews until the downstream station-dependent force/stress chain is validated."
                 )
 
     with audit_tab:
@@ -10812,9 +11283,15 @@ def render_crossbeam_prestress_loss_page() -> None:
                     },
                     {
                         "Order": 6,
+                        "Source / component": "Effective Prestress preview",
+                        "Current state": "SOURCE-GATED QA PREVIEW",
+                        "Feeds": "Sequential fpe(s) / Pe(s) source-chain and closure review",
+                    },
+                    {
+                        "Order": 7,
                         "Source / component": "Pe / Pe_eff assembly",
                         "Current state": "LOCKED — not certified",
-                        "Feeds": "Future SLS/ULS staged checks",
+                        "Feeds": "Future SLS/ULS staged checks after station-dependent TD and secondary prestress",
                     },
                 ]
             ),
@@ -10827,113 +11304,25 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
 
 
-    with loss_summary_container:
-        st.markdown("#### Prestress Loss Summary")
-        st.caption(
-            "Compact component summary in MPa and percent of area-weighted fpj. The current source chain remains a QA subtotal until station-dependent Time-Dependent loss and Pe(s)/Pe_eff(s) assembly are released."
-        )
-        summary_payload = _crossbeam_loss_summary_payload(
-            length_m=length_m,
-            friction_rows=current_loss_rows,
-            anchorage_station_rows=current_anchorage_station_rows,
-            lightweight_result=(
-                lightweight_result if lightweight_evidence_status == "CURRENT" else None
-            ),
+
+    summary_payload = _crossbeam_loss_summary_payload(
+        length_m=length_m,
+        friction_rows=current_loss_rows,
+        anchorage_station_rows=current_anchorage_station_rows,
+        lightweight_result=(
+            lightweight_result if lightweight_evidence_status == "CURRENT" else None
+        ),
+        lightweight_status=lightweight_evidence_status,
+        td_result=(td_result if td_evidence_status == "CURRENT" else None),
+        td_status=td_evidence_status,
+    )
+
+    with loss_summary_tab:
+        _render_crossbeam_loss_summary(
+            summary_payload=summary_payload,
             lightweight_status=lightweight_evidence_status,
-            td_result=(td_result if td_evidence_status == "CURRENT" else None),
             td_status=td_evidence_status,
         )
-        weighted_fpj = summary_payload.get("weighted_fpj_mpa")
-        instantaneous_loss = summary_payload.get("instantaneous_loss_mpa")
-        td_loss = summary_payload.get("time_dependent_loss_mpa")
-        total_loss = summary_payload.get("total_loss_mpa")
-        total_percent = summary_payload.get("total_loss_percent")
-        remaining_stress = summary_payload.get("remaining_stress_mpa")
-        render_metric_cards(
-            [
-                {
-                    "title": "Reference fpj",
-                    "value": f"{float(weighted_fpj):.2f} MPa" if weighted_fpj is not None else "—",
-                    "detail": "Aps-weighted active tendon jacking stress",
-                    "status": "info",
-                },
-                {
-                    "title": "Instantaneous losses",
-                    "value": f"{float(instantaneous_loss):.2f} MPa" if instantaneous_loss is not None else "—",
-                    "detail": (
-                        f"{100.0 * float(instantaneous_loss) / float(weighted_fpj):.2f}% of fpj · friction + anchorage + ES"
-                        if instantaneous_loss is not None and weighted_fpj
-                        else "run/refresh Elastic Shortening"
-                    ),
-                    "status": "ready" if instantaneous_loss is not None else "warning",
-                },
-                {
-                    "title": "Time-dependent losses",
-                    "value": f"{float(td_loss):.2f} MPa" if td_loss is not None else "—",
-                    "detail": (
-                        f"{100.0 * float(td_loss) / float(weighted_fpj):.2f}% of fpj · creep + shrinkage + relaxation"
-                        if td_loss is not None and weighted_fpj
-                        else "run/refresh Time-Dependent"
-                    ),
-                    "status": "ready" if td_loss is not None else "warning",
-                },
-                {
-                    "title": "Total accounted losses",
-                    "value": f"{float(total_loss):.2f} MPa" if total_loss is not None else "SOURCE BLOCKED",
-                    "detail": f"{float(total_percent):.2f}% of fpj" if total_percent is not None else "all component sources must be CURRENT",
-                    "status": "warning" if total_loss is not None else "warning",
-                },
-                {
-                    "title": "Stress after accounted losses",
-                    "value": f"{float(remaining_stress):.2f} MPa" if remaining_stress is not None else "—",
-                    "detail": "QA subtotal only · not final Pe_eff",
-                    "status": "neutral",
-                },
-                {
-                    "title": "Assembly status",
-                    "value": str(summary_payload.get("status") or "INCOMPLETE"),
-                    "detail": "Pe(s)/Pe_eff(s) remains locked",
-                    "status": "warning",
-                },
-            ]
-        )
-        component_rows = list(summary_payload.get("component_rows") or [])
-        if component_rows:
-            st.markdown("##### Losses by cause")
-            component_table = pd.DataFrame(component_rows)
-            st.dataframe(
-                component_table,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Loss (MPa)": st.column_config.NumberColumn(format="%.3f"),
-                    "% of fpj": st.column_config.NumberColumn(format="%.3f%%"),
-                    "Status": st.column_config.TextColumn(width="small"),
-                    "Basis": st.column_config.TextColumn(width="large"),
-                },
-            )
-        governing_rows = list(summary_payload.get("governing_rows") or [])
-        if governing_rows:
-            st.markdown("##### Tendon governing accounted-loss row")
-            st.dataframe(
-                pd.DataFrame(governing_rows),
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Governing station s (m)": st.column_config.NumberColumn(format="%.3f"),
-                    "fpj (MPa)": st.column_config.NumberColumn(format="%.3f"),
-                    "Instantaneous loss (MPa)": st.column_config.NumberColumn(format="%.3f"),
-                    "TD loss (MPa)": st.column_config.NumberColumn(format="%.3f"),
-                    "Total accounted loss (MPa)": st.column_config.NumberColumn(format="%.3f"),
-                    "Loss (% fpj)": st.column_config.NumberColumn(format="%.3f%%"),
-                    "Remaining stress (MPa)": st.column_config.NumberColumn(format="%.3f"),
-                },
-            )
-            st.caption(
-                "Instantaneous losses are evaluated on the same tendon/station chain. The current TD component is still a representative scalar and is identified as such; this table is not the final station-dependent effective-prestress handoff."
-            )
-        if lightweight_evidence_status != "CURRENT" or td_evidence_status != "CURRENT":
-            st.warning(
-                f"Summary is incomplete: Elastic Shortening = {lightweight_evidence_status}; Time-Dependent = {td_evidence_status}. Run the missing/stale component before using the accounted subtotal."
-            )
-        st.warning(str(summary_payload.get("scope_guard") or ""))
+
+    with effective_prestress_tab:
+        _render_crossbeam_effective_prestress_preview(summary_payload)

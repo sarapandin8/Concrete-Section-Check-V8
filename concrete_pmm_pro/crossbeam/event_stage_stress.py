@@ -637,9 +637,13 @@ def run_crossbeam_event_stage_stress_sources(
                 f"{len(cumulative_fcgp_by_event)} permanent-load event response(s) are imported by FEA Case Name and activation age with 0 additional internal solves."
                 if cumulative_fcgp_by_event
                 else (
-                    "One later permanent-load Δf_cd is calculated from an imported FEA response with 0 additional internal solves."
-                    if imported_ready
-                    else "Later permanent-load Δf_cd is using the legacy engineer QA fallback because no verified imported FEA source is active."
+                    "No later permanent-load response is adopted; Δf_cd = 0.0000 MPa and the released stress state remains active to final time."
+                    if use_multi_event and imported_ready
+                    else (
+                        "One later permanent-load Δf_cd is calculated from an imported FEA response with 0 additional internal solves."
+                        if imported_ready
+                        else "Later permanent-load Δf_cd is using the legacy engineer QA fallback because no verified imported FEA source is active."
+                    )
                 )
             )
         ),
