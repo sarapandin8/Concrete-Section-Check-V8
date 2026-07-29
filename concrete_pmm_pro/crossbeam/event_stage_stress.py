@@ -19,7 +19,10 @@ from concrete_pmm_pro.crossbeam.lightweight_elastic_shortening import (
     _bonded_fcgp_route,
     _stress_rows_at_tendon_cg,
 )
-from concrete_pmm_pro.crossbeam.later_permanent_response import resolve_imported_later_fea_response
+from concrete_pmm_pro.crossbeam.later_permanent_response import (
+    resolve_imported_later_fea_response,
+    resolve_imported_permanent_load_events,
+)
 from concrete_pmm_pro.crossbeam.stressing_stage_frame import (
     _beam_response_rows,
     prestress_equivalent_nodal_loads,
@@ -342,6 +345,9 @@ def run_crossbeam_event_stage_stress_sources(
     later_permanent_load_delta_fcgp_mpa: float = 0.0,
     later_fea_response_rows: Any = None,
     later_fea_source_declaration: Any = None,
+    permanent_load_event_schedule: Any = None,
+    falsework_removal_age_days: float = 0.0,
+    final_age_days: float = 0.0,
 ) -> dict[str, Any]:
     """Resolve and verify stress sources at grouting, release, and later load.
 
@@ -414,37 +420,65 @@ def run_crossbeam_event_stage_stress_sources(
         if not verification.get("ready"):
             issues.append(str(verification.get("status") or "Event response source requires review."))
 
-    imported_later_source = resolve_imported_later_fea_response(
-        model=model,
-        load_rows=later_fea_response_rows,
-        profile_rows=profile_rows,
-        system_rows=system_rows,
-        source_declaration=later_fea_source_declaration,
-    )
-    imported_active_count = int(imported_later_source.get("active_count") or 0)
-    imported_ready = bool(imported_later_source.get("ready"))
-    if imported_active_count > 0 and not imported_ready:
-        issues.extend(imported_later_source.get("issues") or [
-            "Imported Later Permanent Load FEA response requires review."
-        ])
-
-    if imported_ready:
-        later_delta = _float(imported_later_source.get("delta_fcgp_mpa"))
-        later_source_label = "Imported incremental FEA P/V2/M3 response at tp"
-        later_audit_source = "Released-stage source + imported tp Δf_cd"
-        later_source_mode = "VERIFIED IMPORTED FEA SOURCE"
+    use_multi_event = permanent_load_event_schedule is not None
+    if use_multi_event:
+        permanent_event_source = resolve_imported_permanent_load_events(
+            model=model,
+            load_rows=later_fea_response_rows,
+            event_schedule=permanent_load_event_schedule,
+            profile_rows=profile_rows,
+            system_rows=system_rows,
+            falsework_removal_age_days=falsework_removal_age_days,
+            final_age_days=final_age_days,
+        )
+        if not permanent_event_source.get("ready"):
+            issues.extend(
+                permanent_event_source.get("issues")
+                or ["Imported permanent-load event responses require review."]
+            )
+        imported_ready = bool(permanent_event_source.get("ready"))
+        multi_events = list(permanent_event_source.get("events") or [])
+        combined_audit_rows = []
+        for event_item in multi_events:
+            for audit_row in event_item.get("response", {}).get("audit_rows") or []:
+                combined_audit_rows.append(
+                    {
+                        "Event ID": event_item.get("Event ID"),
+                        "Permanent load group": event_item.get("Permanent load group"),
+                        "Activation age (days)": event_item.get("Activation age (days)"),
+                        **dict(audit_row),
+                    }
+                )
+        imported_later_source = {
+            "ready": imported_ready,
+            "status": permanent_event_source.get("status"),
+            "issues": permanent_event_source.get("issues") or [],
+            "warnings": permanent_event_source.get("warnings") or [],
+            "events": multi_events,
+            "cumulative_points": permanent_event_source.get("cumulative_points") or [],
+            "audit_rows": combined_audit_rows,
+            "delta_fcgp_mpa": permanent_event_source.get("total_delta_fcgp_mpa"),
+            "fingerprint": permanent_event_source.get("fingerprint") or "",
+            "basis": permanent_event_source.get("basis") or "",
+            "scope_guard": permanent_event_source.get("scope_guard") or "",
+        }
     else:
-        later_delta = _float(later_permanent_load_delta_fcgp_mpa)
-        later_source_label = "Legacy engineer Δf_cd QA fallback"
-        later_audit_source = "Released-stage source + legacy engineer Δf_cd"
-        later_source_mode = "LEGACY QA FALLBACK"
+        permanent_event_source = None
+        imported_later_source = resolve_imported_later_fea_response(
+            model=model,
+            load_rows=later_fea_response_rows,
+            profile_rows=profile_rows,
+            system_rows=system_rows,
+            source_declaration=later_fea_source_declaration,
+        )
+        imported_active_count = int(imported_later_source.get("active_count") or 0)
+        imported_ready = bool(imported_later_source.get("ready"))
+        if imported_active_count > 0 and not imported_ready:
+            issues.extend(
+                imported_later_source.get("issues")
+                or ["Imported Later Permanent Load FEA response requires review."]
+            )
 
-    later_fcgp = (
-        max(_float(released_fcgp) + later_delta, 0.0)
-        if released_fcgp is not None
-        else None
-    )
-    ready = not issues and released_fcgp is not None
     event_rows = [
         {
             "Event": "Post-ES / grouting",
@@ -466,13 +500,6 @@ def run_crossbeam_event_stage_stress_sources(
             ),
             "Structural solves": 1,
         },
-        {
-            "Event": "After later permanent load",
-            "Stress source": later_source_label,
-            "f_cgp (MPa; compression +)": later_fcgp,
-            "Δf_cgp from prior event (MPa)": later_delta,
-            "Structural solves": 0,
-        },
     ]
     stress_audit_rows = [
         _governing_stress_audit_row(
@@ -487,14 +514,101 @@ def run_crossbeam_event_stage_stress_sources(
             model=model,
             route=released_route,
         ),
-        _governing_stress_audit_row(
-            event="After later permanent load",
-            source=later_audit_source,
-            model=model,
-            route=released_route,
-            later_delta_fcgp_mpa=later_delta,
-        ),
     ]
+
+    cumulative_fcgp_by_event: list[dict[str, Any]] = []
+    if use_multi_event and permanent_event_source and permanent_event_source.get("ready"):
+        released_value = _float(released_fcgp)
+        previous_cumulative = 0.0
+        for item in permanent_event_source.get("events") or []:
+            cumulative_delta = _float(item.get("cumulative_delta_fcgp_mpa"))
+            event_delta = cumulative_delta - previous_cumulative
+            previous_cumulative = cumulative_delta
+            label = f"{item.get('Event ID')} · {item.get('Permanent load group')}"
+            source_label = f"Imported incremental FEA case {item.get('Case Name')} at {float(item.get('Activation age (days)') or 0.0):.1f} d"
+            fcgp_value = max(released_value + cumulative_delta, 0.0)
+            event_rows.append(
+                {
+                    "Event": label,
+                    "Stress source": source_label,
+                    "f_cgp (MPa; compression +)": fcgp_value,
+                    "Δf_cgp from prior event (MPa)": event_delta,
+                    "Structural solves": 0,
+                }
+            )
+            stress_audit_rows.append(
+                _governing_stress_audit_row(
+                    event=label,
+                    source=source_label,
+                    model=model,
+                    route=released_route,
+                    later_delta_fcgp_mpa=cumulative_delta,
+                )
+            )
+            cumulative_fcgp_by_event.append(
+                {
+                    "event_id": item.get("Event ID"),
+                    "load_group": item.get("Permanent load group"),
+                    "case_name": item.get("Case Name"),
+                    "activation_age_days": _float(item.get("Activation age (days)")),
+                    "event_delta_fcgp_mpa": event_delta,
+                    "cumulative_delta_fcgp_mpa": cumulative_delta,
+                    "fcgp_mpa": fcgp_value,
+                }
+            )
+        later_delta = previous_cumulative
+        later_fcgp = max(released_value + later_delta, 0.0)
+        later_source_mode = (
+            "VERIFIED MULTI-EVENT IMPORTED FEA SOURCE"
+            if cumulative_fcgp_by_event
+            else "NO LATER PERMANENT EVENTS"
+        )
+    elif imported_ready:
+        later_delta = _float(imported_later_source.get("delta_fcgp_mpa"))
+        later_fcgp = max(_float(released_fcgp) + later_delta, 0.0) if released_fcgp is not None else None
+        later_source_mode = "VERIFIED IMPORTED FEA SOURCE"
+        event_rows.append(
+            {
+                "Event": "After later permanent load",
+                "Stress source": "Imported incremental FEA P/V2/M3 response at tp",
+                "f_cgp (MPa; compression +)": later_fcgp,
+                "Δf_cgp from prior event (MPa)": later_delta,
+                "Structural solves": 0,
+            }
+        )
+        stress_audit_rows.append(
+            _governing_stress_audit_row(
+                event="After later permanent load",
+                source="Released-stage source + imported tp Δf_cd",
+                model=model,
+                route=released_route,
+                later_delta_fcgp_mpa=later_delta,
+            )
+        )
+    else:
+        later_delta = _float(later_permanent_load_delta_fcgp_mpa)
+        later_fcgp = max(_float(released_fcgp) + later_delta, 0.0) if released_fcgp is not None else None
+        later_source_mode = "LEGACY QA FALLBACK"
+        event_rows.append(
+            {
+                "Event": "After later permanent load",
+                "Stress source": "Legacy engineer Δf_cd QA fallback",
+                "f_cgp (MPa; compression +)": later_fcgp,
+                "Δf_cgp from prior event (MPa)": later_delta,
+                "Structural solves": 0,
+            }
+        )
+        stress_audit_rows.append(
+            _governing_stress_audit_row(
+                event="After later permanent load",
+                source="Released-stage source + legacy engineer Δf_cd",
+                model=model,
+                route=released_route,
+                later_delta_fcgp_mpa=later_delta,
+            )
+        )
+
+    ready = not issues and released_fcgp is not None
     return {
         "ready": ready,
         "status": "EVENT STRESS SOURCES VERIFIED" if ready else "REVIEW REQUIRED",
@@ -511,16 +625,23 @@ def run_crossbeam_event_stage_stress_sources(
         "later_permanent_load_fcgp_mpa": later_fcgp,
         "later_permanent_load_source_mode": later_source_mode,
         "later_fea_response_source": imported_later_source,
+        "permanent_load_event_source": permanent_event_source,
+        "cumulative_fcgp_by_event": cumulative_fcgp_by_event,
         "falsework_solution": solution,
         "falsework_response_rows": response_rows,
         "falsework_stress_rows": stress_rows,
         "falsework_fcgp_route": released_route,
         "scope_guard": (
-            "Falsework removal is solved once with temporary vertical contact removed and is verified against the stored contact response. "
+            "Falsework removal is solved once with temporary vertical contact removed and verified against the stored contact response. "
             + (
-                "Later permanent-load Δf_cd is calculated from one adopted imported FEA P/V2/M3 response without another internal structural solve."
-                if imported_ready
-                else "Later permanent-load Δf_cd is using the legacy engineer QA fallback because no verified imported FEA source is active."
+                f"{len(cumulative_fcgp_by_event)} permanent-load event response(s) are imported by FEA Case Name and activation age with 0 additional internal solves."
+                if cumulative_fcgp_by_event
+                else (
+                    "One later permanent-load Δf_cd is calculated from an imported FEA response with 0 additional internal solves."
+                    if imported_ready
+                    else "Later permanent-load Δf_cd is using the legacy engineer QA fallback because no verified imported FEA source is active."
+                )
             )
         ),
     }
+

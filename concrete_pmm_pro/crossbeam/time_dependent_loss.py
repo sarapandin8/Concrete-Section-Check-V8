@@ -34,6 +34,9 @@ from concrete_pmm_pro.crossbeam.section_library import (
 from concrete_pmm_pro.crossbeam.event_stage_stress import (
     run_crossbeam_event_stage_stress_sources,
 )
+from concrete_pmm_pro.crossbeam.later_permanent_response import (
+    td_permanent_event_schedule_status,
+)
 from concrete_pmm_pro.crossbeam.tendon import (
     TENDON_BOND_STATE_BONDED,
     canonical_tendon_system_rows,
@@ -204,12 +207,14 @@ def _segmental_schedule_source(
     falsework_removal_age_days: float,
     permanent_load_age_days: float,
     final_age_days: float,
+    permanent_load_events: Any = None,
 ) -> dict[str, Any]:
     """Return a validated member-level construction schedule.
 
-    Ages are concrete ages in days.  Equal-age events are permitted because
-    stressing, grouting, and falsework operations may be specified on the same
-    day in a design schedule.  The current bonded route begins at grouting.
+    PTLOSS4B3B accepts multiple imported permanent-load events.  Each adopted
+    event has its own activation age and FEA Case Name.  The legacy single tp
+    age remains a backward-compatible fallback when no multi-event schedule is
+    supplied.
     """
 
     ti = _float(stressing_age_days)
@@ -218,16 +223,46 @@ def _segmental_schedule_source(
     tp = _float(permanent_load_age_days)
     tf = _float(final_age_days)
     issues: list[str] = []
+    warnings: list[str] = []
     if ti <= 0.0:
         issues.append("Tendon stressing age ti must be positive.")
     if tg < ti:
         issues.append("Tendon grouting age tg must not precede stressing age ti.")
     if tr < tg:
         issues.append("Falsework removal age tr must not precede tendon grouting age tg.")
-    if tp < tr:
-        issues.append("Later permanent-load age tp must not precede falsework removal age tr.")
-    if tf <= tp:
-        issues.append("Final age tf must be greater than later permanent-load age tp.")
+
+    dynamic_events: list[dict[str, Any]] = []
+    schedule_status = None
+    if permanent_load_events is not None:
+        schedule_status = td_permanent_event_schedule_status(
+            permanent_load_events,
+            falsework_removal_age_days=tr,
+            final_age_days=tf,
+            imported_case_names=None,
+        )
+        issues.extend(schedule_status.get("issues") or [])
+        warnings.extend(schedule_status.get("warnings") or [])
+        dynamic_events = list(schedule_status.get("adopted_rows") or [])
+    else:
+        if tp < tr:
+            issues.append("Later permanent-load age tp must not precede falsework removal age tr.")
+        if tf <= tp:
+            issues.append("Final age tf must be greater than later permanent-load age tp.")
+        dynamic_events = [
+            {
+                "Adopt": True,
+                "Event ID": "PL1",
+                "Permanent load group": "Later permanent load",
+                "Activation age (days)": tp,
+                "Case Name": "",
+            }
+        ]
+
+    if dynamic_events:
+        latest_age = max(_float(row.get("Activation age (days)")) for row in dynamic_events)
+        if tf <= latest_age:
+            issues.append("Final age tf must be greater than every permanent-load event age.")
+
     events = [
         {
             "Event": "Tendon stressing",
@@ -247,29 +282,86 @@ def _segmental_schedule_source(
             "Age (days)": tr,
             "Calculation role": "Event structural solve; temporary vertical contact removed",
         },
-        {
-            "Event": "Later permanent load",
-            "Symbol": "tp",
-            "Age (days)": tp,
-            "Calculation role": "Engineer-entered Δfcd source; Loads-workspace handoff not yet connected",
-        },
+    ]
+    if permanent_load_events is None:
+        events.append(
+            {
+                "Event": "Later permanent load",
+                "Symbol": "tp",
+                "Age (days)": tp,
+                "Calculation role": "Engineer-entered Δfcd source; Loads-workspace handoff not yet connected",
+            }
+        )
+    else:
+        for row in dynamic_events:
+            events.append(
+                {
+                    "Event": f"{row.get('Event ID')} · {row.get('Permanent load group')}",
+                    "Symbol": str(row.get("Event ID") or "PL"),
+                    "Age (days)": _float(row.get("Activation age (days)")),
+                    "Calculation role": f"Imported incremental FEA Case Name: {row.get('Case Name') or '—'}",
+                }
+            )
+    events.append(
         {
             "Event": "Final time",
             "Symbol": "tf",
             "Age (days)": tf,
             "Calculation role": "End of adopted loss interval",
-        },
-    ]
+        }
+    )
+
+    # Build interval boundaries using unique event ages. Events at the same age
+    # are applied together before the following interval.
+    age_groups: list[dict[str, Any]] = []
+    if permanent_load_events is None:
+        age_groups = [{"age_days": tp, "events": dynamic_events}]
+        boundaries = [
+            ("Post-grouting → falsework removal", tg, tr),
+            ("Falsework removal → later permanent load", tr, tp),
+            ("Later permanent load → final time", tp, tf),
+        ]
+    else:
+        for row in dynamic_events:
+            age = _float(row.get("Activation age (days)"))
+            if age_groups and abs(_float(age_groups[-1].get("age_days")) - age) <= 1.0e-9:
+                age_groups[-1]["events"].append(dict(row))
+            else:
+                age_groups.append({"age_days": age, "events": [dict(row)]})
+        boundaries: list[tuple[str, float, float]] = [
+            ("Post-grouting → falsework removal", tg, tr)
+        ]
+        if not age_groups:
+            boundaries.append(("Falsework removal → final time", tr, tf))
+        previous_age = tr
+        previous_label = "Falsework removal"
+        for group in age_groups:
+            ids = " + ".join(str(item.get("Event ID") or "PL") for item in group["events"])
+            age = _float(group.get("age_days"))
+            boundaries.append((f"{previous_label} → {ids}", previous_age, age))
+            previous_age = age
+            previous_label = ids
+        if age_groups:
+            boundaries.append((f"{previous_label} → final time", previous_age, tf))
+
     return {
         "ready": not issues,
         "issues": _dedupe(issues),
+        "warnings": _dedupe(warnings),
         "events": events,
         "stressing_age_days": ti,
         "grout_age_days": tg,
         "falsework_removal_age_days": tr,
-        "permanent_load_age_days": tp,
+        "permanent_load_age_days": (
+            _float(dynamic_events[0].get("Activation age (days)")) if dynamic_events else tp
+        ),
+        "permanent_load_events": dynamic_events,
+        "event_age_groups": age_groups,
+        "interval_boundaries": boundaries,
         "final_age_days": tf,
         "immediate_grout": abs(tg - ti) <= 1.0e-9,
+        "multi_event": permanent_load_events is not None,
+        "schedule_status": schedule_status,
     }
 
 
@@ -301,11 +393,13 @@ def _segmental_time_step_rows(
     tr = _float(schedule.get("falsework_removal_age_days"))
     tp = _float(schedule.get("permanent_load_age_days"))
     tf = _float(schedule.get("final_age_days"))
-    boundaries = [
-        ("Post-grouting → falsework removal", tg, tr),
-        ("Falsework removal → later permanent load", tr, tp),
-        ("Later permanent load → final time", tp, tf),
-    ]
+    boundaries = list(schedule.get("interval_boundaries") or [])
+    if not boundaries:
+        boundaries = [
+            ("Post-grouting → falsework removal", tg, tr),
+            ("Falsework removal → later permanent load", tr, tp),
+            ("Later permanent load → final time", tp, tf),
+        ]
 
     def _psi_at(age: float) -> float:
         return _float(
@@ -680,6 +774,7 @@ def run_crossbeam_lightweight_time_dependent_loss(
     later_permanent_load_delta_fcgp_mpa: float = 0.0,
     later_fea_response_rows: Any = None,
     later_fea_source_declaration: Any = None,
+    permanent_load_event_schedule: Any = None,
     inner_perimeter_factor: float,
     relaxation_steel_class: str,
     ep_mpa: float,
@@ -752,6 +847,7 @@ def run_crossbeam_lightweight_time_dependent_loss(
         falsework_removal_age_days=tr,
         permanent_load_age_days=tp,
         final_age_days=tf,
+        permanent_load_events=permanent_load_event_schedule,
     )
     if segmental and not schedule.get("ready"):
         issues.extend(schedule.get("issues") or ["Precast Segmental construction schedule is not ready."])
@@ -818,7 +914,8 @@ def run_crossbeam_lightweight_time_dependent_loss(
     kdf = 1.0 / denominator if denominator > 0.0 else 0.0
     fcgp = max(_float(es_result.get("fcgp_mpa")), 0.0)
     event_stress_source = None
-    interval_fcgp = [fcgp, fcgp, fcgp]
+    boundary_count = len(schedule.get("interval_boundaries") or []) or 3
+    interval_fcgp = [fcgp] * boundary_count
     if segmental and linear_stage_model is not None:
         event_stress_source = run_crossbeam_event_stage_stress_sources(
             model=linear_stage_model,
@@ -828,18 +925,38 @@ def run_crossbeam_lightweight_time_dependent_loss(
             later_permanent_load_delta_fcgp_mpa=later_permanent_load_delta_fcgp_mpa,
             later_fea_response_rows=later_fea_response_rows,
             later_fea_source_declaration=later_fea_source_declaration,
+            permanent_load_event_schedule=permanent_load_event_schedule,
+            falsework_removal_age_days=tr,
+            final_age_days=tf,
         )
-        imported_source = dict(event_stress_source.get("later_fea_response_source") or {})
-        if imported_source.get("ready"):
-            for event in schedule.get("events", []):
-                if str(event.get("Event") or "") == "Later permanent load":
-                    event["Calculation role"] = "Imported incremental FEA P/V2/M3 response at tp; no internal structural solve"
         if event_stress_source.get("ready"):
-            interval_fcgp = [
-                fcgp,
-                _float(event_stress_source.get("falsework_removed_fcgp_mpa"), fcgp),
-                _float(event_stress_source.get("later_permanent_load_fcgp_mpa"), fcgp),
-            ]
+            if permanent_load_event_schedule is None:
+                imported_source = dict(event_stress_source.get("later_fea_response_source") or {})
+                if imported_source.get("ready"):
+                    for event in schedule.get("events", []):
+                        if str(event.get("Event") or "") == "Later permanent load":
+                            event["Calculation role"] = "Imported incremental FEA P/V2/M3 response at tp; no internal structural solve"
+            released_fcgp = _float(event_stress_source.get("falsework_removed_fcgp_mpa"), fcgp)
+            interval_fcgp[0] = fcgp
+            if len(interval_fcgp) > 1:
+                interval_fcgp[1] = released_fcgp
+            cumulative_by_event = list(event_stress_source.get("cumulative_fcgp_by_event") or [])
+            if permanent_load_event_schedule is not None:
+                cumulative_lookup = {
+                    str(row.get("event_id") or ""): _float(row.get("fcgp_mpa"), released_fcgp)
+                    for row in cumulative_by_event
+                }
+                for group_index, group in enumerate(schedule.get("event_age_groups") or [], start=2):
+                    group_events = list(group.get("events") or [])
+                    if not group_events or group_index >= len(interval_fcgp):
+                        continue
+                    last_event_id = str(group_events[-1].get("Event ID") or "")
+                    interval_fcgp[group_index] = cumulative_lookup.get(last_event_id, released_fcgp)
+            elif len(interval_fcgp) >= 3:
+                interval_fcgp[2] = _float(
+                    event_stress_source.get("later_permanent_load_fcgp_mpa"),
+                    released_fcgp,
+                )
         else:
             blocking = event_stress_source.get("issues") or ["Event stress sources are not ready."]
             issues.extend(blocking)
@@ -898,6 +1015,66 @@ def run_crossbeam_lightweight_time_dependent_loss(
             "representative_interval_difference_mpa": creep_loss
             - direct_component_totals["creep_loss_mpa"],
         }
+    permanent_event_source = dict((event_stress_source or {}).get("permanent_load_event_source") or {})
+    permanent_event_count = len(permanent_event_source.get("events") or [])
+    permanent_event_ready = bool(permanent_event_source.get("ready"))
+    imported_single_ready = bool(
+        dict((event_stress_source or {}).get("later_fea_response_source") or {}).get("ready")
+    )
+    if permanent_load_event_schedule is not None:
+        if permanent_event_count > 0 and permanent_event_ready:
+            permanent_source_note = (
+                f"Falsework-removal stress redistribution is sourced and response-verified by one no-contact frame solve. "
+                f"{permanent_event_count} permanent-load FEA event response(s) are applied at their own activation ages with no additional internal solve."
+            )
+            route_source_note = (
+                f"The explicit schedule uses one no-contact falsework-removal event solve and {permanent_event_count} imported incremental permanent-load FEA event response(s). "
+            )
+            scope_source_note = (
+                f"PTLOSS4B3B uses one event solve for falsework removal and {permanent_event_count} compact imported permanent-load event response(s). "
+            )
+        elif permanent_event_ready:
+            permanent_source_note = (
+                "Falsework-removal stress redistribution is sourced and response-verified by one no-contact frame solve. "
+                "No later permanent-load events are adopted; the released stress state remains active to final time."
+            )
+            route_source_note = (
+                "The explicit schedule uses one no-contact falsework-removal event solve and no later permanent-load events. "
+            )
+            scope_source_note = (
+                "PTLOSS4B3B uses one event solve for falsework removal with no later permanent-load increment. "
+            )
+        else:
+            permanent_source_note = (
+                "Falsework-removal stress redistribution is sourced and response-verified by one no-contact frame solve. "
+                "The compact permanent-load event schedule or imported FEA response requires review."
+            )
+            route_source_note = (
+                "The explicit schedule uses one no-contact falsework-removal event solve, but the permanent-load event source requires review. "
+            )
+            scope_source_note = (
+                "PTLOSS4B3B permanent-load event sourcing is not ready. "
+            )
+    else:
+        permanent_source_note = (
+            "Falsework-removal stress redistribution is sourced and response-verified by one no-contact frame solve. "
+            + (
+                "Later permanent-load Δfcd is sourced from the imported FEA P/V2/M3 response without another internal solve."
+                if imported_single_ready
+                else "Later permanent-load Δfcd is not yet backed by an active verified FEA import."
+            )
+        )
+        route_source_note = (
+            "The explicit schedule uses one no-contact falsework-removal event solve and the in-page incremental FEA response at tp. "
+            if imported_single_ready
+            else "The explicit schedule uses one no-contact falsework-removal event solve with response-source verification. "
+        )
+        scope_source_note = (
+            "PTLOSS4B3A uses one event solve for falsework removal and a verified in-page incremental FEA response at tp. "
+            if imported_single_ready
+            else "PTLOSS4B2B1 uses one event solve for falsework removal and explicit interval stress sources. "
+        )
+
     review_notes: list[str] = []
     calibration_advisories: list[str] = []
     blocking_review_notes: list[str] = []
@@ -915,13 +1092,7 @@ def run_crossbeam_lightweight_time_dependent_loss(
             )
         blocking_review_notes.extend(
             [
-                (
-                    "Falsework-removal stress redistribution is sourced and response-verified by one no-contact frame solve. "
-                    "Later permanent-load Δfcd is sourced from the imported FEA P/V2/M3 response without another internal solve."
-                    if bool(dict((event_stress_source or {}).get("later_fea_response_source") or {}).get("ready"))
-                    else "Falsework-removal stress redistribution is sourced and response-verified by one no-contact frame solve. "
-                    "Later permanent-load Δfcd is not yet backed by an active verified FEA import."
-                ),
+                permanent_source_note,
                 "Relaxation is retained as one final AASHTO R2 interval term because the current source does not provide a time-development law for distributing relaxation among construction steps.",
             ]
         )
@@ -953,13 +1124,8 @@ def run_crossbeam_lightweight_time_dependent_loss(
             else "CAST-IN-PLACE NONSEGMENTAL — AASHTO 5.9.3.4.5 REPRESENTATIVE DESIGN ESTIMATE"
         ),
         "route_note": (
-            (
-                "The explicit schedule uses one no-contact falsework-removal event solve and the in-page incremental FEA response at tp. "
-                "Final adoption remains blocked until station/tendon-dependent effective-prestress assembly and relaxation/time-dependent interaction are accepted."
-                if bool(dict((event_stress_source or {}).get("later_fea_response_source") or {}).get("ready"))
-                else "The explicit schedule uses one no-contact falsework-removal event solve with response-source verification. "
-                "Final adoption remains blocked until a verified Later Permanent Load FEA import and the downstream interaction chain are accepted."
-            )
+            route_source_note
+            + "Final adoption remains blocked until station/tendon-dependent effective-prestress assembly and relaxation/time-dependent interaction are accepted."
             if segmental
             else "For post-tensioned members after grouting, the pre-grouting/initial interval term is taken as zero in accordance with AASHTO 5.9.3.4.5."
         ),
@@ -971,6 +1137,7 @@ def run_crossbeam_lightweight_time_dependent_loss(
             "grout_age_days": tg,
             "falsework_removal_age_days": tr,
             "permanent_load_age_days": tp,
+            "permanent_load_event_schedule": list(schedule.get("permanent_load_events") or []),
             "inner_perimeter_factor": _float(inner_perimeter_factor),
             "relaxation_steel_class": steel_class,
             "ep_mpa": _float(ep_mpa),
@@ -1011,12 +1178,7 @@ def run_crossbeam_lightweight_time_dependent_loss(
             else "COMPONENT READY — EFFECTIVE PRESTRESS ASSEMBLY LOCKED"
         ),
         "scope_guard": (
-            (
-                "PTLOSS4B3A uses one event solve for falsework removal and a verified in-page incremental FEA response at tp. "
-                "Time-resolved relaxation, measured material models, and station/tendon-dependent Pe/Pe_eff assembly remain excluded."
-                if bool(dict((event_stress_source or {}).get("later_fea_response_source") or {}).get("ready"))
-                else "PTLOSS4B2B1 uses one event solve for falsework removal and explicit interval stress sources. "
-                "PTLOSS4B3A in-page FEA sourcing is not active; time-resolved relaxation, measured material models, and Pe/Pe_eff assembly remain excluded."
-            )
+            scope_source_note
+            + "Time-resolved relaxation, measured material models, and station/tendon-dependent Pe/Pe_eff assembly remain excluded."
         ),
     }

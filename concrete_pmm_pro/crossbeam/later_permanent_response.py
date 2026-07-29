@@ -31,9 +31,49 @@ CB_LATER_FEA_RESPONSE_TABLE_KEY = "crossbeam_ptloss4b3_later_fea_response_table"
 CB_LATER_FEA_RESPONSE_EDITOR_KEY = "crossbeam_ptloss4b3a_td_fea_response_editor"
 CB_TD_FEA_SOURCE_DECLARATION_KEY = "crossbeam_ptloss4b3a_td_fea_source_declaration"
 CB_TD_FEA_RESPONSE_METADATA_KEY = "crossbeam_time_dependent_fea_response"
-CB_TD_FEA_RESPONSE_SCHEMA_VERSION = 1
+CB_TD_FEA_RESPONSE_SCHEMA_VERSION = 2
 
 TD_FEA_IMPORT_MODE_INCREMENTAL = "Incremental response — permanent loads activated at tp"
+
+# PTLOSS4B3B compact multi-event schedule.  The response table remains a
+# single import surface; Case Name maps imported rows to one or more permanent
+# load events, each with its own activation age.
+CB_TD_PERMANENT_EVENT_SCHEDULE_KEY = "crossbeam_ptloss4b3b_td_permanent_event_schedule"
+CB_TD_PERMANENT_EVENT_SCHEDULE_EDITOR_KEY = "crossbeam_ptloss4b3b_td_permanent_event_schedule_editor"
+TD_PERMANENT_EVENT_SCHEMA_VERSION = 1
+
+PERMANENT_LOAD_GROUP_OPTIONS = (
+    "Beam / Girder permanent load — CIP / PC / Steel",
+    "Slab / Deck permanent load — CIP / PC / Steel deck",
+    "SDL on slab",
+    "Box girder permanent load",
+    "SDL track work / Utility",
+    "Other permanent load",
+)
+
+PERMANENT_EVENT_SCHEDULE_COLUMNS = (
+    "Adopt",
+    "Event ID",
+    "Permanent load group",
+    "Activation age (days)",
+    "Case Name",
+)
+
+FORBIDDEN_CASE_TOKENS = (
+    "ULS",
+    "STRENGTH",
+    "LIVE",
+    "WIND",
+    "SEISMIC",
+    "EARTHQUAKE",
+    "TEMP",
+    "PRESTRESS",
+    "CREEP",
+    "SHRINK",
+    "RELAX",
+    "ENVELOPE",
+)
+AMBIGUOUS_CASE_TOKENS = ("FINAL", "TOTAL", "SERVICE", "SLS")
 
 
 LATER_FEA_RESPONSE_COLUMNS = (
@@ -110,6 +150,148 @@ def _records(values: Any) -> list[dict[str, Any]]:
 
 def _dedupe(messages: list[str]) -> list[str]:
     return list(dict.fromkeys(str(item).strip() for item in messages if str(item).strip()))
+
+
+def default_td_permanent_event_schedule() -> list[dict[str, Any]]:
+    """Return compact, inactive event rows covering the standard load groups."""
+
+    return [
+        {
+            "Adopt": False,
+            "Event ID": f"PL{index}",
+            "Permanent load group": group,
+            "Activation age (days)": "",
+            "Case Name": "",
+        }
+        for index, group in enumerate(PERMANENT_LOAD_GROUP_OPTIONS[:-1], start=1)
+    ]
+
+
+def canonical_td_permanent_event_schedule(values: Any) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for index, raw in enumerate(_records(values), start=1):
+        group = str(raw.get("Permanent load group") or "").strip()
+        if not group:
+            group = PERMANENT_LOAD_GROUP_OPTIONS[min(index - 1, len(PERMANENT_LOAD_GROUP_OPTIONS) - 1)]
+        rows.append(
+            {
+                "Adopt": _bool(raw.get("Adopt"), False),
+                "Event ID": str(raw.get("Event ID") or f"PL{index}").strip(),
+                "Permanent load group": group,
+                "Activation age (days)": raw.get("Activation age (days)", ""),
+                "Case Name": str(raw.get("Case Name") or "").strip(),
+            }
+        )
+    return rows
+
+
+def td_permanent_event_schedule_status(
+    values: Any,
+    *,
+    falsework_removal_age_days: float,
+    final_age_days: float,
+    imported_case_names: Any = None,
+) -> dict[str, Any]:
+    rows = canonical_td_permanent_event_schedule(values)
+    adopted = [row for row in rows if bool(row.get("Adopt"))]
+    issues: list[str] = []
+    warnings: list[str] = []
+    seen_ids: set[str] = set()
+    seen_cases: set[str] = set()
+    imported = {str(value).strip().casefold() for value in (imported_case_names or []) if str(value).strip()}
+    tr = float(_float(falsework_removal_age_days, 0.0) or 0.0)
+    tf = float(_float(final_age_days, 0.0) or 0.0)
+    for index, row in enumerate(adopted, start=1):
+        event_id = str(row.get("Event ID") or "").strip()
+        group = str(row.get("Permanent load group") or "").strip()
+        case = str(row.get("Case Name") or "").strip()
+        age = _float(row.get("Activation age (days)"), None)
+        prefix = f"Permanent event row {index}"
+        if not event_id:
+            issues.append(f"{prefix}: Event ID is required.")
+        elif event_id.casefold() in seen_ids:
+            issues.append(f"{prefix}: duplicate Event ID '{event_id}'.")
+        else:
+            seen_ids.add(event_id.casefold())
+        if group not in PERMANENT_LOAD_GROUP_OPTIONS:
+            issues.append(f"{prefix}: select a supported permanent load group.")
+        if age is None:
+            issues.append(f"{prefix}: activation age is required.")
+        elif age < tr - 1.0e-9:
+            issues.append(f"{prefix}: activation age {age:.3f} d precedes falsework removal age {tr:.3f} d.")
+        elif age >= tf - 1.0e-9:
+            issues.append(f"{prefix}: activation age must be earlier than final age {tf:.3f} d.")
+        if not case:
+            issues.append(f"{prefix}: select an imported FEA Case Name.")
+        else:
+            case_key = case.casefold()
+            if case_key in seen_cases:
+                issues.append(f"{prefix}: FEA Case Name '{case}' is already assigned to another event.")
+            else:
+                seen_cases.add(case_key)
+            if imported and case_key not in imported:
+                issues.append(f"{prefix}: FEA Case Name '{case}' is not present in the imported response table.")
+            upper = case.upper()
+            forbidden = [token for token in FORBIDDEN_CASE_TOKENS if token in upper]
+            if forbidden:
+                issues.append(
+                    f"{prefix}: Case Name '{case}' contains excluded response token(s): {', '.join(forbidden)}."
+                )
+            ambiguous = [token for token in AMBIGUOUS_CASE_TOKENS if token in upper]
+            if ambiguous:
+                warnings.append(
+                    f"{prefix}: Case Name '{case}' looks cumulative/combined ({', '.join(ambiguous)}); verify it is an unfactored incremental permanent-load response."
+                )
+    adopted_sorted = sorted(
+        adopted,
+        key=lambda row: (float(_float(row.get("Activation age (days)"), 1.0e99) or 1.0e99), str(row.get("Event ID") or "")),
+    )
+    return {
+        "ready": not issues,
+        "status": (
+            "PERMANENT EVENT SCHEDULE READY"
+            if adopted_sorted and not issues
+            else ("NO LATER PERMANENT EVENTS" if not adopted_sorted and not issues else "REVIEW REQUIRED")
+        ),
+        "issues": _dedupe(issues),
+        "warnings": _dedupe(warnings),
+        "rows": rows,
+        "adopted_rows": adopted_sorted,
+        "adopted_count": len(adopted_sorted),
+    }
+
+
+def legacy_td_event_schedule(
+    *,
+    declaration: Any,
+    activation_age_days: float,
+    response_rows: Any,
+) -> list[dict[str, Any]]:
+    """Migrate one PTLOSS4B3A declaration into one compact schedule row."""
+
+    active_cases = sorted(
+        {
+            str(row.get("Case Name") or "").strip()
+            for row in canonical_later_fea_response_rows(response_rows)
+            if bool(row.get("Active")) and str(row.get("Case Name") or "").strip()
+        }
+    )
+    source = canonical_td_fea_source_declaration(declaration)
+    case = str(source.get("source_case_stage") or (active_cases[0] if len(active_cases) == 1 else "")).strip()
+    group_text = str(source.get("permanent_load_groups") or "").strip()
+    if not case and not group_text:
+        return default_td_permanent_event_schedule()
+    group = "Other permanent load"
+    return [
+        {
+            "Adopt": bool(case),
+            "Event ID": "PL1",
+            "Permanent load group": group,
+            "Activation age (days)": float(_float(activation_age_days, 90.0) or 90.0),
+            "Case Name": case,
+        },
+        *default_td_permanent_event_schedule()[1:],
+    ]
 
 
 def canonical_later_fea_response_rows(values: Any) -> list[dict[str, Any]]:
@@ -204,7 +386,7 @@ def default_later_fea_response_template(length_m: float = 20.0) -> list[dict[str
         {
             "Active": False,
             "Station x (m)": station,
-            "Case Name": "LATER-PERM",
+            "Case Name": "",
             "Step Type": "",
             "Step Num": "",
             "FEA Object": "",
@@ -507,5 +689,237 @@ def resolve_imported_later_fea_response(
         "scope_guard": (
             "The current Time-Dependent schedule uses one governing representative-route Δfcd scalar. "
             "Station/tendon-dependent Pe(s) and Pe,eff(s) assembly remains locked for a later milestone."
+        ),
+    }
+
+
+def resolve_imported_permanent_load_events(
+    *,
+    model: Mapping[str, Any],
+    load_rows: Any,
+    event_schedule: Any,
+    profile_rows: Any,
+    system_rows: Any,
+    falsework_removal_age_days: float,
+    final_age_days: float,
+) -> dict[str, Any]:
+    """Resolve multiple imported incremental permanent-load cases by activation age.
+
+    Each adopted event maps one FEA Case Name to one activation age.  Imported
+    rows are selected by Case Name, so the user does not need to tick every
+    station row.  Cumulative representative-route stress increments are summed
+    only at matching row keys; independently governing maxima are never added.
+    """
+
+    rows = canonical_later_fea_response_rows(load_rows)
+    imported_cases = sorted(
+        {
+            str(row.get("Case Name") or "").strip()
+            for row in rows
+            if str(row.get("Case Name") or "").strip()
+        }
+    )
+    schedule_status = td_permanent_event_schedule_status(
+        event_schedule,
+        falsework_removal_age_days=falsework_removal_age_days,
+        final_age_days=final_age_days,
+        imported_case_names=imported_cases,
+    )
+    if not schedule_status["ready"]:
+        return {
+            "ready": False,
+            "status": schedule_status["status"],
+            "issues": list(schedule_status["issues"]),
+            "warnings": list(schedule_status["warnings"]),
+            "event_schedule": schedule_status,
+            "events": [],
+            "active_count": 0,
+            "total_delta_fcgp_mpa": None,
+            "cumulative_points": [],
+            "fingerprint": "",
+        }
+
+    issues: list[str] = []
+    warnings: list[str] = list(schedule_status["warnings"])
+    event_results: list[dict[str, Any]] = []
+    used_case_keys = {str(row.get("Case Name") or "").strip().casefold() for row in schedule_status["adopted_rows"]}
+    unmapped_cases = sorted(
+        case for case in imported_cases if case.casefold() not in used_case_keys
+    )
+    if unmapped_cases:
+        warnings.append(
+            "Imported Case Name(s) not assigned to an adopted permanent event are ignored: "
+            + ", ".join(unmapped_cases)
+            + "."
+        )
+
+    for event in schedule_status["adopted_rows"]:
+        case = str(event.get("Case Name") or "").strip()
+        selected_rows = [
+            {**row, "Active": True}
+            for row in rows
+            if str(row.get("Case Name") or "").strip().casefold() == case.casefold()
+        ]
+        resolved = resolve_imported_later_fea_response(
+            model=model,
+            load_rows=selected_rows,
+            profile_rows=profile_rows,
+            system_rows=system_rows,
+            source_declaration=None,
+        )
+        if not resolved.get("ready"):
+            issues.extend(
+                f"{event.get('Event ID')} / {case}: {message}"
+                for message in (resolved.get("issues") or [resolved.get("status") or "response requires review"])
+            )
+        warnings.extend(
+            f"{event.get('Event ID')} / {case}: {message}"
+            for message in (resolved.get("warnings") or [])
+        )
+        event_results.append(
+            {
+                **dict(event),
+                "Activation age (days)": float(_float(event.get("Activation age (days)"), 0.0) or 0.0),
+                "response": resolved,
+                "delta_fcgp_mpa": resolved.get("delta_fcgp_mpa"),
+                "status": resolved.get("status"),
+                "ready": bool(resolved.get("ready")),
+            }
+        )
+
+    if issues:
+        return {
+            "ready": False,
+            "status": "REVIEW REQUIRED",
+            "issues": _dedupe(issues),
+            "warnings": _dedupe(warnings),
+            "event_schedule": schedule_status,
+            "events": event_results,
+            "active_count": len(event_results),
+            "total_delta_fcgp_mpa": None,
+            "cumulative_points": [],
+            "fingerprint": "",
+        }
+
+    if not event_results:
+        payload = {"schedule": [], "events": []}
+        fingerprint = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        return {
+            "ready": True,
+            "status": "NO LATER PERMANENT EVENTS",
+            "issues": [],
+            "warnings": _dedupe(warnings),
+            "event_schedule": schedule_status,
+            "events": [],
+            "active_count": 0,
+            "total_delta_fcgp_mpa": 0.0,
+            "cumulative_points": [],
+            "fingerprint": fingerprint,
+            "basis": "No permanent-load events are adopted after falsework removal; released-stage f_cgp remains active to final time.",
+            "scope_guard": "The representative-stress QA route remains active with no later permanent-load increment.",
+        }
+
+    # Require identical station/element/side keys so cumulative increments are
+    # formed from the same physical response rows, never by adding independent maxima.
+    def _row_key(row: Mapping[str, Any]) -> tuple[Any, ...]:
+        return (
+            round(float(_float(row.get("Station x (m)"), 0.0) or 0.0), 9),
+            str(row.get("Internal Element") or row.get("FEA Element") or "").strip().casefold(),
+            str(row.get("End / Side") or "").strip().casefold(),
+            str(row.get("Section ID") or "").strip().casefold(),
+        )
+
+    maps: list[dict[tuple[Any, ...], dict[str, Any]]] = []
+    for event_result in event_results:
+        mapping = {
+            _row_key(row): dict(row)
+            for row in (event_result["response"].get("audit_rows") or [])
+        }
+        maps.append(mapping)
+    reference_keys = set(maps[0]) if maps else set()
+    for index, mapping in enumerate(maps[1:], start=2):
+        if set(mapping) != reference_keys:
+            missing = len(reference_keys - set(mapping))
+            extra = len(set(mapping) - reference_keys)
+            issues.append(
+                f"Permanent event {index} uses a different FEA station/element/side mesh "
+                f"({missing} missing, {extra} extra response row keys). Export all incremental cases from the same model revision and station set."
+            )
+    if issues:
+        return {
+            "ready": False,
+            "status": "RESPONSE MESH REVIEW REQUIRED",
+            "issues": _dedupe(issues),
+            "warnings": _dedupe(warnings),
+            "event_schedule": schedule_status,
+            "events": event_results,
+            "active_count": len(event_results),
+            "total_delta_fcgp_mpa": None,
+            "cumulative_points": [],
+            "fingerprint": "",
+        }
+
+    cumulative_by_key = {key: 0.0 for key in reference_keys}
+    cumulative_points: list[dict[str, Any]] = []
+    for event_result, mapping in zip(event_results, maps):
+        for key in reference_keys:
+            cumulative_by_key[key] += float(
+                _float(mapping[key].get("Δf_cd (MPa; compression +)"), 0.0) or 0.0
+            )
+        governing_key = max(cumulative_by_key, key=lambda key: cumulative_by_key[key], default=None)
+        governing_row = dict(mapping.get(governing_key) or {}) if governing_key is not None else {}
+        cumulative_delta = float(cumulative_by_key.get(governing_key, 0.0)) if governing_key is not None else 0.0
+        point = {
+            "Event ID": event_result.get("Event ID"),
+            "Permanent load group": event_result.get("Permanent load group"),
+            "Case Name": event_result.get("Case Name"),
+            "Activation age (days)": event_result.get("Activation age (days)"),
+            "Event Δf_cd (MPa)": float(_float(event_result.get("delta_fcgp_mpa"), 0.0) or 0.0),
+            "Cumulative Δf_cd (MPa)": cumulative_delta,
+            "Governing station s (m)": governing_row.get("Station x (m)"),
+            "Governing element": governing_row.get("Internal Element"),
+            "Governing side": governing_row.get("End / Side"),
+            "Governing section": governing_row.get("Section ID"),
+        }
+        cumulative_points.append(point)
+        event_result["cumulative_delta_fcgp_mpa"] = cumulative_delta
+        event_result["cumulative_governing_row"] = governing_row
+
+    payload = {
+        "schedule": schedule_status["adopted_rows"],
+        "events": [
+            {
+                "event_id": item.get("Event ID"),
+                "case": item.get("Case Name"),
+                "age": item.get("Activation age (days)"),
+                "fingerprint": item.get("response", {}).get("fingerprint"),
+                "cumulative_delta": item.get("cumulative_delta_fcgp_mpa"),
+            }
+            for item in event_results
+        ],
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    total_delta = cumulative_points[-1]["Cumulative Δf_cd (MPa)"] if cumulative_points else 0.0
+    return {
+        "ready": True,
+        "status": "MULTI-EVENT FEA SOURCES VERIFIED",
+        "issues": [],
+        "warnings": _dedupe(warnings),
+        "event_schedule": schedule_status,
+        "events": event_results,
+        "active_count": len(event_results),
+        "total_delta_fcgp_mpa": float(total_delta),
+        "cumulative_points": cumulative_points,
+        "fingerprint": fingerprint,
+        "basis": (
+            "Each adopted permanent-load group maps to one unfactored incremental FEA Case Name and its own activation age. "
+            "P/V2/M3 remain row-coupled. Cumulative Δfcd is summed only at matching station/element/side keys; independent maxima are never added."
+        ),
+        "scope_guard": (
+            "The current loss route remains a representative-stress QA model. Station/tendon-dependent Pe(s) and Pe,eff(s) assembly remains locked."
         ),
     }

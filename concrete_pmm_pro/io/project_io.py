@@ -35,11 +35,15 @@ from concrete_pmm_pro.core.units import N_to_kN, Nmm_to_kNm
 from concrete_pmm_pro.crossbeam.later_permanent_response import (
     CB_LATER_FEA_RESPONSE_TABLE_KEY,
     CB_TD_FEA_SOURCE_DECLARATION_KEY,
+    CB_TD_PERMANENT_EVENT_SCHEDULE_KEY,
     CB_TD_FEA_RESPONSE_METADATA_KEY,
     CB_TD_FEA_RESPONSE_SCHEMA_VERSION,
     canonical_later_fea_response_rows,
     canonical_td_fea_source_declaration,
+    canonical_td_permanent_event_schedule,
     default_td_fea_source_declaration,
+    default_td_permanent_event_schedule,
+    legacy_td_event_schedule,
 )
 from concrete_pmm_pro.crossbeam.section_library import (
     CB_SECLIB_ACTIVE_ID_KEY,
@@ -70,6 +74,7 @@ from concrete_pmm_pro.crossbeam.tendon_persistence import (
 )
 from concrete_pmm_pro.crossbeam.prestress_loss import (
     CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY,
+    CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
     crossbeam_prestress_loss_settings_from_session_state,
     restore_crossbeam_prestress_loss_project_state,
 )
@@ -229,13 +234,29 @@ def _crossbeam_td_fea_response_metadata_from_session(session_state: Any) -> dict
     declaration = canonical_td_fea_source_declaration(
         _get_session_value(session_state, CB_TD_FEA_SOURCE_DECLARATION_KEY, {})
     )
-    if not rows and declaration == default_td_fea_source_declaration():
+    raw_schedule = _get_session_value(session_state, CB_TD_PERMANENT_EVENT_SCHEDULE_KEY, None)
+    if raw_schedule is None:
+        schedule = legacy_td_event_schedule(
+            declaration=declaration,
+            activation_age_days=float(
+                _get_session_value(session_state, CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY, 90.0) or 90.0
+            ),
+            response_rows=rows,
+        )
+    else:
+        schedule = canonical_td_permanent_event_schedule(raw_schedule)
+    if (
+        not rows
+        and declaration == default_td_fea_source_declaration()
+        and schedule == default_td_permanent_event_schedule()
+    ):
         return {}
     return {
         "schema_version": CB_TD_FEA_RESPONSE_SCHEMA_VERSION,
         "owner": "Sections/Prestress Loss/Time-Dependent",
         "rows": _clean_table_value(rows),
         "source_declaration": _clean_table_value(declaration),
+        "permanent_event_schedule": _clean_table_value(schedule),
     }
 
 
@@ -1348,13 +1369,28 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
 
     td_fea_response = project.metadata.get(CB_TD_FEA_RESPONSE_METADATA_KEY)
     if isinstance(td_fea_response, dict):
-        session_state[CB_LATER_FEA_RESPONSE_TABLE_KEY] = pd.DataFrame(
-            canonical_later_fea_response_rows(td_fea_response.get("rows") or [])
-        )
-        session_state[CB_TD_FEA_SOURCE_DECLARATION_KEY] = canonical_td_fea_source_declaration(
+        restored_rows = canonical_later_fea_response_rows(td_fea_response.get("rows") or [])
+        restored_declaration = canonical_td_fea_source_declaration(
             td_fea_response.get("source_declaration") or {}
         )
-        session_state["crossbeam_ptloss4b3a_td_fea_migration_status"] = "CURRENT PTLOSS OWNERSHIP"
+        session_state[CB_LATER_FEA_RESPONSE_TABLE_KEY] = pd.DataFrame(restored_rows)
+        session_state[CB_TD_FEA_SOURCE_DECLARATION_KEY] = restored_declaration
+        if "permanent_event_schedule" in td_fea_response:
+            restored_schedule = canonical_td_permanent_event_schedule(
+                td_fea_response.get("permanent_event_schedule") or []
+            )
+            migration_status = "CURRENT PTLOSS4B3B MULTI-EVENT OWNERSHIP"
+        else:
+            restored_schedule = legacy_td_event_schedule(
+                declaration=restored_declaration,
+                activation_age_days=float(
+                    session_state.get(CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY, 90.0) or 90.0
+                ),
+                response_rows=restored_rows,
+            )
+            migration_status = "MIGRATED FROM PTLOSS4B3A SINGLE EVENT TO PTLOSS4B3B MULTI-EVENT SCHEDULE"
+        session_state[CB_TD_PERMANENT_EVENT_SCHEDULE_KEY] = pd.DataFrame(restored_schedule)
+        session_state["crossbeam_ptloss4b3a_td_fea_migration_status"] = migration_status
     elif isinstance(workflow_load_tables, dict) and CB_LATER_FEA_RESPONSE_TABLE_KEY in workflow_load_tables:
         # Forward migration from deployed PTLOSS4B3, where the same table was
         # incorrectly owned by the main Loads workspace. Preserve rows but do
@@ -1365,7 +1401,16 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
             )
         )
         session_state[CB_TD_FEA_SOURCE_DECLARATION_KEY] = default_td_fea_source_declaration()
-        session_state["crossbeam_ptloss4b3a_td_fea_migration_status"] = "MIGRATED FROM PTLOSS4B3 LOADS OWNERSHIP — SOURCE DECLARATION REQUIRED"
+        session_state[CB_TD_PERMANENT_EVENT_SCHEDULE_KEY] = pd.DataFrame(
+            legacy_td_event_schedule(
+                declaration={},
+                activation_age_days=float(
+                    session_state.get(CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY, 90.0) or 90.0
+                ),
+                response_rows=session_state[CB_LATER_FEA_RESPONSE_TABLE_KEY],
+            )
+        )
+        session_state["crossbeam_ptloss4b3a_td_fea_migration_status"] = "MIGRATED FROM PTLOSS4B3 LOADS OWNERSHIP TO PTLOSS4B3B — EVENT CASE/AGE REVIEW REQUIRED"
     shear_reinforcement = project.metadata.get(SHEAR_REINFORCEMENT_TABLE_KEY)
     if isinstance(shear_reinforcement, list):
         session_state[SHEAR_REINFORCEMENT_TABLE_KEY] = pd.DataFrame(shear_reinforcement)

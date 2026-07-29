@@ -2881,7 +2881,7 @@ def _render_crossbeam_uls_sls_load_tables(force_unit: str, moment_unit: str) -> 
             for info in result.info:
                 st.info(info)
     st.warning(
-        "Crossbeam ULS/SLS tables are input/persistence foundations only in PTLOSS4B3A. Final strength/service analysis handoff remains a separate named milestone."
+        "Crossbeam ULS/SLS tables are input/persistence foundations only in PTLOSS4B3B. Construction-stage permanent-load events remain owned by Prestress Loss → Time-Dependent; final strength/service analysis handoff remains a separate named milestone."
     )
 
 

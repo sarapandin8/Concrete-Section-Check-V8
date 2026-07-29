@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from concrete_pmm_pro.crossbeam.later_permanent_response import (
     CB_LATER_FEA_RESPONSE_TABLE_KEY,
     CB_TD_FEA_SOURCE_DECLARATION_KEY,
+    CB_TD_PERMANENT_EVENT_SCHEDULE_KEY,
 )
 from typing import Any, Mapping, MutableMapping
 
@@ -81,6 +82,7 @@ INPUT_GROUP_KEYS: dict[str, tuple[str, ...]] = {
         "prestress_loss_settings",
         CB_LATER_FEA_RESPONSE_TABLE_KEY,
         CB_TD_FEA_SOURCE_DECLARATION_KEY,
+        CB_TD_PERMANENT_EVENT_SCHEDULE_KEY,
     ),
     "Loads": (
         "load_cases",
