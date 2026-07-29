@@ -7431,38 +7431,117 @@ def _render_crossbeam_td_fea_response_import(
 
 
 
-def _tendon_path_average_mpa(
+def _projected_station_path_average_trace(
     rows: list[dict[str, Any]],
     value_key: str,
     *,
     length_m: float,
-) -> float | None:
-    """Return a station-path average without double-counting joint-face duplicates."""
+    station_keys: tuple[str, ...] = ("s (m)", "Station s (m)"),
+) -> dict[str, Any]:
+    """Return a duplicate-safe trapezoidal average over projected member station.
+
+    PTLOSS4D1 stored upstream component rows with ``s (m)`` but its assembled
+    Effective Prestress rows with ``Station s (m)``.  Reading only the former
+    collapsed every assembled row to station zero and silently produced an
+    arithmetic row mean.  This trace accepts both canonical labels, averages
+    left/right duplicate faces once at a shared station, and integrates using
+    the actual (possibly nonuniform) station spacing.
+
+    The current source is projected member station, not tendon arc length.  The
+    returned completeness flag therefore confirms 0-to-L projected coverage;
+    a future tendon-arc-length source may replace this approximation without
+    changing the closure contract.
+    """
 
     station_values: dict[float, list[float]] = {}
+    skipped_rows = 0
     for row in rows:
         value = row.get(value_key)
         if value is None:
             continue
-        station = round(_finite_float(row.get("s (m)")), 9)
+        station_value = None
+        for key in station_keys:
+            candidate = row.get(key)
+            if candidate is not None:
+                station_value = _finite_float(candidate)
+                break
+        if station_value is None:
+            skipped_rows += 1
+            continue
+        station = round(float(station_value), 9)
         station_values.setdefault(station, []).append(_finite_float(value))
+
     points = sorted(
         (station, sum(values) / len(values))
         for station, values in station_values.items()
         if values
     )
     if not points:
-        return None
+        return {
+            "average": None,
+            "integral": None,
+            "start_station_m": None,
+            "end_station_m": None,
+            "covered_length_m": 0.0,
+            "point_count": 0,
+            "duplicate_row_count": 0,
+            "skipped_row_count": skipped_rows,
+            "complete_projected_coverage": False,
+            "basis": "projected-station trapezoidal integration",
+        }
+
+    start_station = float(points[0][0])
+    end_station = float(points[-1][0])
+    covered = max(end_station - start_station, 0.0)
+    duplicate_count = sum(max(len(values) - 1, 0) for values in station_values.values())
+    tolerance = max(1.0e-9, 1.0e-7 * max(abs(float(length_m)), 1.0))
+    complete = (
+        abs(start_station) <= tolerance
+        and abs(end_station - float(length_m)) <= tolerance
+        and covered > tolerance
+    )
+
     if len(points) == 1:
-        return float(points[0][1])
-    integral = 0.0
-    covered = 0.0
-    for (s0, v0), (s1, v1) in zip(points, points[1:]):
-        ds = max(float(s1) - float(s0), 0.0)
-        integral += 0.5 * (float(v0) + float(v1)) * ds
-        covered += ds
-    divisor = covered if covered > 1.0e-12 else max(float(length_m), 1.0)
-    return integral / divisor
+        average = float(points[0][1])
+        integral = 0.0
+    else:
+        integral = 0.0
+        for (s0, v0), (s1, v1) in zip(points, points[1:]):
+            ds = max(float(s1) - float(s0), 0.0)
+            integral += 0.5 * (float(v0) + float(v1)) * ds
+        average = integral / covered if covered > tolerance else float(points[0][1])
+
+    return {
+        "average": average,
+        "integral": integral,
+        "start_station_m": start_station,
+        "end_station_m": end_station,
+        "covered_length_m": covered,
+        "point_count": len(points),
+        "duplicate_row_count": duplicate_count,
+        "skipped_row_count": skipped_rows,
+        "complete_projected_coverage": complete,
+        "basis": "projected-station trapezoidal integration",
+    }
+
+
+def _tendon_path_average_mpa(
+    rows: list[dict[str, Any]],
+    value_key: str,
+    *,
+    length_m: float,
+    station_keys: tuple[str, ...] = ("s (m)", "Station s (m)"),
+) -> float | None:
+    """Return the projected-station trapezoidal average for compatibility."""
+
+    trace = _projected_station_path_average_trace(
+        rows,
+        value_key,
+        length_m=length_m,
+        station_keys=station_keys,
+    )
+    average = trace.get("average")
+    return None if average is None else float(average)
 
 
 def _crossbeam_loss_summary_payload(
@@ -7551,8 +7630,8 @@ def _crossbeam_loss_summary_payload(
     relaxation_mpa = _finite_float(current_td.get("relaxation_loss_mpa")) if current_td else None
 
     component_specs = [
-        ("Friction / wobble", "ΔfpF", friction_mpa, "Aps-weighted tendon path average"),
-        ("Anchorage set / draw-in", "ΔfpA", anchorage_mpa, "Aps-weighted seating path average"),
+        ("Friction / wobble", "ΔfpF", friction_mpa, "Aps-weighted projected-station trapezoidal average"),
+        ("Anchorage set / draw-in", "ΔfpA", anchorage_mpa, "Aps-weighted projected-station trapezoidal average"),
         ("Elastic shortening", "ΔfpES", es_mpa, "Aps-weighted current stressing-group result"),
         ("Creep", "ΔfpCD", creep_mpa, "Current event-based TD schedule · representative scalar"),
         ("Shrinkage", "ΔfpSD", shrinkage_mpa, "Current event-based TD schedule · representative scalar"),
@@ -7688,6 +7767,7 @@ def _crossbeam_loss_summary_payload(
     )
 
     average_effective_stress = None
+    effective_path_average_rows: list[dict[str, Any]] = []
     if effective_station_rows and total_area > 0.0:
         numerator = 0.0
         denominator = 0.0
@@ -7695,17 +7775,44 @@ def _crossbeam_loss_summary_payload(
             tendon_rows = [
                 row for row in effective_station_rows if row.get("Tendon") == tendon_id
             ]
-            average = _tendon_path_average_mpa(
+            trace = _projected_station_path_average_trace(
                 tendon_rows,
                 "fpe preview (MPa)",
                 length_m=length_m,
+                station_keys=("Station s (m)", "s (m)"),
+            )
+            average = trace.get("average")
+            effective_path_average_rows.append(
+                {
+                    "Tendon": tendon_id,
+                    "Projected start s (m)": trace.get("start_station_m"),
+                    "Projected end s (m)": trace.get("end_station_m"),
+                    "Covered length (m)": trace.get("covered_length_m"),
+                    "Unique stations": trace.get("point_count"),
+                    "Duplicate rows collapsed": trace.get("duplicate_row_count"),
+                    "Skipped rows": trace.get("skipped_row_count"),
+                    "Average fpe preview (MPa)": average,
+                    "Coverage status": (
+                        "COMPLETE"
+                        if trace.get("complete_projected_coverage")
+                        else "INCOMPLETE"
+                    ),
+                }
             )
             if average is None or meta["aps"] <= 0.0:
                 continue
-            numerator += meta["aps"] * average
+            numerator += meta["aps"] * float(average)
             denominator += meta["aps"]
         if denominator > 0.0:
             average_effective_stress = numerator / denominator
+
+    projected_coverage_ready = bool(
+        effective_path_average_rows
+        and all(
+            str(row.get("Coverage status") or "") == "COMPLETE"
+            for row in effective_path_average_rows
+        )
+    )
 
     initial_total_force = (
         sum(meta["aps"] * meta["fpj"] for meta in tendon_meta.values()) / 1000.0
@@ -7720,6 +7827,27 @@ def _crossbeam_loss_summary_payload(
     average_force_loss = (
         initial_total_force - average_effective_force
         if initial_total_force is not None and average_effective_force is not None
+        else None
+    )
+    average_loss_force_from_components = (
+        total_area * float(average_total_mpa) / 1000.0
+        if total_area > 0.0 and average_total_mpa is not None
+        else None
+    )
+    average_stress_closure = (
+        float(weighted_fpj) - float(average_total_mpa) - float(average_effective_stress)
+        if weighted_fpj is not None
+        and average_total_mpa is not None
+        and average_effective_stress is not None
+        else None
+    )
+    average_force_closure = (
+        float(initial_total_force)
+        - float(average_effective_force)
+        - float(average_loss_force_from_components)
+        if initial_total_force is not None
+        and average_effective_force is not None
+        and average_loss_force_from_components is not None
         else None
     )
 
@@ -7793,10 +7921,15 @@ def _crossbeam_loss_summary_payload(
         average_total_mpa is not None
         and average_effective_stress is not None
         and effective_station_rows
+        and projected_coverage_ready
         and max_stress_closure is not None
         and max_force_closure is not None
+        and average_stress_closure is not None
+        and average_force_closure is not None
         and max_stress_closure <= 1.0e-6
         and max_force_closure <= 1.0e-6
+        and abs(float(average_stress_closure)) <= 1.0e-6
+        and abs(float(average_force_closure)) <= 1.0e-6
         and all(
             -1.0e-9 <= _finite_float(row.get("fpe preview (MPa)")) <= _finite_float(row.get("fpj (MPa)")) + 1.0e-9
             for row in effective_station_rows
@@ -7820,6 +7953,15 @@ def _crossbeam_loss_summary_payload(
         "initial_total_force_kn": initial_total_force,
         "average_effective_force_kn": average_effective_force,
         "average_force_loss_kn": average_force_loss,
+        "average_loss_force_from_components_kn": average_loss_force_from_components,
+        "average_stress_closure_mpa": average_stress_closure,
+        "average_force_closure_kn": average_force_closure,
+        "projected_coverage_ready": projected_coverage_ready,
+        "effective_path_average_rows": effective_path_average_rows,
+        "averaging_basis": (
+            "Aps-weighted piecewise-trapezoidal integration over projected member station s; "
+            "duplicate left/right rows at one station are collapsed before integration."
+        ),
         "governing_rows": governing_rows,
         "max_local_loss_mpa": max_local_loss,
         "max_local_loss_percent": max_local_percent,
@@ -7836,9 +7978,10 @@ def _crossbeam_loss_summary_payload(
             else "SOURCE BLOCKED"
         ),
         "scope_guard": (
-            "Average values are Aps-weighted tendon path averages. Maximum local values remain separate. "
-            "Time-dependent loss is still a representative event-stress scalar; secondary prestress response, "
-            "final station-dependent TD loss, and the SLS handoff remain locked."
+            "Average values use Aps-weighted piecewise-trapezoidal integration over projected member station s; "
+            "they are not arithmetic means of displayed station rows and are not yet true tendon-arc-length averages. "
+            "Maximum local values remain separate. Time-dependent loss is still a representative event-stress scalar; "
+            "secondary prestress response, final station-dependent TD loss, and the SLS handoff remain locked."
         ),
     }
 
@@ -8047,12 +8190,16 @@ def _render_crossbeam_effective_prestress_preview(
             \Delta f_{pTD}&=\Delta f_{pCD}+\Delta f_{pSD}+\Delta f_{pR}\\
             f_{pe,j}^{\mathrm{preview}}(s)&=f_{p,ES,j}(s)-\Delta f_{pTD}\\
             P_{e,j}^{\mathrm{preview}}(s)&=\frac{A_{ps,j}f_{pe,j}^{\mathrm{preview}}(s)}{1000}\\
-            \bar f_{pe,\mathrm{sys}}&=\frac{\sum_j A_{ps,j}\bar f_{pe,j}}{\sum_j A_{ps,j}}
+            \bar f_{pe,j}^{(s)}&=\frac{1}{s_n-s_0}\sum_{i=0}^{n-1}
+            \frac{f_{pe,j}(s_i)+f_{pe,j}(s_{i+1})}{2}(s_{i+1}-s_i)\\
+            \bar f_{pe,\mathrm{sys}}&=\frac{\sum_j A_{ps,j}\bar f_{pe,j}^{(s)}}{\sum_j A_{ps,j}}
             \end{aligned}
             """
         )
         st.caption(
-            "Aps is in mm² and stress is in MPa, so division by 1000 gives tendon force in kN. The current ΔfpTD is representative, not yet tendon/station dependent."
+            "Aps is in mm² and stress is in MPa, so division by 1000 gives tendon force in kN. "
+            "The average uses piecewise trapezoidal integration over projected member station s with duplicate station faces collapsed once; "
+            "it is not an arithmetic mean and is not yet a true tendon-arc-length average. The current ΔfpTD is representative, not yet tendon/station dependent."
         )
 
     render_metric_cards(
@@ -8078,6 +8225,26 @@ def _render_crossbeam_effective_prestress_preview(
                 "status": "ready" if ready else "warning",
             },
             {
+                "title": "System-average stress closure",
+                "value": (
+                    f"{float(summary_payload.get('average_stress_closure_mpa')):.3e} MPa"
+                    if summary_payload.get("average_stress_closure_mpa") is not None
+                    else "—"
+                ),
+                "detail": "f̄pj − Δf̄total − f̄pe",
+                "status": "ready" if ready else "warning",
+            },
+            {
+                "title": "System-average force closure",
+                "value": (
+                    f"{float(summary_payload.get('average_force_closure_kn')):.3e} kN"
+                    if summary_payload.get("average_force_closure_kn") is not None
+                    else "—"
+                ),
+                "detail": "ΣPj − ΣPe,avg − ApsΣ·Δf̄total/1000",
+                "status": "ready" if ready else "warning",
+            },
+            {
                 "title": "Force loss — average",
                 "value": (
                     f"{float(summary_payload.get('average_force_loss_kn')):,.2f} kN"
@@ -8089,6 +8256,23 @@ def _render_crossbeam_effective_prestress_preview(
             },
         ]
     )
+
+    path_average_rows = list(summary_payload.get("effective_path_average_rows") or [])
+    if path_average_rows:
+        with st.expander("Projected-station averaging audit", expanded=False):
+            st.caption(str(summary_payload.get("averaging_basis") or ""))
+            st.dataframe(
+                pd.DataFrame(path_average_rows),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Projected start s (m)": st.column_config.NumberColumn(format="%.3f"),
+                    "Projected end s (m)": st.column_config.NumberColumn(format="%.3f"),
+                    "Covered length (m)": st.column_config.NumberColumn(format="%.3f"),
+                    "Average fpe preview (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                    "Coverage status": st.column_config.TextColumn(width="small"),
+                },
+            )
 
     station_rows = list(summary_payload.get("system_station_rows") or [])
     if station_rows:
@@ -10186,7 +10370,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         st.markdown("#### Lightweight Time-Dependent Losses — event-based schedule preview")
         st.caption(
-            "PTLOSS4B2B1 keeps the route event-based and lightweight. PTLOSS4B3B2 guards the stressing-strength source, while PTLOSS4D1 reorders the loss workflow and adds a source-gated Effective Prestress preview without changing the accepted equations. Opening the tab performs 0 solves; falsework removal uses one no-contact frame solve, and all imported permanent-load events add 0 internal solves."
+            "PTLOSS4B2B1 keeps the route event-based and lightweight. PTLOSS4B3B2 guards the stressing-strength source, while PTLOSS4D1 reorders the loss workflow and PTLOSS4D1A corrects the projected-station average and adds system-average closure guards without changing the accepted equations. Opening the tab performs 0 solves; falsework removal uses one no-contact frame solve, and all imported permanent-load events add 0 internal solves."
         )
         render_metric_cards(
             [
@@ -10214,7 +10398,7 @@ def render_crossbeam_prestress_loss_page() -> None:
             "Source transfer from Segmental Box Girder Pro is limited to unit-safe AASHTO material factors, drying-geometry traceability, age reconciliation, and component separation. BG40 f_cgp, external/unbonded routing, report-match constants, and the BG40 relaxation interaction cap are not reused."
         )
         st.caption(
-            "Baseline continuity: PTLOSS4B2B1 does not assemble Pe/Pe_eff; PTLOSS4B3B2 protects f'ci/Eci source integrity and PTLOSS4D1 summarizes and previews Effective Prestress while keeping the downstream station-dependent force/stress chain locked."
+            "Baseline continuity: PTLOSS4B2B1 does not assemble Pe/Pe_eff; PTLOSS4B3B2 protects f'ci/Eci source integrity and PTLOSS4D1A integrates the Effective Prestress preview over projected station and keeps the downstream station-dependent force/stress chain locked."
         )
         if bool(st.session_state.get(CB_LOSS_ES_STRENGTH_RATIO_GUARD_NOTICE_KEY)):
             st.info(
@@ -11233,7 +11417,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                     """
                 )
                 st.caption(
-                    "PTLOSS4D1 assembles a source-gated fpe/Pe preview but does not release the final Pe/Pe_eff SLS handoff. Multi-event stress sources and the loss summary remain QA previews until the downstream station-dependent force/stress chain is validated."
+                    "PTLOSS4D1A assembles a projected-station-integrated, source-gated fpe/Pe preview but does not release the final Pe/Pe_eff SLS handoff. Multi-event stress sources and the loss summary remain QA previews until the downstream station-dependent force/stress chain is validated."
                 )
 
     with audit_tab:

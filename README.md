@@ -1760,3 +1760,7 @@ Reuses the established Loads-workspace Excel/CSV import workflow to connect one 
 ## CROSSBEAM.PTLOSS4D1 — Reordered Loss Workflow and Source-Gated Effective Prestress Preview
 
 Moves Loss Summary after Time-Dependent, separates system-average and maximum-local loss semantics, and adds a row-consistent `fpe(s)` / `Pe(s)` QA preview with formula, stress-closure, and force-closure traces while keeping station-dependent TD, secondary prestress, and final SLS handoff locked. See `README_CROSSBEAM_PTLOSS4D1.md`.
+
+## CROSSBEAM.PTLOSS4D1A — Projected-Station Integrated Effective Prestress Average and Closure Guard
+
+Corrects the Effective Prestress system average by reading the assembled `Station s (m)` source, collapsing duplicate station faces, and using actual-spacing trapezoidal integration instead of an arithmetic row mean. Adds full projected-coverage gating plus system-average stress/force closure while retaining representative TD loss and the locked final SLS handoff. See `README_CROSSBEAM_PTLOSS4D1A.md`.
