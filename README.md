@@ -1748,3 +1748,7 @@ Converts mesh-dependent raw contact-node reactions into auditable tributary-leng
 ## CROSSBEAM.PTLOSS3B2B2 — Incremental Tendon-Group Compression-Contact Stages
 
 Advances the rigid compression-only falsework active set through Gravity and the user-confirmed G1→G2→G3→G4 post-anchor tendon sequence, preserving prior groups, auditing lift-off/re-closure, frame response, staged-versus-one-shot consistency, and global mesh convergence while keeping `f_cgp`, Elastic Shortening force feedback, `P after ES`, and `Pe/Pe_eff` locked. See `README_CROSSBEAM_PTLOSS3B2B2.md`.
+
+## CROSSBEAM.PTLOSS4B3 — Imported FEA Later Permanent Load Response
+
+Reuses the established Loads-workspace Excel/CSV import workflow to connect one adopted row-coupled incremental FEA P/V2/M3 response case to the Crossbeam Later Permanent Load event, derives auditable tendon-CG Delta f_cd without a second internal solve, persists the source in Project JSON, and keeps final station-dependent Pe(s)/Pe_eff(s) assembly locked. See `README_CROSSBEAM_PTLOSS4B3.md`.

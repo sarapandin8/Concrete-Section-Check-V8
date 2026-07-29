@@ -20,14 +20,14 @@ from concrete_pmm_pro.core.analysis import AnalysisModeSettings
 from concrete_pmm_pro.core.analysis_modes import analysis_mode_label
 from concrete_pmm_pro.core.models import LoadCase
 from concrete_pmm_pro.core.units import kN_to_N, kNm_to_Nmm, tonf_to_N, tonfm_to_Nmm
-from concrete_pmm_pro.ui.commercial import render_metric_cards, render_page_header, render_section_bar
-from concrete_pmm_pro.crossbeam.later_permanent_load import (
-    CB_LATER_PERMANENT_LOAD_EDITOR_KEY,
-    CB_LATER_PERMANENT_LOAD_TABLE_KEY,
-    LOAD_TABLE_COLUMNS as CROSSBEAM_LATER_LOAD_COLUMNS,
-    LOAD_TYPE_OPTIONS as CROSSBEAM_LATER_LOAD_TYPE_OPTIONS,
-    default_later_permanent_load_rows,
+from concrete_pmm_pro.crossbeam.later_permanent_response import (
+    CB_LATER_FEA_RESPONSE_EDITOR_KEY,
+    CB_LATER_FEA_RESPONSE_TABLE_KEY,
+    LATER_FEA_RESPONSE_COLUMNS,
+    canonical_later_fea_response_rows,
+    default_later_fea_response_template,
 )
+from concrete_pmm_pro.ui.commercial import render_metric_cards, render_page_header, render_section_bar
 from concrete_pmm_pro.serviceability.girder_sls_load_components import (
     BEAM_GIRDER_SYSTEM_SETTINGS_KEY,
     BEAM_GIRDER_SLS_AUTO_LOAD_SETTINGS_KEY,
@@ -201,7 +201,7 @@ WORKFLOW_LOAD_TABLE_KEYS = (
     "column_sls_loads_table",
     "beam_uls_loads_table",
     "beam_sls_loads_table",
-    CB_LATER_PERMANENT_LOAD_TABLE_KEY,
+    CB_LATER_FEA_RESPONSE_TABLE_KEY,
 )
 IMPORT_FILE_TYPES = ["xlsx", "csv"]
 LEGACY_COLUMN_RENAMES = {
@@ -263,8 +263,12 @@ def _render_load_workflow_notice() -> None:
     if settings.member_type == "portal_frame_crossbeam":
         st.info(
             f"Active member workflow: {analysis_mode_label(settings)}. "
-            "This page owns the verified Later Permanent Load event source used by Prestress Loss → Time-Dependent. "
-            "It does not reuse Column/Pier or Beam/Girder ULS/SLS tables."
+            "This page owns the imported FEA response source for the Later Permanent Load event used by "
+            "Prestress Loss → Time-Dependent. It reuses the established template/upload/preview/apply workflow."
+        )
+        st.caption(
+            "Import one adopted incremental FEA case/combination. P, V2, and M3 remain coupled by source row; "
+            "the app does not mix component maxima from different rows or cases."
         )
         return
     st.info(
@@ -1019,12 +1023,12 @@ def _ensure_workflow_load_tables_initialized() -> None:
         st.session_state["beam_uls_loads_table"] = _default_beam_uls_load_table()
     if "beam_sls_loads_table" not in st.session_state:
         st.session_state["beam_sls_loads_table"] = _default_beam_sls_load_table()
-    if CB_LATER_PERMANENT_LOAD_TABLE_KEY not in st.session_state:
-        st.session_state[CB_LATER_PERMANENT_LOAD_TABLE_KEY] = pd.DataFrame(
-            default_later_permanent_load_rows(
+    if CB_LATER_FEA_RESPONSE_TABLE_KEY not in st.session_state:
+        st.session_state[CB_LATER_FEA_RESPONSE_TABLE_KEY] = pd.DataFrame(
+            default_later_fea_response_template(
                 float(st.session_state.get("crossbeam_ui1_length_m", 20.0) or 20.0)
             ),
-            columns=list(CROSSBEAM_LATER_LOAD_COLUMNS),
+            columns=list(LATER_FEA_RESPONSE_COLUMNS),
         )
 
 
@@ -1203,6 +1207,14 @@ WORKFLOW_IMPORT_ALIASES: dict[str, tuple[str, ...]] = {
     "Tu": ("Tu", "T", "Torsion"),
     "T": ("T", "Tu", "Torsion"),
     "Nu": ("Nu", "N", "P", "Pu", "Axial", "Axial Force"),
+    "Step Type": ("Step Type", "StepType", "Step", "Output Step Type"),
+    "Step Num": ("Step Num", "StepNum", "Step Number", "Output Step Num"),
+    "FEA Object": ("FEA Object", "Object", "Obj", "Frame", "Frame Object", "Section Cut"),
+    "FEA Element": ("FEA Element", "Element", "Elm", "Elm ID", "Element ID"),
+    "End / Side": ("End / Side", "End", "Side", "End Side", "Output End", "Location Side"),
+    "Section ID": ("Section ID", "Section", "Section Name", "Property", "Property Name"),
+    "V2": ("V2", "Vy", "V", "Shear 2", "Shear V2"),
+    "M3": ("M3", "Mx", "M", "Moment 3", "Moment M3"),
     "Note": ("Note", "Notes", "Description", "Remarks", "Comment"),
 }
 
@@ -2684,110 +2696,105 @@ def _render_building_beam_girder_load_tables(force_unit: str, moment_unit: str) 
 
 
 
-def _crossbeam_later_load_layout_status(table: pd.DataFrame, length_m: float) -> dict[str, Any]:
-    rows = _stringify_table(pd.DataFrame(table), list(CROSSBEAM_LATER_LOAD_COLUMNS))
+
+def _crossbeam_later_fea_syntax_status(table: pd.DataFrame, *, length_m: float) -> dict[str, Any]:
+    rows = _stringify_table(pd.DataFrame(table), list(LATER_FEA_RESPONSE_COLUMNS))
     active = rows[rows["Active"].map(lambda value: _to_bool(value, default=False))]
     issues: list[str] = []
-    total_downward = 0.0
+    cases: set[str] = set()
     for index, row in active.iterrows():
         row_no = int(index) + 1
-        load_type = str(row.get("Load Type") or "").strip()
-        load_id = str(row.get("Load ID") or "").strip()
-        station = _to_float(row.get("Station s (m)"))
-        end_station = _to_float(row.get("End station s (m)"))
-        magnitude = _to_float(row.get("Magnitude"))
-        if not load_id:
-            issues.append(f"Row {row_no}: Load ID is required.")
-        if load_type not in CROSSBEAM_LATER_LOAD_TYPE_OPTIONS:
-            issues.append(f"Row {row_no}: select Point load or Uniform line load.")
+        case_name = str(row.get("Case Name") or "").strip()
+        station = _to_float(row.get("Station x (m)"))
+        if not case_name:
+            issues.append(f"Row {row_no}: Case Name is required.")
+        else:
+            cases.add(case_name)
         if station is None or station < 0.0 or station > length_m:
-            issues.append(f"Row {row_no}: station must lie within 0 to {length_m:.3f} m.")
-        if magnitude is None or magnitude <= 0.0:
-            issues.append(f"Row {row_no}: magnitude must be greater than zero; downward is positive.")
-        if load_type == "Uniform line load":
-            if end_station is None or station is None or end_station <= station or end_station > length_m:
-                issues.append(f"Row {row_no}: uniform-load end station must be greater than start and within L.")
-            elif magnitude is not None:
-                total_downward += magnitude * (end_station - station)
-        elif load_type == "Point load" and magnitude is not None:
-            total_downward += magnitude
+            issues.append(f"Row {row_no}: Station x must lie within 0 to {length_m:.3f} m.")
+        for column in ("P", "V2", "M3"):
+            if _to_float(row.get(column)) is None:
+                issues.append(f"Row {row_no}: {column} must be numeric.")
+    if len(cases) > 1:
+        issues.append("Active rows must use one adopted FEA Case Name; import or activate only one case/combination.")
     if issues:
         status = "REVIEW REQUIRED"
     elif active.empty:
-        status = "LAYOUT REQUIRED"
+        status = "IMPORT REQUIRED"
     else:
-        status = "LAYOUT READY"
+        status = "IMPORT READY"
     return {
         "status": status,
         "active_count": len(active),
+        "case_count": len(cases),
+        "case_name": next(iter(cases), "—"),
         "issues": list(dict.fromkeys(issues)),
-        "total_downward_kN": total_downward,
     }
 
 
-def _render_crossbeam_later_permanent_load_table() -> None:
-    """Render the PTLOSS4B3 Loads-workspace source without solver execution."""
+def _render_crossbeam_later_fea_response_table(force_unit: str, moment_unit: str) -> None:
+    """Render PTLOSS4B3 by reusing the established import/load-table pattern."""
 
     length_m = float(st.session_state.get("crossbeam_ui1_length_m", 20.0) or 20.0)
-    st.markdown("### Portal Frame Crossbeam — Later Permanent Load Event")
+    st.markdown("### Portal Frame Crossbeam — Imported FEA Later Permanent Load Response")
     st.caption(
-        "Define the permanent gravity loads that become active at age tp in Prestress Loss → Time-Dependent. "
-        "Opening or editing this page performs 0 structural solves. The Time-Dependent Run validates these rows, converts them to consistent frame nodal loads, and runs one cumulative released-frame event solve."
+        "Import the incremental internal-force response caused by the permanent loads that become active at age tp. "
+        "Opening, importing, previewing, or editing this page performs 0 structural solves."
     )
     current = _stringify_table(
-        pd.DataFrame(st.session_state.get(CB_LATER_PERMANENT_LOAD_TABLE_KEY)),
-        list(CROSSBEAM_LATER_LOAD_COLUMNS),
+        pd.DataFrame(st.session_state.get(CB_LATER_FEA_RESPONSE_TABLE_KEY)),
+        list(LATER_FEA_RESPONSE_COLUMNS),
     )
-    layout = _crossbeam_later_load_layout_status(current, length_m)
-    render_metric_cards(
+    syntax = _crossbeam_later_fea_syntax_status(current, length_m=length_m)
+    _render_load_compact_cards(
         [
-            {
-                "title": "Event",
-                "value": "Later permanent load",
-                "detail": "activates at tp in Time-Dependent Loss",
-                "status": "info",
-            },
-            {
-                "title": "Crossbeam length",
-                "value": f"L = {length_m:.3f} m",
-                "detail": "read-only; edit in Section Builder",
-                "status": "neutral",
-            },
-            {
-                "title": "Layout status",
-                "value": str(layout["status"]),
-                "detail": f"{layout['active_count']} active row(s)",
-                "status": "ready" if layout["status"] == "LAYOUT READY" else "warning",
-            },
-            {
-                "title": "Downward resultant",
-                "value": f"{float(layout['total_downward_kN']):,.3f} kN",
-                "detail": "point + integrated line loads",
-                "status": "neutral",
-            },
-        ]
+            {"title": "Source", "value": "FEA import", "detail": "incremental later-load response", "status": "info"},
+            {"title": "Crossbeam length", "value": f"L = {length_m:.3f} m", "detail": "read-only; Section Builder source", "status": "neutral"},
+            {"title": "Import status", "value": syntax["status"], "detail": f"{syntax['active_count']} active row(s)", "status": "ready" if syntax["status"] == "IMPORT READY" else "warning"},
+            {"title": "Adopted case", "value": syntax["case_name"], "detail": "one case/combination only", "status": "ready" if syntax["case_count"] == 1 else "warning"},
+        ],
+        columns=4,
     )
     st.info(
-        "Input convention: Point load magnitude is kN; Uniform line load magnitude is kN/m. "
-        "Downward gravity is entered positive. Point loads use Station s; line loads use Station s to End station s."
+        f"Import convention: Station in m; P and V2 in {force_unit}; M3 in {moment_unit}. "
+        "P is compression-positive and M3 is sagging-positive in the Crossbeam s–vertical plane. "
+        "Export or transform the FEA signs before Apply when the analysis program uses another convention."
     )
-    action_a, action_b = st.columns([1, 3])
-    with action_a:
-        if st.button(
-            "Reset safe template",
-            use_container_width=True,
-            key="crossbeam_ptloss4b3_reset_later_loads",
-        ):
-            st.session_state[CB_LATER_PERMANENT_LOAD_TABLE_KEY] = pd.DataFrame(
-                default_later_permanent_load_rows(length_m),
-                columns=list(CROSSBEAM_LATER_LOAD_COLUMNS),
-            )
-            st.session_state.pop(CB_LATER_PERMANENT_LOAD_EDITOR_KEY, None)
-            _sync_workflow_load_tables_metadata()
-            st.rerun()
-    with action_b:
-        st.caption(
-            "Template rows are inactive and have zero magnitude so a new project cannot create a fake permanent-load event. Enter verified loads, then set Active."
+    st.warning(
+        "Do not import separate maxima for P, V2, and M3. Each active row must retain the force tuple from the same FEA case, step, station, element/end, and section side."
+    )
+
+    template = pd.DataFrame(default_later_fea_response_template(length_m), columns=list(LATER_FEA_RESPONSE_COLUMNS))
+
+    def _replace_later_fea_rows(imported: pd.DataFrame) -> None:
+        st.session_state[CB_LATER_FEA_RESPONSE_TABLE_KEY] = pd.DataFrame(
+            canonical_later_fea_response_rows(imported),
+            columns=list(LATER_FEA_RESPONSE_COLUMNS),
+        )
+
+    def _append_later_fea_rows(imported: pd.DataFrame) -> None:
+        current_rows = canonical_later_fea_response_rows(
+            st.session_state.get(CB_LATER_FEA_RESPONSE_TABLE_KEY, [])
+        )
+        imported_rows = canonical_later_fea_response_rows(imported)
+        st.session_state[CB_LATER_FEA_RESPONSE_TABLE_KEY] = pd.DataFrame(
+            current_rows + imported_rows,
+            columns=list(LATER_FEA_RESPONSE_COLUMNS),
+        )
+
+    with st.expander("Import Later Permanent Load response from Excel / CSV", expanded=True):
+        _render_workflow_import_tools(
+            title="Crossbeam Later Permanent Load FEA response import",
+            table_name="Crossbeam Later FEA",
+            columns=list(LATER_FEA_RESPONSE_COLUMNS),
+            numeric_columns=["Station x (m)", "P", "V2", "M3"],
+            state_key=CB_LATER_FEA_RESPONSE_TABLE_KEY,
+            editor_key=CB_LATER_FEA_RESPONSE_EDITOR_KEY,
+            key_prefix="crossbeam_later_fea_response",
+            unique_key_columns=["Case Name", "Station x (m)", "FEA Element", "End / Side", "Section ID"],
+            replace_callback=_replace_later_fea_rows,
+            append_callback=_append_later_fea_rows,
+            template_df=template,
         )
 
     edited = st.data_editor(
@@ -2797,59 +2804,52 @@ def _render_crossbeam_later_permanent_load_table() -> None:
         hide_index=True,
         column_config={
             "Active": st.column_config.CheckboxColumn("Active"),
-            "Load ID": st.column_config.TextColumn("Load ID"),
-            "Load Type": st.column_config.SelectboxColumn(
-                "Load Type", options=list(CROSSBEAM_LATER_LOAD_TYPE_OPTIONS), required=True
-            ),
-            "Station s (m)": st.column_config.TextColumn(
-                "Station s (m)", help="Point-load station or line-load start station along the physical Crossbeam."
-            ),
-            "End station s (m)": st.column_config.TextColumn(
-                "End station s (m)", help="Required only for Uniform line load. Leave blank for Point load."
-            ),
-            "Magnitude": st.column_config.TextColumn(
-                "Magnitude", help="Point: kN. Uniform line load: kN/m. Downward is positive."
-            ),
+            "Station x (m)": st.column_config.TextColumn("Station x (m)", help="Physical Crossbeam station s = 0 to L."),
+            "Case Name": st.column_config.TextColumn("Case Name", help="One adopted incremental FEA case or combination."),
+            "Step Type": st.column_config.TextColumn("Step Type", help="Optional FEA step metadata."),
+            "Step Num": st.column_config.TextColumn("Step Num", help="Optional FEA step number/time metadata."),
+            "FEA Object": st.column_config.TextColumn("FEA Object", help="Optional source object/frame/section-cut identifier."),
+            "FEA Element": st.column_config.TextColumn("FEA Element", help="Optional source element identifier; retained for traceability."),
+            "End / Side": st.column_config.SelectboxColumn("End / Side", options=["", "Left-side limit", "Right-side limit", "Interior sample"], help="Required at a section/property discontinuity when the station is ambiguous."),
+            "Section ID": st.column_config.TextColumn("Section ID", help="Optional Crossbeam Section ID. Use with End / Side at boundaries."),
+            "P": st.column_config.TextColumn(f"P ({force_unit}; compression +)"),
+            "V2": st.column_config.TextColumn(f"V2 ({force_unit})"),
+            "M3": st.column_config.TextColumn(f"M3 ({moment_unit}; sagging +)"),
             "Note": st.column_config.TextColumn("Note"),
         },
-        key=CB_LATER_PERMANENT_LOAD_EDITOR_KEY,
+        key=CB_LATER_FEA_RESPONSE_EDITOR_KEY,
         on_change=_sync_simple_load_editor_to_table,
-        args=(
-            CB_LATER_PERMANENT_LOAD_TABLE_KEY,
-            CB_LATER_PERMANENT_LOAD_EDITOR_KEY,
-            list(CROSSBEAM_LATER_LOAD_COLUMNS),
-        ),
+        args=(CB_LATER_FEA_RESPONSE_TABLE_KEY, CB_LATER_FEA_RESPONSE_EDITOR_KEY, list(LATER_FEA_RESPONSE_COLUMNS)),
     )
-    edited = _stringify_table(edited, list(CROSSBEAM_LATER_LOAD_COLUMNS))
+    edited = _stringify_table(edited, list(LATER_FEA_RESPONSE_COLUMNS))
     _store_editor_table_and_rerun_on_change(
-        CB_LATER_PERMANENT_LOAD_TABLE_KEY,
+        CB_LATER_FEA_RESPONSE_TABLE_KEY,
         edited,
         current,
-        list(CROSSBEAM_LATER_LOAD_COLUMNS),
+        list(LATER_FEA_RESPONSE_COLUMNS),
     )
     _sync_workflow_load_tables_metadata()
 
-    current_status = _crossbeam_later_load_layout_status(edited, length_m)
-    if current_status["issues"]:
-        with st.expander("Later permanent-load input review", expanded=True):
-            for issue in current_status["issues"]:
+    syntax = _crossbeam_later_fea_syntax_status(edited, length_m=length_m)
+    if syntax["issues"]:
+        with st.expander("Imported response input review", expanded=True):
+            for issue in syntax["issues"]:
                 st.warning(issue)
-    elif current_status["status"] == "LAYOUT READY":
+    elif syntax["status"] == "IMPORT READY":
         st.success(
-            "Later permanent-load layout is ready for structural validation. Run Prestress Loss → Time-Dependent to create and verify the cumulative event response."
+            "Imported rows are syntactically ready. Prestress Loss → Time-Dependent performs the section/tendon/source validation and calculates the governing imported Δfcd."
         )
     else:
         st.warning(
-            "No active verified later permanent-load rows exist. Time-Dependent Loss will retain the engineer-entered Δfcd field only as a QA fallback and will not treat it as a verified structural source."
+            "No active imported Later Permanent Load response is available. Time-Dependent remains a schedule QA preview and cannot treat the later-load source as verified."
         )
 
-    with st.expander("PTLOSS4B3 source boundary", expanded=False):
-        st.write("- This Loads page stores input rows only and never runs the frame solver.")
-        st.write("- The event is cumulative: self-weight + post-ES prestress + active later permanent loads.")
-        st.write("- Point-load stations and Uniform-load start/end stations must coincide with the accepted 0.5 m frame mesh; the Time-Dependent run reports the nearest mesh station when they do not.")
-        st.write("- Point loads are applied at frame nodes; Uniform line loads are applied directly to every complete beam element in the selected interval.")
-        st.write("- Time-Dependent QA exposes load-row audit, frame-load closure, raw N/M, response changes, and fingerprints.")
-        st.write("- ULS/SLS operational loads are outside this milestone and are not mixed into Δfcd.")
+    with st.expander("FEA import engineering contract", expanded=False):
+        st.write("- Import incremental P/V2/M3 effects from one adopted Later Permanent Load case/combination.")
+        st.write("- P, V2, and M3 stay coupled by row; no independent component envelope is assembled.")
+        st.write("- End / Side or Section ID is required where one station has two section/property limits.")
+        st.write("- The Time-Dependent route calculates Δfcd = P/A − M3·yp/I at the tendon CG.")
+        st.write("- The app still uses one internal solve for falsework removal; imported FEA response adds no solver run.")
 
 
 def _commercial_load_dashboard_cards(force_unit: str, moment_unit: str, settings: AnalysisModeSettings) -> list[dict[str, object]]:
@@ -2868,6 +2868,7 @@ def _commercial_load_dashboard_cards(force_unit: str, moment_unit: str, settings
         _df_from_key("beam_uls_loads_table"),
         _df_from_key("beam_sls_loads_table"),
         _df_from_key("building_beam_girder_uls_loads_table"),
+        _df_from_key(CB_LATER_FEA_RESPONSE_TABLE_KEY),
     ]
     total_rows = sum(len(df) for df in tables if not df.empty)
     active_rows = 0
@@ -2899,24 +2900,28 @@ def render_loads_page() -> None:
     _render_load_workflow_notice()
 
     if settings.member_type == "portal_frame_crossbeam":
-        _render_crossbeam_later_permanent_load_table()
-        return
-
-    unit_cols = st.columns(2)
-    with unit_cols[0]:
-        force_unit = st.selectbox(
-            "Force unit",
-            FORCE_UNIT_OPTIONS,
-            index=0,
-            help="Unit used by axial and shear columns in the active load tables.",
+        force_unit = "kN"
+        moment_unit = "kN-m"
+        st.caption(
+            "Crossbeam Later Permanent Load FEA import uses the locked SI exchange basis: kN, kN-m, and m. "
+            "Convert the FEA export before Apply when its display units differ."
         )
-    with unit_cols[1]:
-        moment_unit = st.selectbox(
-            "Moment unit",
-            MOMENT_UNIT_OPTIONS,
-            index=0,
-            help="Unit used by moment and torsion columns in the active load tables.",
-        )
+    else:
+        unit_cols = st.columns(2)
+        with unit_cols[0]:
+            force_unit = st.selectbox(
+                "Force unit",
+                FORCE_UNIT_OPTIONS,
+                index=0,
+                help="Unit used by axial and shear columns in the active load tables.",
+            )
+        with unit_cols[1]:
+            moment_unit = st.selectbox(
+                "Moment unit",
+                MOMENT_UNIT_OPTIONS,
+                index=0,
+                help="Unit used by moment and torsion columns in the active load tables.",
+            )
 
     render_metric_cards(_commercial_load_dashboard_cards(force_unit, moment_unit, settings))
     render_section_bar("Load input tables", "ULS/SLS cases are edited below and remain the source of truth for analysis.", mark="Σ")
@@ -2924,7 +2929,9 @@ def render_loads_page() -> None:
     with st.expander("Axis convention for load input", expanded=False):
         _render_axis_convention_panel()
 
-    if settings.member_type == "beam_girder":
+    if settings.member_type == "portal_frame_crossbeam":
+        _render_crossbeam_later_fea_response_table(force_unit, moment_unit)
+    elif settings.member_type == "beam_girder":
         _render_beam_girder_load_tables(force_unit, moment_unit)
     elif settings.member_type == "building_beam_girder":
         _render_building_beam_girder_load_tables(force_unit, moment_unit)

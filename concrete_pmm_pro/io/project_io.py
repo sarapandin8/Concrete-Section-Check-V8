@@ -32,6 +32,7 @@ from concrete_pmm_pro.core.reinforcement_system import (
 from concrete_pmm_pro.core.models import LoadCase, PrestressElement, Rebar
 from concrete_pmm_pro.core.project import ProjectModel
 from concrete_pmm_pro.core.units import N_to_kN, Nmm_to_kNm
+from concrete_pmm_pro.crossbeam.later_permanent_response import CB_LATER_FEA_RESPONSE_TABLE_KEY
 from concrete_pmm_pro.crossbeam.section_library import (
     CB_SECLIB_ACTIVE_ID_KEY,
     CB_SECLIB_DEFINITIONS_KEY,
@@ -63,9 +64,6 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY,
     crossbeam_prestress_loss_settings_from_session_state,
     restore_crossbeam_prestress_loss_project_state,
-)
-from concrete_pmm_pro.crossbeam.later_permanent_load import (
-    CB_LATER_PERMANENT_LOAD_TABLE_KEY,
 )
 from concrete_pmm_pro.data.prestress_tendon_products import (
     DEFAULT_STRAND_DIAMETER_MM,
@@ -201,7 +199,7 @@ WORKFLOW_LOAD_TABLE_METADATA_KEYS = (
     "column_sls_loads_table",
     "beam_uls_loads_table",
     "beam_sls_loads_table",
-    CB_LATER_PERMANENT_LOAD_TABLE_KEY,
+    CB_LATER_FEA_RESPONSE_TABLE_KEY,
 )
 
 CROSSBEAM_LENGTH_STATE_KEY = "crossbeam_ui1_length_m"

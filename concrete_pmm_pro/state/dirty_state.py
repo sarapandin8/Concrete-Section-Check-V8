@@ -11,6 +11,8 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+
+from concrete_pmm_pro.crossbeam.later_permanent_response import CB_LATER_FEA_RESPONSE_TABLE_KEY
 from typing import Any, Mapping, MutableMapping
 
 CURRENT_INPUT_HASH_KEY = "_perf_current_input_hash"
@@ -81,10 +83,10 @@ INPUT_GROUP_KEYS: dict[str, tuple[str, ...]] = {
         "column_sls_loads_table",
         "beam_uls_loads_table",
         "beam_sls_loads_table",
-        "crossbeam_ptloss4b3_later_permanent_load_table",
         "beam_sls_transfer_loads_table",
         "beam_sls_construction_loads_table",
         "beam_sls_service_loads_table",
+        CB_LATER_FEA_RESPONSE_TABLE_KEY,
         "girder_sls_load_components",
         "beam_girder_sls_auto_load_settings",
         "building_beam_girder_service_load_settings",
