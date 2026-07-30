@@ -155,14 +155,14 @@ def test_ptloss4d2_handoff_blocks_unclosed_or_incomplete_sources() -> None:
 
 def test_ptloss4d2_ui_keeps_external_fea_and_sls_return_boundaries_explicit() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
-    assert "FEA Effective Prestress Handoff" in source
-    assert "Download FEA handoff workbook" in source
+    assert "External-FEA handoff" in source
+    assert "Download FEA workbook" in source
     assert "Do not apply the same losses twice" in source
-    assert "Engineer adoption — use the representative Time-Dependent loss approximation" in source
+    assert "Engineer adoption — accept representative TD loss" in source
     assert "DIRECT_EFFECTIVE_FORCE" in source
-    assert "Download Three-Point Profile CSV" in source
+    assert "Download Three-Point CSV" in source
     assert "disabled=not download_ready" in source
-    assert "calculate secondary; return verified P/V2/M3 through Loads" in source
+    assert "External FEA calculates secondary prestress; import verified FEA SLS P/V2/M3 through Loads" in source
 
 
 def test_ptloss4d2a_requires_explicit_td_adoption_before_download() -> None:

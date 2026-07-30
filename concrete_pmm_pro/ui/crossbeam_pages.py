@@ -8128,13 +8128,12 @@ def _render_crossbeam_loss_summary(
 def _render_crossbeam_effective_prestress_fea_handoff(
     summary_payload: Mapping[str, Any],
 ) -> None:
-    """Render an engineer-adopted preliminary external-FEA handoff contract."""
+    """Render a compact engineer-adopted external-FEA handoff contract."""
 
-    st.markdown("#### FEA Effective Prestress Handoff")
+    st.markdown("#### External-FEA handoff")
     st.caption(
-        "Download tendon stress/force after accounted losses for external structural analysis. "
-        "This handoff is separate from the main ULS/SLS Loads import and performs 0 structural solves; "
-        "after external analysis, import verified FEA SLS P/V2/M3 through Loads."
+        "Select one application route, confirm the representative Time-Dependent approximation, "
+        "then download the reviewed tendon handoff. External FEA calculates secondary prestress; import verified FEA SLS P/V2/M3 through Loads."
     )
 
     current_route = str(
@@ -8149,17 +8148,19 @@ def _render_crossbeam_effective_prestress_fea_handoff(
         FEA_ROUTE_DIRECT_EFFECTIVE_FORCE: "Direct effective force — input fpe / Pe once",
         FEA_ROUTE_JACKING_WITH_LOSSES: "Jacking force with FEA losses — input fpj / Pj and reproduce losses",
     }
-    route = st.selectbox(
-        "FEA application route",
-        options=list(FEA_APPLICATION_ROUTES),
-        format_func=lambda value: route_labels.get(str(value), str(value)),
-        key=CB_EFFECTIVE_FEA_ROUTE_KEY,
-        help=(
-            "Choose exactly one route. Direct effective force is recommended when the FEA program accepts "
-            "effective tendon stress/force. The alternative starts from jacking force and requires the same "
-            "loss profile to be reproduced in FEA."
-        ),
-    )
+    route_col, adoption_col = st.columns([1.0, 1.35])
+    with route_col:
+        route = st.selectbox(
+            "FEA application route",
+            options=list(FEA_APPLICATION_ROUTES),
+            format_func=lambda value: route_labels.get(str(value), str(value)),
+            key=CB_EFFECTIVE_FEA_ROUTE_KEY,
+            help=(
+                "Choose exactly one route. Direct effective force is recommended when the FEA program accepts "
+                "effective tendon stress/force. The alternative starts from jacking force and requires the same "
+                "loss profile to be reproduced in FEA."
+            ),
+        )
 
     audit_metadata = dict(summary_payload.get("handoff_audit_metadata") or {})
     source_handoff = build_effective_prestress_fea_handoff(
@@ -8176,15 +8177,16 @@ def _render_crossbeam_effective_prestress_fea_handoff(
         st.session_state[CB_EFFECTIVE_FEA_TD_ADOPTION_KEY] = False
         st.session_state[CB_EFFECTIVE_FEA_ADOPTION_TOKEN_KEY] = adoption_token
 
-    engineer_adopted_td = st.checkbox(
-        "Engineer adoption — use the representative Time-Dependent loss approximation for this external-FEA handoff",
-        key=CB_EFFECTIVE_FEA_TD_ADOPTION_KEY,
-        disabled=not source_ready,
-        help=(
-            "The current creep, shrinkage, and relaxation loss is a representative scalar, not a fully "
-            "tendon/station-dependent model. Confirm only after accepting that limitation for this FEA handoff."
-        ),
-    )
+    with adoption_col:
+        engineer_adopted_td = st.checkbox(
+            "Engineer adoption — accept representative TD loss for this FEA handoff",
+            key=CB_EFFECTIVE_FEA_TD_ADOPTION_KEY,
+            disabled=not source_ready,
+            help=(
+                "The current creep, shrinkage, and relaxation loss is a representative scalar, not a fully "
+                "tendon/station-dependent model. Confirm only after accepting that limitation for this FEA handoff."
+            ),
+        )
 
     handoff = build_effective_prestress_fea_handoff(
         summary_payload,
@@ -8196,64 +8198,26 @@ def _render_crossbeam_effective_prestress_fea_handoff(
     ready = bool(handoff.get("ready"))
     download_ready = bool(handoff.get("download_ready"))
     tendon_rows = list(handoff.get("tendon_rows") or [])
-    station_rows = list(handoff.get("station_rows") or [])
     fingerprint = str(handoff.get("source_fingerprint") or "")
     source_id = str(handoff.get("source_id") or fingerprint[:12])
 
-    render_metric_cards(
-        [
-            {
-                "title": "FEA handoff source",
-                "value": "ENGINEER ADOPTED" if download_ready else ("ADOPTION REQUIRED" if ready else "SOURCE BLOCKED"),
-                "detail": str(handoff.get("status") or "SOURCE BLOCKED"),
-                "status": "ready" if download_ready else ("warning" if ready else "critical"),
-            },
-            {
-                "title": "Tendon coverage",
-                "value": f"{len(tendon_rows)} Tendons" if tendon_rows else "—",
-                "detail": f"{len(station_rows)} three-point rows · Left / Mid / Right / Average",
-                "status": "ready" if ready else "warning",
-            },
-            {
-                "title": "Application route",
-                "value": str(route),
-                "detail": route_labels.get(str(route), str(route)),
-                "status": "info",
-            },
-            {
-                "title": "TD approximation",
-                "value": "ENGINEER ADOPTED" if engineer_adopted_td else "ADOPTION REQUIRED",
-                "detail": "representative creep + shrinkage + relaxation scalar",
-                "status": "ready" if engineer_adopted_td else "warning",
-            },
-            {
-                "title": "Secondary / SLS route",
-                "value": "EXTERNAL FEA · SLS PENDING",
-                "detail": "calculate secondary; return verified P/V2/M3 through Loads",
-                "status": "warning",
-            },
-        ]
-    )
-
     if not ready:
+        st.error("FEA HANDOFF SOURCE BLOCKED — refresh the upstream loss components and closure checks.")
         for issue in handoff.get("issues") or ["Effective Prestress source is incomplete."]:
-            st.warning(str(issue))
+            st.caption(f"• {issue}")
         return
 
     if download_ready:
         st.success(
-            "ENGINEER-ADOPTED PRELIMINARY HANDOFF READY — apply the selected route once and let the external portal-frame model calculate secondary prestress."
+            f"ENGINEER-ADOPTED PRELIMINARY HANDOFF · {route} · external FEA secondary/SLS response pending"
         )
     else:
         st.warning(
-            "PRELIMINARY SOURCE READY — ENGINEER ADOPTION REQUIRED. Confirm the representative Time-Dependent loss approximation before downloading the FEA contract."
+            "PRELIMINARY SOURCE READY — select the route and confirm Engineer adoption to enable downloads."
         )
     st.caption(
-        f"Source ID · {source_id} · full fingerprint retained in Handoff Summary · Contract ID {handoff.get('contract_id') or '—'}"
-    )
-    st.warning(
-        "Do not apply the same losses twice. Either input the exported effective fpe/Pe directly and disable duplicate FEA loss calculations, "
-        "or reproduce the jacking-force loss model in FEA — never both."
+        f"Source ID {source_id} · Contract ID {handoff.get('contract_id') or '—'} · "
+        "Do not apply the same losses twice; use exactly one FEA route."
     )
 
     compact_columns = [
@@ -8293,7 +8257,7 @@ def _render_crossbeam_effective_prestress_fea_handoff(
     col1, col2, col3 = st.columns(3)
     with col1:
         st.download_button(
-            "Download FEA handoff workbook",
+            "Download FEA workbook",
             data=workbook_bytes,
             file_name=f"{file_stem}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -8313,7 +8277,7 @@ def _render_crossbeam_effective_prestress_fea_handoff(
         )
     with col3:
         st.download_button(
-            "Download Three-Point Profile CSV",
+            "Download Three-Point CSV",
             data=profile_csv,
             file_name=f"{file_stem}_three_point_profile.csv",
             mime="text/csv",
@@ -8322,7 +8286,7 @@ def _render_crossbeam_effective_prestress_fea_handoff(
             key="crossbeam_effective_prestress_fea_handoff_station_csv",
         )
 
-    with st.expander("FEA application instructions and limitations", expanded=False):
+    with st.expander("FEA instructions, limitations, and traceability", expanded=False):
         st.dataframe(
             pd.DataFrame(handoff.get("instructions_rows") or []),
             use_container_width=True,
@@ -8338,42 +8302,34 @@ def _render_crossbeam_effective_prestress_fea_handoff(
 def _render_crossbeam_effective_prestress_preview(
     summary_payload: Mapping[str, Any],
 ) -> None:
-    st.markdown("#### Effective Prestress — source-gated preview")
+    st.markdown("#### Effective Prestress & External-FEA Handoff")
     st.caption(
-        "Sequentially assembles the current Friction, Anchorage Set, Elastic Shortening, and representative Time-Dependent losses into fpe and Pe without releasing any SLS or final design handoff."
+        "Compact closeout of the accepted loss chain. Detailed formulas, closure rows, and station traces remain available below for QA."
     )
     ready = bool(summary_payload.get("effective_preview_ready"))
     average_fpj = summary_payload.get("weighted_fpj_mpa")
     average_loss = summary_payload.get("average_total_loss_mpa")
     average_loss_percent = summary_payload.get("average_total_loss_percent")
     average_fpe = summary_payload.get("average_effective_stress_mpa")
-    pj_total = summary_payload.get("initial_total_force_kn")
     pe_total = summary_payload.get("average_effective_force_kn")
     max_local_loss = summary_payload.get("max_local_loss_mpa")
+    max_local_percent = summary_payload.get("max_local_loss_percent")
     min_local_fpe = summary_payload.get("min_local_fpe_mpa")
 
     render_metric_cards(
         [
             {
-                "title": "Source readiness",
-                "value": str(summary_payload.get("effective_status") or "SOURCE BLOCKED"),
-                "detail": "Current component fingerprints and row-consistent stress chain",
+                "title": "Average total loss — QA",
+                "value": f"{float(average_loss):.2f} MPa" if average_loss is not None else "SOURCE BLOCKED",
+                "detail": (
+                    f"{float(average_loss_percent):.2f}% of fpj · reference fpj = {float(average_fpj):.2f} MPa"
+                    if average_loss_percent is not None and average_fpj is not None
+                    else "current source chain required"
+                ),
                 "status": "warning" if ready else "critical",
             },
             {
-                "title": "Average initial stress",
-                "value": f"{float(average_fpj):.2f} MPa" if average_fpj is not None else "—",
-                "detail": f"ΣPj = {float(pj_total):,.2f} kN" if pj_total is not None else "source required",
-                "status": "info",
-            },
-            {
-                "title": "Average total loss — QA",
-                "value": f"{float(average_loss):.2f} MPa" if average_loss is not None else "—",
-                "detail": f"{float(average_loss_percent):.2f}% of fpj" if average_loss_percent is not None else "source required",
-                "status": "warning",
-            },
-            {
-                "title": "Average effective stress",
+                "title": "Average effective prestress",
                 "value": f"{float(average_fpe):.2f} MPa" if average_fpe is not None else "—",
                 "detail": f"ΣPe,avg = {float(pe_total):,.2f} kN" if pe_total is not None else "source required",
                 "status": "ready" if ready else "warning",
@@ -8381,13 +8337,17 @@ def _render_crossbeam_effective_prestress_preview(
             {
                 "title": "Maximum local loss",
                 "value": f"{float(max_local_loss):.2f} MPa" if max_local_loss is not None else "—",
-                "detail": f"minimum local fpe = {float(min_local_fpe):.2f} MPa" if min_local_fpe is not None else "source required",
-                "status": "warning",
+                "detail": (
+                    f"{float(max_local_percent):.2f}% of local fpj · minimum local fpe = {float(min_local_fpe):.2f} MPa"
+                    if max_local_percent is not None and min_local_fpe is not None
+                    else "local station chain required"
+                ),
+                "status": "warning" if max_local_loss is not None else "neutral",
             },
             {
-                "title": "FEA / SLS route",
-                "value": "FEA READY · SLS PENDING" if ready else "SOURCE BLOCKED",
-                "detail": "export fpe/Pe; FEA computes secondary; import verified SLS response",
+                "title": "External FEA / SLS",
+                "value": "HANDOFF AVAILABLE · SLS PENDING" if ready else "SOURCE BLOCKED",
+                "detail": "FEA calculates secondary; verified SLS P/V2/M3 returns through Loads",
                 "status": "warning" if ready else "critical",
             },
         ]
@@ -8395,14 +8355,15 @@ def _render_crossbeam_effective_prestress_preview(
 
     if ready:
         st.info(
-            "PREVIEW ONLY: fpe(s) and Pe(s) below use the current representative TD scalar. They are suitable for source-chain QA, not final service-stress adoption."
+            "Preliminary external-FEA handoff uses the representative TD loss. Apply one route only; external FEA calculates secondary prestress and returns verified SLS response."
         )
     else:
         st.warning(
-            "Effective Prestress preview is source-blocked. Refresh every upstream loss component and resolve stress/force closure before review."
+            "Effective Prestress is source-blocked. Refresh every upstream loss component and resolve stress/force closure before review."
         )
 
-    with st.expander("Formula and sequential stress-chain trace", expanded=True):
+    path_average_rows = list(summary_payload.get("effective_path_average_rows") or [])
+    with st.expander("QA formulas, closure, and averaging audit", expanded=False):
         st.latex(
             r"""
             \begin{aligned}
@@ -8419,69 +8380,55 @@ def _render_crossbeam_effective_prestress_preview(
             """
         )
         st.caption(
-            "Aps is in mm² and stress is in MPa, so division by 1000 gives tendon force in kN. "
-            "The average uses piecewise trapezoidal integration over projected member station s with duplicate station faces collapsed once; "
-            "it is not an arithmetic mean and is not yet a true tendon-arc-length average. The current ΔfpTD is representative, not yet tendon/station dependent."
+            "Aps is in mm² and stress is in MPa, so division by 1000 gives kN. "
+            "Averages use duplicate-safe projected-station trapezoidal integration; TD remains a representative scalar."
         )
-
-    render_metric_cards(
-        [
-            {
-                "title": "Maximum stress closure",
-                "value": (
-                    f"{float(summary_payload.get('max_stress_closure_mpa')):.3e} MPa"
-                    if summary_payload.get("max_stress_closure_mpa") is not None
-                    else "—"
-                ),
-                "detail": "fpj − Σloss − fpe",
-                "status": "ready" if ready else "warning",
-            },
-            {
-                "title": "Maximum force closure",
-                "value": (
-                    f"{float(summary_payload.get('max_force_closure_kn')):.3e} kN"
-                    if summary_payload.get("max_force_closure_kn") is not None
-                    else "—"
-                ),
-                "detail": "Pj − Pe − Σ(Aps·loss/1000)",
-                "status": "ready" if ready else "warning",
-            },
-            {
-                "title": "System-average stress closure",
-                "value": (
-                    f"{float(summary_payload.get('average_stress_closure_mpa')):.3e} MPa"
-                    if summary_payload.get("average_stress_closure_mpa") is not None
-                    else "—"
-                ),
-                "detail": "f̄pj − Δf̄total − f̄pe",
-                "status": "ready" if ready else "warning",
-            },
-            {
-                "title": "System-average force closure",
-                "value": (
-                    f"{float(summary_payload.get('average_force_closure_kn')):.3e} kN"
-                    if summary_payload.get("average_force_closure_kn") is not None
-                    else "—"
-                ),
-                "detail": "ΣPj − ΣPe,avg − ApsΣ·Δf̄total/1000",
-                "status": "ready" if ready else "warning",
-            },
-            {
-                "title": "Force loss — average",
-                "value": (
-                    f"{float(summary_payload.get('average_force_loss_kn')):,.2f} kN"
-                    if summary_payload.get("average_force_loss_kn") is not None
-                    else "—"
-                ),
-                "detail": "ΣPj − ΣPe,avg",
-                "status": "neutral",
-            },
-        ]
-    )
-
-    path_average_rows = list(summary_payload.get("effective_path_average_rows") or [])
-    if path_average_rows:
-        with st.expander("Projected-station averaging audit", expanded=False):
+        render_metric_cards(
+            [
+                {
+                    "title": "Maximum stress closure",
+                    "value": (
+                        f"{float(summary_payload.get('max_stress_closure_mpa')):.3e} MPa"
+                        if summary_payload.get("max_stress_closure_mpa") is not None
+                        else "—"
+                    ),
+                    "detail": "fpj − Σloss − fpe",
+                    "status": "ready" if ready else "warning",
+                },
+                {
+                    "title": "Maximum force closure",
+                    "value": (
+                        f"{float(summary_payload.get('max_force_closure_kn')):.3e} kN"
+                        if summary_payload.get("max_force_closure_kn") is not None
+                        else "—"
+                    ),
+                    "detail": "Pj − Pe − Σ(Aps·loss/1000)",
+                    "status": "ready" if ready else "warning",
+                },
+                {
+                    "title": "System stress closure",
+                    "value": (
+                        f"{float(summary_payload.get('average_stress_closure_mpa')):.3e} MPa"
+                        if summary_payload.get("average_stress_closure_mpa") is not None
+                        else "—"
+                    ),
+                    "detail": "f̄pj − Δf̄total − f̄pe",
+                    "status": "ready" if ready else "warning",
+                },
+                {
+                    "title": "System force closure",
+                    "value": (
+                        f"{float(summary_payload.get('average_force_closure_kn')):.3e} kN"
+                        if summary_payload.get("average_force_closure_kn") is not None
+                        else "—"
+                    ),
+                    "detail": "ΣPj − ΣPe,avg − ApsΣ·Δf̄total/1000",
+                    "status": "ready" if ready else "warning",
+                },
+            ]
+        )
+        if path_average_rows:
+            st.markdown("##### Projected-station averaging audit")
             st.caption(str(summary_payload.get("averaging_basis") or ""))
             st.dataframe(
                 pd.DataFrame(path_average_rows),
@@ -8497,57 +8444,60 @@ def _render_crossbeam_effective_prestress_preview(
             )
 
     station_rows = list(summary_payload.get("system_station_rows") or [])
-    if station_rows:
-        st.markdown("##### System tendon-force distribution by station")
-        st.dataframe(
-            pd.DataFrame(station_rows),
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Station s (m)": st.column_config.NumberColumn(format="%.3f"),
-                "Aps represented (mm²)": st.column_config.NumberColumn(format="%.1f"),
-                "ΣPj (kN)": st.column_config.NumberColumn(format="%.3f"),
-                "ΣPe preview (kN)": st.column_config.NumberColumn(format="%.3f"),
-                "Σ loss force (kN)": st.column_config.NumberColumn(format="%.3f"),
-                "Force closure (kN)": st.column_config.NumberColumn(format="%.3e"),
-            },
-        )
-
     effective_rows = list(summary_payload.get("effective_station_rows") or [])
+    if station_rows or effective_rows:
+        with st.expander("Station and tendon Effective Prestress preview", expanded=False):
+            if station_rows:
+                st.markdown("##### System tendon-force distribution")
+                st.dataframe(
+                    pd.DataFrame(station_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Station s (m)": st.column_config.NumberColumn(format="%.3f"),
+                        "Aps represented (mm²)": st.column_config.NumberColumn(format="%.1f"),
+                        "ΣPj (kN)": st.column_config.NumberColumn(format="%.3f"),
+                        "ΣPe preview (kN)": st.column_config.NumberColumn(format="%.3f"),
+                        "Σ loss force (kN)": st.column_config.NumberColumn(format="%.3f"),
+                        "Force closure (kN)": st.column_config.NumberColumn(format="%.3e"),
+                    },
+                )
+            if effective_rows:
+                st.markdown("##### Tendon / station sequential preview")
+                compact_columns = [
+                    "Tendon",
+                    "Station s (m)",
+                    "Point",
+                    "fpj (MPa)",
+                    "Friction (MPa)",
+                    "Anchorage (MPa)",
+                    "ES (MPa)",
+                    "TD total (MPa)",
+                    "Total loss (MPa)",
+                    "Loss (% fpj)",
+                    "fpe preview (MPa)",
+                    "Pe preview (kN)",
+                ]
+                st.dataframe(
+                    pd.DataFrame(effective_rows)[compact_columns],
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Station s (m)": st.column_config.NumberColumn(format="%.3f"),
+                        "fpj (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                        "Friction (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                        "Anchorage (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                        "ES (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                        "TD total (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                        "Total loss (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                        "Loss (% fpj)": st.column_config.NumberColumn(format="%.3f%%"),
+                        "fpe preview (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                        "Pe preview (kN)": st.column_config.NumberColumn(format="%.3f"),
+                    },
+                )
+
     if effective_rows:
-        st.markdown("##### Tendon / station sequential Effective Prestress preview")
-        compact_columns = [
-            "Tendon",
-            "Station s (m)",
-            "Point",
-            "fpj (MPa)",
-            "Friction (MPa)",
-            "Anchorage (MPa)",
-            "ES (MPa)",
-            "TD total (MPa)",
-            "Total loss (MPa)",
-            "Loss (% fpj)",
-            "fpe preview (MPa)",
-            "Pe preview (kN)",
-        ]
-        st.dataframe(
-            pd.DataFrame(effective_rows)[compact_columns],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Station s (m)": st.column_config.NumberColumn(format="%.3f"),
-                "fpj (MPa)": st.column_config.NumberColumn(format="%.3f"),
-                "Friction (MPa)": st.column_config.NumberColumn(format="%.3f"),
-                "Anchorage (MPa)": st.column_config.NumberColumn(format="%.3f"),
-                "ES (MPa)": st.column_config.NumberColumn(format="%.3f"),
-                "TD total (MPa)": st.column_config.NumberColumn(format="%.3f"),
-                "Total loss (MPa)": st.column_config.NumberColumn(format="%.3f"),
-                "Loss (% fpj)": st.column_config.NumberColumn(format="%.3f%%"),
-                "fpe preview (MPa)": st.column_config.NumberColumn(format="%.3f"),
-                "Pe preview (kN)": st.column_config.NumberColumn(format="%.3f"),
-            },
-        )
-        with st.expander("Detailed sequential source and closure rows", expanded=False):
+        with st.expander("Detailed sequential source rows", expanded=False):
             st.dataframe(
                 pd.DataFrame(effective_rows),
                 use_container_width=True,
@@ -8555,7 +8505,6 @@ def _render_crossbeam_effective_prestress_preview(
             )
 
     _render_crossbeam_effective_prestress_fea_handoff(summary_payload)
-    st.warning(str(summary_payload.get("scope_guard") or ""))
 
 def render_crossbeam_prestress_loss_page() -> None:
     _ensure_state()
@@ -10593,7 +10542,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         st.markdown("#### Lightweight Time-Dependent Losses — event-based schedule preview")
         st.caption(
-            "PTLOSS4B2B1 keeps the route event-based and lightweight. PTLOSS4B3B2 guards the stressing-strength source; PTLOSS4D1A closes the projected-station Effective Prestress average; PTLOSS4D2 adds a source-fingerprinted external-FEA handoff without changing accepted loss equations. Opening the tab performs 0 solves; falsework removal uses one no-contact frame solve, and imported permanent-load events add 0 internal solves."
+            "PTLOSS4B2B1 keeps the route event-based and lightweight. PTLOSS4B3B2 guards the stressing-strength source; PTLOSS4D1A closes the projected-station Effective Prestress average; PTLOSS4D2A hardens the external-FEA contract; PTLOSS4D2B closes the workflow with a compact decision-first presentation. Opening the tab performs 0 solves; falsework removal uses one no-contact frame solve, and imported permanent-load events add 0 internal solves."
         )
         render_metric_cards(
             [
@@ -10621,7 +10570,7 @@ def render_crossbeam_prestress_loss_page() -> None:
             "Source transfer from Segmental Box Girder Pro is limited to unit-safe AASHTO material factors, drying-geometry traceability, age reconciliation, and component separation. BG40 f_cgp, external/unbonded routing, report-match constants, and the BG40 relaxation interaction cap are not reused."
         )
         st.caption(
-            "Baseline continuity: PTLOSS4B2B1 does not assemble Pe/Pe_eff; PTLOSS4D1A closes the projected-station preview and PTLOSS4D2 exports fpe/Pe for external FEA only. Secondary prestress remains an external-analysis responsibility and verified SLS responses must return through Loads."
+            "Baseline continuity: PTLOSS4D2B freezes the accepted Prestress Loss equations and external-FEA handoff contract. Secondary prestress remains an external-analysis responsibility and verified SLS responses must return through Loads."
         )
         if bool(st.session_state.get(CB_LOSS_ES_STRENGTH_RATIO_GUARD_NOTICE_KEY)):
             st.info(
@@ -11640,7 +11589,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                     """
                 )
                 st.caption(
-                    "PTLOSS4D2A retains the projected-station-integrated fpe/Pe preview and adds an engineer-adopted preliminary external-FEA contract with workbook QA formulas. The representative TD scalar remains explicit; external FEA calculates secondary prestress, and no automatic in-app SLS adoption occurs until verified responses return through Loads."
+                    "PTLOSS4D2B closes the Prestress Loss workflow with the accepted projected-station-integrated fpe/Pe preview, engineer-adopted external-FEA contract, and workbook QA formulas. The representative TD scalar remains explicit; external FEA calculates secondary prestress, and no automatic in-app SLS adoption occurs until verified responses return through Loads."
                 )
 
     with audit_tab:

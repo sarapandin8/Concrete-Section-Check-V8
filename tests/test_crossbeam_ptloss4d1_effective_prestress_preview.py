@@ -104,9 +104,9 @@ def test_ptloss4d1_tab_order_and_final_handoff_guard_are_explicit() -> None:
     ]
     positions = [tab_block.index(label) for label in labels]
     assert positions == sorted(positions)
-    assert "Effective Prestress — source-gated preview" in source
-    assert "PREVIEW READY — FINAL SLS HANDOFF BLOCKED" in source
-    assert "FEA READY · SLS PENDING" in source
+    assert "Effective Prestress & External-FEA Handoff" in source
+    assert "HANDOFF AVAILABLE · SLS PENDING" in source
+    assert "External FEA / SLS" in source
     assert "import verified FEA SLS P/V2/M3 through Loads" in source
     assert "Average total accounted loss — QA" in source
     assert "Maximum local accounted loss" in source
