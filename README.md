@@ -1768,3 +1768,7 @@ Corrects the Effective Prestress system average by reading the assembled `Statio
 ## CROSSBEAM.PTLOSS4D2 — Effective Prestress External-FEA Handoff
 
 Adds a source-fingerprinted Excel/CSV handoff of Tendon/station `fpe` and `Pe`, including compact Left/Mid/Right/average values and explicit no-double-counting instructions. External FEA remains responsible for primary/secondary prestress response, and verified SLS resultants return through the main Loads workspace. No loss equation, solver route, Project JSON schema, or non-Crossbeam workflow is changed. See `README_CROSSBEAM_PTLOSS4D2.md`.
+
+## CROSSBEAM.PTLOSS4D2A — Engineer-Adopted FEA Handoff Contract and Workbook QA
+
+Adds an explicit engineer adoption gate for the representative Time-Dependent loss approximation, requires one declared external-FEA application route, renames the limited export as a Left/Mid/Right three-point profile, and upgrades the workbook with compact data sheets, human-readable source metadata, short Source IDs, a route/adoption Contract ID, and live Excel stress/force closure formulas. External FEA still calculates secondary prestress and verified SLS `P/V2/M3` responses still return through Loads. See `README_CROSSBEAM_PTLOSS4D2A.md`.

@@ -149,6 +149,9 @@ from concrete_pmm_pro.crossbeam.later_permanent_response import (
     td_permanent_event_schedule_status,
 )
 from concrete_pmm_pro.crossbeam.effective_prestress_handoff import (
+    FEA_APPLICATION_ROUTES,
+    FEA_ROUTE_DIRECT_EFFECTIVE_FORCE,
+    FEA_ROUTE_JACKING_WITH_LOSSES,
     build_effective_prestress_fea_handoff,
     effective_prestress_handoff_csv_bytes,
     effective_prestress_handoff_excel_bytes,
@@ -314,6 +317,9 @@ CB_PROFILE_IMPORT_NOTICE_KEY = "crossbeam_ptqa5_profile_import_notice"
 CB_PROFILE_IMPORT_SHEET_KEY = "crossbeam_ptqa6_profile_import_sheet"
 CB_PROFILE_IMPORT_AUDIT_KEY = "crossbeam_ptqa6_profile_import_audit"
 CB_PROFILE_IMPORT_WRITEBACK_QA_KEY = "crossbeam_ptqa8_profile_import_writeback_qa"
+CB_EFFECTIVE_FEA_ROUTE_KEY = "crossbeam_ptloss4d2a_fea_application_route"
+CB_EFFECTIVE_FEA_TD_ADOPTION_KEY = "crossbeam_ptloss4d2a_td_approximation_adopted"
+CB_EFFECTIVE_FEA_ADOPTION_TOKEN_KEY = "crossbeam_ptloss4d2a_td_adoption_source_token"
 
 CB_LENGTH_POLICY_KEEP = "Keep existing stations — review required"
 CB_LENGTH_POLICY_SCALE = "Scale longitudinal stations proportionally"
@@ -8122,52 +8128,108 @@ def _render_crossbeam_loss_summary(
 def _render_crossbeam_effective_prestress_fea_handoff(
     summary_payload: Mapping[str, Any],
 ) -> None:
-    """Render a source-gated external-FEA handoff without changing app state."""
+    """Render an engineer-adopted preliminary external-FEA handoff contract."""
 
     st.markdown("#### FEA Effective Prestress Handoff")
     st.caption(
         "Download tendon stress/force after accounted losses for external structural analysis. "
-        "This handoff is separate from the main ULS/SLS Loads import and performs 0 structural solves."
+        "This handoff is separate from the main ULS/SLS Loads import and performs 0 structural solves; "
+        "after external analysis, import verified FEA SLS P/V2/M3 through Loads."
     )
+
+    current_route = str(
+        st.session_state.get(CB_EFFECTIVE_FEA_ROUTE_KEY)
+        or FEA_ROUTE_DIRECT_EFFECTIVE_FORCE
+    )
+    if current_route not in FEA_APPLICATION_ROUTES:
+        current_route = FEA_ROUTE_DIRECT_EFFECTIVE_FORCE
+        st.session_state[CB_EFFECTIVE_FEA_ROUTE_KEY] = current_route
+
+    route_labels = {
+        FEA_ROUTE_DIRECT_EFFECTIVE_FORCE: "Direct effective force — input fpe / Pe once",
+        FEA_ROUTE_JACKING_WITH_LOSSES: "Jacking force with FEA losses — input fpj / Pj and reproduce losses",
+    }
+    route = st.selectbox(
+        "FEA application route",
+        options=list(FEA_APPLICATION_ROUTES),
+        format_func=lambda value: route_labels.get(str(value), str(value)),
+        key=CB_EFFECTIVE_FEA_ROUTE_KEY,
+        help=(
+            "Choose exactly one route. Direct effective force is recommended when the FEA program accepts "
+            "effective tendon stress/force. The alternative starts from jacking force and requires the same "
+            "loss profile to be reproduced in FEA."
+        ),
+    )
+
+    audit_metadata = dict(summary_payload.get("handoff_audit_metadata") or {})
+    source_handoff = build_effective_prestress_fea_handoff(
+        summary_payload,
+        member_length_m=float(summary_payload.get("member_length_m") or 0.0),
+        audit_metadata=audit_metadata,
+        application_route=str(route),
+        engineer_adopted_td=False,
+    )
+    source_ready = bool(source_handoff.get("ready"))
+    source_fingerprint = str(source_handoff.get("source_fingerprint") or "")
+    adoption_token = f"{source_fingerprint}:{route}"
+    if st.session_state.get(CB_EFFECTIVE_FEA_ADOPTION_TOKEN_KEY) != adoption_token:
+        st.session_state[CB_EFFECTIVE_FEA_TD_ADOPTION_KEY] = False
+        st.session_state[CB_EFFECTIVE_FEA_ADOPTION_TOKEN_KEY] = adoption_token
+
+    engineer_adopted_td = st.checkbox(
+        "Engineer adoption — use the representative Time-Dependent loss approximation for this external-FEA handoff",
+        key=CB_EFFECTIVE_FEA_TD_ADOPTION_KEY,
+        disabled=not source_ready,
+        help=(
+            "The current creep, shrinkage, and relaxation loss is a representative scalar, not a fully "
+            "tendon/station-dependent model. Confirm only after accepting that limitation for this FEA handoff."
+        ),
+    )
+
     handoff = build_effective_prestress_fea_handoff(
         summary_payload,
         member_length_m=float(summary_payload.get("member_length_m") or 0.0),
+        audit_metadata=audit_metadata,
+        application_route=str(route),
+        engineer_adopted_td=bool(engineer_adopted_td),
     )
     ready = bool(handoff.get("ready"))
+    download_ready = bool(handoff.get("download_ready"))
     tendon_rows = list(handoff.get("tendon_rows") or [])
     station_rows = list(handoff.get("station_rows") or [])
     fingerprint = str(handoff.get("source_fingerprint") or "")
+    source_id = str(handoff.get("source_id") or fingerprint[:12])
 
     render_metric_cards(
         [
             {
                 "title": "FEA handoff source",
-                "value": str(handoff.get("status") or "SOURCE BLOCKED"),
-                "detail": "current closed fpe/Pe preview · no solver rerun",
-                "status": "ready" if ready else "critical",
+                "value": "ENGINEER ADOPTED" if download_ready else ("ADOPTION REQUIRED" if ready else "SOURCE BLOCKED"),
+                "detail": str(handoff.get("status") or "SOURCE BLOCKED"),
+                "status": "ready" if download_ready else ("warning" if ready else "critical"),
             },
             {
                 "title": "Tendon coverage",
                 "value": f"{len(tendon_rows)} Tendons" if tendon_rows else "—",
-                "detail": f"{len(station_rows)} station rows · Left / Mid / Right / Average",
+                "detail": f"{len(station_rows)} three-point rows · Left / Mid / Right / Average",
                 "status": "ready" if ready else "warning",
             },
             {
-                "title": "Application basis",
-                "value": "fpe / Pe",
-                "detail": "positive tendon tension magnitude · MPa / kN",
+                "title": "Application route",
+                "value": str(route),
+                "detail": route_labels.get(str(route), str(route)),
                 "status": "info",
             },
             {
-                "title": "Secondary prestress",
-                "value": "EXTERNAL FEA",
-                "detail": "calculate primary + secondary response from frame restraint",
-                "status": "warning",
+                "title": "TD approximation",
+                "value": "ENGINEER ADOPTED" if engineer_adopted_td else "ADOPTION REQUIRED",
+                "detail": "representative creep + shrinkage + relaxation scalar",
+                "status": "ready" if engineer_adopted_td else "warning",
             },
             {
-                "title": "SLS return route",
-                "value": "PENDING",
-                "detail": "import verified FEA SLS P/V2/M3 through Loads",
+                "title": "Secondary / SLS route",
+                "value": "EXTERNAL FEA · SLS PENDING",
+                "detail": "calculate secondary; return verified P/V2/M3 through Loads",
                 "status": "warning",
             },
         ]
@@ -8178,10 +8240,17 @@ def _render_crossbeam_effective_prestress_fea_handoff(
             st.warning(str(issue))
         return
 
-    st.success(
-        "FEA HANDOFF READY — use exactly one FEA application route and let the external portal-frame model calculate secondary prestress."
+    if download_ready:
+        st.success(
+            "ENGINEER-ADOPTED PRELIMINARY HANDOFF READY — apply the selected route once and let the external portal-frame model calculate secondary prestress."
+        )
+    else:
+        st.warning(
+            "PRELIMINARY SOURCE READY — ENGINEER ADOPTION REQUIRED. Confirm the representative Time-Dependent loss approximation before downloading the FEA contract."
+        )
+    st.caption(
+        f"Source ID · {source_id} · full fingerprint retained in Handoff Summary · Contract ID {handoff.get('contract_id') or '—'}"
     )
-    st.caption(f"Source fingerprint · {fingerprint}")
     st.warning(
         "Do not apply the same losses twice. Either input the exported effective fpe/Pe directly and disable duplicate FEA loss calculations, "
         "or reproduce the jacking-force loss model in FEA — never both."
@@ -8218,8 +8287,9 @@ def _render_crossbeam_effective_prestress_fea_handoff(
 
     workbook_bytes = effective_prestress_handoff_excel_bytes(handoff)
     tendon_csv = effective_prestress_handoff_csv_bytes(handoff, table="tendon")
-    station_csv = effective_prestress_handoff_csv_bytes(handoff, table="station")
-    file_stem = f"crossbeam_effective_prestress_fea_handoff_{fingerprint[:12]}"
+    profile_csv = effective_prestress_handoff_csv_bytes(handoff, table="profile")
+    route_suffix = "direct_effective" if route == FEA_ROUTE_DIRECT_EFFECTIVE_FORCE else "jacking_with_losses"
+    file_stem = f"crossbeam_effective_prestress_fea_handoff_{source_id}_{route_suffix}"
     col1, col2, col3 = st.columns(3)
     with col1:
         st.download_button(
@@ -8228,6 +8298,7 @@ def _render_crossbeam_effective_prestress_fea_handoff(
             file_name=f"{file_stem}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
+            disabled=not download_ready,
             key="crossbeam_effective_prestress_fea_handoff_xlsx",
         )
     with col2:
@@ -8237,15 +8308,17 @@ def _render_crossbeam_effective_prestress_fea_handoff(
             file_name=f"{file_stem}_tendons.csv",
             mime="text/csv",
             use_container_width=True,
+            disabled=not download_ready,
             key="crossbeam_effective_prestress_fea_handoff_tendon_csv",
         )
     with col3:
         st.download_button(
-            "Download Station CSV",
-            data=station_csv,
-            file_name=f"{file_stem}_stations.csv",
+            "Download Three-Point Profile CSV",
+            data=profile_csv,
+            file_name=f"{file_stem}_three_point_profile.csv",
             mime="text/csv",
             use_container_width=True,
+            disabled=not download_ready,
             key="crossbeam_effective_prestress_fea_handoff_station_csv",
         )
 
@@ -11567,7 +11640,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                     """
                 )
                 st.caption(
-                    "PTLOSS4D2 retains the projected-station-integrated fpe/Pe preview and adds a source-fingerprinted external-FEA export. The representative TD scalar remains explicit; external FEA calculates secondary prestress, and no automatic in-app SLS adoption occurs until verified responses return through Loads."
+                    "PTLOSS4D2A retains the projected-station-integrated fpe/Pe preview and adds an engineer-adopted preliminary external-FEA contract with workbook QA formulas. The representative TD scalar remains explicit; external FEA calculates secondary prestress, and no automatic in-app SLS adoption occurs until verified responses return through Loads."
                 )
 
     with audit_tab:
@@ -11656,6 +11729,34 @@ def render_crossbeam_prestress_loss_page() -> None:
         td_result=(td_result if td_evidence_status == "CURRENT" else None),
         td_status=td_evidence_status,
     )
+    td_audit = dict(td_result) if td_evidence_status == "CURRENT" and isinstance(td_result, Mapping) else {}
+    td_inputs_audit = dict(td_audit.get("inputs") or {})
+    td_drying_audit = dict(td_audit.get("drying_geometry") or {})
+    jacking_modes = sorted(
+        {
+            str(row.get("Jacking end") or "").strip()
+            for row in system_rows
+            if str(row.get("Jacking end") or "").strip()
+        }
+    )
+    summary_payload["handoff_audit_metadata"] = {
+        "project_name": str(st.session_state.get("project_name") or "Untitled Project"),
+        "member_id": "Portal Frame Crossbeam",
+        "member_workflow": "Portal Frame Crossbeam — Prestressed Concrete",
+        "construction_type": str(td_audit.get("construction_method") or td_construction_method),
+        "member_design_code": str(member_design_code_label),
+        "prestress_loss_basis": "AASHTO LRFD 2020 §5.4.2.3 + §5.9.3.4",
+        "stressing_mode": ", ".join(jacking_modes) if jacking_modes else "Per-Tendon System source",
+        "ti_days": td_inputs_audit.get("load_age_days"),
+        "tg_days": td_inputs_audit.get("grout_age_days"),
+        "tr_days": td_inputs_audit.get("falsework_removal_age_days"),
+        "tf_days": td_inputs_audit.get("final_age_days"),
+        "permanent_load_event_schedule": td_inputs_audit.get("permanent_load_event_schedule") or [],
+        "rh_percent": td_inputs_audit.get("rh_percent"),
+        "fc_mpa": current_es_material_source.get("fc_mpa"),
+        "fci_mpa": td_inputs_audit.get("fci_mpa") or current_es_material_source.get("fci_mpa"),
+        "v_over_s_mm": td_drying_audit.get("v_over_s_mm"),
+    }
 
     with loss_summary_tab:
         _render_crossbeam_loss_summary(
