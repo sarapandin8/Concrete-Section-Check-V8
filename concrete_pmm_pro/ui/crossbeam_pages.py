@@ -148,6 +148,11 @@ from concrete_pmm_pro.crossbeam.later_permanent_response import (
     legacy_td_event_schedule,
     td_permanent_event_schedule_status,
 )
+from concrete_pmm_pro.crossbeam.effective_prestress_handoff import (
+    build_effective_prestress_fea_handoff,
+    effective_prestress_handoff_csv_bytes,
+    effective_prestress_handoff_excel_bytes,
+)
 from concrete_pmm_pro.crossbeam.time_dependent_loss import (
     AASHTO_TIME_DEPENDENT_BASIS,
     LIGHTWEIGHT_TD_METHOD,
@@ -7938,6 +7943,7 @@ def _crossbeam_loss_summary_payload(
 
     return {
         "ready": bool(average_total_mpa is not None and governing_rows),
+        "member_length_m": float(length_m),
         "effective_preview_ready": preview_ready,
         "weighted_fpj_mpa": weighted_fpj,
         "total_aps_mm2": total_area,
@@ -7980,8 +7986,8 @@ def _crossbeam_loss_summary_payload(
         "scope_guard": (
             "Average values use Aps-weighted piecewise-trapezoidal integration over projected member station s; "
             "they are not arithmetic means of displayed station rows and are not yet true tendon-arc-length averages. "
-            "Maximum local values remain separate. Time-dependent loss is still a representative event-stress scalar; "
-            "secondary prestress response, final station-dependent TD loss, and the SLS handoff remain locked."
+            "Maximum local values remain separate. Time-dependent loss is still a representative event-stress scalar. "
+            "Secondary prestress is not subtracted from Pe and must be calculated in external FEA; the in-app SLS handoff remains locked until verified FEA SLS responses are imported."
         ),
     }
 
@@ -8113,6 +8119,149 @@ def _render_crossbeam_loss_summary(
     st.warning(str(summary_payload.get("scope_guard") or ""))
 
 
+def _render_crossbeam_effective_prestress_fea_handoff(
+    summary_payload: Mapping[str, Any],
+) -> None:
+    """Render a source-gated external-FEA handoff without changing app state."""
+
+    st.markdown("#### FEA Effective Prestress Handoff")
+    st.caption(
+        "Download tendon stress/force after accounted losses for external structural analysis. "
+        "This handoff is separate from the main ULS/SLS Loads import and performs 0 structural solves."
+    )
+    handoff = build_effective_prestress_fea_handoff(
+        summary_payload,
+        member_length_m=float(summary_payload.get("member_length_m") or 0.0),
+    )
+    ready = bool(handoff.get("ready"))
+    tendon_rows = list(handoff.get("tendon_rows") or [])
+    station_rows = list(handoff.get("station_rows") or [])
+    fingerprint = str(handoff.get("source_fingerprint") or "")
+
+    render_metric_cards(
+        [
+            {
+                "title": "FEA handoff source",
+                "value": str(handoff.get("status") or "SOURCE BLOCKED"),
+                "detail": "current closed fpe/Pe preview · no solver rerun",
+                "status": "ready" if ready else "critical",
+            },
+            {
+                "title": "Tendon coverage",
+                "value": f"{len(tendon_rows)} Tendons" if tendon_rows else "—",
+                "detail": f"{len(station_rows)} station rows · Left / Mid / Right / Average",
+                "status": "ready" if ready else "warning",
+            },
+            {
+                "title": "Application basis",
+                "value": "fpe / Pe",
+                "detail": "positive tendon tension magnitude · MPa / kN",
+                "status": "info",
+            },
+            {
+                "title": "Secondary prestress",
+                "value": "EXTERNAL FEA",
+                "detail": "calculate primary + secondary response from frame restraint",
+                "status": "warning",
+            },
+            {
+                "title": "SLS return route",
+                "value": "PENDING",
+                "detail": "import verified FEA SLS P/V2/M3 through Loads",
+                "status": "warning",
+            },
+        ]
+    )
+
+    if not ready:
+        for issue in handoff.get("issues") or ["Effective Prestress source is incomplete."]:
+            st.warning(str(issue))
+        return
+
+    st.success(
+        "FEA HANDOFF READY — use exactly one FEA application route and let the external portal-frame model calculate secondary prestress."
+    )
+    st.caption(f"Source fingerprint · {fingerprint}")
+    st.warning(
+        "Do not apply the same losses twice. Either input the exported effective fpe/Pe directly and disable duplicate FEA loss calculations, "
+        "or reproduce the jacking-force loss model in FEA — never both."
+    )
+
+    compact_columns = [
+        "Tendon",
+        "Aps (mm²)",
+        "fpj (MPa)",
+        "Left Pe (kN)",
+        "Mid Pe (kN)",
+        "Right Pe (kN)",
+        "Average Pe (kN)",
+        "Average total loss (MPa)",
+        "Average loss (% fpj)",
+        "Remaining prestress (%)",
+    ]
+    st.dataframe(
+        pd.DataFrame(tendon_rows)[compact_columns],
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Aps (mm²)": st.column_config.NumberColumn(format="%.1f"),
+            "fpj (MPa)": st.column_config.NumberColumn(format="%.3f"),
+            "Left Pe (kN)": st.column_config.NumberColumn(format="%.3f"),
+            "Mid Pe (kN)": st.column_config.NumberColumn(format="%.3f"),
+            "Right Pe (kN)": st.column_config.NumberColumn(format="%.3f"),
+            "Average Pe (kN)": st.column_config.NumberColumn(format="%.3f"),
+            "Average total loss (MPa)": st.column_config.NumberColumn(format="%.3f"),
+            "Average loss (% fpj)": st.column_config.NumberColumn(format="%.3f%%"),
+            "Remaining prestress (%)": st.column_config.NumberColumn(format="%.3f%%"),
+        },
+    )
+
+    workbook_bytes = effective_prestress_handoff_excel_bytes(handoff)
+    tendon_csv = effective_prestress_handoff_csv_bytes(handoff, table="tendon")
+    station_csv = effective_prestress_handoff_csv_bytes(handoff, table="station")
+    file_stem = f"crossbeam_effective_prestress_fea_handoff_{fingerprint[:12]}"
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.download_button(
+            "Download FEA handoff workbook",
+            data=workbook_bytes,
+            file_name=f"{file_stem}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="crossbeam_effective_prestress_fea_handoff_xlsx",
+        )
+    with col2:
+        st.download_button(
+            "Download Tendon CSV",
+            data=tendon_csv,
+            file_name=f"{file_stem}_tendons.csv",
+            mime="text/csv",
+            use_container_width=True,
+            key="crossbeam_effective_prestress_fea_handoff_tendon_csv",
+        )
+    with col3:
+        st.download_button(
+            "Download Station CSV",
+            data=station_csv,
+            file_name=f"{file_stem}_stations.csv",
+            mime="text/csv",
+            use_container_width=True,
+            key="crossbeam_effective_prestress_fea_handoff_station_csv",
+        )
+
+    with st.expander("FEA application instructions and limitations", expanded=False):
+        st.dataframe(
+            pd.DataFrame(handoff.get("instructions_rows") or []),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Topic": st.column_config.TextColumn(width="medium"),
+                "Instruction": st.column_config.TextColumn(width="large"),
+            },
+        )
+        st.info(str(handoff.get("scope_guard") or ""))
+
+
 def _render_crossbeam_effective_prestress_preview(
     summary_payload: Mapping[str, Any],
 ) -> None:
@@ -8163,10 +8312,10 @@ def _render_crossbeam_effective_prestress_preview(
                 "status": "warning",
             },
             {
-                "title": "Final handoff",
-                "value": "BLOCKED",
-                "detail": "station-dependent TD + secondary prestress + SLS routing not released",
-                "status": "critical",
+                "title": "FEA / SLS route",
+                "value": "FEA READY · SLS PENDING" if ready else "SOURCE BLOCKED",
+                "detail": "export fpe/Pe; FEA computes secondary; import verified SLS response",
+                "status": "warning" if ready else "critical",
             },
         ]
     )
@@ -8332,6 +8481,7 @@ def _render_crossbeam_effective_prestress_preview(
                 hide_index=True,
             )
 
+    _render_crossbeam_effective_prestress_fea_handoff(summary_payload)
     st.warning(str(summary_payload.get("scope_guard") or ""))
 
 def render_crossbeam_prestress_loss_page() -> None:
@@ -10370,7 +10520,7 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         st.markdown("#### Lightweight Time-Dependent Losses — event-based schedule preview")
         st.caption(
-            "PTLOSS4B2B1 keeps the route event-based and lightweight. PTLOSS4B3B2 guards the stressing-strength source, while PTLOSS4D1 reorders the loss workflow and PTLOSS4D1A corrects the projected-station average and adds system-average closure guards without changing the accepted equations. Opening the tab performs 0 solves; falsework removal uses one no-contact frame solve, and all imported permanent-load events add 0 internal solves."
+            "PTLOSS4B2B1 keeps the route event-based and lightweight. PTLOSS4B3B2 guards the stressing-strength source; PTLOSS4D1A closes the projected-station Effective Prestress average; PTLOSS4D2 adds a source-fingerprinted external-FEA handoff without changing accepted loss equations. Opening the tab performs 0 solves; falsework removal uses one no-contact frame solve, and imported permanent-load events add 0 internal solves."
         )
         render_metric_cards(
             [
@@ -10398,7 +10548,7 @@ def render_crossbeam_prestress_loss_page() -> None:
             "Source transfer from Segmental Box Girder Pro is limited to unit-safe AASHTO material factors, drying-geometry traceability, age reconciliation, and component separation. BG40 f_cgp, external/unbonded routing, report-match constants, and the BG40 relaxation interaction cap are not reused."
         )
         st.caption(
-            "Baseline continuity: PTLOSS4B2B1 does not assemble Pe/Pe_eff; PTLOSS4B3B2 protects f'ci/Eci source integrity and PTLOSS4D1A integrates the Effective Prestress preview over projected station and keeps the downstream station-dependent force/stress chain locked."
+            "Baseline continuity: PTLOSS4B2B1 does not assemble Pe/Pe_eff; PTLOSS4D1A closes the projected-station preview and PTLOSS4D2 exports fpe/Pe for external FEA only. Secondary prestress remains an external-analysis responsibility and verified SLS responses must return through Loads."
         )
         if bool(st.session_state.get(CB_LOSS_ES_STRENGTH_RATIO_GUARD_NOTICE_KEY)):
             st.info(
@@ -11417,7 +11567,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                     """
                 )
                 st.caption(
-                    "PTLOSS4D1A assembles a projected-station-integrated, source-gated fpe/Pe preview but does not release the final Pe/Pe_eff SLS handoff. Multi-event stress sources and the loss summary remain QA previews until the downstream station-dependent force/stress chain is validated."
+                    "PTLOSS4D2 retains the projected-station-integrated fpe/Pe preview and adds a source-fingerprinted external-FEA export. The representative TD scalar remains explicit; external FEA calculates secondary prestress, and no automatic in-app SLS adoption occurs until verified responses return through Loads."
                 )
 
     with audit_tab:
@@ -11457,25 +11607,31 @@ def render_crossbeam_prestress_loss_page() -> None:
                                 else "PAIR SOURCE REVIEW"
                             )
                         ),
-                        "Feeds": "Elastic Shortening component and P after ES preview; Pe/Pe_eff assembly remains locked",
+                        "Feeds": "Elastic Shortening component and P after ES preview",
                     },
                     {
                         "Order": 5,
                         "Source / component": "Time-dependent losses",
                         "Current state": f"ON-DEMAND {td_evidence_status}",
-                        "Feeds": "Creep + shrinkage + relaxation component preview; Pe/Pe_eff assembly remains locked",
+                        "Feeds": "Representative creep + shrinkage + relaxation component",
                     },
                     {
                         "Order": 6,
                         "Source / component": "Effective Prestress preview",
                         "Current state": "SOURCE-GATED QA PREVIEW",
-                        "Feeds": "Sequential fpe(s) / Pe(s) source-chain and closure review",
+                        "Feeds": "Sequential fpe(s) / Pe(s), system average, and closure review",
                     },
                     {
                         "Order": 7,
                         "Source / component": "Pe / Pe_eff assembly",
-                        "Current state": "LOCKED — not certified",
-                        "Feeds": "Future SLS/ULS staged checks after station-dependent TD and secondary prestress",
+                        "Current state": "SOURCE-GATED DOWNLOAD",
+                        "Feeds": "Tendon/station fpe and Pe; external FEA calculates primary + secondary response",
+                    },
+                    {
+                        "Order": 8,
+                        "Source / component": "Verified SLS return",
+                        "Current state": "PENDING — import through Loads",
+                        "Feeds": "Future SLS section-stress checks from verified FEA P/V2/M3 responses",
                     },
                 ]
             ),

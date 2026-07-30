@@ -309,7 +309,7 @@ def test_ptloss1g_component_subtabs_are_scoped_and_future_losses_are_guarded() -
     assert "Lightweight Time-Dependent Losses — event-based schedule preview" in source
     assert "Effective Prestress assembly remains locked" in source
     assert '"Pe / Pe_eff assembly"' in source
-    assert '"Current state": "LOCKED — not certified"' in source
+    assert '"Current state": "SOURCE-GATED DOWNLOAD"' in source
     assert "PTLOSS1G changes workspace organization only." in source
 
 

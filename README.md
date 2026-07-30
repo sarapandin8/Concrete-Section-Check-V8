@@ -1764,3 +1764,7 @@ Moves Loss Summary after Time-Dependent, separates system-average and maximum-lo
 ## CROSSBEAM.PTLOSS4D1A — Projected-Station Integrated Effective Prestress Average and Closure Guard
 
 Corrects the Effective Prestress system average by reading the assembled `Station s (m)` source, collapsing duplicate station faces, and using actual-spacing trapezoidal integration instead of an arithmetic row mean. Adds full projected-coverage gating plus system-average stress/force closure while retaining representative TD loss and the locked final SLS handoff. See `README_CROSSBEAM_PTLOSS4D1A.md`.
+
+## CROSSBEAM.PTLOSS4D2 — Effective Prestress External-FEA Handoff
+
+Adds a source-fingerprinted Excel/CSV handoff of Tendon/station `fpe` and `Pe`, including compact Left/Mid/Right/average values and explicit no-double-counting instructions. External FEA remains responsible for primary/secondary prestress response, and verified SLS resultants return through the main Loads workspace. No loss equation, solver route, Project JSON schema, or non-Crossbeam workflow is changed. See `README_CROSSBEAM_PTLOSS4D2.md`.

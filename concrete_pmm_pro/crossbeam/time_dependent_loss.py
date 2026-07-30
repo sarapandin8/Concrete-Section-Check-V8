@@ -1031,7 +1031,7 @@ def run_crossbeam_lightweight_time_dependent_loss(
                 f"The explicit schedule uses one no-contact falsework-removal event solve and {permanent_event_count} imported incremental permanent-load FEA event response(s). "
             )
             scope_source_note = (
-                f"PTLOSS4B3B uses one event solve for falsework removal and {permanent_event_count} compact imported permanent-load event response(s). "
+                f"The current compact route uses one event solve for falsework removal and {permanent_event_count} imported permanent-load event response(s). "
             )
         elif permanent_event_ready:
             permanent_source_note = (
@@ -1042,7 +1042,7 @@ def run_crossbeam_lightweight_time_dependent_loss(
                 "The explicit schedule uses one no-contact falsework-removal event solve and no later permanent-load events. "
             )
             scope_source_note = (
-                "PTLOSS4B3B uses one event solve for falsework removal with no later permanent-load increment. "
+                "The current compact route uses one event solve for falsework removal with no later permanent-load increment. "
             )
         else:
             permanent_source_note = (
@@ -1053,7 +1053,7 @@ def run_crossbeam_lightweight_time_dependent_loss(
                 "The explicit schedule uses one no-contact falsework-removal event solve, but the permanent-load event source requires review. "
             )
             scope_source_note = (
-                "PTLOSS4B3B permanent-load event sourcing is not ready. "
+                "The compact permanent-load event source is not ready. "
             )
     else:
         permanent_source_note = (
@@ -1173,12 +1173,13 @@ def run_crossbeam_lightweight_time_dependent_loss(
         "relaxation_loss_mpa": max(relaxation_loss, 0.0),
         "time_dependent_loss_mpa": total,
         "handoff_status": (
-            "SCHEDULE QA ONLY — EFFECTIVE PRESTRESS ASSEMBLY LOCKED"
+            "SCHEDULE QA CURRENT — EFFECTIVE PRESTRESS PREVIEW AVAILABLE"
             if segmental
-            else "COMPONENT READY — EFFECTIVE PRESTRESS ASSEMBLY LOCKED"
+            else "COMPONENT CURRENT — EFFECTIVE PRESTRESS PREVIEW AVAILABLE"
         ),
         "scope_guard": (
             scope_source_note
-            + "Time-resolved relaxation, measured material models, and station/tendon-dependent Pe/Pe_eff assembly remain excluded."
+            + "Time-resolved relaxation, measured material models, and station/tendon-dependent TD refinement remain excluded. "
+            + "The exported fpe/Pe handoff uses the representative TD scalar; external FEA remains responsible for secondary prestress response."
         ),
     }
