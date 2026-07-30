@@ -32,6 +32,12 @@ from concrete_pmm_pro.core.reinforcement_system import (
 from concrete_pmm_pro.core.models import LoadCase, PrestressElement, Rebar
 from concrete_pmm_pro.core.project import ProjectModel
 from concrete_pmm_pro.core.units import N_to_kN, Nmm_to_kNm
+from concrete_pmm_pro.crossbeam.station_force_contract import (
+    CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY,
+    CB_STATION_FORCE_CONTRACT_KEY,
+    canonical_effective_prestress_link,
+    canonical_station_force_contract,
+)
 from concrete_pmm_pro.crossbeam.later_permanent_response import (
     CB_LATER_FEA_RESPONSE_TABLE_KEY,
     CB_TD_FEA_SOURCE_DECLARATION_KEY,
@@ -889,6 +895,15 @@ def project_from_session_state(session_state: Any) -> ProjectModel:
         metadata[CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY] = crossbeam_loss_settings
     else:
         metadata.pop(CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY, None)
+    effective_link = _get_session_value(session_state, CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY, None)
+    if isinstance(effective_link, dict):
+        metadata[CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY] = canonical_effective_prestress_link(effective_link)
+    station_force_contract = _get_session_value(session_state, CB_STATION_FORCE_CONTRACT_KEY, None)
+    if isinstance(station_force_contract, dict):
+        metadata[CB_STATION_FORCE_CONTRACT_KEY] = canonical_station_force_contract(
+            station_force_contract,
+            effective_prestress_link=effective_link,
+        )
     analysis_results_metadata = _analysis_results_metadata_from_session(session_state)
     if analysis_results_metadata:
         metadata[ANALYSIS_RESULTS_METADATA_KEY] = analysis_results_metadata
@@ -1359,6 +1374,15 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
         section_definitions=session_state.get(CB_SECLIB_DEFINITIONS_KEY, []),
     )
     restore_crossbeam_prestress_loss_project_state(project.metadata, session_state)
+    effective_link = project.metadata.get(CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY)
+    if isinstance(effective_link, dict):
+        session_state[CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY] = canonical_effective_prestress_link(effective_link)
+    station_force_contract = project.metadata.get(CB_STATION_FORCE_CONTRACT_KEY)
+    if isinstance(station_force_contract, dict):
+        session_state[CB_STATION_FORCE_CONTRACT_KEY] = canonical_station_force_contract(
+            station_force_contract,
+            effective_prestress_link=session_state.get(CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY),
+        )
 
     session_state["loads_table"] = _loads_to_table(project.loads)
     workflow_load_tables = project.metadata.get("workflow_load_tables")

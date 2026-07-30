@@ -156,6 +156,9 @@ from concrete_pmm_pro.crossbeam.effective_prestress_handoff import (
     effective_prestress_handoff_csv_bytes,
     effective_prestress_handoff_excel_bytes,
 )
+from concrete_pmm_pro.crossbeam.station_force_contract import (
+    CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY,
+)
 from concrete_pmm_pro.crossbeam.time_dependent_loss import (
     AASHTO_TIME_DEPENDENT_BASIS,
     LIGHTWEIGHT_TD_METHOD,
@@ -8200,6 +8203,18 @@ def _render_crossbeam_effective_prestress_fea_handoff(
     tendon_rows = list(handoff.get("tendon_rows") or [])
     fingerprint = str(handoff.get("source_fingerprint") or "")
     source_id = str(handoff.get("source_id") or fingerprint[:12])
+    st.session_state[CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY] = {
+        "ready": bool(download_ready),
+        "source_id": source_id,
+        "contract_id": str(handoff.get("contract_id") or ""),
+        "source_fingerprint": fingerprint,
+        "application_route": str(route),
+        "engineer_adopted_td": bool(engineer_adopted_td),
+        "average_total_loss_percent": float(summary_payload.get("average_total_loss_percent") or 0.0),
+        "effective_prestress_ratio_percent": 100.0 - float(summary_payload.get("average_total_loss_percent") or 0.0),
+        "average_effective_stress_mpa": float(summary_payload.get("average_effective_stress_mpa") or 0.0),
+        "average_effective_force_kn": float(summary_payload.get("average_effective_force_kn") or 0.0),
+    }
 
     if not ready:
         st.error("FEA HANDOFF SOURCE BLOCKED — refresh the upstream loss components and closure checks.")

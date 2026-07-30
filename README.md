@@ -1772,3 +1772,7 @@ Adds a source-fingerprinted Excel/CSV handoff of Tendon/station `fpe` and `Pe`, 
 ## CROSSBEAM.PTLOSS4D2A — Engineer-Adopted FEA Handoff Contract and Workbook QA
 
 Adds an explicit engineer adoption gate for the representative Time-Dependent loss approximation, requires one declared external-FEA application route, renames the limited export as a Left/Mid/Right three-point profile, and upgrades the workbook with compact data sheets, human-readable source metadata, short Source IDs, a route/adoption Contract ID, and live Excel stress/force closure formulas. External FEA still calculates secondary prestress and verified SLS `P/V2/M3` responses still return through Loads. See `README_CROSSBEAM_PTLOSS4D2A.md`.
+
+## CROSSBEAM.LOADS1A — Compact Selected Station-Force ULS/SLS Import
+
+Preserves the established member-workflow Loads UX while adding a compact final-stage FEA source contract, optional Check Point labels for intentionally duplicated stations, one-time source-unit/sign normalization to canonical kN/kN·m, row-coupled force validation, Project-JSON traceability, and a fingerprinted Analysis input handoff without requiring raw element I/J-end results. See `README_CROSSBEAM_LOADS1A.md`.
