@@ -80,6 +80,7 @@ INPUT_GROUP_KEYS: dict[str, tuple[str, ...]] = {
         "girder_prestress_force_states_table",
         "girder_prestress_code_loss_settings",
         "prestress_loss_settings",
+        "crossbeam_ptloss3b1_column_rows",
         CB_LATER_FEA_RESPONSE_TABLE_KEY,
         CB_TD_FEA_SOURCE_DECLARATION_KEY,
         CB_TD_PERMANENT_EVENT_SCHEDULE_KEY,

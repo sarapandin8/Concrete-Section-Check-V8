@@ -158,6 +158,8 @@ from concrete_pmm_pro.crossbeam.effective_prestress_handoff import (
 )
 from concrete_pmm_pro.crossbeam.station_force_contract import (
     CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY,
+    CB_STATION_FORCE_CONTRACT_KEY,
+    CB_STATION_FORCE_VALIDATION_KEY,
 )
 from concrete_pmm_pro.crossbeam.time_dependent_loss import (
     AASHTO_TIME_DEPENDENT_BASIS,
@@ -1721,6 +1723,158 @@ def _ptloss3b1_column_geometry_editor_rows(
     return output
 
 
+CB_SUPPORTQA1_SOURCE_REVISION_KEY = "crossbeam_supportqa1_source_revision"
+CB_SUPPORTQA1_NOTICE_KEY = "crossbeam_supportqa1_notice"
+CB_SUPPORTQA1_STALE_REASON_KEY = "crossbeam_supportqa1_stale_reason"
+
+
+def _invalidate_crossbeam_support_dependent_state(
+    session_state: MutableMapping[str, Any],
+    *,
+    reason: str,
+) -> None:
+    """Invalidate downstream contracts without deleting prior engineering evidence.
+
+    Stored ES/TD results are intentionally retained so their existing input
+    fingerprints report ``STALE`` on the Prestress Loss page.  The external-FEA
+    handoff and Loads contract are actively blocked because those states may be
+    opened before Prestress Loss is revisited.
+    """
+
+    message = str(reason).strip() or "Column / support layout changed."
+    session_state[CB_SUPPORTQA1_STALE_REASON_KEY] = message
+    session_state[CB_SUPPORTQA1_SOURCE_REVISION_KEY] = int(
+        session_state.get(CB_SUPPORTQA1_SOURCE_REVISION_KEY, 0)
+    ) + 1
+
+    link = dict(session_state.get(CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY) or {})
+    if link:
+        link.update(
+            {
+                "ready": False,
+                "engineer_adopted_td": False,
+                "stale": True,
+                "stale_reason": message,
+            }
+        )
+        session_state[CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY] = link
+    session_state[CB_EFFECTIVE_FEA_TD_ADOPTION_KEY] = False
+    session_state.pop(CB_EFFECTIVE_FEA_ADOPTION_TOKEN_KEY, None)
+
+    contract = dict(session_state.get(CB_STATION_FORCE_CONTRACT_KEY) or {})
+    if contract:
+        contract.update(
+            {
+                "model_revision": "",
+                "prestress_source_id": "",
+                "prestress_contract_id": "",
+                "confirmed_final_prestress_applied_once": False,
+                "confirmed_external_fea_secondary": False,
+                "confirmed_uls_final_stage_response_basis": False,
+                "confirmed_sls_service_response_basis": False,
+                "confirmed_transfer_immediate_loss_basis": False,
+                "confirmed_transfer_stage_response_basis": False,
+                "support_layout_stale": True,
+                "support_layout_stale_reason": message,
+            }
+        )
+        session_state[CB_STATION_FORCE_CONTRACT_KEY] = contract
+    session_state[CB_STATION_FORCE_VALIDATION_KEY] = {
+        "ready": False,
+        "status": "STALE — SUPPORT LAYOUT CHANGED",
+        "issues": [message],
+    }
+
+
+def _column_rows_from_batched_form(
+    *,
+    summary_payload: Any,
+    geometry_payloads: Mapping[str, Any],
+    fallback_rows: list[dict[str, Any]],
+    length_m: float,
+) -> list[dict[str, Any]]:
+    """Merge one batched Streamlit form submission into canonical column rows."""
+
+    current = canonical_column_stage_rows(fallback_rows, length_m=length_m)
+    summary_rows = data_editor_payload_to_records(summary_payload, _ptloss3b1_column_summary_editor_rows(current))
+    updated: list[dict[str, Any]] = []
+    source_index_to_row: dict[int, dict[str, Any]] = {}
+
+    for new_index, edited in enumerate(summary_rows):
+        if all(
+            _editor_value_is_blank(edited.get(key))
+            for key in (
+                "Column ID",
+                "Station s (m)",
+                "Column Height (m)",
+                "Shape",
+                "f'c (MPa)",
+            )
+        ):
+            continue
+        try:
+            source_index = int(edited.get("_Source Index"))
+        except (TypeError, ValueError):
+            source_index = -1
+        if 0 <= source_index < len(current):
+            row = dict(current[source_index])
+        else:
+            row = dict(default_column_stage_rows(length_m)[0])
+            row["Column ID"] = f"C{new_index + 1}"
+            row["Station s (m)"] = 0.0
+        row.update(
+            {
+                "Column ID": str(edited.get("Column ID") or row.get("Column ID") or f"C{new_index + 1}").strip()
+                or f"C{new_index + 1}",
+                "Station s (m)": _finite_float(
+                    edited.get("Station s (m)"), row.get("Station s (m)")
+                ),
+                "Height (m)": _finite_float(
+                    edited.get("Column Height (m)"), row.get("Height (m)")
+                ),
+                "Shape": str(edited.get("Shape") or row.get("Shape") or COLUMN_SHAPE_RECT_CHAMFER),
+                "f'c (MPa)": _finite_float(
+                    edited.get("f'c (MPa)"), row.get("f'c (MPa)")
+                ),
+            }
+        )
+        updated.append(row)
+        if source_index >= 0:
+            source_index_to_row[source_index] = row
+
+    for shape, payload in geometry_payloads.items():
+        fallback_geometry = _ptloss3b1_column_geometry_editor_rows(current, shape)
+        for edited in data_editor_payload_to_records(payload, fallback_geometry):
+            try:
+                source_index = int(edited.get("_Source Index"))
+            except (TypeError, ValueError):
+                continue
+            row = source_index_to_row.get(source_index)
+            if row is None or str(row.get("Shape") or "") != shape:
+                continue
+            if shape == COLUMN_SHAPE_CIRCULAR:
+                row["Diameter (mm)"] = _finite_float(
+                    edited.get("Diameter (mm)"), row.get("Diameter (mm)")
+                )
+            else:
+                row["Btrans (mm)"] = _finite_float(
+                    edited.get("Btrans (mm)"), row.get("Btrans (mm)")
+                )
+                row["Blong (mm)"] = _finite_float(
+                    edited.get("Blong (mm)"), row.get("Blong (mm)")
+                )
+                corner_key = (
+                    "Chamfer c (mm)"
+                    if shape == COLUMN_SHAPE_RECT_CHAMFER
+                    else "Fillet radius r (mm)"
+                )
+                row["Corner (mm)"] = _finite_float(
+                    edited.get(corner_key), row.get("Corner (mm)")
+                )
+
+    return canonical_column_stage_rows(updated, length_m=length_m)
+
+
 def _commit_ptloss3b1_column_summary_editor(
     editor_key: str,
     fallback_rows: list[dict[str, Any]],
@@ -1992,84 +2146,120 @@ def render_crossbeam_construction_support_source_workspace(length_m: float) -> N
         _render_crossbeam_construction_type_control(float(length_m))
 
         st.markdown("##### Column / support-line layout")
+        st.caption(
+            "Edits are batched in one form so typing does not rebuild the section preview, stiffness tables, and Prestress-Loss source on every cell change. "
+            "Press Apply once after completing the column layout. Rows are stored in station order."
+        )
         revision = int(st.session_state.get("crossbeam_ptloss3b1_column_editor_revision", 0))
         summary_rows = _ptloss3b1_column_summary_editor_rows(rows)
         editor_key = f"crossbeam_section_builder_column_layout_editor_{revision}"
-        st.data_editor(
-            pd.DataFrame(summary_rows),
-            num_rows="dynamic",
-            use_container_width=True,
-            hide_index=True,
-            key=editor_key,
-            on_change=_commit_ptloss3b1_column_summary_editor,
-            args=(editor_key, summary_rows, float(length_m)),
-            column_config={
-                "_Source Index": None,
-                "Column ID": st.column_config.TextColumn("Column ID", required=True),
-                "Station s (m)": st.column_config.NumberColumn(
-                    "Column centerline station s (m)", min_value=0.0, max_value=float(length_m), format="%.3f", required=True
-                ),
-                "Column Height (m)": st.column_config.NumberColumn(
-                    "Column Height — vertical (m)", min_value=0.0, format="%.3f", required=True
-                ),
-                "Shape": st.column_config.SelectboxColumn(
-                    "Section shape", options=list(COLUMN_SHAPE_OPTIONS), required=True
-                ),
-                "f'c (MPa)": st.column_config.NumberColumn(
-                    "Column f'c (MPa)", min_value=1.0, max_value=150.0, format="%.1f", required=True
-                ),
-            },
-        )
-
-        rows = canonical_column_stage_rows(
-            st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
-        )
-        st.markdown("##### Column section geometry")
-        st.caption(
-            "Rectangular sections use Btrans and Blong plus Chamfer c or Fillet radius r. Circular sections use Diameter D only. "
-            "Dormant dimensions from other shapes are ignored by the geometry/property solver."
-        )
-
         geometry_specs = (
             (COLUMN_SHAPE_RECT_CHAMFER, "Rectangular — equal chamfer", "Chamfer c (mm)"),
             (COLUMN_SHAPE_RECT_FILLET, "Rectangular — equal fillet", "Fillet radius r (mm)"),
             (COLUMN_SHAPE_CIRCULAR, "Circular", "Diameter (mm)"),
         )
-        for shape, heading, corner_label in geometry_specs:
-            geometry_rows = _ptloss3b1_column_geometry_editor_rows(rows, shape)
-            if not geometry_rows:
-                continue
-            st.markdown(f"**{heading}**")
-            geometry_key = f"crossbeam_section_builder_column_geometry_{abs(hash(shape))}_{revision}"
-            config: dict[str, Any] = {
-                "_Source Index": None,
-                "Column ID": st.column_config.TextColumn("Column ID", disabled=True),
-            }
-            if shape == COLUMN_SHAPE_CIRCULAR:
-                config["Diameter (mm)"] = st.column_config.NumberColumn(
-                    "Diameter D (mm)", min_value=0.0, format="%.1f", required=True
-                )
-            else:
-                config["Btrans (mm)"] = st.column_config.NumberColumn(
-                    "Btrans — Normal to Crossbeam axis (mm)", min_value=0.0, format="%.1f", required=True
-                )
-                config["Blong (mm)"] = st.column_config.NumberColumn(
-                    "Blong — Along Crossbeam axis (mm)", min_value=0.0, format="%.1f", required=True
-                )
-                config[corner_label] = st.column_config.NumberColumn(
-                    corner_label, min_value=0.0, format="%.1f", required=True
-                )
-            st.data_editor(
-                pd.DataFrame(geometry_rows),
-                num_rows="fixed",
+        geometry_payloads: dict[str, Any] = {}
+        with st.form(
+            f"crossbeam_section_builder_column_form_{revision}",
+            clear_on_submit=False,
+        ):
+            summary_payload = st.data_editor(
+                pd.DataFrame(summary_rows),
+                num_rows="dynamic",
                 use_container_width=True,
                 hide_index=True,
-                key=geometry_key,
-                on_change=_commit_ptloss3b1_column_geometry_editor,
-                args=(geometry_key, geometry_rows, float(length_m), shape),
-                disabled=["Column ID"],
-                column_config=config,
+                key=editor_key,
+                column_config={
+                    "_Source Index": None,
+                    "Column ID": st.column_config.TextColumn("Column ID", required=True),
+                    "Station s (m)": st.column_config.NumberColumn(
+                        "Column centerline station s (m)", min_value=0.0, max_value=float(length_m), format="%.3f", required=True
+                    ),
+                    "Column Height (m)": st.column_config.NumberColumn(
+                        "Column Height — vertical (m)", min_value=0.0, format="%.3f", required=True
+                    ),
+                    "Shape": st.column_config.SelectboxColumn(
+                        "Section shape", options=list(COLUMN_SHAPE_OPTIONS), required=True
+                    ),
+                    "f'c (MPa)": st.column_config.NumberColumn(
+                        "Column f'c (MPa)", min_value=1.0, max_value=150.0, format="%.1f", required=True
+                    ),
+                },
             )
+
+            st.markdown("##### Column section geometry")
+            st.caption(
+                "Rectangular sections use Btrans and Blong plus Chamfer c or Fillet radius r. Circular sections use Diameter D only. "
+                "Dormant dimensions from other shapes are ignored. After changing a Section shape, Apply once to refresh the applicable geometry table."
+            )
+            for shape, heading, corner_label in geometry_specs:
+                geometry_rows = _ptloss3b1_column_geometry_editor_rows(rows, shape)
+                if not geometry_rows:
+                    continue
+                st.markdown(f"**{heading}**")
+                geometry_key = f"crossbeam_section_builder_column_geometry_{abs(hash(shape))}_{revision}"
+                config: dict[str, Any] = {
+                    "_Source Index": None,
+                    "Column ID": st.column_config.TextColumn("Column ID", disabled=True),
+                }
+                if shape == COLUMN_SHAPE_CIRCULAR:
+                    config["Diameter (mm)"] = st.column_config.NumberColumn(
+                        "Diameter D (mm)", min_value=0.0, format="%.1f", required=True
+                    )
+                else:
+                    config["Btrans (mm)"] = st.column_config.NumberColumn(
+                        "Btrans — Normal to Crossbeam axis (mm)", min_value=0.0, format="%.1f", required=True
+                    )
+                    config["Blong (mm)"] = st.column_config.NumberColumn(
+                        "Blong — Along Crossbeam axis (mm)", min_value=0.0, format="%.1f", required=True
+                    )
+                    config[corner_label] = st.column_config.NumberColumn(
+                        corner_label, min_value=0.0, format="%.1f", required=True
+                    )
+                geometry_payloads[shape] = st.data_editor(
+                    pd.DataFrame(geometry_rows),
+                    num_rows="fixed",
+                    use_container_width=True,
+                    hide_index=True,
+                    key=geometry_key,
+                    disabled=["Column ID"],
+                    column_config=config,
+                )
+
+            apply_columns = st.form_submit_button(
+                "Apply Column / Support Layout",
+                type="primary",
+                use_container_width=True,
+            )
+
+        if apply_columns:
+            previous_rows = canonical_column_stage_rows(
+                st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY),
+                length_m=length_m,
+            )
+            applied_rows = _column_rows_from_batched_form(
+                summary_payload=summary_payload,
+                geometry_payloads=geometry_payloads,
+                fallback_rows=previous_rows,
+                length_m=float(length_m),
+            )
+            if applied_rows != previous_rows:
+                st.session_state[CB_LOSS_ES_COLUMN_ROWS_KEY] = applied_rows
+                st.session_state["crossbeam_ptloss3b1_column_editor_revision"] = revision + 1
+                _invalidate_crossbeam_support_dependent_state(
+                    st.session_state,
+                    reason=(
+                        "Column / support layout changed; Elastic Shortening, Time-Dependent loss, Effective Prestress FEA handoff, and the Loads FEA contract require refresh."
+                    ),
+                )
+                st.session_state[CB_SUPPORTQA1_NOTICE_KEY] = (
+                    f"Applied {len(applied_rows)} column/support row(s). Prestress-Loss and FEA handoff evidence is now stale until recalculated."
+                )
+            st.rerun()
+
+        notice = st.session_state.pop(CB_SUPPORTQA1_NOTICE_KEY, None)
+        if notice:
+            st.warning(str(notice))
 
         rows = canonical_column_stage_rows(
             st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY), length_m=length_m
@@ -2125,7 +2315,7 @@ def render_crossbeam_construction_support_source_workspace(length_m: float) -> N
                 hide_index=True,
             )
             st.caption(
-                "Axis lock for the future 2D s–vertical Portal-Frame solver: in-plane column bending uses I⊥s (about the transverse axis). I∥s is retained for the orthogonal bending axis."
+                "Axis lock for the current 2D s–vertical Portal-Frame loss model: in-plane column bending uses I⊥s (about the transverse axis). I∥s is retained for the orthogonal bending axis."
             )
 
 
@@ -4476,8 +4666,9 @@ def render_crossbeam_segment_layout_page() -> None:
             f"Column / support footprint QA — {footprint_qa['compatible_count']} / {footprint_qa['count']} support footprint(s) are compatible with Solid {'zone' if is_cip else 'segment'} regions."
         )
     else:
-        st.warning(
-            f"Column / support footprint QA — {footprint_qa['compatible_count']} / {footprint_qa['count']} compatible. Review support extents before the future stage solver is released."
+        st.error(
+            f"Column / support footprint QA — {footprint_qa['compatible_count']} / {footprint_qa['count']} compatible. "
+            "Elastic Shortening and Time-Dependent loss are blocked until every support footprint lies within recognized Solid segment/zone regions."
         )
     with st.expander("Column / support footprint QA", expanded=not footprint_qa["ready"]):
         st.dataframe(
@@ -9859,6 +10050,7 @@ def render_crossbeam_prestress_loss_page() -> None:
             column_rows=column_source_rows,
             profile_rows=profile_rows,
             crossbeam_stressing_strength_ratio=linear_stressing_ratio,
+            enforce_support_footprint=True,
         )
         if stage_material_issue:
             linear_stage_model = {

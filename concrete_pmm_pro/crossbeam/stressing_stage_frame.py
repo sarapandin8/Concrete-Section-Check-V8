@@ -33,6 +33,7 @@ import numpy as np
 from concrete_pmm_pro.crossbeam.construction_stage import (
     canonical_column_stage_rows,
     column_section_properties,
+    column_support_footprint_summary,
 )
 from concrete_pmm_pro.core.concrete_materials import aci_concrete_ec_mpa
 from concrete_pmm_pro.crossbeam.section_library import (
@@ -566,6 +567,7 @@ def build_crossbeam_linear_stage_model(
     profile_rows: Any,
     crossbeam_stressing_strength_ratio: float = DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
     max_beam_element_length_m: float = DEFAULT_MAX_BEAM_ELEMENT_LENGTH_M,
+    enforce_support_footprint: bool = False,
 ) -> dict[str, Any]:
     """Resolve a piecewise-gross Crossbeam + fixed-base column frame model.
 
@@ -661,11 +663,29 @@ def build_crossbeam_linear_stage_model(
             issues.append(f"Section {section_id} A/I source is invalid.")
 
     columns = canonical_column_stage_rows(column_rows, length_m=length)
+    support_footprint_qa = column_support_footprint_summary(
+        columns,
+        segment_rows,
+        length_m=length,
+    )
+    if enforce_support_footprint and not support_footprint_qa.get("ready"):
+        for row in support_footprint_qa.get("rows", []):
+            if str(row.get("Status") or "") == "COMPATIBLE":
+                continue
+            issues.append(
+                f"{row.get('Column') or 'Column'} support footprint: {row.get('Issue') or 'review required'}"
+            )
     if len(columns) < 2:
         issues.append("At least two columns are required for the Portal-Frame QA model.")
     column_sources: list[dict[str, Any]] = []
     seen_stations: set[float] = set()
+    seen_column_ids: set[str] = set()
     for row in columns:
+        column_id = str(row.get("Column ID") or "").strip()
+        column_id_key = column_id.casefold()
+        if column_id_key in seen_column_ids:
+            issues.append("Column IDs must be unique.")
+        seen_column_ids.add(column_id_key)
         station = round(_float(row.get("Station s (m)")), 9)
         if station in seen_stations:
             issues.append("Column stations must be unique.")
@@ -840,6 +860,10 @@ def build_crossbeam_linear_stage_model(
         "ranges": ranges,
         "section_sources": section_sources,
         "column_sources": column_sources,
+        "support_footprint_qa": support_footprint_qa,
+        "support_footprint_gate": (
+            "ENFORCED" if enforce_support_footprint else "AUDIT ONLY"
+        ),
         "reference_axis": {
             "status": "READY" if reference_section else "SOURCE BLOCKED",
             "reference_section_id": reference_section_id,

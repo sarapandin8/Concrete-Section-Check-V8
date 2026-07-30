@@ -440,6 +440,73 @@ def column_support_footprint_summary(
     }
 
 
+def column_loss_evaluation_regions(
+    column_values: Any,
+    *,
+    length_m: float,
+) -> list[dict[str, Any]]:
+    """Return ordered overhang/bay regions for multi-column loss QA.
+
+    The source is deliberately geometry-only and solver-independent so both
+    Elastic Shortening and Later Permanent Load stress routing evaluate the
+    same physical regions.  Column centerlines remain separate point targets;
+    this helper returns the intervals between member ends and adjacent column
+    centerlines, including nonzero end overhangs.
+    """
+
+    length = max(_float(length_m), 0.0)
+    columns = canonical_column_stage_rows(column_values, length_m=length)
+    if not columns or length <= 0.0:
+        return []
+
+    tolerance = max(1.0e-9, length * 1.0e-9)
+    output: list[dict[str, Any]] = []
+
+    first = columns[0]
+    first_station = _float(first.get("Station s (m)"))
+    if first_station > tolerance:
+        output.append(
+            {
+                "Region ID": "LEFT-OVERHANG",
+                "Region label": f"Left overhang to {first.get('Column ID')}",
+                "Start s (m)": 0.0,
+                "End s (m)": first_station,
+                "Region type": "OVERHANG",
+            }
+        )
+
+    for left, right in zip(columns, columns[1:]):
+        start = _float(left.get("Station s (m)"))
+        end = _float(right.get("Station s (m)"))
+        if end - start <= tolerance:
+            continue
+        left_id = str(left.get("Column ID") or "?")
+        right_id = str(right.get("Column ID") or "?")
+        output.append(
+            {
+                "Region ID": f"BAY-{left_id}-{right_id}",
+                "Region label": f"Bay {left_id}–{right_id}",
+                "Start s (m)": start,
+                "End s (m)": end,
+                "Region type": "BAY",
+            }
+        )
+
+    last = columns[-1]
+    last_station = _float(last.get("Station s (m)"))
+    if length - last_station > tolerance:
+        output.append(
+            {
+                "Region ID": "RIGHT-OVERHANG",
+                "Region label": f"Right overhang from {last.get('Column ID')}",
+                "Start s (m)": last_station,
+                "End s (m)": length,
+                "Region type": "OVERHANG",
+            }
+        )
+    return output
+
+
 def temporary_support_source(length_m: float) -> dict[str, Any]:
     return {
         "status": "SOURCE DEFINED",

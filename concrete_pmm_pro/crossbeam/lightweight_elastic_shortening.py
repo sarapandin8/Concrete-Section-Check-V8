@@ -20,6 +20,10 @@ from concrete_pmm_pro.crossbeam.elastic_shortening import (
     elastic_shortening_station_rows,
     elastic_shortening_summary,
 )
+from concrete_pmm_pro.crossbeam.construction_stage import (
+    canonical_column_stage_rows,
+    column_loss_evaluation_regions,
+)
 from concrete_pmm_pro.crossbeam.stressing_stage_contact import (
     solve_vertical_compression_contact,
 )
@@ -197,31 +201,58 @@ def _rows_near_station(rows: list[dict[str, Any]], station: float, tolerance: fl
 
 
 def _bonded_fcgp_route(model: Mapping[str, Any], stress_rows: list[dict[str, Any]]) -> dict[str, Any]:
-    columns = sorted(
-        _float(row.get("Station s (m)")) for row in model.get("column_sources", [])
+    column_rows = canonical_column_stage_rows(
+        model.get("column_sources", []),
+        length_m=_float(model.get("length_m")),
     )
     length_m = _float(model.get("length_m"))
-    if len(columns) >= 2:
-        left, right = columns[0], columns[-1]
-        midspan = 0.5 * (left + right)
-        clear_span_rows = [
-            row for row in stress_rows if left - 1.0e-9 <= _float(row.get("s (m)")) <= right + 1.0e-9
-        ]
-        max_m_row = max(clear_span_rows, key=lambda row: abs(_float(row.get("M (kN-m; sagging +)"))), default=None)
-        candidates = [
-            ("Left column centerline", left),
-            ("Span center", midspan),
-            ("Right column centerline", right),
-        ]
-        if max_m_row is not None:
-            candidates.append(("Maximum |M| within column lines", _float(max_m_row.get("s (m)"))))
-    else:
-        candidates = [("Member center", 0.5 * length_m)]
-
     candidate_rows: list[dict[str, Any]] = []
-    for role, station in candidates:
+    for column in column_rows:
+        station = _float(column.get("Station s (m)"))
+        role = f"Column {column.get('Column ID') or '?'} centerline"
         for row in _rows_near_station(stress_rows, station):
             candidate_rows.append({**row, "Evaluation role": role})
+
+    regions = column_loss_evaluation_regions(column_rows, length_m=length_m)
+    for region in regions:
+        start = _float(region.get("Start s (m)"))
+        end = _float(region.get("End s (m)"))
+        label = str(region.get("Region label") or "Region")
+        midpoint = 0.5 * (start + end)
+        for row in _rows_near_station(stress_rows, midpoint):
+            candidate_rows.append(
+                {**row, "Evaluation role": f"{label} midpoint"}
+            )
+        region_rows = [
+            row
+            for row in stress_rows
+            if start - 1.0e-9 <= _float(row.get("s (m)")) <= end + 1.0e-9
+        ]
+        governing_region_row = max(
+            region_rows,
+            key=lambda row: _float(row.get("f_cgp (MPa; compression +)")),
+            default=None,
+        )
+        if governing_region_row is not None:
+            candidate_rows.append(
+                {
+                    **governing_region_row,
+                    "Evaluation role": f"{label} governing f_cgp",
+                }
+            )
+
+    if not candidate_rows and stress_rows:
+        for row in _rows_near_station(stress_rows, 0.5 * length_m):
+            candidate_rows.append({**row, "Evaluation role": "Member center"})
+        governing_member_row = max(
+            stress_rows,
+            key=lambda row: _float(row.get("f_cgp (MPa; compression +)")),
+            default=None,
+        )
+        if governing_member_row is not None:
+            candidate_rows.append(
+                {**governing_member_row, "Evaluation role": "Member governing f_cgp"}
+            )
     # Duplicate roles/stations are harmless but make the audit noisy.
     unique: dict[tuple[str, float, str], dict[str, Any]] = {}
     for row in candidate_rows:
@@ -238,12 +269,12 @@ def _bonded_fcgp_route(model: Mapping[str, Any], stress_rows: list[dict[str, Any
         default=None,
     )
     return {
-        "route": "BONDED — REPRESENTATIVE CONTINUOUS-MEMBER SECTION",
+        "route": "BONDED — ALL COLUMN / BAY REPRESENTATIVE SECTIONS",
         "fcgp_mpa": max(_float(governing.get("f_cgp (MPa; compression +)")) if governing else 0.0, 0.0),
         "governing_row": governing,
         "evaluation_rows": candidate_rows,
         "note": (
-            "Bonded post-tensioning route: evaluate the prestressing-steel centroid at the span center, column centerlines, and the maximum-|M| station between columns; use the governing compressive value."
+            "Bonded post-tensioning route: evaluate every column centerline, every bay/overhang midpoint, and the actual governing f_cgp row within each region; use the governing compressive value."
         ),
     }
 

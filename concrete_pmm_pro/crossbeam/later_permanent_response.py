@@ -25,6 +25,10 @@ from typing import Any
 from concrete_pmm_pro.crossbeam.lightweight_elastic_shortening import (
     _tendon_cg_depth_source,
 )
+from concrete_pmm_pro.crossbeam.construction_stage import (
+    canonical_column_stage_rows,
+    column_loss_evaluation_regions,
+)
 
 
 CB_LATER_FEA_RESPONSE_TABLE_KEY = "crossbeam_ptloss4b3_later_fea_response_table"
@@ -454,28 +458,69 @@ def _resolve_element(
 def _route_candidates(model: Mapping[str, Any], rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not rows:
         return []
-    columns = sorted(float(_float(row.get("Station s (m)"), 0.0) or 0.0) for row in model.get("column_sources", []))
     length_m = float(_float(model.get("length_m"), 0.0) or 0.0)
-    if len(columns) >= 2:
-        left, right = columns[0], columns[-1]
-        mid = 0.5 * (left + right)
-        between = [row for row in rows if left - 1.0e-9 <= float(row["Station x (m)"]) <= right + 1.0e-9]
-        max_m = max(between, key=lambda row: abs(float(row["M3 (kN-m; sagging +)"])), default=None)
-        targets: list[tuple[str, float]] = [
-            ("Left column centerline", left),
-            ("Span center", mid),
-            ("Right column centerline", right),
-        ]
-        if max_m is not None:
-            targets.append(("Maximum |M3| within column lines", float(max_m["Station x (m)"])))
-    else:
-        targets = [("Member center", 0.5 * length_m)]
-
+    columns = canonical_column_stage_rows(
+        model.get("column_sources", []),
+        length_m=length_m,
+    )
     output: list[dict[str, Any]] = []
-    for role, target in targets:
+
+    def add_nearest(role: str, target: float) -> None:
         distance = min(abs(float(row["Station x (m)"]) - target) for row in rows)
         nearest = [row for row in rows if abs(abs(float(row["Station x (m)"]) - target) - distance) <= 1.0e-7]
         output.extend({**row, "Evaluation role": role, "Target station (m)": target} for row in nearest)
+
+    for column in columns:
+        station = float(_float(column.get("Station s (m)"), 0.0) or 0.0)
+        add_nearest(
+            f"Column {column.get('Column ID') or '?'} centerline",
+            station,
+        )
+
+    regions = column_loss_evaluation_regions(columns, length_m=length_m)
+    for region in regions:
+        start = float(_float(region.get("Start s (m)"), 0.0) or 0.0)
+        end = float(_float(region.get("End s (m)"), 0.0) or 0.0)
+        label = str(region.get("Region label") or "Region")
+        add_nearest(f"{label} midpoint", 0.5 * (start + end))
+        region_rows = [
+            row
+            for row in rows
+            if start - 1.0e-9 <= float(row["Station x (m)"]) <= end + 1.0e-9
+        ]
+        governing_region = max(
+            region_rows,
+            key=lambda row: float(row.get("Δf_cd (MPa; compression +)") or 0.0),
+            default=None,
+        )
+        if governing_region is not None:
+            output.append(
+                {
+                    **governing_region,
+                    "Evaluation role": f"{label} governing Δf_cd",
+                    "Target station (m)": float(
+                        governing_region.get("Station x (m)") or 0.0
+                    ),
+                }
+            )
+
+    if not output:
+        add_nearest("Member center", 0.5 * length_m)
+        governing_member = max(
+            rows,
+            key=lambda row: float(row.get("Δf_cd (MPa; compression +)") or 0.0),
+            default=None,
+        )
+        if governing_member is not None:
+            output.append(
+                {
+                    **governing_member,
+                    "Evaluation role": "Member governing Δf_cd",
+                    "Target station (m)": float(
+                        governing_member.get("Station x (m)") or 0.0
+                    ),
+                }
+            )
     unique: dict[tuple[str, float, str, str], dict[str, Any]] = {}
     for row in output:
         key = (

@@ -1780,3 +1780,7 @@ Preserves the established member-workflow Loads UX while adding a compact final-
 ## CROSSBEAM.LOADS1B — Separate SLS At Transfer and At Service Imports
 
 Separates Crossbeam SLS station-force input into fixed At Transfer and At Service sub-tabs, assigns stage metadata automatically, introduces stage-specific FEA/prestress declarations, and requires validated ULS + Transfer + Service inputs before Analysis handoff without changing the accepted Prestress Loss calculations.
+
+## CROSSBEAM.SUPPORTQA1 — Multi-Column Loss Verification, Support-Footprint Gate, and Batched Column Input
+
+The existing dynamic Crossbeam column source now uses one batched Apply form, enforces unique column IDs/stations and Solid support footprints in the production loss model, evaluates bonded `f_cgp` and Later Permanent `Δf_cd` across every column, bay, and overhang, and invalidates downstream Effective Prestress/FEA/Loads contracts whenever the support layout changes. See `README_CROSSBEAM_SUPPORTQA1.md`.
