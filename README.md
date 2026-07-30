@@ -1784,3 +1784,7 @@ Separates Crossbeam SLS station-force input into fixed At Transfer and At Servic
 ## CROSSBEAM.SUPPORTQA1 — Multi-Column Loss Verification, Support-Footprint Gate, and Batched Column Input
 
 The existing dynamic Crossbeam column source now uses one batched Apply form, enforces unique column IDs/stations and Solid support footprints in the production loss model, evaluates bonded `f_cgp` and Later Permanent `Δf_cd` across every column, bay, and overhang, and invalidates downstream Effective Prestress/FEA/Loads contracts whenever the support layout changes. See `README_CROSSBEAM_SUPPORTQA1.md`.
+
+## CROSSBEAM.SUPPORTQA1A — One-Sided Column-Joint ES Audit and Equilibrium Closure
+
+Labels Column-centerline Crossbeam results as `LEFT LIMIT (s−)` and `RIGHT LIMIT (s+)`, adds a post-solve Column-joint equilibrium gate using beam, Column-top, prestress nodal, and active contact actions, summarizes full multi-column `f_cgp` coverage, and advances the ES fingerprint so older evidence cannot remain current. See `README_CROSSBEAM_SUPPORTQA1A.md`.

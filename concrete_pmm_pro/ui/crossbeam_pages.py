@@ -6817,8 +6817,8 @@ def _lightweight_es_fingerprint(
     eci_mpa: float,
 ) -> str:
     payload = {
-        "schema": 1,
-        "solver": "lightweight-es-v1",
+        "schema": 2,
+        "solver": "lightweight-es-supportqa1a-joint-audit-v2",
         "length_m": float(length_m),
         "segment_rows": _records(segment_rows),
         "section_definitions": canonical_section_definitions(section_definitions),
@@ -10167,6 +10167,22 @@ def render_crossbeam_prestress_loss_page() -> None:
         )
         current_es = dict((current_lightweight or {}).get("es_summary") or {})
         current_route = dict((current_lightweight or {}).get("fcgp_route") or {})
+        current_coverage = dict(current_route.get("coverage") or {})
+        current_joint_equilibrium = dict(
+            (current_lightweight or {}).get("column_joint_equilibrium") or {}
+        )
+        bonded_coverage_applicable = bool(current_coverage)
+        support_footprint_qa = dict(
+            linear_stage_model.get("support_footprint_qa") or {}
+        )
+        joint_rows_for_cards = list(current_joint_equilibrium.get("rows") or [])
+        max_joint_residual = max(
+            (
+                _finite_float(row.get("Residual ratio"), 0.0)
+                for row in joint_rows_for_cards
+            ),
+            default=0.0,
+        )
         render_metric_cards(
             [
                 {
@@ -10218,6 +10234,59 @@ def render_crossbeam_prestress_loss_page() -> None:
                     "status": "ready" if current_contact.get("ready") else "neutral",
                 },
                 {
+                    "title": "Support footprints",
+                    "value": (
+                        f"{int(support_footprint_qa.get('compatible_count') or 0)} / {int(support_footprint_qa.get('count') or 0)} COMPATIBLE"
+                        if support_footprint_qa
+                        else "—"
+                    ),
+                    "detail": "Solid support/diaphragm footprint source gate",
+                    "status": "ready" if support_footprint_qa.get("ready") else "warning",
+                },
+                {
+                    "title": "Evaluation coverage",
+                    "value": (
+                        f"{int(current_coverage.get('physical_locations_evaluated') or 0)} / {int(current_coverage.get('physical_locations_expected') or 0)} LOCATIONS"
+                        if current_lightweight and bonded_coverage_applicable
+                        else "MEMBER AVERAGE"
+                        if current_lightweight
+                        else "—"
+                    ),
+                    "detail": (
+                        f"{int(current_coverage.get('columns_expected') or 0)} columns · "
+                        f"{int(current_coverage.get('bays_expected') or 0)} bays · "
+                        f"{int(current_coverage.get('overhangs_expected') or 0)} overhangs · "
+                        f"{int(current_coverage.get('audit_row_count') or 0)} audit rows"
+                        if current_lightweight and bonded_coverage_applicable
+                        else "permanently unbonded f_cgp uses member-length integration"
+                        if current_lightweight
+                        else "all columns, bays, and overhangs"
+                    ),
+                    "status": (
+                        "ready"
+                        if current_lightweight
+                        and (
+                            current_coverage.get("ready")
+                            or not bonded_coverage_applicable
+                        )
+                        else "neutral"
+                    ),
+                },
+                {
+                    "title": "Column-joint equilibrium",
+                    "value": (
+                        f"{int(current_joint_equilibrium.get('pass_count') or 0)} / {int(current_joint_equilibrium.get('count') or 0)} PASS"
+                        if current_lightweight
+                        else "—"
+                    ),
+                    "detail": (
+                        f"max residual ratio = {max_joint_residual:.3e}"
+                        if current_lightweight
+                        else "one-sided beam limits + Column top + nodal/contact actions"
+                    ),
+                    "status": "ready" if current_joint_equilibrium.get("ready") else "warning" if current_lightweight else "neutral",
+                },
+                {
                     "title": "AASHTO f_cgp route",
                     "value": (
                         f"{float((current_lightweight or {}).get('fcgp_mpa')):.3f} MPa"
@@ -10252,7 +10321,9 @@ def render_crossbeam_prestress_loss_page() -> None:
                 evaluation_df = pd.DataFrame(evaluation_rows)
                 preferred_columns = [
                     "Evaluation role",
+                    "Limit side",
                     "s (m)",
+                    "Element",
                     "Region",
                     "Section ID",
                     "N (kN; compression +)",
@@ -10272,6 +10343,49 @@ def render_crossbeam_prestress_loss_page() -> None:
                     hide_index=True,
                 )
                 st.caption(str(current_route.get("note") or ""))
+
+            joint_equilibrium_rows = list(
+                current_joint_equilibrium.get("rows") or []
+            )
+            if joint_equilibrium_rows:
+                with st.expander(
+                    "Column-joint one-sided limit and equilibrium audit",
+                    expanded=not bool(current_joint_equilibrium.get("ready")),
+                ):
+                    st.caption(
+                        "A Column centerline is a frame joint. LEFT LIMIT (s−) and RIGHT LIMIT (s+) are different one-sided Crossbeam sections at the same station. The audit checks Σ(element resisting actions) − explicit prestress nodal action − active contact/restraint reaction = 0 in global Fx, Fy, and moment signs."
+                    )
+                    joint_df = pd.DataFrame(joint_equilibrium_rows)
+                    compact_joint_columns = [
+                        "Column",
+                        "s (m)",
+                        "Residual Fx (kN)",
+                        "Residual Fy (kN)",
+                        "Residual M (kN-m)",
+                        "Residual ratio",
+                        "Status",
+                        "Issue",
+                    ]
+                    st.dataframe(
+                        joint_df[
+                            [
+                                column
+                                for column in compact_joint_columns
+                                if column in joint_df.columns
+                            ]
+                        ],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                    st.markdown("**Detailed joint-action components**")
+                    st.dataframe(
+                        joint_df,
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                    st.caption(
+                        str(current_joint_equilibrium.get("note") or "")
+                    )
 
             sequence_rows = list(current_es.get("sequence_rows") or [])
             if sequence_rows:
@@ -10638,7 +10752,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                     )
 
             st.caption(
-                "QA boundary: the source-derived lightweight result is an AASHTO design estimate, while manual f_cgp/Eci overrides remain engineer-QA previews. Pe/Pe_eff assembly and Time-Dependent losses remain locked until their own downstream milestones are released."
+                "QA boundary: the source-derived lightweight result is an AASHTO design estimate, while manual f_cgp/Eci overrides remain engineer-QA previews. After any support-layout change, Pe/Pe_eff assembly, Time-Dependent Loss, and Effective Prestress must be recalculated from this current ES source before renewed downstream adoption and external-FEA handoff."
             )
 
     with time_dependent_tab:

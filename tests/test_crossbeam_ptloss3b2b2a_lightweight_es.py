@@ -116,6 +116,19 @@ def test_lightweight_bonded_route_runs_one_cumulative_solve_and_releases_es_esti
     assert result["es_summary"]["max_sequence_loss_mpa"] == pytest.approx(
         66.5716965537, rel=1.0e-9
     )
+    joint_audit = result["column_joint_equilibrium"]
+    assert joint_audit["ready"] is True
+    assert joint_audit["pass_count"] == joint_audit["count"] == 2
+    assert max(row["Residual ratio"] for row in joint_audit["rows"]) <= 1.0e-8
+    column_rows = [
+        row
+        for row in result["fcgp_route"]["evaluation_rows"]
+        if row.get("Evaluation class") == "COLUMN"
+    ]
+    assert {row["Limit side"] for row in column_rows} == {
+        "LEFT LIMIT (s−)",
+        "RIGHT LIMIT (s+)",
+    }
     assert any(
         row.get("P after ES (kN)") is not None
         for row in result["after_es_station_rows"]
@@ -170,6 +183,10 @@ def test_lightweight_ui_is_explicitly_on_demand_and_advanced_qa_is_not_automatic
     assert "no FEA solve when opening the page" in elastic
     assert "single cumulative AASHTO design route" in elastic
     assert "Actual structural solves" in elastic
+    assert "Column-joint equilibrium" in elastic
+    assert "LEFT LIMIT (s−) and RIGHT LIMIT (s+)" in elastic
+    assert "Support footprints" in elastic
+    assert "Evaluation coverage" in elastic
     assert "Run Advanced Construction-Stage QA" in elastic
     assert "never runs automatically" in elastic
     assert elastic.index("run_crossbeam_lightweight_elastic_shortening") > elastic.index(

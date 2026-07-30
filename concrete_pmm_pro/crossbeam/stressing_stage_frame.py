@@ -1157,6 +1157,13 @@ def _beam_response_rows(solution: Mapping[str, Any], *, samples_per_element: int
                     "Region": str(element.get("region") or ""),
                     "Section ID": str(element.get("section_id") or ""),
                     "s (m)": station,
+                    "End / Side": (
+                        "I-end / RIGHT LIMIT (s+)"
+                        if sample == 0
+                        else "J-end / LEFT LIMIT (s−)"
+                        if sample == count
+                        else "Interior sample"
+                    ),
                     "N compression-positive (kN)": n_comp / 1000.0,
                     "V (kN)": shear / 1000.0,
                     "M sagging-positive (kN-m)": moment / 1.0e6,

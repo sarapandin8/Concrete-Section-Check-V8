@@ -11,9 +11,16 @@ from concrete_pmm_pro.crossbeam.construction_stage import (
     column_support_footprint_summary,
 )
 from concrete_pmm_pro.crossbeam.later_permanent_response import _route_candidates
-from concrete_pmm_pro.crossbeam.lightweight_elastic_shortening import _bonded_fcgp_route
+from concrete_pmm_pro.crossbeam.lightweight_elastic_shortening import (
+    _bonded_fcgp_route,
+    _column_joint_equilibrium_audit,
+)
 from concrete_pmm_pro.crossbeam.section_library import default_section_definitions
-from concrete_pmm_pro.crossbeam.stressing_stage_frame import build_crossbeam_linear_stage_model
+from concrete_pmm_pro.crossbeam.stressing_stage_frame import (
+    _manual_benchmark_model,
+    build_crossbeam_linear_stage_model,
+    solve_linear_frame,
+)
 from concrete_pmm_pro.crossbeam.tendon import default_tendon_profile_points
 from concrete_pmm_pro.ui.crossbeam_pages import (
     CB_EFFECTIVE_FEA_ADOPTION_TOKEN_KEY,
@@ -240,12 +247,46 @@ def test_supportqa1_bonded_route_evaluates_every_column_and_bay_governing_fcgp()
     roles = {row["Evaluation role"] for row in route["evaluation_rows"]}
 
     assert route["fcgp_mpa"] == 9.0
-    assert all(f"Column C{index} centerline" in roles for index in range(1, 5))
+    assert all(
+        any(role.startswith(f"Column C{index} centerline —") for role in roles)
+        for index in range(1, 5)
+    )
     assert "Bay C1–C2 midpoint" in roles
     assert "Bay C2–C3 governing f_cgp" in roles
     assert "Bay C3–C4 midpoint" in roles
     assert "Left overhang to C1 governing f_cgp" in roles
     assert "Right overhang from C4 governing f_cgp" in roles
+    assert route["coverage"]["ready"] is True
+    assert route["coverage"]["physical_locations_evaluated"] == 9
+    assert route["coverage"]["physical_locations_expected"] == 9
+
+
+def test_supportqa1a_four_column_joint_equilibrium_closes_at_every_centerline() -> None:
+    stations = [0.0, 1.5, 7.0, 13.0, 18.5, 20.0]
+    column_stations = (1.5, 7.0, 13.0, 18.5)
+    model = _manual_benchmark_model(
+        stations_m=stations,
+        column_stations_m=column_stations,
+    )
+    model["column_sources"] = _columns(list(column_stations))
+    loaded_node = model["beam_node_by_station"][round(7.0, 9)]
+    nodal_loads = {loaded_node: (25_000.0, -100_000.0, 50_000_000.0)}
+    solution = solve_linear_frame(
+        nodes=model["nodes"],
+        elements=model["elements"],
+        nodal_loads=nodal_loads,
+        fixed_node_ids=model["fixed_node_ids"],
+    )
+
+    audit = _column_joint_equilibrium_audit(
+        model=model,
+        solution=solution,
+        explicit_nodal_loads=nodal_loads,
+    )
+
+    assert audit["ready"] is True
+    assert audit["count"] == audit["pass_count"] == 4
+    assert max(row["Residual ratio"] for row in audit["rows"]) <= 1.0e-8
 
 
 def test_supportqa1_later_response_route_uses_actual_delta_fcgp_not_max_m3() -> None:

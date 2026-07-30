@@ -30,10 +30,14 @@ def test_ptloss3b2a2_print_css_targets_each_plotly_figure_container() -> None:
     assert elastic.count("_render_ptloss3b2a_print_figure(") >= 2
 
 
-def test_ptloss3b2a2_uses_on_demand_lightweight_fcgp_and_keeps_downstream_handoffs_locked() -> None:
+def test_ptloss3b2a2_uses_on_demand_lightweight_fcgp_and_requires_downstream_recalculation_after_support_changes() -> None:
     elastic = _elastic_source()
     assert "Run Lightweight ES Analysis" in elastic
     assert "single cumulative AASHTO design route" in elastic
     assert "AASHTO f_cgp route" in elastic
-    assert "Pe/Pe_eff assembly and Time-Dependent losses remain locked" in elastic
+    assert (
+        "Pe/Pe_eff assembly, Time-Dependent Loss, and Effective Prestress must be recalculated"
+        in elastic
+    )
+    assert "renewed downstream adoption and external-FEA handoff" in elastic
 
