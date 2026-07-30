@@ -36,9 +36,12 @@ def _ready_contract(**overrides: object) -> dict[str, object]:
         {
             "fea_program": "CSiBridge",
             "model_revision": "CB-FINAL-R03",
-            "confirmed_prestress_applied_once": True,
+            "confirmed_final_prestress_applied_once": True,
             "confirmed_external_fea_secondary": True,
-            "confirmed_final_stage_response_basis": True,
+            "confirmed_uls_final_stage_response_basis": True,
+            "confirmed_sls_service_response_basis": True,
+            "confirmed_transfer_immediate_loss_basis": True,
+            "confirmed_transfer_stage_response_basis": True,
             "confirmed_row_coupled_forces": True,
         }
     )
@@ -156,17 +159,20 @@ def test_invalid_numeric_station_force_is_not_silently_converted_to_zero() -> No
 def test_analysis_handoff_uses_row_coupled_station_forces_and_uniform_loss_contract() -> None:
     contract = _ready_contract(source_force_unit="kN", source_moment_unit="kN-m")
     uls = [_uls_row(P=1000.0, V2=200.0, T=3.0, M3=4.0)]
-    sls = [_sls_row(P=900.0, V2=180.0, T=2.5, M3=3.5)]
+    sls_transfer = [_sls_row(**{"Case Name": "SLS-TR-01", "Stage": "Transfer stage", "P": 950.0, "V2": 190.0, "T": 2.7, "M3": 3.8})]
+    sls_service = [_sls_row(P=900.0, V2=180.0, T=2.5, M3=3.5)]
     handoff = build_station_force_analysis_handoff(
         uls_rows=uls,
-        sls_rows=sls,
+        sls_transfer_rows=sls_transfer,
+        sls_service_rows=sls_service,
         contract=contract,
         member_length_m=20.0,
     )
     assert handoff["ready_for_analysis"] is True
     assert handoff["contract"]["prestress_application_basis"] == PRESTRESS_BASIS_UNIFORM_AVERAGE_LOSS
     assert handoff["contract"]["adopted_total_loss_percent"] == pytest.approx(20.2148)
-    assert handoff["sls_rows"][0]["Stage"] == "Final service stage"
+    assert handoff["sls_transfer_rows"][0]["Stage"] == "Transfer stage"
+    assert handoff["sls_service_rows"][0]["Stage"] == "Final service stage"
     assert len(handoff["fingerprint"]) == 64
 
 

@@ -1776,3 +1776,7 @@ Adds an explicit engineer adoption gate for the representative Time-Dependent lo
 ## CROSSBEAM.LOADS1A — Compact Selected Station-Force ULS/SLS Import
 
 Preserves the established member-workflow Loads UX while adding a compact final-stage FEA source contract, optional Check Point labels for intentionally duplicated stations, one-time source-unit/sign normalization to canonical kN/kN·m, row-coupled force validation, Project-JSON traceability, and a fingerprinted Analysis input handoff without requiring raw element I/J-end results. See `README_CROSSBEAM_LOADS1A.md`.
+
+## CROSSBEAM.LOADS1B — Separate SLS At Transfer and At Service Imports
+
+Separates Crossbeam SLS station-force input into fixed At Transfer and At Service sub-tabs, assigns stage metadata automatically, introduces stage-specific FEA/prestress declarations, and requires validated ULS + Transfer + Service inputs before Analysis handoff without changing the accepted Prestress Loss calculations.
