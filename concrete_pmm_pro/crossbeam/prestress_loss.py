@@ -23,7 +23,7 @@ from concrete_pmm_pro.crossbeam.construction_stage import (
 
 
 CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY = "crossbeam_prestress_loss_settings"
-CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION = 8
+CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION = 9
 
 CB_LOSS_INTERNAL_MU_KEY = "crossbeam_ptloss1_internal_mu"
 CB_LOSS_INTERNAL_K_PER_M_KEY = "crossbeam_ptloss1_internal_k_per_m"
@@ -50,6 +50,8 @@ CB_LOSS_TD_GROUT_AGE_DAYS_KEY = "crossbeam_ptloss4b1_grout_age_days"
 CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY = "crossbeam_ptloss4b1_falsework_removal_age_days"
 CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY = "crossbeam_ptloss4b1_permanent_load_age_days"
 CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY = "crossbeam_ptloss4b2_later_load_delta_fcgp_mpa"
+CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY = "crossbeam_ptloss4d2c_no_later_events_confirmed"
+CB_LOSS_TD_DEFAULTS_RESTORED_NOTICE_KEY = "crossbeam_ptloss4d2c_defaults_restored_notice"
 
 AASHTO_PTL_FRICTION_BASIS = "AASHTO LRFD 5.9.3.2.2b"
 AASHTO_INTERNAL_WOBBLE_K_PER_FT = 0.0002
@@ -165,6 +167,7 @@ def default_crossbeam_prestress_loss_settings() -> dict[str, Any]:
         "td_falsework_removal_age_days": DEFAULT_TD_FALSEWORK_REMOVAL_AGE_DAYS,
         "td_permanent_load_age_days": DEFAULT_TD_PERMANENT_LOAD_AGE_DAYS,
         "td_later_load_delta_fcgp_mpa": DEFAULT_TD_LATER_LOAD_DELTA_FCGP_MPA,
+        "td_no_later_events_confirmed": False,
     }
 
 
@@ -281,6 +284,7 @@ def normalize_crossbeam_prestress_loss_settings(value: Any) -> dict[str, Any]:
             -100.0,
             100.0,
         ),
+        "td_no_later_events_confirmed": _bool(source.get("td_no_later_events_confirmed"), False),
     }
 
 
@@ -315,6 +319,7 @@ def crossbeam_prestress_loss_settings_from_session_state(session_state: Any) -> 
             CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY,
             CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
             CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY,
+            CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY,
         )
     ):
         return {}
@@ -350,6 +355,9 @@ def crossbeam_prestress_loss_settings_from_session_state(session_state: Any) -> 
             ),
             "td_later_load_delta_fcgp_mpa": session_state.get(
                 CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY
+            ),
+            "td_no_later_events_confirmed": session_state.get(
+                CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY
             ),
         }
     )
@@ -388,6 +396,8 @@ def restore_crossbeam_prestress_loss_project_state(
         CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY,
         CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
         CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY,
+        CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY,
+        CB_LOSS_TD_DEFAULTS_RESTORED_NOTICE_KEY,
     ):
         session_state.pop(key, None)
 
@@ -396,7 +406,26 @@ def restore_crossbeam_prestress_loss_project_state(
     if not isinstance(raw, Mapping):
         return None
 
-    settings = normalize_crossbeam_prestress_loss_settings(raw)
+    raw_settings = dict(raw)
+    legacy_zero_schedule = (
+        float(_float(raw_settings.get("td_rh_percent"), 0.0)) <= 1.0
+        and float(_float(raw_settings.get("td_load_age_days"), 0.0)) <= 0.01
+        and float(_float(raw_settings.get("td_curing_end_age_days"), 0.0)) <= 0.0
+        and float(_float(raw_settings.get("td_final_age_days"), 0.0)) <= 0.02
+        and float(_float(raw_settings.get("td_grout_age_days"), 0.0)) <= 0.01
+        and float(_float(raw_settings.get("td_falsework_removal_age_days"), 0.0)) <= 0.01
+    )
+    if legacy_zero_schedule:
+        defaults = default_crossbeam_prestress_loss_settings()
+        for field in (
+            "td_rh_percent", "td_load_age_days", "td_curing_end_age_days",
+            "td_final_age_days", "td_grout_age_days",
+            "td_falsework_removal_age_days", "td_permanent_load_age_days",
+        ):
+            raw_settings[field] = defaults[field]
+        raw_settings["td_no_later_events_confirmed"] = False
+        session_state[CB_LOSS_TD_DEFAULTS_RESTORED_NOTICE_KEY] = True
+    settings = normalize_crossbeam_prestress_loss_settings(raw_settings)
     session_state[CB_LOSS_INTERNAL_MU_KEY] = float(settings["internal_mu"])
     session_state[CB_LOSS_INTERNAL_K_PER_M_KEY] = float(settings["internal_k_per_m"])
     session_state[CB_LOSS_EXTERNAL_MU_KEY] = float(settings["external_deviator_mu"])
@@ -429,6 +458,9 @@ def restore_crossbeam_prestress_loss_project_state(
     )
     session_state[CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY] = float(
         settings["td_later_load_delta_fcgp_mpa"]
+    )
+    session_state[CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY] = bool(
+        settings["td_no_later_events_confirmed"]
     )
     return settings
 

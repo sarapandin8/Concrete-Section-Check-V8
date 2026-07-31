@@ -323,7 +323,7 @@ def test_ptloss4a_inputs_round_trip_in_project_metadata_without_results() -> Non
     restored = restore_crossbeam_prestress_loss_project_state(
         {CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY: metadata}, restored_state
     )
-    assert metadata["schema_version"] == CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION == 8
+    assert metadata["schema_version"] == CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION == 9
     assert metadata["td_rh_percent"] == pytest.approx(68.0)
     assert metadata["td_load_age_days"] == pytest.approx(35.0)
     assert metadata["td_curing_end_age_days"] == pytest.approx(5.0)
@@ -355,7 +355,7 @@ def test_ptloss4b2_time_dependent_widget_defaults_include_later_load_delta_witho
     assert state[CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY] == pytest.approx(
         settings["td_later_load_delta_fcgp_mpa"]
     )
-    assert len(state) == 10
+    assert len(state) == 11
 
 def test_time_dependent_ui_is_on_demand_and_contains_no_structural_solver_call() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")

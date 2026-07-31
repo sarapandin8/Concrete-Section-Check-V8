@@ -216,6 +216,8 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY,
     CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
     CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY,
+    CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY,
+    CB_LOSS_TD_DEFAULTS_RESTORED_NOTICE_KEY,
     CB_LOSS_EXTERNAL_MU_KEY,
     CB_LOSS_INTERNAL_K_PER_M_KEY,
     CB_LOSS_INTERNAL_MU_KEY,
@@ -5472,10 +5474,50 @@ def _initialize_crossbeam_td_session_defaults(
         CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY: td_settings[
             "td_later_load_delta_fcgp_mpa"
         ],
+        CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY: td_settings.get(
+            "td_no_later_events_confirmed", False
+        ),
     }
     for key, value in defaults_by_key.items():
         if key not in session_state:
             session_state[key] = value
+
+
+def _repair_invalid_legacy_td_schedule_state(
+    session_state: MutableMapping[str, Any],
+) -> bool:
+    """Restore general-practice defaults only for the known invalid zero-age legacy pattern."""
+
+    def value(key: str) -> float:
+        try:
+            return float(session_state.get(key, 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    invalid = (
+        value(CB_LOSS_TD_RH_PERCENT_KEY) <= 1.0
+        and value(CB_LOSS_TD_LOAD_AGE_DAYS_KEY) <= 0.01
+        and value(CB_LOSS_TD_CURING_END_AGE_DAYS_KEY) <= 0.0
+        and value(CB_LOSS_TD_FINAL_AGE_DAYS_KEY) <= 0.02
+        and value(CB_LOSS_TD_GROUT_AGE_DAYS_KEY) <= 0.01
+        and value(CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY) <= 0.01
+    )
+    if not invalid:
+        return False
+    session_state[CB_LOSS_TD_RH_PERCENT_KEY] = DEFAULT_TD_RH_PERCENT
+    session_state[CB_LOSS_TD_LOAD_AGE_DAYS_KEY] = DEFAULT_TD_LOAD_AGE_DAYS
+    session_state[CB_LOSS_TD_CURING_END_AGE_DAYS_KEY] = DEFAULT_TD_CURING_END_AGE_DAYS
+    session_state[CB_LOSS_TD_FINAL_AGE_DAYS_KEY] = DEFAULT_TD_FINAL_AGE_DAYS
+    session_state[CB_LOSS_TD_GROUT_AGE_DAYS_KEY] = DEFAULT_TD_GROUT_AGE_DAYS
+    session_state[CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY] = (
+        DEFAULT_TD_FALSEWORK_REMOVAL_AGE_DAYS
+    )
+    session_state[CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY] = (
+        DEFAULT_TD_PERMANENT_LOAD_AGE_DAYS
+    )
+    session_state[CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY] = False
+    session_state[CB_LOSS_TD_DEFAULTS_RESTORED_NOTICE_KEY] = True
+    return True
 
 
 def _loss_setting_defaults_from_state() -> dict[str, Any]:
@@ -5556,6 +5598,9 @@ def _loss_setting_defaults_from_state() -> dict[str, Any]:
             "td_later_load_delta_fcgp_mpa": st.session_state.get(
                 CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY,
                 DEFAULT_TD_LATER_LOAD_DELTA_FCGP_MPA,
+            ),
+            "td_no_later_events_confirmed": st.session_state.get(
+                CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY, False
             ),
         }
     )
@@ -11035,6 +11080,14 @@ def render_crossbeam_prestress_loss_page() -> None:
 
         td_settings = _loss_setting_defaults_from_state()
         _initialize_crossbeam_td_session_defaults(st.session_state, td_settings)
+        if _repair_invalid_legacy_td_schedule_state(st.session_state):
+            td_settings = _loss_setting_defaults_from_state()
+        if bool(st.session_state.get(CB_LOSS_TD_DEFAULTS_RESTORED_NOTICE_KEY)):
+            st.info(
+                "General-practice Time-Dependent defaults were restored from the invalid legacy zero-age schedule: "
+                "RH 75%, curing 7 d, stressing/grouting 28 d, falsework removal 35 d, and final age 18,250 d. "
+                "Review against the approved project construction schedule, then save Project JSON."
+            )
 
         st.markdown("##### Environmental, age, drying, and steel sources")
         source_a, source_b, source_c = st.columns(3)
@@ -11046,6 +11099,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 step=1.0,
                 format="%.1f",
                 key=CB_LOSS_TD_RH_PERCENT_KEY,
+                help="General-practice Thailand starter value is 75%. Replace with project/site mean annual RH when available.",
             )
             st.number_input(
                 "End-of-curing age (days)",
@@ -11064,6 +11118,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 step=1.0,
                 format="%.1f",
                 key=CB_LOSS_TD_LOAD_AGE_DAYS_KEY,
+                help="General-practice starter value is 28 days; stressing remains governed by verified f'ci and the approved sequence.",
             )
             st.number_input(
                 "Final age tf (days)",
@@ -11072,6 +11127,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 step=365.0,
                 format="%.1f",
                 key=CB_LOSS_TD_FINAL_AGE_DAYS_KEY,
+                help="Default 18,250 days represents a 50-year design interval. Adjust to the project design service life.",
             )
         with source_c:
             st.selectbox(
@@ -11115,6 +11171,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                     step=1.0,
                     format="%.1f",
                     key=CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY,
+                    help="General-practice starter value is 35 days, approximately 7 days after stressing/grouting. Verify the approved erection sequence.",
                 )
 
             td_fea_source_ui = _render_crossbeam_td_fea_response_import(
@@ -11129,6 +11186,21 @@ def render_crossbeam_prestress_loss_page() -> None:
                     st.session_state.get(CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY, 90.0) or 90.0
                 ),
             )
+            adopted_td_events = int(
+                dict(td_fea_source_ui.get("schedule_status") or {}).get("adopted_count") or 0
+            )
+            if adopted_td_events == 0:
+                st.checkbox(
+                    "Confirm that no later permanent-load event applies before final service",
+                    key=CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY,
+                    help="Confirm only when the released stress state legitimately remains active to final time. Otherwise adopt each later permanent-load event and import its incremental FEA response.",
+                )
+                if not bool(st.session_state.get(CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY)):
+                    st.warning(
+                        "No later permanent-load event is currently adopted. Confirm this explicitly or add the applicable permanent-load events before running Time-Dependent Loss."
+                    )
+            else:
+                st.session_state[CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY] = False
         else:
             td_fea_source_ui = {
                 "ready": True,
@@ -11270,14 +11342,23 @@ def render_crossbeam_prestress_loss_page() -> None:
             fci_mpa=td_fci,
         )
         td_result, td_evidence_status = _cached_time_dependent_result(td_fingerprint)
+        adopted_td_event_count = int(
+            dict(td_fea_source_ui.get("schedule_status") or {}).get("adopted_count") or 0
+        )
+        no_later_event_confirmed = bool(
+            st.session_state.get(CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY, False)
+        )
         td_schedule_inputs_ready = bool(
             td_construction_method != CONSTRUCTION_METHOD_PRECAST
             or (
-                float(td_settings["td_load_age_days"])
+                0.0 < float(td_settings["td_curing_end_age_days"])
+                <= float(td_settings["td_load_age_days"])
                 <= float(td_settings["td_grout_age_days"])
                 <= float(td_settings["td_falsework_removal_age_days"])
                 < float(td_settings["td_final_age_days"])
+                and 20.0 <= float(td_settings["td_rh_percent"]) <= 100.0
                 and bool(td_fea_source_ui.get("ready"))
+                and (adopted_td_event_count > 0 or no_later_event_confirmed)
             )
         )
         td_sources_ready = bool(
@@ -11367,7 +11448,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 )
             if not td_schedule_inputs_ready:
                 source_messages.append(
-                    "Precast Segmental ages must satisfy ti ≤ tg ≤ tr < tf, and every adopted permanent-load event must have a valid Case Name and activation age between tr and tf."
+                    "Precast Segmental inputs must satisfy 0 < curing ≤ ti ≤ tg ≤ tr < tf, RH must be at least 20%, and either later permanent-load events must be adopted or the no-later-event declaration must be confirmed."
                 )
             st.warning(
                 "Time-Dependent preview is blocked until the source chain is complete. "

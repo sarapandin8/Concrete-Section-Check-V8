@@ -1792,3 +1792,6 @@ Labels Column-centerline Crossbeam results as `LEFT LIMIT (s−)` and `RIGHT LIM
 ## CROSSBEAM.SUPPORTQA1B — Safe ES Override Defaults and Governing-Source Clarity
 
 Synchronizes disabled Elastic Shortening manual `f_cgp`/`Eci` fields to their current source values, safely seeds the first engineer override from that source, preserves intentional persisted overrides, and marks the exact local audit row or tied rows that produce the governing `f_cgp` without changing the solver or loss equations. See `README_CROSSBEAM_SUPPORTQA1B.md`.
+
+## CROSSBEAM.SUPPORTQA1C
+Harden Time-Dependent schedule defaults and adoption gates with RH 75%, 7/28/28/35-day construction ages, 50-year final age, legacy-zero migration, and explicit no-later-permanent-event confirmation.
