@@ -189,7 +189,7 @@ def test_crossbeam_runtime_card_is_input_review_only_even_when_generic_status_sa
         {"analysis_status": "Ready to review"},
     )
     assert value == "INPUT REVIEW ONLY"
-    assert "no SLS/ULS solver" in detail
+    assert "no Crossbeam solver" in detail
     assert status == "warning"
 
 
@@ -204,12 +204,13 @@ def test_non_crossbeam_runtime_card_preserves_existing_status_wording() -> None:
     assert status == "info"
 
 
-def test_crossbeam_sidebar_and_main_router_share_station_foundation_navigation() -> None:
-    assert 'return ["Station Check Foundation"]' in APP_SOURCE
-    assert '"Station Check Foundation": "A1"' in APP_SOURCE
-    assert 'ANALYSIS_CROSSBEAM_SUBTABS = ["Station Check Foundation"]' in ANALYSIS_SOURCE
-    assert "render_crossbeam_analysis_foundation()" in ANALYSIS_SOURCE
-
+def test_crossbeam_sidebar_and_main_router_share_compact_uls_sls_navigation() -> None:
+    expected = '["ULS Strength", "SLS / Stress & Joint Compression"]'
+    assert f"return {expected}" in APP_SOURCE
+    assert '"SLS / Stress & Joint Compression": "SLS"' in APP_SOURCE
+    assert f"ANALYSIS_CROSSBEAM_SUBTABS = {expected}" in ANALYSIS_SOURCE
+    assert "render_crossbeam_uls_workspace()" in ANALYSIS_SOURCE
+    assert "render_crossbeam_sls_workspace()" in ANALYSIS_SOURCE
 
 def test_analysis_cards_display_full_code_edition_and_hide_developer_diagnostics_for_crossbeam() -> None:
     assert "code = workflow_project_code_label_from_session(st.session_state)" in ANALYSIS_SOURCE
@@ -217,8 +218,10 @@ def test_analysis_cards_display_full_code_edition_and_hide_developer_diagnostics
     assert "if not is_portal_frame_crossbeam_workflow(settings):\n        _render_runtime_diagnostics_expander()" in ANALYSIS_SOURCE
 
 
-def test_crossbeam_page_renders_shared_full_length_chart_and_explicit_no_interpolation_caption() -> None:
+def test_crossbeam_source_coverage_is_retained_inside_collapsed_audit_not_main_result_view() -> None:
     assert "make_crossbeam_station_coverage_figure" in CROSSBEAM_PAGE_SOURCE
-    assert '"Full-Length Source Coverage"' in CROSSBEAM_PAGE_SOURCE
-    assert "No production stress/capacity envelope is interpolated" in CROSSBEAM_PAGE_SOURCE
-    assert "actual Column footprint" in CROSSBEAM_PAGE_SOURCE
+    assert 'st.expander("Input source / station coverage audit", expanded=False)' in CROSSBEAM_PAGE_SOURCE
+    assert '"Full-Length Source Coverage"' not in CROSSBEAM_PAGE_SOURCE
+    assert "This is an input-coverage diagram, not a ULS/SLS result graph" in CROSSBEAM_PAGE_SOURCE
+    assert "No result or compliance is interpolated" in CROSSBEAM_PAGE_SOURCE
+

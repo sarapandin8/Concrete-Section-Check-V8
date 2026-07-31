@@ -91,15 +91,14 @@ def _sections_navigation_options() -> list[str]:
 def _analysis_navigation_options() -> list[str]:
     """Return workflow-scoped Analysis subpages for the commercial sidebar.
 
-    Crossbeam Analysis currently has one accepted foundation page.  Keeping the
-    sidebar on the same option list as the main Analysis router prevents the UI
-    from highlighting generic Beam/Girder ULS/SLS pages while the Crossbeam
-    foundation is actually being rendered.
+    Crossbeam Analysis uses compact ULS and staged SLS workspaces.  The source
+    coverage foundation remains available inside collapsed audit sections rather
+    than as a primary engineering-result page.
     """
 
     mode = _analysis_mode_from_session_for_chrome()
     if is_portal_frame_crossbeam_workflow(mode):
-        return ["Station Check Foundation"]
+        return ["ULS Strength", "SLS / Stress & Joint Compression"]
     return list(WORKSPACE_NAVIGATION["Analysis"])
 
 
@@ -1240,9 +1239,9 @@ def _commercial_subpage_icon(subpage: str) -> str:
         "Segment Layout": "SG",
         "Section / Zone Layout": "ZN",
         "Tendon Profile": "3D",
-        "Station Check Foundation": "A1",
         "ULS Strength": "ULS",
         "SLS / Stress & Cracking": "SLS",
+        "SLS / Stress & Joint Compression": "SLS",
         "SLS Deflection / Camber": "δ",
         "Report / QA": "QA",
     }.get(str(subpage), "•")

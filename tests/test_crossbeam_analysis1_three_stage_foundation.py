@@ -217,12 +217,12 @@ def test_unknown_section_id_blocks_station_foundation_without_silent_replacement
     assert any("CB-UNKNOWN" in error for error in foundation["errors"])
 
 
-def test_analysis_page_routes_crossbeam_to_foundation_without_marking_solver_current() -> None:
+def test_analysis_page_routes_crossbeam_to_isolated_uls_sls_workspaces_without_marking_solver_current() -> None:
     source = open("concrete_pmm_pro/ui/analysis_page.py", encoding="utf-8").read()
-    assert 'ANALYSIS_CROSSBEAM_SUBTABS = ["Station Check Foundation"]' in source
-    assert "render_crossbeam_analysis_foundation()" in source
+    assert 'ANALYSIS_CROSSBEAM_SUBTABS = ["ULS Strength", "SLS / Stress & Joint Compression"]' in source
+    assert "render_crossbeam_uls_workspace()" in source
+    assert "render_crossbeam_sls_workspace()" in source
     assert "if not is_portal_frame_crossbeam_workflow(settings):\n        mark_analysis_current" in source
-
 
 def test_non_crossbeam_analysis_subtabs_remain_unchanged() -> None:
     from concrete_pmm_pro.core.analysis import AnalysisModeSettings
@@ -240,5 +240,6 @@ def test_non_crossbeam_analysis_subtabs_remain_unchanged() -> None:
         "SLS Deflection / Camber",
     ]
     assert _analysis_subtabs_for_workflow(AnalysisModeSettings(member_type="portal_frame_crossbeam")) == [
-        "Station Check Foundation"
+        "ULS Strength",
+        "SLS / Stress & Joint Compression",
     ]
