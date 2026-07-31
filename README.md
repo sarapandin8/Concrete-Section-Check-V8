@@ -1795,3 +1795,7 @@ Synchronizes disabled Elastic Shortening manual `f_cgp`/`Eci` fields to their cu
 
 ## CROSSBEAM.SUPPORTQA1C
 Harden Time-Dependent schedule defaults and adoption gates with RH 75%, 7/28/28/35-day construction ages, 50-year final age, legacy-zero migration, and explicit no-later-permanent-event confirmation.
+
+## CROSSBEAM.SLS1A1 — Transfer Stress-Limit Equation Labels
+
+Adds compact equation and numerical-substitution labels directly on the dashed ACI 318-19 transfer compression/tension limit traces, with exact local `f'ci` calculations retained in hover, without changing the accepted Crossbeam SLS1A solver. See `README_CROSSBEAM_SLS1A1.md`.

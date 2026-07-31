@@ -178,6 +178,13 @@ def test_transfer_chart_uses_beam_girder_stress_language_and_crossbeam_landmarks
     assert "Tension limit" in names
     assert fig.layout.height == 560
     assert "compression negative / tension positive" in fig.layout.yaxis.title.text
+    annotation_text = [str(item.text) for item in fig.layout.annotations]
+    assert any("−0.60f′ci = −0.60(36.00) = −21.60 MPa" in item for item in annotation_text)
+    assert any("+0.25√f′ci = +0.25√(36.00) = +1.50 MPa" in item for item in annotation_text)
+    compression_trace = next(trace for trace in fig.data if trace.name == "Compression limit")
+    tension_trace = next(trace for trace in fig.data if trace.name == "Tension limit")
+    assert "f′ci=%{customdata[0]:.3f} MPa" in compression_trace.hovertemplate
+    assert "f′ci=%{customdata[0]:.3f} MPa" in tension_trace.hovertemplate
     assert len(fig.layout.shapes) >= 5  # 2 footprints, 2 centerlines, zero line/member ends
 
 

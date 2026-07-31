@@ -412,25 +412,89 @@ def make_crossbeam_transfer_stress_figure(
 
     add_stress_trace("Top stress (MPa)", "Top total stress", _ENGINEERING_STRESS_COLORS["top"])
     add_stress_trace("Bottom stress (MPa)", "Bottom total stress", _ENGINEERING_STRESS_COLORS["bottom"])
+    compression_limits = [_float(row.get("Compression limit (MPa)")) for row in rows]
+    tension_limits = [_float(row.get("Tension limit (MPa)")) for row in rows]
+    fci_values = [_float(row.get("f'ci (MPa)")) for row in rows]
+    compression_formulae = [
+        f"−0.60f′ci = −0.60({fci:.2f}) = −{abs(limit):.2f} MPa"
+        for fci, limit in zip(fci_values, compression_limits)
+    ]
+    tension_formulae = [
+        f"+0.25√f′ci = +0.25√({fci:.2f}) = +{limit:.2f} MPa"
+        for fci, limit in zip(fci_values, tension_limits)
+    ]
     fig.add_trace(
         go.Scatter(
             x=x,
-            y=[_float(row.get("Compression limit (MPa)")) for row in rows],
+            y=compression_limits,
             mode="lines",
             name="Compression limit",
             line={"width": 3.0, "dash": "dash", "color": _ENGINEERING_STRESS_COLORS["compression_limit"]},
-            hovertemplate="s=%{x:.6f} m<br>compression limit=%{y:.3f} MPa<extra></extra>",
+            customdata=[[fci, formula] for fci, formula in zip(fci_values, compression_formulae)],
+            hovertemplate=(
+                "s=%{x:.6f} m<br>compression limit=%{y:.3f} MPa<br>"
+                "f′ci=%{customdata[0]:.3f} MPa<br>%{customdata[1]}<extra></extra>"
+            ),
         )
     )
     fig.add_trace(
         go.Scatter(
             x=x,
-            y=[_float(row.get("Tension limit (MPa)")) for row in rows],
+            y=tension_limits,
             mode="lines",
             name="Tension limit",
             line={"width": 3.0, "dash": "dash", "color": _ENGINEERING_STRESS_COLORS["tension_limit"]},
-            hovertemplate="s=%{x:.6f} m<br>tension limit=%{y:.3f} MPa<extra></extra>",
+            customdata=[[fci, formula] for fci, formula in zip(fci_values, tension_formulae)],
+            hovertemplate=(
+                "s=%{x:.6f} m<br>tension limit=%{y:.3f} MPa<br>"
+                "f′ci=%{customdata[0]:.3f} MPa<br>%{customdata[1]}<extra></extra>"
+            ),
         )
+    )
+
+    # Keep the graph decision-first: show one concise equation/substitution label
+    # directly on each dashed limit line.  When f′ci varies by station, the
+    # right-most local substitution is shown and the hover trace retains the
+    # exact equation at every imported station.
+    right_index = len(rows) - 1
+    right_fci = fci_values[right_index]
+    right_compression_limit = compression_limits[right_index]
+    right_tension_limit = tension_limits[right_index]
+    fci_varies = len({round(value, 9) for value in fci_values}) > 1
+    variation_note = " · local f′ci varies" if fci_varies else ""
+    annotation_common = {
+        "xref": "paper",
+        "yref": "y",
+        "x": 0.985,
+        "showarrow": False,
+        "xanchor": "right",
+        "bgcolor": "rgba(255,255,255,0.88)",
+        "borderwidth": 0,
+        "align": "right",
+    }
+    fig.add_annotation(
+        **annotation_common,
+        y=right_compression_limit,
+        yshift=8,
+        yanchor="bottom",
+        text=(
+            "Compression limit: "
+            f"−0.60f′ci = −0.60({right_fci:.2f}) = −{abs(right_compression_limit):.2f} MPa"
+            f"{variation_note}"
+        ),
+        font={"size": 10, "color": _ENGINEERING_STRESS_COLORS["compression_limit"]},
+    )
+    fig.add_annotation(
+        **annotation_common,
+        y=right_tension_limit,
+        yshift=8,
+        yanchor="bottom",
+        text=(
+            "Tension limit: "
+            f"+0.25√f′ci = +0.25√({right_fci:.2f}) = +{right_tension_limit:.2f} MPa"
+            f"{variation_note}"
+        ),
+        font={"size": 10, "color": _ENGINEERING_STRESS_COLORS["tension_limit"]},
     )
     fig.add_hline(
         y=0.0,
