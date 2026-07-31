@@ -395,6 +395,79 @@ def _finite_float(value: Any, default: float = 0.0) -> float:
     return number if isfinite(number) else float(default)
 
 
+def _sync_es_override_preview_value(
+    session_state: MutableMapping[str, Any],
+    *,
+    enabled_key: str,
+    value_key: str,
+    source_value: Any,
+) -> bool:
+    """Keep a dormant ES QA override aligned with its current source.
+
+    Disabled override fields are read-only previews of the source-derived value.
+    When an engineer enables an override for the first time in the current
+    session, the editable value starts from that same source rather than from a
+    stale project/default seed.  An already-enabled persisted override remains
+    untouched on first load.
+    """
+
+    enabled = bool(session_state.get(enabled_key, False))
+    previous_key = f"{enabled_key}__previous_enabled"
+    previous_enabled = (
+        bool(session_state.get(previous_key))
+        if previous_key in session_state
+        else enabled
+    )
+
+    try:
+        source_number = float(source_value)
+    except (TypeError, ValueError):
+        source_number = None
+    if source_number is not None and not isfinite(source_number):
+        source_number = None
+
+    if source_number is not None and (not enabled or not previous_enabled):
+        session_state[value_key] = source_number
+
+    session_state[previous_key] = enabled
+    return enabled
+
+
+def _annotate_governing_fcgp_rows(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    governing_fcgp_mpa: Any,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Mark the audit row(s) that produce the adopted governing f_cgp."""
+
+    annotated = [dict(row) for row in rows]
+    try:
+        governing = float(governing_fcgp_mpa)
+    except (TypeError, ValueError):
+        governing = None
+    if governing is None or not isfinite(governing):
+        for row in annotated:
+            row["Governing source"] = ""
+        return annotated, []
+
+    tolerance = max(1.0e-6, abs(governing) * 1.0e-9)
+    governing_rows: list[dict[str, Any]] = []
+    for row in annotated:
+        try:
+            value = float(row.get("f_cgp (MPa; compression +)"))
+        except (TypeError, ValueError):
+            value = None
+        is_governing = (
+            value is not None
+            and isfinite(value)
+            and abs(value - governing) <= tolerance
+        )
+        row["Governing source"] = "GOVERNING" if is_governing else ""
+        if is_governing:
+            governing_rows.append(row)
+    return annotated, governing_rows
+
+
 def _display_zero(value: Any, *, tolerance: float = 5.0e-13) -> float:
     """Normalize floating-point negative zero for user-facing QA text."""
 
@@ -9587,20 +9660,12 @@ def render_crossbeam_prestress_loss_page() -> None:
             ordered_es_group_rows = list(current_es_group_rows)
 
         material_eci = current_es_material_source.get("eci_mpa")
-        eci_override_enabled = bool(
-            st.session_state.get(CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY, False)
+        eci_override_enabled = _sync_es_override_preview_value(
+            st.session_state,
+            enabled_key=CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY,
+            value_key=CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY,
+            source_value=material_eci,
         )
-        # An inactive QA override must not retain the legacy 31,500 MPa seed while
-        # the stage-derived Eci is different. Keep the dormant field aligned with
-        # the current source so enabling it is an explicit engineering action, not
-        # an accidental jump to a stale value.
-        if (
-            not eci_override_enabled
-            and material_eci is not None
-            and abs(float(st.session_state.get(CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY, DEFAULT_ES_ECI_OVERRIDE_MPA))
-                    - float(DEFAULT_ES_ECI_OVERRIDE_MPA)) <= 1.0e-9
-        ):
-            st.session_state[CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY] = float(material_eci)
         selected_eci = (
             float(st.session_state.get(CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY, DEFAULT_ES_ECI_OVERRIDE_MPA))
             if eci_override_enabled
@@ -9649,8 +9714,11 @@ def render_crossbeam_prestress_loss_page() -> None:
             and lightweight_result.get("ready")
             else None
         )
-        fcgp_override_enabled = bool(
-            st.session_state.get(CB_LOSS_ES_FCGP_OVERRIDE_ENABLED_KEY, False)
+        fcgp_override_enabled = _sync_es_override_preview_value(
+            st.session_state,
+            enabled_key=CB_LOSS_ES_FCGP_OVERRIDE_ENABLED_KEY,
+            value_key=CB_LOSS_ES_FCGP_OVERRIDE_MPA_KEY,
+            source_value=derived_fcgp,
         )
         selected_fcgp = (
             float(st.session_state.get(CB_LOSS_ES_FCGP_OVERRIDE_MPA_KEY, DEFAULT_ES_FCGP_OVERRIDE_MPA))
@@ -10317,10 +10385,45 @@ def render_crossbeam_prestress_loss_page() -> None:
 
             evaluation_rows = list(current_route.get("evaluation_rows") or [])
             if evaluation_rows:
+                annotated_evaluation_rows, governing_evaluation_rows = (
+                    _annotate_governing_fcgp_rows(
+                        evaluation_rows,
+                        governing_fcgp_mpa=(current_lightweight or {}).get("fcgp_mpa"),
+                    )
+                )
                 st.markdown("###### f_cgp evaluation audit")
-                evaluation_df = pd.DataFrame(evaluation_rows)
+                if governing_evaluation_rows:
+                    governing_row = governing_evaluation_rows[0]
+                    governing_bits = [
+                        f"{float((current_lightweight or {}).get('fcgp_mpa')):.3f} MPa",
+                        str(governing_row.get("Evaluation role") or "governing audit row"),
+                        f"s = {_finite_float(governing_row.get('s (m)')):.3f} m",
+                    ]
+                    limit_side = str(governing_row.get("Limit side") or "").strip()
+                    if limit_side:
+                        governing_bits.append(limit_side)
+                    section_id = str(governing_row.get("Section ID") or "").strip()
+                    if section_id:
+                        governing_bits.append(f"Section {section_id}")
+                    if len(governing_evaluation_rows) > 1:
+                        governing_bits.append(
+                            f"{len(governing_evaluation_rows)} tied audit rows"
+                        )
+                    st.success(
+                        "Governing f_cgp source — " + " · ".join(governing_bits)
+                    )
+                elif str(current_route.get("route") or "").upper().startswith("UNBONDED"):
+                    st.info(
+                        "Governing f_cgp source — member-length average from the stored cumulative response; no single local row governs this route."
+                    )
+                else:
+                    st.warning(
+                        "The adopted f_cgp is available, but no matching local governing audit row was found. Review the stored source before downstream adoption."
+                    )
+                evaluation_df = pd.DataFrame(annotated_evaluation_rows)
                 preferred_columns = [
                     "Evaluation role",
+                    "Governing source",
                     "Limit side",
                     "s (m)",
                     "Element",
@@ -10674,7 +10777,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 format="%.3f",
                 key=CB_LOSS_ES_FCGP_OVERRIDE_MPA_KEY,
                 disabled=not bool(st.session_state.get(CB_LOSS_ES_FCGP_OVERRIDE_ENABLED_KEY)),
-                help="QA preview only. f_cgp must ultimately come from the accepted stressing/load-transfer stage response, including prestress and applicable self-weight/stage effects with protected sign conventions.",
+                help="QA preview only. While this override is disabled, the field displays the current source-derived f_cgp. Enabling it starts from that source value; only a subsequent engineer edit creates a manual preview.",
             )
             st.checkbox(
                 "Enable manual Eci override (engineer QA only)",
@@ -10688,7 +10791,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 format="%.0f",
                 key=CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY,
                 disabled=not bool(st.session_state.get(CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY)),
-                help="Use only when the actual stressing-age concrete modulus is supported by an engineering source. While this override is disabled, its dormant value is synchronized to the current stage-derived Eci so enabling it cannot silently reactivate the legacy 31,500 MPa seed.",
+                help="Use only when the actual stressing-age concrete modulus is supported by an engineering source. While this override is disabled, the field displays the current stage-derived Eci. Enabling it starts from that source value; only a subsequent engineer edit creates a manual preview.",
             )
 
             group_count = int(current_es_group_summary.get("group_count") or 0)

@@ -1788,3 +1788,7 @@ The existing dynamic Crossbeam column source now uses one batched Apply form, en
 ## CROSSBEAM.SUPPORTQA1A — One-Sided Column-Joint ES Audit and Equilibrium Closure
 
 Labels Column-centerline Crossbeam results as `LEFT LIMIT (s−)` and `RIGHT LIMIT (s+)`, adds a post-solve Column-joint equilibrium gate using beam, Column-top, prestress nodal, and active contact actions, summarizes full multi-column `f_cgp` coverage, and advances the ES fingerprint so older evidence cannot remain current. See `README_CROSSBEAM_SUPPORTQA1A.md`.
+
+## CROSSBEAM.SUPPORTQA1B — Safe ES Override Defaults and Governing-Source Clarity
+
+Synchronizes disabled Elastic Shortening manual `f_cgp`/`Eci` fields to their current source values, safely seeds the first engineer override from that source, preserves intentional persisted overrides, and marks the exact local audit row or tied rows that produce the governing `f_cgp` without changing the solver or loss equations. See `README_CROSSBEAM_SUPPORTQA1B.md`.

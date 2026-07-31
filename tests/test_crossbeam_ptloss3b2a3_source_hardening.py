@@ -7,8 +7,10 @@ def _source() -> str:
 
 def test_ptloss3b2a3_resets_inactive_legacy_eci_override_to_stage_source():
     source = _source()
-    assert "inactive QA override must not retain the legacy 31,500 MPa seed" in source
-    assert "st.session_state[CB_LOSS_ES_ECI_OVERRIDE_MPA_KEY] = float(material_eci)" in source
+    assert "_sync_es_override_preview_value" in source
+    assert "Disabled override fields are read-only previews of the source-derived value" in source
+    assert "source_value=material_eci" in source
+    assert "the field displays the current stage-derived Eci" in source
 
 
 def test_ptloss3b2a3_exposes_bond_state_guard_and_lightweight_runtime_status():
