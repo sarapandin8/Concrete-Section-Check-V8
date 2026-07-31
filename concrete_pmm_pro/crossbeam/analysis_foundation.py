@@ -457,8 +457,9 @@ def _boundary_contexts(
         return [right_context], warnings
 
     # If both sides are materially identical, one interior context is sufficient
-    # for a CIP zone boundary.  Physical segment joints stay explicitly two-sided
-    # even when the Section ID happens to be the same.
+    # for a CIP zone boundary. Physical segment joints may still expand to both
+    # adjacent Section IDs internally, but downstream SLS reports collapse them
+    # to one governing Top value and one governing Bottom value per joint.
     if (
         not is_physical_joint
         and left_context["Section ID"] == right_context["Section ID"]
@@ -469,7 +470,8 @@ def _boundary_contexts(
 
     warnings.append(
         f"Station s = {station_m:.6f} m is an internal {boundary_type.lower()} without a Left/Right Check Point; "
-        "the source row is mapped to both s- and s+ faces without changing its row-coupled forces."
+        "the source row is evaluated against both adjacent Section IDs internally without changing its row-coupled forces; "
+        "the joint check reports one governing Top value and one governing Bottom value."
     )
     return [left_context, right_context], warnings
 

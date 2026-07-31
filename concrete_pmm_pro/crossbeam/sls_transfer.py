@@ -32,8 +32,6 @@ from concrete_pmm_pro.core.concrete_materials import (
 )
 from concrete_pmm_pro.crossbeam.analysis_foundation import (
     DATASET_SLS_TRANSFER,
-    FACE_LEFT,
-    FACE_RIGHT,
 )
 from concrete_pmm_pro.crossbeam.prestress_loss import (
     DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
@@ -43,7 +41,7 @@ from concrete_pmm_pro.crossbeam.section_library import canonical_section_definit
 from concrete_pmm_pro.crossbeam.tendon import canonical_tendon_system_rows
 
 
-CROSSBEAM_SLS_TRANSFER_SCHEMA = "crossbeam-sls-transfer-stress-v1"
+CROSSBEAM_SLS_TRANSFER_SCHEMA = "crossbeam-sls-transfer-stress-v2"
 CB_ANALYSIS_SLS_TRANSFER_RESULT_KEY = "crossbeam_analysis_sls1a_transfer_result"
 DEFAULT_JOINT_MIN_COMPRESSION_MPA = 0.70
 
@@ -78,6 +76,20 @@ def _bool(value: Any, default: bool = True) -> bool:
     if text in {"false", "0", "no", "n", "off"}:
         return False
     return bool(value)
+
+
+def _joint_gate_required(foundation: Mapping[str, Any]) -> bool:
+    """Return whether the active construction route has physical segment joints."""
+
+    construction_method = _text(foundation.get("construction_method"))
+    if construction_method:
+        return construction_method.casefold() == "precast segmental"
+    # Compatibility for pre-CIP test fixtures and legacy foundations that did
+    # not yet persist the construction method explicitly.
+    return any(
+        _text(row.get("Boundary type")) == "Physical segment joint"
+        for row in _records(foundation.get("internal_boundaries"))
+    )
 
 
 def _records(value: Any) -> list[dict[str, Any]]:
@@ -179,7 +191,16 @@ def _joint_case_coverage_errors(
     foundation: Mapping[str, Any],
     transfer_rows: Sequence[Mapping[str, Any]],
 ) -> list[str]:
-    """Enforce both one-sided faces at every physical joint for every case."""
+    """Require at least one mapped result at every physical joint for every case.
+
+    Analysis Foundation may expand one imported station row to both adjacent
+    Section IDs internally.  The production joint gate no longer requires the
+    user to provide or review separate ``s-``/``s+`` results.  One governing
+    Top value and one governing Bottom value are reported per physical joint.
+    """
+
+    if not _joint_gate_required(foundation):
+        return []
 
     boundaries = [
         dict(row)
@@ -195,19 +216,97 @@ def _joint_case_coverage_errors(
         case_rows = [row for row in transfer_rows if _text(row.get("Case / Combination")) == case_name]
         for boundary in boundaries:
             station = _float(boundary.get("Station s (m)"))
-            faces = {
-                _text(row.get("Station face"))
+            matches = [
+                row
                 for row in case_rows
                 if bool(row.get("Physical segment joint"))
                 and abs(_float(row.get("Station s (m)")) - station) <= tolerance
-            }
-            missing = [face for face in (FACE_LEFT, FACE_RIGHT) if face not in faces]
-            if missing:
+            ]
+            if not matches:
                 errors.append(
                     f"Case {case_name}: physical joint {_text(boundary.get('Boundary ID')) or '?'} at "
-                    f"s = {station:.6f} m requires both s- and s+ checks; missing {', '.join(missing)}."
+                    f"s = {station:.6f} m requires one joint result with both Top and Bottom fibers."
                 )
     return errors
+
+
+def _joint_summary_rows(
+    *,
+    foundation: Mapping[str, Any],
+    result_rows: Sequence[Mapping[str, Any]],
+    joint_limit_mpa: float,
+) -> list[dict[str, Any]]:
+    """Collapse internal adjacent-face calculations to one result per joint/case.
+
+    If adjacent Segment section properties differ, each side is still evaluated
+    internally using the same row-coupled FEA force state.  The displayed Top
+    and Bottom values are the numerically greatest signed stresses, meaning the
+    values closest to zero or furthest into tension.  They are therefore the
+    governing values for joint-opening prevention under the adopted convention
+    Compression = negative and Tension = positive.
+    """
+
+    if not _joint_gate_required(foundation):
+        return []
+
+    boundaries = [
+        dict(row)
+        for row in _records(foundation.get("internal_boundaries"))
+        if _text(row.get("Boundary type")) == "Physical segment joint"
+    ]
+    if not boundaries:
+        return []
+    cases = sorted(
+        {
+            _text(row.get("Case / Combination"))
+            for row in result_rows
+            if _text(row.get("Case / Combination"))
+        }
+    )
+    tolerance = max(1.0e-7, abs(_float(foundation.get("member_length_m"))) * 1.0e-8)
+    summaries: list[dict[str, Any]] = []
+    for case_name in cases:
+        for boundary in boundaries:
+            station = _float(boundary.get("Station s (m)"))
+            matches = [
+                row
+                for row in result_rows
+                if _text(row.get("Case / Combination")) == case_name
+                and bool(row.get("Physical segment joint"))
+                and abs(_float(row.get("Station s (m)")) - station) <= tolerance
+            ]
+            if not matches:
+                continue
+
+            top_source = max(matches, key=lambda row: _float(row.get("Top stress (MPa)"), -math.inf))
+            bottom_source = max(matches, key=lambda row: _float(row.get("Bottom stress (MPa)"), -math.inf))
+            top_stress = _float(top_source.get("Top stress (MPa)"))
+            bottom_stress = _float(bottom_source.get("Bottom stress (MPa)"))
+            top_status = "PASS" if top_stress <= -joint_limit_mpa + 1.0e-12 else "FAIL"
+            bottom_status = "PASS" if bottom_stress <= -joint_limit_mpa + 1.0e-12 else "FAIL"
+            summaries.append(
+                {
+                    "Boundary ID": _text(boundary.get("Boundary ID")) or "Physical joint",
+                    "Case / Combination": case_name,
+                    "Station s (m)": station,
+                    "Top stress (MPa)": top_stress,
+                    "Top compression magnitude (MPa)": -top_stress,
+                    "Top status": top_status,
+                    "Bottom stress (MPa)": bottom_stress,
+                    "Bottom compression magnitude (MPa)": -bottom_stress,
+                    "Bottom status": bottom_status,
+                    "Joint minimum signed stress (MPa)": -joint_limit_mpa,
+                    "Joint minimum compression magnitude (MPa)": joint_limit_mpa,
+                    "Joint status": "PASS" if top_status == "PASS" and bottom_status == "PASS" else "FAIL",
+                    "Section IDs evaluated": " / ".join(
+                        sorted({_text(row.get("Section ID")) for row in matches if _text(row.get("Section ID"))})
+                    ),
+                    "Internal section contexts": len(matches),
+                    "Top source context": _text(top_source.get("Context ID")),
+                    "Bottom source context": _text(bottom_source.get("Context ID")),
+                }
+            )
+    return summaries
 
 
 def _governing_demand(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
@@ -260,29 +359,27 @@ def _governing_by_type(rows: Sequence[Mapping[str, Any]], demand_type: str) -> d
 
 
 def _governing_joint(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
+    """Return the joint/fiber closest to tension from collapsed joint rows."""
+
     candidates: list[dict[str, Any]] = []
     for row in rows:
-        if not bool(row.get("Physical segment joint")):
-            continue
         for fiber in ("Top", "Bottom"):
             stress = _float(row.get(f"{fiber} stress (MPa)"))
-            compression = -stress
             candidates.append(
                 {
+                    "Boundary ID": _text(row.get("Boundary ID")),
                     "Fiber": fiber,
                     "Stress (MPa)": stress,
-                    "Compression (MPa)": compression,
-                    "Status": _text(row.get(f"Joint {fiber.lower()} status")),
+                    "Compression (MPa)": -stress,
+                    "Limit (MPa)": _float(row.get("Joint minimum signed stress (MPa)")),
+                    "Status": _text(row.get(f"{fiber} status")),
                     "Case / Combination": _text(row.get("Case / Combination")),
                     "Station s (m)": _float(row.get("Station s (m)")),
-                    "Station face": _text(row.get("Station face")),
-                    "Section ID": _text(row.get("Section ID")),
-                    "Context ID": _text(row.get("Context ID")),
                 }
             )
     if not candidates:
         return None
-    return min(candidates, key=lambda item: (_float(item.get("Compression (MPa)"), math.inf), _float(item.get("Station s (m)"))))
+    return max(candidates, key=lambda item: (_float(item.get("Stress (MPa)"), -math.inf), -_float(item.get("Station s (m)"))))
 
 
 def calculate_crossbeam_transfer_stress(
@@ -461,6 +558,7 @@ def calculate_crossbeam_transfer_stress(
             "input_fingerprint": input_fingerprint,
             "foundation_fingerprint": _text(foundation.get("fingerprint")),
             "rows": result_rows,
+            "joint_rows": [],
             "cases": sorted({_text(row.get("Case / Combination")) for row in result_rows if _text(row.get("Case / Combination"))}),
             "errors": errors,
             "warnings": warnings,
@@ -473,9 +571,13 @@ def calculate_crossbeam_transfer_stress(
         _text(row.get("Top status")) == "FAIL" or _text(row.get("Bottom status")) == "FAIL"
         for row in result_rows
     )
-    joint_rows = [row for row in result_rows if bool(row.get("Physical segment joint"))]
+    joint_rows = _joint_summary_rows(
+        foundation=foundation,
+        result_rows=result_rows,
+        joint_limit_mpa=joint_limit,
+    )
     joint_fail = any(_text(row.get("Joint status")) == "FAIL" for row in joint_rows)
-    physical_boundaries_exist = any(
+    physical_boundaries_exist = _joint_gate_required(foundation) and any(
         _text(row.get("Boundary type")) == "Physical segment joint"
         for row in _records(foundation.get("internal_boundaries"))
     )
@@ -501,7 +603,7 @@ def calculate_crossbeam_transfer_stress(
     governing = _governing_demand(result_rows)
     governing_compression = _governing_by_type(result_rows, "Compression")
     governing_tension = _governing_by_type(result_rows, "Tension")
-    governing_joint = _governing_joint(result_rows)
+    governing_joint = _governing_joint(joint_rows)
 
     return {
         "schema": CROSSBEAM_SLS_TRANSFER_SCHEMA,
@@ -511,6 +613,7 @@ def calculate_crossbeam_transfer_stress(
         "input_fingerprint": input_fingerprint,
         "foundation_fingerprint": _text(foundation.get("fingerprint")),
         "rows": result_rows,
+        "joint_rows": joint_rows,
         "cases": sorted({_text(row.get("Case / Combination")) for row in result_rows if _text(row.get("Case / Combination"))}),
         "governing": governing,
         "governing_compression": governing_compression,
@@ -527,7 +630,11 @@ def calculate_crossbeam_transfer_stress(
         "limit_basis": {
             "compression": "0.60 f'ci — all other locations; Portal Frame Crossbeam is not a simply supported member",
             "tension": "0.25 sqrt(f'ci) — no additional bonded reinforcement credit",
-            "joint": "Project criterion: both top and bottom fibers at every physical joint remain in compression by at least 0.70 MPa",
+            "joint": (
+                "Project criterion for Precast Segmental only: one governing Top stress and one governing Bottom stress "
+                "are reported per physical joint; both must satisfy fjoint <= -0.70 MPa "
+                "(compression magnitude >= 0.70 MPa)."
+            ),
         },
         "sign_convention": "Compression negative / tension positive; source P compression positive; source M3 sagging positive",
         "limitations": [
@@ -536,6 +643,8 @@ def calculate_crossbeam_transfer_stress(
             "Gross Section ID properties are used. If active Internal Tendons are present, the result remains REVIEW until adopted duct-void geometry is included in the transfer-section properties.",
             "Additional bonded reinforcement under 24.5.3.2.1 is not credited in SLS1A.",
             "Anchorage zones, beam-column joints, D-regions, shear, torsion, and seismic detailing remain separate checks.",
+            "Physical-joint results collapse adjacent Section-ID calculations to one governing Top value and one governing Bottom value; values are not averaged.",
+            "Cast-in-Place Section/Zone boundaries are monolithic and do not require the physical segment-joint compression gate.",
             "Lines on the result chart connect imported stations for visualization only; no compliance is inferred between unverified stations.",
         ],
     }

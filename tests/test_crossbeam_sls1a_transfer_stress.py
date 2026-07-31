@@ -118,14 +118,46 @@ def test_precast_joint_gate_fails_below_0_70_mpa_even_when_aci_stress_passes() -
     assert math.isclose(result["governing_joint"]["Compression (MPa)"], 0.5)
 
 
-def test_every_transfer_case_requires_both_one_sided_joint_faces() -> None:
+def test_one_transfer_joint_row_is_sufficient_and_checks_both_fibers() -> None:
     rows = [
         _context(context_id="left", station=5.0, face="s-", p_kn=1000.0, m_knm=0.0, physical_joint=True),
     ]
     result = _calculate(_foundation(rows, physical_boundary=True))
-    assert result["status"] == "INCOMPLETE"
+    assert result["status"] == "PASS"
     assert result["solver_run"] is True
-    assert any("requires both s- and s+ checks" in issue for issue in result["joint_coverage_issues"])
+    assert result["joint_coverage_issues"] == []
+    assert len(result["joint_rows"]) == 1
+    joint = result["joint_rows"][0]
+    assert math.isclose(joint["Top stress (MPa)"], -1.0)
+    assert math.isclose(joint["Bottom stress (MPa)"], -1.0)
+    assert joint["Top status"] == "PASS"
+    assert joint["Bottom status"] == "PASS"
+
+
+def test_transfer_joint_collapses_adjacent_faces_to_one_governing_value_per_fiber() -> None:
+    rows = [
+        _context(context_id="left", station=5.0, face="s-", p_kn=2000.0, m_knm=0.0, physical_joint=True),
+        _context(context_id="right", station=5.0, face="s+", p_kn=1000.0, m_knm=0.0, physical_joint=True),
+    ]
+    result = _calculate(_foundation(rows, physical_boundary=True))
+    assert result["joint_status"] == "PASS"
+    assert len(result["joint_rows"]) == 1
+    joint = result["joint_rows"][0]
+    assert math.isclose(joint["Top stress (MPa)"], -1.0)
+    assert math.isclose(joint["Bottom stress (MPa)"], -1.0)
+    assert joint["Internal section contexts"] == 2
+    assert "Station face" not in result["governing_joint"]
+
+
+def test_cast_in_place_transfer_has_no_segment_joint_gate() -> None:
+    foundation = _foundation(
+        [_context(context_id="1", station=5.0, physical_joint=True)],
+        physical_boundary=True,
+    )
+    foundation["construction_method"] = "Cast-in-Place"
+    result = _calculate(foundation)
+    assert result["joint_status"] == "NOT REQUIRED"
+    assert result["joint_rows"] == []
 
 
 def test_transfer_input_fingerprint_changes_with_stressing_strength_ratio() -> None:

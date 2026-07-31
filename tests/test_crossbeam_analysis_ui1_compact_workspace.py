@@ -48,9 +48,9 @@ def test_compact_sls_table_has_stress_and_joint_gate_only() -> None:
     precast = _sls_check_table(stage="At Transfer", source_ready=True, construction_method="Precast Segmental")
     assert precast["Check"].tolist() == [
         "Concrete stress — top / bottom",
-        "Physical segment-joint compression",
+        "Physical segment-joint compression — Top / Bottom",
     ]
-    assert precast.iloc[1]["Actual / limit"] == "≥ 0.70 MPa compression"
+    assert precast.iloc[1]["Actual / limit"] == "fjoint ≤ −0.700 MPa"
 
     cip = _sls_check_table(stage="At Transfer", source_ready=True, construction_method="Cast-in-Place")
     assert cip.iloc[1]["Status"] == "NOT REQUIRED"

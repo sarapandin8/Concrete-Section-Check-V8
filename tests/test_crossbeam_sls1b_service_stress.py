@@ -195,6 +195,85 @@ def test_service_joint_gate_fails_below_project_minimum() -> None:
     assert result["joint_status"] == "FAIL"
     assert result["status"] == "FAIL"
     assert math.isclose(result["governing_joint"]["Compression (MPa)"], 0.5)
+    assert math.isclose(result["governing_joint"]["Stress (MPa)"], -0.5)
+    assert math.isclose(result["governing_joint"]["Limit (MPa)"], -0.7)
+    assert len(result["joint_rows"]) == 2  # one result per joint/case, not per face
+
+
+def test_service_joint_strong_compression_passes_with_negative_sign() -> None:
+    rows = [
+        _context(
+            context_id="total",
+            station=5.0,
+            case="SERV-TOTAL",
+            p_kn=6789.0,
+            m_knm=0.0,
+            physical_joint=True,
+        ),
+        _context(
+            context_id="sust",
+            station=5.0,
+            case="SERV-SUST",
+            p_kn=6789.0,
+            m_knm=0.0,
+            physical_joint=True,
+        ),
+    ]
+    result = _calculate(_foundation(rows, physical_boundary=True), sustained=["SERV-SUST"])
+    assert result["joint_status"] == "PASS"
+    assert result["status"] == "PASS"
+    assert math.isclose(result["governing_joint"]["Stress (MPa)"], -6.789)
+
+
+def test_service_joint_uses_one_governing_top_and_bottom_value_without_face_output() -> None:
+    rows = [
+        _context(
+            context_id="left-total",
+            station=5.0,
+            face="s-",
+            case="SERV-TOTAL",
+            p_kn=2000.0,
+            m_knm=0.0,
+            physical_joint=True,
+        ),
+        _context(
+            context_id="right-total",
+            station=5.0,
+            face="s+",
+            case="SERV-TOTAL",
+            p_kn=1000.0,
+            m_knm=0.0,
+            physical_joint=True,
+        ),
+        _context(
+            context_id="sust",
+            station=5.0,
+            case="SERV-SUST",
+            p_kn=1000.0,
+            m_knm=0.0,
+            physical_joint=True,
+        ),
+    ]
+    result = _calculate(_foundation(rows, physical_boundary=True), sustained=["SERV-SUST"])
+    total_joint = next(row for row in result["joint_rows"] if row["Case / Combination"] == "SERV-TOTAL")
+    assert math.isclose(total_joint["Top stress (MPa)"], -1.0)
+    assert math.isclose(total_joint["Bottom stress (MPa)"], -1.0)
+    assert total_joint["Internal section contexts"] == 2
+    assert "Station face" not in result["governing_joint"]
+
+
+def test_cast_in_place_service_has_no_segment_joint_gate() -> None:
+    foundation = _foundation(
+        [
+            _context(context_id="total", station=5.0, case="SERV-TOTAL", physical_joint=True),
+            _context(context_id="sust", station=5.0, case="SERV-SUST", physical_joint=True),
+        ],
+        physical_boundary=True,
+    )
+    foundation["construction_method"] = "Cast-in-Place"
+    result = _calculate(foundation, sustained=["SERV-SUST"])
+    assert result["joint_status"] == "NOT REQUIRED"
+    assert result["joint_rows"] == []
 
 
 def test_service_fingerprint_changes_with_sustained_case_assignment() -> None:
@@ -267,5 +346,9 @@ def test_ui_exposes_service_solver_without_reusing_generic_solver() -> None:
     assert "Prestress + sustained load cases" in PAGE_SOURCE
     assert "Class U" in PAGE_SOURCE
     assert "disabled=not source_ready" in PAGE_SOURCE
+    assert "Compression = negative (−); Tension = positive (+)" in PAGE_SOURCE
+    assert "one result is shown per joint" in PAGE_SOURCE
+    assert "Cast-in-Place Section/Zone boundaries are monolithic" in PAGE_SOURCE
+    assert "Check s− / s+" not in PAGE_SOURCE
     assert "SLS CHECKS ACTIVE" in ANALYSIS_SOURCE
     assert CB_ANALYSIS_SLS_SERVICE_RESULT_KEY not in PROJECT_IO_SOURCE

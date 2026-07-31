@@ -13,7 +13,9 @@ The adopted first production route is deliberately conservative and explicit:
 * all other imported service cases use the total-load compression limit
   ``0.60 f'c`` from ACI 318-19 Table 24.5.4.1; and
 * every physical precast segment joint must retain at least 0.70 MPa
-  compression at both top and bottom fibers on both one-sided faces.
+  compression at both top and bottom fibers.  Adjacent Segment section
+  properties are evaluated internally, but one governing value per fiber is
+  reported for each joint.
 
 Stress convention follows the accepted app charts: compression negative and
 tension positive.  Source ``P`` is compression-positive and source ``M3`` is
@@ -41,6 +43,8 @@ from concrete_pmm_pro.crossbeam.sls_transfer import (
     _governing_by_type,
     _governing_demand,
     _governing_joint,
+    _joint_gate_required,
+    _joint_summary_rows,
     _joint_case_coverage_errors,
     _jsonable_material,
     _records,
@@ -49,7 +53,7 @@ from concrete_pmm_pro.crossbeam.sls_transfer import (
 from concrete_pmm_pro.crossbeam.tendon import canonical_tendon_system_rows
 
 
-CROSSBEAM_SLS_SERVICE_SCHEMA = "crossbeam-sls-service-stress-v1"
+CROSSBEAM_SLS_SERVICE_SCHEMA = "crossbeam-sls-service-stress-v2"
 CB_ANALYSIS_SLS_SERVICE_RESULT_KEY = "crossbeam_analysis_sls1b_service_result"
 CB_ANALYSIS_SLS_SERVICE_SUSTAINED_CASES_KEY = "crossbeam_analysis_sls1b_sustained_cases"
 CLASS_U_TENSION_COEFFICIENT = 0.62
@@ -345,6 +349,7 @@ def calculate_crossbeam_service_stress(
             "input_fingerprint": input_fingerprint,
             "foundation_fingerprint": _text(foundation.get("fingerprint")),
             "rows": result_rows,
+            "joint_rows": [],
             "cases": sorted(
                 {
                     _text(row.get("Case / Combination"))
@@ -365,9 +370,13 @@ def calculate_crossbeam_service_stress(
         or _text(row.get("Bottom status")) == "FAIL"
         for row in result_rows
     )
-    joint_rows = [row for row in result_rows if bool(row.get("Physical segment joint"))]
+    joint_rows = _joint_summary_rows(
+        foundation=foundation,
+        result_rows=result_rows,
+        joint_limit_mpa=joint_limit,
+    )
     joint_fail = any(_text(row.get("Joint status")) == "FAIL" for row in joint_rows)
-    physical_boundaries_exist = any(
+    physical_boundaries_exist = _joint_gate_required(foundation) and any(
         _text(row.get("Boundary type")) == "Physical segment joint"
         for row in _records(foundation.get("internal_boundaries"))
     )
@@ -406,6 +415,7 @@ def calculate_crossbeam_service_stress(
         "input_fingerprint": input_fingerprint,
         "foundation_fingerprint": _text(foundation.get("fingerprint")),
         "rows": result_rows,
+        "joint_rows": joint_rows,
         "cases": sorted(
             {
                 _text(row.get("Case / Combination"))
@@ -416,7 +426,7 @@ def calculate_crossbeam_service_stress(
         "governing": _governing_demand(result_rows),
         "governing_compression": _governing_by_type(result_rows, "Compression"),
         "governing_tension": _governing_by_type(result_rows, "Tension"),
-        "governing_joint": _governing_joint(result_rows),
+        "governing_joint": _governing_joint(joint_rows),
         "joint_min_compression_mpa": joint_limit,
         "section_basis_status": "REVIEW" if gross_section_review else "PASS",
         "service_basis_status": "REVIEW" if basis_incomplete else "PASS",
@@ -434,7 +444,11 @@ def calculate_crossbeam_service_stress(
             "compression_sustained": "0.45 f'c — prestress plus sustained load",
             "compression_total": "0.60 f'c — prestress plus total load",
             "tension": "Class U: 0.62 sqrt(f'c) — uncracked service behavior",
-            "joint": "Project criterion: both top and bottom fibers at every physical joint remain in compression by at least 0.70 MPa",
+            "joint": (
+                "Project criterion for Precast Segmental only: one governing Top stress and one governing Bottom stress "
+                "are reported per physical joint; both must satisfy fjoint <= -0.70 MPa "
+                "(compression magnitude >= 0.70 MPa)."
+            ),
         },
         "sign_convention": (
             "Compression negative / tension positive; source P compression positive; "
@@ -446,6 +460,8 @@ def calculate_crossbeam_service_stress(
             "Class T/C cracked-section, crack-control, and deflection checks are outside SLS1B.",
             "Gross Section ID properties are used. Active Internal Tendon duct voids require adopted net-section properties before final PASS.",
             "Anchorage zones, beam-column joints, D-regions, shear, torsion, and seismic detailing remain separate checks.",
+            "Physical-joint results collapse adjacent Section-ID calculations to one governing Top value and one governing Bottom value; values are not averaged.",
+            "Cast-in-Place Section/Zone boundaries are monolithic and do not require the physical segment-joint compression gate.",
             "Lines on the result chart connect imported stations for visualization only; no compliance is inferred between unverified stations.",
         ],
     }

@@ -385,6 +385,19 @@ def _governing_location_text(value: Any) -> str:
     return f"{case} @ s={station:.3f} m" + (f" · {suffix}" if suffix else "")
 
 
+def _governing_joint_location_text(value: Any) -> str:
+    """Format one displayed physical-joint result without left/right faces."""
+
+    if not isinstance(value, Mapping):
+        return "—"
+    station = float(value.get("Station s (m)") or 0.0)
+    case = str(value.get("Case / Combination") or "—").strip()
+    fiber = str(value.get("Fiber") or "").strip()
+    boundary = str(value.get("Boundary ID") or "").strip()
+    suffix = " · ".join(item for item in (boundary, fiber) if item)
+    return f"{case} @ s={station:.3f} m" + (f" · {suffix}" if suffix else "")
+
+
 def _governing_actual_limit_text(value: Any) -> str:
     if not isinstance(value, Mapping):
         return "—"
@@ -441,11 +454,11 @@ def _sls_cards(
             "title": "Segment joint gate",
             "value": joint_status if joint_required else "NOT REQUIRED",
             "detail": (
-                _governing_location_text(governing_joint)
+                _governing_joint_location_text(governing_joint)
                 if joint_required and result_state in {"PASS", "FAIL", "INCOMPLETE", "REVIEW"} and governing_joint
-                else "Top and bottom compression ≥ 0.70 MPa"
+                else "Top and Bottom: fjoint ≤ −0.70 MPa"
                 if joint_required
-                else "Cast-in-Place zone boundaries"
+                else "Cast-in-Place — no physical segment joints"
             ),
             "status": _metric_status(joint_status) if joint_required else "neutral",
         },
@@ -484,11 +497,11 @@ def _sls_check_table(
     else:
         joint_status = "NOT REQUIRED"
 
-    joint_actual_limit = "≥ 0.70 MPa compression" if joint_required else "—"
+    joint_actual_limit = "fjoint ≤ −0.700 MPa" if joint_required else "—"
     if joint_required and isinstance(governing_joint, Mapping) and result_state in {"PASS", "FAIL", "INCOMPLETE", "REVIEW"}:
         joint_actual_limit = (
-            f"{float(governing_joint.get('Compression (MPa)') or 0.0):.3f} / "
-            f"{float(result.get('joint_min_compression_mpa') or 0.70):.3f} MPa compression"
+            f"{float(governing_joint.get('Stress (MPa)') or 0.0):.3f} / "
+            f"≤ {-float(result.get('joint_min_compression_mpa') or 0.70):.3f} MPa"
         )
     return pd.DataFrame(
         [
@@ -520,18 +533,18 @@ def _sls_check_table(
                 ),
             },
             {
-                "Check": "Physical segment-joint compression",
+                "Check": "Physical segment-joint compression — Top / Bottom",
                 "Status": joint_status,
-                "Governing station / case": _governing_location_text(governing_joint) if joint_required and result_state in {"PASS", "FAIL", "INCOMPLETE", "REVIEW"} else "—",
+                "Governing station / case": _governing_joint_location_text(governing_joint) if joint_required and result_state in {"PASS", "FAIL", "INCOMPLETE", "REVIEW"} else "—",
                 "Actual / limit": joint_actual_limit,
                 "Required action": (
-                    "Review the minimum joint compression reserve."
+                    "Review the governing Top and Bottom joint compression reserve."
                     if joint_status == "PASS"
                     else "Increase compression reserve; joint opening is not permitted."
                     if joint_status == "FAIL"
                     else "Recalculate for the current inputs."
                     if joint_status == "STALE"
-                    else "Check s− / s+ top and bottom fibers for every imported case."
+                    else "Provide one result at every physical joint; both Top and Bottom fibers are checked."
                     if joint_required
                     else "Cast-in-Place boundaries are not physical joints."
                 ),
@@ -567,6 +580,22 @@ def _transfer_result_audit_table(result: Mapping[str, Any]) -> pd.DataFrame:
     return pd.DataFrame(_records(result.get("rows"))).reindex(columns=columns)
 
 
+def _joint_result_audit_table(result: Mapping[str, Any]) -> pd.DataFrame:
+    columns = [
+        "Case / Combination",
+        "Boundary ID",
+        "Station s (m)",
+        "Top stress (MPa)",
+        "Top status",
+        "Bottom stress (MPa)",
+        "Bottom status",
+        "Joint minimum signed stress (MPa)",
+        "Joint status",
+        "Section IDs evaluated",
+    ]
+    return pd.DataFrame(_records(result.get("joint_rows"))).reindex(columns=columns)
+
+
 def _render_transfer_result(
     *,
     foundation: Mapping[str, Any],
@@ -600,6 +629,24 @@ def _render_transfer_result(
         "Lines connect imported station checks for visualization only. Column bands show actual footprints; dotted lines show Column centerlines; orange dash-dot lines show physical segment joints. No compliance is inferred between unverified stations."
     )
     with st.expander("Transfer stress calculation audit", expanded=False):
+        joint_table = _joint_result_audit_table(result)
+        if not joint_table.empty:
+            st.markdown("**Physical segment-joint check — one governing value per fiber**")
+            st.caption(
+                "Both Top and Bottom must satisfy fjoint ≤ −0.70 MPa. Adjacent Section IDs are evaluated internally; the displayed values are the least-compressive / most-tensile results and are not averaged."
+            )
+            st.dataframe(
+                joint_table,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Station s (m)": st.column_config.NumberColumn(format="%.6f"),
+                    "Top stress (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                    "Bottom stress (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                    "Joint minimum signed stress (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                },
+            )
+            st.markdown("**Station stress calculation rows**")
         st.dataframe(
             _transfer_result_audit_table(result),
             use_container_width=True,
@@ -711,6 +758,24 @@ def _render_service_result(
         "Lines connect imported station checks for visualization only. Column bands show actual footprints; dotted lines show Column centerlines; orange dash-dot lines show physical segment joints. No compliance is inferred between unverified stations."
     )
     with st.expander("At Service stress calculation audit", expanded=False):
+        joint_table = _joint_result_audit_table(result)
+        if not joint_table.empty:
+            st.markdown("**Physical segment-joint check — one governing value per fiber**")
+            st.caption(
+                "Both Top and Bottom must satisfy fjoint ≤ −0.70 MPa. Adjacent Section IDs are evaluated internally; the displayed values are the least-compressive / most-tensile results and are not averaged."
+            )
+            st.dataframe(
+                joint_table,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Station s (m)": st.column_config.NumberColumn(format="%.6f"),
+                    "Top stress (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                    "Bottom stress (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                    "Joint minimum signed stress (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                },
+            )
+            st.markdown("**Station stress calculation rows**")
         st.dataframe(
             _service_result_audit_table(result),
             use_container_width=True,
@@ -794,7 +859,11 @@ def render_crossbeam_sls_workspace() -> None:
                 )
                 st.caption(
                     "Tension is checked on a conservative Class U basis: ft ≤ 0.62√f'c. "
-                    "Physical segment joints retain the separate ≥ 0.70 MPa compression gate."
+                    + (
+                        "For Precast Segmental, physical joints retain the separate Top/Bottom gate fjoint ≤ −0.70 MPa."
+                        if construction_method == "Precast Segmental"
+                        else "For Cast-in-Place, the physical segment-joint gate is not required."
+                    )
                 )
             else:
                 st.caption("No SLS At Service cases are available for basis assignment.")
@@ -845,11 +914,14 @@ def render_crossbeam_sls_workspace() -> None:
             disabled=not source_ready,
             use_container_width=True,
             help=(
-                "Calculate ACI 318-19 transfer-stage top/bottom concrete stress and the project physical-joint compression gate."
+                "Calculate ACI 318-19 transfer-stage top/bottom concrete stress"
+                + (" and the project physical-joint compression gate." if construction_method == "Precast Segmental" else ".")
                 if stage == SLS_STAGE_TRANSFER
-                else "Calculate ACI 318-19 Class U final-service stress, sustained/total compression limits, and the project physical-joint compression gate."
+                else "Calculate ACI 318-19 Class U final-service stress and sustained/total compression limits"
+                + (", including the project physical-joint compression gate." if construction_method == "Precast Segmental" else ".")
             ),
         )
+
     with note_col:
         st.caption(
             "Uses imported Transfer P and M3 exactly once; compression is negative and tension is positive."
@@ -858,6 +930,18 @@ def render_crossbeam_sls_workspace() -> None:
                 f"Class U · {len(sustained_cases)} sustained case(s); unselected cases use total-load limits. "
                 "Imported final-service P and M3 are used exactly once."
             )
+        )
+
+    if construction_method == "Precast Segmental":
+        st.info(
+            "**Stress sign convention:** Compression = negative (−); Tension = positive (+).  \n"
+            "**Physical segment-joint gate:** one result is shown per joint. Both Top and Bottom must satisfy "
+            "`fjoint ≤ −0.70 MPa` (compression magnitude ≥ 0.70 MPa)."
+        )
+    else:
+        st.info(
+            "**Stress sign convention:** Compression = negative (−); Tension = positive (+).  \n"
+            "**Segment-joint gate:** NOT REQUIRED — Cast-in-Place Section/Zone boundaries are monolithic, not physical segment joints."
         )
 
     if calculate_clicked:
@@ -912,7 +996,7 @@ def render_crossbeam_sls_workspace() -> None:
         st.warning(
             issues[0]
             if issues
-            else f"{stage.upper()} JOINT CHECK INCOMPLETE — add both s− and s+ rows at every physical joint for every case."
+            else f"{stage.upper()} JOINT CHECK INCOMPLETE — provide one result at every physical joint for every case; both Top and Bottom fibers are checked."
         )
     elif result_state == "REVIEW" and isinstance(stored_result, Mapping):
         basis_issues = [str(item) for item in stored_result.get("basis_coverage_issues", [])]

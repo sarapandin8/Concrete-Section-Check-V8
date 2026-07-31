@@ -1799,3 +1799,7 @@ Harden Time-Dependent schedule defaults and adoption gates with RH 75%, 7/28/28/
 ## CROSSBEAM.SLS1A1 — Transfer Stress-Limit Equation Labels
 
 Adds compact equation and numerical-substitution labels directly on the dashed ACI 318-19 transfer compression/tension limit traces, with exact local `f'ci` calculations retained in hover, without changing the accepted Crossbeam SLS1A solver. See `README_CROSSBEAM_SLS1A1.md`.
+
+## CROSSBEAM.SLS1B1 — Segment-Joint Sign, Single-Result, and CIP Applicability Hotfix
+
+Corrects the signed physical-joint compression gate to `fjoint <= -0.70 MPa`, reports one governing Top and one governing Bottom stress per Precast Segmental joint without user-facing left/right splitting, adds a visible stress-sign callout, and marks the gate `NOT REQUIRED` for Cast-in-Place Crossbeams. See `README_CROSSBEAM_SLS1B1.md`.
