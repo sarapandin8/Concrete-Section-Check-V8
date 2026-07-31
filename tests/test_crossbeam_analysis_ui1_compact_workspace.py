@@ -4,6 +4,8 @@ from pathlib import Path
 
 from concrete_pmm_pro.ui.crossbeam_analysis_page import (
     _dataset_ready,
+    _governing_actual_limit_text,
+    _signed_stress_text,
     _sls_check_table,
     _uls_check_table,
 )
@@ -90,3 +92,42 @@ def test_main_crossbeam_pages_do_not_render_source_coverage_before_result_worksp
     assert "make_crossbeam_station_coverage_figure" not in sls_body
     assert "_render_source_audit" in uls_body
     assert "_render_source_audit" in sls_body
+
+
+def test_signed_stress_text_shows_explicit_tension_plus_sign() -> None:
+    assert _signed_stress_text(6.789) == "+6.789"
+    assert _signed_stress_text(-6.789) == "−6.789"
+    assert _signed_stress_text(0.0) == "0.000"
+
+
+def test_compact_sls_actual_limit_text_keeps_signed_stress_visible() -> None:
+    stress_text = _governing_actual_limit_text(
+        {"Stress (MPa)": 8.958, "Limit (MPa)": 4.159, "Utilization": 2.154}
+    )
+    assert stress_text == "+8.958 / +4.159 MPa · D/C 2.154"
+
+    table = _sls_check_table(
+        stage="At Service",
+        source_ready=True,
+        construction_method="Precast Segmental",
+        result={
+            "stress_status": "FAIL",
+            "joint_status": "FAIL",
+            "joint_min_compression_mpa": 0.70,
+            "governing": {
+                "Stress (MPa)": 8.958,
+                "Limit (MPa)": 4.159,
+                "Utilization": 2.154,
+            },
+            "governing_joint": {
+                "Stress (MPa)": 6.789,
+                "Case / Combination": "ULS-01",
+                "Station s (m)": 10.0,
+                "Boundary ID": "S3 / S4",
+                "Fiber": "Bottom",
+            },
+        },
+        result_state="FAIL",
+    )
+    assert table.iloc[0]["Actual / limit"] == "+8.958 / +4.159 MPa · D/C 2.154"
+    assert table.iloc[1]["Actual / limit"] == "+6.789 / ≤ −0.700 MPa"

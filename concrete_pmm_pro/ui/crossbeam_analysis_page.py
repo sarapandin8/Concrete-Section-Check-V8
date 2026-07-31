@@ -398,13 +398,27 @@ def _governing_joint_location_text(value: Any) -> str:
     return f"{case} @ s={station:.3f} m" + (f" · {suffix}" if suffix else "")
 
 
+def _signed_stress_text(value: float, *, decimals: int = 3) -> str:
+    """Format signed stress so tension is visibly positive and compression negative."""
+
+    number = float(value)
+    tolerance = 0.5 * 10.0 ** (-decimals)
+    if abs(number) < tolerance:
+        number = 0.0
+    text = f"{number:+.{decimals}f}" if number != 0.0 else f"{number:.{decimals}f}"
+    return text.replace("-", "−")
+
+
 def _governing_actual_limit_text(value: Any) -> str:
     if not isinstance(value, Mapping):
         return "—"
     actual = float(value.get("Stress (MPa)") or 0.0)
     limit = float(value.get("Limit (MPa)") or 0.0)
     utilization = float(value.get("Utilization") or 0.0)
-    return f"{actual:.3f} / {limit:.3f} MPa · D/C {utilization:.3f}"
+    return (
+        f"{_signed_stress_text(actual)} / {_signed_stress_text(limit)} MPa · "
+        f"D/C {utilization:.3f}"
+    )
 
 
 def _sls_cards(
@@ -500,8 +514,8 @@ def _sls_check_table(
     joint_actual_limit = "fjoint ≤ −0.700 MPa" if joint_required else "—"
     if joint_required and isinstance(governing_joint, Mapping) and result_state in {"PASS", "FAIL", "INCOMPLETE", "REVIEW"}:
         joint_actual_limit = (
-            f"{float(governing_joint.get('Stress (MPa)') or 0.0):.3f} / "
-            f"≤ {-float(result.get('joint_min_compression_mpa') or 0.70):.3f} MPa"
+            f"{_signed_stress_text(float(governing_joint.get('Stress (MPa)') or 0.0))} / "
+            f"≤ {_signed_stress_text(-float(result.get('joint_min_compression_mpa') or 0.70))} MPa"
         )
     return pd.DataFrame(
         [
