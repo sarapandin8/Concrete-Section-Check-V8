@@ -45,23 +45,25 @@ def test_compact_uls_table_has_only_four_engineering_checks() -> None:
 
 
 def test_compact_sls_table_has_stress_and_joint_gate_only() -> None:
-    precast = _sls_check_table(source_ready=True, construction_method="Precast Segmental")
+    precast = _sls_check_table(stage="At Transfer", source_ready=True, construction_method="Precast Segmental")
     assert precast["Check"].tolist() == [
         "Concrete stress — top / bottom",
         "Physical segment-joint compression",
     ]
     assert precast.iloc[1]["Actual / limit"] == "≥ 0.70 MPa compression"
 
-    cip = _sls_check_table(source_ready=True, construction_method="Cast-in-Place")
+    cip = _sls_check_table(stage="At Transfer", source_ready=True, construction_method="Cast-in-Place")
     assert cip.iloc[1]["Status"] == "NOT REQUIRED"
 
 
-def test_crossbeam_analysis_ui_keeps_uls_disabled_and_enables_transfer_only() -> None:
+def test_crossbeam_analysis_ui_keeps_uls_disabled_and_enables_both_sls_stages() -> None:
     assert 'st.button(\n            f"Calculate {selected_check}"' in PAGE_SOURCE
     assert 'st.button(\n            f"Calculate {stage}"' in PAGE_SOURCE
     assert "disabled=True" in PAGE_SOURCE  # ULS remains a shell
-    assert "disabled=(not source_ready) or stage != SLS_STAGE_TRANSFER" in PAGE_SOURCE
+    assert "disabled=not source_ready" in PAGE_SOURCE
     assert "calculate_crossbeam_transfer_stress" in PAGE_SOURCE
+    assert "calculate_crossbeam_service_stress" in PAGE_SOURCE
+    assert "Service stress basis" in PAGE_SOURCE
     assert "The disabled action prevents a UI shell from being mistaken for a completed strength check." in PAGE_SOURCE
 
 

@@ -188,8 +188,7 @@ def test_transfer_chart_uses_beam_girder_stress_language_and_crossbeam_landmarks
     assert len(fig.layout.shapes) >= 5  # 2 footprints, 2 centerlines, zero line/member ends
 
 
-def test_sls1a_enables_only_transfer_calculation_and_keeps_result_session_only() -> None:
+def test_sls1a_transfer_calculation_remains_available_and_result_session_only() -> None:
     assert "calculate_crossbeam_transfer_stress" in PAGE_SOURCE
-    assert "disabled=(not source_ready) or stage != SLS_STAGE_TRANSFER" in PAGE_SOURCE
-    assert "At Service is implemented in the next SLS milestone." in PAGE_SOURCE
+    assert "disabled=not source_ready" in PAGE_SOURCE
     assert CB_ANALYSIS_SLS_TRANSFER_RESULT_KEY not in PROJECT_IO_SOURCE

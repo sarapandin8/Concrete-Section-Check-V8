@@ -182,15 +182,16 @@ def test_full_length_chart_has_member_range_column_footprints_centerlines_and_al
     assert len(lines) >= 5
 
 
-def test_crossbeam_runtime_card_is_input_review_only_even_when_generic_status_says_ready() -> None:
+def test_crossbeam_runtime_card_reports_active_sls_checks_even_when_generic_status_says_ready() -> None:
     settings = AnalysisModeSettings(member_type="portal_frame_crossbeam")
     value, detail, status = _analysis_runtime_state_for_workflow(
         settings,
         {"analysis_status": "Ready to review"},
     )
-    assert value == "INPUT REVIEW ONLY"
-    assert "no Crossbeam solver" in detail
-    assert status == "warning"
+    assert value == "SLS CHECKS ACTIVE"
+    assert "Transfer and Service stress checks are available" in detail
+    assert "ULS solvers remain not connected" in detail
+    assert status == "info"
 
 
 def test_non_crossbeam_runtime_card_preserves_existing_status_wording() -> None:
@@ -214,7 +215,7 @@ def test_crossbeam_sidebar_and_main_router_share_compact_uls_sls_navigation() ->
 
 def test_analysis_cards_display_full_code_edition_and_hide_developer_diagnostics_for_crossbeam() -> None:
     assert "code = workflow_project_code_label_from_session(st.session_state)" in ANALYSIS_SOURCE
-    assert '"INPUT REVIEW ONLY"' in ANALYSIS_SOURCE
+    assert '"SLS CHECKS ACTIVE"' in ANALYSIS_SOURCE
     assert "if not is_portal_frame_crossbeam_workflow(settings):\n        _render_runtime_diagnostics_expander()" in ANALYSIS_SOURCE
 
 

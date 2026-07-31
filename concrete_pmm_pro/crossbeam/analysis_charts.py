@@ -565,4 +565,244 @@ def make_crossbeam_transfer_stress_figure(
     return fig
 
 
-__all__ = ["make_crossbeam_station_coverage_figure", "make_crossbeam_transfer_stress_figure"]
+def make_crossbeam_service_stress_figure(
+    foundation: Mapping[str, Any],
+    result: Mapping[str, Any],
+    *,
+    case_name: str,
+) -> go.Figure:
+    """Return the full-length ACI final-service stress chart for one case."""
+
+    rows = [
+        dict(row)
+        for row in _rows(result.get("rows"))
+        if _text(row.get("Case / Combination")) == _text(case_name)
+    ]
+    rows.sort(
+        key=lambda row: (
+            _float(row.get("Station s (m)")),
+            _stress_face_order(row.get("Station face")),
+            _text(row.get("Context ID")),
+        )
+    )
+    fig = go.Figure()
+    if not rows:
+        return fig
+
+    _add_result_landmarks(fig, foundation)
+    x = [_float(row.get("Station s (m)")) for row in rows]
+    faces = [_text(row.get("Station face")) for row in rows]
+    symbols = [_face_symbol(face, DATASET_SLS_SERVICE) for face in faces]
+    customdata = [
+        [
+            _text(row.get("Station face")),
+            _text(row.get("Segment / Zone")),
+            _text(row.get("Section ID")),
+            _text(row.get("Material")),
+            _float(row.get("f'c (MPa)")),
+            _text(row.get("Check Point")) or "—",
+            _text(row.get("Service load condition")),
+        ]
+        for row in rows
+    ]
+
+    def add_stress_trace(field: str, name: str, color: str) -> None:
+        fig.add_trace(
+            go.Scatter(
+                x=x,
+                y=[_float(row.get(field)) for row in rows],
+                mode="lines+markers",
+                name=name,
+                line={"width": 3.0, "color": color},
+                marker={
+                    "symbol": symbols,
+                    "size": 9,
+                    "color": color,
+                    "line": {"width": 1.0, "color": "rgba(15,23,42,0.55)"},
+                },
+                customdata=customdata,
+                hovertemplate=(
+                    f"<b>{name}</b><br>"
+                    "s=%{x:.6f} m<br>stress=%{y:.3f} MPa<br>"
+                    "face=%{customdata[0]}<br>segment=%{customdata[1]}<br>"
+                    "section=%{customdata[2]}<br>material=%{customdata[3]}<br>"
+                    "f′c=%{customdata[4]:.3f} MPa<br>check point=%{customdata[5]}<br>"
+                    "load condition=%{customdata[6]}<extra></extra>"
+                ),
+            )
+        )
+
+    add_stress_trace("Top stress (MPa)", "Top total stress", _ENGINEERING_STRESS_COLORS["top"])
+    add_stress_trace("Bottom stress (MPa)", "Bottom total stress", _ENGINEERING_STRESS_COLORS["bottom"])
+
+    compression_limits = [_float(row.get("Compression limit (MPa)")) for row in rows]
+    tension_limits = [_float(row.get("Tension limit (MPa)")) for row in rows]
+    fc_values = [_float(row.get("f'c (MPa)")) for row in rows]
+    coefficients = [_float(row.get("Compression coefficient")) for row in rows]
+    load_conditions = [_text(row.get("Service load condition")) for row in rows]
+    compression_formulae = [
+        f"−{coefficient:.2f}f′c = −{coefficient:.2f}({fc:.2f}) = −{abs(limit):.2f} MPa"
+        for coefficient, fc, limit in zip(coefficients, fc_values, compression_limits)
+    ]
+    tension_formulae = [
+        f"+0.62√f′c = +0.62√({fc:.2f}) = +{limit:.2f} MPa"
+        for fc, limit in zip(fc_values, tension_limits)
+    ]
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=compression_limits,
+            mode="lines",
+            name="Compression limit",
+            line={"width": 3.0, "dash": "dash", "color": _ENGINEERING_STRESS_COLORS["compression_limit"]},
+            customdata=[
+                [fc, coefficient, condition, formula]
+                for fc, coefficient, condition, formula in zip(
+                    fc_values, coefficients, load_conditions, compression_formulae
+                )
+            ],
+            hovertemplate=(
+                "s=%{x:.6f} m<br>compression limit=%{y:.3f} MPa<br>"
+                "f′c=%{customdata[0]:.3f} MPa<br>coefficient=%{customdata[1]:.2f}<br>"
+                "%{customdata[2]}<br>%{customdata[3]}<extra></extra>"
+            ),
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=tension_limits,
+            mode="lines",
+            name="Class U tension limit",
+            line={"width": 3.0, "dash": "dash", "color": _ENGINEERING_STRESS_COLORS["tension_limit"]},
+            customdata=[[fc, formula] for fc, formula in zip(fc_values, tension_formulae)],
+            hovertemplate=(
+                "s=%{x:.6f} m<br>Class U tension limit=%{y:.3f} MPa<br>"
+                "f′c=%{customdata[0]:.3f} MPa<br>%{customdata[1]}<extra></extra>"
+            ),
+        )
+    )
+
+    right_index = len(rows) - 1
+    right_fc = fc_values[right_index]
+    right_coefficient = coefficients[right_index]
+    right_condition = load_conditions[right_index]
+    right_compression_limit = compression_limits[right_index]
+    right_tension_limit = tension_limits[right_index]
+    fc_varies = len({round(value, 9) for value in fc_values}) > 1
+    coefficient_varies = len({round(value, 9) for value in coefficients}) > 1
+    variation_notes: list[str] = []
+    if fc_varies:
+        variation_notes.append("local f′c varies")
+    if coefficient_varies:
+        variation_notes.append("case basis varies")
+    variation_note = " · " + " / ".join(variation_notes) if variation_notes else ""
+    annotation_common = {
+        "xref": "paper",
+        "yref": "y",
+        "x": 0.985,
+        "showarrow": False,
+        "xanchor": "right",
+        "bgcolor": "rgba(255,255,255,0.88)",
+        "borderwidth": 0,
+        "align": "right",
+    }
+    fig.add_annotation(
+        **annotation_common,
+        y=right_compression_limit,
+        yshift=8,
+        yanchor="bottom",
+        text=(
+            f"Compression limit ({right_condition}): "
+            f"−{right_coefficient:.2f}f′c = −{right_coefficient:.2f}({right_fc:.2f}) "
+            f"= −{abs(right_compression_limit):.2f} MPa{variation_note}"
+        ),
+        font={"size": 10, "color": _ENGINEERING_STRESS_COLORS["compression_limit"]},
+    )
+    fig.add_annotation(
+        **annotation_common,
+        y=right_tension_limit,
+        yshift=8,
+        yanchor="bottom",
+        text=(
+            "Class U tension limit: "
+            f"+0.62√f′c = +0.62√({right_fc:.2f}) = +{right_tension_limit:.2f} MPa"
+            f"{variation_note}"
+        ),
+        font={"size": 10, "color": _ENGINEERING_STRESS_COLORS["tension_limit"]},
+    )
+    fig.add_hline(
+        y=0.0,
+        line={"width": 1.3, "dash": "dot", "color": _ENGINEERING_STRESS_COLORS["zero"]},
+        layer="below",
+    )
+
+    for key, label, color, position in (
+        ("governing_compression", "Gov. Compression", _ENGINEERING_STRESS_COLORS["governing_compression"], "bottom center"),
+        ("governing_tension", "Gov. Tension", _ENGINEERING_STRESS_COLORS["governing_tension"], "top center"),
+    ):
+        governing = result.get(key)
+        if not isinstance(governing, Mapping) or _text(governing.get("Case / Combination")) != _text(case_name):
+            continue
+        fig.add_trace(
+            go.Scatter(
+                x=[_float(governing.get("Station s (m)"))],
+                y=[_float(governing.get("Stress (MPa)"))],
+                mode="markers+text",
+                name=label,
+                marker={"size": 15, "symbol": "circle-open", "color": color, "line": {"width": 3}},
+                text=[label],
+                textposition=position,
+                hovertemplate=(
+                    f"{label}<br>s=%{{x:.6f}} m<br>stress=%{{y:.3f}} MPa<br>"
+                    f"fiber={_text(governing.get('Fiber'))}<br>"
+                    f"face={_text(governing.get('Station face'))}<br>"
+                    f"utilization={_float(governing.get('Utilization')):.3f}<extra></extra>"
+                ),
+            )
+        )
+
+    length = max(_float(foundation.get("member_length_m")), 0.0)
+    case_condition = load_conditions[0] if load_conditions else "Service load"
+    fig.update_layout(
+        title={
+            "text": (
+                "Concrete Stress — At Service"
+                f"<br><sup>ACI 318-19 §§24.5.2, 24.5.4 · Class U · {case_condition.lower()} · compression negative / tension positive</sup>"
+            ),
+            "x": 0.5,
+            "xanchor": "center",
+        },
+        height=560,
+        margin={"l": 76, "r": 30, "t": 92, "b": 120},
+        hovermode="closest",
+        legend={
+            "orientation": "h",
+            "x": 0.5,
+            "y": -0.24,
+            "xanchor": "center",
+            "yanchor": "top",
+        },
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+    )
+    fig.update_xaxes(
+        title="Station s (m)",
+        range=[0.0, length if length > 0.0 else 1.0],
+        showgrid=True,
+        zeroline=False,
+    )
+    fig.update_yaxes(
+        title="Stress (MPa) — compression negative / tension positive",
+        showgrid=True,
+        zeroline=False,
+    )
+    apply_global_plot_readability(fig)
+    return fig
+
+
+__all__ = [
+    "make_crossbeam_service_stress_figure",
+    "make_crossbeam_station_coverage_figure",
+    "make_crossbeam_transfer_stress_figure",
+]

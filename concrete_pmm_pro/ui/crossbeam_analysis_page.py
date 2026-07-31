@@ -3,7 +3,7 @@
 Crossbeam Analysis follows the same decision-first language as the accepted
 Beam/Girder ULS and SLS pages, while keeping Crossbeam solver/state ownership
 isolated.  ANALYSIS.UI1 established the compact shell; CROSSBEAM.SLS1A now evaluates
-ACI 318-19 transfer-stage concrete stress while ULS and At Service remain isolated future solvers.
+ACI 318-19 transfer- and final-service concrete stress while ULS remains an isolated future solver.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from concrete_pmm_pro.crossbeam.analysis_foundation import (
     build_crossbeam_analysis_foundation,
 )
 from concrete_pmm_pro.crossbeam.analysis_charts import (
+    make_crossbeam_service_stress_figure,
     make_crossbeam_station_coverage_figure,
     make_crossbeam_transfer_stress_figure,
 )
@@ -42,6 +43,13 @@ from concrete_pmm_pro.crossbeam.sls_transfer import (
     calculate_crossbeam_transfer_stress,
     transfer_stress_input_fingerprint,
 )
+from concrete_pmm_pro.crossbeam.sls_service import (
+    CB_ANALYSIS_SLS_SERVICE_RESULT_KEY,
+    CB_ANALYSIS_SLS_SERVICE_SUSTAINED_CASES_KEY,
+    calculate_crossbeam_service_stress,
+    canonical_sustained_case_names,
+    service_stress_input_fingerprint,
+)
 from concrete_pmm_pro.crossbeam.station_force_contract import CB_STATION_FORCE_VALIDATION_KEY
 from concrete_pmm_pro.crossbeam.tendon_persistence import CB_TENDON_SYSTEM_ROWS_KEY
 from concrete_pmm_pro.ui.commercial import render_metric_cards
@@ -54,6 +62,7 @@ CB_CONSTRUCTION_METHOD_KEY = "crossbeam_ptloss3b1_construction_method"
 CB_ANALYSIS_UI1_ULS_CHECK_KEY = "crossbeam_analysis_ui1_uls_check"
 CB_ANALYSIS_UI1_SLS_STAGE_KEY = "crossbeam_analysis_ui1_sls_stage"
 CB_ANALYSIS_SLS1A_CASE_KEY = "crossbeam_analysis_sls1a_diagram_case"
+CB_ANALYSIS_SLS1B_CASE_KEY = "crossbeam_analysis_sls1b_diagram_case"
 
 ULS_CHECKS = ("Flexure", "Shear", "Torsion", "Shear + Torsion")
 SLS_STAGE_TRANSFER = "At Transfer"
@@ -445,6 +454,7 @@ def _sls_cards(
 
 def _sls_check_table(
     *,
+    stage: str,
     source_ready: bool,
     construction_method: str,
     result: Mapping[str, Any] | None = None,
@@ -488,17 +498,25 @@ def _sls_check_table(
                 "Governing station / case": _governing_location_text(governing) if result_state in {"PASS", "FAIL", "INCOMPLETE", "REVIEW"} else "—",
                 "Actual / limit": _governing_actual_limit_text(governing) if result_state in {"PASS", "FAIL", "INCOMPLETE", "REVIEW"} else "—",
                 "Required action": (
-                    "Review the governing transfer stress and source audit."
+                    f"Review the governing {stage.lower()} stress and source audit."
                     if stress_status == "PASS"
-                    else "Revise the transfer-stage prestress/load/section basis."
+                    else (
+                        "Revise the transfer-stage prestress/load/section basis."
+                        if stage == SLS_STAGE_TRANSFER
+                        else "Revise the final-service prestress/load/section basis."
+                    )
                     if stress_status == "FAIL"
-                    else "Adopt transfer-stage duct-void/net-section properties before final PASS."
+                    else (
+                        "Adopt transfer-stage duct-void/net-section properties before final PASS."
+                        if stage == SLS_STAGE_TRANSFER
+                        else "Complete sustained/total service basis and adopted duct-void/net-section review."
+                    )
                     if stress_status == "REVIEW"
                     else "Recalculate for the current inputs."
                     if stress_status == "STALE"
                     else "Complete the selected SLS dataset and mapping."
                     if not source_ready
-                    else "Run Calculate At Transfer."
+                    else f"Run Calculate {stage}."
                 ),
             },
             {
@@ -619,8 +637,124 @@ def _render_transfer_result(
             st.caption(f"• {note}")
 
 
+
+def _service_result_audit_table(result: Mapping[str, Any]) -> pd.DataFrame:
+    columns = [
+        "Case / Combination",
+        "Service load condition",
+        "Station s (m)",
+        "Station face",
+        "Segment / Zone",
+        "Section ID",
+        "Material",
+        "f'c (MPa)",
+        "P (kN; compression +)",
+        "M3 (kN-m; sagging +)",
+        "Axial stress (MPa)",
+        "Top bending stress (MPa)",
+        "Top stress (MPa)",
+        "Top applicable limit (MPa)",
+        "Top utilization",
+        "Top status",
+        "Bottom bending stress (MPa)",
+        "Bottom stress (MPa)",
+        "Bottom applicable limit (MPa)",
+        "Bottom utilization",
+        "Bottom status",
+        "Joint status",
+    ]
+    return pd.DataFrame(_records(result.get("rows"))).reindex(columns=columns)
+
+
+def _service_cases_from_foundation(foundation: Mapping[str, Any]) -> list[str]:
+    return sorted(
+        {
+            str(row.get("Case / Combination") or "").strip()
+            for row in foundation.get("mapped_rows", [])
+            if isinstance(row, Mapping)
+            and str(row.get("Dataset") or "") == DATASET_SLS_SERVICE
+            and str(row.get("Case / Combination") or "").strip()
+        }
+    )
+
+
+def _render_service_result(
+    *,
+    foundation: Mapping[str, Any],
+    result: Mapping[str, Any],
+) -> None:
+    cases = [str(item) for item in result.get("cases", []) if str(item).strip()]
+    if not cases:
+        st.warning("No calculated At Service case is available for the result graph.")
+        return
+    governing = result.get("governing") if isinstance(result.get("governing"), Mapping) else {}
+    default_case = str(governing.get("Case / Combination") or cases[0])
+    if st.session_state.get(CB_ANALYSIS_SLS1B_CASE_KEY) not in cases:
+        st.session_state[CB_ANALYSIS_SLS1B_CASE_KEY] = default_case if default_case in cases else cases[0]
+    if len(cases) > 1:
+        selected_case = st.selectbox(
+            "Diagram case",
+            options=cases,
+            key=CB_ANALYSIS_SLS1B_CASE_KEY,
+            help="The decision summary checks every imported service case; the graph displays one case at a time.",
+        )
+    else:
+        selected_case = cases[0]
+        st.caption(f"Diagram case: {selected_case}")
+    figure = make_crossbeam_service_stress_figure(
+        foundation,
+        result,
+        case_name=selected_case,
+    )
+    st.plotly_chart(figure, use_container_width=True, config={"displaylogo": False})
+    st.caption(
+        "Lines connect imported station checks for visualization only. Column bands show actual footprints; dotted lines show Column centerlines; orange dash-dot lines show physical segment joints. No compliance is inferred between unverified stations."
+    )
+    with st.expander("At Service stress calculation audit", expanded=False):
+        st.dataframe(
+            _service_result_audit_table(result),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Station s (m)": st.column_config.NumberColumn(format="%.6f"),
+                "f'c (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "P (kN; compression +)": st.column_config.NumberColumn(format="%.3f"),
+                "M3 (kN-m; sagging +)": st.column_config.NumberColumn(format="%.3f"),
+                "Axial stress (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "Top bending stress (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "Top stress (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "Top applicable limit (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "Top utilization": st.column_config.NumberColumn(format="%.3f"),
+                "Bottom bending stress (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "Bottom stress (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "Bottom applicable limit (MPa)": st.column_config.NumberColumn(format="%.3f"),
+                "Bottom utilization": st.column_config.NumberColumn(format="%.3f"),
+            },
+        )
+        limit_basis = result.get("limit_basis") if isinstance(result.get("limit_basis"), Mapping) else {}
+        st.markdown(
+            "**ACI 318-19 final-service basis**  \n"
+            f"- Sustained compression: {limit_basis.get('compression_sustained', '0.45 f\'c')}  \n"
+            f"- Total-load compression: {limit_basis.get('compression_total', '0.60 f\'c')}  \n"
+            f"- Tension: {limit_basis.get('tension', 'Class U: 0.62 sqrt(f\'c)')}  \n"
+            f"- Joint: {limit_basis.get('joint', 'Project criterion')}  \n"
+            f"- Sign convention: {result.get('sign_convention', 'Compression negative / tension positive')}"
+        )
+        basis_issues = [str(item) for item in result.get("basis_coverage_issues", [])]
+        if basis_issues:
+            st.markdown("**Service load-basis review**")
+            for issue in basis_issues:
+                st.warning(issue)
+        coverage_issues = [str(item) for item in result.get("joint_coverage_issues", [])]
+        if coverage_issues:
+            st.markdown("**Joint coverage issues**")
+            for issue in coverage_issues:
+                st.warning(issue)
+        for note in result.get("limitations", []):
+            st.caption(f"• {note}")
+
 def render_crossbeam_sls_workspace() -> None:
-    """Render staged Crossbeam SLS, with the At Transfer solver in SLS1A."""
+    """Render compact Crossbeam SLS for Transfer and final Service stages."""
 
     foundation = _foundation_from_session()
     construction_method = str(foundation.get("construction_method") or "Precast Segmental")
@@ -637,6 +771,36 @@ def render_crossbeam_sls_workspace() -> None:
     dataset = _sls_dataset_for_stage(stage)
     summary = _dataset_summary(foundation, dataset)
     source_ready = _dataset_ready(summary)
+
+    sustained_cases: list[str] = []
+    if stage == SLS_STAGE_SERVICE:
+        available_cases = _service_cases_from_foundation(foundation)
+        saved_cases = canonical_sustained_case_names(
+            st.session_state.get(CB_ANALYSIS_SLS_SERVICE_SUSTAINED_CASES_KEY, [])
+        )
+        valid_saved = [name for name in saved_cases if name in available_cases]
+        if st.session_state.get(CB_ANALYSIS_SLS_SERVICE_SUSTAINED_CASES_KEY) != valid_saved:
+            st.session_state[CB_ANALYSIS_SLS_SERVICE_SUSTAINED_CASES_KEY] = valid_saved
+        with st.expander("Service stress basis", expanded=False):
+            if available_cases:
+                st.multiselect(
+                    "Prestress + sustained load cases",
+                    options=available_cases,
+                    key=CB_ANALYSIS_SLS_SERVICE_SUSTAINED_CASES_KEY,
+                    help=(
+                        "Selected cases use the ACI 318-19 compression limit 0.45f'c. "
+                        "Unselected service cases use the total-load limit 0.60f'c."
+                    ),
+                )
+                st.caption(
+                    "Tension is checked on a conservative Class U basis: ft ≤ 0.62√f'c. "
+                    "Physical segment joints retain the separate ≥ 0.70 MPa compression gate."
+                )
+            else:
+                st.caption("No SLS At Service cases are available for basis assignment.")
+        sustained_cases = canonical_sustained_case_names(
+            st.session_state.get(CB_ANALYSIS_SLS_SERVICE_SUSTAINED_CASES_KEY, [])
+        )
 
     current_fingerprint = ""
     stored_result: Mapping[str, Any] | None = None
@@ -658,29 +822,8 @@ def render_crossbeam_sls_workspace() -> None:
         candidate = st.session_state.get(CB_ANALYSIS_SLS_TRANSFER_RESULT_KEY)
         stored_result = candidate if isinstance(candidate, Mapping) else None
         result_state = _result_state(stored_result, current_fingerprint=current_fingerprint)
-
-    action_col, note_col = st.columns([1, 3])
-    with action_col:
-        calculate_clicked = st.button(
-            f"Calculate {stage}",
-            type="primary",
-            disabled=(not source_ready) or stage != SLS_STAGE_TRANSFER,
-            use_container_width=True,
-            help=(
-                "Calculate ACI 318-19 transfer-stage top/bottom concrete stress and the project physical-joint compression gate."
-                if stage == SLS_STAGE_TRANSFER
-                else "At Service is implemented in the next SLS milestone."
-            ),
-        )
-    with note_col:
-        st.caption(
-            "Uses imported Transfer P and M3 exactly once; compression is negative and tension is positive."
-            if stage == SLS_STAGE_TRANSFER
-            else "At Service stress limits and final effective-prestress checks are not implemented in SLS1A."
-        )
-
-    if calculate_clicked and stage == SLS_STAGE_TRANSFER:
-        calculated = calculate_crossbeam_transfer_stress(
+    else:
+        current_fingerprint = service_stress_input_fingerprint(
             foundation=foundation,
             section_definitions=st.session_state.get(CB_SECLIB_DEFINITIONS_KEY),
             concrete_material=st.session_state.get("concrete_material"),
@@ -688,12 +831,63 @@ def render_crossbeam_sls_workspace() -> None:
             active_concrete_material_name=st.session_state.get("active_concrete_material_name"),
             deck_topping_material_name=st.session_state.get("deck_topping_material_name"),
             tendon_system_rows=st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY),
-            stressing_strength_ratio=st.session_state.get(
-                CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
-                DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
+            sustained_case_names=sustained_cases,
+        )
+        candidate = st.session_state.get(CB_ANALYSIS_SLS_SERVICE_RESULT_KEY)
+        stored_result = candidate if isinstance(candidate, Mapping) else None
+        result_state = _result_state(stored_result, current_fingerprint=current_fingerprint)
+
+    action_col, note_col = st.columns([1, 3])
+    with action_col:
+        calculate_clicked = st.button(
+            f"Calculate {stage}",
+            type="primary",
+            disabled=not source_ready,
+            use_container_width=True,
+            help=(
+                "Calculate ACI 318-19 transfer-stage top/bottom concrete stress and the project physical-joint compression gate."
+                if stage == SLS_STAGE_TRANSFER
+                else "Calculate ACI 318-19 Class U final-service stress, sustained/total compression limits, and the project physical-joint compression gate."
             ),
         )
-        st.session_state[CB_ANALYSIS_SLS_TRANSFER_RESULT_KEY] = calculated
+    with note_col:
+        st.caption(
+            "Uses imported Transfer P and M3 exactly once; compression is negative and tension is positive."
+            if stage == SLS_STAGE_TRANSFER
+            else (
+                f"Class U · {len(sustained_cases)} sustained case(s); unselected cases use total-load limits. "
+                "Imported final-service P and M3 are used exactly once."
+            )
+        )
+
+    if calculate_clicked:
+        if stage == SLS_STAGE_TRANSFER:
+            calculated = calculate_crossbeam_transfer_stress(
+                foundation=foundation,
+                section_definitions=st.session_state.get(CB_SECLIB_DEFINITIONS_KEY),
+                concrete_material=st.session_state.get("concrete_material"),
+                concrete_materials=st.session_state.get("concrete_materials"),
+                active_concrete_material_name=st.session_state.get("active_concrete_material_name"),
+                deck_topping_material_name=st.session_state.get("deck_topping_material_name"),
+                tendon_system_rows=st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY),
+                stressing_strength_ratio=st.session_state.get(
+                    CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
+                    DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
+                ),
+            )
+            st.session_state[CB_ANALYSIS_SLS_TRANSFER_RESULT_KEY] = calculated
+        else:
+            calculated = calculate_crossbeam_service_stress(
+                foundation=foundation,
+                section_definitions=st.session_state.get(CB_SECLIB_DEFINITIONS_KEY),
+                concrete_material=st.session_state.get("concrete_material"),
+                concrete_materials=st.session_state.get("concrete_materials"),
+                active_concrete_material_name=st.session_state.get("active_concrete_material_name"),
+                deck_topping_material_name=st.session_state.get("deck_topping_material_name"),
+                tendon_system_rows=st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY),
+                sustained_case_names=sustained_cases,
+            )
+            st.session_state[CB_ANALYSIS_SLS_SERVICE_RESULT_KEY] = calculated
         rerun = getattr(st, "rerun", None)
         if callable(rerun):
             rerun()
@@ -711,24 +905,34 @@ def render_crossbeam_sls_workspace() -> None:
     )
     if not source_ready:
         st.error(f"{dataset.upper()} SOURCE BLOCKED — complete this dataset and Section mapping before calculation.")
-    elif stage == SLS_STAGE_TRANSFER and result_state == "STALE":
-        st.warning("TRANSFER STRESS RESULT STALE — inputs changed after the last calculation. Run Calculate At Transfer again.")
-    elif stage == SLS_STAGE_TRANSFER and result_state == "INCOMPLETE" and isinstance(stored_result, Mapping):
+    elif result_state == "STALE":
+        st.warning(f"{stage.upper()} STRESS RESULT STALE — inputs changed after the last calculation. Run Calculate {stage} again.")
+    elif result_state == "INCOMPLETE" and isinstance(stored_result, Mapping):
         issues = [str(item) for item in stored_result.get("joint_coverage_issues", [])]
-        st.warning(issues[0] if issues else "TRANSFER JOINT CHECK INCOMPLETE — add both s− and s+ rows at every physical joint for every case.")
-    elif stage == SLS_STAGE_TRANSFER and result_state == "REVIEW" and isinstance(stored_result, Mapping):
-        internal_ids = [str(item) for item in stored_result.get("active_internal_tendon_ids", [])]
         st.warning(
-            "TRANSFER SECTION BASIS REVIEW — gross Section ID properties are used, but active Internal Tendon duct voids are not yet deducted"
-            + (f" ({', '.join(internal_ids)})." if internal_ids else ".")
+            issues[0]
+            if issues
+            else f"{stage.upper()} JOINT CHECK INCOMPLETE — add both s− and s+ rows at every physical joint for every case."
         )
-    elif stage == SLS_STAGE_TRANSFER and result_state == "SOURCE BLOCKED" and isinstance(stored_result, Mapping):
+    elif result_state == "REVIEW" and isinstance(stored_result, Mapping):
+        basis_issues = [str(item) for item in stored_result.get("basis_coverage_issues", [])]
+        internal_ids = [str(item) for item in stored_result.get("active_internal_tendon_ids", [])]
+        if basis_issues:
+            st.warning(basis_issues[0])
+        elif internal_ids:
+            st.warning(
+                f"{stage.upper()} SECTION BASIS REVIEW — gross Section ID properties are used, but active Internal Tendon duct voids are not yet deducted ({', '.join(internal_ids)})."
+            )
+        else:
+            st.warning(f"{stage.upper()} ENGINEERING REVIEW REQUIRED — see the calculation audit.")
+    elif result_state == "SOURCE BLOCKED" and isinstance(stored_result, Mapping):
         errors = [str(item) for item in stored_result.get("errors", [])]
-        st.error(errors[0] if errors else "Transfer stress calculation is source-blocked.")
+        st.error(errors[0] if errors else f"{stage} stress calculation is source-blocked.")
 
     st.markdown("#### Compact SLS check table")
     st.dataframe(
         _sls_check_table(
+            stage=stage,
             source_ready=source_ready,
             construction_method=construction_method,
             result=stored_result,
@@ -739,10 +943,14 @@ def render_crossbeam_sls_workspace() -> None:
     )
 
     st.markdown(f"#### Concrete stress — {stage}")
-    if stage == SLS_STAGE_TRANSFER and isinstance(stored_result, Mapping) and result_state in {"PASS", "FAIL", "INCOMPLETE", "REVIEW"} and stored_result.get("solver_run"):
-        _render_transfer_result(foundation=foundation, result=stored_result)
-    elif stage == SLS_STAGE_TRANSFER and result_state == "SOURCE BLOCKED" and isinstance(stored_result, Mapping):
-        with st.expander("Transfer stress blocking issues", expanded=False):
+    visible_states = {"PASS", "FAIL", "INCOMPLETE", "REVIEW"}
+    if isinstance(stored_result, Mapping) and result_state in visible_states and stored_result.get("solver_run"):
+        if stage == SLS_STAGE_TRANSFER:
+            _render_transfer_result(foundation=foundation, result=stored_result)
+        else:
+            _render_service_result(foundation=foundation, result=stored_result)
+    elif result_state == "SOURCE BLOCKED" and isinstance(stored_result, Mapping):
+        with st.expander(f"{stage} stress blocking issues", expanded=False):
             for error in stored_result.get("errors", []):
                 st.error(str(error))
     else:

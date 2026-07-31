@@ -20704,9 +20704,9 @@ def _analysis_runtime_state_for_workflow(
 
     if is_portal_frame_crossbeam_workflow(settings):
         return (
-            "INPUT REVIEW ONLY",
-            "Compact ULS/SLS workspaces are available; no Crossbeam solver has run",
-            "warning",
+            "SLS CHECKS ACTIVE",
+            "Crossbeam Transfer and Service stress checks are available; ULS solvers remain not connected",
+            "info",
         )
     return (
         str(session_state.get("analysis_status", "Ready to review")),
