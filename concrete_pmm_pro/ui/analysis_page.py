@@ -100,10 +100,12 @@ from concrete_pmm_pro.core.analysis_modes import (
     is_beam_girder_future_workflow,
     is_building_beam_girder_workflow,
     is_pmm_primary_workflow,
+    is_portal_frame_crossbeam_workflow,
 )
 from concrete_pmm_pro.core.units import N_to_kN, Nmm_to_kNm
 from concrete_pmm_pro.state.dirty_state import mark_analysis_current, project_input_hash
 from concrete_pmm_pro.ui.navigation import render_active_choice
+from concrete_pmm_pro.ui.crossbeam_analysis_page import render_crossbeam_analysis_foundation
 from concrete_pmm_pro.ui.commercial import render_metric_cards, render_page_header, render_section_bar
 from concrete_pmm_pro.geometry.summary import summarize_geometry, to_shapely_polygon
 from concrete_pmm_pro.reporting import (
@@ -256,6 +258,7 @@ from concrete_pmm_pro.verification.sls_benchmarks import (
 
 ANALYSIS_SUBTABS = ["ULS Strength", "SLS / Stress & Cracking", "SLS Deflection / Camber"]
 ANALYSIS_COLUMN_PIER_SUBTABS = ["ULS Strength"]
+ANALYSIS_CROSSBEAM_SUBTABS = ["Station Check Foundation"]
 COLUMN_PIER_ULS_CHECK_SUBTABS = ["Summary", "Flexural (PMM)", "Shear", "Torsion", "Shear + Torsion"]
 # Legacy source-test token retained while PERF.RERUN1 switches from eager st.tabs
 # to lazy subpage rendering: uls_tab, sls_tab, sls_deflection_tab, report_tab
@@ -20661,7 +20664,16 @@ def _commercial_analysis_dashboard_cards(settings: AnalysisModeSettings, active_
 
     workflow_label = analysis_mode_label(settings)
     code = workflow_project_design_code_from_session(st.session_state)
-    route = "PMM / ULS" if is_pmm_primary_workflow(settings) else ("Bridge girder" if is_beam_girder_future_workflow(settings) else "Building girder")
+    if is_pmm_primary_workflow(settings):
+        route = "PMM / ULS"
+    elif is_beam_girder_future_workflow(settings):
+        route = "Bridge girder"
+    elif is_building_beam_girder_workflow(settings):
+        route = "Building girder"
+    elif is_portal_frame_crossbeam_workflow(settings):
+        route = "Crossbeam station checks"
+    else:
+        route = "Unresolved workflow"
     readiness = st.session_state.get("analysis_status", "Ready to review")
     return [
         {"title": "Active review", "value": active_subpage, "detail": "Only the selected analysis workspace is rendered", "status": "info"},
@@ -20674,6 +20686,8 @@ def _commercial_analysis_dashboard_cards(settings: AnalysisModeSettings, active_
 def _analysis_subtabs_for_workflow(settings: AnalysisModeSettings) -> list[str]:
     if is_pmm_primary_workflow(settings):
         return list(ANALYSIS_COLUMN_PIER_SUBTABS)
+    if is_portal_frame_crossbeam_workflow(settings):
+        return list(ANALYSIS_CROSSBEAM_SUBTABS)
     return list(ANALYSIS_SUBTABS)
 
 
@@ -20700,11 +20714,17 @@ def render_analysis_page() -> None:
     active_subpage = _analysis_subpage_choice()
     render_metric_cards(_commercial_analysis_dashboard_cards(settings, active_subpage))
     render_section_bar("Analysis workspace", "The selected analysis subpage controls what is evaluated on this rerun.", mark="A")
-    if active_subpage == "ULS Strength":
+    if active_subpage == "Station Check Foundation" and is_portal_frame_crossbeam_workflow(settings):
+        render_crossbeam_analysis_foundation()
+    elif active_subpage == "ULS Strength":
         render_analysis_uls_pmm()
     elif active_subpage == "SLS / Stress & Cracking":
         render_analysis_sls_stress()
     elif active_subpage == "SLS Deflection / Camber":
         render_analysis_sls_deflection_camber()
-    mark_analysis_current(st.session_state, workspace=f"Analysis / {active_subpage}")
+
+    # ANALYSIS1 assembles read-only source contexts only.  Opening the
+    # Crossbeam foundation must not claim that ULS/SLS analysis is CURRENT.
+    if not is_portal_frame_crossbeam_workflow(settings):
+        mark_analysis_current(st.session_state, workspace=f"Analysis / {active_subpage}")
     _render_runtime_diagnostics_expander()
