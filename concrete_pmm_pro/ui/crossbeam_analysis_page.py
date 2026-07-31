@@ -17,6 +17,8 @@ from concrete_pmm_pro.crossbeam.analysis_foundation import (
     DATASET_ORDER,
     build_crossbeam_analysis_foundation,
 )
+from concrete_pmm_pro.crossbeam.analysis_charts import make_crossbeam_station_coverage_figure
+from concrete_pmm_pro.crossbeam.prestress_loss import CB_LOSS_ES_COLUMN_ROWS_KEY
 from concrete_pmm_pro.crossbeam.rebar_persistence import (
     CB_RB_TEMPLATE_ROWS_KEY,
     CB_RB_ZONE_ROWS_KEY,
@@ -60,6 +62,7 @@ def _foundation_from_session() -> dict[str, Any]:
         rebar_zone_rows=_records(st.session_state.get(CB_RB_ZONE_ROWS_KEY)),
         rebar_template_rows=_records(st.session_state.get(CB_RB_TEMPLATE_ROWS_KEY)),
         transverse_template_rows=_records(st.session_state.get(CB_TR_TEMPLATE_ROWS_KEY)),
+        column_rows=_records(st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY)),
     )
     # Session-only source assembly for later Crossbeam Analysis milestones.
     # Project JSON result persistence is intentionally not introduced here.
@@ -98,6 +101,18 @@ def _analysis1_cards(foundation: Mapping[str, Any]) -> list[dict[str, object]]:
                 "status": "ready" if summary.get("Source ready") and not summary.get("Mapping errors") else "warning",
             }
         )
+    coverage = foundation.get("station_coverage") if isinstance(foundation.get("station_coverage"), Mapping) else {}
+    cards.append(
+        {
+            "title": "Station coverage",
+            "value": str(coverage.get("status") or "REVIEW REQUIRED"),
+            "detail": (
+                f"{coverage.get('covered_requirements', 0)} / "
+                f"{coverage.get('required_requirements', 0)} structural requirements"
+            ),
+            "status": "ready" if coverage.get("ready") else "warning",
+        }
+    )
     return cards
 
 
@@ -113,6 +128,8 @@ def _display_rows(foundation: Mapping[str, Any], dataset: str) -> pd.DataFrame:
         "Station s (m)",
         "Check Point",
         "Station face",
+        "Column ID",
+        "Column side",
         "Boundary type",
         "Segment / Zone",
         "Section ID",
@@ -166,6 +183,22 @@ def render_crossbeam_analysis_foundation() -> None:
             "Cast-in-Place boundaries are Section / analysis zones within one monolithic member; the 0.70 MPa physical segment-joint gate does not apply."
         )
 
+    render_section_bar(
+        "Full-Length Source Coverage",
+        "Shared Crossbeam Analysis chart foundation showing imported station contexts, Segment/Zone bands, physical or analysis boundaries, and actual Column footprints/centerlines.",
+        mark="A1A",
+    )
+    coverage_figure = make_crossbeam_station_coverage_figure(foundation)
+    st.plotly_chart(
+        coverage_figure,
+        use_container_width=True,
+        config={"displaylogo": False},
+    )
+    st.caption(
+        "Markers are validated imported station-check contexts. Column bands show the actual footprint along s; dashed lines show Column centerlines. "
+        "No production stress/capacity envelope is interpolated between unverified stations."
+    )
+
     tabs = st.tabs(list(DATASET_ORDER))
     for tab, dataset in zip(tabs, DATASET_ORDER):
         with tab:
@@ -203,5 +236,23 @@ def render_crossbeam_analysis_foundation() -> None:
             st.error(error)
         for warning in warnings:
             st.warning(warning)
+        coverage = foundation.get("station_coverage") if isinstance(foundation.get("station_coverage"), Mapping) else {}
+        missing_rows = [
+            dict(row)
+            for row in coverage.get("missing_rows", [])
+            if isinstance(row, Mapping)
+        ]
+        if missing_rows:
+            st.warning(
+                "STATION COVERAGE REVIEW REQUIRED — required member ends, one-sided Column contexts, or Segment/Zone boundaries are missing from one or more datasets."
+            )
+            st.dataframe(
+                pd.DataFrame(missing_rows),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Station s (m)": st.column_config.NumberColumn(format="%.6f"),
+                },
+            )
         for limitation in foundation.get("limitations", []):
             st.caption(f"• {limitation}")

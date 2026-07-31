@@ -20663,7 +20663,7 @@ def _commercial_analysis_dashboard_cards(settings: AnalysisModeSettings, active_
     """Return visual-only dashboard cards for the Analysis workspace."""
 
     workflow_label = analysis_mode_label(settings)
-    code = workflow_project_design_code_from_session(st.session_state)
+    code = workflow_project_code_label_from_session(st.session_state)
     if is_pmm_primary_workflow(settings):
         route = "PMM / ULS"
     elif is_beam_girder_future_workflow(settings):
@@ -20674,13 +20674,35 @@ def _commercial_analysis_dashboard_cards(settings: AnalysisModeSettings, active_
         route = "Crossbeam station checks"
     else:
         route = "Unresolved workflow"
-    readiness = st.session_state.get("analysis_status", "Ready to review")
+    runtime_value, runtime_detail, runtime_status = _analysis_runtime_state_for_workflow(
+        settings,
+        st.session_state,
+    )
     return [
         {"title": "Active review", "value": active_subpage, "detail": "Only the selected analysis workspace is rendered", "status": "info"},
         {"title": "Workflow", "value": workflow_label, "detail": route, "status": "ready"},
         {"title": "Design code", "value": str(code), "detail": "Project code basis", "status": "neutral"},
-        {"title": "Runtime state", "value": str(readiness), "detail": "Displayed status only; solver routing is unchanged", "status": "info"},
+        {"title": "Runtime mode", "value": runtime_value, "detail": runtime_detail, "status": runtime_status},
     ]
+
+
+def _analysis_runtime_state_for_workflow(
+    settings: AnalysisModeSettings,
+    session_state: Mapping[str, Any],
+) -> tuple[str, str, str]:
+    """Return status wording that cannot over-certify Crossbeam foundation UI."""
+
+    if is_portal_frame_crossbeam_workflow(settings):
+        return (
+            "INPUT REVIEW ONLY",
+            "Station foundation is reviewable; no SLS/ULS solver has run",
+            "warning",
+        )
+    return (
+        str(session_state.get("analysis_status", "Ready to review")),
+        "Displayed status only; solver routing is unchanged",
+        "info",
+    )
 
 
 def _analysis_subtabs_for_workflow(settings: AnalysisModeSettings) -> list[str]:
@@ -20727,4 +20749,5 @@ def render_analysis_page() -> None:
     # Crossbeam foundation must not claim that ULS/SLS analysis is CURRENT.
     if not is_portal_frame_crossbeam_workflow(settings):
         mark_analysis_current(st.session_state, workspace=f"Analysis / {active_subpage}")
-    _render_runtime_diagnostics_expander()
+    if not is_portal_frame_crossbeam_workflow(settings):
+        _render_runtime_diagnostics_expander()

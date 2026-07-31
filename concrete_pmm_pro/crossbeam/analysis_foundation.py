@@ -22,6 +22,10 @@ import json
 import math
 from typing import Any
 
+from concrete_pmm_pro.crossbeam.construction_stage import (
+    canonical_column_stage_rows,
+    column_support_footprint_rows,
+)
 from concrete_pmm_pro.crossbeam.rebar import (
     canonical_rebar_templates,
     canonical_rebar_zones,
@@ -43,7 +47,7 @@ from concrete_pmm_pro.crossbeam.transverse import (
 )
 
 
-CROSSBEAM_ANALYSIS_FOUNDATION_SCHEMA = "crossbeam-three-stage-station-foundation-v1"
+CROSSBEAM_ANALYSIS_FOUNDATION_SCHEMA = "crossbeam-three-stage-station-foundation-v2"
 CROSSBEAM_ANALYSIS_FOUNDATION_KEY = "crossbeam_analysis1_station_foundation"
 
 DATASET_ULS_FINAL = "ULS Final Stage"
@@ -58,6 +62,9 @@ FACE_INTERIOR = "INTERIOR"
 FACE_LEFT = "s-"
 FACE_RIGHT = "s+"
 FACE_END = "END"
+
+STATION_COVERAGE_READY = "READY"
+STATION_COVERAGE_REVIEW = "REVIEW REQUIRED"
 
 
 def _text(value: Any) -> str:
@@ -198,6 +205,183 @@ def _side_hint(check_point: Any) -> str:
     if any(token in compact for token in right_tokens):
         return "RIGHT"
     return ""
+
+
+def _column_side_label(check_point: Any, station_face: Any) -> str:
+    """Return a normalized one-sided label for coverage auditing.
+
+    Column-side intent is primarily carried by the optional Check Point label
+    (for example ``C1-Left`` / ``C1-Right``).  At a Segment/Zone boundary the
+    mapped station face already carries the same one-sided meaning and is used
+    as a fallback.  An unspecified interior row is intentionally not promoted
+    to both sides of a beam-column joint.
+    """
+
+    side = _side_hint(check_point)
+    if side:
+        return side
+    face = _text(station_face)
+    if face == FACE_LEFT:
+        return "LEFT"
+    if face == FACE_RIGHT:
+        return "RIGHT"
+    return ""
+
+
+def _internal_boundary_rows(
+    segments: Sequence[Mapping[str, Any]],
+    *,
+    construction_method: str,
+) -> list[dict[str, Any]]:
+    boundary_type = (
+        "Physical segment joint"
+        if construction_method == CONSTRUCTION_PRECAST_SEGMENTAL
+        else "Section / analysis zone boundary"
+    )
+    rows: list[dict[str, Any]] = []
+    for left, right in zip(segments, segments[1:]):
+        rows.append(
+            {
+                "Boundary ID": f"{_text(left.get('Segment'))} / {_text(right.get('Segment'))}",
+                "Station s (m)": _float(left.get("x_end_m")),
+                "Boundary type": boundary_type,
+                "Left Segment / Zone": _text(left.get("Segment")),
+                "Right Segment / Zone": _text(right.get("Segment")),
+                "Left Section ID": _text(left.get("Section ID")),
+                "Right Section ID": _text(right.get("Section ID")),
+                "Required sides": ("LEFT", "RIGHT"),
+            }
+        )
+    return rows
+
+
+def _coverage_event_rows(
+    *,
+    member_length_m: float,
+    boundaries: Sequence[Mapping[str, Any]],
+    columns: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return structural stations that should be represented in each dataset.
+
+    This is a coverage-review source, not a solver acceptance rule.  It makes
+    missing member ends, physical/zone boundaries, and both one-sided column
+    contexts visible before a future SLS/ULS module can claim a complete
+    longitudinal review.
+    """
+
+    events: list[dict[str, Any]] = [
+        {
+            "Event ID": "MEMBER-LEFT-END",
+            "Event type": "Member end",
+            "Label": "Left end",
+            "Station s (m)": 0.0,
+            "Required sides": ("ANY",),
+        },
+        {
+            "Event ID": "MEMBER-RIGHT-END",
+            "Event type": "Member end",
+            "Label": "Right end",
+            "Station s (m)": float(member_length_m),
+            "Required sides": ("ANY",),
+        },
+    ]
+    for boundary in boundaries:
+        events.append(
+            {
+                "Event ID": f"BOUNDARY:{_text(boundary.get('Boundary ID'))}",
+                "Event type": _text(boundary.get("Boundary type")),
+                "Label": _text(boundary.get("Boundary ID")),
+                "Station s (m)": _float(boundary.get("Station s (m)")),
+                "Required sides": tuple(boundary.get("Required sides") or ("LEFT", "RIGHT")),
+            }
+        )
+    for column in columns:
+        events.append(
+            {
+                "Event ID": f"COLUMN:{_text(column.get('Column ID'))}",
+                "Event type": "Column centerline",
+                "Label": _text(column.get("Column ID")),
+                "Station s (m)": _float(column.get("Station s (m)")),
+                "Required sides": ("LEFT", "RIGHT"),
+            }
+        )
+    return sorted(
+        events,
+        key=lambda row: (
+            _float(row.get("Station s (m)")),
+            _text(row.get("Event type")),
+            _text(row.get("Label")),
+        ),
+    )
+
+
+def _station_coverage_summary(
+    *,
+    mapped_rows: Sequence[Mapping[str, Any]],
+    datasets: Sequence[str],
+    events: Sequence[Mapping[str, Any]],
+    member_length_m: float,
+) -> dict[str, Any]:
+    tolerance = max(1.0e-6, abs(float(member_length_m)) * 1.0e-7)
+    audit_rows: list[dict[str, Any]] = []
+    covered_count = 0
+    required_count = 0
+
+    for dataset in datasets:
+        dataset_rows = [row for row in mapped_rows if _text(row.get("Dataset")) == dataset]
+        for event in events:
+            station = _float(event.get("Station s (m)"))
+            event_rows = [
+                row
+                for row in dataset_rows
+                if abs(_float(row.get("Station s (m)")) - station) <= tolerance
+            ]
+            available_sides = {
+                side
+                for row in event_rows
+                for side in (
+                    _column_side_label(row.get("Check Point"), row.get("Station face")),
+                )
+                if side
+            }
+            required_sides = tuple(event.get("Required sides") or ("ANY",))
+            if required_sides == ("ANY",):
+                covered = bool(event_rows)
+                missing_sides: list[str] = [] if covered else ["ANY"]
+            else:
+                missing_sides = [side for side in required_sides if side not in available_sides]
+                covered = not missing_sides
+
+            required_count += len(required_sides)
+            covered_count += len(required_sides) - len(missing_sides)
+            audit_rows.append(
+                {
+                    "Dataset": dataset,
+                    "Event ID": _text(event.get("Event ID")),
+                    "Event type": _text(event.get("Event type")),
+                    "Label": _text(event.get("Label")),
+                    "Station s (m)": station,
+                    "Required sides": " / ".join(required_sides),
+                    "Available sides": " / ".join(sorted(available_sides)) or ("ANY" if event_rows else "—"),
+                    "Source rows": len({_text(row.get("Source row")) for row in event_rows}),
+                    "Status": STATION_COVERAGE_READY if covered else STATION_COVERAGE_REVIEW,
+                    "Missing": " / ".join(missing_sides) or "—",
+                }
+            )
+
+    missing_rows = [row for row in audit_rows if row["Status"] != STATION_COVERAGE_READY]
+    return {
+        "status": STATION_COVERAGE_READY if not missing_rows and audit_rows else STATION_COVERAGE_REVIEW,
+        "ready": bool(audit_rows) and not missing_rows,
+        "covered_requirements": covered_count,
+        "required_requirements": required_count,
+        "event_count_per_dataset": len(events),
+        "rows": audit_rows,
+        "missing_rows": missing_rows,
+        "note": (
+            "Coverage is a source-review gate only. Connected chart lines never certify unverified stations between imported rows."
+        ),
+    }
 
 
 def _segment_candidates(
@@ -364,6 +548,7 @@ def build_crossbeam_analysis_foundation(
     rebar_zone_rows: Any,
     rebar_template_rows: Any,
     transverse_template_rows: Any,
+    column_rows: Any = None,
 ) -> dict[str, Any]:
     """Assemble source-traceable station contexts without running a solver."""
 
@@ -405,6 +590,17 @@ def build_crossbeam_analysis_foundation(
     warnings.extend(zone_warnings)
     longitudinal_by_id = template_map(longitudinal_templates)
     transverse_by_id = transverse_template_map(transverse_templates)
+
+    columns = canonical_column_stage_rows(column_rows, length_m=member_length_m)
+    column_footprints = column_support_footprint_rows(
+        columns,
+        segments,
+        length_m=member_length_m,
+    )
+    boundaries = _internal_boundary_rows(
+        segments,
+        construction_method=method,
+    )
 
     mapped_rows: list[dict[str, Any]] = []
     dataset_summaries: list[dict[str, Any]] = []
@@ -471,6 +667,12 @@ def build_crossbeam_analysis_foundation(
                     context_errors.append("Transverse / Shear Template source is missing.")
 
                 physical_joint = bool(context.get("Physical segment joint"))
+                matching_columns = [
+                    _text(column.get("Column ID"))
+                    for column in columns
+                    if abs(_float(column.get("Station s (m)")) - station)
+                    <= max(1.0e-7, abs(float(member_length_m)) * 1.0e-8)
+                ]
                 context_status = "READY" if not context_errors else "BLOCKED"
                 mapped = {
                     "Dataset": dataset,
@@ -481,6 +683,8 @@ def build_crossbeam_analysis_foundation(
                     "Station s (m)": station,
                     "Check Point": check_point,
                     "Station face": _text(context.get("Station face")),
+                    "Column ID": " / ".join(matching_columns) or "—",
+                    "Column side": _column_side_label(check_point, context.get("Station face")) or "—",
                     "Boundary type": _text(context.get("Boundary type")),
                     "Physical segment joint": physical_joint,
                     "Segment / Zone": _text(context.get("Segment")),
@@ -530,6 +734,18 @@ def build_crossbeam_analysis_foundation(
     errors = list(dict.fromkeys(errors))
     warnings = list(dict.fromkeys(warnings))
 
+    coverage_events = _coverage_event_rows(
+        member_length_m=member_length_m,
+        boundaries=boundaries,
+        columns=columns,
+    )
+    station_coverage = _station_coverage_summary(
+        mapped_rows=mapped_rows,
+        datasets=DATASET_ORDER,
+        events=coverage_events,
+        member_length_m=member_length_m,
+    )
+
     payload_for_fingerprint = {
         "schema": CROSSBEAM_ANALYSIS_FOUNDATION_SCHEMA,
         "loads_handoff_fingerprint": _text(source_handoff.get("fingerprint")),
@@ -540,6 +756,10 @@ def build_crossbeam_analysis_foundation(
         "zones": zones,
         "longitudinal_templates": longitudinal_templates,
         "transverse_templates": transverse_templates,
+        "columns": columns,
+        "column_footprints": column_footprints,
+        "boundaries": boundaries,
+        "station_coverage": station_coverage,
         "mapped_rows": mapped_rows,
     }
     fingerprint = _foundation_fingerprint(payload_for_fingerprint)
@@ -558,6 +778,11 @@ def build_crossbeam_analysis_foundation(
         "prestress_loss_basis": "AASHTO LRFD 2020 Section 5.9.3",
         "construction_method": method,
         "member_length_m": float(member_length_m),
+        "segments": segments,
+        "columns": columns,
+        "column_footprints": column_footprints,
+        "internal_boundaries": boundaries,
+        "station_coverage": station_coverage,
         "loads_handoff_fingerprint": _text(source_handoff.get("fingerprint")),
         "fingerprint": fingerprint,
         "dataset_summaries": dataset_summaries,
@@ -567,6 +792,7 @@ def build_crossbeam_analysis_foundation(
         "limitations": [
             "Input assembly only; no ACI 318 strength or service-stress equation is evaluated.",
             "P, V2, T, and M3 remain row-coupled to one imported FEA output state.",
+            "Full-length source graphics show imported station coverage only; they do not interpolate a production envelope between unverified stations.",
             "Precast physical-joint SLS compression >= 0.70 MPa is identified but not calculated in ANALYSIS1.",
             "D-regions, anchorage zones, beam-column joints, and seismic detailing remain separate guarded scopes.",
         ],
