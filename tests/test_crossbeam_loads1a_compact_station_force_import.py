@@ -43,6 +43,9 @@ def _ready_contract(**overrides: object) -> dict[str, object]:
             "confirmed_transfer_immediate_loss_basis": True,
             "confirmed_transfer_stage_response_basis": True,
             "confirmed_row_coupled_forces": True,
+            "confirmed_uls_dataset": True,
+            "confirmed_sls_transfer_dataset": True,
+            "confirmed_sls_service_dataset": True,
         }
     )
     contract.update(overrides)
@@ -216,7 +219,7 @@ def test_loads_page_keeps_old_member_ux_and_does_not_require_raw_i_j_element_out
     assert "Raw element I/J-end output is not required" in source
     assert "Check Point" in source
     assert "Canonical import preview — kN / kN·m" in source
-    assert "P, V2, T, and M3 in each row come from the same FEA output state" in source
+    assert "P, V2, T, and M3 come from the same output state" in source
     block = source[source.index("def _render_crossbeam_uls_sls_load_tables"):source.index("def _commercial_load_dashboard_cards")]
     assert '"FEA Element"' not in block
     assert '"End / Side"' not in block

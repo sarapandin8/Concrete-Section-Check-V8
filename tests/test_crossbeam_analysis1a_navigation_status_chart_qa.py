@@ -52,6 +52,9 @@ def _ready_contract() -> dict[str, object]:
             "confirmed_transfer_immediate_loss_basis": True,
             "confirmed_transfer_stage_response_basis": True,
             "confirmed_row_coupled_forces": True,
+            "confirmed_uls_dataset": True,
+            "confirmed_sls_transfer_dataset": True,
+            "confirmed_sls_service_dataset": True,
         }
     )
     return canonical_station_force_contract(contract)

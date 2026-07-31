@@ -2906,6 +2906,8 @@ def _crossbeam_station_force_contract() -> dict[str, Any]:
 
 
 def _render_crossbeam_station_force_contract() -> dict[str, Any]:
+    """Render optional import mapping; dataset declarations live in each tab."""
+
     contract = _crossbeam_station_force_contract()
     link = _crossbeam_effective_prestress_link()
     seed_payload = {
@@ -2919,49 +2921,48 @@ def _render_crossbeam_station_force_contract() -> dict[str, Any]:
             "v2_sign",
             "t_sign",
             "m3_sign",
-            "adopted_total_loss_percent",
-            "prestress_source_id",
-            "prestress_contract_id",
-            "confirmed_final_prestress_applied_once",
-            "confirmed_external_fea_secondary",
-            "confirmed_uls_final_stage_response_basis",
-            "confirmed_sls_service_response_basis",
-            "confirmed_transfer_immediate_loss_basis",
-            "confirmed_transfer_stage_response_basis",
-            "confirmed_row_coupled_forces",
+            "confirmed_uls_dataset",
+            "confirmed_sls_transfer_dataset",
+            "confirmed_sls_service_dataset",
         )
     }
     seed_token = repr(sorted(seed_payload.items()))
-    if st.session_state.get("crossbeam_loads1b_contract_seed") != seed_token:
+    if st.session_state.get("crossbeam_loads1c_contract_seed") != seed_token:
         for key, value in seed_payload.items():
-            st.session_state[f"crossbeam_loads1b_{key}"] = value
-        st.session_state["crossbeam_loads1b_contract_seed"] = seed_token
+            st.session_state[f"crossbeam_loads1c_{key}"] = value
+        st.session_state["crossbeam_loads1c_contract_seed"] = seed_token
 
-    loss = float(contract.get("adopted_total_loss_percent") or 0.0)
-    ratio = float(contract.get("effective_prestress_ratio_percent") or 100.0 - loss)
-    transfer_ready = bool(
-        contract.get("confirmed_transfer_immediate_loss_basis")
-        and contract.get("confirmed_transfer_stage_response_basis")
-    )
-    final_ready = bool(
-        contract.get("confirmed_final_prestress_applied_once")
-        and contract.get("confirmed_external_fea_secondary")
-        and contract.get("confirmed_uls_final_stage_response_basis")
-        and contract.get("confirmed_sls_service_response_basis")
-    )
+    # Widget state is available at the start of a Streamlit rerun. Mirror it
+    # before rendering the summary cards so a newly checked declaration does
+    # not appear stale until a second interaction.
+    for field in (
+        "confirmed_uls_dataset",
+        "confirmed_sls_transfer_dataset",
+        "confirmed_sls_service_dataset",
+    ):
+        widget_key = f"crossbeam_loads1c_{field}"
+        if widget_key in st.session_state:
+            contract[field] = bool(st.session_state.get(widget_key))
+
     _render_load_compact_cards(
         [
             {
-                "title": "SLS At Transfer basis",
-                "value": "IMMEDIATE LOSSES ONLY",
-                "detail": "Friction + Anchorage Set + ES · no long-term TD loss",
-                "status": "ready" if transfer_ready else "warning",
+                "title": "ULS Final Stage",
+                "value": "CONFIRMED" if contract.get("confirmed_uls_dataset") else "CONFIRM DATASET",
+                "detail": "one declaration for the imported ULS dataset",
+                "status": "ready" if contract.get("confirmed_uls_dataset") else "warning",
             },
             {
-                "title": "ULS / SLS At Service basis",
-                "value": f"Uniform final loss {loss:.3f}%" if loss > 0.0 else "SOURCE REQUIRED",
-                "detail": f"effective ratio {ratio:.3f}% · Source {contract.get('prestress_source_id') or '—'}",
-                "status": "ready" if bool(link.get("ready")) and final_ready else "warning",
+                "title": "SLS At Transfer",
+                "value": "CONFIRMED" if contract.get("confirmed_sls_transfer_dataset") else "CONFIRM DATASET",
+                "detail": "transfer-stage service result basis",
+                "status": "ready" if contract.get("confirmed_sls_transfer_dataset") else "warning",
+            },
+            {
+                "title": "SLS At Service",
+                "value": "CONFIRMED" if contract.get("confirmed_sls_service_dataset") else "CONFIRM DATASET",
+                "detail": "final-service result basis",
+                "status": "ready" if contract.get("confirmed_sls_service_dataset") else "warning",
             },
             {
                 "title": "Applied-table units",
@@ -2970,116 +2971,113 @@ def _render_crossbeam_station_force_contract() -> dict[str, Any]:
                 "status": "info",
             },
         ],
-        columns=3,
+        columns=4,
     )
 
-    with st.expander(
-        "FEA source, units, axes, and Transfer / Service declarations",
-        expanded=False,
-    ):
+    with st.expander("Optional source metadata, import units, and sign mapping", expanded=False):
         st.caption(
-            "Source units and signs apply only when a new file is imported. Applied rows are stored canonically in kN and kN·m. "
-            "Transfer and final-service prestress states are declared separately."
+            "FEA program and model/revision are optional traceability fields. Source units and signs apply only when a new file is imported; applied rows remain stored canonically in kN and kN·m."
         )
         row1 = st.columns([1.0, 1.15, 0.8, 0.8])
         with row1[0]:
             contract["fea_program"] = st.text_input(
-                "FEA program", key="crossbeam_loads1b_fea_program", placeholder="CSiBridge / SAP2000 / MIDAS Civil"
+                "FEA program (optional)",
+                key="crossbeam_loads1c_fea_program",
+                placeholder="CSiBridge / SAP2000 / MIDAS Civil",
             )
         with row1[1]:
             contract["model_revision"] = st.text_input(
-                "FEA model / revision", key="crossbeam_loads1b_model_revision", placeholder="e.g. CB-FINAL-R03"
+                "FEA model / revision (optional)",
+                key="crossbeam_loads1c_model_revision",
+                placeholder="e.g. CB-FINAL-R03",
             )
         with row1[2]:
             contract["source_force_unit"] = st.selectbox(
-                "Source force unit", options=list(CROSSBEAM_SOURCE_FORCE_UNITS), key="crossbeam_loads1b_source_force_unit"
+                "Source force unit",
+                options=list(CROSSBEAM_SOURCE_FORCE_UNITS),
+                key="crossbeam_loads1c_source_force_unit",
             )
         with row1[3]:
             contract["source_moment_unit"] = st.selectbox(
-                "Source moment unit", options=list(CROSSBEAM_SOURCE_MOMENT_UNITS), key="crossbeam_loads1b_source_moment_unit"
+                "Source moment unit",
+                options=list(CROSSBEAM_SOURCE_MOMENT_UNITS),
+                key="crossbeam_loads1c_source_moment_unit",
             )
 
-        source_cols = st.columns([0.9, 0.9, 1.0, 1.15])
-        with source_cols[0]:
-            contract["adopted_total_loss_percent"] = st.number_input(
-                "Final uniform loss (%)",
-                min_value=0.0,
-                max_value=60.0,
-                step=0.01,
-                format="%.4f",
-                key="crossbeam_loads1b_adopted_total_loss_percent",
-                disabled=bool(link.get("ready")),
-                help="Used by ULS and SLS At Service only. At Transfer uses the immediate-loss prestress state, not this final loss.",
+        axes = st.columns(4)
+        with axes[0]:
+            contract["p_sign"] = st.selectbox(
+                "Source P sign", options=list(P_SIGNS), key="crossbeam_loads1c_p_sign"
             )
-        with source_cols[1]:
-            st.metric("Final effective ratio", f"{100.0 - float(contract.get('adopted_total_loss_percent') or 0.0):.4f}%")
-        with source_cols[2]:
-            contract["prestress_source_id"] = st.text_input(
-                "Prestress Source ID", key="crossbeam_loads1b_prestress_source_id", disabled=bool(link.get("ready"))
+        with axes[1]:
+            contract["v2_sign"] = st.selectbox(
+                "Source V2 sign", options=list(V2_SIGNS), key="crossbeam_loads1c_v2_sign"
             )
-        with source_cols[3]:
-            contract["prestress_contract_id"] = st.text_input(
-                "Prestress Contract ID", key="crossbeam_loads1b_prestress_contract_id", disabled=bool(link.get("ready"))
+        with axes[2]:
+            contract["t_sign"] = st.selectbox(
+                "Source T sign", options=list(T_SIGNS), key="crossbeam_loads1c_t_sign"
             )
-
-        st.markdown("**Stage declarations**")
-        final_cols = st.columns(2)
-        with final_cols[0]:
-            st.caption("Final stage — ULS and SLS At Service")
-            contract["confirmed_final_prestress_applied_once"] = st.checkbox(
-                "Final effective prestress / total loss applied exactly once in FEA",
-                key="crossbeam_loads1b_confirmed_final_prestress_applied_once",
+        with axes[3]:
+            contract["m3_sign"] = st.selectbox(
+                "Source M3 sign", options=list(M3_SIGNS), key="crossbeam_loads1c_m3_sign"
             )
-            contract["confirmed_external_fea_secondary"] = st.checkbox(
-                "External portal-frame FEA includes final-stage secondary prestress response",
-                key="crossbeam_loads1b_confirmed_external_fea_secondary",
-            )
-            contract["confirmed_uls_final_stage_response_basis"] = st.checkbox(
-                "ULS rows are factored final-stage responses",
-                key="crossbeam_loads1b_confirmed_uls_final_stage_response_basis",
-            )
-            contract["confirmed_sls_service_response_basis"] = st.checkbox(
-                "SLS At Service rows are verified final-service responses",
-                key="crossbeam_loads1b_confirmed_sls_service_response_basis",
-            )
-        with final_cols[1]:
-            st.caption("Transfer stage — SLS At Transfer")
-            contract["confirmed_transfer_immediate_loss_basis"] = st.checkbox(
-                "Transfer prestress uses immediate losses only: Friction + Anchorage Set + ES, applied once",
-                key="crossbeam_loads1b_confirmed_transfer_immediate_loss_basis",
-            )
-            contract["confirmed_transfer_stage_response_basis"] = st.checkbox(
-                "SLS At Transfer rows use the verified transfer-age support/contact and loading state",
-                key="crossbeam_loads1b_confirmed_transfer_stage_response_basis",
-            )
-            contract["confirmed_row_coupled_forces"] = st.checkbox(
-                "P, V2, T, and M3 in each row come from the same FEA output state",
-                key="crossbeam_loads1b_confirmed_row_coupled_forces",
-            )
-
-        with st.expander("Source-axis and sign mapping", expanded=False):
-            axes = st.columns(4)
-            with axes[0]:
-                contract["p_sign"] = st.selectbox("Source P sign", options=list(P_SIGNS), key="crossbeam_loads1b_p_sign")
-            with axes[1]:
-                contract["v2_sign"] = st.selectbox("Source V2 sign", options=list(V2_SIGNS), key="crossbeam_loads1b_v2_sign")
-            with axes[2]:
-                contract["t_sign"] = st.selectbox("Source T sign", options=list(T_SIGNS), key="crossbeam_loads1b_t_sign")
-            with axes[3]:
-                contract["m3_sign"] = st.selectbox("Source M3 sign", options=list(M3_SIGNS), key="crossbeam_loads1b_m3_sign")
-            st.caption(
-                "Canonical Crossbeam storage: P compression positive, V2 upward positive, T right-hand positive about increasing station s, and M3 sagging positive."
-            )
+        st.caption(
+            "Canonical storage: P compression positive, V2 upward positive, T right-hand positive about increasing station s, and M3 sagging positive."
+        )
 
     contract = canonical_station_force_contract(contract, effective_prestress_link=link)
     st.session_state[CB_STATION_FORCE_CONTRACT_KEY] = contract
     _sync_workflow_load_tables_metadata()
-    errors, warnings = validate_station_force_contract(contract)
-    if errors:
-        st.warning(f"Complete FEA stage contract requires {len(errors)} confirmation(s) before Analysis handoff is ready.")
-    for warning in warnings:
-        st.caption(f"• {warning}")
     return contract
+
+
+def _render_crossbeam_dataset_confirmation(
+    contract: Mapping[str, Any],
+    *,
+    dataset: str,
+) -> dict[str, Any]:
+    """Render one concise engineer confirmation for the active dataset."""
+
+    item = canonical_station_force_contract(
+        contract,
+        effective_prestress_link=_crossbeam_effective_prestress_link(),
+    )
+    specs = {
+        "ULS": {
+            "field": "confirmed_uls_dataset",
+            "label": (
+                "I confirm that each imported row is a factored final-stage FEA result and "
+                "P, V2, T, and M3 come from the same output state."
+            ),
+        },
+        "SLS_TRANSFER": {
+            "field": "confirmed_sls_transfer_dataset",
+            "label": (
+                "I confirm that each imported row is a transfer-stage service result using "
+                "the adopted immediate-prestress condition."
+            ),
+        },
+        "SLS_SERVICE": {
+            "field": "confirmed_sls_service_dataset",
+            "label": (
+                "I confirm that each imported row is a final-service FEA result with effective "
+                "prestress and losses represented once."
+            ),
+        },
+    }
+    spec = specs[dataset]
+    field = spec["field"]
+    item[field] = st.checkbox(
+        spec["label"],
+        key=f"crossbeam_loads1c_{field}",
+    )
+    item = canonical_station_force_contract(
+        item,
+        effective_prestress_link=_crossbeam_effective_prestress_link(),
+    )
+    st.session_state[CB_STATION_FORCE_CONTRACT_KEY] = item
+    _sync_workflow_load_tables_metadata()
+    return item
 
 
 def _render_crossbeam_station_force_import_tools(
@@ -3377,6 +3375,7 @@ def _render_crossbeam_uls_sls_load_tables(force_unit: str, moment_unit: str) -> 
         st.caption(
             "Import factored final-stage combinations. Do not combine independent maxima; every P/V2/T/M3 row must come from one FEA output state."
         )
+        contract = _render_crossbeam_dataset_confirmation(contract, dataset="ULS")
         uls_template = pd.DataFrame(
             [
                 {
@@ -3460,8 +3459,7 @@ def _render_crossbeam_uls_sls_load_tables(force_unit: str, moment_unit: str) -> 
                 "title": "SLS At Transfer",
                 "case": "SLS-TR-01",
                 "caption": (
-                    "Import transfer-stage FEA responses using immediate-loss prestress only: Friction, Anchorage Set, and Elastic Shortening. "
-                    "Do not apply the final Time-Dependent loss at this stage."
+                    "Import transfer-stage service responses using the adopted immediate-prestress condition."
                 ),
                 "note": "Selected transfer-stage response using the verified transfer-age support/contact and loading state.",
             },
@@ -3472,7 +3470,7 @@ def _render_crossbeam_uls_sls_load_tables(force_unit: str, moment_unit: str) -> 
                 "title": "SLS At Service",
                 "case": "SLS-SERV-01",
                 "caption": (
-                    "Import final-service FEA responses after the adopted uniform final prestress loss has been applied once and the portal-frame model has calculated secondary prestress."
+                    "Import final-service FEA responses with effective prestress and losses represented once."
                 ),
                 "note": "Selected final-service response including primary and secondary prestress once.",
             },
@@ -3490,14 +3488,14 @@ def _render_crossbeam_uls_sls_load_tables(force_unit: str, moment_unit: str) -> 
                         {
                             "title": "Prestress state",
                             "value": (
-                                "IMMEDIATE LOSSES"
+                                "IMMEDIATE PRESTRESS"
                                 if spec["stage"] == "Transfer stage"
-                                else f"FINAL LOSS {float(contract.get('adopted_total_loss_percent') or 0.0):.3f}%"
+                                else "FINAL SERVICE BASIS"
                             ),
                             "detail": (
-                                "Friction + Anchorage Set + ES"
+                                "adopted transfer-stage condition"
                                 if spec["stage"] == "Transfer stage"
-                                else "primary + secondary response from FEA"
+                                else "effective prestress represented once in FEA"
                             ),
                             "status": "info",
                         },
@@ -3505,6 +3503,14 @@ def _render_crossbeam_uls_sls_load_tables(force_unit: str, moment_unit: str) -> 
                     columns=2,
                 )
                 st.caption(spec["caption"])
+                contract = _render_crossbeam_dataset_confirmation(
+                    contract,
+                    dataset=(
+                        "SLS_TRANSFER"
+                        if spec["stage"] == "Transfer stage"
+                        else "SLS_SERVICE"
+                    ),
+                )
                 stage_template = pd.DataFrame(
                     [
                         {

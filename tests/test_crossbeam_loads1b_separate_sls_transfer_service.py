@@ -42,6 +42,9 @@ def _ready_contract() -> dict[str, object]:
             "confirmed_transfer_immediate_loss_basis": True,
             "confirmed_transfer_stage_response_basis": True,
             "confirmed_row_coupled_forces": True,
+            "confirmed_uls_dataset": True,
+            "confirmed_sls_transfer_dataset": True,
+            "confirmed_sls_service_dataset": True,
         }
     )
     return canonical_station_force_contract(contract)
@@ -66,7 +69,7 @@ def _row(case: str, stage: str | None = None) -> dict[str, object]:
 
 def test_stage_context_validation_separates_transfer_from_final_service() -> None:
     contract = _ready_contract()
-    contract["confirmed_sls_service_response_basis"] = False
+    contract["confirmed_sls_service_dataset"] = False
 
     transfer_errors, _ = validate_station_force_contract(
         contract, response_type="SLS", sls_stage="Transfer stage"
@@ -131,8 +134,8 @@ def test_loads_page_uses_fixed_at_transfer_and_at_service_subtabs() -> None:
         )
     ]
     assert 'st.tabs(["At Transfer", "At Service"])' in block
-    assert "immediate-loss prestress only" in block
-    assert "Do not apply the final Time-Dependent loss at this stage" in block
+    assert "adopted immediate-prestress condition" in block
+    assert "effective prestress and losses represented once" in block
     assert "CROSSBEAM_SLS_STAGE_EDITOR_COLUMNS" in block
     assert 'SelectboxColumn(\n                    "Stage"' not in block
     assert '"sls_transfer_validation"' in block
@@ -173,9 +176,12 @@ def test_project_json_round_trip_preserves_both_sls_stage_rows_and_v2_contract()
     rows = pd.DataFrame(restored["crossbeam_sls_loads_table"])
     assert set(rows["Stage"]) == {"Transfer stage", "Final service stage"}
     restored_contract = restored[CB_STATION_FORCE_CONTRACT_KEY]
-    assert restored_contract["schema"] == "crossbeam-station-force-import-contract-v2"
+    assert restored_contract["schema"] == "crossbeam-station-force-import-contract-v3"
     assert restored_contract["confirmed_transfer_immediate_loss_basis"] is True
     assert restored_contract["confirmed_sls_service_response_basis"] is True
+    assert restored_contract["confirmed_uls_dataset"] is True
+    assert restored_contract["confirmed_sls_transfer_dataset"] is True
+    assert restored_contract["confirmed_sls_service_dataset"] is True
 
 
 def test_loads1a_contract_migrates_final_declarations_but_requires_new_transfer_declarations() -> None:
@@ -194,5 +200,8 @@ def test_loads1a_contract_migrates_final_declarations_but_requires_new_transfer_
     assert migrated["confirmed_uls_final_stage_response_basis"] is True
     assert migrated["confirmed_sls_service_response_basis"] is True
     assert migrated["confirmed_transfer_immediate_loss_basis"] is False
+    assert migrated["confirmed_uls_dataset"] is True
+    assert migrated["confirmed_sls_service_dataset"] is True
+    assert migrated["confirmed_sls_transfer_dataset"] is False
     errors, _ = validate_station_force_contract(migrated)
-    assert any("Transfer-stage prestress" in error for error in errors)
+    assert any("SLS At Transfer dataset" in error for error in errors)

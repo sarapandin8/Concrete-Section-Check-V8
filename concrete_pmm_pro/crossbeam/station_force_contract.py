@@ -1,9 +1,9 @@
 """Compact station-force import contract for Portal Frame Crossbeam Loads.
 
-CROSSBEAM.LOADS1B preserves the established member-workflow pattern: the
-engineer selects row-coupled design forces at each design station in the
-external FEA program, then imports those selected ULS/SLS resultants.  This
-module intentionally does not model raw frame-element I/J-end output.
+CROSSBEAM.LOADS1C keeps the established row-coupled station-force model while
+reducing the external-FEA adoption workflow to one engineer confirmation per
+required dataset. Optional source metadata and legacy declarations remain
+persisted for traceability and safe old-project migration.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import math
 from typing import Any, Iterable, Mapping, Sequence
 
 
-CROSSBEAM_STATION_FORCE_CONTRACT_SCHEMA = "crossbeam-station-force-import-contract-v2"
+CROSSBEAM_STATION_FORCE_CONTRACT_SCHEMA = "crossbeam-station-force-import-contract-v3"
 CROSSBEAM_STATION_FORCE_HANDOFF_SCHEMA = "crossbeam-station-force-analysis-handoff-v2"
 
 CB_STATION_FORCE_CONTRACT_KEY = "crossbeam_loads_station_force_contract"
@@ -182,15 +182,18 @@ def default_station_force_contract(
         "effective_prestress_ratio_percent": 100.0 - loss,
         "prestress_source_id": _text(link.get("source_id")),
         "prestress_contract_id": _text(link.get("contract_id")),
-        # Final-stage basis used by ULS and SLS At Service.
+        # LOADS1C uses one engineer declaration per imported dataset.
+        # Legacy detailed declarations remain stored below for safe project migration
+        # and round-trip preservation, but they no longer block import.
+        "confirmed_uls_dataset": False,
+        "confirmed_sls_transfer_dataset": False,
+        "confirmed_sls_service_dataset": False,
         "confirmed_final_prestress_applied_once": False,
         "confirmed_external_fea_secondary": False,
         "confirmed_uls_final_stage_response_basis": False,
         "confirmed_sls_service_response_basis": False,
-        # Transfer-stage basis intentionally excludes long-term TD loss.
         "confirmed_transfer_immediate_loss_basis": False,
         "confirmed_transfer_stage_response_basis": False,
-        # Common row-coupling declaration.
         "confirmed_row_coupled_forces": False,
     }
 
@@ -252,6 +255,37 @@ def canonical_station_force_contract(
     result["confirmed_row_coupled_forces"] = _bool(
         source.get("confirmed_row_coupled_forces"), False
     )
+
+    # LOADS1C migration: old projects used several detailed declarations.
+    # Derive the new single dataset confirmations only when the new fields are
+    # absent, so explicit current-project choices are never overwritten.
+    legacy_row_coupled = result["confirmed_row_coupled_forces"]
+    legacy_uls_ready = bool(
+        legacy_row_coupled
+        and result["confirmed_final_prestress_applied_once"]
+        and result["confirmed_external_fea_secondary"]
+        and result["confirmed_uls_final_stage_response_basis"]
+    )
+    legacy_transfer_ready = bool(
+        legacy_row_coupled
+        and result["confirmed_transfer_immediate_loss_basis"]
+        and result["confirmed_transfer_stage_response_basis"]
+    )
+    legacy_service_ready = bool(
+        legacy_row_coupled
+        and result["confirmed_final_prestress_applied_once"]
+        and result["confirmed_external_fea_secondary"]
+        and result["confirmed_sls_service_response_basis"]
+    )
+    result["confirmed_uls_dataset"] = _bool(
+        source.get("confirmed_uls_dataset"), legacy_uls_ready
+    )
+    result["confirmed_sls_transfer_dataset"] = _bool(
+        source.get("confirmed_sls_transfer_dataset"), legacy_transfer_ready
+    )
+    result["confirmed_sls_service_dataset"] = _bool(
+        source.get("confirmed_sls_service_dataset"), legacy_service_ready
+    )
     return result
 
 
@@ -272,57 +306,41 @@ def validate_station_force_contract(
     response_type: str | None = None,
     sls_stage: str | None = None,
 ) -> tuple[list[str], list[str]]:
-    """Validate common and stage-specific FEA source declarations.
+    """Validate the simplified LOADS1C dataset declarations.
 
-    ``response_type=None`` checks the complete ULS + Transfer + Service contract.
-    Import previews pass a response/stage context so one stage can be reviewed
-    without requiring unrelated stage confirmations first.
+    FEA program/revision, prestress source IDs, and final-loss metadata are
+    optional traceability fields.  They are preserved in Project JSON but do
+    not block station-force import.  Each required dataset has one explicit
+    engineer confirmation that includes its stage basis and the row-coupled
+    P/V2/T/M3 rule.
     """
 
     item = canonical_station_force_contract(contract)
     errors: list[str] = []
     warnings: list[str] = []
-    if not item["fea_program"]:
-        errors.append("FEA Program is required.")
-    if not item["model_revision"]:
-        errors.append("FEA model / revision is required.")
-    loss = float(item["adopted_total_loss_percent"])
-    if not (0.0 < loss < 60.0):
-        errors.append(
-            "Adopted uniform system-average final prestress loss must be greater than 0% and less than 60%."
-        )
-    if not item["prestress_source_id"]:
-        warnings.append("Prestress Source ID is blank; traceability to Prestress Loss is incomplete.")
-    if not item["prestress_contract_id"]:
-        warnings.append("Prestress Contract ID is blank; record the FEA handoff contract used by the model.")
-    if not item["confirmed_row_coupled_forces"]:
-        errors.append("Confirm that P, V2, T, and M3 in each row come from the same FEA output state.")
 
     response = _text(response_type).upper()
     stage = canonical_sls_stage(sls_stage) if sls_stage else ""
     check_all = not response
-    check_final = check_all or response == "ULS" or (response == "SLS" and stage == "Final service stage")
-    check_transfer = check_all or (response == "SLS" and stage == "Transfer stage")
 
-    if check_final:
-        if not item["confirmed_final_prestress_applied_once"]:
-            errors.append("Confirm that final effective prestress / total loss was applied exactly once in FEA.")
-        if not item["confirmed_external_fea_secondary"]:
-            errors.append("Confirm that the external portal-frame model calculated final-stage secondary prestress response.")
-        if (check_all or response == "ULS") and not item["confirmed_uls_final_stage_response_basis"]:
-            errors.append("Confirm that imported ULS rows are factored final-stage FEA responses.")
-        if (check_all or (response == "SLS" and stage == "Final service stage")) and not item["confirmed_sls_service_response_basis"]:
-            errors.append("Confirm that imported SLS At Service rows are verified final-service FEA responses.")
+    if check_all or response == "ULS":
+        if not item["confirmed_uls_dataset"]:
+            errors.append(
+                "Confirm the ULS dataset: each row is a factored final-stage FEA result and P, V2, T, and M3 come from the same output state."
+            )
 
-    if check_transfer:
-        if not item["confirmed_transfer_immediate_loss_basis"]:
+    if check_all or (response == "SLS" and stage == "Transfer stage"):
+        if not item["confirmed_sls_transfer_dataset"]:
             errors.append(
-                "Confirm that Transfer-stage prestress uses immediate losses only (Friction, Anchorage Set, and Elastic Shortening), applied once in FEA."
+                "Confirm the SLS At Transfer dataset: each row is a transfer-stage service result using the adopted immediate-prestress condition."
             )
-        if not item["confirmed_transfer_stage_response_basis"]:
+
+    if check_all or (response == "SLS" and stage == "Final service stage"):
+        if not item["confirmed_sls_service_dataset"]:
             errors.append(
-                "Confirm that imported SLS At Transfer rows use the verified transfer-age support/contact and loading state."
+                "Confirm the SLS At Service dataset: each row is a final-service FEA result with effective prestress and losses represented once."
             )
+
     return errors, warnings
 
 
