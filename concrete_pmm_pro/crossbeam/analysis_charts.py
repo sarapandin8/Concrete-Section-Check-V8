@@ -267,4 +267,238 @@ def make_crossbeam_station_coverage_figure(foundation: Mapping[str, Any]) -> go.
     return fig
 
 
-__all__ = ["make_crossbeam_station_coverage_figure"]
+# Accepted Concrete Section Pro engineering-stress chart palette.  Values match
+# the Beam/Girder SLS workspace so Crossbeam does not introduce an ad-hoc style.
+_ENGINEERING_STRESS_COLORS = {
+    "top": "#1565c0",
+    "bottom": "#64b5f6",
+    "compression_limit": "#e53935",
+    "tension_limit": "#ec4899",
+    "zero": "#4a4a4a",
+    "governing_tension": "#2e7d32",
+    "governing_compression": "#00897b",
+}
+
+
+def _stress_face_order(face: Any) -> int:
+    text = _text(face)
+    if text == FACE_LEFT:
+        return 0
+    if text == FACE_RIGHT:
+        return 2
+    return 1
+
+
+def _add_result_landmarks(fig: go.Figure, foundation: Mapping[str, Any]) -> None:
+    """Add restrained Column footprints/centerlines and physical-joint lines."""
+
+    length = max(_float(foundation.get("member_length_m")), 0.0)
+    columns = _rows(foundation.get("columns"))
+    footprints = _rows(foundation.get("column_footprints"))
+    boundaries = _rows(foundation.get("internal_boundaries"))
+    footprint_by_id = {
+        _text(row.get("Column")): row
+        for row in footprints
+        if _text(row.get("Column"))
+    }
+    for column in columns:
+        column_id = _text(column.get("Column ID"))
+        station = _float(column.get("Station s (m)"))
+        footprint = footprint_by_id.get(column_id, {})
+        x0 = _float(footprint.get("s_left (m)"), station)
+        x1 = _float(footprint.get("s_right (m)"), station)
+        if x1 > x0:
+            fig.add_vrect(
+                x0=max(0.0, x0),
+                x1=min(length, x1),
+                fillcolor="rgba(71, 85, 105, 0.075)",
+                opacity=1.0,
+                line_width=0,
+                layer="below",
+            )
+        fig.add_vline(
+            x=station,
+            line={"color": "rgba(30, 41, 59, 0.52)", "width": 1.25, "dash": "dot"},
+            layer="below",
+        )
+        fig.add_annotation(
+            x=station,
+            y=1.025,
+            yref="paper",
+            text=column_id,
+            showarrow=False,
+            font={"size": 10, "color": "#334155"},
+        )
+    for boundary in boundaries:
+        if _text(boundary.get("Boundary type")) != "Physical segment joint":
+            continue
+        fig.add_vline(
+            x=_float(boundary.get("Station s (m)")),
+            line={"color": "rgba(180, 83, 9, 0.50)", "width": 1.2, "dash": "dashdot"},
+            layer="below",
+        )
+    for station in (0.0, length):
+        fig.add_vline(
+            x=station,
+            line={"color": "rgba(15, 23, 42, 0.52)", "width": 1.2},
+            layer="below",
+        )
+
+
+def make_crossbeam_transfer_stress_figure(
+    foundation: Mapping[str, Any],
+    result: Mapping[str, Any],
+    *,
+    case_name: str,
+) -> go.Figure:
+    """Return the full-length ACI transfer-stress chart for one imported case."""
+
+    rows = [
+        dict(row)
+        for row in _rows(result.get("rows"))
+        if _text(row.get("Case / Combination")) == _text(case_name)
+    ]
+    rows.sort(
+        key=lambda row: (
+            _float(row.get("Station s (m)")),
+            _stress_face_order(row.get("Station face")),
+            _text(row.get("Context ID")),
+        )
+    )
+    fig = go.Figure()
+    if not rows:
+        return fig
+
+    _add_result_landmarks(fig, foundation)
+    x = [_float(row.get("Station s (m)")) for row in rows]
+    faces = [_text(row.get("Station face")) for row in rows]
+    symbols = [_face_symbol(face, DATASET_SLS_TRANSFER) for face in faces]
+    customdata = [
+        [
+            _text(row.get("Station face")),
+            _text(row.get("Segment / Zone")),
+            _text(row.get("Section ID")),
+            _text(row.get("Material")),
+            _float(row.get("f'ci (MPa)")),
+            _text(row.get("Check Point")) or "—",
+        ]
+        for row in rows
+    ]
+
+    def add_stress_trace(field: str, name: str, color: str) -> None:
+        fig.add_trace(
+            go.Scatter(
+                x=x,
+                y=[_float(row.get(field)) for row in rows],
+                mode="lines+markers",
+                name=name,
+                line={"width": 3.0, "color": color},
+                marker={
+                    "symbol": symbols,
+                    "size": 9,
+                    "color": color,
+                    "line": {"width": 1.0, "color": "rgba(15,23,42,0.55)"},
+                },
+                customdata=customdata,
+                hovertemplate=(
+                    f"<b>{name}</b><br>"
+                    "s=%{x:.6f} m<br>stress=%{y:.3f} MPa<br>"
+                    "face=%{customdata[0]}<br>segment=%{customdata[1]}<br>"
+                    "section=%{customdata[2]}<br>material=%{customdata[3]}<br>"
+                    "f'ci=%{customdata[4]:.3f} MPa<br>check point=%{customdata[5]}<extra></extra>"
+                ),
+            )
+        )
+
+    add_stress_trace("Top stress (MPa)", "Top total stress", _ENGINEERING_STRESS_COLORS["top"])
+    add_stress_trace("Bottom stress (MPa)", "Bottom total stress", _ENGINEERING_STRESS_COLORS["bottom"])
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=[_float(row.get("Compression limit (MPa)")) for row in rows],
+            mode="lines",
+            name="Compression limit",
+            line={"width": 3.0, "dash": "dash", "color": _ENGINEERING_STRESS_COLORS["compression_limit"]},
+            hovertemplate="s=%{x:.6f} m<br>compression limit=%{y:.3f} MPa<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=[_float(row.get("Tension limit (MPa)")) for row in rows],
+            mode="lines",
+            name="Tension limit",
+            line={"width": 3.0, "dash": "dash", "color": _ENGINEERING_STRESS_COLORS["tension_limit"]},
+            hovertemplate="s=%{x:.6f} m<br>tension limit=%{y:.3f} MPa<extra></extra>",
+        )
+    )
+    fig.add_hline(
+        y=0.0,
+        line={"width": 1.3, "dash": "dot", "color": _ENGINEERING_STRESS_COLORS["zero"]},
+        layer="below",
+    )
+
+    for key, label, color, position in (
+        ("governing_compression", "Gov. Compression", _ENGINEERING_STRESS_COLORS["governing_compression"], "bottom center"),
+        ("governing_tension", "Gov. Tension", _ENGINEERING_STRESS_COLORS["governing_tension"], "top center"),
+    ):
+        governing = result.get(key)
+        if not isinstance(governing, Mapping) or _text(governing.get("Case / Combination")) != _text(case_name):
+            continue
+        fig.add_trace(
+            go.Scatter(
+                x=[_float(governing.get("Station s (m)"))],
+                y=[_float(governing.get("Stress (MPa)"))],
+                mode="markers+text",
+                name=label,
+                marker={"size": 15, "symbol": "circle-open", "color": color, "line": {"width": 3}},
+                text=[label],
+                textposition=position,
+                hovertemplate=(
+                    f"{label}<br>s=%{{x:.6f}} m<br>stress=%{{y:.3f}} MPa<br>"
+                    f"fiber={_text(governing.get('Fiber'))}<br>"
+                    f"face={_text(governing.get('Station face'))}<br>"
+                    f"utilization={_float(governing.get('Utilization')):.3f}<extra></extra>"
+                ),
+            )
+        )
+
+    length = max(_float(foundation.get("member_length_m")), 0.0)
+    fig.update_layout(
+        title={
+            "text": (
+                "Concrete Stress — At Transfer"
+                "<br><sup>ACI 318-19 §24.5.3 · compression negative / tension positive</sup>"
+            ),
+            "x": 0.5,
+            "xanchor": "center",
+        },
+        height=560,
+        margin={"l": 76, "r": 30, "t": 92, "b": 120},
+        hovermode="closest",
+        legend={
+            "orientation": "h",
+            "x": 0.5,
+            "y": -0.24,
+            "xanchor": "center",
+            "yanchor": "top",
+        },
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+    )
+    fig.update_xaxes(
+        title="Station s (m)",
+        range=[0.0, length if length > 0.0 else 1.0],
+        showgrid=True,
+        zeroline=False,
+    )
+    fig.update_yaxes(
+        title="Stress (MPa) — compression negative / tension positive",
+        showgrid=True,
+        zeroline=False,
+    )
+    apply_global_plot_readability(fig)
+    return fig
+
+
+__all__ = ["make_crossbeam_station_coverage_figure", "make_crossbeam_transfer_stress_figure"]

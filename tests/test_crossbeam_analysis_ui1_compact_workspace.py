@@ -56,10 +56,12 @@ def test_compact_sls_table_has_stress_and_joint_gate_only() -> None:
     assert cip.iloc[1]["Status"] == "NOT REQUIRED"
 
 
-def test_crossbeam_analysis_ui_uses_disabled_actions_until_real_solvers_exist() -> None:
+def test_crossbeam_analysis_ui_keeps_uls_disabled_and_enables_transfer_only() -> None:
     assert 'st.button(\n            f"Calculate {selected_check}"' in PAGE_SOURCE
     assert 'st.button(\n            f"Calculate {stage}"' in PAGE_SOURCE
-    assert PAGE_SOURCE.count("disabled=True") >= 2
+    assert "disabled=True" in PAGE_SOURCE  # ULS remains a shell
+    assert "disabled=(not source_ready) or stage != SLS_STAGE_TRANSFER" in PAGE_SOURCE
+    assert "calculate_crossbeam_transfer_stress" in PAGE_SOURCE
     assert "The disabled action prevents a UI shell from being mistaken for a completed strength check." in PAGE_SOURCE
 
 
