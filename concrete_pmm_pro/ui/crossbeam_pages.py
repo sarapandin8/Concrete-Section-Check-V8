@@ -8801,6 +8801,310 @@ def _render_crossbeam_effective_prestress_preview(
 
     _render_crossbeam_effective_prestress_fea_handoff(summary_payload)
 
+def _deduplicated_loss_messages(messages: Any) -> list[str]:
+    """Return compact, stable blocker text without hiding distinct causes."""
+
+    unique: list[str] = []
+    for message in list(messages or []):
+        text = str(message or "").strip()
+        if text and text not in unique:
+            unique.append(text)
+    return unique
+
+
+def _crossbeam_prestress_loss_readiness_rows(
+    *,
+    system_rows: Any,
+    profile_rows: Any,
+    friction_summary: Mapping[str, Any] | None = None,
+    anchorage_summary: Mapping[str, Any] | None = None,
+    lightweight_status: str = "MISSING",
+    lightweight_ready: bool = False,
+    lightweight_sources_ready: bool = False,
+    lightweight_source_issues: Any = None,
+    td_status: str = "MISSING",
+    td_ready: bool = False,
+    td_sources_ready: bool = False,
+    td_source_issues: Any = None,
+    summary_payload: Mapping[str, Any] | None = None,
+) -> list[dict[str, str]]:
+    """Build one decision-first view of the complete loss-chain readiness.
+
+    The rows are deliberately calculation-free.  They expose the same gates
+    already enforced by each component so the UI does not create an alternate
+    solver route or silently relax an engineering prerequisite.
+    """
+
+    rows: list[dict[str, str]] = []
+    system = _records(system_rows)
+    profile = _records(profile_rows)
+
+    def add(stage: str, status: str, action: str, where: str) -> None:
+        rows.append(
+            {
+                "Loss stage": stage,
+                "Status": status,
+                "Required action": action,
+                "Where to fix": where,
+            }
+        )
+
+    if not system:
+        add(
+            "Tendon force source",
+            "BLOCKED",
+            "Define at least one active tendon with complete material, Aps, jacking, and anchorage data.",
+            "Sections → Tendon System",
+        )
+    else:
+        add(
+            "Tendon force source",
+            "AVAILABLE",
+            f"{len(system)} Tendon System row(s) available.",
+            "No action",
+        )
+
+    if not profile:
+        add(
+            "Tendon geometry source",
+            "BLOCKED",
+            "Define the tendon profile geometry and station coverage used by the loss calculations.",
+            "Sections → Tendon Profile",
+        )
+    else:
+        add(
+            "Tendon geometry source",
+            "AVAILABLE",
+            f"{len(profile)} Tendon Profile row(s) available.",
+            "No action",
+        )
+
+    if not system or not profile:
+        return rows
+
+    friction = dict(friction_summary or {})
+    friction_issues = _deduplicated_loss_messages(friction.get("blocking_issues"))
+    if friction_issues:
+        add(
+            "Friction & Wobble",
+            "BLOCKED",
+            " ".join(friction_issues),
+            "Prestress Loss → Friction & Wobble",
+        )
+    else:
+        add(
+            "Friction & Wobble",
+            "CURRENT (AUTO)",
+            "Calculated from the current Tendon System, profile, μ, and wobble inputs.",
+            "No action",
+        )
+
+    anchorage = dict(anchorage_summary or {})
+    anchorage_issues = _deduplicated_loss_messages(anchorage.get("blocking_issues"))
+    active_ends = int(anchorage.get("active_seating_end_count") or 0)
+    calculated_ends = int(anchorage.get("calculated_end_count") or 0)
+    anchorage_ready = bool(active_ends > 0 and calculated_ends == active_ends and not anchorage_issues)
+    if anchorage_ready:
+        add(
+            "Anchorage Set / Draw-in",
+            "CURRENT (AUTO)",
+            f"All {calculated_ends}/{active_ends} active seating ends are calculated.",
+            "No action",
+        )
+    else:
+        if not anchorage_issues:
+            anchorage_issues = [
+                f"Only {calculated_ends}/{active_ends} active seating ends are calculated; resolve the incomplete seating-end source."
+            ]
+        add(
+            "Anchorage Set / Draw-in",
+            "BLOCKED",
+            " ".join(anchorage_issues),
+            "Prestress Loss → Anchorage Set / Draw-in",
+        )
+
+    es_status = str(lightweight_status or "MISSING").upper()
+    es_issues = _deduplicated_loss_messages(lightweight_source_issues)
+    if es_status == "CURRENT" and lightweight_ready:
+        add(
+            "Elastic Shortening",
+            "CURRENT",
+            "Current source-derived Lightweight ES result is available.",
+            "No action",
+        )
+    elif not lightweight_sources_ready:
+        add(
+            "Elastic Shortening",
+            "BLOCKED",
+            " ".join(es_issues) or "Complete the displayed ES source requirements.",
+            "Prestress Loss → Elastic Shortening",
+        )
+    elif es_status == "STALE":
+        add(
+            "Elastic Shortening",
+            "STALE",
+            "Inputs changed after the stored result; rerun Lightweight ES Analysis.",
+            "Prestress Loss → Elastic Shortening",
+        )
+    else:
+        add(
+            "Elastic Shortening",
+            "READY TO RUN",
+            "Press Run Lightweight ES Analysis.",
+            "Prestress Loss → Elastic Shortening",
+        )
+
+    td_state = str(td_status or "MISSING").upper()
+    td_issues = _deduplicated_loss_messages(td_source_issues)
+    if td_state == "CURRENT" and td_ready:
+        add(
+            "Time-Dependent",
+            "CURRENT",
+            "Current event-based Time-Dependent result is available.",
+            "No action",
+        )
+    elif not td_sources_ready:
+        add(
+            "Time-Dependent",
+            "BLOCKED",
+            " ".join(td_issues) or "Complete the displayed Time-Dependent source requirements.",
+            "Prestress Loss → Time-Dependent",
+        )
+    elif td_state == "STALE":
+        add(
+            "Time-Dependent",
+            "STALE",
+            "Inputs changed after the stored result; rerun the Time-Dependent preview.",
+            "Prestress Loss → Time-Dependent",
+        )
+    else:
+        add(
+            "Time-Dependent",
+            "READY TO RUN",
+            "Press the Time-Dependent Run button for the active construction route.",
+            "Prestress Loss → Time-Dependent",
+        )
+
+    summary = dict(summary_payload or {})
+    if bool(summary.get("effective_preview_ready")):
+        add(
+            "Effective Prestress / FEA handoff",
+            "CURRENT / CLOSED",
+            "The current loss chain passes stress, force, and projected-station closure gates.",
+            "No action",
+        )
+    else:
+        effective_issues: list[str] = []
+        if not (es_status == "CURRENT" and lightweight_ready):
+            effective_issues.append("Elastic Shortening is not CURRENT.")
+        if not (td_state == "CURRENT" and td_ready):
+            effective_issues.append("Time-Dependent loss is not CURRENT.")
+        if summary and not bool(summary.get("projected_coverage_ready")):
+            effective_issues.append("Projected-station Effective Prestress coverage is incomplete.")
+        if not effective_issues:
+            effective_issues.append("Resolve the displayed stress/force closure or effective-stress validity gate.")
+        add(
+            "Effective Prestress / FEA handoff",
+            "BLOCKED",
+            " ".join(effective_issues),
+            "Prestress Loss → Effective Prestress",
+        )
+    return rows
+
+
+def _render_crossbeam_prestress_loss_readiness(rows: Any) -> None:
+    action_rows = [dict(row) for row in _records(rows)]
+    unresolved = [
+        row
+        for row in action_rows
+        if str(row.get("Status") or "").upper()
+        not in {"AVAILABLE", "CURRENT", "CURRENT (AUTO)", "CURRENT / CLOSED"}
+    ]
+    blocked = [
+        row
+        for row in unresolved
+        if str(row.get("Status") or "").upper() == "BLOCKED"
+    ]
+    stale = [
+        row
+        for row in unresolved
+        if str(row.get("Status") or "").upper() == "STALE"
+    ]
+    if not unresolved:
+        overall_value = "CURRENT / CLOSED"
+        overall_detail = "All required prestress-loss sources are current"
+        overall_tone = "ready"
+    elif blocked:
+        overall_value = "BLOCKED"
+        overall_detail = str(blocked[0].get("Loss stage") or "Resolve required source")
+        overall_tone = "critical"
+    elif stale:
+        overall_value = "STALE"
+        overall_detail = str(stale[0].get("Loss stage") or "Rerun required component")
+        overall_tone = "warning"
+    else:
+        overall_value = "ACTION REQUIRED"
+        overall_detail = str(unresolved[0].get("Loss stage") or "Run required component")
+        overall_tone = "warning"
+
+    st.markdown("#### Prestress Loss Run Readiness")
+    st.caption(
+        "This is the single source of blocker information for the complete loss chain. "
+        "Use the Required action and Where to fix columns; opening every subtab to search for the cause is not required."
+    )
+    render_metric_cards(
+        [
+            {
+                "title": "Overall loss chain",
+                "value": overall_value,
+                "detail": overall_detail,
+                "status": overall_tone,
+            },
+            {
+                "title": "Unresolved stages",
+                "value": len(unresolved),
+                "detail": f"{len(blocked)} blocked · {len(stale)} stale",
+                "status": "ready" if not unresolved else "warning",
+            },
+            {
+                "title": "Next action",
+                "value": (
+                    str(unresolved[0].get("Where to fix") or "Review the table")
+                    if unresolved
+                    else "No action"
+                ),
+                "detail": (
+                    str(unresolved[0].get("Required action") or "")
+                    if unresolved
+                    else "Effective Prestress handoff is available"
+                ),
+                "status": overall_tone,
+            },
+        ]
+    )
+    if blocked:
+        first = blocked[0]
+        st.error(
+            f"{first.get('Loss stage')}: {first.get('Required action')} "
+            f"Fix at {first.get('Where to fix')}."
+        )
+    elif stale:
+        first = stale[0]
+        st.warning(
+            f"{first.get('Loss stage')}: {first.get('Required action')} "
+            f"Use {first.get('Where to fix')}."
+        )
+    elif unresolved:
+        first = unresolved[0]
+        st.info(
+            f"Next: {first.get('Required action')} ({first.get('Where to fix')})."
+        )
+    else:
+        st.success("Prestress Loss source chain is CURRENT / CLOSED for the present inputs.")
+
+    st.table(pd.DataFrame(action_rows))
+
+
 def render_crossbeam_prestress_loss_page() -> None:
     _ensure_state()
     render_page_header(
@@ -8817,13 +9121,26 @@ def render_crossbeam_prestress_loss_page() -> None:
         mark="L",
     )
     length_m = _render_crossbeam_member_length_reference()
+    readiness_placeholder = st.empty()
     system_rows = _records(st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY))
     profile_rows = _records(st.session_state.get(CB_PROFILE_ROWS_KEY))
     if not system_rows:
-        st.warning("Define Tendon System rows before calculating prestress losses.")
+        with readiness_placeholder.container():
+            _render_crossbeam_prestress_loss_readiness(
+                _crossbeam_prestress_loss_readiness_rows(
+                    system_rows=system_rows,
+                    profile_rows=profile_rows,
+                )
+            )
         return
     if not profile_rows:
-        st.warning("Define Tendon Profile geometry before calculating prestress losses.")
+        with readiness_placeholder.container():
+            _render_crossbeam_prestress_loss_readiness(
+                _crossbeam_prestress_loss_readiness_rows(
+                    system_rows=system_rows,
+                    profile_rows=profile_rows,
+                )
+            )
         return
 
     _guard_crossbeam_stressing_strength_ratio_state(st.session_state)
@@ -10175,6 +10492,25 @@ def render_crossbeam_prestress_loss_page() -> None:
             and selected_eci is not None
             and float(selected_eci) > 0.0
         )
+        lightweight_source_issues = [
+            *list(linear_stage_model.get("issues") or []),
+            *list(bond_state_source.get("issues") or []),
+        ]
+        if not upstream_ready:
+            lightweight_source_issues.append(
+                "Accepted P after Friction and Anchorage Set is required."
+            )
+        if not current_es_group_summary.get("ready"):
+            lightweight_source_issues.extend(
+                current_es_group_summary.get("issues") or []
+            )
+        if selected_eci is None or float(selected_eci or 0.0) <= 0.0:
+            lightweight_source_issues.append(
+                "A positive source-derived stressing-age concrete modulus Eci is required."
+            )
+        lightweight_source_issues = _deduplicated_loss_messages(
+            lightweight_source_issues
+        )
 
         action_col, clear_col = st.columns([3, 1])
         with action_col:
@@ -10182,9 +10518,8 @@ def render_crossbeam_prestress_loss_page() -> None:
                 "Run Lightweight ES Analysis",
                 type="primary",
                 use_container_width=True,
-                disabled=not lightweight_sources_ready,
                 help=(
-                    "Runs one cumulative rigid compression-contact solve using self-weight and every accepted tendon force after Anchorage Set. It does not run G0→G4 history, mesh sensitivity, or synthetic benchmarks."
+                    "Always available. If a required source is missing, the exact blockers and their correction locations are shown here instead of disabling the action."
                 ),
             )
         with clear_col:
@@ -10199,7 +10534,15 @@ def render_crossbeam_prestress_loss_page() -> None:
             st.session_state.pop(CB_PTL_LIGHTWEIGHT_ES_RESULT_KEY, None)
             st.rerun()
 
-        if run_lightweight:
+        if run_lightweight and not lightweight_sources_ready:
+            st.error(
+                "Elastic Shortening cannot run: "
+                + (
+                    " ".join(lightweight_source_issues)
+                    or "Complete the ES source requirements shown in Prestress Loss Run Readiness."
+                )
+            )
+        elif run_lightweight:
             started = perf_counter()
             with st.spinner("Running one cumulative Elastic Shortening design-stage solve..."):
                 lightweight_result = run_crossbeam_lightweight_elastic_shortening(
@@ -10225,19 +10568,12 @@ def render_crossbeam_prestress_loss_page() -> None:
             st.rerun()
 
         if not lightweight_sources_ready:
-            source_issues = [
-                *list(linear_stage_model.get("issues") or []),
-                *list(bond_state_source.get("issues") or []),
-            ]
-            if not upstream_ready:
-                source_issues.append(
-                    "Accepted P after Friction and Anchorage Set is required."
-                )
-            if not current_es_group_summary.get("ready"):
-                source_issues.extend(current_es_group_summary.get("issues") or [])
             st.warning(
                 "Lightweight ES analysis is blocked until the required sources are complete. "
-                + (" ".join(dict.fromkeys(str(item) for item in source_issues if item)) or "Review the source cards above.")
+                + (
+                    " ".join(lightweight_source_issues)
+                    or "Review Prestress Loss Run Readiness above."
+                )
             )
 
         current_lightweight = (
@@ -11340,6 +11676,24 @@ def render_crossbeam_prestress_loss_page() -> None:
             and not bool(st.session_state.get(CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY))
             and td_schedule_inputs_ready
         )
+        td_source_messages: list[str] = []
+        if lightweight_evidence_status != "CURRENT":
+            td_source_messages.append(
+                f"Lightweight Elastic Shortening result is {lightweight_evidence_status}; run or refresh ES first."
+            )
+        if not drying_preview.get("ready"):
+            td_source_messages.extend(drying_preview.get("issues") or [])
+        if td_eci <= 0.0 or td_fci <= 0.0:
+            td_source_messages.append("Stressing-age Eci and f'ci sources are required.")
+        if bool(st.session_state.get(CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY)):
+            td_source_messages.append(
+                "Manual Eci override is active; PTLOSS4A requires the source-derived stressing-age modulus."
+            )
+        if not td_schedule_inputs_ready:
+            td_source_messages.append(
+                "Precast Segmental inputs must satisfy 0 < curing ≤ ti ≤ tg ≤ tr < tf, RH must be at least 20%, and either later permanent-load events must be adopted or the no-later-event declaration must be confirmed."
+            )
+        td_source_messages = _deduplicated_loss_messages(td_source_messages)
 
         run_col, clear_col = st.columns([3, 1])
         with run_col:
@@ -11351,8 +11705,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 ),
                 type="primary",
                 use_container_width=True,
-                disabled=not td_sources_ready,
-                help="Uses stored post-ES results and one no-contact frame solve for falsework removal. Each adopted permanent-load FEA event is applied at its own activation age with 0 additional internal solves.",
+                help="Always available. If a required source is missing, the exact blockers and their correction locations are shown here instead of disabling the action.",
             )
         with clear_col:
             clear_td = st.button(
@@ -11364,7 +11717,15 @@ def render_crossbeam_prestress_loss_page() -> None:
             st.session_state.pop(CB_PTL_TIME_DEPENDENT_FINGERPRINT_KEY, None)
             st.session_state.pop(CB_PTL_TIME_DEPENDENT_RESULT_KEY, None)
             st.rerun()
-        if run_td:
+        if run_td and not td_sources_ready:
+            st.error(
+                "Time-Dependent loss cannot run: "
+                + (
+                    " ".join(td_source_messages)
+                    or "Complete the Time-Dependent source requirements shown in Prestress Loss Run Readiness."
+                )
+            )
+        elif run_td:
             started = perf_counter()
             td_result = run_crossbeam_lightweight_time_dependent_loss(
                 lightweight_es_result=current_es_for_td,
@@ -11404,26 +11765,12 @@ def render_crossbeam_prestress_loss_page() -> None:
             st.rerun()
 
         if not td_sources_ready:
-            source_messages = []
-            if lightweight_evidence_status != "CURRENT":
-                source_messages.append(
-                    f"Lightweight Elastic Shortening result is {lightweight_evidence_status}; run or refresh ES first."
-                )
-            if not drying_preview.get("ready"):
-                source_messages.extend(drying_preview.get("issues") or [])
-            if td_eci <= 0.0 or td_fci <= 0.0:
-                source_messages.append("Stressing-age Eci and f'ci sources are required.")
-            if bool(st.session_state.get(CB_LOSS_ES_ECI_OVERRIDE_ENABLED_KEY)):
-                source_messages.append(
-                    "Manual Eci override is active; PTLOSS4A requires the source-derived stressing-age modulus."
-                )
-            if not td_schedule_inputs_ready:
-                source_messages.append(
-                    "Precast Segmental inputs must satisfy 0 < curing ≤ ti ≤ tg ≤ tr < tf, RH must be at least 20%, and either later permanent-load events must be adopted or the no-later-event declaration must be confirmed."
-                )
             st.warning(
                 "Time-Dependent preview is blocked until the source chain is complete. "
-                + " ".join(dict.fromkeys(str(item) for item in source_messages if item))
+                + (
+                    " ".join(td_source_messages)
+                    or "Review Prestress Loss Run Readiness above."
+                )
             )
 
         current_td = (
@@ -12182,6 +12529,27 @@ def render_crossbeam_prestress_loss_page() -> None:
         "fci_mpa": td_inputs_audit.get("fci_mpa") or current_es_material_source.get("fci_mpa"),
         "v_over_s_mm": td_drying_audit.get("v_over_s_mm"),
     }
+
+    readiness_rows = _crossbeam_prestress_loss_readiness_rows(
+        system_rows=system_rows,
+        profile_rows=profile_rows,
+        friction_summary=current_summary,
+        anchorage_summary=current_anchorage_summary,
+        lightweight_status=lightweight_evidence_status,
+        lightweight_ready=bool(
+            isinstance(lightweight_result, Mapping)
+            and lightweight_result.get("ready")
+        ),
+        lightweight_sources_ready=lightweight_sources_ready,
+        lightweight_source_issues=lightweight_source_issues,
+        td_status=td_evidence_status,
+        td_ready=bool(isinstance(td_result, Mapping) and td_result.get("ready")),
+        td_sources_ready=td_sources_ready,
+        td_source_issues=td_source_messages,
+        summary_payload=summary_payload,
+    )
+    with readiness_placeholder.container():
+        _render_crossbeam_prestress_loss_readiness(readiness_rows)
 
     with loss_summary_tab:
         _render_crossbeam_loss_summary(
