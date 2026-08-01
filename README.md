@@ -1803,3 +1803,7 @@ Adds compact equation and numerical-substitution labels directly on the dashed A
 ## CROSSBEAM.SLS1B1 — Segment-Joint Sign, Single-Result, and CIP Applicability Hotfix
 
 Corrects the signed physical-joint compression gate to `fjoint <= -0.70 MPa`, reports one governing Top and one governing Bottom stress per Precast Segmental joint without user-facing left/right splitting, adds a visible stress-sign callout, and marks the gate `NOT REQUIRED` for Cast-in-Place Crossbeams. See `README_CROSSBEAM_SLS1B1.md`.
+
+## CROSSBEAM.ULS1A — P–M3 Interaction Strength
+
+Portal Frame Crossbeam ULS Flexure now evaluates simultaneous row-coupled `P` and `M3` demands against an ACI 318-19 phi-reduced strain-compatibility interaction capacity. The compact workspace provides a full-length D/C chart, one governing result per physical segment joint, strict Precast joint rebar-continuity rules, and guarded REVIEW status for incomplete/unbonded/approximate prestress strength sources. See `README_CROSSBEAM_ULS1A.md`.

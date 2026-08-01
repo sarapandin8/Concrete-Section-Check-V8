@@ -58,15 +58,16 @@ def test_compact_sls_table_has_stress_and_joint_gate_only() -> None:
     assert cip.iloc[1]["Status"] == "NOT REQUIRED"
 
 
-def test_crossbeam_analysis_ui_keeps_uls_disabled_and_enables_both_sls_stages() -> None:
+def test_crossbeam_analysis_ui_enables_flexure_only_and_keeps_both_sls_stages() -> None:
     assert 'st.button(\n            f"Calculate {selected_check}"' in PAGE_SOURCE
     assert 'st.button(\n            f"Calculate {stage}"' in PAGE_SOURCE
-    assert "disabled=True" in PAGE_SOURCE  # ULS remains a shell
+    assert 'selected_check != "Flexure"' in PAGE_SOURCE
     assert "disabled=not source_ready" in PAGE_SOURCE
     assert "calculate_crossbeam_transfer_stress" in PAGE_SOURCE
     assert "calculate_crossbeam_service_stress" in PAGE_SOURCE
     assert "Service stress basis" in PAGE_SOURCE
-    assert "The disabled action prevents a UI shell from being mistaken for a completed strength check." in PAGE_SOURCE
+    assert "calculate_crossbeam_uls_flexure" in PAGE_SOURCE
+    assert "P–M3 interaction" in PAGE_SOURCE
 
 
 def test_crossbeam_router_does_not_fall_through_to_generic_beam_girder_solvers() -> None:

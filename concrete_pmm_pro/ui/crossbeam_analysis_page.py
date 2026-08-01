@@ -3,7 +3,7 @@
 Crossbeam Analysis follows the same decision-first language as the accepted
 Beam/Girder ULS and SLS pages, while keeping Crossbeam solver/state ownership
 isolated.  ANALYSIS.UI1 established the compact shell; CROSSBEAM.SLS1A now evaluates
-ACI 318-19 transfer- and final-service concrete stress while ULS remains an isolated future solver.
+ACI 318-19 transfer/final-service stress and the first isolated ULS P–M3 interaction solver.
 """
 
 from __future__ import annotations
@@ -23,11 +23,13 @@ from concrete_pmm_pro.crossbeam.analysis_foundation import (
     build_crossbeam_analysis_foundation,
 )
 from concrete_pmm_pro.crossbeam.analysis_charts import (
+    make_crossbeam_flexure_pm3_figure,
     make_crossbeam_service_stress_figure,
     make_crossbeam_station_coverage_figure,
     make_crossbeam_transfer_stress_figure,
 )
 from concrete_pmm_pro.crossbeam.prestress_loss import (
+    CB_LOSS_EP_MPA_KEY,
     CB_LOSS_ES_COLUMN_ROWS_KEY,
     CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
     DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
@@ -50,8 +52,16 @@ from concrete_pmm_pro.crossbeam.sls_service import (
     canonical_sustained_case_names,
     service_stress_input_fingerprint,
 )
-from concrete_pmm_pro.crossbeam.station_force_contract import CB_STATION_FORCE_VALIDATION_KEY
-from concrete_pmm_pro.crossbeam.tendon_persistence import CB_TENDON_SYSTEM_ROWS_KEY
+from concrete_pmm_pro.crossbeam.station_force_contract import (
+    CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY,
+    CB_STATION_FORCE_VALIDATION_KEY,
+)
+from concrete_pmm_pro.crossbeam.tendon_persistence import CB_PROFILE_ROWS_KEY, CB_TENDON_SYSTEM_ROWS_KEY
+from concrete_pmm_pro.crossbeam.uls_flexure import (
+    CB_ANALYSIS_ULS_FLEXURE_RESULT_KEY,
+    calculate_crossbeam_uls_flexure,
+    flexure_input_fingerprint,
+)
 from concrete_pmm_pro.ui.commercial import render_metric_cards
 from concrete_pmm_pro.ui.crossbeam_section_library import CB_SEGMENT_ROWS_KEY
 from concrete_pmm_pro.ui.navigation import render_active_choice
@@ -63,6 +73,7 @@ CB_ANALYSIS_UI1_ULS_CHECK_KEY = "crossbeam_analysis_ui1_uls_check"
 CB_ANALYSIS_UI1_SLS_STAGE_KEY = "crossbeam_analysis_ui1_sls_stage"
 CB_ANALYSIS_SLS1A_CASE_KEY = "crossbeam_analysis_sls1a_diagram_case"
 CB_ANALYSIS_SLS1B_CASE_KEY = "crossbeam_analysis_sls1b_diagram_case"
+CB_ANALYSIS_ULS1A_CASE_KEY = "crossbeam_analysis_uls1a_diagram_case"
 
 ULS_CHECKS = ("Flexure", "Shear", "Torsion", "Shear + Torsion")
 SLS_STAGE_TRANSFER = "At Transfer"
@@ -238,7 +249,7 @@ def _render_source_audit(
         st.caption(
             f"Analysis input fingerprint: {str(foundation.get('fingerprint') or '')[:16] or 'missing'} · "
             f"Loads handoff: {str(foundation.get('loads_handoff_fingerprint') or '')[:16] or 'missing'} · "
-            "Solver run: No"
+            "Input audit only; result state is shown in the decision cards above."
         )
 
 
@@ -248,12 +259,31 @@ def _not_calculated_graph_note(label: str) -> None:
     )
 
 
+def _uls_governing_text(value: Any) -> str:
+    if not isinstance(value, Mapping):
+        return "—"
+    return (
+        f"{str(value.get('Case / Combination') or '—')} @ "
+        f"s={float(value.get('Station s (m)') or 0.0):.3f} m"
+    )
+
+
 def _uls_cards(
     *,
     selected_check: str,
     summary: Mapping[str, Any],
+    result: Mapping[str, Any] | None = None,
+    result_state: str = "NOT CALCULATED",
 ) -> list[dict[str, object]]:
     ready = _dataset_ready(summary)
+    flexure_active = selected_check == "Flexure"
+    displayed_state = result_state if flexure_active else "NOT CALCULATED"
+    governing = result.get("governing") if isinstance(result, Mapping) and flexure_active else None
+    governing_dc = (
+        float(governing.get("P-M3 D/C") or 0.0)
+        if isinstance(governing, Mapping)
+        else None
+    )
     return [
         {
             "title": "Selected check",
@@ -269,44 +299,132 @@ def _uls_cards(
         },
         {
             "title": "Result status",
-            "value": "NOT CALCULATED",
-            "detail": "No ACI 318-19 strength equation evaluated",
-            "status": "warning",
+            "value": displayed_state,
+            "detail": "ACI 318-19 P–M3 interaction" if flexure_active else "Solver not yet connected",
+            "status": _metric_status(displayed_state),
         },
         {
-            "title": "Governing",
-            "value": "—",
-            "detail": "Station / case available after calculation",
-            "status": "neutral",
+            "title": "Governing P–M3",
+            "value": f"D/C {governing_dc:.3f}" if governing_dc is not None else "—",
+            "detail": _uls_governing_text(governing),
+            "status": _metric_status(displayed_state) if governing_dc is not None else "neutral",
         },
     ]
 
 
-def _uls_check_table(*, selected_check: str, source_ready: bool) -> pd.DataFrame:
+def _uls_check_table(
+    *,
+    selected_check: str,
+    source_ready: bool,
+    flexure_result: Mapping[str, Any] | None = None,
+    flexure_state: str = "NOT CALCULATED",
+) -> pd.DataFrame:
     rows: list[dict[str, str]] = []
+    governing = flexure_result.get("governing") if isinstance(flexure_result, Mapping) else None
     for check in ULS_CHECKS:
-        status = "NOT CALCULATED" if source_ready else "SOURCE BLOCKED"
-        action = (
-            "Run the selected Crossbeam solver when available."
-            if check == selected_check and source_ready
-            else "Complete the ULS source and mapping."
-            if not source_ready
-            else "Select this check when review is required."
-        )
+        if not source_ready:
+            status = "SOURCE BLOCKED"
+            location = "—"
+            demand_capacity = "—"
+            action = "Complete the ULS source and Section/Rebar mapping."
+        elif check == "Flexure":
+            status = flexure_state
+            location = _uls_governing_text(governing)
+            if isinstance(governing, Mapping) and governing.get("P-M3 D/C") is not None:
+                demand = abs(float(governing.get("M3 (kN-m; sagging +)") or 0.0))
+                capacity = float(governing.get("phiMn at Pu (kN-m)") or 0.0)
+                dc = float(governing.get("P-M3 D/C") or 0.0)
+                demand_capacity = f"|M3| {demand:,.2f} / φMn@Pu {capacity:,.2f} kN-m · D/C {dc:.3f}"
+            else:
+                demand_capacity = "—"
+            action = (
+                "Review P–M3 audit and guarded limitations."
+                if status in {"PASS", "REVIEW"}
+                else "Revise section/rebar/prestress or ULS demand basis."
+                if status == "FAIL"
+                else "Calculate Flexure."
+            )
+        else:
+            status = "NOT CALCULATED"
+            location = "—"
+            demand_capacity = "—"
+            action = "Select this check after the Crossbeam solver is implemented."
         rows.append(
             {
                 "Check": check,
                 "Status": status,
-                "Governing station / case": "—",
-                "Demand / capacity": "—",
+                "Governing station / case": location,
+                "Demand / capacity": demand_capacity,
                 "Required action": action,
             }
         )
     return pd.DataFrame(rows)
 
 
+def _render_uls_flexure_result(*, foundation: Mapping[str, Any], result: Mapping[str, Any]) -> None:
+    cases = [str(item) for item in result.get("cases", []) if str(item).strip()]
+    if not cases:
+        st.warning("No calculated ULS Flexure case is available for the result graph.")
+        return
+    governing = result.get("governing") if isinstance(result.get("governing"), Mapping) else {}
+    default_case = str(governing.get("Case / Combination") or cases[0])
+    if st.session_state.get(CB_ANALYSIS_ULS1A_CASE_KEY) not in cases:
+        st.session_state[CB_ANALYSIS_ULS1A_CASE_KEY] = default_case if default_case in cases else cases[0]
+    if len(cases) > 1:
+        selected_case = st.selectbox(
+            "Diagram case",
+            options=cases,
+            key=CB_ANALYSIS_ULS1A_CASE_KEY,
+            help="The decision summary checks every imported ULS case; the graph displays one case at a time.",
+        )
+    else:
+        selected_case = cases[0]
+        st.caption(f"Diagram case: {selected_case}")
+    figure = make_crossbeam_flexure_pm3_figure(foundation, result, case_name=selected_case)
+    st.plotly_chart(figure, use_container_width=True, config={"displaylogo": False})
+    st.caption(
+        "Lines connect imported station checks for visualization only. Column bands show actual footprints; dotted lines show Column centerlines; orange dash-dot lines show physical segment joints. No compliance is inferred between unverified stations."
+    )
+    with st.expander("Flexure P–M3 calculation audit", expanded=False):
+        columns = [
+            "Case / Combination", "Station s (m)", "Check Point", "Station face",
+            "Segment / Zone", "Section ID", "Material", "Longitudinal template",
+            "P (kN; compression +)", "M3 (kN-m; sagging +)", "|M3| demand (kN-m)",
+            "phiMn at Pu (kN-m)", "P-M3 D/C", "Status", "Capacity method",
+            "Rebar count", "As total (mm²)", "Ordinary rebar credited",
+            "Bonded tendon groups", "Aps total (mm²)", "Internal section contexts", "Capacity basis",
+        ]
+        st.dataframe(
+            pd.DataFrame(_records(result.get("rows"))).reindex(columns=columns),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Station s (m)": st.column_config.NumberColumn(format="%.6f"),
+                "P (kN; compression +)": st.column_config.NumberColumn(format="%.3f"),
+                "M3 (kN-m; sagging +)": st.column_config.NumberColumn(format="%.3f"),
+                "|M3| demand (kN-m)": st.column_config.NumberColumn(format="%.3f"),
+                "phiMn at Pu (kN-m)": st.column_config.NumberColumn(format="%.3f"),
+                "P-M3 D/C": st.column_config.NumberColumn(format="%.3f"),
+                "As total (mm²)": st.column_config.NumberColumn(format="%.1f"),
+                "Aps total (mm²)": st.column_config.NumberColumn(format="%.1f"),
+            },
+        )
+        st.markdown(
+            "**ACI 318-19 axial-flexure basis**  \n"
+            "- Strain compatibility with φ-reduced P–M3 sectional capacity.  \n"
+            "- P is compression-positive; M3 is sagging-positive.  \n"
+            "- P and M3 are taken from the same imported ULS Final Stage row."
+        )
+        for issue in result.get("errors", []):
+            st.error(str(issue))
+        for warning in result.get("warnings", []):
+            st.warning(str(warning))
+        for note in result.get("limitations", []):
+            st.caption(f"• {note}")
+
+
 def render_crossbeam_uls_workspace() -> None:
-    """Render compact Crossbeam ULS shell without using generic member solvers."""
+    """Render compact Crossbeam ULS with ULS1A Flexure connected."""
 
     foundation = _foundation_from_session()
     summary = _dataset_summary(foundation, DATASET_ULS_FINAL)
@@ -314,42 +432,107 @@ def render_crossbeam_uls_workspace() -> None:
 
     st.subheader("ULS Strength")
     st.caption(
-        "Crossbeam-specific ACI 318-19 workspace. External FEA station rows remain the demand source; no generic Beam/Girder solver is reused."
+        "Crossbeam-specific ACI 318-19 workspace. External FEA station rows remain the demand source; Section/Rebar capacity is evaluated in the isolated Crossbeam route."
     )
     selected_check = render_active_choice(
         "ULS check to calculate",
         list(ULS_CHECKS),
         key=CB_ANALYSIS_UI1_ULS_CHECK_KEY,
     )
+
+    current_fingerprint = flexure_input_fingerprint(
+        foundation=foundation,
+        section_definitions=st.session_state.get(CB_SECLIB_DEFINITIONS_KEY),
+        rebar_template_rows=st.session_state.get(CB_RB_TEMPLATE_ROWS_KEY),
+        tendon_system_rows=st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY),
+        tendon_profile_rows=st.session_state.get(CB_PROFILE_ROWS_KEY),
+        effective_prestress_link=st.session_state.get(CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY),
+        concrete_material=st.session_state.get("concrete_material"),
+        concrete_materials=st.session_state.get("concrete_materials"),
+        active_concrete_material_name=st.session_state.get("active_concrete_material_name"),
+        deck_topping_material_name=st.session_state.get("deck_topping_material_name"),
+        prestress_ep_mpa=st.session_state.get(CB_LOSS_EP_MPA_KEY, 195000.0),
+    )
+    candidate = st.session_state.get(CB_ANALYSIS_ULS_FLEXURE_RESULT_KEY)
+    flexure_result = candidate if isinstance(candidate, Mapping) else None
+    flexure_state = _result_state(flexure_result, current_fingerprint=current_fingerprint)
+
     action_col, note_col = st.columns([1, 3])
     with action_col:
-        st.button(
+        calculate_clicked = st.button(
             f"Calculate {selected_check}",
             type="primary",
-            disabled=True,
+            disabled=(not source_ready or selected_check != "Flexure"),
             use_container_width=True,
-            help="ANALYSIS.UI1 establishes the compact workspace only; the engineering solver is a later milestone.",
+            help=(
+                "Calculate ACI 318-19 P–M3 interaction at every READY ULS station."
+                if selected_check == "Flexure"
+                else "This Crossbeam strength solver is not connected yet."
+            ),
         )
     with note_col:
         st.caption(
-            "Solver not yet connected. The disabled action prevents a UI shell from being mistaken for a completed strength check."
+            "Uses row-coupled ULS Final Stage P and M3 exactly once; P is compression positive and M3 is sagging positive."
+            if selected_check == "Flexure"
+            else "Shear and torsion remain isolated future milestones."
         )
 
-    render_metric_cards(_uls_cards(selected_check=selected_check, summary=summary))
+    st.info(
+        "**ULS sign convention:** P = compression positive (+); M3 = sagging positive (+).  \n"
+        "**Flexure check:** simultaneous P and M3 from each imported row are checked against the φ-reduced interaction capacity; D/C ≤ 1.00."
+    )
+
+    if calculate_clicked:
+        calculated = calculate_crossbeam_uls_flexure(
+            foundation=foundation,
+            section_definitions=st.session_state.get(CB_SECLIB_DEFINITIONS_KEY),
+            rebar_template_rows=st.session_state.get(CB_RB_TEMPLATE_ROWS_KEY),
+            tendon_system_rows=st.session_state.get(CB_TENDON_SYSTEM_ROWS_KEY),
+            tendon_profile_rows=st.session_state.get(CB_PROFILE_ROWS_KEY),
+            effective_prestress_link=st.session_state.get(CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY),
+            concrete_material=st.session_state.get("concrete_material"),
+            concrete_materials=st.session_state.get("concrete_materials"),
+            active_concrete_material_name=st.session_state.get("active_concrete_material_name"),
+            deck_topping_material_name=st.session_state.get("deck_topping_material_name"),
+            prestress_ep_mpa=st.session_state.get(CB_LOSS_EP_MPA_KEY, 195000.0),
+        )
+        st.session_state[CB_ANALYSIS_ULS_FLEXURE_RESULT_KEY] = calculated
+        flexure_result = calculated
+        flexure_state = str(calculated.get("status") or "NOT CALCULATED")
+
+    active_result = flexure_result if selected_check == "Flexure" else None
+    active_state = flexure_state if selected_check == "Flexure" else "NOT CALCULATED"
+    render_metric_cards(
+        _uls_cards(
+            selected_check=selected_check,
+            summary=summary,
+            result=active_result,
+            result_state=active_state,
+        )
+    )
     if not source_ready:
         st.error("ULS SOURCE BLOCKED — complete the ULS dataset and Section/Rebar mapping before calculation.")
+    if selected_check == "Flexure" and flexure_state == "STALE":
+        st.warning("Flexure result is STALE — inputs changed after the last calculation. Recalculate before use.")
 
     st.markdown("#### Compact ULS check table")
     st.dataframe(
-        _uls_check_table(selected_check=selected_check, source_ready=source_ready),
+        _uls_check_table(
+            selected_check=selected_check,
+            source_ready=source_ready,
+            flexure_result=flexure_result,
+            flexure_state=flexure_state,
+        ),
         use_container_width=True,
         hide_index=True,
     )
 
     st.markdown(f"#### {selected_check} result workspace")
-    _not_calculated_graph_note(f"Crossbeam {selected_check}")
+    if selected_check == "Flexure" and isinstance(flexure_result, Mapping) and flexure_state != "STALE":
+        _render_uls_flexure_result(foundation=foundation, result=flexure_result)
+    else:
+        _not_calculated_graph_note(f"Crossbeam {selected_check}")
     _render_source_audit(foundation, datasets=(DATASET_ULS_FINAL,))
-
 
 def _sls_dataset_for_stage(stage: str) -> str:
     return DATASET_SLS_TRANSFER if stage == SLS_STAGE_TRANSFER else DATASET_SLS_SERVICE

@@ -806,3 +806,136 @@ __all__ = [
     "make_crossbeam_station_coverage_figure",
     "make_crossbeam_transfer_stress_figure",
 ]
+
+
+def make_crossbeam_flexure_pm3_figure(
+    foundation: Mapping[str, Any],
+    result: Mapping[str, Any],
+    *,
+    case_name: str,
+) -> go.Figure:
+    """Return the full-length Crossbeam ACI P-M3 utilization chart."""
+
+    rows = [
+        dict(row)
+        for row in _rows(result.get("rows"))
+        if _text(row.get("Case / Combination")) == _text(case_name)
+    ]
+    rows.sort(
+        key=lambda row: (
+            _float(row.get("Station s (m)")),
+            _stress_face_order(row.get("Station face")),
+            _text(row.get("Context ID")),
+        )
+    )
+    fig = go.Figure()
+    if not rows:
+        return fig
+
+    _add_result_landmarks(fig, foundation)
+    x = [_float(row.get("Station s (m)")) for row in rows]
+    y = [row.get("P-M3 D/C") for row in rows]
+    symbols = [_face_symbol(row.get("Station face"), DATASET_ULS_FINAL) for row in rows]
+    customdata = [
+        [
+            _float(row.get("P (kN; compression +)")),
+            _float(row.get("M3 (kN-m; sagging +)")),
+            _float(row.get("phiMn at Pu (kN-m)")),
+            _text(row.get("Section ID")),
+            _text(row.get("Longitudinal template")),
+            _text(row.get("Status")),
+            _text(row.get("Capacity method")),
+            int(_float(row.get("Rebar count"))),
+            _float(row.get("As total (mm²)")),
+            int(_float(row.get("Bonded tendon groups"))),
+            _float(row.get("Aps total (mm²)")),
+            _text(row.get("Station face")),
+        ]
+        for row in rows
+    ]
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=y,
+            mode="lines+markers",
+            name="P–M3 interaction D/C",
+            line={"width": 3.0, "color": "#1565c0"},
+            marker={
+                "symbol": symbols,
+                "size": 9,
+                "color": "#1565c0",
+                "line": {"width": 1.0, "color": "rgba(15,23,42,0.55)"},
+            },
+            customdata=customdata,
+            connectgaps=False,
+            hovertemplate=(
+                "<b>P–M3 interaction</b><br>"
+                "s=%{x:.6f} m<br>D/C=%{y:.3f}<br>"
+                "P=%{customdata[0]:.3f} kN (compression +)<br>"
+                "M3=%{customdata[1]:.3f} kN-m (sagging +)<br>"
+                "φMn at Pu=%{customdata[2]:.3f} kN-m<br>"
+                "Section=%{customdata[3]}<br>Rebar template=%{customdata[4]}<br>"
+                "Status=%{customdata[5]}<br>Method=%{customdata[6]}<br>"
+                "Rebars=%{customdata[7]} · As=%{customdata[8]:.1f} mm²<br>"
+                "Bonded tendon groups=%{customdata[9]} · Aps=%{customdata[10]:.1f} mm²<br>"
+                "Face=%{customdata[11]}<extra></extra>"
+            ),
+        )
+    )
+    fig.add_hline(
+        y=1.0,
+        line={"width": 3.0, "dash": "dash", "color": "#e53935"},
+        annotation_text="Interaction limit = 1.00",
+        annotation_position="top right",
+    )
+
+    governing = result.get("governing")
+    if isinstance(governing, Mapping) and _text(governing.get("Case / Combination")) == _text(case_name):
+        fig.add_trace(
+            go.Scatter(
+                x=[_float(governing.get("Station s (m)"))],
+                y=[_float(governing.get("P-M3 D/C"))],
+                mode="markers+text",
+                name="Governing",
+                marker={"size": 15, "symbol": "circle-open", "color": "#00897b", "line": {"width": 3}},
+                text=["Governing"],
+                textposition="top center",
+                hovertemplate=(
+                    "Governing P–M3<br>s=%{x:.6f} m<br>D/C=%{y:.3f}<br>"
+                    f"P={_float(governing.get('P (kN; compression +)')):.3f} kN<br>"
+                    f"M3={_float(governing.get('M3 (kN-m; sagging +)')):.3f} kN-m<extra></extra>"
+                ),
+            )
+        )
+
+    length = max(_float(foundation.get("member_length_m")), 0.0)
+    fig.update_layout(
+        title={
+            "text": (
+                "P–M3 Interaction — ULS Flexure"
+                "<br><sup>ACI 318-19 · P compression positive / M3 sagging positive</sup>"
+            ),
+            "x": 0.5,
+            "xanchor": "center",
+        },
+        height=560,
+        margin={"l": 76, "r": 30, "t": 92, "b": 120},
+        hovermode="closest",
+        legend={"orientation": "h", "x": 0.5, "y": -0.24, "xanchor": "center", "yanchor": "top"},
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+    )
+    fig.update_xaxes(
+        title="Station s (m)",
+        range=[0.0, length if length > 0.0 else 1.0],
+        showgrid=True,
+        zeroline=False,
+    )
+    fig.update_yaxes(
+        title="P–M3 interaction D/C",
+        rangemode="tozero",
+        showgrid=True,
+        zeroline=False,
+    )
+    apply_global_plot_readability(fig)
+    return fig
