@@ -20599,7 +20599,13 @@ def _crossbeam_flexure_chart_rows(result_df: pd.DataFrame) -> pd.DataFrame:
     for (_case, _station), group in source.groupby(["Case", "__station"], dropna=False, sort=False):
         finite_dc = group[group["__dc"].notna()]
         if not finite_dc.empty:
-            chosen.append(finite_dc.loc[finite_dc["__dc"].astype(float).idxmax()])
+            max_dc = float(finite_dc["__dc"].astype(float).max())
+            tied = finite_dc[(finite_dc["__dc"].astype(float) - max_dc).abs() <= 1.0e-12]
+            tied_capacity = tied[tied["__capacity"].notna()]
+            if not tied_capacity.empty:
+                chosen.append(tied_capacity.loc[tied_capacity["__capacity"].astype(float).idxmin()])
+            else:
+                chosen.append(tied.iloc[0])
             continue
         finite_capacity = group[group["__capacity"].notna()]
         if not finite_capacity.empty:
@@ -20756,7 +20762,7 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
     status_style = "danger" if status == "FAIL" else ("ready" if status == "PASS" else "warning")
     result_cards = [
         {"title": "Flexure status", "value": status, "detail": "ACI 318-19 station/face review", "status": status_style, "strong": True},
-        {"title": "Governing D/C", "value": "-" if governing is None else str(governing.get("Utilization") or "-"), "detail": "-" if governing is None else f"{governing.get('Case')} @ s={_format_beam_uls_x(governing.get('Station s (m)'))}", "status": "info"},
+        {"title": "Governing Flexural D/C", "value": "-" if governing is None else str(governing.get("Flexural D/C") or "-"), "detail": "-" if governing is None else f"{governing.get('Case')} @ s={_format_beam_uls_x(governing.get('Station s (m)'))}", "status": "info"},
         {"title": "Governing source", "value": "-" if governing is None else str(governing.get("Section ID") or "-"), "detail": "-" if governing is None else str(governing.get("Section face") or "-"), "status": "info"},
         {"title": "Structural solves", "value": f"{int(result.get('structural_solves') or 0):,}", "detail": f"{int(result.get('station_checks') or 0):,} station/face checks", "status": "neutral"},
     ]
@@ -20773,11 +20779,13 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
         )
         st.caption(
             "The chart uses the governing face at duplicate Case/station locations; the audit table below retains every left/right limit. "
+            "For zero-M3 rows, φMn(Pu) uses the bending sign from the nearest nonzero station in the same Load Case; Flexural D/C is 0.000 and Axial D/C is separate. "
             "At a Precast physical Segment joint, ordinary longitudinal rebar is zero and bonded Tendons remain the section-continuity source."
         )
         display_columns = [
             "Status", "Station s (m)", "Check Point", "Case", "Section face", "Location type",
-            "Section ID", "Rebar Template", "P kN", "M3 kN-m", "Capacity", "Utilization",
+            "Section ID", "Rebar Template", "P kN", "M3 kN-m", "φMn at Pu", "Flexural D/C", "Axial D/C",
+            "Bending direction", "Direction reference",
             "Ordinary bars credited", "Bonded tendons credited", "Unbonded tendons omitted",
         ]
         st.dataframe(result_df[[column for column in display_columns if column in result_df]], use_container_width=True, hide_index=True)

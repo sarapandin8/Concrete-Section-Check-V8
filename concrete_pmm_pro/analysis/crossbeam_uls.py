@@ -5,6 +5,10 @@ reinforcement, tendon, effective-prestress, and ULS station-force inputs into a
 solver-facing contract.  It does not mutate the generic ``load_cases`` table
 and it does not add prestress force to the imported FEA demand.
 
+``CROSSBEAM.ANALYSIS1B`` keeps zero-M3 rows in that same contract, resolves only
+their bending sign from the nearest nonzero station in the same Load Case, and
+reports flexural and axial utilization separately.
+
 Internal units remain mm, MPa, N, and N-mm.  Imported Crossbeam ``M3`` is the
 sagging-positive moment in the member s-vertical plane and maps to PMM ``Mux``
 because the section x-axis is transverse and the y-axis is vertical.
@@ -103,6 +107,8 @@ CROSSBEAM_ULS_RESULT_HASH_KEY = "crossbeam_analysis1a_uls_flexure_input_hash"
 CROSSBEAM_ULS_LOAD_TABLE_KEY = "crossbeam_uls_loads_table"
 CROSSBEAM_LENGTH_KEY = "crossbeam_ui1_length_m"
 CROSSBEAM_SEGMENT_ROWS_KEY = "crossbeam_ui1_segment_layout_rows"
+_ZERO_M3_TOLERANCE_KNM = 1.0e-9
+_DIRECTION_PROBE_MOMENT_NMM = 1.0
 
 
 @dataclass(frozen=True)
@@ -139,6 +145,13 @@ class CrossbeamUlsPreparation:
     info: tuple[str, ...]
     fingerprint: str
     demand_rows: tuple[dict[str, Any], ...]
+
+
+@dataclass(frozen=True)
+class ZeroMomentDirectionReference:
+    sign: float
+    station_m: float
+    source_m3_knm: float
 
 
 def _get(state: Any, key: str, default: Any = None) -> Any:
@@ -200,6 +213,65 @@ def _without_runtime_ids(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_without_runtime_ids(item) for item in value]
     return value
+
+
+def _nearest_nonzero_m3_reference(
+    row: PreparedCrossbeamUlsRow,
+    rows: tuple[PreparedCrossbeamUlsRow, ...],
+) -> ZeroMomentDirectionReference | None:
+    """Resolve a zero-M3 bending side from the same Load Case only.
+
+    A zero moment has no mathematical direction, but section capacity at the
+    same Pu still exists.  The nearest nonzero station in the same imported
+    Load Case provides only the sign used to select the PMM direction; its
+    moment magnitude is never substituted into demand.
+    """
+
+    candidates = [
+        candidate
+        for candidate in rows
+        if candidate.case_name == row.case_name
+        and abs(float(candidate.source_m3_knm)) > _ZERO_M3_TOLERANCE_KNM
+    ]
+    if not candidates:
+        return None
+    reference = min(
+        candidates,
+        key=lambda candidate: (
+            abs(float(candidate.station_m) - float(row.station_m)),
+            float(candidate.station_m),
+            str(candidate.check_point),
+            str(candidate.section_face),
+        ),
+    )
+    source_m3 = float(reference.source_m3_knm)
+    return ZeroMomentDirectionReference(
+        sign=-1.0 if source_m3 < 0.0 else 1.0,
+        station_m=float(reference.station_m),
+        source_m3_knm=source_m3,
+    )
+
+
+def _compression_axial_dcr(pmm: Any, pu_n: float) -> float | None:
+    """Return a display-only compression axial ratio, separate from flexure."""
+
+    if not math.isfinite(float(pu_n)) or float(pu_n) < 0.0:
+        return None
+    capacities: list[float] = []
+    for point in list(getattr(pmm, "points", []) or []):
+        value = getattr(point, "phiPn_capped_N", None)
+        if value is None:
+            value = getattr(point, "phiPn_N", None)
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(numeric):
+            capacities.append(numeric)
+    max_capacity = max(capacities, default=None)
+    if max_capacity is None or max_capacity <= 0.0:
+        return None
+    return float(pu_n) / float(max_capacity)
 
 
 def _analysis_settings(state: Any) -> AnalysisSettings:
@@ -757,7 +829,7 @@ def build_crossbeam_uls_flexure_preparation(state: Any) -> CrossbeamUlsPreparati
             ]
         )
     fingerprint_payload = {
-        "schema": "crossbeam-analysis1a-uls-flexure-v1",
+        "schema": "crossbeam-analysis1b-zero-moment-capacity-v1",
         "construction_method": construction_method,
         "contract": contract,
         "demands": demand_rows,
@@ -801,14 +873,92 @@ def run_crossbeam_uls_flexure(preparation: CrossbeamUlsPreparation) -> dict[str,
             continue
 
         for row in group:
-            summary = check_uls_demands_against_rc_pmm(pmm, row.analysis_input.load_cases)
-            warnings.extend(summary.warnings)
-            result = summary.results[0] if summary.results else None
-            capacity = None if result is None else result.capacity_phiMn_Nmm
-            dcr = None if result is None else result.dcr
-            status = "REVIEW" if result is None else str(result.status)
+            source_load = row.analysis_input.load_cases[0]
+            zero_m3 = abs(float(row.source_m3_knm)) <= _ZERO_M3_TOLERANCE_KNM
+            direction_reference = (
+                _nearest_nonzero_m3_reference(row, preparation.rows)
+                if zero_m3
+                else None
+            )
+            axial_dcr = _compression_axial_dcr(pmm, float(source_load.Pu_N))
+
+            if zero_m3:
+                axial_summary = check_uls_demands_against_rc_pmm(pmm, row.analysis_input.load_cases)
+                warnings.extend(axial_summary.warnings)
+                axial_result = axial_summary.results[0] if axial_summary.results else None
+                if axial_result is not None and axial_result.dcr is not None:
+                    try:
+                        candidate_axial_dcr = float(axial_result.dcr)
+                    except (TypeError, ValueError):
+                        candidate_axial_dcr = float("nan")
+                    if math.isfinite(candidate_axial_dcr) and candidate_axial_dcr >= 0.0:
+                        axial_dcr = candidate_axial_dcr
+
+                if direction_reference is None:
+                    result = None
+                    capacity = None
+                    dcr = None
+                    status = "REVIEW"
+                    result_message = (
+                        "M3 is zero and this Load Case has no nonzero M3 station from which to resolve "
+                        "the bending direction; phiMn at Pu is intentionally not guessed."
+                    )
+                else:
+                    probe_load = source_load.model_copy(
+                        update={"Mux_Nmm": direction_reference.sign * _DIRECTION_PROBE_MOMENT_NMM}
+                    )
+                    flexure_summary = check_uls_demands_against_rc_pmm(pmm, [probe_load])
+                    warnings.extend(flexure_summary.warnings)
+                    result = flexure_summary.results[0] if flexure_summary.results else None
+                    capacity = None if result is None else result.capacity_phiMn_Nmm
+                    dcr = 0.0 if capacity is not None and float(capacity) > 0.0 else None
+                    flexure_status = "REVIEW" if result is None else str(result.status)
+                    axial_status = "REVIEW" if axial_result is None else str(axial_result.status)
+                    if "FAIL" in {flexure_status, axial_status}:
+                        status = "FAIL"
+                    elif flexure_status == "PASS" and axial_status == "PASS":
+                        status = "PASS"
+                    else:
+                        status = "REVIEW"
+                    result_message = (
+                        "Zero-M3 flexural capacity evaluated at the actual Pu using the bending sign "
+                        f"from the nearest nonzero station in the same Load Case: s = "
+                        f"{direction_reference.station_m:.3f} m, M3 = "
+                        f"{direction_reference.source_m3_knm:+,.3f} kN-m. Flexural D/C = 0.000; "
+                        "axial utilization is reported separately."
+                    )
+            else:
+                summary = check_uls_demands_against_rc_pmm(pmm, row.analysis_input.load_cases)
+                warnings.extend(summary.warnings)
+                result = summary.results[0] if summary.results else None
+                capacity = None if result is None else result.capacity_phiMn_Nmm
+                dcr = None if result is None else result.dcr
+                status = "REVIEW" if result is None else str(result.status)
+                result_message = "" if result is None else str(result.message)
             if status == "PASS" and row.omitted_unbonded_tendon_count:
                 status = "REVIEW"
+            capacity_sign = (
+                direction_reference.sign
+                if zero_m3 and direction_reference is not None
+                else (-1.0 if row.source_m3_knm < 0.0 else 1.0)
+            )
+            if zero_m3 and direction_reference is not None:
+                bending_direction = (
+                    "Sagging reference (+M3)" if direction_reference.sign > 0.0 else "Hogging reference (-M3)"
+                )
+                tension_face = "Bottom face" if direction_reference.sign > 0.0 else "Top face"
+                direction_source = (
+                    f"Same-case nearest nonzero: s = {direction_reference.station_m:.3f} m; "
+                    f"M3 = {direction_reference.source_m3_knm:+,.3f} kN-m"
+                )
+            elif zero_m3:
+                bending_direction = "Unresolved — zero M3"
+                tension_face = "-"
+                direction_source = "Unavailable — no nonzero M3 row in the same Load Case"
+            else:
+                bending_direction = "Sagging (+M3)" if row.source_m3_knm > 0.0 else "Hogging (-M3)"
+                tension_face = "Bottom face" if row.source_m3_knm > 0.0 else "Top face"
+                direction_source = "Current nonzero M3 row"
             result_rows.append(
                 {
                     "Check": "Flexure",
@@ -829,17 +979,22 @@ def run_crossbeam_uls_flexure(preparation: CrossbeamUlsPreparation) -> dict[str,
                     "M3 kN-m": row.source_m3_knm,
                     "Demand": f"{row.source_m3_knm:,.3f} kN-m",
                     "Capacity": "-" if capacity is None else f"{capacity / 1_000_000.0:,.3f} kN-m",
+                    "φMn at Pu": "-" if capacity is None else f"{capacity / 1_000_000.0:,.3f} kN-m",
                     "Utilization": "-" if dcr is None else f"{dcr:.3f}",
+                    "Flexural D/C": "-" if dcr is None else f"{dcr:.3f}",
+                    "Axial D/C": "-" if axial_dcr is None else f"{axial_dcr:.3f}",
                     "Demand kN-m": row.source_m3_knm,
                     "Capacity kN-m": float("nan") if capacity is None else capacity / 1_000_000.0,
                     "Utilization value": float("nan") if dcr is None else dcr,
-                    "Capacity plot sign": -1.0 if row.source_m3_knm < 0.0 else 1.0,
+                    "Axial D/C value": float("nan") if axial_dcr is None else axial_dcr,
+                    "Capacity plot sign": capacity_sign,
                     "Mn nominal kN-m": float("nan"),
                     "φ value": float("nan"),
                     "φMn kN-m": float("nan") if capacity is None else capacity / 1_000_000.0,
                     "D/C value": float("nan") if dcr is None else dcr,
-                    "Bending direction": "Sagging (+M3)" if row.source_m3_knm > 0.0 else "Hogging (-M3)" if row.source_m3_knm < 0.0 else "Axial / zero M3",
-                    "Tension face": "Bottom face" if row.source_m3_knm > 0.0 else "Top face" if row.source_m3_knm < 0.0 else "-",
+                    "Bending direction": bending_direction,
+                    "Tension face": tension_face,
+                    "Direction reference": direction_source,
                     "Code basis": "ACI 318-19",
                     "Strain compatibility basis": "ACI section strain compatibility",
                     "φ policy": "ACI strain-based φ from PMM engine",
@@ -851,8 +1006,12 @@ def run_crossbeam_uls_flexure(preparation: CrossbeamUlsPreparation) -> dict[str,
                     "Bonded tendons credited": row.bonded_tendon_count,
                     "Bonded Aps credited mm²": row.bonded_tendon_area_mm2,
                     "Unbonded tendons omitted": row.omitted_unbonded_tendon_count,
-                    "Method": "ACI strain compatibility / directional Pu-Mux slice",
-                    "Notes": " | ".join(row.notes + (() if result is None else (str(result.message),))),
+                    "Method": (
+                        "ACI strain compatibility / zero-demand same-case direction reference"
+                        if zero_m3
+                        else "ACI strain compatibility / directional Pu-Mux slice"
+                    ),
+                    "Notes": " | ".join(row.notes + ((result_message,) if result_message else ())),
                 }
             )
 
@@ -868,7 +1027,7 @@ def run_crossbeam_uls_flexure(preparation: CrossbeamUlsPreparation) -> dict[str,
     else:
         overall = "REVIEW"
     return {
-        "schema": "crossbeam-analysis1a-uls-flexure-result-v1",
+        "schema": "crossbeam-analysis1b-zero-moment-capacity-result-v1",
         "input_fingerprint": preparation.fingerprint,
         "status": overall,
         "rows": result_rows,

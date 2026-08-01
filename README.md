@@ -1802,3 +1802,11 @@ Harden Time-Dependent schedule defaults and adoption gates with RH 75%, 7/28/28/
 ## CROSSBEAM.AUTOFLOW1 — Automatic Prestress-to-FEA Workflow
 
 Removes repetitive handoff and load-import confirmations: a CURRENT/CLOSED loss source is adopted automatically, the final-stage FEA route applies the system-average total accounted loss once, stage basis follows the selected upload target, and FEA program/model revision remain optional QA metadata. See `README_CROSSBEAM_AUTOFLOW1.md`.
+
+## CROSSBEAM.ANALYSIS1A — ULS Station-Force Adapter & Run Readiness
+
+Connects canonical Crossbeam ULS station forces to the existing ACI PMM engine with station-specific Section/Rebar/Bonded-Tendon mapping, physical-joint continuity rules, deterministic caching, and no duplicate prestress demand. See `README_CROSSBEAM_ANALYSIS1A.md`.
+
+## CROSSBEAM.ANALYSIS1B — Zero-Moment Endpoint Capacity & D/C Separation
+
+Calculates `phiMn(Pu)` at zero-M3 Crossbeam endpoints using the nearest nonzero bending direction in the same Load Case, reports Flexural D/C separately from Axial D/C, and conservatively selects duplicate joint-face capacity. See `README_CROSSBEAM_ANALYSIS1B.md`.

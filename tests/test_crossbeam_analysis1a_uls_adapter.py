@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import pandas as pd
 import pytest
 
 from concrete_pmm_pro.analysis.crossbeam_uls import (
@@ -166,8 +167,8 @@ def test_crossbeam_adapter_blocks_only_missing_engineering_source_not_model_revi
 
 @dataclass
 class _CapacityResult:
-    capacity_phiMn_Nmm: float = 4_000_000_000.0
-    dcr: float = 0.65
+    capacity_phiMn_Nmm: float | None = 4_000_000_000.0
+    dcr: float | None = 0.65
     status: str = "PASS"
     message: str = "Demand is within the directional PMM capacity."
 
@@ -218,3 +219,172 @@ def test_analysis_page_routes_crossbeam_before_generic_preflight() -> None:
     assert "_render_crossbeam_uls_flexure_workspace()" in block
     assert block.index("_render_crossbeam_uls_flexure_workspace()") < block.index("_render_beam_girder_uls_workspace")
     assert "No active ULS load cases" not in block
+
+
+def _zero_moment_state() -> dict[str, object]:
+    state = _ready_state()
+    state["crossbeam_uls_loads_table"] = [
+        {
+            "Active": True,
+            "Station s (m)": 0.0,
+            "Check Point": "Left end",
+            "Case Name": "ULS-ENV",
+            "P": 5000.0,
+            "V2": 0.0,
+            "T": 0.0,
+            "M3": 0.0,
+            "Note": "zero left endpoint",
+        },
+        {
+            "Active": True,
+            "Station s (m)": 5.0,
+            "Check Point": "Left reference",
+            "Case Name": "ULS-ENV",
+            "P": 5000.0,
+            "V2": 320.0,
+            "T": 45.0,
+            "M3": 2200.0,
+            "Note": "nearest left reference",
+        },
+        {
+            "Active": True,
+            "Station s (m)": 15.0,
+            "Check Point": "Right reference",
+            "Case Name": "ULS-ENV",
+            "P": 5000.0,
+            "V2": -320.0,
+            "T": -45.0,
+            "M3": -1800.0,
+            "Note": "nearest right reference",
+        },
+        {
+            "Active": True,
+            "Station s (m)": 20.0,
+            "Check Point": "Right end",
+            "Case Name": "ULS-ENV",
+            "P": 5000.0,
+            "V2": 0.0,
+            "T": 0.0,
+            "M3": 0.0,
+            "Note": "zero right endpoint",
+        },
+    ]
+    return state
+
+
+def test_zero_m3_endpoints_use_nearest_same_case_direction_and_keep_axial_dc_separate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    preparation = build_crossbeam_uls_flexure_preparation(_zero_moment_state())
+    assert preparation.ready, preparation.errors
+
+    def _capacity(_pmm: object, loads: object) -> _CapacitySummary:
+        load = list(loads)[0]
+        if abs(float(load.Mux_Nmm)) <= 1.0e-9:
+            return _CapacitySummary(
+                results=(
+                    _CapacityResult(
+                        capacity_phiMn_Nmm=None,
+                        dcr=0.057,
+                        status="PASS",
+                        message="Axial-only prototype check.",
+                    ),
+                )
+            )
+        return _CapacitySummary(
+            results=(
+                _CapacityResult(
+                    capacity_phiMn_Nmm=4_000_000_000.0,
+                    dcr=abs(float(load.Mux_Nmm)) / 4_000_000_000.0,
+                    status="PASS",
+                    message="Directional capacity available.",
+                ),
+            )
+        )
+
+    monkeypatch.setattr(
+        "concrete_pmm_pro.analysis.crossbeam_uls.run_pmm_solver",
+        lambda _analysis_input: _PmmResult(),
+    )
+    monkeypatch.setattr(
+        "concrete_pmm_pro.analysis.crossbeam_uls.check_uls_demands_against_rc_pmm",
+        _capacity,
+    )
+    result = run_crossbeam_uls_flexure(preparation)
+    endpoints = {
+        float(row["Station s (m)"]): row
+        for row in result["rows"]
+        if float(row["Station s (m)"]) in {0.0, 20.0}
+    }
+
+    assert endpoints[0.0]["Capacity kN-m"] == pytest.approx(4000.0)
+    assert endpoints[20.0]["Capacity kN-m"] == pytest.approx(4000.0)
+    assert endpoints[0.0]["φMn at Pu"] == "4,000.000 kN-m"
+    assert endpoints[20.0]["φMn at Pu"] == "4,000.000 kN-m"
+    assert endpoints[0.0]["Flexural D/C"] == "0.000"
+    assert endpoints[20.0]["Flexural D/C"] == "0.000"
+    assert endpoints[0.0]["Axial D/C"] == "0.057"
+    assert endpoints[20.0]["Axial D/C"] == "0.057"
+    assert endpoints[0.0]["Capacity plot sign"] == pytest.approx(1.0)
+    assert endpoints[20.0]["Capacity plot sign"] == pytest.approx(-1.0)
+    assert "s = 5.000 m" in endpoints[0.0]["Direction reference"]
+    assert "s = 15.000 m" in endpoints[20.0]["Direction reference"]
+
+
+def test_zero_m3_without_nonzero_same_case_is_review_and_not_guessed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _ready_state()
+    state["crossbeam_uls_loads_table"] = [
+        {
+            "Active": True,
+            "Station s (m)": 5.0,
+            "Check Point": "Zero-only case",
+            "Case Name": "ULS-ZERO-ONLY",
+            "P": 5000.0,
+            "V2": 0.0,
+            "T": 0.0,
+            "M3": 0.0,
+            "Note": "direction intentionally unavailable",
+        }
+    ]
+    preparation = build_crossbeam_uls_flexure_preparation(state)
+    assert preparation.ready, preparation.errors
+
+    monkeypatch.setattr(
+        "concrete_pmm_pro.analysis.crossbeam_uls.run_pmm_solver",
+        lambda _analysis_input: _PmmResult(),
+    )
+    monkeypatch.setattr(
+        "concrete_pmm_pro.analysis.crossbeam_uls.check_uls_demands_against_rc_pmm",
+        lambda _pmm, _loads: _CapacitySummary(
+            results=(
+                _CapacityResult(
+                    capacity_phiMn_Nmm=None,
+                    dcr=0.057,
+                    status="PASS",
+                    message="Axial-only prototype check.",
+                ),
+            )
+        ),
+    )
+    row = run_crossbeam_uls_flexure(preparation)["rows"][0]
+    assert row["Status"] == "REVIEW"
+    assert row["Capacity"] == "-"
+    assert row["Flexural D/C"] == "-"
+    assert row["Axial D/C"] == "0.057"
+    assert "no nonzero M3 row" in row["Direction reference"]
+
+
+def test_crossbeam_chart_uses_lowest_capacity_when_duplicate_faces_have_equal_dc() -> None:
+    from concrete_pmm_pro.ui.analysis_page import _crossbeam_flexure_chart_rows
+
+    source = pd.DataFrame(
+        [
+            {"Case": "ULS-ENV", "Station s (m)": 10.0, "Utilization value": 0.0, "Capacity kN-m": 4200.0},
+            {"Case": "ULS-ENV", "Station s (m)": 10.0, "Utilization value": 0.0, "Capacity kN-m": 3900.0},
+        ]
+    )
+    chosen = _crossbeam_flexure_chart_rows(source)
+    assert len(chosen.index) == 1
+    assert float(chosen.iloc[0]["Capacity kN-m"]) == pytest.approx(3900.0)
