@@ -1,94 +1,91 @@
-# CROSSBEAM.SLS1A — At Transfer Concrete Stress
+# CROSSBEAM.SLS1A — Transfer-Stage Concrete Stress Check
 
-## Scope
+## Outcome
 
-This milestone connects the accepted compact Crossbeam SLS workspace to a Crossbeam-owned ACI 318-19 transfer-stage concrete stress solver.
+Adds a complete Portal Frame Crossbeam `SLS At Transfer` Analysis workspace at
+the same decision-review level as Crossbeam Flexure: guarded source readiness,
+explicit calculation action, stored current/stale result, decision cards,
+governing result, required actions, full-length chart, compact result table, and
+calculation audit.
 
-- consumes validated `SLS At Transfer` station rows from the Crossbeam Analysis foundation;
-- uses imported row-coupled `P` and `M3` directly from external FEA;
-- maps every row to its active Section ID, gross section properties, and concrete material;
-- calculates top- and bottom-fiber stress with elastic theory;
-- evaluates ACI 318-19 transfer-stage concrete stress limits;
-- evaluates the project-specific physical segment-joint compression gate;
-- displays one compact full-length engineering result chart using the accepted Beam/Girder chart language;
-- adds actual Column footprints/centerlines and physical segment-joint markers without cluttering the main chart;
-- keeps detailed station calculations and source mapping inside collapsed audit expanders.
+## Calculation contract
 
-## Sign convention and equations
+- Source: active `Crossbeam Loads → SLS Loads → At Transfer` rows only.
+- Row coupling: `P`, `V2`, `T`, and `M3` remain from the same imported FEA row.
+- Signs: `P` compression-positive; `M3` sagging-positive; displayed concrete
+  stress compression-negative and tension-positive.
+- Gross-section stresses:
 
-Result charts use:
+  ```text
+  sigma_top    = -P/A - M3/Ztop
+  sigma_bottom = -P/A + M3/Zbottom
+  ```
 
-- compression negative;
-- tension positive;
-- imported `P` compression positive;
-- imported `M3` sagging positive.
+- Imported Transfer resultants are used exactly once. Prestress force, primary
+  prestress moment, and secondary prestress are not added again.
+- `f'ci = (f'ci/f'c) × f'c` uses the existing Crossbeam stressing-strength ratio
+  and each Section ID's concrete material.
 
-For each mapped section:
+## Limit basis
 
-```text
-f_axial = -P / A
-f_top   = f_axial - M3 / Ztop
-f_bottom= f_axial + M3 / Zbottom
-```
+- ACI 318-19 Table 24.5.3.1, all other locations: compression not greater than
+  `0.60f'ci`.
+- ACI 318-19 Table 24.5.3.2, all other locations: tension not greater than
+  `0.25sqrt(f'ci)` in the app's MPa basis.
+- The simply-supported-member end limits are not applied to the Portal Frame
+  Crossbeam.
+- ACI 318-19 24.5.3.2.1 bonded-reinforcement relief is not credited by SLS1A;
+  it requires a separate total tensile-force design check.
+- Precast Segmental physical joints: every active Transfer Load Case must cover
+  every physical joint; both `LEFT LIMIT (s-)` and `RIGHT LIMIT (s+)` top and
+  bottom fibers must remain at least `0.70 MPa` in compression.
 
-Internal calculations use N, mm, N-mm, and MPa.
+## UI / QA behavior
 
-## ACI 318-19 transfer limits
+- Crossbeam routes to SLS1A before the generic SLS workflow.
+- Run button is enabled only when the Transfer source, Section/Material/f'ci
+  sources, and required joint-face coverage are complete.
+- Stored results become `STALE` when station forces, Section Library, concrete
+  materials, stressing ratio, construction method, joints, or column chart
+  geometry change.
+- Overall status covers every active Transfer Load Case; the chart selector
+  displays one case at a time for readability.
+- Full-length chart includes top/bottom stress, section-specific ACI limit
+  traces, governing compression/tension/joint markers, physical-joint markers,
+  and actual column footprints/centerlines.
+- Chart lines are visualization only; no compliance is inferred between
+  unverified imported stations.
+- FAIL states produce criterion-specific required actions. A joint tension
+  failure can report both the physical-joint and ACI tension failures.
 
-The Portal Frame Crossbeam is not treated as a simply supported member. The solver therefore uses the `all other locations` limits from ACI 318-19 Tables 24.5.3.1 and 24.5.3.2:
+## Scope exclusions
 
-```text
-Compression magnitude <= 0.60 f'ci
-Tension              <= 0.25 sqrt(f'ci) MPa
-```
+SLS1A does not calculate V2/T principal stress, shear/torsion, cracking,
+anchorage-zone or D-region behavior, transfer/development length, local bearing,
+or the ACI 318-19 24.5.3.2.1 reinforcement exception. Final Service stress,
+Result Summary, Report/QA, and Project JSON analysis-result persistence remain
+separate milestones.
 
-No credit is taken for additional bonded reinforcement under ACI 318-19 24.5.3.2.1 in this milestone.
+## Files
 
-## Precast Segmental joint gate
-
-For every imported Transfer case at every physical segment joint:
-
-```text
-s- top and bottom compression >= 0.70 MPa
-s+ top and bottom compression >= 0.70 MPa
-```
-
-Missing one-sided joint rows produce `INCOMPLETE`, not a false PASS. An actual stress or joint-compression exceedance produces `FAIL`.
-
-For Cast-in-Place construction, Section/Analysis zone boundaries are not physical joints and the joint gate is `NOT REQUIRED`.
-
-## Result lifecycle
-
-- The calculated SLS1A result is session-only and is invalidated by an input fingerprint when relevant inputs change.
-- Project JSON input persistence remains unchanged and continues to preserve Section, material, Loads, construction-type, and confirmation inputs.
-- Analysis result caches are intentionally not added to Project JSON.
-
-## Internal-tendon duct-void guard
-
-ACI 318R-19 R24.5.2.1 states that section-property calculations should account for voids created by sheathing or ducts for unbonded prestressing. At transfer, the current Crossbeam Section Library does not yet contain adopted internal-duct geometry. Therefore:
-
-- active Internal Tendons + non-failing gross-section stress result → `REVIEW`, not `PASS`;
-- active External Tendons only + complete/non-failing checks may produce `PASS`;
-- an actual ACI stress exceedance or joint-compression failure remains `FAIL`.
-
-This guard prevents the gross-section preview from being over-certified while retaining the compact result graph and station audit.
-
-## Explicit limitations
-
-- Gross Section ID properties are used; a separate net-section deduction for ungrouted tendon ducts is not included in SLS1A.
-- Lines connect imported stations for visualization only; compliance is not inferred between unverified stations.
-- Anchorage zones, beam-column joints, D-regions, shear, torsion, seismic detailing, and At Service stress remain separate milestones.
-- Result Summary and Report / QA are not connected in this milestone.
-
-## Files changed
-
-- `concrete_pmm_pro/crossbeam/sls_transfer.py`
-- `concrete_pmm_pro/crossbeam/analysis_charts.py`
-- `concrete_pmm_pro/ui/crossbeam_analysis_page.py`
+- `concrete_pmm_pro/analysis/crossbeam_sls_transfer.py`
+- `concrete_pmm_pro/analysis/__init__.py`
+- `concrete_pmm_pro/ui/analysis_page.py`
 - `tests/test_crossbeam_sls1a_transfer_stress.py`
-- `tests/test_crossbeam_analysis_ui1_compact_workspace.py`
-- `README_CROSSBEAM_SLS1A.md`
+
+## Verification
+
+- Hand-calculated rectangular section sign/equation benchmark.
+- ACI compression/tension limit benchmark.
+- Precast every-case/every-joint `s-/s+` coverage tests.
+- Physical-joint top/bottom compression and multi-failure action tests.
+- Cast-in-Place routing test.
+- External-FEA once-only/no-generic-load-case test.
+- Stable/stale fingerprint tests.
+- Full-length Plotly chart and actual column-footprint test.
+- Streamlit AppTest source-ready and calculation-button smoke tests.
+- Bare app smoke test.
 
 ## Repo summary
 
-`Add ACI 318-19 Crossbeam transfer-stage top/bottom stress checks with compact full-length charts, Column landmarks, and strict one-sided segment-joint compression QA.`
+Complete Crossbeam SLS transfer concrete-stress checks with ACI limits, two-sided physical-joint compression gates, full-length decision charts, required actions, and stale-safe external-FEA routing.

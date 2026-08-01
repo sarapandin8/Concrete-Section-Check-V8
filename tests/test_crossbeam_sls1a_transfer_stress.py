@@ -1,226 +1,394 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 
-from concrete_pmm_pro.core.concrete_materials import c45_precast_material
-from concrete_pmm_pro.crossbeam.analysis_charts import make_crossbeam_transfer_stress_figure
-from concrete_pmm_pro.crossbeam.sls_transfer import (
-    CB_ANALYSIS_SLS_TRANSFER_RESULT_KEY,
-    calculate_crossbeam_transfer_stress,
-    transfer_stress_input_fingerprint,
+import pandas as pd
+import pytest
+
+from concrete_pmm_pro.analysis.crossbeam_sls_transfer import (
+    ACI_TRANSFER_COMPRESSION_FACTOR,
+    ACI_TRANSFER_TENSION_FACTOR_MPA,
+    CROSSBEAM_TRANSFER_RESULT_HASH_KEY,
+    CROSSBEAM_TRANSFER_RESULT_KEY,
+    PHYSICAL_JOINT_MIN_COMPRESSION_MPA,
+    CrossbeamTransferPreparation,
+    PreparedCrossbeamTransferRow,
+    build_crossbeam_transfer_stress_preparation,
+    run_crossbeam_transfer_stress,
 )
-from concrete_pmm_pro.crossbeam.section_library import default_section_definitions
+from concrete_pmm_pro.core.concrete_materials import default_concrete_materials
+from concrete_pmm_pro.crossbeam.prestress_loss import (
+    CB_LOSS_ES_COLUMN_ROWS_KEY,
+    CB_LOSS_ES_CONSTRUCTION_METHOD_KEY,
+    CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
+)
+from concrete_pmm_pro.crossbeam.rebar import (
+    default_crossbeam_rebar_templates,
+    default_crossbeam_rebar_zones,
+)
+from concrete_pmm_pro.crossbeam.rebar_persistence import (
+    CB_RB_TEMPLATE_ROWS_KEY,
+    CB_RB_ZONE_ROWS_KEY,
+    CB_TR_TEMPLATE_ROWS_KEY,
+)
+from concrete_pmm_pro.crossbeam.section_library import (
+    CB_SECLIB_DEFINITIONS_KEY,
+    default_section_definitions,
+    migrate_segment_rows_to_library,
+)
+from concrete_pmm_pro.crossbeam.station_force_contract import (
+    CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY,
+    CB_STATION_FORCE_CONTRACT_KEY,
+    default_station_force_contract,
+)
+from concrete_pmm_pro.crossbeam.transverse import default_crossbeam_transverse_templates
+from concrete_pmm_pro.crossbeam.workflow import default_crossbeam_segment_rows
 
 
-PAGE_SOURCE = Path("concrete_pmm_pro/ui/crossbeam_analysis_page.py").read_text(encoding="utf-8")
-PROJECT_IO_SOURCE = Path("concrete_pmm_pro/io/project_io.py").read_text(encoding="utf-8")
-
-
-def _context(
-    *,
-    context_id: str,
-    station: float,
-    face: str = "INTERIOR",
-    case: str = "TR-01",
-    p_kn: float = 1000.0,
-    m_knm: float = 100.0,
-    physical_joint: bool = False,
-) -> dict[str, object]:
+def _base_state(*, construction_method: str = "Precast Segmental") -> dict[str, object]:
+    length_m = 20.0
+    definitions = default_section_definitions()
+    segments = migrate_segment_rows_to_library(default_crossbeam_segment_rows(length_m), definitions)
+    solid_id = str(definitions[0]["Section ID"])
+    for segment in segments:
+        segment["Section ID"] = solid_id
+        segment["Section role"] = "Solid"
+    longitudinal = default_crossbeam_rebar_templates()
+    transverse = default_crossbeam_transverse_templates()
+    zones = default_crossbeam_rebar_zones(segments, longitudinal, transverse)
+    link = {
+        "ready": False,
+        "source_id": "sls1a-external-fea-source",
+        "contract_id": "sls1a-transfer-contract",
+        "average_total_loss_percent": 20.0,
+        "effective_prestress_ratio_percent": 80.0,
+        "average_effective_stress_mpa": 0.0,
+    }
     return {
-        "Dataset": "SLS At Transfer",
-        "Stage": "Transfer stage",
-        "Source row": f"SLS At Transfer:{context_id}",
-        "Case / Combination": case,
+        "crossbeam_ui1_length_m": length_m,
+        "crossbeam_ui1_segment_layout_rows": segments,
+        CB_SECLIB_DEFINITIONS_KEY: definitions,
+        CB_RB_TEMPLATE_ROWS_KEY: longitudinal,
+        CB_RB_ZONE_ROWS_KEY: zones,
+        CB_TR_TEMPLATE_ROWS_KEY: transverse,
+        CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY: link,
+        CB_STATION_FORCE_CONTRACT_KEY: default_station_force_contract(
+            effective_prestress_link=link
+        ),
+        CB_LOSS_ES_CONSTRUCTION_METHOD_KEY: construction_method,
+        CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY: 0.80,
+        CB_LOSS_ES_COLUMN_ROWS_KEY: [
+            {
+                "Column ID": "C1",
+                "Station s (m)": 1.5,
+                "Height (m)": 10.0,
+                "Shape": "Rectangular — Equal Chamfer 4 Corners",
+                "Btrans (mm)": 2000.0,
+                "Blong (mm)": 1500.0,
+                "Corner (mm)": 200.0,
+                "Diameter (mm)": 2000.0,
+                "f'c (MPa)": 35.0,
+            }
+        ],
+        "concrete_materials": default_concrete_materials(),
+        "load_cases": [],
+        "crossbeam_sls_loads_table": [],
+    }
+
+
+def _transfer_row(station: float, *, case: str = "TR-1", check_point: str = "", p: float = 5000.0, m3: float = 0.0) -> dict[str, object]:
+    return {
+        "Active": True,
         "Station s (m)": station,
-        "Check Point": "",
-        "Station face": face,
-        "Boundary type": "Physical segment joint" if physical_joint else "Interior",
-        "Physical segment joint": physical_joint,
-        "Segment / Zone": "S1" if face != "s+" else "S2",
-        "Section ID": "CB-S01",
-        "Section role": "Solid",
-        "Area mm2": 1_000_000.0,
-        "Z top mm3": 100_000_000.0,
-        "Z bottom mm3": 100_000_000.0,
-        "P (kN; compression +)": p_kn,
-        "M3 (kN-m; sagging +)": m_knm,
-        "Context status": "READY",
-        "Context ID": context_id,
+        "Check Point": check_point,
+        "Case Name": case,
+        "Stage": "Transfer stage",
+        "P": p,
+        "V2": 125.0,
+        "T": 18.0,
+        "M3": m3,
+        "Note": "row-coupled external FEA Transfer response",
     }
 
 
-def _foundation(rows: list[dict[str, object]], *, physical_boundary: bool = False) -> dict[str, object]:
-    boundaries = []
-    if physical_boundary:
-        boundaries = [
-            {
-                "Boundary ID": "S1 / S2",
-                "Station s (m)": 5.0,
-                "Boundary type": "Physical segment joint",
-            }
-        ]
-    return {
-        "fingerprint": "foundation-001",
-        "member_length_m": 10.0,
-        "mapped_rows": rows,
-        "internal_boundaries": boundaries,
-        "columns": [
-            {"Column ID": "C1", "Station s (m)": 2.0},
-            {"Column ID": "C2", "Station s (m)": 8.0},
-        ],
-        "column_footprints": [
-            {"Column": "C1", "s_left (m)": 1.5, "s_right (m)": 2.5},
-            {"Column": "C2", "s_left (m)": 7.5, "s_right (m)": 8.5},
-        ],
-    }
+def _complete_joint_rows(*, case: str = "TR-1") -> list[dict[str, object]]:
+    # Default Crossbeam segment joints at 3, 7, 10, 13, and 17 m.
+    return [_transfer_row(station, case=case, m3=750.0 if station == 10.0 else 0.0) for station in (0.0, 3.0, 7.0, 10.0, 13.0, 17.0, 20.0)]
 
 
-def _calculate(foundation: dict[str, object], *, ratio: float = 0.8):
-    return calculate_crossbeam_transfer_stress(
-        foundation=foundation,
-        section_definitions=default_section_definitions(),
-        concrete_materials=[c45_precast_material()],
-        stressing_strength_ratio=ratio,
-    )
-
-
-def test_transfer_stress_uses_row_coupled_p_and_m3_with_accepted_sign_convention() -> None:
-    result = _calculate(_foundation([_context(context_id="1", station=4.0)]))
-    assert result["status"] == "PASS"
-    row = result["rows"][0]
-    assert math.isclose(row["Axial stress (MPa)"], -1.0)
-    assert math.isclose(row["Top bending stress (MPa)"], -1.0)
-    assert math.isclose(row["Bottom bending stress (MPa)"], 1.0)
-    assert math.isclose(row["Top stress (MPa)"], -2.0)
-    assert math.isclose(row["Bottom stress (MPa)"], 0.0)
-
-
-def test_transfer_limits_use_aci_all_other_locations_for_portal_frame() -> None:
-    result = _calculate(_foundation([_context(context_id="1", station=0.0)]))
-    row = result["rows"][0]
-    assert math.isclose(row["f'ci (MPa)"], 36.0)
-    assert math.isclose(row["Compression limit magnitude (MPa)"], 21.6)
-    assert math.isclose(row["Tension limit (MPa)"], 1.5)
-    assert "not a simply supported member" in result["limit_basis"]["compression"]
-    assert "additional bonded reinforcement" in result["limit_basis"]["tension"]
-
-
-def test_precast_joint_gate_fails_below_0_70_mpa_even_when_aci_stress_passes() -> None:
-    rows = [
-        _context(context_id="left", station=5.0, face="s-", p_kn=500.0, m_knm=0.0, physical_joint=True),
-        _context(context_id="right", station=5.0, face="s+", p_kn=500.0, m_knm=0.0, physical_joint=True),
-    ]
-    result = _calculate(_foundation(rows, physical_boundary=True))
-    assert result["stress_status"] == "PASS"
-    assert result["joint_status"] == "FAIL"
-    assert result["status"] == "FAIL"
-    assert math.isclose(result["governing_joint"]["Compression (MPa)"], 0.5)
-
-
-def test_one_transfer_joint_row_is_sufficient_and_checks_both_fibers() -> None:
-    rows = [
-        _context(context_id="left", station=5.0, face="s-", p_kn=1000.0, m_knm=0.0, physical_joint=True),
-    ]
-    result = _calculate(_foundation(rows, physical_boundary=True))
-    assert result["status"] == "PASS"
-    assert result["solver_run"] is True
-    assert result["joint_coverage_issues"] == []
-    assert len(result["joint_rows"]) == 1
-    joint = result["joint_rows"][0]
-    assert math.isclose(joint["Top stress (MPa)"], -1.0)
-    assert math.isclose(joint["Bottom stress (MPa)"], -1.0)
-    assert joint["Top status"] == "PASS"
-    assert joint["Bottom status"] == "PASS"
-
-
-def test_transfer_joint_collapses_adjacent_faces_to_one_governing_value_per_fiber() -> None:
-    rows = [
-        _context(context_id="left", station=5.0, face="s-", p_kn=2000.0, m_knm=0.0, physical_joint=True),
-        _context(context_id="right", station=5.0, face="s+", p_kn=1000.0, m_knm=0.0, physical_joint=True),
-    ]
-    result = _calculate(_foundation(rows, physical_boundary=True))
-    assert result["joint_status"] == "PASS"
-    assert len(result["joint_rows"]) == 1
-    joint = result["joint_rows"][0]
-    assert math.isclose(joint["Top stress (MPa)"], -1.0)
-    assert math.isclose(joint["Bottom stress (MPa)"], -1.0)
-    assert joint["Internal section contexts"] == 2
-    assert "Station face" not in result["governing_joint"]
-
-
-def test_cast_in_place_transfer_has_no_segment_joint_gate() -> None:
-    foundation = _foundation(
-        [_context(context_id="1", station=5.0, physical_joint=True)],
-        physical_boundary=True,
-    )
-    foundation["construction_method"] = "Cast-in-Place"
-    result = _calculate(foundation)
-    assert result["joint_status"] == "NOT REQUIRED"
-    assert result["joint_rows"] == []
-
-
-def test_transfer_input_fingerprint_changes_with_stressing_strength_ratio() -> None:
-    foundation = _foundation([_context(context_id="1", station=4.0)])
-    kwargs = {
-        "foundation": foundation,
-        "section_definitions": default_section_definitions(),
-        "concrete_materials": [c45_precast_material()],
-    }
-    fp_08 = transfer_stress_input_fingerprint(**kwargs, stressing_strength_ratio=0.8)
-    fp_09 = transfer_stress_input_fingerprint(**kwargs, stressing_strength_ratio=0.9)
-    assert fp_08 != fp_09
-
-
-def test_active_internal_tendon_keeps_gross_section_nonfailure_at_review() -> None:
-    result = calculate_crossbeam_transfer_stress(
-        foundation=_foundation([_context(context_id="1", station=4.0)]),
-        section_definitions=default_section_definitions(),
-        concrete_materials=[c45_precast_material()],
-        tendon_system_rows=[
-            {
-                "Tendon ID": "T1",
-                "Active": True,
-                "Type": "Internal",
-            }
-        ],
+def _manual_preparation(row: PreparedCrossbeamTransferRow) -> CrossbeamTransferPreparation:
+    return CrossbeamTransferPreparation(
+        ready=True,
+        rows=(row,),
+        errors=(),
+        warnings=(),
+        info=(),
+        fingerprint="manual-benchmark",
+        demand_rows=(),
+        member_length_m=20.0,
+        construction_method="Cast-in-Place",
         stressing_strength_ratio=0.8,
+        joint_stations_m=(),
+        column_rows=(),
     )
-    assert result["status"] == "REVIEW"
-    assert result["stress_status"] == "REVIEW"
-    assert result["section_basis_status"] == "REVIEW"
-    assert result["active_internal_tendon_ids"] == ["T1"]
-    assert any("duct-void geometry" in warning for warning in result["warnings"])
 
 
-def test_transfer_chart_uses_beam_girder_stress_language_and_crossbeam_landmarks() -> None:
-    foundation = _foundation(
+def test_transfer_stress_rectangular_hand_check_preserves_p_m3_signs_and_aci_limits() -> None:
+    # 1000 x 1000 rectangle: A=1,000,000 mm2 and Z=166,666,666.667 mm3.
+    # P=1000 kN -> -1 MPa. M3=500 kN-m -> top -3 MPa, bottom +3 MPa.
+    # Total top=-4 MPa and bottom=+2 MPa.
+    source = PreparedCrossbeamTransferRow(
+        station_m=5.0,
+        check_point="Benchmark",
+        case_name="TR-BENCH",
+        section_face="INTERIOR",
+        location_type="SEGMENT / ZONE INTERIOR",
+        segment_id="SEG-1",
+        section_id="RECT",
+        material_name="Concrete",
+        source_p_kn=1000.0,
+        source_v2_kn=0.0,
+        source_t_knm=0.0,
+        source_m3_knm=500.0,
+        fc_mpa=50.0,
+        fci_mpa=40.0,
+        area_mm2=1_000_000.0,
+        ix_mm4=83_333_333_333.33333,
+        z_top_mm3=166_666_666.66666666,
+        z_bottom_mm3=166_666_666.66666666,
+        is_physical_joint=False,
+    )
+    result = run_crossbeam_transfer_stress(_manual_preparation(source))
+    row = result["rows"][0]
+
+    assert row["Axial stress MPa"] == pytest.approx(-1.0)
+    assert row["Top bending stress MPa"] == pytest.approx(-3.0)
+    assert row["Bottom bending stress MPa"] == pytest.approx(3.0)
+    assert row["Top stress MPa"] == pytest.approx(-4.0)
+    assert row["Bottom stress MPa"] == pytest.approx(2.0)
+    assert row["Compression limit MPa"] == pytest.approx(-ACI_TRANSFER_COMPRESSION_FACTOR * 40.0)
+    assert row["Tension limit MPa"] == pytest.approx(ACI_TRANSFER_TENSION_FACTOR_MPA * math.sqrt(40.0))
+    assert row["Status"] == "FAIL"
+    assert result["status"] == "FAIL"
+    assert any(action["Module"] == "ACI transfer tension" for action in result["required_actions"])
+
+
+def test_precast_preparation_expands_each_unlabeled_joint_row_to_s_minus_and_s_plus() -> None:
+    state = _base_state()
+    state["crossbeam_sls_loads_table"] = _complete_joint_rows()
+    preparation = build_crossbeam_transfer_stress_preparation(state)
+
+    assert preparation.ready, preparation.errors
+    assert preparation.joint_stations_m == pytest.approx((3.0, 7.0, 10.0, 13.0, 17.0))
+    for station in preparation.joint_stations_m:
+        faces = {
+            row.section_face
+            for row in preparation.rows
+            if row.station_m == pytest.approx(station)
+        }
+        assert faces == {"LEFT LIMIT (s-)", "RIGHT LIMIT (s+)"}
+    # External FEA total resultants do not require the generic load_cases table
+    # or a ready effective-prestress tendon-capacity gate.
+    assert state["load_cases"] == []
+    assert state[CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY]["ready"] is False
+
+
+def test_precast_preparation_blocks_missing_joint_for_every_transfer_case() -> None:
+    state = _base_state()
+    state["crossbeam_sls_loads_table"] = _complete_joint_rows(case="TR-1") + [
+        _transfer_row(0.0, case="TR-2"),
+        _transfer_row(20.0, case="TR-2"),
+    ]
+    preparation = build_crossbeam_transfer_stress_preparation(state)
+
+    assert preparation.ready is False
+    assert any("TR-2: physical joint at s = 3.000000 m" in error for error in preparation.errors)
+    assert not any("TR-1: physical joint" in error for error in preparation.errors)
+
+
+def test_explicit_single_joint_side_is_blocked_until_opposite_face_is_imported() -> None:
+    state = _base_state()
+    rows = _complete_joint_rows()
+    rows = [row for row in rows if float(row["Station s (m)"]) != 10.0]
+    rows.append(_transfer_row(10.0, check_point="Joint Left", m3=750.0))
+    state["crossbeam_sls_loads_table"] = rows
+    preparation = build_crossbeam_transfer_stress_preparation(state)
+
+    assert preparation.ready is False
+    assert any("RIGHT LIMIT (s+)" in error for error in preparation.errors)
+
+    state["crossbeam_sls_loads_table"].append(
+        _transfer_row(10.0, check_point="Joint Right", m3=750.0)
+    )
+    repaired = build_crossbeam_transfer_stress_preparation(state)
+    assert repaired.ready, repaired.errors
+
+
+def test_cast_in_place_route_has_no_physical_joint_minimum_compression_gate() -> None:
+    state = _base_state(construction_method="Cast-in-Place")
+    state["crossbeam_sls_loads_table"] = [
+        _transfer_row(0.0),
+        _transfer_row(10.0, m3=500.0),
+        _transfer_row(20.0),
+    ]
+    preparation = build_crossbeam_transfer_stress_preparation(state)
+
+    assert preparation.ready, preparation.errors
+    assert preparation.joint_stations_m == ()
+    result = run_crossbeam_transfer_stress(preparation)
+    assert all(row["Location type"] != "PHYSICAL SEGMENT JOINT" for row in result["rows"])
+    assert all(math.isnan(float(row["Joint utilization"])) for row in result["fiber_rows"])
+
+
+def test_joint_minimum_compression_is_checked_for_both_fibers_and_creates_action() -> None:
+    source = PreparedCrossbeamTransferRow(
+        station_m=10.0,
+        check_point="Joint",
+        case_name="TR-JOINT",
+        section_face="LEFT LIMIT (s-)",
+        location_type="PHYSICAL SEGMENT JOINT",
+        segment_id="SEG-1",
+        section_id="RECT",
+        material_name="Concrete",
+        source_p_kn=500.0,
+        source_v2_kn=0.0,
+        source_t_knm=0.0,
+        source_m3_knm=0.0,
+        fc_mpa=50.0,
+        fci_mpa=40.0,
+        area_mm2=1_000_000.0,
+        ix_mm4=83_333_333_333.33333,
+        z_top_mm3=166_666_666.66666666,
+        z_bottom_mm3=166_666_666.66666666,
+        is_physical_joint=True,
+    )
+    result = run_crossbeam_transfer_stress(_manual_preparation(source))
+
+    assert result["status"] == "FAIL"
+    assert {row["Fiber"] for row in result["fiber_rows"]} == {"Top", "Bottom"}
+    assert all(row["Criterion"] == "Physical-joint minimum compression" for row in result["fiber_rows"])
+    assert all(row["Joint compression margin MPa"] == pytest.approx(-0.20) for row in result["fiber_rows"])
+    assert result["required_actions"][0]["Module"] == "Physical joint"
+
+
+def test_joint_tension_failure_reports_both_joint_and_aci_tension_actions() -> None:
+    source = PreparedCrossbeamTransferRow(
+        station_m=10.0,
+        check_point="Joint",
+        case_name="TR-JOINT-TENSION",
+        section_face="RIGHT LIMIT (s+)",
+        location_type="PHYSICAL SEGMENT JOINT",
+        segment_id="SEG-2",
+        section_id="RECT",
+        material_name="Concrete",
+        source_p_kn=0.0,
+        source_v2_kn=0.0,
+        source_t_knm=0.0,
+        source_m3_knm=400.0,
+        fc_mpa=50.0,
+        fci_mpa=40.0,
+        area_mm2=1_000_000.0,
+        ix_mm4=83_333_333_333.33333,
+        z_top_mm3=166_666_666.66666666,
+        z_bottom_mm3=166_666_666.66666666,
+        is_physical_joint=True,
+    )
+    result = run_crossbeam_transfer_stress(_manual_preparation(source))
+    modules = {action["Module"] for action in result["required_actions"]}
+    assert "Physical joint" in modules
+    assert "ACI transfer tension" in modules
+
+
+def test_transfer_fingerprint_is_stable_and_changes_with_engineering_or_chart_sources() -> None:
+    state = _base_state(construction_method="Cast-in-Place")
+    state["crossbeam_sls_loads_table"] = [_transfer_row(0.0), _transfer_row(10.0), _transfer_row(20.0)]
+    first = build_crossbeam_transfer_stress_preparation(state)
+    second = build_crossbeam_transfer_stress_preparation(state)
+    assert first.ready and second.ready
+    assert first.fingerprint == second.fingerprint
+
+    state["crossbeam_sls_loads_table"][1]["M3"] = 100.0
+    changed_demand = build_crossbeam_transfer_stress_preparation(state)
+    assert changed_demand.fingerprint != first.fingerprint
+
+    state[CB_LOSS_ES_COLUMN_ROWS_KEY][0]["Blong (mm)"] = 1800.0
+    changed_column = build_crossbeam_transfer_stress_preparation(state)
+    assert changed_column.fingerprint != changed_demand.fingerprint
+
+    state[CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY] = 0.75
+    changed_fci = build_crossbeam_transfer_stress_preparation(state)
+    assert changed_fci.fingerprint != changed_column.fingerprint
+
+
+def test_transfer_preparation_ignores_final_service_rows_but_blocks_invalid_fci_ratio() -> None:
+    state = _base_state(construction_method="Cast-in-Place")
+    service = _transfer_row(5.0, case="SERV")
+    service["Stage"] = "Final service stage"
+    state["crossbeam_sls_loads_table"] = [
+        _transfer_row(0.0),
+        _transfer_row(20.0),
+        service,
+    ]
+    preparation = build_crossbeam_transfer_stress_preparation(state)
+    assert preparation.ready, preparation.errors
+    assert {row["Case Name"] for row in preparation.demand_rows} == {"TR-1"}
+
+    state[CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY] = 0.10
+    blocked = build_crossbeam_transfer_stress_preparation(state)
+    assert blocked.ready is False
+    assert any("between 0.50 and 1.00" in error for error in blocked.errors)
+
+
+def test_analysis_page_routes_crossbeam_sls_to_sls1a_and_exposes_cache_and_chart_contract() -> None:
+    source = open("concrete_pmm_pro/ui/analysis_page.py", encoding="utf-8").read()
+    block = source[source.index("def render_analysis_sls_stress"):source.index("def render_analysis_sls_deflection_camber")]
+    assert "_render_crossbeam_transfer_stress_workspace()" in block
+    assert "generic SLS solver" not in block
+    assert "CROSSBEAM_TRANSFER_RESULT_KEY" in source
+    assert "CROSSBEAM_TRANSFER_RESULT_HASH_KEY" in source
+    assert "Stored Crossbeam Transfer Stress result is STALE" in source
+    assert "Column bands show actual Blong footprints" in source
+    assert "no compliance is inferred between unverified stations" in source
+
+
+def test_transfer_figure_contains_stress_limits_joint_marker_and_column_geometry() -> None:
+    from concrete_pmm_pro.ui.analysis_page import _make_crossbeam_transfer_stress_figure
+
+    result_rows = pd.DataFrame(
         [
-            _context(context_id="1", station=0.0, p_kn=1000.0, m_knm=0.0),
-            _context(context_id="2", station=5.0, p_kn=1000.0, m_knm=100.0),
-            _context(context_id="3", station=10.0, p_kn=1000.0, m_knm=0.0),
+            {
+                "Status": "PASS", "Station s (m)": 0.0, "Case": "TR-1", "Section face": "INTERIOR",
+                "Location type": "SEGMENT / ZONE INTERIOR", "Section ID": "S1", "Top stress MPa": -4.0,
+                "Bottom stress MPa": -2.0, "Compression limit MPa": -21.6, "Tension limit MPa": 1.5,
+            },
+            {
+                "Status": "PASS", "Station s (m)": 10.0, "Case": "TR-1", "Section face": "LEFT LIMIT (s-)",
+                "Location type": "PHYSICAL SEGMENT JOINT", "Section ID": "S1", "Top stress MPa": -3.0,
+                "Bottom stress MPa": -1.0, "Compression limit MPa": -21.6, "Tension limit MPa": 1.5,
+            },
+            {
+                "Status": "PASS", "Station s (m)": 20.0, "Case": "TR-1", "Section face": "INTERIOR",
+                "Location type": "SEGMENT / ZONE INTERIOR", "Section ID": "S1", "Top stress MPa": -4.0,
+                "Bottom stress MPa": -2.0, "Compression limit MPa": -21.6, "Tension limit MPa": 1.5,
+            },
         ]
     )
-    result = _calculate(foundation)
-    fig = make_crossbeam_transfer_stress_figure(foundation, result, case_name="TR-01")
-    names = [trace.name for trace in fig.data]
-    assert "Top total stress" in names
-    assert "Bottom total stress" in names
-    assert "Compression limit" in names
-    assert "Tension limit" in names
-    assert fig.layout.height == 560
-    assert "compression negative / tension positive" in fig.layout.yaxis.title.text
-    annotation_text = [str(item.text) for item in fig.layout.annotations]
-    assert any("−0.60f′ci = −0.60(36.00) = −21.60 MPa" in item for item in annotation_text)
-    assert any("+0.25√f′ci = +0.25√(36.00) = +1.50 MPa" in item for item in annotation_text)
-    compression_trace = next(trace for trace in fig.data if trace.name == "Compression limit")
-    tension_trace = next(trace for trace in fig.data if trace.name == "Tension limit")
-    assert "f′ci=%{customdata[0]:.3f} MPa" in compression_trace.hovertemplate
-    assert "f′ci=%{customdata[0]:.3f} MPa" in tension_trace.hovertemplate
-    assert len(fig.layout.shapes) >= 5  # 2 footprints, 2 centerlines, zero line/member ends
-
-
-def test_sls1a_transfer_calculation_remains_available_and_result_session_only() -> None:
-    assert "calculate_crossbeam_transfer_stress" in PAGE_SOURCE
-    assert "disabled=not source_ready" in PAGE_SOURCE
-    assert CB_ANALYSIS_SLS_TRANSFER_RESULT_KEY not in PROJECT_IO_SOURCE
+    fiber_rows = pd.DataFrame(
+        [
+            {"Case": "TR-1", "Station s (m)": 10.0, "Fiber": "Top", "Stress MPa": -3.0, "Compression utilization": 0.14, "Tension utilization": 0.0, "Joint utilization": 0.23},
+            {"Case": "TR-1", "Station s (m)": 10.0, "Fiber": "Bottom", "Stress MPa": -1.0, "Compression utilization": 0.05, "Tension utilization": 0.0, "Joint utilization": 0.70},
+        ]
+    )
+    figure = _make_crossbeam_transfer_stress_figure(
+        result_rows,
+        fiber_rows,
+        case_name="TR-1",
+        member_length_m=20.0,
+        column_rows=[{"Column ID": "C1", "Station s (m)": 1.5, "Blong (mm)": 1500.0}],
+    )
+    trace_names = {str(trace.name) for trace in figure.data}
+    assert {"Top total stress", "Bottom total stress", "Compression limit", "Tension limit", "Joint min comp."}.issubset(trace_names)
+    assert "Gov. compression" in trace_names
+    assert "Gov. joint" in trace_names
+    assert figure.layout.xaxis.range == (0.0, 20.0)
+    assert any(shape.type == "rect" and float(shape.x0) == pytest.approx(0.75) and float(shape.x1) == pytest.approx(2.25) for shape in figure.layout.shapes)

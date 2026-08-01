@@ -24,6 +24,13 @@ from concrete_pmm_pro.analysis.crossbeam_uls import (
     build_crossbeam_uls_flexure_preparation,
     run_crossbeam_uls_flexure,
 )
+from concrete_pmm_pro.analysis.crossbeam_sls_transfer import (
+    CROSSBEAM_TRANSFER_RESULT_HASH_KEY,
+    CROSSBEAM_TRANSFER_RESULT_KEY,
+    PHYSICAL_JOINT_MIN_COMPRESSION_MPA,
+    build_crossbeam_transfer_stress_preparation,
+    run_crossbeam_transfer_stress,
+)
 from concrete_pmm_pro.analysis.preflight import build_analysis_input_from_session_state, check_analysis_readiness
 from concrete_pmm_pro.analysis.pmm_solver import run_pmm_solver, run_rc_pmm_solver
 from concrete_pmm_pro.analysis.prestress_checks import (
@@ -20803,6 +20810,506 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
             st.info(str(result.get("scope") or ""))
 
 
+def _crossbeam_transfer_demand_dataframe(preparation: object) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for source in list(getattr(preparation, "demand_rows", ()) or ()):
+        if not bool(source.get("Active", True)):
+            continue
+        rows.append(
+            {
+                "Active": True,
+                "Station s (m)": source.get("Station s (m)"),
+                "Check Point": source.get("Check Point"),
+                "Case": source.get("Case Name"),
+                "Stage": source.get("Stage"),
+                "P kN": source.get("P"),
+                "V2 kN": source.get("V2"),
+                "T kN-m": source.get("T"),
+                "M3 kN-m": source.get("M3"),
+                "Note": source.get("Note"),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _crossbeam_transfer_blocking_action(message: object) -> dict[str, str]:
+    text = str(message or "").strip()
+    lowered = text.casefold()
+    if "sls at transfer" in lowered or "station-force" in lowered or "stage" in lowered:
+        return {
+            "Where to Fix": "Loads → SLS Loads → At Transfer",
+            "Recommended Action": "Import or activate row-coupled Transfer P/V2/T/M3 responses in canonical kN/kN-m units.",
+        }
+    if "physical joint" in lowered or "s-/s+" in lowered:
+        return {
+            "Where to Fix": "Loads → SLS Loads → At Transfer",
+            "Recommended Action": "Add the missing Transfer row at every physical joint and cover both Left (s-) and Right (s+) faces for each Load Case.",
+        }
+    if "stressing-strength ratio" in lowered or "f'ci" in lowered:
+        return {
+            "Where to Fix": "Sections → Prestress Loss → Elastic Shortening",
+            "Recommended Action": "Define a valid stressing-strength ratio f'ci/f'c between 0.50 and 1.00.",
+        }
+    if "concrete material" in lowered or "material" in lowered:
+        return {
+            "Where to Fix": "Setup → Materials",
+            "Recommended Action": "Define the concrete material referenced by every active Crossbeam Section ID.",
+        }
+    if "section" in lowered or "segment" in lowered or "length" in lowered:
+        return {
+            "Where to Fix": "Sections → Section Builder / Segment Layout",
+            "Recommended Action": "Complete the physical length, Section Library, Segment/Zone layout, and valid gross section geometry.",
+        }
+    fallback = _readiness_blocking_action(text)
+    return {
+        "Where to Fix": fallback["Where to Fix"],
+        "Recommended Action": fallback["Recommended Action"],
+    }
+
+
+def _crossbeam_transfer_face_order(value: object) -> int:
+    text = str(value or "").upper()
+    if "LEFT LIMIT" in text:
+        return 0
+    if "INTERIOR" in text:
+        return 1
+    if "RIGHT LIMIT" in text:
+        return 2
+    return 1
+
+
+def _crossbeam_transfer_case_rows(result_rows: pd.DataFrame, case_name: str) -> pd.DataFrame:
+    if result_rows.empty:
+        return result_rows
+    selected = result_rows[result_rows["Case"].astype(str) == str(case_name)].copy()
+    selected["__station"] = pd.to_numeric(selected["Station s (m)"], errors="coerce")
+    selected["__face_order"] = selected["Section face"].map(_crossbeam_transfer_face_order)
+    return selected.sort_values(["__station", "__face_order"], kind="stable").drop(
+        columns=["__station", "__face_order"], errors="ignore"
+    )
+
+
+def _crossbeam_transfer_governing_for_case(
+    fiber_rows: pd.DataFrame,
+    *,
+    case_name: str,
+    utilization_column: str,
+) -> Mapping[str, object] | None:
+    if fiber_rows.empty or utilization_column not in fiber_rows.columns:
+        return None
+    selected = fiber_rows[fiber_rows["Case"].astype(str) == str(case_name)].copy()
+    selected["__util"] = pd.to_numeric(selected[utilization_column], errors="coerce")
+    selected = selected[selected["__util"].notna()]
+    if selected.empty or float(selected["__util"].max()) <= 0.0:
+        return None
+    return selected.loc[selected["__util"].astype(float).idxmax()].to_dict()
+
+
+def _make_crossbeam_transfer_stress_figure(
+    result_rows: pd.DataFrame,
+    fiber_rows: pd.DataFrame,
+    *,
+    case_name: str,
+    member_length_m: float,
+    column_rows: list[Mapping[str, object]],
+) -> go.Figure:
+    """Build the full-length SLS1A transfer-stress engineering figure."""
+
+    fig = go.Figure()
+    selected = _crossbeam_transfer_case_rows(result_rows, case_name)
+    if selected.empty:
+        return fig
+    x = pd.to_numeric(selected["Station s (m)"], errors="coerce")
+    top = pd.to_numeric(selected["Top stress MPa"], errors="coerce")
+    bottom = pd.to_numeric(selected["Bottom stress MPa"], errors="coerce")
+    comp_limit = pd.to_numeric(selected["Compression limit MPa"], errors="coerce")
+    tension_limit = pd.to_numeric(selected["Tension limit MPa"], errors="coerce")
+
+    for values, name, color, symbol in (
+        (top, "Top total stress", _ENGINEERING_STRESS_PLOT_COLORS["top"], "cross"),
+        (bottom, "Bottom total stress", _ENGINEERING_STRESS_PLOT_COLORS["bottom"], "x"),
+    ):
+        fig.add_trace(
+            go.Scatter(
+                x=x,
+                y=values,
+                mode="lines+markers",
+                name=name,
+                line={"width": 3.0, "color": color},
+                marker={"size": 9, "symbol": symbol, "color": color},
+                customdata=selected[["Section face", "Section ID"]].to_numpy(),
+                hovertemplate=(
+                    "s=%{x:.3f} m<br>stress=%{y:.3f} MPa<br>"
+                    "face=%{customdata[0]}<br>Section ID=%{customdata[1]}<extra></extra>"
+                ),
+            )
+        )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=comp_limit,
+            mode="lines",
+            name="Compression limit",
+            line={"dash": "dash", "width": 2.8, "color": _ENGINEERING_STRESS_PLOT_COLORS["compression_limit"]},
+            hovertemplate="s=%{x:.3f} m<br>limit=%{y:.3f} MPa<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=tension_limit,
+            mode="lines",
+            name="Tension limit",
+            line={"dash": "dash", "width": 2.8, "color": _ENGINEERING_STRESS_PLOT_COLORS["tension_limit"]},
+            hovertemplate="s=%{x:.3f} m<br>limit=%{y:.3f} MPa<extra></extra>",
+        )
+    )
+
+    joints = selected[selected["Location type"].astype(str) == "PHYSICAL SEGMENT JOINT"]
+    if not joints.empty:
+        joint_x = sorted({float(value) for value in pd.to_numeric(joints["Station s (m)"], errors="coerce").dropna()})
+        fig.add_trace(
+            go.Scatter(
+                x=joint_x,
+                y=[-PHYSICAL_JOINT_MIN_COMPRESSION_MPA] * len(joint_x),
+                mode="markers",
+                name="Joint min comp.",
+                marker={"size": 12, "symbol": "diamond-open", "color": "#f59e0b", "line": {"width": 2}},
+                hovertemplate="Physical joint s=%{x:.3f} m<br>required stress <= %{y:.3f} MPa<extra></extra>",
+            )
+        )
+
+    governing_specs = (
+        ("Compression utilization", "Gov. compression", _ENGINEERING_STRESS_PLOT_COLORS["governing_compression"], "circle-open"),
+        ("Tension utilization", "Gov. tension", _ENGINEERING_STRESS_PLOT_COLORS["governing_tension"], "circle-open"),
+        ("Joint utilization", "Gov. joint", "#f59e0b", "diamond-open"),
+    )
+    for column, label, color, symbol in governing_specs:
+        governing = _crossbeam_transfer_governing_for_case(
+            fiber_rows,
+            case_name=case_name,
+            utilization_column=column,
+        )
+        if governing is None:
+            continue
+        fig.add_trace(
+            go.Scatter(
+                x=[float(governing.get("Station s (m)") or 0.0)],
+                y=[float(governing.get("Stress MPa") or 0.0)],
+                mode="markers+text",
+                name=label,
+                marker={"size": 15, "symbol": symbol, "color": color, "line": {"width": 3}},
+                text=[label],
+                textposition="top center" if float(governing.get("Stress MPa") or 0.0) >= 0.0 else "bottom center",
+                hovertemplate=(
+                    f"{escape(label)}<br>s=%{{x:.3f}} m<br>stress=%{{y:.3f}} MPa<br>"
+                    f"fiber={escape(str(governing.get('Fiber') or '-'))}<extra></extra>"
+                ),
+            )
+        )
+
+    for column in column_rows:
+        station = _analysis_float_or_zero(column.get("Station s (m)"))
+        width_m = max(_analysis_float_or_zero(column.get("Blong (mm)")) / 1000.0, 0.0)
+        x0 = max(0.0, station - 0.5 * width_m)
+        x1 = min(float(member_length_m), station + 0.5 * width_m)
+        fig.add_vrect(
+            x0=x0,
+            x1=x1,
+            fillcolor="rgba(100,116,139,0.10)",
+            line_width=0,
+            layer="below",
+        )
+        fig.add_vline(
+            x=station,
+            line={"color": "rgba(71,85,105,0.55)", "width": 1.5, "dash": "dot"},
+            layer="below",
+        )
+        fig.add_annotation(
+            x=station,
+            y=1.035,
+            xref="x",
+            yref="paper",
+            text=escape(str(column.get("Column ID") or "Column")),
+            showarrow=False,
+            font={"size": 10, "color": "#475569"},
+        )
+
+    _add_engineering_zero_stress_line(fig)
+    _apply_engineering_stress_plot_style(
+        fig,
+        height=650,
+        title="Concrete Stress At Transfer",
+        subtitle=(
+            "ACI 318-19 Tables 24.5.3.1/.2 · P compression positive · M3 sagging positive · "
+            "stress compression negative / tension positive"
+        ),
+    )
+    fig.update_xaxes(range=[0.0, float(member_length_m)])
+    return fig
+
+
+def _format_crossbeam_transfer_stress(value: object) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    return f"{number:+,.3f} MPa" if math.isfinite(number) else "-"
+
+
+def _format_crossbeam_transfer_utilization(value: object) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    return f"{number:.3f}" if math.isfinite(number) else "-"
+
+
+def _render_crossbeam_transfer_stress_workspace() -> None:
+    """Render the complete SLS1A Transfer concrete-stress decision workspace."""
+
+    st.markdown(_ANALYSIS_DASHBOARD_CSS, unsafe_allow_html=True)
+    st.markdown("### Crossbeam SLS At Transfer — concrete stress")
+    st.caption(
+        "Checks gross-section top/bottom concrete stress at every imported Transfer station and both sides of every Precast physical joint. "
+        "Imported FEA P/M3 contain transfer-age prestress and secondary response and are used exactly once."
+    )
+    with st.expander("Transfer stress scope / engineering assumptions", expanded=False):
+        st.markdown(
+            "- Stress convention: compression negative; tension positive. Imported P is compression positive and M3 is sagging positive.\n"
+            "- Gross concrete section: sigma_top = -P/A - M3/Ztop; sigma_bottom = -P/A + M3/Zbottom.\n"
+            "- ACI 318-19 all-other-location limits: compression <= 0.60f'ci and tension <= 0.25sqrt(f'ci).\n"
+            "- The simply-supported-member end limits are not used for this Portal Frame Crossbeam.\n"
+            "- ACI 318-19 24.5.3.2.1 bonded-reinforcement relief is not credited automatically.\n"
+            "- Every Precast physical joint must keep both s-/s+ top and bottom fibers at least 0.70 MPa in compression.\n"
+            "- V2/T, principal stress, shear/torsion, anchorage-zone, local D-region, and transfer/development length remain separate."
+        )
+
+    preparation = build_crossbeam_transfer_stress_preparation(st.session_state)
+    demand_df = _crossbeam_transfer_demand_dataframe(preparation)
+    cached = st.session_state.get(CROSSBEAM_TRANSFER_RESULT_KEY)
+    cached_hash = str(st.session_state.get(CROSSBEAM_TRANSFER_RESULT_HASH_KEY) or "")
+    cache_current = isinstance(cached, Mapping) and cached_hash == preparation.fingerprint
+
+    control_cols = st.columns([2.2, 1.0])
+    with control_cols[0]:
+        if preparation.ready:
+            st.success(
+                f"TRANSFER SOURCE READY — {len(preparation.demand_rows):,} imported row(s) expand to "
+                f"{len(preparation.rows):,} station/face check(s)."
+            )
+        else:
+            st.error("TRANSFER SOURCE BLOCKED — resolve the stage force, Section/Material, f'ci, or physical-joint coverage items below.")
+    with control_cols[1]:
+        run_clicked = st.button(
+            "Run Transfer Stress",
+            key="crossbeam_sls1a_run_transfer_stress",
+            type="primary" if preparation.ready else "secondary",
+            disabled=not preparation.ready,
+            use_container_width=True,
+            help="Runs only Crossbeam SLS At Transfer top/bottom concrete stress for the current imported station/face sources.",
+        )
+
+    if run_clicked and preparation.ready:
+        with st.spinner("Calculating Crossbeam Transfer concrete stresses..."):
+            result = run_crossbeam_transfer_stress(preparation)
+        st.session_state[CROSSBEAM_TRANSFER_RESULT_KEY] = result
+        st.session_state[CROSSBEAM_TRANSFER_RESULT_HASH_KEY] = preparation.fingerprint
+        st.session_state["analysis_status"] = str(result.get("status") or "REVIEW")
+        cached = result
+        cache_current = True
+
+    if preparation.errors:
+        with st.expander("Run blocking actions", expanded=True):
+            blocking_rows = []
+            for index, message in enumerate(preparation.errors, start=1):
+                action = _crossbeam_transfer_blocking_action(message)
+                blocking_rows.append(
+                    {
+                        "Priority": index,
+                        "Where to Fix": action["Where to Fix"],
+                        "Issue": message,
+                        "Required Action": action["Recommended Action"],
+                    }
+                )
+            st.dataframe(pd.DataFrame(blocking_rows), use_container_width=True, hide_index=True)
+    if preparation.warnings and not cache_current:
+        with st.expander("Source warnings", expanded=False):
+            for message in preparation.warnings:
+                st.warning(message)
+
+    source_cards = [
+        {
+            "title": "Transfer source",
+            "value": "READY" if preparation.ready else "SOURCE BLOCKED",
+            "detail": "Crossbeam Loads · SLS At Transfer · canonical kN/kN-m",
+            "status": "ready" if preparation.ready else "danger",
+            "strong": True,
+        },
+        {
+            "title": "Station / face checks",
+            "value": f"{len(preparation.rows):,}",
+            "detail": f"{len(preparation.joint_stations_m):,} physical joint station(s)",
+            "status": "info",
+        },
+        {
+            "title": "Transfer strength",
+            "value": f"f'ci = {preparation.stressing_strength_ratio:.3f} f'c" if math.isfinite(preparation.stressing_strength_ratio) else "INVALID",
+            "detail": "Section-specific material strength source",
+            "status": "ready" if preparation.ready else "warning",
+        },
+        {
+            "title": "Prestress demand",
+            "value": "NOT ADDED",
+            "detail": "verified external-FEA Transfer resultants used once",
+            "status": "ready",
+        },
+    ]
+    _render_analysis_summary_strip(source_cards, columns=4)
+
+    if not cache_current:
+        if isinstance(cached, Mapping):
+            st.warning("Stored Crossbeam Transfer Stress result is STALE because station forces or mapped Section/Material/f'ci/joint sources changed.")
+        else:
+            st.markdown(_beam_uls_not_calculated_notice_html("Transfer Stress"), unsafe_allow_html=True)
+        with st.expander("Transfer demand table — audit / source data", expanded=False):
+            st.dataframe(demand_df, use_container_width=True, hide_index=True)
+        return
+
+    result = dict(cached)
+    result_df = pd.DataFrame(list(result.get("rows") or []))
+    fiber_df = pd.DataFrame(list(result.get("fiber_rows") or []))
+    governing = result.get("governing_row") if isinstance(result.get("governing_row"), Mapping) else None
+    status = str(result.get("status") or "REVIEW")
+    status_style = "danger" if status == "FAIL" else ("ready" if status == "PASS" else "warning")
+    criterion = "-" if governing is None else str(governing.get("Criterion") or "-")
+    station_detail = "-" if governing is None else (
+        f"{governing.get('Case')} @ s={float(governing.get('Station s (m)') or 0.0):.3f} m · "
+        f"{governing.get('Fiber')} / {governing.get('Section face')}"
+    )
+    if governing is None:
+        actual_vs_limit = "-"
+    elif str(governing.get("Criterion") or "") == "Physical-joint minimum compression":
+        actual_vs_limit = (
+            f"compression {float(governing.get('Actual MPa') or 0.0):,.3f} / "
+            f"required {float(governing.get('Limit MPa') or 0.0):,.3f} MPa"
+        )
+    elif str(governing.get("Criterion") or "") == "ACI transfer compression":
+        actual_vs_limit = (
+            f"|compression| {float(governing.get('Actual MPa') or 0.0):,.3f} / "
+            f"limit {float(governing.get('Limit MPa') or 0.0):,.3f} MPa"
+        )
+    else:
+        actual_vs_limit = (
+            f"tension {float(governing.get('Actual MPa') or 0.0):,.3f} / "
+            f"limit {float(governing.get('Limit MPa') or 0.0):,.3f} MPa"
+        )
+    _render_analysis_summary_strip(
+        [
+            {
+                "title": "Transfer stress status",
+                "value": status,
+                "detail": "ACI 318-19 + project physical-joint criterion",
+                "status": status_style,
+                "strong": True,
+            },
+            {
+                "title": "Controlling check",
+                "value": criterion,
+                "detail": station_detail,
+                "status": status_style,
+            },
+            {
+                "title": "Actual vs limit",
+                "value": actual_vs_limit,
+                "detail": "compression negative / tension positive",
+                "status": status_style,
+            },
+            {
+                "title": "Governing utilization",
+                "value": "-" if governing is None else _format_crossbeam_transfer_utilization(governing.get("Utilization value")),
+                "detail": f"{int(result.get('fiber_checks') or 0):,} fiber checks",
+                "status": status_style,
+            },
+        ],
+        columns=4,
+    )
+
+    actions = list(result.get("required_actions") or [])
+    if actions:
+        st.markdown("#### Required actions")
+        st.dataframe(pd.DataFrame(actions), use_container_width=True, hide_index=True)
+    elif status == "PASS":
+        st.success("All imported Transfer station/fiber checks pass the applicable ACI stress limits and every imported physical-joint s-/s+ compression check passes 0.70 MPa.")
+
+    if not result_df.empty:
+        case_options = list(dict.fromkeys(result_df["Case"].astype(str).tolist()))
+        selected_case = st.selectbox(
+            "Diagram Load Case",
+            case_options,
+            key="crossbeam_sls1a_transfer_diagram_case",
+            help="The decision status covers every active Transfer case. The figure shows one selected case to remain readable.",
+        )
+        selected_rows = _crossbeam_transfer_case_rows(result_df, selected_case)
+        selected_fibers = fiber_df[fiber_df["Case"].astype(str) == str(selected_case)].copy()
+        _render_beam_uls_static_plotly_figure(
+            _make_crossbeam_transfer_stress_figure(
+                result_df,
+                fiber_df,
+                case_name=selected_case,
+                member_length_m=float(preparation.member_length_m),
+                column_rows=list(preparation.column_rows),
+            ),
+            caption=(
+                "Lines connect imported station checks for visualization only; no compliance is inferred between unverified stations. "
+                "Column bands show actual Blong footprints and dotted lines show centerlines. Physical-joint diamonds mark the required -0.70 MPa maximum stress; both s-/s+ top and bottom fibers are checked."
+            ),
+        )
+        compact_columns = [
+            "Status", "Station s (m)", "Case", "Section face", "Location type", "Section ID",
+            "P kN", "M3 kN-m", "f'ci MPa", "Top stress MPa", "Bottom stress MPa",
+            "Compression limit MPa", "Tension limit MPa", "Governing utilization",
+            "Top criterion", "Bottom criterion",
+        ]
+        st.dataframe(
+            selected_rows[[column for column in compact_columns if column in selected_rows]],
+            use_container_width=True,
+            hide_index=True,
+        )
+        with st.expander("All Transfer cases / station-face audit", expanded=False):
+            st.dataframe(
+                result_df[[column for column in compact_columns if column in result_df]],
+                use_container_width=True,
+                hide_index=True,
+            )
+        with st.expander("Calculation audit — force components, gross section properties, and fiber criteria", expanded=False):
+            audit_columns = [
+                "Status", "Station s (m)", "Check Point", "Case", "Section face", "Segment", "Section ID", "Material",
+                "P kN", "V2 kN", "T kN-m", "M3 kN-m", "f'c MPa", "f'ci MPa", "A mm2", "Ix mm4", "Ztop mm3", "Zbottom mm3",
+                "Axial stress MPa", "Top bending stress MPa", "Bottom bending stress MPa", "Top stress MPa", "Bottom stress MPa",
+                "Top utilization", "Bottom utilization", "Top joint margin MPa", "Bottom joint margin MPa", "Notes",
+            ]
+            st.dataframe(
+                result_df[[column for column in audit_columns if column in result_df]],
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption(
+                "Row-coupled source audit retains V2 and T but SLS1A uses only P and M3 for longitudinal extreme-fiber normal stress. "
+                "No Prestress force or Secondary Prestress moment is added after import."
+            )
+
+    messages = list(result.get("errors") or [])
+    warnings = list(result.get("warnings") or [])
+    if messages or warnings:
+        with st.expander("Calculation warnings / limitations", expanded=False):
+            for message in messages:
+                st.error(message)
+            for message in warnings:
+                st.warning(message)
+            st.info(str(result.get("scope") or ""))
+
+
 def render_analysis_uls_pmm() -> None:
     st.subheader("ULS Strength")
     mode_settings = _analysis_mode_from_session()
@@ -20838,8 +21345,7 @@ def render_analysis_sls_stress() -> None:
     st.subheader("SLS / Stress & Cracking")
     mode_settings = _analysis_mode_from_session()
     if is_portal_frame_crossbeam_workflow(mode_settings):
-        st.info("Crossbeam SLS At Transfer and At Service station checks are not part of ANALYSIS1A.")
-        st.warning("Use ULS Strength for the current Crossbeam Flexure station adapter. SLS concrete-stress routing remains a separate milestone and no generic SLS solver is run here.")
+        _render_crossbeam_transfer_stress_workspace()
         return
     if is_pmm_primary_workflow(mode_settings):
         st.info("SLS / Stress & Cracking is not selected for Column/Pier/Wall/Pylon PMM workflow.")
