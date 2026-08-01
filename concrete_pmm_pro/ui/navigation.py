@@ -7,10 +7,90 @@ options or execute inactive workspaces.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, MutableMapping
 from html import escape
 import re
+from typing import Any
 
 import streamlit as st
+
+from concrete_pmm_pro.core.analysis import AnalysisModeSettings
+from concrete_pmm_pro.core.analysis_modes import is_pmm_primary_workflow
+
+
+ANALYSIS_SUBPAGES = ("ULS Strength", "SLS / Stress & Cracking", "SLS Deflection / Camber")
+ANALYSIS_COLUMN_PIER_SUBPAGES = ("ULS Strength",)
+
+_WORKFLOW_MEMBER_TYPES = {
+    "column_pier_pmm",
+    "beam_girder",
+    "building_beam_girder",
+    "portal_frame_crossbeam",
+}
+_WORKFLOW_LABEL_MEMBER_TYPES = {
+    "Column / Pier / Wall / Pylon — RC / Prestressed Member": "column_pier_pmm",
+    "Bridge Beam / Girder — RC / Prestressed Member": "beam_girder",
+    "Building Beam / Girder — RC / Prestressed Member": "building_beam_girder",
+    "Portal Frame Crossbeam — Prestressed Concrete": "portal_frame_crossbeam",
+    # Legacy labels remain recovery-only so an interrupted rerun cannot erase
+    # an otherwise unambiguous workflow selection.
+    "Column / Pier / Wall / Pylon - PMM Mode": "column_pier_pmm",
+    "Beam / Girder - Future Design Workflow": "beam_girder",
+    "Beam / Girder - Flexure Mode Future": "beam_girder",
+}
+
+
+def _coerce_analysis_mode_settings(value: Any) -> AnalysisModeSettings | None:
+    """Coerce the canonical object/dict workflow state without guessing."""
+
+    if isinstance(value, AnalysisModeSettings):
+        return value
+    if isinstance(value, Mapping):
+        try:
+            return AnalysisModeSettings.model_validate(dict(value))
+        except Exception:
+            return None
+    return None
+
+
+def resolve_analysis_mode_settings(session_state: Mapping[str, Any]) -> AnalysisModeSettings:
+    """Resolve workflow before any workflow-scoped navigation is validated.
+
+    ``analysis_mode_settings`` is authoritative whenever it is valid.  The
+    Project selector's synchronized member type/label is used only as a recovery
+    source when that canonical value is temporarily absent or invalid during a
+    Streamlit rerun.  Recovery is written back when the state is mutable so the
+    remainder of the same rerun sees one stable workflow.
+    """
+
+    canonical = _coerce_analysis_mode_settings(session_state.get("analysis_mode_settings"))
+    if canonical is not None:
+        return canonical
+
+    member_type = str(session_state.get("project_analysis_mode_member_type_sync") or "")
+    if member_type not in _WORKFLOW_MEMBER_TYPES:
+        label = str(session_state.get("project_analysis_mode_member_type_label") or "")
+        member_type = _WORKFLOW_LABEL_MEMBER_TYPES.get(label, "column_pier_pmm")
+
+    recovered = AnalysisModeSettings(member_type=member_type)
+    if isinstance(session_state, MutableMapping):
+        session_state["analysis_mode_settings"] = recovered
+        session_state["project_analysis_mode_member_type_sync"] = recovered.member_type
+    return recovered
+
+
+def analysis_subpages_for_workflow(settings: AnalysisModeSettings) -> list[str]:
+    """Return the single canonical Analysis subpage list for one workflow."""
+
+    if is_pmm_primary_workflow(settings):
+        return list(ANALYSIS_COLUMN_PIER_SUBPAGES)
+    return list(ANALYSIS_SUBPAGES)
+
+
+def analysis_subpages_for_session(session_state: Mapping[str, Any]) -> list[str]:
+    """Resolve the active workflow, then return its allowed Analysis pages."""
+
+    return analysis_subpages_for_workflow(resolve_analysis_mode_settings(session_state))
 
 
 def _slug(value: str) -> str:

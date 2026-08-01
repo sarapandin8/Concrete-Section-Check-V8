@@ -117,7 +117,13 @@ from concrete_pmm_pro.core.analysis_modes import (
 )
 from concrete_pmm_pro.core.units import N_to_kN, Nmm_to_kNm
 from concrete_pmm_pro.state.dirty_state import mark_analysis_current, project_input_hash
-from concrete_pmm_pro.ui.navigation import render_active_choice
+from concrete_pmm_pro.ui.navigation import (
+    ANALYSIS_COLUMN_PIER_SUBPAGES,
+    ANALYSIS_SUBPAGES,
+    analysis_subpages_for_workflow,
+    render_active_choice,
+    resolve_analysis_mode_settings,
+)
 from concrete_pmm_pro.ui.commercial import render_metric_cards, render_page_header, render_section_bar
 from concrete_pmm_pro.geometry.summary import summarize_geometry, to_shapely_polygon
 from concrete_pmm_pro.reporting import (
@@ -268,8 +274,8 @@ from concrete_pmm_pro.verification.sls_benchmarks import (
     sls_benchmark_summary_to_dataframe,
 )
 
-ANALYSIS_SUBTABS = ["ULS Strength", "SLS / Stress & Cracking", "SLS Deflection / Camber"]
-ANALYSIS_COLUMN_PIER_SUBTABS = ["ULS Strength"]
+ANALYSIS_SUBTABS = list(ANALYSIS_SUBPAGES)
+ANALYSIS_COLUMN_PIER_SUBTABS = list(ANALYSIS_COLUMN_PIER_SUBPAGES)
 COLUMN_PIER_ULS_CHECK_SUBTABS = ["Summary", "Flexural (PMM)", "Shear", "Torsion", "Shear + Torsion"]
 # Legacy source-test token retained while PERF.RERUN1 switches from eager st.tabs
 # to lazy subpage rendering: uls_tab, sls_tab, sls_deflection_tab, report_tab
@@ -978,12 +984,7 @@ def _workflow_shear_torsion_status_text(settings: AnalysisModeSettings) -> str:
 
 
 def _analysis_mode_from_session() -> AnalysisModeSettings:
-    value = st.session_state.get("analysis_mode_settings")
-    if isinstance(value, AnalysisModeSettings):
-        return value
-    if isinstance(value, dict):
-        return AnalysisModeSettings.model_validate(value)
-    return AnalysisModeSettings()
+    return resolve_analysis_mode_settings(st.session_state)
 
 
 def _girder_sls_project_design_code_from_session() -> str:
@@ -21446,9 +21447,7 @@ def _commercial_analysis_dashboard_cards(settings: AnalysisModeSettings, active_
 
 
 def _analysis_subtabs_for_workflow(settings: AnalysisModeSettings) -> list[str]:
-    if is_pmm_primary_workflow(settings):
-        return list(ANALYSIS_COLUMN_PIER_SUBTABS)
-    return list(ANALYSIS_SUBTABS)
+    return analysis_subpages_for_workflow(settings)
 
 
 def _analysis_subpage_choice() -> str:

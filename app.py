@@ -44,7 +44,11 @@ from concrete_pmm_pro.ui.loads_page import render_loads_page
 from concrete_pmm_pro.ui.materials_page import render_materials_page
 from concrete_pmm_pro.ui.prestress_page import render_prestress_page
 from concrete_pmm_pro.ui.project_page import render_project_page
-from concrete_pmm_pro.ui.navigation import render_active_choice
+from concrete_pmm_pro.ui.navigation import (
+    analysis_subpages_for_session,
+    render_active_choice,
+    resolve_analysis_mode_settings,
+)
 from concrete_pmm_pro.ui.commercial import render_metric_cards, render_page_header, render_section_bar
 from concrete_pmm_pro.visualization.plot_readability import apply_global_plot_readability
 from concrete_pmm_pro.ui.rebar_page import render_rebar_page
@@ -88,25 +92,11 @@ def _sections_navigation_options() -> list[str]:
     return list(WORKSPACE_NAVIGATION["Sections"])
 
 
-def _analysis_navigation_options() -> list[str]:
-    """Return workflow-scoped Analysis subpages for the commercial sidebar.
-
-    Crossbeam Analysis uses compact ULS and staged SLS workspaces.  The source
-    coverage foundation remains available inside collapsed audit sections rather
-    than as a primary engineering-result page.
-    """
-
-    mode = _analysis_mode_from_session_for_chrome()
-    if is_portal_frame_crossbeam_workflow(mode):
-        return ["ULS Strength", "SLS / Stress & Joint Compression"]
-    return list(WORKSPACE_NAVIGATION["Analysis"])
-
-
 def _workspace_subpages(workspace: str) -> list[str]:
     if str(workspace) == "Sections":
         return _sections_navigation_options()
     if str(workspace) == "Analysis":
-        return _analysis_navigation_options()
+        return analysis_subpages_for_session(st.session_state)
     return list(WORKSPACE_NAVIGATION.get(str(workspace), []))
 
 
@@ -1241,22 +1231,13 @@ def _commercial_subpage_icon(subpage: str) -> str:
         "Tendon Profile": "3D",
         "ULS Strength": "ULS",
         "SLS / Stress & Cracking": "SLS",
-        "SLS / Stress & Joint Compression": "SLS",
         "SLS Deflection / Camber": "δ",
         "Report / QA": "QA",
     }.get(str(subpage), "•")
 
 
 def _analysis_mode_from_session_for_chrome() -> AnalysisModeSettings:
-    value = st.session_state.get("analysis_mode_settings")
-    if isinstance(value, AnalysisModeSettings):
-        return value
-    if isinstance(value, dict):
-        try:
-            return AnalysisModeSettings.model_validate(value)
-        except Exception:
-            return AnalysisModeSettings()
-    return AnalysisModeSettings()
+    return resolve_analysis_mode_settings(st.session_state)
 
 
 def _current_section_label_for_chrome() -> str:
@@ -3453,6 +3434,9 @@ def main() -> None:
         "Internal units: mm, MPa, N, N-mm."
     )
 
+    # CROSSBEAM.UI.NAV1: resolve the canonical workflow before Sidebar or main
+    # Analysis navigation validates/resets its workflow-scoped subpage key.
+    _analysis_mode_from_session_for_chrome()
     update_dirty_state_from_session(st.session_state)
 
     if st.session_state.get("_nav_active_workspace") == "Results":
