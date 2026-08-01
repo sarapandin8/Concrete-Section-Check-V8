@@ -33,12 +33,7 @@ FEA_APPLICATION_ROUTES = (
     FEA_ROUTE_DIRECT_EFFECTIVE_FORCE,
     FEA_ROUTE_JACKING_WITH_LOSSES,
 )
-ENGINEER_ADOPTION_REQUIRED_STATUS = (
-    "PRELIMINARY SOURCE READY — ENGINEER ADOPTION REQUIRED"
-)
-ENGINEER_ADOPTED_HANDOFF_STATUS = (
-    "ENGINEER-ADOPTED PRELIMINARY HANDOFF — EXTERNAL FEA ONLY"
-)
+AUTOMATIC_HANDOFF_READY_STATUS = "SOURCE READY — FINAL-STAGE FEA HANDOFF"
 TENDON_HANDOFF_EXPORT_COLUMNS = (
     "Tendon",
     "Aps (mm²)",
@@ -183,7 +178,7 @@ def build_effective_prestress_fea_handoff(
     generated_at_utc: str | None = None,
     audit_metadata: Mapping[str, Any] | None = None,
     application_route: str = FEA_ROUTE_DIRECT_EFFECTIVE_FORCE,
-    engineer_adopted_td: bool = False,
+    engineer_adopted_td: bool = True,
 ) -> dict[str, Any]:
     """Build a deterministic, external-FEA-only Effective Prestress handoff."""
 
@@ -322,20 +317,20 @@ def build_effective_prestress_fea_handoff(
 
     generated = generated_at_utc or datetime.now(timezone.utc).isoformat(timespec="seconds")
     source_ready = bool(not issues and tendon_handoff_rows and station_handoff_rows)
-    download_ready = bool(source_ready and engineer_adopted_td)
+    # A closed, validated loss chain is the engineering source gate.  No
+    # additional ceremonial checkbox is required to export the same result.
+    download_ready = source_ready
     if not source_ready:
         status = "SOURCE BLOCKED"
-    elif download_ready:
-        status = ENGINEER_ADOPTED_HANDOFF_STATUS
     else:
-        status = ENGINEER_ADOPTION_REQUIRED_STATUS
+        status = AUTOMATIC_HANDOFF_READY_STATUS
 
     source_id = fingerprint[:12]
     contract_payload = {
         "schema": EFFECTIVE_PRESTRESS_FEA_HANDOFF_SCHEMA,
         "source_fingerprint": fingerprint,
         "application_route": route,
-        "engineer_adopted_td": bool(engineer_adopted_td),
+        "automatic_source_adoption": bool(source_ready),
     }
     contract_fingerprint = hashlib.sha256(
         json.dumps(contract_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -375,7 +370,7 @@ def build_effective_prestress_fea_handoff(
     summary_rows: list[dict[str, Any]] = []
     add_summary(summary_rows, "Schema version", EFFECTIVE_PRESTRESS_FEA_HANDOFF_SCHEMA)
     add_summary(summary_rows, "Handoff status", status)
-    add_summary(summary_rows, "Engineer TD adoption", "ADOPTED" if engineer_adopted_td else "REQUIRED")
+    add_summary(summary_rows, "Source adoption", "AUTOMATIC WHEN CURRENT/CLOSED")
     add_summary(summary_rows, "FEA application route", route)
     add_summary(summary_rows, "Generated at (UTC)", generated)
     add_summary(summary_rows, "Source ID", source_id)
@@ -409,7 +404,7 @@ def build_effective_prestress_fea_handoff(
     add_summary(summary_rows, "Member-equivalent V/S (mm)", audit.get("v_over_s_mm"))
     add_summary(summary_rows, "TD subtotal (MPa)", summary_payload.get("time_dependent_loss_mpa"))
     add_summary(summary_rows, "Averaging basis", EFFECTIVE_PRESTRESS_FEA_HANDOFF_BASIS)
-    add_summary(summary_rows, "TD loss basis", "Representative event-stress scalar; engineer adoption required for this preliminary handoff")
+    add_summary(summary_rows, "TD loss basis", "Validated system-average total accounted loss (% fpj)")
     add_summary(summary_rows, "Secondary prestress", "Not included — calculate from structural restraint in external FEA")
     add_summary(summary_rows, "SLS return route", "Import verified FEA SLS P/V2/M3 responses in the main Loads workspace")
 
@@ -421,7 +416,7 @@ def build_effective_prestress_fea_handoff(
     instructions_rows = [
         {
             "Topic": "Purpose",
-            "Instruction": "This preliminary handoff transfers reviewed tendon stress/force data to external FEA. It is separate from ULS/SLS demand import and requires engineer adoption of the representative TD approximation.",
+            "Instruction": "This handoff transfers the CURRENT/CLOSED loss result to external FEA. Source readiness is automatic after validation; no separate confirmation is required.",
         },
         {
             "Topic": "Adopted application route",
@@ -445,7 +440,7 @@ def build_effective_prestress_fea_handoff(
         },
         {
             "Topic": "Time-dependent limitation",
-            "Instruction": "Current creep, shrinkage, and relaxation are a representative TD scalar applied to each tendon/station. This preliminary handoff is enabled only after explicit engineer adoption of that approximation.",
+            "Instruction": "The system-average total accounted loss is expressed as %fpj. Subtract its MPa equivalent once from the pre-loss FEA tendon-stress basis, then apply the resulting force to each tendon.",
         },
         {
             "Topic": "SLS feedback",
@@ -469,7 +464,7 @@ def build_effective_prestress_fea_handoff(
         "contract_fingerprint": contract_fingerprint,
         "generated_at_utc": generated,
         "application_route": route,
-        "engineer_adopted_td": bool(engineer_adopted_td),
+        "engineer_adopted_td": bool(source_ready),
         "summary_rows": summary_rows,
         "tendon_rows": tendon_handoff_rows,
         "station_rows": station_handoff_rows,

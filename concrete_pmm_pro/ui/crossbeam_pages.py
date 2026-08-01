@@ -1843,9 +1843,6 @@ def _invalidate_crossbeam_support_dependent_state(
                 "model_revision": "",
                 "prestress_source_id": "",
                 "prestress_contract_id": "",
-                "confirmed_uls_dataset": False,
-                "confirmed_sls_transfer_dataset": False,
-                "confirmed_sls_service_dataset": False,
                 "confirmed_final_prestress_applied_once": False,
                 "confirmed_external_fea_secondary": False,
                 "confirmed_uls_final_stage_response_basis": False,
@@ -8443,12 +8440,12 @@ def _render_crossbeam_loss_summary(
 def _render_crossbeam_effective_prestress_fea_handoff(
     summary_payload: Mapping[str, Any],
 ) -> None:
-    """Render a compact engineer-adopted external-FEA handoff contract."""
+    """Render the automatic, source-gated final-stage FEA handoff."""
 
     st.markdown("#### External-FEA handoff")
     st.caption(
-        "Select one application route, confirm the representative Time-Dependent approximation, "
-        "then download the reviewed tendon handoff. External FEA calculates secondary prestress; import verified FEA SLS P/V2/M3 through Loads."
+        "The CURRENT/CLOSED loss chain is adopted automatically. Apply the system-average total accounted loss "
+        "once to the pre-loss tendon stress used in FEA; external FEA calculates secondary prestress."
     )
 
     current_route = str(
@@ -8459,23 +8456,12 @@ def _render_crossbeam_effective_prestress_fea_handoff(
         current_route = FEA_ROUTE_DIRECT_EFFECTIVE_FORCE
         st.session_state[CB_EFFECTIVE_FEA_ROUTE_KEY] = current_route
 
-    route_labels = {
-        FEA_ROUTE_DIRECT_EFFECTIVE_FORCE: "Direct effective force — input fpe / Pe once",
-        FEA_ROUTE_JACKING_WITH_LOSSES: "Jacking force with FEA losses — input fpj / Pj and reproduce losses",
-    }
-    route_col, adoption_col = st.columns([1.0, 1.35])
-    with route_col:
-        route = st.selectbox(
-            "FEA application route",
-            options=list(FEA_APPLICATION_ROUTES),
-            format_func=lambda value: route_labels.get(str(value), str(value)),
-            key=CB_EFFECTIVE_FEA_ROUTE_KEY,
-            help=(
-                "Choose exactly one route. Direct effective force is recommended when the FEA program accepts "
-                "effective tendon stress/force. The alternative starts from jacking force and requires the same "
-                "loss profile to be reproduced in FEA."
-            ),
-        )
+    # The project workflow has one accepted route: calculate the total loss in
+    # this app, subtract it once from the pre-loss FEA stress basis, and apply
+    # the resulting tendon force.  Hiding alternative routes prevents an
+    # accidental second loss calculation in FEA.
+    route = FEA_ROUTE_DIRECT_EFFECTIVE_FORCE
+    st.session_state[CB_EFFECTIVE_FEA_ROUTE_KEY] = route
 
     audit_metadata = dict(summary_payload.get("handoff_audit_metadata") or {})
     source_handoff = build_effective_prestress_fea_handoff(
@@ -8483,32 +8469,20 @@ def _render_crossbeam_effective_prestress_fea_handoff(
         member_length_m=float(summary_payload.get("member_length_m") or 0.0),
         audit_metadata=audit_metadata,
         application_route=str(route),
-        engineer_adopted_td=False,
+        engineer_adopted_td=True,
     )
     source_ready = bool(source_handoff.get("ready"))
     source_fingerprint = str(source_handoff.get("source_fingerprint") or "")
     adoption_token = f"{source_fingerprint}:{route}"
-    if st.session_state.get(CB_EFFECTIVE_FEA_ADOPTION_TOKEN_KEY) != adoption_token:
-        st.session_state[CB_EFFECTIVE_FEA_TD_ADOPTION_KEY] = False
-        st.session_state[CB_EFFECTIVE_FEA_ADOPTION_TOKEN_KEY] = adoption_token
-
-    with adoption_col:
-        engineer_adopted_td = st.checkbox(
-            "Engineer adoption — accept representative TD loss for this FEA handoff",
-            key=CB_EFFECTIVE_FEA_TD_ADOPTION_KEY,
-            disabled=not source_ready,
-            help=(
-                "The current creep, shrinkage, and relaxation loss is a representative scalar, not a fully "
-                "tendon/station-dependent model. Confirm only after accepting that limitation for this FEA handoff."
-            ),
-        )
+    st.session_state[CB_EFFECTIVE_FEA_TD_ADOPTION_KEY] = source_ready
+    st.session_state[CB_EFFECTIVE_FEA_ADOPTION_TOKEN_KEY] = adoption_token
 
     handoff = build_effective_prestress_fea_handoff(
         summary_payload,
         member_length_m=float(summary_payload.get("member_length_m") or 0.0),
         audit_metadata=audit_metadata,
         application_route=str(route),
-        engineer_adopted_td=bool(engineer_adopted_td),
+        engineer_adopted_td=True,
     )
     ready = bool(handoff.get("ready"))
     download_ready = bool(handoff.get("download_ready"))
@@ -8521,7 +8495,7 @@ def _render_crossbeam_effective_prestress_fea_handoff(
         "contract_id": str(handoff.get("contract_id") or ""),
         "source_fingerprint": fingerprint,
         "application_route": str(route),
-        "engineer_adopted_td": bool(engineer_adopted_td),
+        "engineer_adopted_td": bool(download_ready),
         "average_total_loss_percent": float(summary_payload.get("average_total_loss_percent") or 0.0),
         "effective_prestress_ratio_percent": 100.0 - float(summary_payload.get("average_total_loss_percent") or 0.0),
         "average_effective_stress_mpa": float(summary_payload.get("average_effective_stress_mpa") or 0.0),
@@ -8535,16 +8509,10 @@ def _render_crossbeam_effective_prestress_fea_handoff(
         return
 
     if download_ready:
-        st.success(
-            f"ENGINEER-ADOPTED PRELIMINARY HANDOFF · {route} · external FEA secondary/SLS response pending"
-        )
-    else:
-        st.warning(
-            "PRELIMINARY SOURCE READY — select the route and confirm Engineer adoption to enable downloads."
-        )
+        st.success("SOURCE READY — apply the calculated final tendon stress/force once in external FEA.")
     st.caption(
         f"Source ID {source_id} · Contract ID {handoff.get('contract_id') or '—'} · "
-        "Do not apply the same losses twice; use exactly one FEA route."
+        "Do not calculate or subtract the same losses again in FEA."
     )
 
     compact_columns = [

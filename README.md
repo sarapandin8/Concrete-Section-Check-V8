@@ -1795,19 +1795,6 @@ Synchronizes disabled Elastic Shortening manual `f_cgp`/`Eci` fields to their cu
 
 ## CROSSBEAM.SUPPORTQA1C
 Harden Time-Dependent schedule defaults and adoption gates with RH 75%, 7/28/28/35-day construction ages, 50-year final age, legacy-zero migration, and explicit no-later-permanent-event confirmation.
+## CROSSBEAM.AUTOFLOW1 — Automatic Prestress-to-FEA Workflow
 
-## CROSSBEAM.SLS1A1 — Transfer Stress-Limit Equation Labels
-
-Adds compact equation and numerical-substitution labels directly on the dashed ACI 318-19 transfer compression/tension limit traces, with exact local `f'ci` calculations retained in hover, without changing the accepted Crossbeam SLS1A solver. See `README_CROSSBEAM_SLS1A1.md`.
-
-## CROSSBEAM.SLS1B1 — Segment-Joint Sign, Single-Result, and CIP Applicability Hotfix
-
-Corrects the signed physical-joint compression gate to `fjoint <= -0.70 MPa`, reports one governing Top and one governing Bottom stress per Precast Segmental joint without user-facing left/right splitting, adds a visible stress-sign callout, and marks the gate `NOT REQUIRED` for Cast-in-Place Crossbeams. See `README_CROSSBEAM_SLS1B1.md`.
-
-## CROSSBEAM.ULS1A — P–M3 Interaction Strength
-
-Portal Frame Crossbeam ULS Flexure now evaluates simultaneous row-coupled `P` and `M3` demands against an ACI 318-19 phi-reduced strain-compatibility interaction capacity. The compact workspace provides a full-length D/C chart, one governing result per physical segment joint, strict Precast joint rebar-continuity rules, and guarded REVIEW status for incomplete/unbonded/approximate prestress strength sources. See `README_CROSSBEAM_ULS1A.md`.
-
-## CROSSBEAM.ULS1A1 — Mu versus φMn Flexure Chart
-
-Portal Frame Crossbeam ULS Flexure now uses the accepted Bridge Beam/Girder-style full-length `Mu` versus signed `φMn at concurrent Pu` chart while retaining P–M3 utilization in cards, tables, hover data, and audit output.
+Removes repetitive handoff and load-import confirmations: a CURRENT/CLOSED loss source is adopted automatically, the final-stage FEA route applies the system-average total accounted loss once, stage basis follows the selected upload target, and FEA program/model revision remain optional QA metadata. See `README_CROSSBEAM_AUTOFLOW1.md`.

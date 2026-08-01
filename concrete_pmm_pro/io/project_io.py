@@ -84,10 +84,6 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     crossbeam_prestress_loss_settings_from_session_state,
     restore_crossbeam_prestress_loss_project_state,
 )
-from concrete_pmm_pro.crossbeam.sls_service import (
-    CB_ANALYSIS_SLS_SERVICE_SUSTAINED_CASES_KEY,
-    canonical_sustained_case_names,
-)
 from concrete_pmm_pro.data.prestress_tendon_products import (
     DEFAULT_STRAND_DIAMETER_MM,
     DEFAULT_STRAND_EP_MPA,
@@ -300,13 +296,6 @@ def _crossbeam_input_metadata_from_session(session_state: Any) -> dict[str, Any]
         ),
         "construction_method_last": _get_session_value(
             session_state, CROSSBEAM_CONSTRUCTION_METHOD_LAST_STATE_KEY, None
-        ),
-        "sls_service_sustained_cases": canonical_sustained_case_names(
-            _get_session_value(
-                session_state,
-                CB_ANALYSIS_SLS_SERVICE_SUSTAINED_CASES_KEY,
-                [],
-            )
         ),
     }
 
@@ -1366,11 +1355,6 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
         construction_last = crossbeam_input.get("construction_method_last")
         if construction_last is not None:
             session_state[CROSSBEAM_CONSTRUCTION_METHOD_LAST_STATE_KEY] = construction_last
-        sustained_cases = crossbeam_input.get("sls_service_sustained_cases")
-        if sustained_cases is not None:
-            session_state[CB_ANALYSIS_SLS_SERVICE_SUSTAINED_CASES_KEY] = canonical_sustained_case_names(
-                sustained_cases
-            )
 
     restore_crossbeam_rebar_project_state(
         project.metadata,
