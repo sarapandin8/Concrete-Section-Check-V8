@@ -1807,3 +1807,7 @@ Corrects the signed physical-joint compression gate to `fjoint <= -0.70 MPa`, re
 ## CROSSBEAM.ULS1A — P–M3 Interaction Strength
 
 Portal Frame Crossbeam ULS Flexure now evaluates simultaneous row-coupled `P` and `M3` demands against an ACI 318-19 phi-reduced strain-compatibility interaction capacity. The compact workspace provides a full-length D/C chart, one governing result per physical segment joint, strict Precast joint rebar-continuity rules, and guarded REVIEW status for incomplete/unbonded/approximate prestress strength sources. See `README_CROSSBEAM_ULS1A.md`.
+
+## CROSSBEAM.ULS1A1 — Mu versus φMn Flexure Chart
+
+Portal Frame Crossbeam ULS Flexure now uses the accepted Bridge Beam/Girder-style full-length `Mu` versus signed `φMn at concurrent Pu` chart while retaining P–M3 utilization in cards, tables, hover data, and audit output.

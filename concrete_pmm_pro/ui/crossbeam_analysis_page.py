@@ -383,7 +383,10 @@ def _render_uls_flexure_result(*, foundation: Mapping[str, Any], result: Mapping
     figure = make_crossbeam_flexure_pm3_figure(foundation, result, case_name=selected_case)
     st.plotly_chart(figure, use_container_width=True, config={"displaylogo": False})
     st.caption(
-        "Lines connect imported station checks for visualization only. Column bands show actual footprints; dotted lines show Column centerlines; orange dash-dot lines show physical segment joints. No compliance is inferred between unverified stations."
+        "Mu is the signed imported M3 demand. φMn is the available moment capacity at the concurrent imported Pu and is plotted in the Mu direction. "
+        "At zero-Mu stations, φMn is plotted as zero because no bending direction is defined; axial-only P/φPn utilization remains in the cards and audit. "
+        "Lines connect imported station checks for visualization only. Column bands show actual footprints; dotted lines show Column centerlines; "
+        "orange dash-dot lines show physical segment joints. No compliance is inferred between unverified stations."
     )
     with st.expander("Flexure P–M3 calculation audit", expanded=False):
         columns = [

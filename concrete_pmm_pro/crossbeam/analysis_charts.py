@@ -805,6 +805,7 @@ __all__ = [
     "make_crossbeam_service_stress_figure",
     "make_crossbeam_station_coverage_figure",
     "make_crossbeam_transfer_stress_figure",
+    "make_crossbeam_flexure_pm3_figure",
 ]
 
 
@@ -814,7 +815,14 @@ def make_crossbeam_flexure_pm3_figure(
     *,
     case_name: str,
 ) -> go.Figure:
-    """Return the full-length Crossbeam ACI P-M3 utilization chart."""
+    """Return the full-length Crossbeam ULS ``Mu`` versus ``φMn`` chart.
+
+    ``φMn`` is the available uniaxial M3 capacity at the concurrent imported
+    ``Pu`` from the same source row.  Capacity is plotted with the demand sign
+    so positive and negative bending directions remain visually comparable.
+    The numerical P–M3 interaction D/C remains in the cards, compact table,
+    governing marker, hover data, and calculation audit.
+    """
 
     rows = [
         dict(row)
@@ -834,13 +842,23 @@ def make_crossbeam_flexure_pm3_figure(
 
     _add_result_landmarks(fig, foundation)
     x = [_float(row.get("Station s (m)")) for row in rows]
-    y = [row.get("P-M3 D/C") for row in rows]
+    mu = [_float(row.get("M3 (kN-m; sagging +)")) for row in rows]
+    phi_mn_signed: list[float] = []
+    for row, demand in zip(rows, mu):
+        capacity = max(_float(row.get("phiMn at Pu (kN-m)")), 0.0)
+        if abs(demand) <= 1.0e-12:
+            # The axial-only branch has no moment direction.  Plot zero so the
+            # diagram does not imply an arbitrary positive/negative φMn branch;
+            # its axial P/φPn utilization remains visible in D/C cards/audit.
+            phi_mn_signed.append(0.0)
+        else:
+            phi_mn_signed.append(capacity if demand > 0.0 else -capacity)
+
     symbols = [_face_symbol(row.get("Station face"), DATASET_ULS_FINAL) for row in rows]
     customdata = [
         [
             _float(row.get("P (kN; compression +)")),
-            _float(row.get("M3 (kN-m; sagging +)")),
-            _float(row.get("phiMn at Pu (kN-m)")),
+            _float(row.get("P-M3 D/C")),
             _text(row.get("Section ID")),
             _text(row.get("Longitudinal template")),
             _text(row.get("Status")),
@@ -850,15 +868,16 @@ def make_crossbeam_flexure_pm3_figure(
             int(_float(row.get("Bonded tendon groups"))),
             _float(row.get("Aps total (mm²)")),
             _text(row.get("Station face")),
+            _float(row.get("phiMn at Pu (kN-m)")),
         ]
         for row in rows
     ]
     fig.add_trace(
         go.Scatter(
             x=x,
-            y=y,
+            y=mu,
             mode="lines+markers",
-            name="P–M3 interaction D/C",
+            name="Mu",
             line={"width": 3.0, "color": "#1565c0"},
             marker={
                 "symbol": symbols,
@@ -869,57 +888,80 @@ def make_crossbeam_flexure_pm3_figure(
             customdata=customdata,
             connectgaps=False,
             hovertemplate=(
-                "<b>P–M3 interaction</b><br>"
-                "s=%{x:.6f} m<br>D/C=%{y:.3f}<br>"
+                "<b>Mu demand</b><br>"
+                "s=%{x:.6f} m<br>Mu=%{y:.3f} kN-m<br>"
                 "P=%{customdata[0]:.3f} kN (compression +)<br>"
-                "M3=%{customdata[1]:.3f} kN-m (sagging +)<br>"
-                "φMn at Pu=%{customdata[2]:.3f} kN-m<br>"
-                "Section=%{customdata[3]}<br>Rebar template=%{customdata[4]}<br>"
-                "Status=%{customdata[5]}<br>Method=%{customdata[6]}<br>"
-                "Rebars=%{customdata[7]} · As=%{customdata[8]:.1f} mm²<br>"
-                "Bonded tendon groups=%{customdata[9]} · Aps=%{customdata[10]:.1f} mm²<br>"
-                "Face=%{customdata[11]}<extra></extra>"
+                "φMn at Pu=%{customdata[11]:.3f} kN-m<br>"
+                "P–M3 D/C=%{customdata[1]:.3f}<br>"
+                "Section=%{customdata[2]}<br>Rebar template=%{customdata[3]}<br>"
+                "Status=%{customdata[4]}<br>Method=%{customdata[5]}<br>"
+                "Rebars=%{customdata[6]} · As=%{customdata[7]:.1f} mm²<br>"
+                "Bonded tendon groups=%{customdata[8]} · Aps=%{customdata[9]:.1f} mm²<br>"
+                "Face=%{customdata[10]}<extra></extra>"
             ),
         )
     )
-    fig.add_hline(
-        y=1.0,
-        line={"width": 3.0, "dash": "dash", "color": "#e53935"},
-        annotation_text="Interaction limit = 1.00",
-        annotation_position="top right",
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=phi_mn_signed,
+            mode="lines",
+            name="φMn",
+            line={"width": 3.0, "color": "#e53935", "dash": "dash"},
+            customdata=customdata,
+            connectgaps=False,
+            hovertemplate=(
+                "<b>Available φMn at concurrent Pu</b><br>"
+                "s=%{x:.6f} m<br>φMn (plot sign)=%{y:.3f} kN-m<br>"
+                "φMn magnitude=%{customdata[11]:.3f} kN-m<br>"
+                "P=%{customdata[0]:.3f} kN (compression +)<br>"
+                "P–M3 D/C=%{customdata[1]:.3f}<br>"
+                "Status=%{customdata[4]}<extra></extra>"
+            ),
+        )
     )
 
     governing = result.get("governing")
     if isinstance(governing, Mapping) and _text(governing.get("Case / Combination")) == _text(case_name):
+        governing_mu = _float(governing.get("M3 (kN-m; sagging +)"))
+        governing_capacity = max(_float(governing.get("phiMn at Pu (kN-m)")), 0.0)
+        governing_capacity_signed = (
+            0.0
+            if abs(governing_mu) <= 1.0e-12
+            else governing_capacity if governing_mu > 0.0 else -governing_capacity
+        )
+        governing_dc = _float(governing.get("P-M3 D/C"))
         fig.add_trace(
             go.Scatter(
                 x=[_float(governing.get("Station s (m)"))],
-                y=[_float(governing.get("P-M3 D/C"))],
+                y=[governing_capacity_signed],
                 mode="markers+text",
-                name="Governing",
+                name="Gov. flexure",
                 marker={"size": 15, "symbol": "circle-open", "color": "#00897b", "line": {"width": 3}},
-                text=["Governing"],
-                textposition="top center",
+                text=[f"D/C {governing_dc:.3f}"],
+                textposition="bottom center" if governing_capacity_signed >= 0.0 else "top center",
                 hovertemplate=(
-                    "Governing P–M3<br>s=%{x:.6f} m<br>D/C=%{y:.3f}<br>"
-                    f"P={_float(governing.get('P (kN; compression +)')):.3f} kN<br>"
-                    f"M3={_float(governing.get('M3 (kN-m; sagging +)')):.3f} kN-m<extra></extra>"
+                    "<b>Governing flexure</b><br>s=%{x:.6f} m<br>"
+                    f"Mu={governing_mu:.3f} kN-m<br>"
+                    f"φMn at Pu={governing_capacity:.3f} kN-m<br>"
+                    f"P–M3 D/C={governing_dc:.3f}<extra></extra>"
                 ),
             )
         )
 
     length = max(_float(foundation.get("member_length_m")), 0.0)
+    fig.add_hline(y=0.0, line={"width": 1.2, "color": "rgba(51,65,85,0.72)"})
     fig.update_layout(
         title={
             "text": (
-                "P–M3 Interaction — ULS Flexure"
-                "<br><sup>ACI 318-19 · P compression positive / M3 sagging positive</sup>"
+                "Flexure Check — ULS"
+                "<br><sup>ACI 318-19 · Mu versus φMn at concurrent Pu · P compression positive / M3 sagging positive</sup>"
             ),
             "x": 0.5,
             "xanchor": "center",
         },
         height=560,
-        margin={"l": 76, "r": 30, "t": 92, "b": 120},
+        margin={"l": 82, "r": 30, "t": 92, "b": 120},
         hovermode="closest",
         legend={"orientation": "h", "x": 0.5, "y": -0.24, "xanchor": "center", "yanchor": "top"},
         paper_bgcolor="white",
@@ -932,10 +974,10 @@ def make_crossbeam_flexure_pm3_figure(
         zeroline=False,
     )
     fig.update_yaxes(
-        title="P–M3 interaction D/C",
-        rangemode="tozero",
+        title="Moment, Mu / φMn (kN-m)",
         showgrid=True,
         zeroline=False,
     )
     apply_global_plot_readability(fig)
     return fig
+

@@ -100,8 +100,8 @@ def test_uls_flexure_fingerprint_changes_with_row_coupled_demand() -> None:
     assert fp1 != fp2
 
 
-def test_uls_flexure_chart_has_interaction_limit_and_crossbeam_landmarks() -> None:
-    foundation = _foundation([_row(station=0.0), _row(station=5.0), _row(station=10.0)])
+def test_uls_flexure_chart_compares_mu_with_phi_mn_and_keeps_crossbeam_landmarks() -> None:
+    foundation = _foundation([_row(station=0.0, m3_knm=0.0), _row(station=5.0), _row(station=10.0)])
     result = calculate_crossbeam_uls_flexure(
         foundation=foundation,
         section_definitions=default_section_definitions(),
@@ -109,10 +109,35 @@ def test_uls_flexure_chart_has_interaction_limit_and_crossbeam_landmarks() -> No
         concrete_materials=[c45_precast_material()],
     )
     fig = make_crossbeam_flexure_pm3_figure(foundation, result, case_name="ULS-01")
-    assert "P–M3 interaction D/C" in [trace.name for trace in fig.data]
-    assert any("Interaction limit = 1.00" in str(annotation.text) for annotation in fig.layout.annotations)
-    assert fig.layout.yaxis.title.text == "P–M3 interaction D/C"
+    trace_names = [trace.name for trace in fig.data]
+    assert "Mu" in trace_names
+    assert "φMn" in trace_names
+    assert "Gov. flexure" in trace_names
+    assert fig.layout.yaxis.title.text == "Moment, Mu / φMn (kN-m)"
+    assert "Mu versus φMn at concurrent Pu" in fig.layout.title.text
     assert len(fig.layout.shapes) >= 3
+
+    mu_trace = next(trace for trace in fig.data if trace.name == "Mu")
+    phi_trace = next(trace for trace in fig.data if trace.name == "φMn")
+    assert list(mu_trace.y)[0] == 0.0
+    assert list(phi_trace.y)[0] == 0.0
+    assert list(phi_trace.y)[1] > 0.0
+
+
+def test_uls_flexure_chart_plots_capacity_in_negative_mu_direction() -> None:
+    foundation = _foundation([_row(station=5.0, m3_knm=-700.0)])
+    result = calculate_crossbeam_uls_flexure(
+        foundation=foundation,
+        section_definitions=default_section_definitions(),
+        rebar_template_rows=default_crossbeam_rebar_templates(),
+        concrete_materials=[c45_precast_material()],
+    )
+    fig = make_crossbeam_flexure_pm3_figure(foundation, result, case_name="ULS-01")
+    mu_trace = next(trace for trace in fig.data if trace.name == "Mu")
+    phi_trace = next(trace for trace in fig.data if trace.name == "φMn")
+    assert list(mu_trace.y) == [-700.0]
+    assert list(phi_trace.y)[0] < 0.0
+    assert abs(list(phi_trace.y)[0]) == result["rows"][0]["phiMn at Pu (kN-m)"]
 
 
 def test_uls1a_ui_connects_only_flexure_and_keeps_result_session_only() -> None:
