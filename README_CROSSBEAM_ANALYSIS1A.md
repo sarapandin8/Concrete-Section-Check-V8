@@ -1,44 +1,65 @@
-# CROSSBEAM.ANALYSIS1A — Navigation, Status, and Populated-Source QA
+# CROSSBEAM.ANALYSIS1A — ULS Station-Force Adapter and Run Readiness
 
-## Scope
+## Baseline
 
-This milestone hardens the accepted `CROSSBEAM.ANALYSIS1` three-stage station-check foundation before any ACI 318 strength or service-stress solver is introduced.
+- Starting ZIP: `concrete-section-pro_CROSSBEAM-AUTOFLOW1-auto-loss-handoff-simplified-imports.zip`
+- Starting SHA-256: `605bb47d87ba8090444d6ebd6a5ea50d5ac7ec5eb02b32e0e354362324260957`
 
-## Changes
+## Problem corrected
 
-- Makes the commercial sidebar use the same Crossbeam-specific Analysis subpage list as the main Analysis router, eliminating the previous generic `ULS Strength` highlight while `Station Check Foundation` was displayed.
-- Uses the complete member-code edition label (`ACI 318-19`) in the Analysis dashboard card.
-- Replaces the misleading Crossbeam runtime state with `INPUT REVIEW ONLY`; no SLS/ULS solver is marked current.
-- Hides generic Developer timing diagnostics from the Crossbeam foundation page.
-- Adds a shared full-length Crossbeam Analysis chart foundation showing:
-  - member extent `s = 0 to L`,
-  - Segment/Zone bands and Section IDs,
-  - physical Precast Segment joints or CIP analysis-zone boundaries,
-  - actual Column footprints along `s`,
-  - Column centerlines and IDs,
-  - validated ULS Final, SLS At Transfer, and SLS At Service source-station markers,
-  - one-sided `s- / s+` marker semantics.
-- Adds source-only station-coverage QA for member ends, both sides of each Column centerline, and both sides of every internal Segment/Zone boundary in all three required datasets.
-- Adds populated regression fixtures proving different Section IDs on opposite joint faces, row-coupled force preservation, actual rebar source mappings, Column-side coverage, and full-length chart landmarks.
+Crossbeam ULS resultants were stored in `crossbeam_uls_loads_table`, but the
+Analysis page fell through to the generic Column/Pier PMM workflow and required
+generic `load_cases`. The Crossbeam station-force handoff therefore had no
+consumer and the Calculate action remained blocked even when its own sources
+were ready.
 
-## Engineering limits
+## Implemented route
 
-- No ACI 318-19 stress, flexure, shear, torsion, or capacity equation is evaluated.
-- No result interpolation or production envelope is created between imported stations.
-- `STATION COVERAGE REVIEW REQUIRED` is a source-review state and does not silently become a solver PASS/FAIL result.
-- The project-specific Precast Segment Joint compression criterion (`>= 0.70 MPa` at top and bottom fibers) remains identified but is not calculated in this milestone.
-- D-regions, anchorage zones, beam-column joints, seismic detailing, and construction-stage verification remain separately guarded scopes.
+- Route Portal Frame Crossbeam ULS Strength to a dedicated station adapter
+  before the generic Analysis preflight.
+- Read active canonical Crossbeam `P/V2/T/M3` rows directly.
+- Map compression-positive `P` to PMM `Pu` and sagging-positive `M3` to PMM
+  `Mux`; retain `V2` and `T` with the same row for audit only.
+- Rebuild Section ID, concrete, generated ordinary reinforcement, tendon
+  profile position, bond state, and effective prestress at every check station.
+- At a Precast physical Segment joint, omit ordinary longitudinal rebar and
+  credit only bonded Tendons that have valid profile coverage and a
+  CURRENT/CLOSED average `fpe` source.
+- Treat Cast-in-Place Zone boundaries as property boundaries rather than
+  physical joints.
+- Use imported external-FEA resultants once. `Pe` and secondary prestress are
+  not added to demand inside Analysis.
+- Cache results with deterministic engineering fingerprints that exclude
+  runtime-generated model UUIDs.
+- Guard Crossbeam SLS and Deflection tabs instead of accidentally running a
+  generic girder route.
 
-## Files changed
+## Protected behavior
 
-- `app.py`
-- `concrete_pmm_pro/crossbeam/analysis_foundation.py`
-- `concrete_pmm_pro/crossbeam/analysis_charts.py`
-- `concrete_pmm_pro/ui/analysis_page.py`
-- `concrete_pmm_pro/ui/crossbeam_analysis_page.py`
-- `tests/test_crossbeam_analysis1a_navigation_status_chart_qa.py`
-- `README_CROSSBEAM_ANALYSIS1A.md`
+- Existing PMM equations, ACI strain compatibility, and phi-factor policy are
+  unchanged.
+- Crossbeam PT Loss and Loads equations/contracts are unchanged.
+- Generic Column/Pier, Bridge Girder, and Building Girder routes are unchanged.
+- This milestone does not calculate Shear, Torsion, combined V+T, SLS stress,
+  deflection/camber, physical-joint shear transfer, anchorage/development,
+  transition D-regions, or seismic detailing.
+- Permanently unbonded/external Tendons are not silently credited by the bonded
+  section-strain route; any otherwise passing result is downgraded to REVIEW.
+
+## QA
+
+- New adapter tests cover generic-load-case independence, row-coupled mapping,
+  interior versus physical-joint reinforcement credit, effective-prestress
+  blocking, deterministic cache fingerprints, existing-PMM invocation, and UI
+  routing.
+- A real existing-PMM smoke run completed two station checks (interior and
+  physical joint) without solver errors.
+- Selected Analysis regression: 128 passed.
+- Complete Crossbeam regression: 468 passed and 8 baseline-existing failures;
+  all eight failures reproduce on the untouched AUTOFLOW1 ZIP.
 
 ## Repo summary
 
-`Harden Crossbeam Analysis navigation and review status, add populated three-stage source QA, and establish a shared full-length chart standard with Column footprints and station-coverage gates.`
+Connect Crossbeam ULS station forces to the existing ACI PMM engine with
+station-specific Section/Rebar/Bonded-Tendon mapping, physical-joint continuity
+rules, deterministic caching, and no duplicate prestress demand.

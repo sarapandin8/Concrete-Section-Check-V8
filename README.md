@@ -1,3 +1,7 @@
+### CROSSBEAM.ANALYSIS1A — ULS Station-Force Adapter and Run Readiness
+
+Connects active Crossbeam ULS `P/V2/T/M3` station rows directly to the existing ACI 318 PMM engine, maps `P → Pu` and sagging-positive `M3 → Mux`, rebuilds Section/Rebar/Bonded-Tendon capacity sources at each station/face, and removes the unrelated generic `load_cases` preflight blocker. Precast physical joints receive zero ordinary longitudinal-rebar credit while bonded Tendons use the CURRENT/CLOSED average effective prestress; imported external-FEA demand is never augmented with `Pe` again. See `README_CROSSBEAM_ANALYSIS1A.md`.
+
 ### CROSSBEAM.PTLOSS4B3A — In-Page Construction-Stage FEA Response Import
 
 Relocates the Crossbeam `tp` incremental FEA response import from the main Loads workspace into `Sections → Prestress Loss → Time-Dependent`, restores Loads to dedicated Crossbeam ULS/SLS demand imports, adds mandatory source-scope declarations, and safely migrates deployed PTLOSS4B3 Project JSON data without changing accepted prestress-loss equations or releasing `Pe / Pe_eff`. See `README_CROSSBEAM_PTLOSS4B3A.md`.

@@ -45,8 +45,8 @@ def analysis_mode_description(settings: AnalysisModeSettings) -> str:
     if settings.member_type == PORTAL_FRAME_CROSSBEAM_WORKFLOW:
         return (
             "Portal frame prestressed concrete crossbeam workflow for station-based solid/hollow member layout, "
-            "top-referenced tendon profile definition, ACI design-code routing, and future prestress-loss FEA handoff. "
-            "WF1 establishes geometry and tendon source-of-truth only; SLS, ULS, loss, anchorage, and D-region checks remain future guarded scope."
+            "top-referenced tendon profile definition, prestress-loss FEA handoff, and ACI 318 station-based ULS flexure review. "
+            "Shear, torsion, SLS, anchorage, physical-joint shear transfer, and D-region checks remain guarded scope."
         )
     if settings.member_type == "general_section":
         return (
@@ -104,7 +104,7 @@ def analysis_mode_warnings(settings: AnalysisModeSettings) -> list[str]:
         warnings.extend(
             [
                 "Portal Frame Crossbeam uses ACI 318 project design-code routing, while the Crossbeam Prestress Loss page uses an explicit AASHTO friction/wobble basis.",
-                "Current Crossbeam tools do not certify SLS stress, final effective prestress, ULS strength, anchorage zones, solid/hollow transition zones, column joint regions, or local D-regions.",
+                "Crossbeam ULS Flexure is an engineering-review station route. Shear, torsion, SLS stress, anchorage zones, physical-joint shear transfer, solid/hollow transitions, column joint regions, and local D-regions remain outside this milestone.",
             ]
         )
     elif settings.member_type == "general_section":

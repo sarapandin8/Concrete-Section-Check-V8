@@ -18,6 +18,12 @@ from concrete_pmm_pro.visualization.plot_readability import apply_global_plot_re
 from shapely.geometry import LineString
 
 from concrete_pmm_pro.analysis.capacity_check import DemandCapacitySummary, check_uls_demands_against_rc_pmm
+from concrete_pmm_pro.analysis.crossbeam_uls import (
+    CROSSBEAM_ULS_RESULT_HASH_KEY,
+    CROSSBEAM_ULS_RESULT_KEY,
+    build_crossbeam_uls_flexure_preparation,
+    run_crossbeam_uls_flexure,
+)
 from concrete_pmm_pro.analysis.preflight import build_analysis_input_from_session_state, check_analysis_readiness
 from concrete_pmm_pro.analysis.pmm_solver import run_pmm_solver, run_rc_pmm_solver
 from concrete_pmm_pro.analysis.prestress_checks import (
@@ -100,6 +106,7 @@ from concrete_pmm_pro.core.analysis_modes import (
     is_beam_girder_future_workflow,
     is_building_beam_girder_workflow,
     is_pmm_primary_workflow,
+    is_portal_frame_crossbeam_workflow,
 )
 from concrete_pmm_pro.core.units import N_to_kN, Nmm_to_kNm
 from concrete_pmm_pro.state.dirty_state import mark_analysis_current, project_input_hash
@@ -20552,9 +20559,248 @@ def _render_analysis_settings_panel() -> None:
     st.session_state["analysis_settings"] = settings
 
 
+def _crossbeam_uls_demand_dataframe(preparation: object) -> pd.DataFrame:
+    rows = []
+    for source in list(getattr(preparation, "demand_rows", ()) or ()):
+        if not bool(source.get("Active", True)):
+            continue
+        rows.append(
+            {
+                "Active": True,
+                "Station x (m)": source.get("Station s (m)"),
+                "Case Name": source.get("Case Name"),
+                "Mux": source.get("M3"),
+                "Nu": source.get("P"),
+                "Vuy": source.get("V2"),
+                "Tu": source.get("T"),
+                "Check Point": source.get("Check Point"),
+                "Note": source.get("Note"),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _crossbeam_flexure_chart_rows(result_df: pd.DataFrame) -> pd.DataFrame:
+    """Return one conservative face per Case/station for the capacity chart.
+
+    The full audit table retains every physical-joint face.  Plotting both faces
+    at exactly one station would create a misleading vertical capacity segment,
+    so the chart uses the face with the largest finite D/C (or the lowest finite
+    capacity when D/C is unavailable).
+    """
+
+    if result_df.empty:
+        return result_df
+    source = result_df.copy()
+    source["__dc"] = pd.to_numeric(source.get("Utilization value"), errors="coerce")
+    source["__capacity"] = pd.to_numeric(source.get("Capacity kN-m"), errors="coerce")
+    source["__station"] = pd.to_numeric(source.get("Station s (m)"), errors="coerce")
+    chosen: list[pd.Series] = []
+    for (_case, _station), group in source.groupby(["Case", "__station"], dropna=False, sort=False):
+        finite_dc = group[group["__dc"].notna()]
+        if not finite_dc.empty:
+            chosen.append(finite_dc.loc[finite_dc["__dc"].astype(float).idxmax()])
+            continue
+        finite_capacity = group[group["__capacity"].notna()]
+        if not finite_capacity.empty:
+            chosen.append(finite_capacity.loc[finite_capacity["__capacity"].astype(float).idxmin()])
+        else:
+            chosen.append(group.iloc[0])
+    return pd.DataFrame(chosen).drop(columns=["__dc", "__capacity", "__station"], errors="ignore")
+
+
+def _crossbeam_uls_blocking_action(message: object) -> dict[str, str]:
+    text = str(message or "").strip()
+    lowered = text.casefold()
+    if "effective prestress" in lowered or "fpe" in lowered or "current/closed" in lowered:
+        return {
+            "Where to Fix": "Sections → Prestress Loss → Effective Prestress",
+            "Recommended Action": "Complete the loss source and tendon coverage; the handoff becomes ready automatically without an extra adoption checkbox.",
+        }
+    if "tendon" in lowered or "bond" in lowered or "aps" in lowered or "fpu" in lowered:
+        return {
+            "Where to Fix": "Sections → Tendon System / Tendon Profile",
+            "Recommended Action": "Complete active tendon geometry, final bond state, strand properties, and profile coverage at this station.",
+        }
+    if "reinforcement" in lowered or "rebar" in lowered or "template" in lowered or "zone" in lowered:
+        return {
+            "Where to Fix": "Sections → Rebar",
+            "Recommended Action": "Assign an active longitudinal and transverse template to every applicable Segment/Zone.",
+        }
+    if "section" in lowered or "segment" in lowered or "physical length" in lowered:
+        return {
+            "Where to Fix": "Sections → Section Builder",
+            "Recommended Action": "Complete the Crossbeam length, Segment/Zone layout, Section ID assignment, and valid section geometry.",
+        }
+    if "concrete material" in lowered:
+        return {
+            "Where to Fix": "Materials",
+            "Recommended Action": "Define the concrete material referenced by each active Crossbeam Section ID.",
+        }
+    if "station-force" in lowered or "uls" in lowered or "station" in lowered:
+        return {
+            "Where to Fix": "Loads → Crossbeam ULS",
+            "Recommended Action": "Correct or activate the canonical row-coupled P/V2/T/M3 station-force rows.",
+        }
+    fallback = _readiness_blocking_action(text)
+    return {
+        "Where to Fix": fallback["Where to Fix"],
+        "Recommended Action": fallback["Recommended Action"],
+    }
+
+
+def _render_crossbeam_uls_flexure_workspace() -> None:
+    """Render the Crossbeam-only ULS station adapter and on-demand flexure run."""
+
+    st.markdown(_ANALYSIS_DASHBOARD_CSS, unsafe_allow_html=True)
+    st.markdown("### Crossbeam ULS Flexure — station checks")
+    st.caption(
+        "Reads active row-coupled P/V2/T/M3 demands from Crossbeam Loads. "
+        "For this milestone P maps to Pu and sagging-positive M3 maps to PMM Mux; Pe and secondary prestress are not added to demand again."
+    )
+    with st.expander("Crossbeam ULS scope / engineering assumptions", expanded=False):
+        st.markdown(
+            "- Section ID, concrete material, ordinary reinforcement, tendon position, bond state, and effective prestress are rebuilt at each imported station.\n"
+            "- Precast physical Segment joints receive zero ordinary longitudinal-rebar credit; bonded Tendons remain the continuity source.\n"
+            "- Cast-in-Place boundaries are Section/Rebar Zones, not physical joints.\n"
+            "- V2 and T remain coupled to the imported row for traceability; Shear, Torsion, and combined V+T are not calculated by ANALYSIS1A.\n"
+            "- Bonded-prestress PMM remains an engineering-review route; unbonded/external Tendons are not silently credited."
+        )
+
+    control_cols = st.columns([1.0, 2.2, 1.0])
+    with control_cols[0]:
+        st.selectbox(
+            "Accuracy preset",
+            list(ACCURACY_PRESET_RESOLUTIONS.keys()),
+            key="analysis_accuracy_preset",
+            help="Controls the existing PMM neutral-axis sweep. It does not change load mapping or engineering equations.",
+        )
+
+    preparation = build_crossbeam_uls_flexure_preparation(st.session_state)
+    demand_df = _crossbeam_uls_demand_dataframe(preparation)
+    cached = st.session_state.get(CROSSBEAM_ULS_RESULT_KEY)
+    cached_hash = str(st.session_state.get(CROSSBEAM_ULS_RESULT_HASH_KEY) or "")
+    cache_current = isinstance(cached, Mapping) and cached_hash == preparation.fingerprint
+
+    with control_cols[1]:
+        if preparation.ready:
+            st.success(
+                f"ULS source ready — {len(preparation.demand_rows):,} imported row(s) expand to "
+                f"{len(preparation.rows):,} station/face check(s)."
+            )
+        else:
+            st.error("ULS source blocked — resolve the station-force, Section/Rebar, Tendon, or Effective Prestress items below.")
+    with control_cols[2]:
+        run_clicked = st.button(
+            "Calculate Flexure",
+            key="crossbeam_analysis1a_calculate_flexure",
+            type="primary" if preparation.ready else "secondary",
+            disabled=not preparation.ready,
+            use_container_width=True,
+            help="Runs only Crossbeam ULS Flexure for the current station/face sources.",
+        )
+
+    if run_clicked and preparation.ready:
+        with st.spinner("Calculating Crossbeam station flexure capacities..."):
+            result = run_crossbeam_uls_flexure(preparation)
+        st.session_state[CROSSBEAM_ULS_RESULT_KEY] = result
+        st.session_state[CROSSBEAM_ULS_RESULT_HASH_KEY] = preparation.fingerprint
+        st.session_state["analysis_status"] = str(result.get("status") or "REVIEW")
+        cached = result
+        cache_current = True
+
+    if preparation.errors:
+        with st.expander("Run blocking actions", expanded=True):
+            blocking_rows = []
+            for index, message in enumerate(preparation.errors, start=1):
+                action = _crossbeam_uls_blocking_action(message)
+                blocking_rows.append(
+                    {
+                        "Priority": index,
+                        "Where to Fix": action["Where to Fix"],
+                        "Issue": message,
+                        "Required Action": action["Recommended Action"],
+                    }
+                )
+            st.dataframe(
+                pd.DataFrame(blocking_rows),
+                use_container_width=True,
+                hide_index=True,
+            )
+    if preparation.warnings:
+        with st.expander("Source warnings", expanded=False):
+            for message in preparation.warnings:
+                st.warning(message)
+
+    source_cards = [
+        {"title": "ULS source", "value": "READY" if preparation.ready else "SOURCE BLOCKED", "detail": "Crossbeam Loads · canonical kN/kN-m", "status": "ready" if preparation.ready else "danger", "strong": True},
+        {"title": "Station / face checks", "value": f"{len(preparation.rows):,}", "detail": f"from {len(preparation.demand_rows):,} imported row(s)", "status": "info"},
+        {"title": "Axis mapping", "value": "M3 → Mux", "detail": "sagging positive · P compression positive", "status": "neutral"},
+        {"title": "Prestress demand", "value": "NOT ADDED", "detail": "verified external-FEA resultants used once", "status": "ready"},
+    ]
+    _render_analysis_summary_strip(source_cards, columns=4)
+
+    if not cache_current:
+        if isinstance(cached, Mapping):
+            st.warning("Stored Crossbeam Flexure result is STALE because station forces or mapped Section/Rebar/Tendon sources changed.")
+        else:
+            st.markdown(_beam_uls_not_calculated_notice_html("Flexure"), unsafe_allow_html=True)
+        with st.expander("ULS demand table — audit / source data", expanded=False):
+            st.dataframe(demand_df, use_container_width=True, hide_index=True)
+        return
+
+    result = dict(cached)
+    result_df = pd.DataFrame(list(result.get("rows") or []))
+    governing = result.get("governing_row") if isinstance(result.get("governing_row"), Mapping) else None
+    status = str(result.get("status") or "REVIEW")
+    status_style = "danger" if status == "FAIL" else ("ready" if status == "PASS" else "warning")
+    result_cards = [
+        {"title": "Flexure status", "value": status, "detail": "ACI 318-19 station/face review", "status": status_style, "strong": True},
+        {"title": "Governing D/C", "value": "-" if governing is None else str(governing.get("Utilization") or "-"), "detail": "-" if governing is None else f"{governing.get('Case')} @ s={_format_beam_uls_x(governing.get('Station s (m)'))}", "status": "info"},
+        {"title": "Governing source", "value": "-" if governing is None else str(governing.get("Section ID") or "-"), "detail": "-" if governing is None else str(governing.get("Section face") or "-"), "status": "info"},
+        {"title": "Structural solves", "value": f"{int(result.get('structural_solves') or 0):,}", "detail": f"{int(result.get('station_checks') or 0):,} station/face checks", "status": "neutral"},
+    ]
+    _render_analysis_summary_strip(result_cards, columns=4)
+
+    if not result_df.empty:
+        chart_df = _crossbeam_flexure_chart_rows(result_df)
+        _render_beam_uls_static_plotly_figure(
+            _make_beam_uls_flexure_preview_figure(
+                demand_df,
+                chart_df,
+                code_label="ACI 318-19 · Crossbeam M3 → Mux",
+            )
+        )
+        st.caption(
+            "The chart uses the governing face at duplicate Case/station locations; the audit table below retains every left/right limit. "
+            "At a Precast physical Segment joint, ordinary longitudinal rebar is zero and bonded Tendons remain the section-continuity source."
+        )
+        display_columns = [
+            "Status", "Station s (m)", "Check Point", "Case", "Section face", "Location type",
+            "Section ID", "Rebar Template", "P kN", "M3 kN-m", "Capacity", "Utilization",
+            "Ordinary bars credited", "Bonded tendons credited", "Unbonded tendons omitted",
+        ]
+        st.dataframe(result_df[[column for column in display_columns if column in result_df]], use_container_width=True, hide_index=True)
+
+    messages = list(result.get("errors") or [])
+    warnings = list(result.get("warnings") or [])
+    if messages or warnings:
+        with st.expander("Calculation audit / limitations", expanded=False):
+            for message in messages:
+                st.error(message)
+            for message in warnings[:20]:
+                st.warning(message)
+            if len(warnings) > 20:
+                st.caption(f"{len(warnings) - 20} additional repeated solver warning(s) are omitted from this compact view.")
+            st.info(str(result.get("scope") or ""))
+
+
 def render_analysis_uls_pmm() -> None:
     st.subheader("ULS Strength")
     mode_settings = _analysis_mode_from_session()
+    if is_portal_frame_crossbeam_workflow(mode_settings):
+        _render_crossbeam_uls_flexure_workspace()
+        return
     if is_beam_girder_future_workflow(mode_settings) or is_building_beam_girder_workflow(mode_settings):
         _render_beam_girder_uls_workspace(mode_settings)
         return
@@ -20583,6 +20829,10 @@ def render_analysis_uls_pmm() -> None:
 def render_analysis_sls_stress() -> None:
     st.subheader("SLS / Stress & Cracking")
     mode_settings = _analysis_mode_from_session()
+    if is_portal_frame_crossbeam_workflow(mode_settings):
+        st.info("Crossbeam SLS At Transfer and At Service station checks are not part of ANALYSIS1A.")
+        st.warning("Use ULS Strength for the current Crossbeam Flexure station adapter. SLS concrete-stress routing remains a separate milestone and no generic SLS solver is run here.")
+        return
     if is_pmm_primary_workflow(mode_settings):
         st.info("SLS / Stress & Cracking is not selected for Column/Pier/Wall/Pylon PMM workflow.")
         st.warning("Use the ULS Strength workspace for axial-biaxial strength review. Beam/Girder staged SLS checks remain hidden for this member family.")
@@ -20596,10 +20846,13 @@ def render_analysis_sls_stress() -> None:
 
 def render_analysis_sls_deflection_camber() -> None:
     st.subheader("SLS Deflection / Camber")
+    mode_settings = _analysis_mode_from_session()
+    if is_portal_frame_crossbeam_workflow(mode_settings):
+        st.info("Crossbeam SLS Deflection / Camber is not implemented in ANALYSIS1A; no generic girder solver is run for this workflow.")
+        return
     _render_project_design_code_guard(workflow="girder_sls")
     st.info("Deflection convention: positive = upward camber, negative = downward deflection.")
 
-    mode_settings = _analysis_mode_from_session()
     is_bridge_workflow = is_beam_girder_future_workflow(mode_settings)
     is_building_workflow = is_building_beam_girder_workflow(mode_settings)
     if not (is_bridge_workflow or is_building_workflow):
@@ -20661,7 +20914,14 @@ def _commercial_analysis_dashboard_cards(settings: AnalysisModeSettings, active_
 
     workflow_label = analysis_mode_label(settings)
     code = workflow_project_design_code_from_session(st.session_state)
-    route = "PMM / ULS" if is_pmm_primary_workflow(settings) else ("Bridge girder" if is_beam_girder_future_workflow(settings) else "Building girder")
+    if is_pmm_primary_workflow(settings):
+        route = "PMM / ULS"
+    elif is_portal_frame_crossbeam_workflow(settings):
+        route = "Crossbeam station adapter"
+    elif is_beam_girder_future_workflow(settings):
+        route = "Bridge girder"
+    else:
+        route = "Building girder"
     readiness = st.session_state.get("analysis_status", "Ready to review")
     return [
         {"title": "Active review", "value": active_subpage, "detail": "Only the selected analysis workspace is rendered", "status": "info"},

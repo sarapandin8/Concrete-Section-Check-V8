@@ -68,7 +68,7 @@ def test_ptloss4d2_handoff_exports_left_mid_right_and_projected_average() -> Non
 
     assert handoff["ready"] is True
     assert handoff["download_ready"] is True
-    assert handoff["status"] == "ENGINEER-ADOPTED PRELIMINARY HANDOFF — EXTERNAL FEA ONLY"
+    assert handoff["status"] == "SOURCE READY — FINAL-STAGE FEA HANDOFF"
     assert len(handoff["tendon_rows"]) == 2
     t1 = handoff["tendon_rows"][0]
     assert t1["Tendon"] == "T1"
@@ -129,7 +129,7 @@ def test_ptloss4d2_workbook_and_csv_contain_auditable_handoff_tables() -> None:
         for row in range(2, workbook["Handoff Summary"].max_row + 1)
     }
     assert summary_values["FEA application route"] == "DIRECT_EFFECTIVE_FORCE"
-    assert summary_values["Engineer TD adoption"] == "REQUIRED"
+    assert summary_values["Source adoption"] == "AUTOMATIC WHEN CURRENT/CLOSED"
     assert "Source fingerprint" not in {cell.value for cell in workbook["Tendon Handoff"][1]}
     assert "Source ID" in {cell.value for cell in workbook["Tendon Handoff"][1]}
     tendon_csv = effective_prestress_handoff_csv_bytes(handoff, table="tendon")
@@ -158,14 +158,14 @@ def test_ptloss4d2_ui_keeps_external_fea_and_sls_return_boundaries_explicit() ->
     assert "External-FEA handoff" in source
     assert "Download FEA workbook" in source
     assert "Do not apply the same losses twice" in source
-    assert "Engineer adoption — accept representative TD loss" in source
+    assert "adopted automatically" in source
     assert "DIRECT_EFFECTIVE_FORCE" in source
     assert "Download Three-Point CSV" in source
     assert "disabled=not download_ready" in source
     assert "External FEA calculates secondary prestress; import verified FEA SLS P/V2/M3 through Loads" in source
 
 
-def test_ptloss4d2a_requires_explicit_td_adoption_before_download() -> None:
+def test_ptloss4d2a_closed_source_is_automatically_download_ready() -> None:
     source_ready = build_effective_prestress_fea_handoff(
         _summary_payload(),
         member_length_m=20.0,
@@ -173,8 +173,8 @@ def test_ptloss4d2a_requires_explicit_td_adoption_before_download() -> None:
         engineer_adopted_td=False,
     )
     assert source_ready["ready"] is True
-    assert source_ready["download_ready"] is False
-    assert source_ready["status"] == "PRELIMINARY SOURCE READY — ENGINEER ADOPTION REQUIRED"
+    assert source_ready["download_ready"] is True
+    assert source_ready["status"] == "SOURCE READY — FINAL-STAGE FEA HANDOFF"
 
     adopted = build_effective_prestress_fea_handoff(
         _summary_payload(),
@@ -184,7 +184,7 @@ def test_ptloss4d2a_requires_explicit_td_adoption_before_download() -> None:
     )
     assert adopted["download_ready"] is True
     assert adopted["source_fingerprint"] == source_ready["source_fingerprint"]
-    assert adopted["contract_id"] != source_ready["contract_id"]
+    assert adopted["contract_id"] == source_ready["contract_id"]
 
 
 def test_ptloss4d2a_profile_contract_exports_exactly_left_mid_right() -> None:
