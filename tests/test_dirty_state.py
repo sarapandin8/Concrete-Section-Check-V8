@@ -8,6 +8,10 @@ from concrete_pmm_pro.state.dirty_state import (
     mark_analysis_current,
     update_dirty_state_from_session,
 )
+from concrete_pmm_pro.crossbeam.prestress_loss import (
+    CB_LOSS_TD_INPUT_SETTINGS_KEY,
+    default_crossbeam_td_input_settings,
+)
 
 
 def test_perf_rerun1_first_update_does_not_mark_clean_project_dirty() -> None:
@@ -91,3 +95,29 @@ def test_perf_rerun1_current_status_reports_not_run_without_analysis_hash() -> N
 
     assert status.analysis_status == "Not run"
     assert status.recommended_action.startswith("Open Analysis")
+
+
+def test_materializing_effective_td_defaults_does_not_mark_analysis_stale() -> None:
+    state: dict[str, object] = {"project_name": "A"}
+    update_dirty_state_from_session(state)
+    mark_analysis_current(state, workspace="Analysis / SLS")
+
+    state[CB_LOSS_TD_INPUT_SETTINGS_KEY] = default_crossbeam_td_input_settings()
+    status = update_dirty_state_from_session(state)
+
+    assert status.analysis_status == "Current"
+    assert "Prestress" not in status.changed_groups
+
+
+def test_td_input_change_marks_analysis_out_of_date() -> None:
+    state: dict[str, object] = {"project_name": "A"}
+    update_dirty_state_from_session(state)
+    mark_analysis_current(state, workspace="Analysis / SLS")
+    settings = default_crossbeam_td_input_settings()
+    settings["td_rh_percent"] = 83.0
+    state[CB_LOSS_TD_INPUT_SETTINGS_KEY] = settings
+
+    status = update_dirty_state_from_session(state)
+
+    assert status.analysis_status == "Out of date"
+    assert "Prestress" in status.changed_groups

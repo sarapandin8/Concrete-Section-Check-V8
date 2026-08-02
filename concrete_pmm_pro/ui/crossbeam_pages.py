@@ -218,6 +218,8 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY,
     CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY,
     CB_LOSS_TD_DEFAULTS_RESTORED_NOTICE_KEY,
+    CB_LOSS_TD_INPUT_SETTINGS_KEY,
+    TD_INPUT_FIELD_KEYS,
     CB_LOSS_EXTERNAL_MU_KEY,
     CB_LOSS_INTERNAL_K_PER_M_KEY,
     CB_LOSS_INTERNAL_MU_KEY,
@@ -238,6 +240,9 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     DEFAULT_TD_FALSEWORK_REMOVAL_AGE_DAYS,
     DEFAULT_TD_PERMANENT_LOAD_AGE_DAYS,
     DEFAULT_TD_LATER_LOAD_DELTA_FCGP_MPA,
+    crossbeam_td_input_settings_from_session_state,
+    persist_crossbeam_td_input_settings,
+    reset_crossbeam_td_input_settings,
     DEFAULT_INTERNAL_FRICTION_MU,
     DEFAULT_INTERNAL_WOBBLE_K_PER_M,
     aashto_friction_wobble_station_rows,
@@ -5448,34 +5453,12 @@ def _initialize_crossbeam_td_session_defaults(
 ) -> None:
     """Seed all Time-Dependent widget keys without overwriting user inputs."""
 
-    defaults_by_key = {
-        CB_LOSS_TD_RH_PERCENT_KEY: td_settings["td_rh_percent"],
-        CB_LOSS_TD_LOAD_AGE_DAYS_KEY: td_settings["td_load_age_days"],
-        CB_LOSS_TD_CURING_END_AGE_DAYS_KEY: td_settings["td_curing_end_age_days"],
-        CB_LOSS_TD_FINAL_AGE_DAYS_KEY: td_settings["td_final_age_days"],
-        CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY: td_settings[
-            "td_inner_perimeter_factor"
-        ],
-        CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY: td_settings[
-            "td_relaxation_steel_class"
-        ],
-        CB_LOSS_TD_GROUT_AGE_DAYS_KEY: td_settings["td_grout_age_days"],
-        CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY: td_settings[
-            "td_falsework_removal_age_days"
-        ],
-        CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY: td_settings[
-            "td_permanent_load_age_days"
-        ],
-        CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY: td_settings[
-            "td_later_load_delta_fcgp_mpa"
-        ],
-        CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY: td_settings.get(
-            "td_no_later_events_confirmed", False
-        ),
-    }
-    for key, value in defaults_by_key.items():
-        if key not in session_state:
-            session_state[key] = value
+    durable = session_state.get(CB_LOSS_TD_INPUT_SETTINGS_KEY)
+    durable_values = dict(durable) if isinstance(durable, Mapping) else {}
+    for field, widget_key in TD_INPUT_FIELD_KEYS.items():
+        if widget_key not in session_state:
+            session_state[widget_key] = durable_values.get(field, td_settings[field])
+    persist_crossbeam_td_input_settings(session_state)
 
 
 def _repair_invalid_legacy_td_schedule_state(
@@ -5512,10 +5495,12 @@ def _repair_invalid_legacy_td_schedule_state(
     )
     session_state[CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY] = False
     session_state[CB_LOSS_TD_DEFAULTS_RESTORED_NOTICE_KEY] = True
+    persist_crossbeam_td_input_settings(session_state)
     return True
 
 
 def _loss_setting_defaults_from_state() -> dict[str, Any]:
+    td_inputs = crossbeam_td_input_settings_from_session_state(st.session_state)
     return normalize_crossbeam_prestress_loss_settings(
         {
             "internal_mu": st.session_state.get(
@@ -5561,42 +5546,7 @@ def _loss_setting_defaults_from_state() -> dict[str, Any]:
             ),
             "es_column_rows": st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY, []),
             "es_pair_sequence": st.session_state.get(CB_LOSS_ES_PAIR_SEQUENCE_KEY, []),
-            "td_rh_percent": st.session_state.get(
-                CB_LOSS_TD_RH_PERCENT_KEY, DEFAULT_TD_RH_PERCENT
-            ),
-            "td_load_age_days": st.session_state.get(
-                CB_LOSS_TD_LOAD_AGE_DAYS_KEY, DEFAULT_TD_LOAD_AGE_DAYS
-            ),
-            "td_curing_end_age_days": st.session_state.get(
-                CB_LOSS_TD_CURING_END_AGE_DAYS_KEY, DEFAULT_TD_CURING_END_AGE_DAYS
-            ),
-            "td_final_age_days": st.session_state.get(
-                CB_LOSS_TD_FINAL_AGE_DAYS_KEY, DEFAULT_TD_FINAL_AGE_DAYS
-            ),
-            "td_inner_perimeter_factor": st.session_state.get(
-                CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY, DEFAULT_TD_INNER_PERIMETER_FACTOR
-            ),
-            "td_relaxation_steel_class": st.session_state.get(
-                CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY, DEFAULT_TD_RELAXATION_STEEL_CLASS
-            ),
-            "td_grout_age_days": st.session_state.get(
-                CB_LOSS_TD_GROUT_AGE_DAYS_KEY, DEFAULT_TD_GROUT_AGE_DAYS
-            ),
-            "td_falsework_removal_age_days": st.session_state.get(
-                CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY,
-                DEFAULT_TD_FALSEWORK_REMOVAL_AGE_DAYS,
-            ),
-            "td_permanent_load_age_days": st.session_state.get(
-                CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
-                DEFAULT_TD_PERMANENT_LOAD_AGE_DAYS,
-            ),
-            "td_later_load_delta_fcgp_mpa": st.session_state.get(
-                CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY,
-                DEFAULT_TD_LATER_LOAD_DELTA_FCGP_MPA,
-            ),
-            "td_no_later_events_confirmed": st.session_state.get(
-                CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY, False
-            ),
+            **td_inputs,
         }
     )
 
@@ -11391,7 +11341,26 @@ def render_crossbeam_prestress_loss_page() -> None:
                 "Review against the approved project construction schedule, then save Project JSON."
             )
 
-        st.markdown("##### Environmental, age, drying, and steel sources")
+        source_heading, source_reset = st.columns([5.0, 1.25])
+        with source_heading:
+            st.markdown("##### Environmental, age, drying, and steel sources")
+        with source_reset:
+            reset_td_defaults = st.button(
+                "Reset to defaults",
+                key="crossbeam_td_reset_source_defaults",
+                use_container_width=True,
+                help="Restore the general-practice TD source and schedule starters. Imported FEA rows and permanent-load event mappings are preserved.",
+            )
+        if reset_td_defaults:
+            reset_crossbeam_td_input_settings(st.session_state)
+            st.session_state.pop(CB_PTL_TIME_DEPENDENT_FINGERPRINT_KEY, None)
+            st.session_state.pop(CB_PTL_TIME_DEPENDENT_RESULT_KEY, None)
+            st.session_state["crossbeam_td_defaults_reset_notice"] = True
+            st.rerun()
+        if bool(st.session_state.pop("crossbeam_td_defaults_reset_notice", False)):
+            st.success(
+                "Time-Dependent source defaults restored. Imported FEA rows and permanent-load event mappings were not changed. Review the construction schedule before running the preview."
+            )
         source_a, source_b, source_c = st.columns(3)
         with source_a:
             st.number_input(
@@ -11492,15 +11461,36 @@ def render_crossbeam_prestress_loss_page() -> None:
                 dict(td_fea_source_ui.get("schedule_status") or {}).get("adopted_count") or 0
             )
             if adopted_td_events == 0:
-                st.checkbox(
-                    "Confirm that no later permanent-load event applies before final service",
-                    key=CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY,
-                    help="Confirm only when the released stress state legitimately remains active to final time. Otherwise adopt each later permanent-load event and import its incremental FEA response.",
+                no_later_confirmed = bool(
+                    st.session_state.get(CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY)
                 )
-                if not bool(st.session_state.get(CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY)):
-                    st.warning(
-                        "No later permanent-load event is currently adopted. Confirm this explicitly or add the applicable permanent-load events before running Time-Dependent Loss."
+                with st.container(border=True):
+                    st.markdown("##### Permanent-load schedule adoption decision")
+                    st.caption(
+                        "This is not a load-selection control. It records the engineer's decision that the released stress state remains active to final age when no later permanent-load event is adopted."
                     )
+                    if no_later_confirmed:
+                        st.success(
+                            "NO LATER PERMANENT EVENTS — CONFIRMED. The released stress state will remain active to final age unless an event is adopted above."
+                        )
+                        if st.button(
+                            "Revoke confirmation",
+                            key="crossbeam_td_revoke_no_later_events",
+                        ):
+                            st.session_state[CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY] = False
+                            persist_crossbeam_td_input_settings(st.session_state)
+                            st.rerun()
+                    else:
+                        st.warning(
+                            "ENGINEER DECISION REQUIRED — No later permanent-load event is currently adopted. Confirm the no-event condition or adopt every applicable event above before running Time-Dependent Loss."
+                        )
+                        if st.button(
+                            "Confirm no later permanent events",
+                            key="crossbeam_td_confirm_no_later_events",
+                        ):
+                            st.session_state[CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY] = True
+                            persist_crossbeam_td_input_settings(st.session_state)
+                            st.rerun()
             else:
                 st.session_state[CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY] = False
         else:
@@ -11511,6 +11501,7 @@ def render_crossbeam_prestress_loss_page() -> None:
                 "declaration": default_td_fea_source_declaration(),
                 "schedule_status": {"ready": True, "status": "NOT APPLICABLE", "issues": []},
             }
+        persist_crossbeam_td_input_settings(st.session_state)
 
         td_settings = _loss_setting_defaults_from_state()
         drying_preview = crossbeam_drying_geometry(

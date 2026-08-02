@@ -52,6 +52,7 @@ CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY = "crossbeam_ptloss4b1_permanent_load_age
 CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY = "crossbeam_ptloss4b2_later_load_delta_fcgp_mpa"
 CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY = "crossbeam_ptloss4d2c_no_later_events_confirmed"
 CB_LOSS_TD_DEFAULTS_RESTORED_NOTICE_KEY = "crossbeam_ptloss4d2c_defaults_restored_notice"
+CB_LOSS_TD_INPUT_SETTINGS_KEY = "crossbeam_time_dependent_input_settings"
 
 AASHTO_PTL_FRICTION_BASIS = "AASHTO LRFD 5.9.3.2.2b"
 AASHTO_INTERNAL_WOBBLE_K_PER_FT = 0.0002
@@ -171,6 +172,28 @@ def default_crossbeam_prestress_loss_settings() -> dict[str, Any]:
     }
 
 
+TD_INPUT_FIELD_KEYS: dict[str, str] = {
+    "td_rh_percent": CB_LOSS_TD_RH_PERCENT_KEY,
+    "td_load_age_days": CB_LOSS_TD_LOAD_AGE_DAYS_KEY,
+    "td_curing_end_age_days": CB_LOSS_TD_CURING_END_AGE_DAYS_KEY,
+    "td_final_age_days": CB_LOSS_TD_FINAL_AGE_DAYS_KEY,
+    "td_inner_perimeter_factor": CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY,
+    "td_relaxation_steel_class": CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY,
+    "td_grout_age_days": CB_LOSS_TD_GROUT_AGE_DAYS_KEY,
+    "td_falsework_removal_age_days": CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY,
+    "td_permanent_load_age_days": CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
+    "td_later_load_delta_fcgp_mpa": CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY,
+    "td_no_later_events_confirmed": CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY,
+}
+
+
+def default_crossbeam_td_input_settings() -> dict[str, Any]:
+    """Return the durable Time-Dependent input subset."""
+
+    defaults = default_crossbeam_prestress_loss_settings()
+    return {field: defaults[field] for field in TD_INPUT_FIELD_KEYS}
+
+
 def normalize_crossbeam_prestress_loss_settings(value: Any) -> dict[str, Any]:
     """Return bounded PTLOSS1 settings from metadata or session state values."""
 
@@ -288,6 +311,53 @@ def normalize_crossbeam_prestress_loss_settings(value: Any) -> dict[str, Any]:
     }
 
 
+def crossbeam_td_input_settings_from_session_state(
+    session_state: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Read TD inputs from visible widgets or their durable off-page owner.
+
+    Streamlit removes widget-owned keys after navigating to a page where those
+    widgets are not rendered.  The separate durable mapping preserves project
+    inputs across workspace navigation without persisting calculated results.
+    """
+
+    durable = session_state.get(CB_LOSS_TD_INPUT_SETTINGS_KEY)
+    durable_values = dict(durable) if isinstance(durable, Mapping) else {}
+    defaults = default_crossbeam_td_input_settings()
+    source = {
+        field: (
+            session_state[widget_key]
+            if widget_key in session_state
+            else durable_values.get(field, defaults[field])
+        )
+        for field, widget_key in TD_INPUT_FIELD_KEYS.items()
+    }
+    normalized = normalize_crossbeam_prestress_loss_settings(source)
+    return {field: normalized[field] for field in TD_INPUT_FIELD_KEYS}
+
+
+def persist_crossbeam_td_input_settings(
+    session_state: MutableMapping[str, Any],
+) -> dict[str, Any]:
+    """Copy current TD widget values into the durable off-page input owner."""
+
+    settings = crossbeam_td_input_settings_from_session_state(session_state)
+    session_state[CB_LOSS_TD_INPUT_SETTINGS_KEY] = dict(settings)
+    return settings
+
+
+def reset_crossbeam_td_input_settings(
+    session_state: MutableMapping[str, Any],
+) -> dict[str, Any]:
+    """Restore general-practice TD defaults without deleting imported events."""
+
+    settings = default_crossbeam_td_input_settings()
+    for field, widget_key in TD_INPUT_FIELD_KEYS.items():
+        session_state[widget_key] = settings[field]
+    session_state[CB_LOSS_TD_INPUT_SETTINGS_KEY] = dict(settings)
+    return settings
+
+
 def crossbeam_prestress_loss_settings_from_session_state(session_state: Any) -> dict[str, Any]:
     """Return JSON-safe loss settings when the PTLOSS1 page has been used."""
 
@@ -320,9 +390,11 @@ def crossbeam_prestress_loss_settings_from_session_state(session_state: Any) -> 
             CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
             CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY,
             CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY,
+            CB_LOSS_TD_INPUT_SETTINGS_KEY,
         )
     ):
         return {}
+    td_inputs = crossbeam_td_input_settings_from_session_state(session_state)
     settings = normalize_crossbeam_prestress_loss_settings(
         {
             "internal_mu": session_state.get(CB_LOSS_INTERNAL_MU_KEY),
@@ -340,25 +412,7 @@ def crossbeam_prestress_loss_settings_from_session_state(session_state: Any) -> 
             "es_closure_required_mpa": session_state.get(CB_LOSS_ES_CLOSURE_REQUIRED_MPA_KEY),
             "es_column_rows": session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY),
             "es_pair_sequence": session_state.get(CB_LOSS_ES_PAIR_SEQUENCE_KEY),
-            "td_rh_percent": session_state.get(CB_LOSS_TD_RH_PERCENT_KEY),
-            "td_load_age_days": session_state.get(CB_LOSS_TD_LOAD_AGE_DAYS_KEY),
-            "td_curing_end_age_days": session_state.get(CB_LOSS_TD_CURING_END_AGE_DAYS_KEY),
-            "td_final_age_days": session_state.get(CB_LOSS_TD_FINAL_AGE_DAYS_KEY),
-            "td_inner_perimeter_factor": session_state.get(CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY),
-            "td_relaxation_steel_class": session_state.get(CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY),
-            "td_grout_age_days": session_state.get(CB_LOSS_TD_GROUT_AGE_DAYS_KEY),
-            "td_falsework_removal_age_days": session_state.get(
-                CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY
-            ),
-            "td_permanent_load_age_days": session_state.get(
-                CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY
-            ),
-            "td_later_load_delta_fcgp_mpa": session_state.get(
-                CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY
-            ),
-            "td_no_later_events_confirmed": session_state.get(
-                CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY
-            ),
+            **td_inputs,
         }
     )
     return dict(settings)
@@ -398,6 +452,7 @@ def restore_crossbeam_prestress_loss_project_state(
         CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY,
         CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY,
         CB_LOSS_TD_DEFAULTS_RESTORED_NOTICE_KEY,
+        CB_LOSS_TD_INPUT_SETTINGS_KEY,
     ):
         session_state.pop(key, None)
 
@@ -462,6 +517,7 @@ def restore_crossbeam_prestress_loss_project_state(
     session_state[CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY] = bool(
         settings["td_no_later_events_confirmed"]
     )
+    persist_crossbeam_td_input_settings(session_state)
     return settings
 
 

@@ -21,6 +21,10 @@ from concrete_pmm_pro.crossbeam.station_force_contract import (
     CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY,
     CB_STATION_FORCE_CONTRACT_KEY,
 )
+from concrete_pmm_pro.crossbeam.prestress_loss import (
+    CB_LOSS_TD_INPUT_SETTINGS_KEY,
+    crossbeam_td_input_settings_from_session_state,
+)
 from typing import Any, Mapping, MutableMapping
 
 CURRENT_INPUT_HASH_KEY = "_perf_current_input_hash"
@@ -84,6 +88,7 @@ INPUT_GROUP_KEYS: dict[str, tuple[str, ...]] = {
         "girder_prestress_force_states_table",
         "girder_prestress_code_loss_settings",
         "prestress_loss_settings",
+        CB_LOSS_TD_INPUT_SETTINGS_KEY,
         "crossbeam_ptloss3b1_column_rows",
         CB_LATER_FEA_RESPONSE_TABLE_KEY,
         CB_TD_FEA_SOURCE_DECLARATION_KEY,
@@ -172,6 +177,11 @@ def _input_hash_value(state: Mapping[str, Any], key: str) -> Any:
     does not invalidate cached analysis results.
     """
 
+    if key == CB_LOSS_TD_INPUT_SETTINGS_KEY:
+        # Treat an unmaterialized fresh-session TD state as its effective
+        # defaults. Opening the TD tab only creates the durable owner; it must
+        # not make otherwise identical analysis results stale.
+        return crossbeam_td_input_settings_from_session_state(state)
     if key == "section_has_ordinary_rebar":
         try:
             from concrete_pmm_pro.core.reinforcement_system import ordinary_rebar_enabled

@@ -1,3 +1,7 @@
+### CROSSBEAM.TDSTATE1 — Durable TD Inputs, Explicit Schedule Decision, and Reset
+
+Preserves Crossbeam Time-Dependent environmental, age, drying, steel, and no-later-event inputs across Streamlit workspace navigation; replaces the ambiguous no-event checkbox with an explicit engineer adoption decision; and adds a safe `Reset to defaults` action that leaves imported FEA rows and permanent-load event mappings intact. See `README_CROSSBEAM_TDSTATE1.md`.
+
 ### CROSSBEAM.ANALYSIS1A — ULS Station-Force Adapter and Run Readiness
 
 Connects active Crossbeam ULS `P/V2/T/M3` station rows directly to the existing ACI 318 PMM engine, maps `P → Pu` and sagging-positive `M3 → Mux`, rebuilds Section/Rebar/Bonded-Tendon capacity sources at each station/face, and removes the unrelated generic `load_cases` preflight blocker. Precast physical joints receive zero ordinary longitudinal-rebar credit while bonded Tendons use the CURRENT/CLOSED average effective prestress; imported external-FEA demand is never augmented with `Pe` again. See `README_CROSSBEAM_ANALYSIS1A.md`.
