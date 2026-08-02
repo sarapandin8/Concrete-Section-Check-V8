@@ -35,6 +35,7 @@ from concrete_pmm_pro.core.units import N_to_kN, Nmm_to_kNm
 from concrete_pmm_pro.crossbeam.station_force_contract import (
     CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY,
     CB_STATION_FORCE_CONTRACT_KEY,
+    CB_STATION_FORCE_VALIDATION_KEY,
     canonical_effective_prestress_link,
     canonical_station_force_contract,
 )
@@ -254,6 +255,8 @@ _CROSSBEAM_RESTORE_EDITOR_PREFIXES = (
     "crossbeam_tr1_zone_assignment_",
 )
 
+_CROSSBEAM_LOADS_WIDGET_PREFIX = "crossbeam_loads1b_"
+
 
 def _clear_crossbeam_restore_widget_state(session_state: MutableMapping[str, Any]) -> None:
     """Remove stale widget transport values before canonical Project restore."""
@@ -261,8 +264,11 @@ def _clear_crossbeam_restore_widget_state(session_state: MutableMapping[str, Any
     for key in _CROSSBEAM_RESTORE_WIDGET_KEYS:
         session_state.pop(key, None)
     for key in list(session_state):
-        if str(key).startswith(_CROSSBEAM_RESTORE_EDITOR_PREFIXES):
+        if str(key).startswith(
+            (*_CROSSBEAM_RESTORE_EDITOR_PREFIXES, _CROSSBEAM_LOADS_WIDGET_PREFIX)
+        ):
             session_state.pop(key, None)
+    session_state.pop(CB_STATION_FORCE_VALIDATION_KEY, None)
 
 
 def _crossbeam_td_fea_response_metadata_from_session(session_state: Any) -> dict[str, Any]:
@@ -1296,6 +1302,10 @@ def _reset_loaded_project_dirty_state(session_state: MutableMapping[str, Any], *
 
 
 def apply_project_to_session_state(project: ProjectModel, session_state: MutableMapping[str, Any]) -> None:
+    # Project JSON is the canonical transaction boundary. Widget keys are only
+    # UI transport and must never survive from the previously open project.
+    _clear_crossbeam_restore_widget_state(session_state)
+
     session_state["project_name"] = project.project_name
     session_state["designer"] = project.designer or ""
     session_state["description"] = project.description or ""
@@ -1337,7 +1347,6 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
 
     crossbeam_input = project.metadata.get(SECLIB_METADATA_KEY)
     if isinstance(crossbeam_input, dict):
-        _clear_crossbeam_restore_widget_state(session_state)
         definitions = canonical_section_definitions(crossbeam_input.get("section_definitions") or [])
         if definitions:
             session_state[CB_SECLIB_DEFINITIONS_KEY] = definitions

@@ -2891,16 +2891,6 @@ def _crossbeam_station_force_contract() -> dict[str, Any]:
     if not isinstance(current, dict):
         current = default_station_force_contract(effective_prestress_link=link)
     contract = canonical_station_force_contract(current, effective_prestress_link=link)
-    if link.get("ready"):
-        contract["adopted_total_loss_percent"] = float(
-            link.get("average_total_loss_percent") or 0.0
-        )
-        contract["effective_prestress_ratio_percent"] = float(
-            link.get("effective_prestress_ratio_percent")
-            or 100.0 - float(contract["adopted_total_loss_percent"])
-        )
-        contract["prestress_source_id"] = str(link.get("source_id") or "")
-        contract["prestress_contract_id"] = str(link.get("contract_id") or "")
     st.session_state[CB_STATION_FORCE_CONTRACT_KEY] = contract
     return contract
 
@@ -2936,6 +2926,15 @@ def _render_crossbeam_station_force_contract() -> dict[str, Any]:
         for key, value in seed_payload.items():
             st.session_state[f"crossbeam_loads1b_{key}"] = value
         st.session_state["crossbeam_loads1b_contract_seed"] = seed_token
+    if link.get("ready"):
+        # Keep disabled linked widgets synchronized on every rerun. Their state
+        # may display the canonical values but never owns the Project contract.
+        for key in (
+            "adopted_total_loss_percent",
+            "prestress_source_id",
+            "prestress_contract_id",
+        ):
+            st.session_state[f"crossbeam_loads1b_{key}"] = contract.get(key)
 
     loss = float(contract.get("adopted_total_loss_percent") or 0.0)
     ratio = float(contract.get("effective_prestress_ratio_percent") or 100.0 - loss)

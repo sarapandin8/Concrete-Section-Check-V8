@@ -17,6 +17,10 @@ from concrete_pmm_pro.crossbeam.later_permanent_response import (
     CB_TD_FEA_SOURCE_DECLARATION_KEY,
     CB_TD_PERMANENT_EVENT_SCHEDULE_KEY,
 )
+from concrete_pmm_pro.crossbeam.station_force_contract import (
+    CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY,
+    CB_STATION_FORCE_CONTRACT_KEY,
+)
 from typing import Any, Mapping, MutableMapping
 
 CURRENT_INPUT_HASH_KEY = "_perf_current_input_hash"
@@ -96,6 +100,8 @@ INPUT_GROUP_KEYS: dict[str, tuple[str, ...]] = {
         "beam_sls_service_loads_table",
         "crossbeam_uls_loads_table",
         "crossbeam_sls_loads_table",
+        CB_STATION_FORCE_CONTRACT_KEY,
+        CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY,
         "girder_sls_load_components",
         "beam_girder_sls_auto_load_settings",
         "building_beam_girder_service_load_settings",

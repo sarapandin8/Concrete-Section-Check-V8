@@ -200,7 +200,8 @@ def canonical_station_force_contract(
     *,
     effective_prestress_link: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    defaults = default_station_force_contract(effective_prestress_link=effective_prestress_link)
+    link = canonical_effective_prestress_link(effective_prestress_link)
+    defaults = default_station_force_contract(effective_prestress_link=link)
     source = dict(value or {})
     result = dict(defaults)
     result.update({key: source.get(key, default) for key, default in defaults.items()})
@@ -225,6 +226,18 @@ def canonical_station_force_contract(
     result["effective_prestress_ratio_percent"] = 100.0 - loss
     result["prestress_source_id"] = _text(result.get("prestress_source_id"))
     result["prestress_contract_id"] = _text(result.get("prestress_contract_id"))
+
+    # A CURRENT/CLOSED Effective Prestress Link is the authoritative source for
+    # the final-loss basis used by ULS and SLS At Service. Disabled UI widgets
+    # are presentation-only and cannot replace these canonical values.
+    if link["ready"]:
+        linked_loss = float(link["average_total_loss_percent"])
+        result["adopted_total_loss_percent"] = linked_loss
+        result["effective_prestress_ratio_percent"] = float(
+            link["effective_prestress_ratio_percent"]
+        )
+        result["prestress_source_id"] = _text(link["source_id"])
+        result["prestress_contract_id"] = _text(link["contract_id"])
 
     # Legacy confirmation fields remain serialized for compatibility, but the
     # selected upload bucket now declares the response basis automatically.
