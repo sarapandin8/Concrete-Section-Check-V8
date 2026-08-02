@@ -1045,6 +1045,33 @@ section[data-testid="stSidebar"] .cpmm-sidebar-project-upload-card * {
   border-color: #d998a3;
   background: linear-gradient(180deg, #fffafb 0%, #fff0f2 100%);
 }
+.cpmm-sidebar-project-loaded-card {
+  border: 1px solid #66b7a6;
+  border-left: 4px solid #0f6f60;
+  border-radius: 10px;
+  background: #e7f8f3;
+  padding: 0.58rem 0.62rem;
+  margin: 0.42rem 0 0.50rem 0;
+  box-shadow: 0 6px 14px rgba(15, 111, 96, 0.08);
+}
+.cpmm-sidebar-project-loaded-title {
+  color: #0f6f60 !important;
+  -webkit-text-fill-color: #0f6f60 !important;
+  font-size: 0.64rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.cpmm-sidebar-project-loaded-name {
+  color: #061b35 !important;
+  -webkit-text-fill-color: #061b35 !important;
+  font-size: 0.76rem;
+  font-weight: 900;
+  line-height: 1.28;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  margin-top: 0.22rem;
+}
 .cpmm-sidebar-project-upload-kicker {
   color: #0b3a66 !important;
   font-size: 0.64rem;
@@ -1505,7 +1532,15 @@ def _render_sidebar_project_file_actions() -> None:
         )
         load_notice = st.session_state.pop("_sidebar_project_load_notice", None)
         if load_notice:
-            st.success(str(load_notice))
+            st.markdown(
+                f"""
+<div class="cpmm-sidebar-project-loaded-card">
+  <div class="cpmm-sidebar-project-loaded-title" style="color:#0f6f60!important;-webkit-text-fill-color:#0f6f60!important;">Project loaded</div>
+  <div class="cpmm-sidebar-project-loaded-name" style="color:#061b35!important;-webkit-text-fill-color:#061b35!important;">{escape(str(load_notice))}</div>
+</div>
+""",
+                unsafe_allow_html=True,
+            )
         uploader_revision = int(
             st.session_state.get("ui_commercial4_3_sidebar_uploader_revision", 0) or 0
         )
@@ -1566,7 +1601,7 @@ section[data-testid="stSidebar"] div[data-testid="stFileUploader"] {
                         "Project JSON loaded. Review Section Builder, Rebar, Prestress, and Loads tabs before future analysis."
                     )
                     st.session_state["_sidebar_project_load_notice"] = (
-                        f"Loaded {review.get('filename')}."
+                        f"{review.get('filename')}"
                     )
                     st.session_state["ui_commercial4_3_sidebar_uploader_revision"] = (
                         uploader_revision + 1

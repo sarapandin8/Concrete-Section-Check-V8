@@ -285,8 +285,14 @@ def validate_station_force_contract(
         warnings.append("FEA Program is blank; add it later for report traceability.")
     if not item["model_revision"]:
         warnings.append("FEA model / revision is blank; add it later for report traceability.")
+    response = _text(response_type).upper()
+    stage = canonical_sls_stage(sls_stage) if sls_stage else ""
+    check_all = not response
+    check_final = check_all or response == "ULS" or (response == "SLS" and stage == "Final service stage")
+    check_transfer = check_all or (response == "SLS" and stage == "Transfer stage")
+
     loss = float(item["adopted_total_loss_percent"])
-    if not (0.0 < loss < 60.0):
+    if check_final and not (0.0 < loss < 60.0):
         errors.append(
             "Adopted uniform system-average final prestress loss must be greater than 0% and less than 60%."
         )
@@ -297,12 +303,6 @@ def validate_station_force_contract(
     # Uploading a row into a named ULS/SLS stage is the user's declaration of
     # its response basis.  Repeating that declaration through checkboxes adds
     # friction without validating the numerical data.
-
-    response = _text(response_type).upper()
-    stage = canonical_sls_stage(sls_stage) if sls_stage else ""
-    check_all = not response
-    check_final = check_all or response == "ULS" or (response == "SLS" and stage == "Final service stage")
-    check_transfer = check_all or (response == "SLS" and stage == "Transfer stage")
 
     return errors, warnings
 

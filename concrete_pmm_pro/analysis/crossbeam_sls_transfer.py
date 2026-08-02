@@ -54,12 +54,17 @@ from concrete_pmm_pro.geometry.summary import summarize_geometry
 
 CROSSBEAM_TRANSFER_RESULT_KEY = "crossbeam_sls1a_transfer_stress_result"
 CROSSBEAM_TRANSFER_RESULT_HASH_KEY = "crossbeam_sls1a_transfer_stress_input_hash"
+CROSSBEAM_SERVICE_RESULT_KEY = "crossbeam_sls1b_service_stress_result"
+CROSSBEAM_SERVICE_RESULT_HASH_KEY = "crossbeam_sls1b_service_stress_input_hash"
 CROSSBEAM_SLS_LOAD_TABLE_KEY = "crossbeam_sls_loads_table"
 CROSSBEAM_LENGTH_KEY = "crossbeam_ui1_length_m"
 CROSSBEAM_SEGMENT_ROWS_KEY = "crossbeam_ui1_segment_layout_rows"
 
 ACI_TRANSFER_COMPRESSION_FACTOR = 0.60
 ACI_TRANSFER_TENSION_FACTOR_MPA = 0.25
+ACI_SERVICE_TOTAL_COMPRESSION_FACTOR = 0.60
+ACI_SERVICE_CLASS_U_TENSION_FACTOR_MPA = 0.62
+ACI_SERVICE_CLASS_T_TENSION_FACTOR_MPA = 1.00
 PHYSICAL_JOINT_MIN_COMPRESSION_MPA = 0.70
 _STATION_TOLERANCE_MIN_M = 1.0e-7
 
@@ -294,6 +299,8 @@ def _derive_precast_joint_demands(
     *,
     joint_stations: list[float],
     tolerance_m: float,
+    stage: str = "Transfer stage",
+    stage_label: str = "Transfer",
 ) -> tuple[list[dict[str, Any]], list[str], set[tuple[str, float]]]:
     """Linearly interpolate missing Precast joint resultants without extrapolation.
 
@@ -322,7 +329,7 @@ def _derive_precast_joint_demands(
             upper = [value for value in stations if value > joint + tolerance_m]
             if not lower or not upper:
                 blockers.append(
-                    f"{case}: physical joint at s = {joint:.6f} m cannot be auto-interpolated because active Transfer rows do not bracket the joint."
+                    f"{case}: physical joint at s = {joint:.6f} m cannot be auto-interpolated because active {stage_label} rows do not bracket the joint."
                 )
                 blocked_pairs.add((case, float(joint)))
                 continue
@@ -332,7 +339,7 @@ def _derive_precast_joint_demands(
             row1 = _interpolation_source_row(case_rows, station_m=s1, tolerance_m=tolerance_m)
             if row0 is None or row1 is None or s1 <= s0:
                 blockers.append(
-                    f"{case}: physical joint at s = {joint:.6f} m cannot be auto-interpolated because a bracketing station has ambiguous duplicate Transfer resultants."
+                    f"{case}: physical joint at s = {joint:.6f} m cannot be auto-interpolated because a bracketing station has ambiguous duplicate {stage_label} resultants."
                 )
                 blocked_pairs.add((case, float(joint)))
                 continue
@@ -342,7 +349,7 @@ def _derive_precast_joint_demands(
                 "Station s (m)": float(joint),
                 "Check Point": "AUTO JOINT INTERPOLATION",
                 "Case Name": case,
-                "Stage": "Transfer stage",
+                "Stage": stage,
                 "Note": (
                     f"Auto-interpolated physical-joint resultant from s={s0:.6f} m and "
                     f"s={s1:.6f} m; used for both s-/s+ Section faces."
@@ -358,8 +365,15 @@ def _derive_precast_joint_demands(
     return derived, _dedupe(blockers), blocked_pairs
 
 
-def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransferPreparation:
-    """Build validated gross-section transfer checks from Crossbeam SLS rows."""
+def _build_crossbeam_stress_preparation(
+    state: Any,
+    *,
+    stage: str,
+    stage_label: str,
+    schema: str,
+    transfer_stage: bool,
+) -> CrossbeamTransferPreparation:
+    """Build validated gross-section checks for one Crossbeam SLS stage."""
 
     errors: list[str] = []
     warnings: list[str] = []
@@ -371,23 +385,26 @@ def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransfer
     construction_method = normalize_construction_method(
         _get(state, CB_LOSS_ES_CONSTRUCTION_METHOD_KEY, CONSTRUCTION_METHOD_PRECAST)
     )
-    try:
-        stressing_ratio = float(
-            _get(
-                state,
-                CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
-                DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
+    if transfer_stage:
+        try:
+            stressing_ratio = float(
+                _get(
+                    state,
+                    CB_LOSS_ES_STRESSING_STRENGTH_RATIO_KEY,
+                    DEFAULT_CROSSBEAM_STRESSING_STRENGTH_RATIO,
+                )
             )
-        )
-    except (TypeError, ValueError):
-        stressing_ratio = float("nan")
-    if not math.isfinite(stressing_ratio) or not (
-        MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO <= stressing_ratio <= 1.0
-    ):
-        errors.append(
-            "Crossbeam stressing-strength ratio f'ci/f'c must be between "
-            f"{MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO:.2f} and 1.00."
-        )
+        except (TypeError, ValueError):
+            stressing_ratio = float("nan")
+        if not math.isfinite(stressing_ratio) or not (
+            MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO <= stressing_ratio <= 1.0
+        ):
+            errors.append(
+                "Crossbeam stressing-strength ratio f'ci/f'c must be between "
+                f"{MIN_CROSSBEAM_STRESSING_STRENGTH_RATIO:.2f} and 1.00."
+            )
+    else:
+        stressing_ratio = 1.0
 
     contract = canonical_station_force_contract(
         _get(state, CB_STATION_FORCE_CONTRACT_KEY, {}),
@@ -399,22 +416,20 @@ def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransfer
         response_type="SLS",
         rows_are_canonical=True,
     )
-    demand_rows = [
-        row for row in all_sls if canonical_sls_stage(row.get("Stage")) == "Transfer stage"
-    ]
+    demand_rows = [row for row in all_sls if canonical_sls_stage(row.get("Stage")) == stage]
     validation = validate_station_force_rows(
         demand_rows,
         contract=contract,
         member_length_m=max(length_m, 0.0),
         response_type="SLS",
         rows_are_canonical=True,
-        expected_sls_stage="Transfer stage",
+        expected_sls_stage=stage,
     )
     errors.extend(validation.errors)
     warnings.extend(validation.warnings)
     active_demands = [row for row in demand_rows if bool(row.get("Active", True))]
     if not active_demands:
-        errors.append("No active SLS At Transfer station-force rows are available.")
+        errors.append(f"No active SLS {stage_label} station-force rows are available.")
 
     segment_rows = _records(_get(state, CROSSBEAM_SEGMENT_ROWS_KEY, []))
     definitions = canonical_section_definitions(_get(state, CB_SECLIB_DEFINITIONS_KEY, []))
@@ -437,7 +452,7 @@ def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransfer
     )
     if errors:
         payload = {
-            "schema": "crossbeam-sls1a-transfer-preparation-v2",
+            "schema": schema,
             "contract": contract,
             "demands": demand_rows,
             "errors": _dedupe(errors),
@@ -466,13 +481,15 @@ def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransfer
             active_demands,
             joint_stations=joint_stations,
             tolerance_m=tolerance_m,
+            stage=stage,
+            stage_label=stage_label,
         )
         errors.extend(interpolation_errors)
     check_demands = active_demands + derived_joint_rows
     prepared: list[PreparedCrossbeamTransferRow] = []
     for demand in check_demands:
         station = float(demand.get("Station s (m)") or 0.0)
-        case = str(demand.get("Case Name") or "SLS-TR")
+        case = str(demand.get("Case Name") or ("SLS-TR" if transfer_stage else "SLS-SERV"))
         check_point = str(demand.get("Check Point") or "")
         at_joint = construction_method == CONSTRUCTION_METHOD_PRECAST and any(
             abs(station - joint) <= tolerance_m for joint in joint_stations
@@ -574,15 +591,15 @@ def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransfer
     if prepared:
         info.extend(
             [
-                f"Prepared {len(prepared)} Transfer station/face concrete-stress checks.",
-                f"Active imported Transfer rows: {len(active_demands)}.",
+                f"Prepared {len(prepared)} {stage_label} station/face concrete-stress checks.",
+                f"Active imported {stage_label} rows: {len(active_demands)}.",
                 "Demand mapping: P compression-positive; M3 sagging-positive; V2/T retained for row-coupled audit only.",
-                "Imported FEA Transfer resultants are used exactly once; prestress and secondary effects are not added again.",
+                f"Imported FEA {stage_label} resultants are used exactly once; prestress and secondary effects are not added again.",
             ]
         )
     if derived_joint_rows:
         warnings.append(
-            f"{len(derived_joint_rows)} physical-joint resultant row(s) were linearly interpolated from active bracketing Transfer stations and expanded to both s-/s+ Section faces."
+            f"{len(derived_joint_rows)} physical-joint resultant row(s) were linearly interpolated from active bracketing {stage_label} stations and expanded to both s-/s+ Section faces."
         )
     warnings.append(
         "Stress lines connect verified imported stations for visualization only; no compliance is inferred between unverified stations."
@@ -590,7 +607,7 @@ def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransfer
     errors = _dedupe(errors)
     warnings = _dedupe(warnings)
     fingerprint_payload = {
-        "schema": "crossbeam-sls1a-transfer-preparation-v2",
+        "schema": schema,
         "construction_method": construction_method,
         "stressing_strength_ratio": stressing_ratio,
         "contract": contract,
@@ -619,6 +636,30 @@ def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransfer
         joint_stations_m=tuple(joint_stations),
         column_rows=tuple(column_rows),
         derived_joint_rows=tuple(derived_joint_rows),
+    )
+
+
+def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransferPreparation:
+    """Build validated gross-section transfer checks from Crossbeam SLS rows."""
+
+    return _build_crossbeam_stress_preparation(
+        state,
+        stage="Transfer stage",
+        stage_label="At Transfer",
+        schema="crossbeam-sls1a-transfer-preparation-v3",
+        transfer_stage=True,
+    )
+
+
+def build_crossbeam_service_stress_preparation(state: Any) -> CrossbeamTransferPreparation:
+    """Build validated gross-section final-service checks from Crossbeam SLS rows."""
+
+    return _build_crossbeam_stress_preparation(
+        state,
+        stage="Final service stage",
+        stage_label="At Final Service",
+        schema="crossbeam-sls1b-service-preparation-v1",
+        transfer_stage=False,
     )
 
 
@@ -889,5 +930,306 @@ def run_crossbeam_transfer_stress(preparation: CrossbeamTransferPreparation) -> 
             "Transfer-stage gross-section extreme-fiber concrete stress only. Imported P/M3 are used once. "
             "V2/T, principal stress, shear/torsion, anchorage-zone, local D-region, transfer/development length, "
             "and ACI 318-19 24.5.3.2.1 total tensile-force reinforcement design remain separate."
+        ),
+    }
+
+
+def _service_fiber_check(
+    stress_mpa: float,
+    *,
+    fc_mpa: float,
+    physical_joint: bool,
+) -> dict[str, Any]:
+    """Classify one final-service gross-section fiber under ACI 318-19."""
+
+    compression_limit = ACI_SERVICE_TOTAL_COMPRESSION_FACTOR * fc_mpa
+    class_u_limit = ACI_SERVICE_CLASS_U_TENSION_FACTOR_MPA * math.sqrt(fc_mpa)
+    class_t_limit = ACI_SERVICE_CLASS_T_TENSION_FACTOR_MPA * math.sqrt(fc_mpa)
+    compression = max(-float(stress_mpa), 0.0)
+    tension = max(float(stress_mpa), 0.0)
+    compression_util = compression / compression_limit
+    class_u_util = tension / class_u_limit
+    class_t_util = tension / class_t_limit
+
+    if compression_util > 1.0 + 1.0e-12:
+        status = "FAIL"
+        classification = "Compression exceeds total-load limit"
+        criterion = "ACI service total-load compression"
+        actual = compression
+        limit = compression_limit
+    elif tension <= class_u_limit + 1.0e-12:
+        status = "PASS"
+        classification = "Class U"
+        criterion = "ACI Class U tension"
+        actual = tension
+        limit = class_u_limit
+    elif tension <= class_t_limit + 1.0e-12:
+        status = "REVIEW"
+        classification = "Class T"
+        criterion = "ACI Class T classification"
+        actual = tension
+        limit = class_t_limit
+    else:
+        status = "REVIEW"
+        classification = "Class C"
+        criterion = "ACI Class C classification"
+        actual = tension
+        limit = class_t_limit
+
+    joint_util: float | None = None
+    joint_margin: float | None = None
+    if physical_joint:
+        joint_margin = compression - PHYSICAL_JOINT_MIN_COMPRESSION_MPA
+        if compression > 0.0:
+            joint_util = PHYSICAL_JOINT_MIN_COMPRESSION_MPA / compression
+        else:
+            joint_util = 1.001 + tension / PHYSICAL_JOINT_MIN_COMPRESSION_MPA
+        if stress_mpa > -PHYSICAL_JOINT_MIN_COMPRESSION_MPA + 1.0e-12:
+            status = "FAIL"
+            criterion = "Physical-joint minimum compression"
+            actual = compression
+            limit = PHYSICAL_JOINT_MIN_COMPRESSION_MPA
+
+    utilization = max(
+        compression_util,
+        class_u_util,
+        float(joint_util or 0.0),
+    )
+    return {
+        "status": status,
+        "classification": classification,
+        "criterion": criterion,
+        "actual_mpa": actual,
+        "limit_mpa": limit,
+        "compression_utilization": compression_util,
+        "class_u_utilization": class_u_util,
+        "class_t_utilization": class_t_util,
+        "joint_utilization": joint_util,
+        "joint_margin_mpa": joint_margin,
+        "utilization": utilization,
+        "compression_limit_mpa": compression_limit,
+        "class_u_limit_mpa": class_u_limit,
+        "class_t_limit_mpa": class_t_limit,
+    }
+
+
+def _service_required_actions(fiber_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    actions: list[dict[str, Any]] = []
+    failed_joints = [
+        row
+        for row in fiber_rows
+        if math.isfinite(float(row.get("Joint compression margin MPa") or float("nan")))
+        and float(row.get("Joint compression margin MPa")) < -1.0e-12
+    ]
+    if failed_joints:
+        governing = max(failed_joints, key=lambda row: float(row.get("Utilization value") or 0.0))
+        actions.append(
+            {
+                "Priority": "High",
+                "Module": "Physical joint",
+                "Issue": (
+                    f"Final-service minimum compression fails at s={governing['Station s (m)']:.3f} m / "
+                    f"{governing['Section face']} / {governing['Fiber']} / {governing['Case']}."
+                ),
+                "Required Action": (
+                    "Revise effective prestress, tendon profile, final service demand, or joint/section geometry until both s-/s+ top and bottom fibers remain at least 0.70 MPa in compression."
+                ),
+            }
+        )
+    compression = [
+        row
+        for row in fiber_rows
+        if float(row.get("Compression utilization") or 0.0) > 1.0 + 1.0e-12
+    ]
+    if compression:
+        governing = max(compression, key=lambda row: float(row.get("Compression utilization") or 0.0))
+        actions.append(
+            {
+                "Priority": "High",
+                "Module": "ACI service compression",
+                "Issue": (
+                    f"Total-load compression exceeds 0.60f'c at s={governing['Station s (m)']:.3f} m / "
+                    f"{governing['Fiber']} / {governing['Case']}."
+                ),
+                "Required Action": (
+                    "Verify the imported final-service response and final effective-prestress basis, then revise prestress, eccentricity, service demand, or gross section before acceptance."
+                ),
+            }
+        )
+    class_c = [row for row in fiber_rows if str(row.get("ACI class")) == "Class C"]
+    if class_c:
+        governing = max(class_c, key=lambda row: float(row.get("Class U utilization") or 0.0))
+        actions.append(
+            {
+                "Priority": "High",
+                "Module": "ACI Class C service route",
+                "Issue": (
+                    f"Gross-section tension exceeds 1.00sqrt(f'c) at s={governing['Station s (m)']:.3f} m / "
+                    f"{governing['Fiber']} / {governing['Case']}."
+                ),
+                "Required Action": (
+                    "Use a cracked transformed-section service-stress analysis in accordance with ACI 318-19 24.5.2.3 before final acceptance."
+                ),
+            }
+        )
+    elif any(str(row.get("ACI class")) == "Class T" for row in fiber_rows):
+        governing = max(
+            (row for row in fiber_rows if str(row.get("ACI class")) == "Class T"),
+            key=lambda row: float(row.get("Class U utilization") or 0.0),
+        )
+        actions.append(
+            {
+                "Priority": "Medium",
+                "Module": "ACI Class T service route",
+                "Issue": (
+                    f"Final-service tension is Class T at s={governing['Station s (m)']:.3f} m / "
+                    f"{governing['Fiber']} / {governing['Case']}."
+                ),
+                "Required Action": (
+                    "Carry the Class T classification into the serviceability and deflection review; this gross-section stress result is not a Class U PASS."
+                ),
+            }
+        )
+    return actions
+
+
+def run_crossbeam_service_stress(preparation: CrossbeamTransferPreparation) -> dict[str, Any]:
+    """Calculate final-service gross-section stress and ACI classification."""
+
+    if not preparation.ready:
+        raise ValueError("Crossbeam Final Service stress preparation is not ready.")
+    rows: list[dict[str, Any]] = []
+    fiber_rows: list[dict[str, Any]] = []
+    for source in preparation.rows:
+        axial_mpa = -source.source_p_kn * 1000.0 / source.area_mm2
+        top_bending_mpa = -source.source_m3_knm * 1_000_000.0 / source.z_top_mm3
+        bottom_bending_mpa = source.source_m3_knm * 1_000_000.0 / source.z_bottom_mm3
+        top_stress = axial_mpa + top_bending_mpa
+        bottom_stress = axial_mpa + bottom_bending_mpa
+        top_check = _service_fiber_check(
+            top_stress, fc_mpa=source.fc_mpa, physical_joint=source.is_physical_joint
+        )
+        bottom_check = _service_fiber_check(
+            bottom_stress, fc_mpa=source.fc_mpa, physical_joint=source.is_physical_joint
+        )
+        statuses = {str(top_check["status"]), str(bottom_check["status"])}
+        status = "FAIL" if "FAIL" in statuses else ("REVIEW" if "REVIEW" in statuses else "PASS")
+        row_utilization = max(float(top_check["utilization"]), float(bottom_check["utilization"]))
+        rows.append(
+            {
+                "Check": "Concrete Stress At Final Service",
+                "Status": status,
+                "Station s (m)": source.station_m,
+                "Check Point": source.check_point,
+                "Case": source.case_name,
+                "Section face": source.section_face,
+                "Location type": source.location_type,
+                "Segment": source.segment_id,
+                "Section ID": source.section_id,
+                "Material": source.material_name,
+                "P kN": source.source_p_kn,
+                "V2 kN": source.source_v2_kn,
+                "T kN-m": source.source_t_knm,
+                "M3 kN-m": source.source_m3_knm,
+                "f'c MPa": source.fc_mpa,
+                "A mm2": source.area_mm2,
+                "Ix mm4": source.ix_mm4,
+                "Ztop mm3": source.z_top_mm3,
+                "Zbottom mm3": source.z_bottom_mm3,
+                "Axial stress MPa": axial_mpa,
+                "Top bending stress MPa": top_bending_mpa,
+                "Bottom bending stress MPa": bottom_bending_mpa,
+                "Top stress MPa": top_stress,
+                "Bottom stress MPa": bottom_stress,
+                "Compression limit MPa": -float(top_check["compression_limit_mpa"]),
+                "Tension limit MPa": float(top_check["class_u_limit_mpa"]),
+                "Class T upper MPa": float(top_check["class_t_limit_mpa"]),
+                "Top ACI class": str(top_check["classification"]),
+                "Bottom ACI class": str(bottom_check["classification"]),
+                "Top utilization": float(top_check["utilization"]),
+                "Bottom utilization": float(bottom_check["utilization"]),
+                "Governing utilization": row_utilization,
+                "Top criterion": str(top_check["criterion"]),
+                "Bottom criterion": str(bottom_check["criterion"]),
+                "Joint minimum compression MPa": (
+                    -PHYSICAL_JOINT_MIN_COMPRESSION_MPA if source.is_physical_joint else float("nan")
+                ),
+                "Top joint margin MPa": (
+                    float(top_check["joint_margin_mpa"])
+                    if top_check["joint_margin_mpa"] is not None
+                    else float("nan")
+                ),
+                "Bottom joint margin MPa": (
+                    float(bottom_check["joint_margin_mpa"])
+                    if bottom_check["joint_margin_mpa"] is not None
+                    else float("nan")
+                ),
+                "Notes": " | ".join(source.notes),
+            }
+        )
+        for fiber, stress, check in (
+            ("Top", top_stress, top_check),
+            ("Bottom", bottom_stress, bottom_check),
+        ):
+            fiber_rows.append(
+                {
+                    "Status": str(check["status"]),
+                    "Station s (m)": source.station_m,
+                    "Check Point": source.check_point,
+                    "Case": source.case_name,
+                    "Section face": source.section_face,
+                    "Location type": source.location_type,
+                    "Section ID": source.section_id,
+                    "Fiber": fiber,
+                    "Stress MPa": stress,
+                    "ACI class": str(check["classification"]),
+                    "Criterion": str(check["criterion"]),
+                    "Actual MPa": float(check["actual_mpa"]),
+                    "Limit MPa": float(check["limit_mpa"]),
+                    "Compression utilization": float(check["compression_utilization"]),
+                    "Class U utilization": float(check["class_u_utilization"]),
+                    "Class T utilization": float(check["class_t_utilization"]),
+                    "Tension utilization": float(check["class_u_utilization"]),
+                    "Joint utilization": (
+                        float(check["joint_utilization"])
+                        if check["joint_utilization"] is not None
+                        else float("nan")
+                    ),
+                    "Joint compression margin MPa": (
+                        float(check["joint_margin_mpa"])
+                        if check["joint_margin_mpa"] is not None
+                        else float("nan")
+                    ),
+                    "Utilization value": float(check["utilization"]),
+                    "f'c MPa": source.fc_mpa,
+                    "Compression limit MPa": -float(check["compression_limit_mpa"]),
+                    "Tension limit MPa": float(check["class_u_limit_mpa"]),
+                    "Class T upper MPa": float(check["class_t_limit_mpa"]),
+                }
+            )
+
+    governing = max(fiber_rows, key=lambda row: float(row["Utilization value"]), default=None)
+    statuses = {str(row.get("Status")) for row in fiber_rows}
+    status = "FAIL" if "FAIL" in statuses else ("REVIEW" if "REVIEW" in statuses else "PASS")
+    return {
+        "schema": "crossbeam-sls1b-service-stress-result-v1",
+        "input_fingerprint": preparation.fingerprint,
+        "status": status,
+        "rows": rows,
+        "fiber_rows": fiber_rows,
+        "governing_row": governing,
+        "required_actions": _service_required_actions(fiber_rows),
+        "warnings": list(preparation.warnings)
+        + [
+            "The imported Final Service bucket is checked as prestress plus total load against 0.60f'c. A separate sustained-load response is required to check the ACI 318-19 0.45f'c limit."
+        ],
+        "errors": [],
+        "station_face_checks": len(rows),
+        "fiber_checks": len(fiber_rows),
+        "code_basis": "ACI 318-19 Sections 24.5.2.1 through 24.5.2.3 and Table 24.5.4.1",
+        "scope": (
+            "Final-service gross-section extreme-fiber concrete stress using verified external-FEA total resultants. "
+            "Imported P/M3 are used once; effective prestress and secondary response are not added again. "
+            "Class C requires a cracked transformed-section follow-up, and the sustained-load 0.45f'c condition remains a separate source check."
         ),
     }

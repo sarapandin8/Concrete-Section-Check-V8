@@ -102,6 +102,19 @@ def test_selected_file_replaces_truncated_native_pill_with_explicit_actions() ->
     assert "-webkit-text-fill-color:#061b35!important" in APP
 
 
+def test_post_apply_notice_is_app_owned_and_readable_instead_of_native_success_alert() -> None:
+    render_start = APP.index("def _render_sidebar_project_file_actions")
+    render_end = APP.index("def _render_commercial_sidebar", render_start)
+    render_source = APP[render_start:render_end]
+
+    assert "cpmm-sidebar-project-loaded-card" in APP
+    assert "cpmm-sidebar-project-loaded-title" in APP
+    assert "cpmm-sidebar-project-loaded-name" in APP
+    assert 'style="color:#0f6f60!important;-webkit-text-fill-color:#0f6f60!important;"' in render_source
+    assert 'style="color:#061b35!important;-webkit-text-fill-color:#061b35!important;"' in render_source
+    assert "st.success(str(load_notice))" not in render_source
+
+
 @pytest.mark.parametrize(
     ("foreground", "background"),
     [

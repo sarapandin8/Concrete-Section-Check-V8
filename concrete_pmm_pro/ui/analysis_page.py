@@ -25,10 +25,14 @@ from concrete_pmm_pro.analysis.crossbeam_uls import (
     run_crossbeam_uls_flexure,
 )
 from concrete_pmm_pro.analysis.crossbeam_sls_transfer import (
+    CROSSBEAM_SERVICE_RESULT_HASH_KEY,
+    CROSSBEAM_SERVICE_RESULT_KEY,
     CROSSBEAM_TRANSFER_RESULT_HASH_KEY,
     CROSSBEAM_TRANSFER_RESULT_KEY,
     PHYSICAL_JOINT_MIN_COMPRESSION_MPA,
+    build_crossbeam_service_stress_preparation,
     build_crossbeam_transfer_stress_preparation,
+    run_crossbeam_service_stress,
     run_crossbeam_transfer_stress,
 )
 from concrete_pmm_pro.analysis.preflight import build_analysis_input_from_session_state, check_analysis_readiness
@@ -20919,8 +20923,13 @@ def _make_crossbeam_transfer_stress_figure(
     case_name: str,
     member_length_m: float,
     column_rows: list[Mapping[str, object]],
+    stage_title: str = "Concrete Stress At Transfer",
+    code_subtitle: str = (
+        "ACI 318-19 Tables 24.5.3.1/.2 · P compression positive · M3 sagging positive · "
+        "stress compression negative / tension positive"
+    ),
 ) -> go.Figure:
-    """Build the full-length SLS1A transfer-stress engineering figure."""
+    """Build a full-length Crossbeam SLS concrete-stress engineering figure."""
 
     fig = go.Figure()
     selected = _crossbeam_transfer_case_rows(result_rows, case_name)
@@ -21046,11 +21055,8 @@ def _make_crossbeam_transfer_stress_figure(
     _apply_engineering_stress_plot_style(
         fig,
         height=650,
-        title="Concrete Stress At Transfer",
-        subtitle=(
-            "ACI 318-19 Tables 24.5.3.1/.2 · P compression positive · M3 sagging positive · "
-            "stress compression negative / tension positive"
-        ),
+        title=stage_title,
+        subtitle=code_subtitle,
     )
     fig.update_xaxes(range=[0.0, float(member_length_m)])
     return fig
@@ -21344,6 +21350,251 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
             st.info(str(result.get("scope") or ""))
 
 
+def _crossbeam_service_blocking_action(message: object) -> dict[str, str]:
+    text = str(message or "").strip()
+    lowered = text.casefold()
+    if "final prestress loss" in lowered or "prestress source" in lowered or "uniform system-average" in lowered:
+        return {
+            "Where to Fix": "Sections -> Prestress Loss -> Effective Prestress",
+            "Recommended Action": "Complete the current Effective Prestress handoff so the final loss and source contract are available to Loads.",
+        }
+    if "sls at final service" in lowered or "station-force" in lowered or "stage" in lowered:
+        return {
+            "Where to Fix": "Loads -> SLS Loads -> At Service",
+            "Recommended Action": "Import or activate row-coupled Final Service P/V2/T/M3 responses after final effective prestress and secondary response are included once in FEA.",
+        }
+    if "physical joint" in lowered or "s-/s+" in lowered:
+        return {
+            "Where to Fix": "Loads -> SLS Loads -> At Service",
+            "Recommended Action": "Provide bracketed Final Service stations or explicit Left/Right joint rows; the app will interpolate only unambiguous bracketed resultants.",
+        }
+    return _crossbeam_transfer_blocking_action(text)
+
+
+def _render_crossbeam_service_stress_workspace() -> None:
+    """Render the SLS1B final-service concrete-stress decision workspace."""
+
+    st.markdown(_ANALYSIS_DASHBOARD_CSS, unsafe_allow_html=True)
+    preparation = build_crossbeam_service_stress_preparation(st.session_state)
+    is_precast = preparation.construction_method == "Precast Segmental"
+    st.markdown("### Crossbeam SLS At Final Service - concrete stress")
+    st.caption(
+        "Checks gross-section top/bottom stress from verified Final Service external-FEA P/M3 resultants. "
+        "The imported response must already contain final effective prestress, primary and secondary prestress, and service actions exactly once."
+    )
+    with st.expander("Final Service stress scope / engineering assumptions", expanded=False):
+        st.markdown(
+            "- Stress convention: compression negative; tension positive. Imported P is compression positive and M3 is sagging positive.\n"
+            "- Gross concrete section: sigma_top = -P/A - M3/Ztop; sigma_bottom = -P/A + M3/Zbottom.\n"
+            "- ACI 318-19 total-load compression limit: 0.60f'c.\n"
+            "- Gross-section tension class: Class U <= 0.62sqrt(f'c); Class T <= 1.00sqrt(f'c); Class C requires cracked transformed-section follow-up.\n"
+            "- The sustained-load compression limit 0.45f'c requires a separate sustained-load response and is not inferred from the total-load bucket.\n"
+            + (
+                "- Every Precast physical joint must keep both s-/s+ top and bottom fibers at least 0.70 MPa in compression. Missing exact joint rows may be linearly interpolated only from unambiguous bracketing Final Service stations.\n"
+                if is_precast
+                else "- Cast-in-Place Section/Zone boundaries are monolithic property boundaries and do not activate a physical-joint gate.\n"
+            )
+            + "- V2/T, principal stress, shear/torsion, anchorage-zone, local D-region, crack width, and deflection remain separate."
+        )
+
+    cached = st.session_state.get(CROSSBEAM_SERVICE_RESULT_KEY)
+    cached_hash = str(st.session_state.get(CROSSBEAM_SERVICE_RESULT_HASH_KEY) or "")
+    cache_current = isinstance(cached, Mapping) and cached_hash == preparation.fingerprint
+    demand_df = _crossbeam_transfer_demand_dataframe(preparation)
+    control_cols = st.columns([2.2, 1.0])
+    with control_cols[0]:
+        if preparation.ready:
+            derived_count = len(preparation.derived_joint_rows)
+            st.success(
+                f"FINAL SERVICE SOURCE READY - {len(preparation.demand_rows):,} imported row(s) expand to "
+                f"{len(preparation.rows):,} station/face check(s)"
+                + (f", including {derived_count:,} auto-interpolated physical-joint station(s)." if derived_count else ".")
+            )
+        else:
+            st.error(
+                f"FINAL SERVICE SOURCE BLOCKED - {len(preparation.errors):,} required action(s). "
+                "Open Run blocking actions below for the exact correction."
+            )
+    with control_cols[1]:
+        run_clicked = st.button(
+            "Run Final Service Stress",
+            key="crossbeam_sls1b_run_service_stress",
+            type="primary" if preparation.ready else "secondary",
+            disabled=not preparation.ready,
+            use_container_width=True,
+        )
+
+    if run_clicked and preparation.ready:
+        with st.spinner("Calculating Crossbeam Final Service concrete stresses..."):
+            result = run_crossbeam_service_stress(preparation)
+        st.session_state[CROSSBEAM_SERVICE_RESULT_KEY] = result
+        st.session_state[CROSSBEAM_SERVICE_RESULT_HASH_KEY] = preparation.fingerprint
+        st.session_state["analysis_status"] = str(result.get("status") or "REVIEW")
+        cached = result
+        cache_current = True
+
+    if preparation.errors:
+        with st.expander("Run blocking actions", expanded=True):
+            blocking_rows = []
+            for index, message in enumerate(preparation.errors, start=1):
+                action = _crossbeam_service_blocking_action(message)
+                blocking_rows.append(
+                    {
+                        "Priority": index,
+                        "Where to Fix": action["Where to Fix"],
+                        "Issue": message,
+                        "Required Action": action["Recommended Action"],
+                    }
+                )
+            st.dataframe(pd.DataFrame(blocking_rows), use_container_width=True, hide_index=True)
+
+    contract = st.session_state.get("crossbeam_loads_station_force_contract")
+    contract = contract if isinstance(contract, Mapping) else {}
+    final_loss = _analysis_float_or_zero(contract.get("adopted_total_loss_percent"))
+    _render_analysis_summary_strip(
+        [
+            {
+                "title": "Final Service source",
+                "value": "READY" if preparation.ready else "SOURCE BLOCKED",
+                "detail": "Crossbeam Loads - SLS At Service - canonical kN/kN-m",
+                "status": "ready" if preparation.ready else "danger",
+                "strong": True,
+            },
+            {
+                "title": "Station / face checks",
+                "value": f"{len(preparation.rows):,}",
+                "detail": (
+                    f"{len(preparation.joint_stations_m):,} physical joint station(s) - {len(preparation.derived_joint_rows):,} auto-interpolated"
+                    if is_precast
+                    else "Cast-in-Place - no physical-joint gate"
+                ),
+                "status": "info",
+            },
+            {
+                "title": "Final prestress basis",
+                "value": f"Loss {final_loss:.3f}%" if final_loss > 0.0 else "SOURCE REQUIRED",
+                "detail": "verified external-FEA response basis",
+                "status": "ready" if preparation.ready else "warning",
+            },
+            {
+                "title": "Prestress demand",
+                "value": "NOT ADDED",
+                "detail": "effective + secondary response already in imported FEA resultants",
+                "status": "ready",
+            },
+        ],
+        columns=4,
+    )
+
+    if not cache_current:
+        if isinstance(cached, Mapping):
+            st.warning("Stored Crossbeam Final Service Stress result is STALE because final-service forces or mapped Section/Material/prestress sources changed.")
+        else:
+            st.markdown(_beam_uls_not_calculated_notice_html("Final Service Stress"), unsafe_allow_html=True)
+        with st.expander("Final Service demand table - audit / source data", expanded=False):
+            st.dataframe(demand_df, use_container_width=True, hide_index=True)
+        return
+
+    result = dict(cached)
+    result_df = pd.DataFrame(list(result.get("rows") or []))
+    fiber_df = pd.DataFrame(list(result.get("fiber_rows") or []))
+    governing = result.get("governing_row") if isinstance(result.get("governing_row"), Mapping) else None
+    status = str(result.get("status") or "REVIEW")
+    status_style = "danger" if status == "FAIL" else ("ready" if status == "PASS" else "warning")
+    criterion = "-" if governing is None else str(governing.get("Criterion") or "-")
+    station_detail = "-" if governing is None else (
+        f"{governing.get('Case')} @ s={float(governing.get('Station s (m)') or 0.0):.3f} m - "
+        f"{governing.get('Fiber')} / {governing.get('Section face')}"
+    )
+    classification = "-" if governing is None else str(governing.get("ACI class") or "-")
+    _render_analysis_summary_strip(
+        [
+            {
+                "title": "Final Service stress status",
+                "value": status,
+                "detail": "ACI 318-19 total-load + project physical-joint criterion",
+                "status": status_style,
+                "strong": True,
+            },
+            {
+                "title": "Controlling check",
+                "value": criterion,
+                "detail": station_detail,
+                "status": status_style,
+            },
+            {
+                "title": "ACI stress class",
+                "value": classification,
+                "detail": "gross-section service classification",
+                "status": status_style,
+            },
+            {
+                "title": "Governing utilization",
+                "value": "-" if governing is None else _format_crossbeam_transfer_utilization(governing.get("Utilization value")),
+                "detail": f"{int(result.get('fiber_checks') or 0):,} fiber checks",
+                "status": status_style,
+            },
+        ],
+        columns=4,
+    )
+
+    actions = list(result.get("required_actions") or [])
+    if actions:
+        st.markdown("#### Required actions")
+        st.dataframe(pd.DataFrame(actions), use_container_width=True, hide_index=True)
+    elif status == "PASS":
+        st.success("All imported Final Service total-load gross-section checks are Class U and pass the applicable compression and physical-joint criteria.")
+
+    if not result_df.empty:
+        case_options = list(dict.fromkeys(result_df["Case"].astype(str).tolist()))
+        selected_case = st.selectbox(
+            "Diagram Load Case",
+            case_options,
+            key="crossbeam_sls1b_service_diagram_case",
+        )
+        selected_rows = _crossbeam_transfer_case_rows(result_df, selected_case)
+        _render_beam_uls_static_plotly_figure(
+            _make_crossbeam_transfer_stress_figure(
+                result_df,
+                fiber_df,
+                case_name=selected_case,
+                member_length_m=float(preparation.member_length_m),
+                column_rows=list(preparation.column_rows),
+                stage_title="Concrete Stress At Final Service",
+                code_subtitle=(
+                    "ACI 318-19 Sections 24.5.2 and 24.5.4 - total-load 0.60f'c - "
+                    "stress compression negative / tension positive"
+                ),
+            ),
+            caption=(
+                "Lines connect imported station checks for visualization only. The upper dashed line is the Class U tension threshold; "
+                "Class T/C classification and the separate sustained-load 0.45f'c condition remain visible scope guards."
+            ),
+        )
+        compact_columns = [
+            "Status", "Station s (m)", "Case", "Section face", "Location type", "Section ID",
+            "P kN", "M3 kN-m", "f'c MPa", "Top stress MPa", "Bottom stress MPa",
+            "Compression limit MPa", "Tension limit MPa", "Class T upper MPa",
+            "Top ACI class", "Bottom ACI class", "Governing utilization",
+        ]
+        st.dataframe(
+            selected_rows[[column for column in compact_columns if column in selected_rows]],
+            use_container_width=True,
+            hide_index=True,
+        )
+        with st.expander("All Final Service cases / station-face audit", expanded=False):
+            st.dataframe(
+                result_df[[column for column in compact_columns if column in result_df]],
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    with st.expander("Calculation warnings / limitations", expanded=False):
+        for message in list(result.get("warnings") or []):
+            st.warning(message)
+        st.info(str(result.get("scope") or ""))
+
+
 def render_analysis_uls_pmm() -> None:
     st.subheader("ULS Strength")
     mode_settings = _analysis_mode_from_session()
@@ -21379,7 +21630,16 @@ def render_analysis_sls_stress() -> None:
     st.subheader("SLS / Stress & Cracking")
     mode_settings = _analysis_mode_from_session()
     if is_portal_frame_crossbeam_workflow(mode_settings):
-        _render_crossbeam_transfer_stress_workspace()
+        active_stage = render_active_choice(
+            "Crossbeam SLS stage",
+            ["At Transfer", "At Final Service"],
+            key="crossbeam_sls_stage_review",
+            horizontal=True,
+        )
+        if active_stage == "At Final Service":
+            _render_crossbeam_service_stress_workspace()
+        else:
+            _render_crossbeam_transfer_stress_workspace()
         return
     if is_pmm_primary_workflow(mode_settings):
         st.info("SLS / Stress & Cracking is not selected for Column/Pier/Wall/Pylon PMM workflow.")

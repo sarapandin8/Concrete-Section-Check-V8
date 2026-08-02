@@ -6,6 +6,9 @@ import pandas as pd
 import pytest
 
 from concrete_pmm_pro.analysis.crossbeam_sls_transfer import (
+    ACI_SERVICE_CLASS_T_TENSION_FACTOR_MPA,
+    ACI_SERVICE_CLASS_U_TENSION_FACTOR_MPA,
+    ACI_SERVICE_TOTAL_COMPRESSION_FACTOR,
     ACI_TRANSFER_COMPRESSION_FACTOR,
     ACI_TRANSFER_TENSION_FACTOR_MPA,
     CROSSBEAM_TRANSFER_RESULT_HASH_KEY,
@@ -13,7 +16,9 @@ from concrete_pmm_pro.analysis.crossbeam_sls_transfer import (
     PHYSICAL_JOINT_MIN_COMPRESSION_MPA,
     CrossbeamTransferPreparation,
     PreparedCrossbeamTransferRow,
+    build_crossbeam_service_stress_preparation,
     build_crossbeam_transfer_stress_preparation,
+    run_crossbeam_service_stress,
     run_crossbeam_transfer_stress,
 )
 from concrete_pmm_pro.core.concrete_materials import default_concrete_materials
@@ -116,6 +121,13 @@ def _complete_joint_rows(*, case: str = "TR-1") -> list[dict[str, object]]:
     return [_transfer_row(station, case=case, m3=750.0 if station == 10.0 else 0.0) for station in (0.0, 3.0, 7.0, 10.0, 13.0, 17.0, 20.0)]
 
 
+def _service_row(station: float, *, case: str = "SERV-1", p: float = 5000.0, m3: float = 0.0) -> dict[str, object]:
+    row = _transfer_row(station, case=case, p=p, m3=m3)
+    row["Stage"] = "Final service stage"
+    row["Note"] = "verified final-service external FEA total response"
+    return row
+
+
 def _manual_preparation(row: PreparedCrossbeamTransferRow) -> CrossbeamTransferPreparation:
     return CrossbeamTransferPreparation(
         ready=True,
@@ -171,6 +183,81 @@ def test_transfer_stress_rectangular_hand_check_preserves_p_m3_signs_and_aci_lim
     assert row["Status"] == "FAIL"
     assert result["status"] == "FAIL"
     assert any(action["Module"] == "ACI transfer tension" for action in result["required_actions"])
+
+
+def test_final_service_hand_check_uses_total_load_limit_and_classifies_u_t_c() -> None:
+    def result_for(moment_knm: float) -> dict[str, object]:
+        source = PreparedCrossbeamTransferRow(
+            station_m=5.0,
+            check_point="Benchmark",
+            case_name="SERV-BENCH",
+            section_face="INTERIOR",
+            location_type="SEGMENT / ZONE INTERIOR",
+            segment_id="SEG-1",
+            section_id="RECT",
+            material_name="Concrete",
+            source_p_kn=1000.0,
+            source_v2_kn=0.0,
+            source_t_knm=0.0,
+            source_m3_knm=moment_knm,
+            fc_mpa=40.0,
+            fci_mpa=40.0,
+            area_mm2=1_000_000.0,
+            ix_mm4=83_333_333_333.33333,
+            z_top_mm3=166_666_666.66666666,
+            z_bottom_mm3=166_666_666.66666666,
+            is_physical_joint=False,
+        )
+        return run_crossbeam_service_stress(_manual_preparation(source))
+
+    class_u = result_for(500.0)
+    assert class_u["status"] == "PASS"
+    assert class_u["rows"][0]["Bottom ACI class"] == "Class U"
+    assert class_u["rows"][0]["Compression limit MPa"] == pytest.approx(
+        -ACI_SERVICE_TOTAL_COMPRESSION_FACTOR * 40.0
+    )
+    assert class_u["rows"][0]["Tension limit MPa"] == pytest.approx(
+        ACI_SERVICE_CLASS_U_TENSION_FACTOR_MPA * math.sqrt(40.0)
+    )
+
+    class_t = result_for(1000.0)
+    assert class_t["status"] == "REVIEW"
+    assert class_t["rows"][0]["Bottom ACI class"] == "Class T"
+    assert any(action["Module"] == "ACI Class T service route" for action in class_t["required_actions"])
+
+    class_c = result_for(1300.0)
+    assert class_c["status"] == "REVIEW"
+    assert class_c["rows"][0]["Bottom ACI class"] == "Class C"
+    assert class_c["rows"][0]["Class T upper MPa"] == pytest.approx(
+        ACI_SERVICE_CLASS_T_TENSION_FACTOR_MPA * math.sqrt(40.0)
+    )
+    assert any(action["Module"] == "ACI Class C service route" for action in class_c["required_actions"])
+
+
+def test_final_service_preparation_filters_stage_and_auto_interpolates_precast_joints() -> None:
+    state = _base_state()
+    state["crossbeam_sls_loads_table"] = [
+        _transfer_row(0.0),
+        *[
+            _service_row(float(station), p=4000.0 + station, m3=50.0 * station)
+            for station in range(0, 21, 2)
+        ],
+    ]
+
+    preparation = build_crossbeam_service_stress_preparation(state)
+
+    assert preparation.ready, preparation.errors
+    assert {row["Stage"] for row in preparation.demand_rows} == {"Final service stage"}
+    assert [row["Station s (m)"] for row in preparation.derived_joint_rows] == pytest.approx(
+        [3.0, 7.0, 13.0, 17.0]
+    )
+    for station in preparation.joint_stations_m:
+        faces = {
+            row.section_face
+            for row in preparation.rows
+            if row.station_m == pytest.approx(station)
+        }
+        assert faces == {"LEFT LIMIT (s-)", "RIGHT LIMIT (s+)"}
 
 
 def test_precast_preparation_expands_each_unlabeled_joint_row_to_s_minus_and_s_plus() -> None:
@@ -369,10 +456,15 @@ def test_analysis_page_routes_crossbeam_sls_to_sls1a_and_exposes_cache_and_chart
     source = open("concrete_pmm_pro/ui/analysis_page.py", encoding="utf-8").read()
     block = source[source.index("def render_analysis_sls_stress"):source.index("def render_analysis_sls_deflection_camber")]
     assert "_render_crossbeam_transfer_stress_workspace()" in block
+    assert "_render_crossbeam_service_stress_workspace()" in block
+    assert '["At Transfer", "At Final Service"]' in block
     assert "generic SLS solver" not in block
     assert "CROSSBEAM_TRANSFER_RESULT_KEY" in source
     assert "CROSSBEAM_TRANSFER_RESULT_HASH_KEY" in source
+    assert "CROSSBEAM_SERVICE_RESULT_KEY" in source
+    assert "CROSSBEAM_SERVICE_RESULT_HASH_KEY" in source
     assert "Stored Crossbeam Transfer Stress result is STALE" in source
+    assert "Stored Crossbeam Final Service Stress result is STALE" in source
     assert "Column bands show actual Blong footprints" in source
     assert "no compliance is inferred between unverified stations" in source
 
