@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import MutableMapping
+from html import escape
 from typing import Any
 
 import pandas as pd
@@ -51,9 +52,25 @@ def render_crossbeam_project_geometry_notice(
         (issue for issue in issues if issue.get("Component") == "Rebar Zones"),
         None,
     )
-    st.error("PROJECT GEOMETRY INCONSISTENT — BLOCKED")
-    if rebar_issue:
-        st.caption(str(rebar_issue.get("Detail") or "Rebar Zone geometry requires review."))
+    issue_detail = (
+        str(rebar_issue.get("Detail") or "Rebar Zone geometry requires review.")
+        if rebar_issue
+        else "Review the listed project-coordinate inconsistencies before analysis."
+    )
+    if str(key_prefix).startswith("sidebar_"):
+        st.markdown(
+            (
+                '<div class="cpmm-sidebar-blocked-notice">'
+                "PROJECT GEOMETRY INCONSISTENT — BLOCKED"
+                f"<br>{escape(issue_detail)}"
+                "</div>"
+            ),
+            unsafe_allow_html=True,
+        )
+    else:
+        st.error("PROJECT GEOMETRY INCONSISTENT — BLOCKED")
+        if rebar_issue:
+            st.caption(issue_detail)
 
     rebar = dict(audit.get("rebar") or {})
     if rebar_issue and bool(rebar.get("reset_supported")):

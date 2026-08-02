@@ -1025,6 +1025,82 @@ section[data-testid="stSidebar"] div[data-testid="stFileUploader"] small {
   color: #0b3a66 !important;
   font-weight: 750 !important;
 }
+.cpmm-sidebar-project-upload-card {
+  border: 1px solid #8fb3d8;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #eef6ff 100%);
+  padding: 0.62rem 0.66rem;
+  margin: 0.42rem 0 0.50rem 0;
+  box-shadow: 0 7px 16px rgba(7, 26, 51, 0.075);
+}
+.cpmm-sidebar-project-upload-card.ready {
+  border-color: #66b7a6;
+  background: linear-gradient(180deg, #f8fffd 0%, #e7f8f3 100%);
+}
+.cpmm-sidebar-project-upload-card.invalid {
+  border-color: #d998a3;
+  background: linear-gradient(180deg, #fffafb 0%, #fff0f2 100%);
+}
+.cpmm-sidebar-project-upload-kicker {
+  color: #0b3a66 !important;
+  font-size: 0.64rem;
+  font-weight: 950;
+  letter-spacing: 0.065em;
+  text-transform: uppercase;
+  line-height: 1.25;
+}
+.cpmm-sidebar-project-upload-card.ready .cpmm-sidebar-project-upload-kicker,
+.cpmm-sidebar-project-upload-card.ready .cpmm-sidebar-project-upload-state {
+  color: #0f6f60 !important;
+}
+.cpmm-sidebar-project-upload-card.invalid .cpmm-sidebar-project-upload-kicker,
+.cpmm-sidebar-project-upload-card.invalid .cpmm-sidebar-project-upload-state {
+  color: #9f2033 !important;
+}
+.cpmm-sidebar-project-upload-name {
+  color: #061b35 !important;
+  font-size: 0.78rem;
+  font-weight: 950;
+  line-height: 1.27;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  margin-top: 0.26rem;
+}
+.cpmm-sidebar-project-upload-meta,
+.cpmm-sidebar-project-upload-workflow,
+.cpmm-sidebar-project-upload-detail {
+  color: #34536f !important;
+  font-size: 0.66rem;
+  font-weight: 750;
+  line-height: 1.30;
+  overflow-wrap: anywhere;
+  margin-top: 0.18rem;
+}
+.cpmm-sidebar-project-upload-detail {
+  color: #7f1d2d !important;
+}
+.cpmm-sidebar-project-upload-state {
+  color: #0b3a66 !important;
+  font-size: 0.66rem;
+  font-weight: 950;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+  margin-top: 0.30rem;
+}
+.cpmm-sidebar-blocked-notice {
+  border: 1px solid #dfa1aa;
+  border-left: 4px solid #b4233b;
+  border-radius: 10px;
+  background: #fff1f3;
+  color: #81172a !important;
+  padding: 0.62rem 0.66rem;
+  margin: 0.48rem 0 0.42rem 0;
+  box-shadow: 0 6px 14px rgba(127, 29, 45, 0.08);
+  font-size: 0.70rem;
+  font-weight: 950;
+  line-height: 1.34;
+  overflow-wrap: anywhere;
+}
 
 
 /* UI.COMMERCIAL4.3.1: sidebar text contrast hotfix.
@@ -1086,7 +1162,7 @@ section[data-testid="stSidebar"] div[data-testid="stFileUploader"] label {
   opacity: 1 !important;
   font-weight: 800 !important;
 }
-section[data-testid="stSidebar"] div[data-testid="stFileUploader"] button {
+section[data-testid="stSidebar"] div[data-testid="stFileUploaderDropzone"] button {
   color: #0b3a66 !important;
   background: #f8fbff !important;
   border-color: #a9c4df !important;
@@ -1306,6 +1382,89 @@ def _render_sidebar_active_context() -> None:
     )
 
 
+def _project_upload_size_label(size_bytes: int) -> str:
+    """Return a compact deterministic file-size label for the sidebar card."""
+
+    size = max(int(size_bytes), 0)
+    if size < 1024:
+        return f"{size} B"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
+    return f"{size / (1024 * 1024):.1f} MB"
+
+
+def _review_sidebar_project_upload(uploaded_file: object) -> dict[str, object]:
+    """Validate a selected Project JSON without mutating the active session."""
+
+    filename = str(getattr(uploaded_file, "name", "") or "Unnamed project.json")
+    try:
+        payload = uploaded_file.getvalue()  # type: ignore[attr-defined]
+    except Exception as exc:
+        return {
+            "filename": filename,
+            "size_label": "Unknown size",
+            "project": None,
+            "error": f"The selected file could not be read: {exc}",
+        }
+
+    size_label = _project_upload_size_label(len(payload))
+    try:
+        pending_json = payload.decode("utf-8")
+        project = project_from_json(pending_json)
+    except (UnicodeDecodeError, ProjectIOError) as exc:
+        return {
+            "filename": filename,
+            "size_label": size_label,
+            "project": None,
+            "error": str(exc),
+        }
+
+    workflow = analysis_mode_label(project.analysis_mode_settings or AnalysisModeSettings())
+    return {
+        "filename": filename,
+        "size_label": size_label,
+        "project": project,
+        "workflow": workflow,
+        "error": None,
+    }
+
+
+def _render_sidebar_project_upload_review(review: Mapping[str, object]) -> None:
+    """Render the full selected filename and validation state at sidebar width."""
+
+    filename = escape(str(review.get("filename") or "Unnamed project.json"))
+    size_label = escape(str(review.get("size_label") or "Unknown size"))
+    error = review.get("error")
+    if error:
+        st.markdown(
+            f"""
+<div class="cpmm-sidebar-project-upload-card invalid">
+  <div class="cpmm-sidebar-project-upload-kicker">Project file invalid</div>
+  <div class="cpmm-sidebar-project-upload-name" title="{filename}">{filename}</div>
+  <div class="cpmm-sidebar-project-upload-meta">{size_label} · JSON validation failed</div>
+  <div class="cpmm-sidebar-project-upload-detail">{escape(str(error))}</div>
+  <div class="cpmm-sidebar-project-upload-state">Select a valid Project JSON</div>
+</div>
+""",
+            unsafe_allow_html=True,
+        )
+        return
+
+    workflow = escape(str(review.get("workflow") or "Not identified"))
+    st.markdown(
+        f"""
+<div class="cpmm-sidebar-project-upload-card ready">
+  <div class="cpmm-sidebar-project-upload-kicker">Project file selected</div>
+  <div class="cpmm-sidebar-project-upload-name" title="{filename}">{filename}</div>
+  <div class="cpmm-sidebar-project-upload-meta">{size_label} · JSON validated</div>
+  <div class="cpmm-sidebar-project-upload-workflow">Workflow in file: {workflow}</div>
+  <div class="cpmm-sidebar-project-upload-state">Ready to apply</div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
 def _render_sidebar_project_file_actions() -> None:
     """Move project-level save/load actions into the commercial sidebar.
 
@@ -1334,25 +1493,30 @@ def _render_sidebar_project_file_actions() -> None:
             type=["json"],
             key="ui_commercial4_3_sidebar_project_json_uploader",
         )
-        if uploaded_file is not None and st.button(
-            "Apply Loaded Project",
-            use_container_width=True,
-            type="primary",
-            key="ui_commercial4_3_sidebar_apply_project_json",
-        ):
-            try:
-                pending_json = uploaded_file.getvalue().decode("utf-8")
-                project = project_from_json(pending_json)
-                apply_project_to_session_state(project, st.session_state)
-            except (UnicodeDecodeError, ProjectIOError) as exc:
-                st.session_state["_project_load_error"] = str(exc)
-            else:
-                st.session_state["_project_load_success"] = (
-                    "Project JSON loaded. Review Section Builder, Rebar, Prestress, and Loads tabs before future analysis."
-                )
-            rerun = getattr(st, "rerun", None)
-            if callable(rerun):
-                rerun()
+        if uploaded_file is not None:
+            review = _review_sidebar_project_upload(uploaded_file)
+            _render_sidebar_project_upload_review(review)
+            if st.button(
+                "Apply Loaded Project",
+                use_container_width=True,
+                type="primary",
+                disabled=review.get("project") is None,
+                key="ui_commercial4_3_sidebar_apply_project_json",
+            ):
+                try:
+                    project = review.get("project")
+                    if project is None:
+                        raise ProjectIOError("The selected Project JSON is not valid.")
+                    apply_project_to_session_state(project, st.session_state)
+                except ProjectIOError as exc:
+                    st.session_state["_project_load_error"] = str(exc)
+                else:
+                    st.session_state["_project_load_success"] = (
+                        "Project JSON loaded. Review Section Builder, Rebar, Prestress, and Loads tabs before future analysis."
+                    )
+                rerun = getattr(st, "rerun", None)
+                if callable(rerun):
+                    rerun()
         render_crossbeam_project_geometry_notice(
             st.session_state,
             key_prefix="sidebar_project_json1",
