@@ -60,6 +60,9 @@ from concrete_pmm_pro.ui.crossbeam_pages import (
     render_crossbeam_tendon_system_page,
 )
 from concrete_pmm_pro.ui.crossbeam_rebar_page import render_crossbeam_rebar_page
+from concrete_pmm_pro.ui.crossbeam_project_geometry import (
+    render_crossbeam_project_geometry_notice,
+)
 from concrete_pmm_pro.visualization.plot_readability import install_streamlit_plotly_readability_patch
 
 
@@ -1350,6 +1353,10 @@ def _render_sidebar_project_file_actions() -> None:
             rerun = getattr(st, "rerun", None)
             if callable(rerun):
                 rerun()
+        render_crossbeam_project_geometry_notice(
+            st.session_state,
+            key_prefix="sidebar_project_json1",
+        )
 
 
 def _render_commercial_sidebar(active_workspace: str | None = None) -> None:

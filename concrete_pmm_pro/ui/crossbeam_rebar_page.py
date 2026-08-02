@@ -120,6 +120,7 @@ from concrete_pmm_pro.crossbeam.rebar_persistence import (
     CB_TR_TEMPLATE_ROWS_KEY,
     repair_migrated_zone_template_compatibility,
     repair_stale_builtin_zone_template_compatibility,
+    reset_crossbeam_rebar_zones_from_segment_layout,
     validate_loaded_crossbeam_rebar_state,
 )
 from concrete_pmm_pro.crossbeam.tendon import (
@@ -1646,13 +1647,10 @@ def _render_zone_assignment(
         )
 
     if st.button("Reset rebar zones from Segment Layout", key="crossbeam_rb1_reset_zones"):
-        st.session_state[CB_RB_ZONE_ROWS_KEY] = default_crossbeam_rebar_zones(
+        reset_crossbeam_rebar_zones_from_segment_layout(
+            st.session_state,
             segment_rows,
-            template_rows,
-            transverse_template_rows,
         )
-        st.session_state[CB_RB_SEGMENT_SIGNATURE_KEY] = current_signature
-        st.session_state[CB_RB_ZONE_REV_KEY] = int(st.session_state.get(CB_RB_ZONE_REV_KEY, 0)) + 1
         st.rerun()
 
     longitudinal_ids = list(template_map(template_rows)) or [""]

@@ -61,6 +61,10 @@ from concrete_pmm_pro.crossbeam.section_library import (
     canonical_section_definitions,
     migrate_segment_rows_to_library,
 )
+from concrete_pmm_pro.crossbeam.project_geometry import (
+    CROSSBEAM_PROJECT_GEOMETRY_AUDIT_KEY,
+    crossbeam_project_geometry_audit,
+)
 from concrete_pmm_pro.crossbeam.rebar_persistence import (
     CROSSBEAM_REBAR_LEGACY_METADATA_KEYS,
     CROSSBEAM_REBAR_METADATA_KEY,
@@ -231,6 +235,34 @@ CROSSBEAM_SEGMENT_REVISION_STATE_KEY = "crossbeam_ui1_segment_editor_revision"
 CROSSBEAM_PRECAST_LAYOUT_STATE_KEY = "crossbeam_cip1_precast_segment_rows"
 CROSSBEAM_CIP_LAYOUT_STATE_KEY = "crossbeam_cip1_cast_in_place_zone_rows"
 CROSSBEAM_CONSTRUCTION_METHOD_LAST_STATE_KEY = "crossbeam_cip1_last_construction_method"
+CROSSBEAM_UI1A_MIGRATION_STATE_KEY = "crossbeam_ui1a_segment_assignment_migrated"
+
+_CROSSBEAM_RESTORE_WIDGET_KEYS = (
+    "crossbeam_pt1b_length_widget_m",
+    "crossbeam_pt1b_length_widget_synced_m",
+    "crossbeam_pt1b_length_repair_checked",
+    "crossbeam_pt1b_length_repair_notice",
+    "crossbeam_pt1c_length_change_notice",
+    "crossbeam_cip1a_construction_method_widget",
+    "crossbeam_cip1a_construction_method_widget_synced",
+    "crossbeam_cip1a_construction_method_notice",
+)
+
+_CROSSBEAM_RESTORE_EDITOR_PREFIXES = (
+    "crossbeam_ui1a_segment_editor_",
+    "crossbeam_tr1_zone_geometry_",
+    "crossbeam_tr1_zone_assignment_",
+)
+
+
+def _clear_crossbeam_restore_widget_state(session_state: MutableMapping[str, Any]) -> None:
+    """Remove stale widget transport values before canonical Project restore."""
+
+    for key in _CROSSBEAM_RESTORE_WIDGET_KEYS:
+        session_state.pop(key, None)
+    for key in list(session_state):
+        if str(key).startswith(_CROSSBEAM_RESTORE_EDITOR_PREFIXES):
+            session_state.pop(key, None)
 
 
 def _crossbeam_td_fea_response_metadata_from_session(session_state: Any) -> dict[str, Any]:
@@ -1305,6 +1337,7 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
 
     crossbeam_input = project.metadata.get(SECLIB_METADATA_KEY)
     if isinstance(crossbeam_input, dict):
+        _clear_crossbeam_restore_widget_state(session_state)
         definitions = canonical_section_definitions(crossbeam_input.get("section_definitions") or [])
         if definitions:
             session_state[CB_SECLIB_DEFINITIONS_KEY] = definitions
@@ -1355,6 +1388,10 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
         construction_last = crossbeam_input.get("construction_method_last")
         if construction_last is not None:
             session_state[CROSSBEAM_CONSTRUCTION_METHOD_LAST_STATE_KEY] = construction_last
+        # A canonical Project-JSON block is authoritative.  Mark the historical
+        # new-project seed migration complete so a later Streamlit rerun cannot
+        # reinterpret a valid saved 30 m layout as the current 20 m default.
+        session_state[CROSSBEAM_UI1A_MIGRATION_STATE_KEY] = True
 
     restore_crossbeam_rebar_project_state(
         project.metadata,
@@ -1492,3 +1529,6 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
     session_state["project_metadata"] = dict(project.metadata)
     analysis_restored = _restore_analysis_results_metadata(project, session_state)
     _reset_loaded_project_dirty_state(session_state, analysis_restored=analysis_restored)
+    session_state[CROSSBEAM_PROJECT_GEOMETRY_AUDIT_KEY] = (
+        crossbeam_project_geometry_audit(session_state)
+    )

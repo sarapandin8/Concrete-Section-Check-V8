@@ -41,6 +41,9 @@ from concrete_pmm_pro.io.project_io import (
     project_to_json,
 )
 from concrete_pmm_pro.reporting import build_result_traceability_snapshot, check_report_readiness
+from concrete_pmm_pro.ui.crossbeam_project_geometry import (
+    render_crossbeam_project_geometry_notice,
+)
 
 
 @dataclass(frozen=True)
@@ -1270,6 +1273,10 @@ def render_project_page() -> None:
         st.success(success_message)
     if error_message:
         st.error(f"Invalid project file: {error_message}")
+    render_crossbeam_project_geometry_notice(
+        st.session_state,
+        key_prefix="project_page_json1",
+    )
 
     analysis_mode = _coerce_analysis_mode_settings(st.session_state.get("analysis_mode_settings", AnalysisModeSettings()))
     project = project_from_session_state(st.session_state)

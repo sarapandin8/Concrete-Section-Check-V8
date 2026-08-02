@@ -928,17 +928,12 @@ def _ensure_state() -> None:
         seed_rows = legacy_segments or default_crossbeam_segment_rows(length_m)
         st.session_state[CB_SEGMENT_ROWS_KEY] = migrate_segment_rows_to_library(seed_rows, definitions)
     elif not st.session_state.get(CB_UI1A_MIGRATION_KEY):
-        # Heal the exact UI1 seed and the observed stale 0.1 m widget state, but
-        # never overwrite a custom segment layout. This runs before widgets.
+        # Current-schema rows may have come from Project JSON and are therefore
+        # authoritative even when their stations happen to match an historical
+        # default seed.  Only the legacy-key branch above may adopt the 20 m
+        # new-project default; never infer user intent from canonical rows.
         current_rows = _records(st.session_state.get(CB_SEGMENT_ROWS_KEY))
-        if _rows_match_old_30m_seed(current_rows):
-            st.session_state[CB_LENGTH_KEY] = DEFAULT_CROSSBEAM_LENGTH_M
-            length_m = DEFAULT_CROSSBEAM_LENGTH_M
-            st.session_state[CB_SEGMENT_ROWS_KEY] = migrate_segment_rows_to_library(
-                default_crossbeam_segment_rows(length_m), definitions
-            )
-        else:
-            st.session_state[CB_SEGMENT_ROWS_KEY] = _canonical_segment_rows(current_rows)
+        st.session_state[CB_SEGMENT_ROWS_KEY] = _canonical_segment_rows(current_rows)
         st.session_state[CB_UI1A_MIGRATION_KEY] = True
     st.session_state.setdefault(CB_SEGMENT_REV_KEY, 0)
     _sync_layout_state_for_construction_method(length_m)

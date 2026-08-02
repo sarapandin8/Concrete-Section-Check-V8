@@ -49,6 +49,7 @@ from concrete_pmm_pro.crossbeam.construction_stage import (
     normalize_construction_method,
 )
 from concrete_pmm_pro.crossbeam.prestress_loss import CB_LOSS_ES_CONSTRUCTION_METHOD_KEY
+from concrete_pmm_pro.crossbeam.project_geometry import crossbeam_project_geometry_audit
 from concrete_pmm_pro.crossbeam.rebar import (
     cage_relative_longitudinal_center_offset_mm,
     canonical_rebar_templates,
@@ -644,6 +645,14 @@ def build_crossbeam_uls_flexure_preparation(state: Any) -> CrossbeamUlsPreparati
     construction_method = normalize_construction_method(
         _get(state, CB_LOSS_ES_CONSTRUCTION_METHOD_KEY, CONSTRUCTION_METHOD_PRECAST)
     )
+    if construction_method == CONSTRUCTION_METHOD_PRECAST:
+        geometry_audit = crossbeam_project_geometry_audit(state)
+        errors.extend(
+            str(issue.get("Detail") or "")
+            for issue in geometry_audit.get("issues", [])
+            if bool(issue.get("Blocks rebar solver"))
+            and str(issue.get("Detail") or "").strip()
+        )
     templates, zones, transverse_templates = _load_source_for_method(state, construction_method)
     templates_by_id = template_map(templates)
     transverse_by_id = transverse_template_map(transverse_templates)

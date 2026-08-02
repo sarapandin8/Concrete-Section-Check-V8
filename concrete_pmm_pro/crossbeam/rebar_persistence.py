@@ -34,6 +34,10 @@ from concrete_pmm_pro.crossbeam.transverse import (
     transverse_template_map,
     validate_transverse_templates,
 )
+from concrete_pmm_pro.crossbeam.project_geometry import (
+    CROSSBEAM_PROJECT_GEOMETRY_AUDIT_KEY,
+    crossbeam_project_geometry_audit,
+)
 
 
 CROSSBEAM_REBAR_METADATA_KEY = "crossbeam_rebar_input_model"
@@ -561,7 +565,31 @@ def validate_loaded_crossbeam_rebar_state(
         longitudinal,
         transverse,
     )
-    errors = _deduplicated(list(load_errors or []) + reference_errors + transverse_errors + zone_errors)
+    geometry_state = {
+        "crossbeam_ui1_length_m": max(
+            [
+                float(row.get("x_end_m", 0.0) or 0.0)
+                for row in segments
+                if row.get("x_end_m") is not None
+            ]
+            or [0.0]
+        ),
+        "crossbeam_ui1_segment_layout_rows": segments,
+        CB_RB_ZONE_ROWS_KEY: zones,
+    }
+    geometry_audit = crossbeam_project_geometry_audit(geometry_state)
+    geometry_errors = [
+        str(issue.get("Detail") or "")
+        for issue in geometry_audit.get("issues", [])
+        if issue.get("Component") == "Rebar Zones" and str(issue.get("Detail") or "").strip()
+    ]
+    errors = _deduplicated(
+        list(load_errors or [])
+        + reference_errors
+        + transverse_errors
+        + geometry_errors
+        + zone_errors
+    )
     warnings = _deduplicated(transverse_warnings + zone_warnings)
     return {
         "schema_version": CROSSBEAM_REBAR_SCHEMA_VERSION,
@@ -572,7 +600,59 @@ def validate_loaded_crossbeam_rebar_state(
         "longitudinal_template_count": len(longitudinal),
         "transverse_template_count": len(transverse),
         "zone_count": len(zones),
+        "geometry_audit": geometry_audit,
     }
+
+
+def reset_crossbeam_rebar_zones_from_segment_layout(
+    session_state: MutableMapping[str, Any],
+    segment_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Explicitly rebuild one Rebar Zone per Segment and refresh validation.
+
+    The editable longitudinal/transverse Template Libraries are preserved.  No
+    reset occurs during Project-JSON restore; this action is called only after
+    the engineer presses the visible reset button.
+    """
+
+    segments = _records(segment_rows)
+    longitudinal = canonical_rebar_templates(
+        _records(session_state.get(CB_RB_TEMPLATE_ROWS_KEY))
+        or default_crossbeam_rebar_templates()
+    )
+    transverse = canonical_transverse_templates(
+        _records(session_state.get(CB_TR_TEMPLATE_ROWS_KEY))
+        or default_crossbeam_transverse_templates()
+    )
+    zones = default_crossbeam_rebar_zones(segments, longitudinal, transverse)
+    session_state[CB_RB_ZONE_ROWS_KEY] = zones
+    session_state[CB_RB_SEGMENT_SIGNATURE_KEY] = segment_signature(segments)
+    session_state[CB_RB_ZONE_REV_KEY] = int(
+        session_state.get(CB_RB_ZONE_REV_KEY, 0) or 0
+    ) + 1
+
+    # Discard data-editor payloads from the pre-reset revision.  They are UI
+    # transport state only and must not replay old 45 m coordinates afterward.
+    for key in list(session_state):
+        if str(key).startswith(
+            ("crossbeam_tr1_zone_geometry_", "crossbeam_tr1_zone_assignment_")
+        ):
+            session_state.pop(key, None)
+
+    validation = validate_loaded_crossbeam_rebar_state(
+        longitudinal,
+        transverse,
+        zones,
+        segments,
+    )
+    validation["migrated"] = False
+    validation["migration_notes"] = []
+    session_state[CB_RB_PROJECT_LOAD_VALIDATION_KEY] = validation
+    session_state[CB_RB_MIG1_ROLE_REPAIR_DONE_KEY] = True
+    session_state[CROSSBEAM_PROJECT_GEOMETRY_AUDIT_KEY] = (
+        crossbeam_project_geometry_audit(session_state)
+    )
+    return validation
 
 
 def _restore_preview(
