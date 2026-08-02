@@ -8,6 +8,7 @@ from concrete_pmm_pro.analysis.crossbeam_uls_shear import (
     CROSSBEAM_ULS_SHEAR_RESULT_HASH_KEY,
     CROSSBEAM_ULS_SHEAR_RESULT_KEY,
     _aci_prestressed_vc_n,
+    _interpolate_support_demand,
     _minimum_av_per_s,
     _spacing_limits_mm,
     build_crossbeam_uls_shear_preparation,
@@ -413,18 +414,94 @@ def test_shear_cache_keys_are_crossbeam_namespaced() -> None:
     assert CROSSBEAM_ULS_SHEAR_RESULT_HASH_KEY.startswith("crossbeam_")
 
 
-def test_missing_exact_column_face_row_blocks_conservative_support_check() -> None:
+def test_missing_exact_column_face_rows_use_one_sided_interpolation_and_limited_extrapolation() -> None:
     state = _ready_state(include_guard_rows=False)
+    columns = default_column_stage_rows(20.0)
+    columns[0]["Station s (m)"] = 2.75
+    columns[1]["Station s (m)"] = 17.25
+    state[CROSSBEAM_COLUMN_ROWS_KEY] = columns
     state["crossbeam_uls_loads_table"] = [
-        row for row in state["crossbeam_uls_loads_table"]
-        if row["Station s (m)"] != 2.5
+        {
+            "Active": True,
+            "Station s (m)": float(station),
+            "Check Point": "",
+            "Case Name": "ULS-01",
+            "P": 5000.0,
+            "V2": 2000.0 - 125.0 * float(station),
+            "T": 40.0 + float(station),
+            "M3": 500.0 * float(station),
+            "Note": "2 m station grid",
+        }
+        for station in range(0, 21, 2)
+    ]
+
+    preparation = build_crossbeam_uls_shear_preparation(state)
+
+    assert preparation.ready, preparation.errors
+    assert len(preparation.derived_support_rows) == 8
+    by_check = {str(row["Check Point"]): row for row in preparation.derived_support_rows}
+    assert by_check["C1-L Face"]["__Demand source"] == "INTERPOLATED"
+    assert by_check["C1-L Face"]["__Source station 1 (m)"] == pytest.approx(0.0)
+    assert by_check["C1-L Face"]["__Source station 2 (m)"] == pytest.approx(2.0)
+    assert by_check["C1-R Face"]["__Demand source"] == "EXTRAPOLATED"
+    assert by_check["C1-R Face"]["__Extrapolation ratio"] == pytest.approx(0.125)
+    assert by_check["C2-L Face"]["__Demand source"] == "EXTRAPOLATED"
+    assert by_check["C2-L Face"]["__Extrapolation ratio"] == pytest.approx(0.125)
+    assert by_check["C2-R Face"]["__Demand source"] == "INTERPOLATED"
+
+    result = run_crossbeam_uls_shear(preparation)
+    face = next(row for row in result["rows"] if row["Check Point"] == "C1-R Face")
+    assert face["Demand source"] == "EXTRAPOLATED"
+    assert face["Source station 1 (m)"] == pytest.approx(4.0)
+    assert face["Source station 2 (m)"] == pytest.approx(6.0)
+    assert face["Extrapolation ratio"] == pytest.approx(0.125)
+
+
+def test_support_face_extrapolation_beyond_25_percent_blocks() -> None:
+    state = _ready_state(include_guard_rows=False)
+    columns = default_column_stage_rows(20.0)
+    columns[0]["Station s (m)"] = 2.75
+    columns[1]["Station s (m)"] = 17.25
+    state[CROSSBEAM_COLUMN_ROWS_KEY] = columns
+    state["crossbeam_uls_loads_table"] = [
+        {
+            "Active": True,
+            "Station s (m)": float(station),
+            "Check Point": "",
+            "Case Name": "ULS-01",
+            "P": 5000.0,
+            "V2": 1000.0 - 20.0 * float(station),
+            "T": 50.0,
+            "M3": 100.0 * float(station),
+            "Note": "sparse one-sided grid",
+        }
+        for station in (0, 2, 6, 8, 12, 14, 18, 20)
     ]
 
     preparation = build_crossbeam_uls_shear_preparation(state)
 
     assert preparation.ready is False
-    assert any("exact one-sided station-force row" in message for message in preparation.errors)
-    assert any("C1-R" in message for message in preparation.errors)
+    assert any("exceeding the 25% safety limit" in message for message in preparation.errors)
+
+
+def test_support_recovery_never_uses_rows_across_column_centerline() -> None:
+    rows = [
+        {"Active": True, "Station s (m)": 2.0, "Case Name": "ULS-01", "P": 1.0, "V2": 2.0, "T": 3.0, "M3": 4.0},
+        {"Active": True, "Station s (m)": 4.0, "Case Name": "ULS-01", "P": 5.0, "V2": 6.0, "T": 7.0, "M3": 8.0},
+    ]
+    demand, error, _note = _interpolate_support_demand(
+        case_rows=rows,
+        target_m=3.75,
+        support_center_m=2.75,
+        side="right",
+        support_footprints=[{"Center s (m)": 2.75}],
+        tolerance=1.0e-7,
+        station_label="Column Face",
+    )
+
+    assert demand is None
+    assert error is not None
+    assert "at least two active row-coupled" in error
 
 
 def test_crossbeam_shear_chart_breaks_support_regions_and_dedupes_capacity_legends() -> None:

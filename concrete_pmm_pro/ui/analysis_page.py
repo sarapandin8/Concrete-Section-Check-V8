@@ -21298,7 +21298,7 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         )
         st.caption(
             "Signed Vu and the ±φVn / ±φVc traces are broken across each shaded support footprint. Open circles mark Column Face checks; open diamonds mark ACI h/2 checks. "
-            "Both locations are checked conservatively and the larger D/C governs. P, T, and M3 remain row-coupled to the same exact or same-side interpolated station-force source. "
+            "Both locations are checked conservatively and the larger D/C governs. P, T, and M3 remain row-coupled to the same exact, one-sided interpolated, or limited one-sided extrapolated station-force source. "
             "Physical segment-joint transfer and torsion interaction remain outside this milestone."
         )
         compact_columns = [
@@ -21314,7 +21314,9 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         )
         with st.expander("Calculation audit — ACI terms / all station rows", expanded=False):
             audit_columns = [
-                "Status", "Station s (m)", "Case", "Section face", "Location type", "P kN", "V2 kN", "T kN-m", "M3 kN-m",
+                "Status", "Station s (m)", "Case", "Section face", "Location type", "Demand source",
+                "Source station 1 (m)", "Source station 2 (m)", "Source ratio", "Extrapolation ratio",
+                "P kN", "V2 kN", "T kN-m", "M3 kN-m",
                 "bw mm", "h mm", "d raw mm", "d mm", "dp mm", "Tension face", "Bending direction",
                 "Aps mm2", "As tension mm2", "Aps fse kN", "Aps fpu kN", "As fy kN", "Prestress ratio",
                 "Vc(a) kN", "Vc(b) kN", "Vc(c) kN", "Vc lower kN", "Vc kN", "Vs kN", "φVn kN",

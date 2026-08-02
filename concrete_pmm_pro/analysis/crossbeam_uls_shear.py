@@ -1,11 +1,12 @@
 """Station-specific ACI 318-19 ULS shear checks for Portal Frame Crossbeams.
 
-``CROSSBEAM.ANALYSIS2B`` consumes the accepted canonical Crossbeam ULS
+``CROSSBEAM.ANALYSIS2C`` consumes the accepted canonical Crossbeam ULS
 station-force rows and the same Section/Rebar/Tendon sources used by the
 Crossbeam flexure adapter.  In addition to ordinary beam stations, it generates
 conservative support checks at each available beam-side Column Face and at h/2
-measured outward from that face.  Exact one-sided source rows are required at
-faces; h/2 resultants may be row-coupled interpolations on the same beam side.
+measured outward from that face.  Column Face and h/2 resultants use exact rows when available, otherwise
+row-coupled one-sided interpolation or tightly limited one-sided extrapolation
+within the same reaction-free beam side.
 The support-footprint D-region itself is omitted from the sectional route.  A
 row located exactly at a Precast physical segment joint remains a separate
 interface/joint-shear REVIEW item.
@@ -105,6 +106,7 @@ _ACI_SHEAR_FYT_MAX_MPA = 420.0
 _ACI_VC_SQRT_FC_LIMIT_MPA_SQRT = 8.3
 _DEMAND_TOLERANCE_KN = 1.0e-9
 _MOMENT_TOLERANCE_KNM = 1.0e-9
+_SUPPORT_EXTRAPOLATION_LIMIT_RATIO = 0.25
 
 
 @dataclass(frozen=True)
@@ -151,6 +153,11 @@ class PreparedCrossbeamShearRow:
     transverse_template: dict[str, Any] | None
     source_signature: str
     notes: tuple[str, ...] = ()
+    demand_source: str = "IMPORTED"
+    source_station_1_m: float | None = None
+    source_station_2_m: float | None = None
+    source_ratio: float | None = None
+    extrapolation_ratio: float | None = None
 
 
 @dataclass(frozen=True)
@@ -408,18 +415,19 @@ def _interpolate_support_demand(
     *,
     case_rows: list[dict[str, Any]],
     target_m: float,
-    support_face_m: float,
+    support_center_m: float,
     side: str,
     support_footprints: list[dict[str, Any]],
     tolerance: float,
-    exact_required: bool,
+    station_label: str,
 ) -> tuple[dict[str, Any] | None, str | None, str]:
-    """Return one row-coupled demand vector at a support check station.
+    """Recover one row-coupled demand vector on one beam side of a support.
 
-    Column-face checks require an exact one-sided source row because shear may
-    jump through the support/joint region.  The h/2 check may use linear
-    interpolation, but both bracket rows must lie on the same beam side and
-    outside all support-footprint interiors.
+    Source priority is exact row, one-sided interpolation, then tightly limited
+    one-sided extrapolation.  All four resultants use one common ratio.  A
+    candidate row is rejected when it lies on a support centerline or when a
+    support centerline lies between that row and the target station, so the
+    reconstruction never crosses a reaction discontinuity.
     """
 
     exact, exact_error = _rows_at_unique_station(
@@ -431,23 +439,44 @@ def _interpolate_support_demand(
     if exact_error:
         return None, exact_error, ""
     if exact is not None:
+        exact.update(
+            {
+                "__Demand source": "EXACT",
+                "__Source station 1 (m)": target_m,
+                "__Source station 2 (m)": target_m,
+                "__Source ratio": 0.0,
+                "__Extrapolation ratio": 0.0,
+            }
+        )
         return exact, None, f"Exact imported row at s = {target_m:.6f} m."
-    if exact_required:
-        return None, (
-            f"an exact one-sided station-force row is required at the {side} Column Face "
-            f"s = {target_m:.6f} m; interpolation across a support reaction is not permitted."
-        ), ""
+
+    support_centers = sorted(
+        {
+            round(_finite_float(item.get("Center s (m)"), float("nan")), 9)
+            for item in support_footprints
+            if math.isfinite(_finite_float(item.get("Center s (m)"), float("nan")))
+        }
+    )
+
+    def _crosses_reaction(station_m: float) -> bool:
+        if side == "left" and station_m >= support_center_m - tolerance:
+            return True
+        if side == "right" and station_m <= support_center_m + tolerance:
+            return True
+        low = min(station_m, target_m)
+        high = max(station_m, target_m)
+        for center in support_centers:
+            center_m = float(center)
+            if abs(station_m - center_m) <= tolerance:
+                return True
+            if low + tolerance < center_m < high - tolerance:
+                return True
+        return False
 
     eligible: list[dict[str, Any]] = []
     for row in case_rows:
         station = _finite_float(row.get("Station s (m)"), float("nan"))
-        if not math.isfinite(station):
-            continue
-        if side == "left" and station > support_face_m + tolerance:
-            continue
-        if side == "right" and station < support_face_m - tolerance:
-            continue
-        if _station_inside_support_interior(station, support_footprints, tolerance=tolerance):
+        if not math.isfinite(station) or _crosses_reaction(station):
             continue
         eligible.append(row)
 
@@ -469,20 +498,47 @@ def _interpolate_support_demand(
         if selected is not None:
             unique_rows.append(selected)
 
-    lower = [row for row in unique_rows if _finite_float(row.get("Station s (m)"), float("nan")) < target_m - tolerance]
-    upper = [row for row in unique_rows if _finite_float(row.get("Station s (m)"), float("nan")) > target_m + tolerance]
-    if not lower or not upper:
+    if len(unique_rows) < 2:
         return None, (
-            f"the ACI h/2 station s = {target_m:.6f} m is not bracketed by two active rows "
-            f"on the {side} beam side of the support."
+            f"{station_label} s = {target_m:.6f} m requires at least two active row-coupled "
+            f"station-force rows on the {side} beam side without crossing a support centerline."
         ), ""
-    lo = max(lower, key=lambda row: _finite_float(row.get("Station s (m)"), -1.0e99))
-    hi = min(upper, key=lambda row: _finite_float(row.get("Station s (m)"), 1.0e99))
+
+    lower = [
+        row for row in unique_rows
+        if _finite_float(row.get("Station s (m)"), float("nan")) < target_m - tolerance
+    ]
+    upper = [
+        row for row in unique_rows
+        if _finite_float(row.get("Station s (m)"), float("nan")) > target_m + tolerance
+    ]
+    method = "INTERPOLATED"
+    extrapolation_ratio = 0.0
+    if lower and upper:
+        lo = max(lower, key=lambda row: _finite_float(row.get("Station s (m)"), -1.0e99))
+        hi = min(upper, key=lambda row: _finite_float(row.get("Station s (m)"), 1.0e99))
+    elif not lower:
+        lo, hi = unique_rows[0], unique_rows[1]
+        method = "EXTRAPOLATED"
+    else:
+        lo, hi = unique_rows[-2], unique_rows[-1]
+        method = "EXTRAPOLATED"
+
     x0 = _finite_float(lo.get("Station s (m)"), float("nan"))
     x1 = _finite_float(hi.get("Station s (m)"), float("nan"))
     if not math.isfinite(x0) or not math.isfinite(x1) or x1 <= x0 + tolerance:
-        return None, f"invalid interpolation bracket for s = {target_m:.6f} m.", ""
+        return None, f"invalid one-sided source bracket for s = {target_m:.6f} m.", ""
     ratio = (target_m - x0) / (x1 - x0)
+    if method == "EXTRAPOLATED":
+        nearest_distance = min(abs(target_m - x0), abs(target_m - x1))
+        extrapolation_ratio = nearest_distance / (x1 - x0)
+        if extrapolation_ratio > _SUPPORT_EXTRAPOLATION_LIMIT_RATIO + 1.0e-12:
+            return None, (
+                f"{station_label} s = {target_m:.6f} m needs one-sided extrapolation of "
+                f"{100.0 * extrapolation_ratio:.1f}% of the source-row spacing, exceeding the "
+                f"{100.0 * _SUPPORT_EXTRAPOLATION_LIMIT_RATIO:.0f}% safety limit."
+            ), ""
+
     derived = {
         "Active": True,
         "Station s (m)": target_m,
@@ -491,8 +547,20 @@ def _interpolate_support_demand(
         "V2": _finite_float(lo.get("V2")) + ratio * (_finite_float(hi.get("V2")) - _finite_float(lo.get("V2"))),
         "T": _finite_float(lo.get("T")) + ratio * (_finite_float(hi.get("T")) - _finite_float(lo.get("T"))),
         "M3": _finite_float(lo.get("M3")) + ratio * (_finite_float(hi.get("M3")) - _finite_float(lo.get("M3"))),
+        "__Demand source": method,
+        "__Source station 1 (m)": x0,
+        "__Source station 2 (m)": x1,
+        "__Source ratio": ratio,
+        "__Extrapolation ratio": extrapolation_ratio,
     }
-    return derived, None, f"Row-coupled linear interpolation from s = {x0:.6f} and {x1:.6f} m."
+    if method == "INTERPOLATED":
+        note = f"Row-coupled one-sided interpolation from s = {x0:.6f} and {x1:.6f} m (r = {ratio:.6f})."
+    else:
+        note = (
+            f"Row-coupled limited one-sided extrapolation from s = {x0:.6f} and {x1:.6f} m "
+            f"(r = {ratio:.6f}; extrapolation = {100.0 * extrapolation_ratio:.1f}% of spacing)."
+        )
+    return derived, None, note
 
 
 def _support_side_section_depth(
@@ -558,12 +626,17 @@ def _derived_support_check_demands(
     errors: list[str] = []
     info: list[str] = []
     seen: set[tuple[str, str, str, str]] = set()
+    ordered_footprints = sorted(
+        support_footprints,
+        key=lambda item: _finite_float(item.get("Center s (m)"), float("inf")),
+    )
     for case_name, case_rows in case_groups.items():
-        for footprint in support_footprints:
+        for footprint in ordered_footprints:
             support_id = str(footprint.get("Column") or "Column / Support")
+            center = _finite_float(footprint.get("Center s (m)"), float("nan"))
             left = _finite_float(footprint.get("s_left (m)"), float("nan"))
             right = _finite_float(footprint.get("s_right (m)"), float("nan"))
-            if not math.isfinite(left) or not math.isfinite(right) or right <= left + tolerance:
+            if not math.isfinite(center) or not math.isfinite(left) or not math.isfinite(right) or right <= left + tolerance:
                 errors.append(f"{support_id}: invalid support-footprint limits for ULS Shear.")
                 continue
             for side, face in (("left", left), ("right", right)):
@@ -583,11 +656,11 @@ def _derived_support_check_demands(
                 face_source, face_error, face_note = _interpolate_support_demand(
                     case_rows=case_rows,
                     target_m=face,
-                    support_face_m=face,
+                    support_center_m=center,
                     side=side,
-                    support_footprints=support_footprints,
+                    support_footprints=ordered_footprints,
                     tolerance=tolerance,
-                    exact_required=True,
+                    station_label="Column Face",
                 )
                 if face_error or face_source is None:
                     errors.append(f"{case_name} · {support_id}-{side_label}: {face_error}")
@@ -628,11 +701,11 @@ def _derived_support_check_demands(
                 critical_source, critical_error, critical_note = _interpolate_support_demand(
                     case_rows=case_rows,
                     target_m=critical,
-                    support_face_m=face,
+                    support_center_m=center,
                     side=side,
-                    support_footprints=support_footprints,
+                    support_footprints=ordered_footprints,
                     tolerance=tolerance,
-                    exact_required=False,
+                    station_label="ACI h/2 critical section",
                 )
                 if critical_error or critical_source is None:
                     errors.append(f"{case_name} · {support_id}-{side_label}: {critical_error}")
@@ -757,7 +830,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
 
     if errors:
         payload = {
-            "schema": "crossbeam-analysis2b-shear-blocked-v1",
+            "schema": "crossbeam-analysis2c-shear-blocked-v1",
             "contract": contract,
             "demands": demand_rows,
             "errors": _dedupe(errors),
@@ -786,7 +859,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
     info.extend(support_info)
     if errors:
         payload = {
-            "schema": "crossbeam-analysis2b-support-check-source-blocked-v1",
+            "schema": "crossbeam-analysis2c-support-check-source-blocked-v1",
             "contract": contract,
             "demands": demand_rows,
             "derived_support_rows": derived_support_rows,
@@ -931,7 +1004,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
                     face = f"{face} / {str(zone.get('Zone ID') or 'ZONE LIMIT')}"
                 source_signature = _fingerprint(
                     {
-                        "schema": "crossbeam-analysis2b-shear-row-v1",
+                        "schema": "crossbeam-analysis2c-shear-row-v1",
                         "station": station,
                         "context_station": context_station,
                         "case": case,
@@ -971,6 +1044,27 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
                         transverse_template=dict(transverse_template),
                         source_signature=source_signature,
                         notes=tuple(_dedupe(row_notes)),
+                        demand_source=str(demand.get("__Demand source") or "IMPORTED"),
+                        source_station_1_m=(
+                            _finite_float(demand.get("__Source station 1 (m)"), float("nan"))
+                            if math.isfinite(_finite_float(demand.get("__Source station 1 (m)"), float("nan")))
+                            else None
+                        ),
+                        source_station_2_m=(
+                            _finite_float(demand.get("__Source station 2 (m)"), float("nan"))
+                            if math.isfinite(_finite_float(demand.get("__Source station 2 (m)"), float("nan")))
+                            else None
+                        ),
+                        source_ratio=(
+                            _finite_float(demand.get("__Source ratio"), float("nan"))
+                            if math.isfinite(_finite_float(demand.get("__Source ratio"), float("nan")))
+                            else None
+                        ),
+                        extrapolation_ratio=(
+                            _finite_float(demand.get("__Extrapolation ratio"), float("nan"))
+                            if math.isfinite(_finite_float(demand.get("__Extrapolation ratio"), float("nan")))
+                            else None
+                        ),
                     )
                 )
 
@@ -994,7 +1088,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
         )
     fingerprint = _fingerprint(
         {
-            "schema": "crossbeam-analysis2b-aci-prestressed-shear-v1",
+            "schema": "crossbeam-analysis2c-aci-prestressed-shear-v1",
             "construction_method": construction_method,
             "contract": contract,
             "demands": demand_rows,
@@ -1492,6 +1586,11 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
                 "V2 kN": row.source_v2_kn,
                 "T kN-m": row.source_t_knm,
                 "M3 kN-m": row.source_m3_knm,
+                "Demand source": row.demand_source,
+                "Source station 1 (m)": row.source_station_1_m,
+                "Source station 2 (m)": row.source_station_2_m,
+                "Source ratio": row.source_ratio,
+                "Extrapolation ratio": row.extrapolation_ratio,
                 "Demand": f"{row.source_v2_kn:,.3f} kN",
                 "Capacity": "-" if not math.isfinite(phi_vn_n) else f"φVn = {phi_vn_n / 1000.0:,.3f} kN",
                 "Utilization": utilization,
@@ -1573,7 +1672,7 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
 
     governing = max(result_rows, key=_governing_rank, default=None)
     return {
-        "schema": "crossbeam-analysis2b-aci-prestressed-shear-result-v1",
+        "schema": "crossbeam-analysis2c-aci-prestressed-shear-result-v1",
         "input_fingerprint": preparation.fingerprint,
         "status": overall,
         "rows": result_rows,

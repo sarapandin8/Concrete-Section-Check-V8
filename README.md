@@ -1822,3 +1822,7 @@ Calculates `phiMn(Pu)` at zero-M3 Crossbeam endpoints using the nearest nonzero 
 ## CROSSBEAM.ANALYSIS2 — ACI 318-19 Prestressed ULS Shear Station Checks
 
 Adds an on-demand Crossbeam Shear tab beside Flexure using the accepted Bridge/Beam lazy ULS pattern, ACI 318-19 prestressed sectional shear and provided transverse-reinforcement gates, explicit physical-joint/support D-region REVIEW guards, deterministic Crossbeam-only caching, and no duplicate prestress demand. See `README_CROSSBEAM_ANALYSIS2.md`.
+
+## CROSSBEAM.ANALYSIS2C — One-Sided Column-Face Demand Recovery
+
+Recovers missing Column-Face and ACI h/2 station forces from exact rows, row-coupled one-sided interpolation, or 25%-limited one-sided extrapolation without crossing support centerlines, and exposes the source trace only in the collapsed Shear audit. No accepted ACI shear equation or user-facing Loads input is changed. See `README_CROSSBEAM_ANALYSIS2C.md`.
