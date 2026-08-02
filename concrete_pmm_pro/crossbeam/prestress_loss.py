@@ -186,6 +186,15 @@ TD_INPUT_FIELD_KEYS: dict[str, str] = {
     "td_no_later_events_confirmed": CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY,
 }
 
+# Streamlit widget identity includes the page on which a widget is rendered.
+# Keep widget-owned keys disposable and separate from the durable project-input
+# owner above.  This follows Streamlit's documented temporary-key pattern for
+# values that must survive multipage navigation.
+TD_INPUT_WIDGET_KEYS: dict[str, str] = {
+    field: f"_{session_key}_widget"
+    for field, session_key in TD_INPUT_FIELD_KEYS.items()
+}
+
 
 def default_crossbeam_td_input_settings() -> dict[str, Any]:
     """Return the durable Time-Dependent input subset."""
@@ -314,34 +323,113 @@ def normalize_crossbeam_prestress_loss_settings(value: Any) -> dict[str, Any]:
 def crossbeam_td_input_settings_from_session_state(
     session_state: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Read TD inputs from visible widgets or their durable off-page owner.
+    """Read TD inputs from their durable off-page owner.
 
-    Streamlit removes widget-owned keys after navigating to a page where those
-    widgets are not rendered.  The separate durable mapping preserves project
-    inputs across workspace navigation without persisting calculated results.
+    The durable mapping is authoritative whenever it exists.  Legacy flat keys
+    are accepted only to bootstrap older sessions and Project JSON payloads.
+    Widget-owned keys are intentionally ignored here because a newly mounted
+    widget can replace them with its minimum/default value before page code
+    reads them.
     """
 
     durable = session_state.get(CB_LOSS_TD_INPUT_SETTINGS_KEY)
-    durable_values = dict(durable) if isinstance(durable, Mapping) else {}
     defaults = default_crossbeam_td_input_settings()
-    source = {
-        field: (
-            session_state[widget_key]
-            if widget_key in session_state
-            else durable_values.get(field, defaults[field])
-        )
-        for field, widget_key in TD_INPUT_FIELD_KEYS.items()
-    }
+    if isinstance(durable, Mapping):
+        source = {
+            field: durable.get(field, defaults[field])
+            for field in TD_INPUT_FIELD_KEYS
+        }
+    else:
+        source = {
+            field: session_state.get(session_key, defaults[field])
+            for field, session_key in TD_INPUT_FIELD_KEYS.items()
+        }
     normalized = normalize_crossbeam_prestress_loss_settings(source)
     return {field: normalized[field] for field in TD_INPUT_FIELD_KEYS}
+
+
+def set_crossbeam_td_input_setting(
+    session_state: MutableMapping[str, Any],
+    field: str,
+    value: Any,
+) -> dict[str, Any]:
+    """Set one durable TD input and mirror its legacy flat session key."""
+
+    if field not in TD_INPUT_FIELD_KEYS:
+        raise KeyError(f"Unknown Crossbeam TD input field: {field}")
+    source = crossbeam_td_input_settings_from_session_state(session_state)
+    source[field] = value
+    normalized = normalize_crossbeam_prestress_loss_settings(source)
+    settings = {name: normalized[name] for name in TD_INPUT_FIELD_KEYS}
+    session_state[CB_LOSS_TD_INPUT_SETTINGS_KEY] = dict(settings)
+    session_state[TD_INPUT_FIELD_KEYS[field]] = settings[field]
+    return settings
+
+
+def initialize_crossbeam_td_widget_state(
+    session_state: MutableMapping[str, Any],
+    fallback_settings: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Load durable TD values into disposable widget keys before rendering."""
+
+    if not isinstance(session_state.get(CB_LOSS_TD_INPUT_SETTINGS_KEY), Mapping):
+        defaults = default_crossbeam_td_input_settings()
+        fallback = fallback_settings if isinstance(fallback_settings, Mapping) else {}
+        legacy_source = {
+            field: session_state.get(
+                session_key,
+                fallback.get(field, defaults[field]),
+            )
+            for field, session_key in TD_INPUT_FIELD_KEYS.items()
+        }
+        normalized = normalize_crossbeam_prestress_loss_settings(legacy_source)
+        session_state[CB_LOSS_TD_INPUT_SETTINGS_KEY] = {
+            field: normalized[field] for field in TD_INPUT_FIELD_KEYS
+        }
+
+    settings = crossbeam_td_input_settings_from_session_state(session_state)
+    for field, session_key in TD_INPUT_FIELD_KEYS.items():
+        value = settings[field]
+        session_state[session_key] = value
+        session_state[TD_INPUT_WIDGET_KEYS[field]] = value
+    return settings
+
+
+def persist_crossbeam_td_widget_value(
+    session_state: MutableMapping[str, Any],
+    field: str,
+) -> dict[str, Any]:
+    """Store one temporary widget value in the durable TD input owner."""
+
+    if field not in TD_INPUT_WIDGET_KEYS:
+        raise KeyError(f"Unknown Crossbeam TD input field: {field}")
+    widget_key = TD_INPUT_WIDGET_KEYS[field]
+    if widget_key not in session_state:
+        return crossbeam_td_input_settings_from_session_state(session_state)
+    return set_crossbeam_td_input_setting(
+        session_state,
+        field,
+        session_state[widget_key],
+    )
 
 
 def persist_crossbeam_td_input_settings(
     session_state: MutableMapping[str, Any],
 ) -> dict[str, Any]:
-    """Copy current TD widget values into the durable off-page input owner."""
+    """Copy legacy flat TD values into the durable off-page input owner.
 
-    settings = crossbeam_td_input_settings_from_session_state(session_state)
+    New UI widgets use :func:`persist_crossbeam_td_widget_value`.  This helper
+    remains the explicit compatibility route for Project JSON restoration and
+    older callers that intentionally populate the established flat keys.
+    """
+
+    defaults = default_crossbeam_td_input_settings()
+    source = {
+        field: session_state.get(session_key, defaults[field])
+        for field, session_key in TD_INPUT_FIELD_KEYS.items()
+    }
+    normalized = normalize_crossbeam_prestress_loss_settings(source)
+    settings = {field: normalized[field] for field in TD_INPUT_FIELD_KEYS}
     session_state[CB_LOSS_TD_INPUT_SETTINGS_KEY] = dict(settings)
     return settings
 
@@ -354,6 +442,7 @@ def reset_crossbeam_td_input_settings(
     settings = default_crossbeam_td_input_settings()
     for field, widget_key in TD_INPUT_FIELD_KEYS.items():
         session_state[widget_key] = settings[field]
+        session_state[TD_INPUT_WIDGET_KEYS[field]] = settings[field]
     session_state[CB_LOSS_TD_INPUT_SETTINGS_KEY] = dict(settings)
     return settings
 

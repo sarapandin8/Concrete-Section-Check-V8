@@ -220,6 +220,7 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     CB_LOSS_TD_DEFAULTS_RESTORED_NOTICE_KEY,
     CB_LOSS_TD_INPUT_SETTINGS_KEY,
     TD_INPUT_FIELD_KEYS,
+    TD_INPUT_WIDGET_KEYS,
     CB_LOSS_EXTERNAL_MU_KEY,
     CB_LOSS_INTERNAL_K_PER_M_KEY,
     CB_LOSS_INTERNAL_MU_KEY,
@@ -241,8 +242,11 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     DEFAULT_TD_PERMANENT_LOAD_AGE_DAYS,
     DEFAULT_TD_LATER_LOAD_DELTA_FCGP_MPA,
     crossbeam_td_input_settings_from_session_state,
+    initialize_crossbeam_td_widget_state,
     persist_crossbeam_td_input_settings,
+    persist_crossbeam_td_widget_value,
     reset_crossbeam_td_input_settings,
+    set_crossbeam_td_input_setting,
     DEFAULT_INTERNAL_FRICTION_MU,
     DEFAULT_INTERNAL_WOBBLE_K_PER_M,
     aashto_friction_wobble_station_rows,
@@ -5451,14 +5455,15 @@ def _initialize_crossbeam_td_session_defaults(
     session_state: MutableMapping[str, Any],
     td_settings: Mapping[str, Any],
 ) -> None:
-    """Seed all Time-Dependent widget keys without overwriting user inputs."""
+    """Copy durable TD inputs into temporary widget keys before rendering."""
 
-    durable = session_state.get(CB_LOSS_TD_INPUT_SETTINGS_KEY)
-    durable_values = dict(durable) if isinstance(durable, Mapping) else {}
-    for field, widget_key in TD_INPUT_FIELD_KEYS.items():
-        if widget_key not in session_state:
-            session_state[widget_key] = durable_values.get(field, td_settings[field])
-    persist_crossbeam_td_input_settings(session_state)
+    initialize_crossbeam_td_widget_state(session_state, td_settings)
+
+
+def _persist_crossbeam_td_widget_change(field: str) -> None:
+    """Streamlit callback: copy one temporary widget value to durable state."""
+
+    persist_crossbeam_td_widget_value(st.session_state, field)
 
 
 def _repair_invalid_legacy_td_schedule_state(
@@ -11369,7 +11374,9 @@ def render_crossbeam_prestress_loss_page() -> None:
                 max_value=100.0,
                 step=1.0,
                 format="%.1f",
-                key=CB_LOSS_TD_RH_PERCENT_KEY,
+                key=TD_INPUT_WIDGET_KEYS["td_rh_percent"],
+                on_change=_persist_crossbeam_td_widget_change,
+                args=("td_rh_percent",),
                 help="General-practice Thailand starter value is 75%. Replace with project/site mean annual RH when available.",
             )
             st.number_input(
@@ -11378,7 +11385,9 @@ def render_crossbeam_prestress_loss_page() -> None:
                 max_value=100000.0,
                 step=1.0,
                 format="%.1f",
-                key=CB_LOSS_TD_CURING_END_AGE_DAYS_KEY,
+                key=TD_INPUT_WIDGET_KEYS["td_curing_end_age_days"],
+                on_change=_persist_crossbeam_td_widget_change,
+                args=("td_curing_end_age_days",),
                 help="Shrinkage maturity is measured from the end of curing. This is separate from the prestress/load application age.",
             )
         with source_b:
@@ -11388,7 +11397,9 @@ def render_crossbeam_prestress_loss_page() -> None:
                 max_value=100000.0,
                 step=1.0,
                 format="%.1f",
-                key=CB_LOSS_TD_LOAD_AGE_DAYS_KEY,
+                key=TD_INPUT_WIDGET_KEYS["td_load_age_days"],
+                on_change=_persist_crossbeam_td_widget_change,
+                args=("td_load_age_days",),
                 help="General-practice starter value is 28 days; stressing remains governed by verified f'ci and the approved sequence.",
             )
             st.number_input(
@@ -11397,7 +11408,9 @@ def render_crossbeam_prestress_loss_page() -> None:
                 max_value=1000000.0,
                 step=365.0,
                 format="%.1f",
-                key=CB_LOSS_TD_FINAL_AGE_DAYS_KEY,
+                key=TD_INPUT_WIDGET_KEYS["td_final_age_days"],
+                on_change=_persist_crossbeam_td_widget_change,
+                args=("td_final_age_days",),
                 help="Default 18,250 days represents a 50-year design interval. Adjust to the project design service life.",
             )
         with source_c:
@@ -11409,13 +11422,17 @@ def render_crossbeam_prestress_loss_page() -> None:
                     0.5: "50% — poorly ventilated enclosed cell",
                     1.0: "100% — ventilated / exposed",
                 }[float(value)],
-                key=CB_LOSS_TD_INNER_PERIMETER_FACTOR_KEY,
+                key=TD_INPUT_WIDGET_KEYS["td_inner_perimeter_factor"],
+                on_change=_persist_crossbeam_td_widget_change,
+                args=("td_inner_perimeter_factor",),
                 help="AASHTO commentary permits 50% of the interior perimeter for poorly ventilated enclosed cells. Solid sections have zero interior perimeter.",
             )
             st.selectbox(
                 "Prestressing-steel relaxation class",
                 options=list(RELAXATION_STEEL_OPTIONS),
-                key=CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY,
+                key=TD_INPUT_WIDGET_KEYS["td_relaxation_steel_class"],
+                on_change=_persist_crossbeam_td_widget_change,
+                args=("td_relaxation_steel_class",),
             )
 
         if td_construction_method == CONSTRUCTION_METHOD_PRECAST:
@@ -11431,7 +11448,9 @@ def render_crossbeam_prestress_loss_page() -> None:
                     max_value=1000000.0,
                     step=1.0,
                     format="%.1f",
-                    key=CB_LOSS_TD_GROUT_AGE_DAYS_KEY,
+                    key=TD_INPUT_WIDGET_KEYS["td_grout_age_days"],
+                    on_change=_persist_crossbeam_td_widget_change,
+                    args=("td_grout_age_days",),
                     help="Set tg = ti when grouting is assumed immediately after stressing. A delayed pre-grouting interval requires a separate loss model.",
                 )
             with schedule_b:
@@ -11441,7 +11460,9 @@ def render_crossbeam_prestress_loss_page() -> None:
                     max_value=1000000.0,
                     step=1.0,
                     format="%.1f",
-                    key=CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY,
+                    key=TD_INPUT_WIDGET_KEYS["td_falsework_removal_age_days"],
+                    on_change=_persist_crossbeam_td_widget_change,
+                    args=("td_falsework_removal_age_days",),
                     help="General-practice starter value is 35 days, approximately 7 days after stressing/grouting. Verify the approved erection sequence.",
                 )
 
@@ -11477,8 +11498,11 @@ def render_crossbeam_prestress_loss_page() -> None:
                             "Revoke confirmation",
                             key="crossbeam_td_revoke_no_later_events",
                         ):
-                            st.session_state[CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY] = False
-                            persist_crossbeam_td_input_settings(st.session_state)
+                            set_crossbeam_td_input_setting(
+                                st.session_state,
+                                "td_no_later_events_confirmed",
+                                False,
+                            )
                             st.rerun()
                     else:
                         st.warning(
@@ -11488,11 +11512,18 @@ def render_crossbeam_prestress_loss_page() -> None:
                             "Confirm no later permanent events",
                             key="crossbeam_td_confirm_no_later_events",
                         ):
-                            st.session_state[CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY] = True
-                            persist_crossbeam_td_input_settings(st.session_state)
+                            set_crossbeam_td_input_setting(
+                                st.session_state,
+                                "td_no_later_events_confirmed",
+                                True,
+                            )
                             st.rerun()
             else:
-                st.session_state[CB_LOSS_TD_NO_LATER_EVENTS_CONFIRMED_KEY] = False
+                set_crossbeam_td_input_setting(
+                    st.session_state,
+                    "td_no_later_events_confirmed",
+                    False,
+                )
         else:
             td_fea_source_ui = {
                 "ready": True,
@@ -11501,8 +11532,6 @@ def render_crossbeam_prestress_loss_page() -> None:
                 "declaration": default_td_fea_source_declaration(),
                 "schedule_status": {"ready": True, "status": "NOT APPLICABLE", "issues": []},
             }
-        persist_crossbeam_td_input_settings(st.session_state)
-
         td_settings = _loss_setting_defaults_from_state()
         drying_preview = crossbeam_drying_geometry(
             length_m=length_m,

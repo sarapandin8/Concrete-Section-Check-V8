@@ -11,6 +11,7 @@ from concrete_pmm_pro.state.dirty_state import (
 from concrete_pmm_pro.crossbeam.prestress_loss import (
     CB_LOSS_TD_INPUT_SETTINGS_KEY,
     default_crossbeam_td_input_settings,
+    initialize_crossbeam_td_widget_state,
 )
 
 
@@ -103,6 +104,18 @@ def test_materializing_effective_td_defaults_does_not_mark_analysis_stale() -> N
     mark_analysis_current(state, workspace="Analysis / SLS")
 
     state[CB_LOSS_TD_INPUT_SETTINGS_KEY] = default_crossbeam_td_input_settings()
+    status = update_dirty_state_from_session(state)
+
+    assert status.analysis_status == "Current"
+    assert "Prestress" not in status.changed_groups
+
+
+def test_td_temporary_widget_materialization_does_not_mark_analysis_stale() -> None:
+    state: dict[str, object] = {"project_name": "A"}
+    update_dirty_state_from_session(state)
+    mark_analysis_current(state, workspace="Analysis / SLS")
+
+    initialize_crossbeam_td_widget_state(state)
     status = update_dirty_state_from_session(state)
 
     assert status.analysis_status == "Current"

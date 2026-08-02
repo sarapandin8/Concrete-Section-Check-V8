@@ -30,11 +30,16 @@ from concrete_pmm_pro.crossbeam.prestress_loss import (
     CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
     CB_LOSS_TD_RELAXATION_STEEL_CLASS_KEY,
     CB_LOSS_TD_RH_PERCENT_KEY,
+    TD_INPUT_FIELD_KEYS,
+    TD_INPUT_WIDGET_KEYS,
     CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY,
     CROSSBEAM_PRESTRESS_LOSS_SCHEMA_VERSION,
     aashto_friction_wobble_station_rows,
     crossbeam_prestress_loss_settings_from_session_state,
+    crossbeam_td_input_settings_from_session_state,
     default_crossbeam_prestress_loss_settings,
+    initialize_crossbeam_td_widget_state,
+    persist_crossbeam_td_widget_value,
     restore_crossbeam_prestress_loss_project_state,
 )
 from concrete_pmm_pro.crossbeam.section_library import (
@@ -356,8 +361,64 @@ def test_ptloss4b2_time_dependent_widget_defaults_include_later_load_delta_witho
     assert state[CB_LOSS_TD_LATER_LOAD_DELTA_FCGP_MPA_KEY] == pytest.approx(
         settings["td_later_load_delta_fcgp_mpa"]
     )
-    assert len(state) == 12
+    assert all(key in state for key in TD_INPUT_WIDGET_KEYS.values())
     assert state[CB_LOSS_TD_INPUT_SETTINGS_KEY]["td_rh_percent"] == pytest.approx(68.0)
+
+
+def test_tdstate2_real_navigation_restores_durable_values_over_widget_minima() -> None:
+    state: dict[str, object] = {}
+    initialize_crossbeam_td_widget_state(state)
+
+    # User changes RH while the TD page is mounted. The widget callback runs
+    # before Streamlit reruns the page and copies the value to durable state.
+    state[TD_INPUT_WIDGET_KEYS["td_rh_percent"]] = 70.0
+    persist_crossbeam_td_widget_value(state, "td_rh_percent")
+    assert state[CB_LOSS_TD_INPUT_SETTINGS_KEY]["td_rh_percent"] == pytest.approx(70.0)
+
+    # Navigating to Analysis removes temporary widget keys. Reproduces the
+    # observed failure in TDSTATE1 where new widgets returned at their minima:
+    # RH=1 and all schedule ages at/near zero.
+    for widget_key in TD_INPUT_WIDGET_KEYS.values():
+        state.pop(widget_key, None)
+    state.update(
+        {
+            CB_LOSS_TD_RH_PERCENT_KEY: 1.0,
+            CB_LOSS_TD_LOAD_AGE_DAYS_KEY: 0.01,
+            CB_LOSS_TD_CURING_END_AGE_DAYS_KEY: 0.0,
+            CB_LOSS_TD_FINAL_AGE_DAYS_KEY: 0.02,
+            CB_LOSS_TD_GROUT_AGE_DAYS_KEY: 0.01,
+            CB_LOSS_TD_FALSEWORK_REMOVAL_AGE_DAYS_KEY: 0.01,
+        }
+    )
+
+    restored = initialize_crossbeam_td_widget_state(state)
+    assert restored["td_rh_percent"] == pytest.approx(70.0)
+    assert restored["td_curing_end_age_days"] == pytest.approx(7.0)
+    assert restored["td_load_age_days"] == pytest.approx(28.0)
+    assert restored["td_grout_age_days"] == pytest.approx(28.0)
+    assert restored["td_falsework_removal_age_days"] == pytest.approx(35.0)
+    assert restored["td_final_age_days"] == pytest.approx(18250.0)
+    for field, widget_key in TD_INPUT_WIDGET_KEYS.items():
+        assert state[widget_key] == restored[field]
+        assert state[TD_INPUT_FIELD_KEYS[field]] == restored[field]
+
+
+def test_tdstate2_off_page_project_save_ignores_disposable_widget_minima() -> None:
+    state: dict[str, object] = {}
+    initialize_crossbeam_td_widget_state(state)
+    state[TD_INPUT_WIDGET_KEYS["td_rh_percent"]] = 70.0
+    persist_crossbeam_td_widget_value(state, "td_rh_percent")
+
+    # A stale/minimum flat value must not beat the durable owner while saving
+    # Project JSON from Analysis or another workspace.
+    state[CB_LOSS_TD_RH_PERCENT_KEY] = 1.0
+    state[CB_LOSS_TD_LOAD_AGE_DAYS_KEY] = 0.01
+    settings = crossbeam_td_input_settings_from_session_state(state)
+    metadata = crossbeam_prestress_loss_settings_from_session_state(state)
+    assert settings["td_rh_percent"] == pytest.approx(70.0)
+    assert settings["td_load_age_days"] == pytest.approx(28.0)
+    assert metadata["td_rh_percent"] == pytest.approx(70.0)
+    assert metadata["td_load_age_days"] == pytest.approx(28.0)
 
 def test_time_dependent_ui_is_on_demand_and_contains_no_structural_solver_call() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
