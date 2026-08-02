@@ -1054,6 +1054,19 @@ section[data-testid="stSidebar"] .cpmm-sidebar-project-upload-card * {
   margin: 0.42rem 0 0.50rem 0;
   box-shadow: 0 6px 14px rgba(15, 111, 96, 0.08);
 }
+section[data-testid="stSidebar"] .cpmm-sidebar-project-loaded-card,
+section[data-testid="stSidebar"] .cpmm-sidebar-project-loaded-card * {
+  opacity: 1 !important;
+  filter: none !important;
+}
+section[data-testid="stSidebar"] .cpmm-sidebar-project-loaded-card .cpmm-sidebar-project-loaded-title {
+  color: #0f6f60 !important;
+  -webkit-text-fill-color: #0f6f60 !important;
+}
+section[data-testid="stSidebar"] .cpmm-sidebar-project-loaded-card .cpmm-sidebar-project-loaded-name {
+  color: #061b35 !important;
+  -webkit-text-fill-color: #061b35 !important;
+}
 .cpmm-sidebar-project-loaded-title {
   color: #0f6f60 !important;
   -webkit-text-fill-color: #0f6f60 !important;
@@ -1112,6 +1125,28 @@ section[data-testid="stSidebar"] .cpmm-sidebar-project-upload-card * {
 .cpmm-sidebar-project-upload-detail {
   color: #7f1d2d !important;
   -webkit-text-fill-color: #7f1d2d !important;
+}
+section[data-testid="stSidebar"] .cpmm-sidebar-project-upload-card .cpmm-sidebar-project-upload-name {
+  color: #061b35 !important;
+  -webkit-text-fill-color: #061b35 !important;
+}
+section[data-testid="stSidebar"] .cpmm-sidebar-project-upload-card .cpmm-sidebar-project-upload-meta,
+section[data-testid="stSidebar"] .cpmm-sidebar-project-upload-card .cpmm-sidebar-project-upload-workflow,
+section[data-testid="stSidebar"] .cpmm-sidebar-project-upload-card .cpmm-sidebar-project-upload-detail {
+  color: #34536f !important;
+  -webkit-text-fill-color: #34536f !important;
+}
+section[data-testid="stSidebar"] .cpmm-sidebar-project-upload-card.invalid .cpmm-sidebar-project-upload-detail {
+  color: #7f1d2d !important;
+  -webkit-text-fill-color: #7f1d2d !important;
+}
+
+/* Closed Streamlit expanders otherwise paginate as an almost-empty tail page
+   in browser PDF exports. Open audit content remains printable. */
+@media print {
+  div[data-testid="stExpander"] details:not([open]) {
+    display: none !important;
+  }
 }
 .cpmm-sidebar-project-upload-state {
   color: #0b3a66 !important;

@@ -726,7 +726,10 @@ def _required_actions(fiber_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "Module": "Physical joint",
                 "Issue": (
                     f"Minimum compression fails at s={governing['Station s (m)']:.3f} m / "
-                    f"{governing['Section face']} / {governing['Fiber']} / {governing['Case']}."
+                    f"{governing['Section face']} / {governing['Fiber']} / {governing['Case']}: "
+                    f"signed stress {float(governing['Stress MPa']):+.3f} MPa "
+                    f"({'tension' if float(governing['Stress MPa']) > 0.0 else 'compression'}), "
+                    f"required <= {-PHYSICAL_JOINT_MIN_COMPRESSION_MPA:.3f} MPa."
                 ),
                 "Required Action": (
                     "Revise Transfer tendon force/profile, stressing sequence, support/contact stage, or joint/section geometry until both s-/s+ top and bottom fibers remain at least 0.70 MPa in compression."
@@ -939,8 +942,17 @@ def _service_fiber_check(
     *,
     fc_mpa: float,
     physical_joint: bool,
+    section_class: str,
 ) -> dict[str, Any]:
-    """Classify one final-service gross-section fiber under ACI 318-19."""
+    """Check one final-service gross-section fiber under ACI 318-19.
+
+    Gross stress classifies the complete section before any Class C stress
+    verification is attempted.  Table 24.5.4.1 compression limits apply only
+    to Class U/T members; a Class C section instead requires a cracked
+    transformed-section stress analysis under 24.5.2.3.  The project physical-
+    joint minimum-compression criterion remains independent and can still FAIL
+    a Class C section.
+    """
 
     compression_limit = ACI_SERVICE_TOTAL_COMPRESSION_FACTOR * fc_mpa
     class_u_limit = ACI_SERVICE_CLASS_U_TENSION_FACTOR_MPA * math.sqrt(fc_mpa)
@@ -951,7 +963,13 @@ def _service_fiber_check(
     class_u_util = tension / class_u_limit
     class_t_util = tension / class_t_limit
 
-    if compression_util > 1.0 + 1.0e-12:
+    if section_class == "Class C":
+        status = "REVIEW"
+        classification = "Class C"
+        criterion = "ACI Class C cracked-section route"
+        actual = float(stress_mpa)
+        limit = class_t_limit
+    elif compression_util > 1.0 + 1.0e-12:
         status = "FAIL"
         classification = "Compression exceeds total-load limit"
         criterion = "ACI service total-load compression"
@@ -990,11 +1008,17 @@ def _service_fiber_check(
             actual = compression
             limit = PHYSICAL_JOINT_MIN_COMPRESSION_MPA
 
-    utilization = max(
-        compression_util,
-        class_u_util,
-        float(joint_util or 0.0),
-    )
+    # Table 24.5.4.1 is not a Class C acceptance check. Keep a useful
+    # classification ratio for ordering the Class C review while preserving
+    # the independent project physical-joint gate.
+    if section_class == "Class C":
+        utilization = max(class_t_util, float(joint_util or 0.0))
+    else:
+        utilization = max(
+            compression_util,
+            class_u_util,
+            float(joint_util or 0.0),
+        )
     return {
         "status": status,
         "classification": classification,
@@ -1010,7 +1034,20 @@ def _service_fiber_check(
         "compression_limit_mpa": compression_limit,
         "class_u_limit_mpa": class_u_limit,
         "class_t_limit_mpa": class_t_limit,
+        "section_class": section_class,
     }
+
+
+def _service_section_class(top_stress_mpa: float, bottom_stress_mpa: float, fc_mpa: float) -> str:
+    """Return the ACI gross-section service classification for one section face."""
+
+    tension = max(float(top_stress_mpa), float(bottom_stress_mpa), 0.0)
+    root_fc = math.sqrt(float(fc_mpa))
+    if tension <= ACI_SERVICE_CLASS_U_TENSION_FACTOR_MPA * root_fc + 1.0e-12:
+        return "Class U"
+    if tension <= ACI_SERVICE_CLASS_T_TENSION_FACTOR_MPA * root_fc + 1.0e-12:
+        return "Class T"
+    return "Class C"
 
 
 def _service_required_actions(fiber_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1029,7 +1066,10 @@ def _service_required_actions(fiber_rows: list[dict[str, Any]]) -> list[dict[str
                 "Module": "Physical joint",
                 "Issue": (
                     f"Final-service minimum compression fails at s={governing['Station s (m)']:.3f} m / "
-                    f"{governing['Section face']} / {governing['Fiber']} / {governing['Case']}."
+                    f"{governing['Section face']} / {governing['Fiber']} / {governing['Case']}: "
+                    f"signed stress {float(governing['Stress MPa']):+.3f} MPa "
+                    f"({'tension' if float(governing['Stress MPa']) > 0.0 else 'compression'}), "
+                    f"required <= {-PHYSICAL_JOINT_MIN_COMPRESSION_MPA:.3f} MPa."
                 ),
                 "Required Action": (
                     "Revise effective prestress, tendon profile, final service demand, or joint/section geometry until both s-/s+ top and bottom fibers remain at least 0.70 MPa in compression."
@@ -1039,6 +1079,7 @@ def _service_required_actions(fiber_rows: list[dict[str, Any]]) -> list[dict[str
     compression = [
         row
         for row in fiber_rows
+        if str(row.get("Section ACI class") or "") != "Class C"
         if float(row.get("Compression utilization") or 0.0) > 1.0 + 1.0e-12
     ]
     if compression:
@@ -1068,7 +1109,8 @@ def _service_required_actions(fiber_rows: list[dict[str, Any]]) -> list[dict[str
                     f"{governing['Fiber']} / {governing['Case']}."
                 ),
                 "Required Action": (
-                    "Use a cracked transformed-section service-stress analysis in accordance with ACI 318-19 24.5.2.3 before final acceptance."
+                    "Complete a cracked transformed-section service-stress analysis in accordance with ACI 318-19 24.5.2.3 before final acceptance. "
+                    "The current total-response FEA P/M bucket is retained for gross classification and is not reused as a fabricated cracked-section result."
                 ),
             }
         )
@@ -1106,11 +1148,18 @@ def run_crossbeam_service_stress(preparation: CrossbeamTransferPreparation) -> d
         bottom_bending_mpa = source.source_m3_knm * 1_000_000.0 / source.z_bottom_mm3
         top_stress = axial_mpa + top_bending_mpa
         bottom_stress = axial_mpa + bottom_bending_mpa
+        section_class = _service_section_class(top_stress, bottom_stress, source.fc_mpa)
         top_check = _service_fiber_check(
-            top_stress, fc_mpa=source.fc_mpa, physical_joint=source.is_physical_joint
+            top_stress,
+            fc_mpa=source.fc_mpa,
+            physical_joint=source.is_physical_joint,
+            section_class=section_class,
         )
         bottom_check = _service_fiber_check(
-            bottom_stress, fc_mpa=source.fc_mpa, physical_joint=source.is_physical_joint
+            bottom_stress,
+            fc_mpa=source.fc_mpa,
+            physical_joint=source.is_physical_joint,
+            section_class=section_class,
         )
         statuses = {str(top_check["status"]), str(bottom_check["status"])}
         status = "FAIL" if "FAIL" in statuses else ("REVIEW" if "REVIEW" in statuses else "PASS")
@@ -1144,6 +1193,7 @@ def run_crossbeam_service_stress(preparation: CrossbeamTransferPreparation) -> d
                 "Compression limit MPa": -float(top_check["compression_limit_mpa"]),
                 "Tension limit MPa": float(top_check["class_u_limit_mpa"]),
                 "Class T upper MPa": float(top_check["class_t_limit_mpa"]),
+                "Section ACI class": section_class,
                 "Top ACI class": str(top_check["classification"]),
                 "Bottom ACI class": str(bottom_check["classification"]),
                 "Top utilization": float(top_check["utilization"]),
@@ -1183,6 +1233,7 @@ def run_crossbeam_service_stress(preparation: CrossbeamTransferPreparation) -> d
                     "Fiber": fiber,
                     "Stress MPa": stress,
                     "ACI class": str(check["classification"]),
+                    "Section ACI class": section_class,
                     "Criterion": str(check["criterion"]),
                     "Actual MPa": float(check["actual_mpa"]),
                     "Limit MPa": float(check["limit_mpa"]),
@@ -1211,6 +1262,13 @@ def run_crossbeam_service_stress(preparation: CrossbeamTransferPreparation) -> d
     governing = max(fiber_rows, key=lambda row: float(row["Utilization value"]), default=None)
     statuses = {str(row.get("Status")) for row in fiber_rows}
     status = "FAIL" if "FAIL" in statuses else ("REVIEW" if "REVIEW" in statuses else "PASS")
+    class_rank = {"Class U": 0, "Class T": 1, "Class C": 2}
+    overall_class = max(
+        (str(row.get("Section ACI class") or "Class U") for row in fiber_rows),
+        key=lambda value: class_rank.get(value, -1),
+        default="Class U",
+    )
+    cracked_status = "REVIEW REQUIRED" if overall_class == "Class C" else "NOT REQUIRED FOR STRESS"
     return {
         "schema": "crossbeam-sls1b-service-stress-result-v1",
         "input_fingerprint": preparation.fingerprint,
@@ -1218,18 +1276,23 @@ def run_crossbeam_service_stress(preparation: CrossbeamTransferPreparation) -> d
         "rows": rows,
         "fiber_rows": fiber_rows,
         "governing_row": governing,
+        "overall_aci_class": overall_class,
+        "gross_classification_status": "COMPLETE",
+        "cracked_transformed_status": cracked_status,
         "required_actions": _service_required_actions(fiber_rows),
         "warnings": list(preparation.warnings)
         + [
-            "The imported Final Service bucket is checked as prestress plus total load against 0.60f'c. A separate sustained-load response is required to check the ACI 318-19 0.45f'c limit."
+            "For Class U/T, the imported Final Service bucket is checked as prestress plus total load against 0.60f'c. "
+            "Class C instead requires cracked transformed-section analysis. A separate sustained-load response is required to check the ACI 318-19 0.45f'c limit where applicable."
         ],
         "errors": [],
         "station_face_checks": len(rows),
         "fiber_checks": len(fiber_rows),
-        "code_basis": "ACI 318-19 Sections 24.5.2.1 through 24.5.2.3 and Table 24.5.4.1",
+        "code_basis": "ACI 318-19 Sections 24.5.2.1 through 24.5.2.3 and Table 24.5.4.1 (Class U/T only)",
         "scope": (
             "Final-service gross-section extreme-fiber concrete stress using verified external-FEA total resultants. "
             "Imported P/M3 are used once; effective prestress and secondary response are not added again. "
-            "Class C requires a cracked transformed-section follow-up, and the sustained-load 0.45f'c condition remains a separate source check."
+            "Gross stress is used only to classify Class C; Table 24.5.4.1 compression limits are not applied to Class C. "
+            "Class C remains REVIEW REQUIRED until a separate cracked transformed-section result is available, and the sustained-load 0.45f'c condition remains a separate source check."
         ),
     }

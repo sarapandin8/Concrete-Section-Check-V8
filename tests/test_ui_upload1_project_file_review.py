@@ -113,6 +113,13 @@ def test_post_apply_notice_is_app_owned_and_readable_instead_of_native_success_a
     assert 'style="color:#0f6f60!important;-webkit-text-fill-color:#0f6f60!important;"' in render_source
     assert 'style="color:#061b35!important;-webkit-text-fill-color:#061b35!important;"' in render_source
     assert "st.success(str(load_notice))" not in render_source
+    assert 'section[data-testid="stSidebar"] .cpmm-sidebar-project-loaded-card .cpmm-sidebar-project-loaded-name' in APP
+
+
+def test_print_css_removes_closed_expanders_that_created_blank_pdf_tail_page() -> None:
+    assert '@media print {' in APP
+    assert 'div[data-testid="stExpander"] details:not([open])' in APP
+    assert 'display: none !important;' in APP
 
 
 @pytest.mark.parametrize(

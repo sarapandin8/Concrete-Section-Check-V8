@@ -227,11 +227,73 @@ def test_final_service_hand_check_uses_total_load_limit_and_classifies_u_t_c() -
 
     class_c = result_for(1300.0)
     assert class_c["status"] == "REVIEW"
+    assert class_c["overall_aci_class"] == "Class C"
+    assert class_c["gross_classification_status"] == "COMPLETE"
+    assert class_c["cracked_transformed_status"] == "REVIEW REQUIRED"
     assert class_c["rows"][0]["Bottom ACI class"] == "Class C"
     assert class_c["rows"][0]["Class T upper MPa"] == pytest.approx(
         ACI_SERVICE_CLASS_T_TENSION_FACTOR_MPA * math.sqrt(40.0)
     )
     assert any(action["Module"] == "ACI Class C service route" for action in class_c["required_actions"])
+
+
+def test_identical_transfer_and_final_resultants_keep_identical_gross_stress_without_double_counting_losses() -> None:
+    source = PreparedCrossbeamTransferRow(
+        station_m=5.0,
+        check_point="Same imported response",
+        case_name="USER-SAME",
+        section_face="INTERIOR",
+        location_type="SEGMENT / ZONE INTERIOR",
+        segment_id="SEG-1",
+        section_id="RECT",
+        material_name="Concrete",
+        source_p_kn=1200.0,
+        source_v2_kn=0.0,
+        source_t_knm=0.0,
+        source_m3_knm=450.0,
+        fc_mpa=40.0,
+        fci_mpa=32.0,
+        area_mm2=1_000_000.0,
+        ix_mm4=83_333_333_333.33333,
+        z_top_mm3=166_666_666.66666666,
+        z_bottom_mm3=166_666_666.66666666,
+        is_physical_joint=False,
+    )
+
+    transfer = run_crossbeam_transfer_stress(_manual_preparation(source))["rows"][0]
+    final = run_crossbeam_service_stress(_manual_preparation(source))["rows"][0]
+
+    assert final["Top stress MPa"] == pytest.approx(transfer["Top stress MPa"])
+    assert final["Bottom stress MPa"] == pytest.approx(transfer["Bottom stress MPa"])
+
+
+def test_class_c_does_not_apply_class_u_t_compression_limit_as_false_failure() -> None:
+    source = PreparedCrossbeamTransferRow(
+        station_m=5.0,
+        check_point="Class C mixed fibers",
+        case_name="SERV-C",
+        section_face="INTERIOR",
+        location_type="SEGMENT / ZONE INTERIOR",
+        segment_id="SEG-1",
+        section_id="RECT",
+        material_name="Concrete",
+        source_p_kn=10_000.0,
+        source_v2_kn=0.0,
+        source_t_knm=0.0,
+        source_m3_knm=2_700.0,
+        fc_mpa=20.0,
+        fci_mpa=20.0,
+        area_mm2=1_000_000.0,
+        ix_mm4=83_333_333_333.33333,
+        z_top_mm3=166_666_666.66666666,
+        z_bottom_mm3=166_666_666.66666666,
+        is_physical_joint=False,
+    )
+    result = run_crossbeam_service_stress(_manual_preparation(source))
+
+    assert result["overall_aci_class"] == "Class C"
+    assert result["status"] == "REVIEW"
+    assert not any(action["Module"] == "ACI service compression" for action in result["required_actions"])
 
 
 def test_final_service_preparation_filters_stage_and_auto_interpolates_precast_joints() -> None:
@@ -467,6 +529,10 @@ def test_analysis_page_routes_crossbeam_sls_to_sls1a_and_exposes_cache_and_chart
     assert "Stored Crossbeam Final Service Stress result is STALE" in source
     assert "Column bands show actual Blong footprints" in source
     assert "no compliance is inferred between unverified stations" in source
+    assert '"title": "Final Service SLS check status"' in source
+    assert '"title": "Controlling stress"' in source
+    assert "gross Class C; cracked transformed verification required" in source
+    assert 'status_title = "SLS check status"' in source
 
 
 def test_transfer_figure_contains_stress_limits_joint_marker_and_column_geometry() -> None:

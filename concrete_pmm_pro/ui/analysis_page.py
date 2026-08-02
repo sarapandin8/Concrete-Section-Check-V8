@@ -21070,6 +21070,28 @@ def _format_crossbeam_transfer_stress(value: object) -> str:
     return f"{number:+,.3f} MPa" if math.isfinite(number) else "-"
 
 
+def _crossbeam_signed_stress_label(value: object) -> str:
+    """Format actual signed stress without hiding tension as zero compression."""
+
+    number = _analysis_float_or_zero(value)
+    direction = "tension" if number > 1.0e-12 else ("compression" if number < -1.0e-12 else "zero")
+    return f"{number:+,.3f} MPa ({direction})"
+
+
+def _crossbeam_governing_requirement(governing: Mapping[str, object] | None) -> str:
+    if governing is None:
+        return "-"
+    criterion = str(governing.get("Criterion") or "")
+    limit = _analysis_float_or_zero(governing.get("Limit MPa"))
+    if criterion == "Physical-joint minimum compression":
+        return f"required stress <= {-abs(limit):,.3f} MPa"
+    if "compression" in criterion.casefold():
+        return f"compression magnitude <= {abs(limit):,.3f} MPa"
+    if "Class C" in criterion:
+        return "gross Class C; cracked transformed verification required"
+    return f"tension <= {abs(limit):,.3f} MPa"
+
+
 def _format_crossbeam_transfer_utilization(value: object) -> str:
     try:
         number = float(value)
@@ -21227,23 +21249,8 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
         f"{governing.get('Case')} @ s={float(governing.get('Station s (m)') or 0.0):.3f} m · "
         f"{governing.get('Fiber')} / {governing.get('Section face')}"
     )
-    if governing is None:
-        actual_vs_limit = "-"
-    elif str(governing.get("Criterion") or "") == "Physical-joint minimum compression":
-        actual_vs_limit = (
-            f"compression {float(governing.get('Actual MPa') or 0.0):,.3f} / "
-            f"required {float(governing.get('Limit MPa') or 0.0):,.3f} MPa"
-        )
-    elif str(governing.get("Criterion") or "") == "ACI transfer compression":
-        actual_vs_limit = (
-            f"|compression| {float(governing.get('Actual MPa') or 0.0):,.3f} / "
-            f"limit {float(governing.get('Limit MPa') or 0.0):,.3f} MPa"
-        )
-    else:
-        actual_vs_limit = (
-            f"tension {float(governing.get('Actual MPa') or 0.0):,.3f} / "
-            f"limit {float(governing.get('Limit MPa') or 0.0):,.3f} MPa"
-        )
+    actual_vs_limit = "-" if governing is None else _crossbeam_signed_stress_label(governing.get("Stress MPa"))
+    requirement = _crossbeam_governing_requirement(governing)
     _render_analysis_summary_strip(
         [
             {
@@ -21262,7 +21269,7 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
             {
                 "title": "Actual vs limit",
                 "value": actual_vs_limit,
-                "detail": "compression negative / tension positive",
+                "detail": requirement,
                 "status": status_style,
             },
             {
@@ -21386,8 +21393,9 @@ def _render_crossbeam_service_stress_workspace() -> None:
         st.markdown(
             "- Stress convention: compression negative; tension positive. Imported P is compression positive and M3 is sagging positive.\n"
             "- Gross concrete section: sigma_top = -P/A - M3/Ztop; sigma_bottom = -P/A + M3/Zbottom.\n"
-            "- ACI 318-19 total-load compression limit: 0.60f'c.\n"
+            "- ACI 318-19 Table 24.5.4.1 total-load compression limit 0.60f'c applies to Class U/T members.\n"
             "- Gross-section tension class: Class U <= 0.62sqrt(f'c); Class T <= 1.00sqrt(f'c); Class C requires cracked transformed-section follow-up.\n"
+            "- For Class C, this page completes gross-section classification only. It does not reuse total-response P/M3 as a fabricated cracked-section result.\n"
             "- The sustained-load compression limit 0.45f'c requires a separate sustained-load response and is not inferred from the total-load bucket.\n"
             + (
                 "- Every Precast physical joint must keep both s-/s+ top and bottom fibers at least 0.70 MPa in compression. Missing exact joint rows may be linearly interpolated only from unambiguous bracketing Final Service stations.\n"
@@ -21506,33 +21514,36 @@ def _render_crossbeam_service_stress_workspace() -> None:
         f"{governing.get('Case')} @ s={float(governing.get('Station s (m)') or 0.0):.3f} m - "
         f"{governing.get('Fiber')} / {governing.get('Section face')}"
     )
-    classification = "-" if governing is None else str(governing.get("ACI class") or "-")
+    controlling_stress = "-" if governing is None else _crossbeam_signed_stress_label(governing.get("Stress MPa"))
+    controlling_requirement = _crossbeam_governing_requirement(governing)
+    overall_class = str(result.get("overall_aci_class") or "-")
+    cracked_status = str(result.get("cracked_transformed_status") or "-")
     _render_analysis_summary_strip(
         [
             {
-                "title": "Final Service stress status",
+                "title": "Final Service SLS check status",
                 "value": status,
-                "detail": "ACI 318-19 total-load + project physical-joint criterion",
+                "detail": "engineering check result; solver runtime is healthy",
                 "status": status_style,
                 "strong": True,
             },
             {
-                "title": "Controlling check",
-                "value": criterion,
-                "detail": station_detail,
+                "title": "Controlling stress",
+                "value": controlling_stress,
+                "detail": f"{criterion} · {controlling_requirement} · {station_detail}",
                 "status": status_style,
             },
             {
-                "title": "ACI stress class",
-                "value": classification,
-                "detail": "gross-section service classification",
-                "status": status_style,
+                "title": "Gross ACI class",
+                "value": overall_class,
+                "detail": "uncracked gross-section classification complete",
+                "status": "warning" if overall_class in {"Class T", "Class C"} else "ready",
             },
             {
-                "title": "Governing utilization",
-                "value": "-" if governing is None else _format_crossbeam_transfer_utilization(governing.get("Utilization value")),
-                "detail": f"{int(result.get('fiber_checks') or 0):,} fiber checks",
-                "status": status_style,
+                "title": "Cracked verification",
+                "value": cracked_status,
+                "detail": "ACI 318-19 24.5.2.3 · separate valid cracked analysis required for Class C",
+                "status": "warning" if cracked_status == "REVIEW REQUIRED" else "ready",
             },
         ],
         columns=4,
@@ -21562,20 +21573,21 @@ def _render_crossbeam_service_stress_workspace() -> None:
                 column_rows=list(preparation.column_rows),
                 stage_title="Concrete Stress At Final Service",
                 code_subtitle=(
-                    "ACI 318-19 Sections 24.5.2 and 24.5.4 - total-load 0.60f'c - "
+                    "ACI 318-19 24.5.2 - gross classification; 0.60f'c applies Class U/T only - "
                     "stress compression negative / tension positive"
                 ),
             ),
             caption=(
-                "Lines connect imported station checks for visualization only. The upper dashed line is the Class U tension threshold; "
-                "Class T/C classification and the separate sustained-load 0.45f'c condition remain visible scope guards."
+                "Lines connect imported station checks for visualization only. The upper dashed line is the Class U tension threshold. "
+                "A Class C result is gross classification only and requires separate cracked transformed-section verification; "
+                "the sustained-load 0.45f'c condition also requires its own response bucket."
             ),
         )
         compact_columns = [
             "Status", "Station s (m)", "Case", "Section face", "Location type", "Section ID",
             "P kN", "M3 kN-m", "f'c MPa", "Top stress MPa", "Bottom stress MPa",
             "Compression limit MPa", "Tension limit MPa", "Class T upper MPa",
-            "Top ACI class", "Bottom ACI class", "Governing utilization",
+            "Section ACI class", "Governing utilization",
         ]
         st.dataframe(
             selected_rows[[column for column in compact_columns if column in selected_rows]],
@@ -21731,11 +21743,20 @@ def _commercial_analysis_dashboard_cards(settings: AnalysisModeSettings, active_
     else:
         route = "Building girder"
     readiness = st.session_state.get("analysis_status", "Ready to review")
+    status_title = "SLS check status" if (
+        is_portal_frame_crossbeam_workflow(settings)
+        and active_subpage == "SLS / Stress & Cracking"
+    ) else "Runtime state"
+    status_detail = (
+        "Current stored Transfer/Final engineering result; solver runtime is separate"
+        if status_title == "SLS check status"
+        else "Displayed status only; solver routing is unchanged"
+    )
     return [
         {"title": "Active review", "value": active_subpage, "detail": "Only the selected analysis workspace is rendered", "status": "info"},
         {"title": "Workflow", "value": workflow_label, "detail": route, "status": "ready"},
         {"title": "Design code", "value": str(code), "detail": "Project code basis", "status": "neutral"},
-        {"title": "Runtime state", "value": str(readiness), "detail": "Displayed status only; solver routing is unchanged", "status": "info"},
+        {"title": status_title, "value": str(readiness), "detail": status_detail, "status": "info"},
     ]
 
 
