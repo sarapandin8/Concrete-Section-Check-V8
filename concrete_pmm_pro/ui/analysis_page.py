@@ -423,6 +423,61 @@ _ANALYSIS_DASHBOARD_CSS = """
   text-align: right;
   overflow-wrap: anywhere;
 }
+.cpmm-sls-print-table-shell {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #cfd8e6;
+  border-radius: 8px;
+  background: #ffffff;
+  margin: 0.35rem 0 0.72rem 0;
+}
+.cpmm-sls-print-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: #101828;
+}
+.cpmm-sls-print-table th,
+.cpmm-sls-print-table td {
+  border-right: 1px solid #e4e9f1;
+  border-bottom: 1px solid #e4e9f1;
+  padding: 0.34rem 0.40rem;
+  font-size: 0.70rem;
+  line-height: 1.28;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.cpmm-sls-print-table th {
+  background: #eef5ff;
+  color: #0b3a66;
+  font-weight: 850;
+}
+.cpmm-sls-print-table th:last-child,
+.cpmm-sls-print-table td:last-child { border-right: 0; }
+.cpmm-sls-print-table tbody tr:last-child td { border-bottom: 0; }
+@media print {
+  .cpmm-sls-print-table-shell {
+    overflow: visible !important;
+    border-radius: 0;
+    break-inside: auto;
+  }
+  .cpmm-sls-print-table {
+    width: 100% !important;
+    table-layout: fixed !important;
+  }
+  .cpmm-sls-print-table thead { display: table-header-group; }
+  .cpmm-sls-print-table tr { break-inside: avoid; }
+  .cpmm-sls-print-table th,
+  .cpmm-sls-print-table td {
+    padding: 2.2pt 2.6pt !important;
+    font-size: 6.8pt !important;
+    line-height: 1.16 !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+  }
+}
 .cpmm-executive-header {
   border: 1px solid #d0d7e2;
   border-radius: 12px;
@@ -958,6 +1013,7 @@ def _runtime_timings_dataframe() -> pd.DataFrame:
 
 def _render_runtime_diagnostics_expander() -> None:
     with st.expander("Developer diagnostics", expanded=False):
+        st.markdown('<span class="cpmm-developer-diagnostics-print-guard"></span>', unsafe_allow_html=True)
         st.info(
             "Developer timing diagnostics measure UI-triggered expensive operations only. "
             "They do not change PMM/SLS formulas, sign conventions, or engineering results."
@@ -20916,6 +20972,25 @@ def _crossbeam_transfer_governing_for_case(
     return selected.loc[selected["__util"].astype(float).idxmax()].to_dict()
 
 
+def _crossbeam_governing_marker_positions(
+    markers: list[Mapping[str, object]],
+) -> list[str]:
+    """Keep coincident governing labels readable in browser and PDF figures."""
+
+    positions = ["top center" if float(marker["y"]) >= 0.0 else "bottom center" for marker in markers]
+    groups: dict[tuple[float, float], list[int]] = {}
+    for index, marker in enumerate(markers):
+        key = (round(float(marker["x"]), 8), round(float(marker["y"]), 8))
+        groups.setdefault(key, []).append(index)
+    spread_positions = ("top left", "top right", "bottom left", "bottom right")
+    for indices in groups.values():
+        if len(indices) <= 1:
+            continue
+        for offset, index in enumerate(indices):
+            positions[index] = spread_positions[offset % len(spread_positions)]
+    return positions
+
+
 def _make_crossbeam_transfer_stress_figure(
     result_rows: pd.DataFrame,
     fiber_rows: pd.DataFrame,
@@ -21000,6 +21075,7 @@ def _make_crossbeam_transfer_stress_figure(
         ("Tension utilization", "Gov. tension", _ENGINEERING_STRESS_PLOT_COLORS["governing_tension"], "circle-open"),
         ("Joint utilization", "Gov. joint", "#f59e0b", "diamond-open"),
     )
+    governing_markers: list[dict[str, object]] = []
     for column, label, color, symbol in governing_specs:
         governing = _crossbeam_transfer_governing_for_case(
             fiber_rows,
@@ -21008,18 +21084,32 @@ def _make_crossbeam_transfer_stress_figure(
         )
         if governing is None:
             continue
+        governing_markers.append(
+            {
+                "label": label,
+                "color": color,
+                "symbol": symbol,
+                "x": float(governing.get("Station s (m)") or 0.0),
+                "y": float(governing.get("Stress MPa") or 0.0),
+                "fiber": str(governing.get("Fiber") or "-"),
+            }
+        )
+
+    marker_positions = _crossbeam_governing_marker_positions(governing_markers)
+    for marker_data, marker_position in zip(governing_markers, marker_positions):
+        label = str(marker_data["label"])
         fig.add_trace(
             go.Scatter(
-                x=[float(governing.get("Station s (m)") or 0.0)],
-                y=[float(governing.get("Stress MPa") or 0.0)],
+                x=[float(marker_data["x"])],
+                y=[float(marker_data["y"])],
                 mode="markers+text",
                 name=label,
-                marker={"size": 15, "symbol": symbol, "color": color, "line": {"width": 3}},
+                marker={"size": 15, "symbol": marker_data["symbol"], "color": marker_data["color"], "line": {"width": 3}},
                 text=[label],
-                textposition="top center" if float(governing.get("Stress MPa") or 0.0) >= 0.0 else "bottom center",
+                textposition=marker_position,
                 hovertemplate=(
                     f"{escape(label)}<br>s=%{{x:.3f}} m<br>stress=%{{y:.3f}} MPa<br>"
-                    f"fiber={escape(str(governing.get('Fiber') or '-'))}<extra></extra>"
+                    f"fiber={escape(str(marker_data['fiber']))}<extra></extra>"
                 ),
             )
         )
@@ -21098,6 +21188,46 @@ def _format_crossbeam_transfer_utilization(value: object) -> str:
     except (TypeError, ValueError):
         return "-"
     return f"{number:.3f}" if math.isfinite(number) else "-"
+
+
+def _crossbeam_print_table_value(value: object) -> str:
+    if value is None:
+        return "-"
+    try:
+        if bool(pd.isna(value)):
+            return "-"
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return "-"
+        return f"{value:,.3f}"
+    return str(value)
+
+
+def _crossbeam_print_safe_table_html(frame: pd.DataFrame, *, label: str) -> str:
+    """Return a wrapping HTML table whose rightmost columns remain printable."""
+
+    columns = [str(column) for column in frame.columns]
+    header = "".join(f"<th>{escape(column)}</th>" for column in columns)
+    body_rows: list[str] = []
+    for row in frame.itertuples(index=False, name=None):
+        cells = "".join(
+            f"<td>{escape(_crossbeam_print_table_value(value)).replace(chr(10), '<br>')}</td>"
+            for value in row
+        )
+        body_rows.append(f"<tr>{cells}</tr>")
+    if not body_rows:
+        body_rows.append(f'<tr><td colspan="{max(len(columns), 1)}">No rows available.</td></tr>')
+    return (
+        f'<div class="cpmm-sls-print-table-shell" role="region" aria-label="{escape(label)}">'
+        '<table class="cpmm-sls-print-table">'
+        f"<thead><tr>{header}</tr></thead><tbody>{''.join(body_rows)}</tbody></table></div>"
+    )
+
+
+def _render_crossbeam_print_safe_table(frame: pd.DataFrame, *, label: str) -> None:
+    st.markdown(_crossbeam_print_safe_table_html(frame, label=label), unsafe_allow_html=True)
 
 
 def _render_crossbeam_transfer_stress_workspace() -> None:
@@ -21285,7 +21415,7 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
     actions = list(result.get("required_actions") or [])
     if actions:
         st.markdown("#### Required actions")
-        st.dataframe(pd.DataFrame(actions), use_container_width=True, hide_index=True)
+        _render_crossbeam_print_safe_table(pd.DataFrame(actions), label="Transfer required actions")
     elif status == "PASS":
         st.success("All imported Transfer station/fiber checks pass the applicable ACI stress limits and every imported physical-joint s-/s+ compression check passes 0.70 MPa.")
 
@@ -21330,17 +21460,26 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
                 hide_index=True,
             )
         with st.expander("Calculation audit — force components, gross section properties, and fiber criteria", expanded=False):
-            audit_columns = [
-                "Status", "Station s (m)", "Check Point", "Case", "Section face", "Segment", "Section ID", "Material",
-                "P kN", "V2 kN", "T kN-m", "M3 kN-m", "f'c MPa", "f'ci MPa", "A mm2", "Ix mm4", "Ztop mm3", "Zbottom mm3",
-                "Axial stress MPa", "Top bending stress MPa", "Bottom bending stress MPa", "Top stress MPa", "Bottom stress MPa",
-                "Top utilization", "Bottom utilization", "Top joint margin MPa", "Bottom joint margin MPa", "Notes",
+            audit_groups = [
+                (
+                    "Transfer calculation audit - source identity",
+                    ["Status", "Station s (m)", "Check Point", "Case", "Section face", "Segment", "Section ID", "Material"],
+                ),
+                (
+                    "Transfer calculation audit - forces and gross properties",
+                    ["Station s (m)", "Section face", "P kN", "V2 kN", "T kN-m", "M3 kN-m", "f'c MPa", "f'ci MPa", "A mm2", "Ix mm4", "Ztop mm3", "Zbottom mm3"],
+                ),
+                (
+                    "Transfer calculation audit - stress and criteria",
+                    ["Station s (m)", "Section face", "Axial stress MPa", "Top bending stress MPa", "Bottom bending stress MPa", "Top stress MPa", "Bottom stress MPa", "Top utilization", "Bottom utilization", "Top joint margin MPa", "Bottom joint margin MPa", "Notes"],
+                ),
             ]
-            st.dataframe(
-                result_df[[column for column in audit_columns if column in result_df]],
-                use_container_width=True,
-                hide_index=True,
-            )
+            for audit_label, audit_columns in audit_groups:
+                st.markdown(f"**{audit_label}**")
+                _render_crossbeam_print_safe_table(
+                    result_df[[column for column in audit_columns if column in result_df]],
+                    label=audit_label,
+                )
             st.caption(
                 "Row-coupled source audit retains V2 and T but SLS1A uses only P and M3 for longitudinal extreme-fiber normal stress. "
                 "No Prestress force or Secondary Prestress moment is added after import."
@@ -21552,7 +21691,7 @@ def _render_crossbeam_service_stress_workspace() -> None:
     actions = list(result.get("required_actions") or [])
     if actions:
         st.markdown("#### Required actions")
-        st.dataframe(pd.DataFrame(actions), use_container_width=True, hide_index=True)
+        _render_crossbeam_print_safe_table(pd.DataFrame(actions), label="Final Service required actions")
     elif status == "PASS":
         st.success("All imported Final Service total-load gross-section checks are Class U and pass the applicable compression and physical-joint criteria.")
 
@@ -21733,7 +21872,7 @@ def _commercial_analysis_dashboard_cards(settings: AnalysisModeSettings, active_
     """Return visual-only dashboard cards for the Analysis workspace."""
 
     workflow_label = analysis_mode_label(settings)
-    code = workflow_project_design_code_from_session(st.session_state)
+    code = workflow_project_code_label_from_session(st.session_state)
     if is_pmm_primary_workflow(settings):
         route = "PMM / ULS"
     elif is_portal_frame_crossbeam_workflow(settings):

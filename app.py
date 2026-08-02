@@ -1147,6 +1147,9 @@ section[data-testid="stSidebar"] .cpmm-sidebar-project-upload-card.invalid .cpmm
   div[data-testid="stExpander"] details:not([open]) {
     display: none !important;
   }
+  div[data-testid="stExpander"] details:has(.cpmm-developer-diagnostics-print-guard) {
+    display: none !important;
+  }
 }
 .cpmm-sidebar-project-upload-state {
   color: #0b3a66 !important;
