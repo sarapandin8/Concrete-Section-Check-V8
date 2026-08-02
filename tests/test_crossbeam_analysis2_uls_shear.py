@@ -80,45 +80,48 @@ def _ready_state(*, include_guard_rows: bool = True) -> dict[str, object]:
         "effective_prestress_ratio_percent": 80.0,
         "average_effective_stress_mpa": 1300.0,
     }
-    loads = [
-        {
-            "Active": True,
-            "Station s (m)": 5.0,
-            "Check Point": "Interior",
-            "Case Name": "ULS-INT",
-            "P": 5000.0,
-            "V2": 320.0,
-            "T": 45.0,
-            "M3": 2200.0,
-            "Note": "interior row",
-        }
+    loads = []
+    base_rows = [
+        (0.0, 600.0, 0.0),
+        (0.5, 550.0, 100.0),
+        (1.5, 500.0, 200.0),
+        (2.5, 450.0, 300.0),
+        (5.0, 320.0, 2200.0),
+        (9.0, 80.0, 4800.0),
+        (11.0, -80.0, 4800.0),
+        (15.0, -300.0, 2200.0),
+        (17.5, -450.0, 300.0),
+        (18.5, -500.0, 200.0),
+        (19.5, -550.0, 100.0),
+        (20.0, -600.0, 0.0),
     ]
+    for station, shear, moment in base_rows:
+        loads.append(
+            {
+                "Active": True,
+                "Station s (m)": station,
+                "Check Point": "",
+                "Case Name": "ULS-01",
+                "P": 5000.0,
+                "V2": shear,
+                "T": 45.0,
+                "M3": moment,
+                "Note": "support-face/h2 source row",
+            }
+        )
     if include_guard_rows:
-        loads.extend(
-            [
-                {
-                    "Active": True,
-                    "Station s (m)": 10.0,
-                    "Check Point": "Joint",
-                    "Case Name": "ULS-JOINT",
-                    "P": 5000.0,
-                    "V2": 410.0,
-                    "T": 50.0,
-                    "M3": 2600.0,
-                    "Note": "physical joint row",
-                },
-                {
-                    "Active": True,
-                    "Station s (m)": 1.5,
-                    "Check Point": "C1 centerline",
-                    "Case Name": "ULS-C1",
-                    "P": 6400.0,
-                    "V2": 525.0,
-                    "T": 35.0,
-                    "M3": -3100.0,
-                    "Note": "support footprint row",
-                },
-            ]
+        loads.append(
+            {
+                "Active": True,
+                "Station s (m)": 10.0,
+                "Check Point": "Joint",
+                "Case Name": "ULS-01",
+                "P": 5000.0,
+                "V2": 0.0,
+                "T": 50.0,
+                "M3": 5000.0,
+                "Note": "physical joint row",
+            }
         )
     return {
         "crossbeam_ui1_length_m": length_m,
@@ -141,29 +144,39 @@ def _ready_state(*, include_guard_rows: bool = True) -> dict[str, object]:
     }
 
 
-def test_preparation_maps_row_coupled_demands_and_guards_joint_and_support() -> None:
+def test_preparation_generates_conservative_column_face_and_h2_rows() -> None:
     state = _ready_state()
     preparation = build_crossbeam_uls_shear_preparation(state)
 
     assert preparation.ready, preparation.errors
-    assert len(preparation.rows) == 3
+    assert len(preparation.derived_support_rows) == 6
+    assert len(preparation.rows) == 13
 
-    interior = next(row for row in preparation.rows if row.case_name == "ULS-INT")
+    interior = next(row for row in preparation.rows if row.station_m == pytest.approx(5.0))
     assert interior.source_p_kn == pytest.approx(5000.0)
     assert interior.source_v2_kn == pytest.approx(320.0)
     assert interior.source_t_knm == pytest.approx(45.0)
     assert interior.source_m3_knm == pytest.approx(2200.0)
     assert interior.location_type == "SEGMENT / ZONE INTERIOR"
-    assert interior.transverse_template is not None
-    assert len(interior.prestress_groups) == 3
 
-    joint = next(row for row in preparation.rows if row.case_name == "ULS-JOINT")
-    assert joint.location_type == "PHYSICAL SEGMENT JOINT"
+    joint = next(row for row in preparation.rows if row.location_type == "PHYSICAL SEGMENT JOINT")
+    assert joint.station_m == pytest.approx(10.0)
     assert joint.transverse_template is None
 
-    support = next(row for row in preparation.rows if row.case_name == "ULS-C1")
-    assert support.location_type == "COLUMN / SUPPORT D-REGION"
-    assert support.transverse_template is None
+    support_rows = [
+        row for row in preparation.rows
+        if row.location_type in {"COLUMN FACE", "ACI h/2 CRITICAL SECTION"}
+    ]
+    assert len(support_rows) == 6
+    assert all(row.transverse_template is not None for row in support_rows)
+    assert not any(row.location_type == "COLUMN / SUPPORT D-REGION" for row in preparation.rows)
+
+    c1_right_face = next(row for row in support_rows if row.check_point == "C1-R Face")
+    c1_right_h2 = next(row for row in support_rows if row.check_point == "C1-R h/2")
+    assert c1_right_face.station_m == pytest.approx(2.5)
+    assert c1_right_face.source_v2_kn == pytest.approx(450.0)
+    assert c1_right_h2.station_m == pytest.approx(3.25)
+    assert c1_right_h2.source_v2_kn == pytest.approx(411.0)
 
     rebuilt = build_crossbeam_uls_shear_preparation(state)
     assert rebuilt.fingerprint == preparation.fingerprint
@@ -172,41 +185,48 @@ def test_preparation_maps_row_coupled_demands_and_guards_joint_and_support() -> 
     ]
 
 
-def test_run_uses_aci_prestressed_route_and_never_certifies_scope_guards() -> None:
+def test_run_checks_support_faces_and_h2_without_d_region_status_penalty() -> None:
     preparation = build_crossbeam_uls_shear_preparation(_ready_state())
     result = run_crossbeam_uls_shear(preparation)
 
-    assert result["status"] == "REVIEW"
-    assert result["station_checks"] == 3
-    rows = {row["Case"]: row for row in result["rows"]}
+    assert result["status"] == "REVIEW"  # physical segment joint remains a separate scope guard
+    assert result["support_checks"] == 6
+    assert result["station_checks"] == 13
 
-    interior = rows["ULS-INT"]
+    interior = next(row for row in result["rows"] if row["Station s (m)"] == pytest.approx(5.0))
     assert interior["Strength status"] == "PASS"
-    assert interior["Status"] in {"PASS", "FAIL", "REVIEW"}
     assert interior["φ"] == pytest.approx(0.75)
     assert interior["φVn kN"] > 0.0
     assert interior["D/C value"] == pytest.approx(abs(interior["V2 kN"]) / interior["φVn kN"])
-    assert interior["Code basis"].startswith("ACI 318-19 22.5.6.2")
 
-    assert rows["ULS-JOINT"]["Status"] == "REVIEW"
-    assert rows["ULS-JOINT"]["Capacity"] == "Joint shear transfer not checked"
-    assert rows["ULS-C1"]["Status"] == "REVIEW"
-    assert rows["ULS-C1"]["Capacity"] == "Support D-region not checked"
-    assert result["governing_row"]["Status"] == "REVIEW"
+    support_rows = [
+        row for row in result["rows"]
+        if row["Location type"] in {"COLUMN FACE", "ACI h/2 CRITICAL SECTION"}
+    ]
+    assert len(support_rows) == 6
+    assert all(row["Status"] == "PASS" for row in support_rows)
+    assert all(math.isfinite(float(row["φVn kN"])) for row in support_rows)
+    assert not any(row["Location type"] == "COLUMN / SUPPORT D-REGION" for row in result["rows"])
+
+    joint = next(row for row in result["rows"] if row["Location type"] == "PHYSICAL SEGMENT JOINT")
+    assert joint["Status"] == "REVIEW"
+    assert joint["Capacity"] == "Joint shear transfer not checked"
+    assert result["governing_row"]["Location type"] == "PHYSICAL SEGMENT JOINT"
 
 
-def test_interior_only_can_close_with_pass_without_double_counting_prestress() -> None:
+def test_interior_and_support_checks_can_close_with_pass_without_double_counting_prestress() -> None:
     state = _ready_state(include_guard_rows=False)
     preparation = build_crossbeam_uls_shear_preparation(state)
     assert preparation.ready, preparation.errors
 
     result = run_crossbeam_uls_shear(preparation)
     assert result["status"] == "PASS"
-    row = result["rows"][0]
-    assert row["Status"] == "PASS"
-    assert row["P kN"] == pytest.approx(5000.0)
-    assert row["V2 kN"] == pytest.approx(320.0)
-    assert "imported FEA demand remains unchanged" in row["Notes"]
+    assert result["support_checks"] == 6
+    assert all(row["Status"] == "PASS" for row in result["rows"])
+    interior = next(row for row in result["rows"] if row["Station s (m)"] == pytest.approx(5.0))
+    assert interior["P kN"] == pytest.approx(5000.0)
+    assert interior["V2 kN"] == pytest.approx(320.0)
+    assert "imported FEA demand remains unchanged" in interior["Notes"]
 
 
 def test_missing_applied_column_layout_blocks_support_d_region_identification() -> None:
@@ -241,14 +261,14 @@ def test_effective_prestress_applicability_gate_returns_review_not_false_pass() 
 
 def test_required_shear_reinforcement_without_sectional_credit_fails() -> None:
     state = _ready_state(include_guard_rows=False)
-    state["crossbeam_uls_loads_table"][0]["V2"] = 100_000.0
+    next(row for row in state["crossbeam_uls_loads_table"] if row["Station s (m)"] == 5.0)["V2"] = 100_000.0
     for template in state[CB_TR_TEMPLATE_ROWS_KEY]:
         template["Credit inside segment"] = False
 
     preparation = build_crossbeam_uls_shear_preparation(state)
     assert preparation.ready, preparation.errors
     result = run_crossbeam_uls_shear(preparation)
-    row = result["rows"][0]
+    row = next(item for item in result["rows"] if item["Station s (m)"] == pytest.approx(5.0))
 
     assert result["status"] == "FAIL"
     assert row["Detailing status"] == "FAIL"
@@ -257,11 +277,14 @@ def test_required_shear_reinforcement_without_sectional_credit_fails() -> None:
 
 def test_zero_m3_evaluates_both_tension_faces_and_reports_governing_trial() -> None:
     state = _ready_state(include_guard_rows=False)
-    state["crossbeam_uls_loads_table"][0]["M3"] = 0.0
+    next(row for row in state["crossbeam_uls_loads_table"] if row["Station s (m)"] == 5.0)["M3"] = 0.0
 
     preparation = build_crossbeam_uls_shear_preparation(state)
     assert preparation.ready, preparation.errors
-    row = run_crossbeam_uls_shear(preparation)["rows"][0]
+    row = next(
+        item for item in run_crossbeam_uls_shear(preparation)["rows"]
+        if item["Station s (m)"] == pytest.approx(5.0)
+    )
 
     assert "Zero M3" in row["Bending direction"]
     assert "both sagging and hogging" in row["Notes"]
@@ -388,3 +411,58 @@ def test_analysis_page_exposes_crossbeam_flexure_and_shear_lazy_tabs() -> None:
 def test_shear_cache_keys_are_crossbeam_namespaced() -> None:
     assert CROSSBEAM_ULS_SHEAR_RESULT_KEY.startswith("crossbeam_")
     assert CROSSBEAM_ULS_SHEAR_RESULT_HASH_KEY.startswith("crossbeam_")
+
+
+def test_missing_exact_column_face_row_blocks_conservative_support_check() -> None:
+    state = _ready_state(include_guard_rows=False)
+    state["crossbeam_uls_loads_table"] = [
+        row for row in state["crossbeam_uls_loads_table"]
+        if row["Station s (m)"] != 2.5
+    ]
+
+    preparation = build_crossbeam_uls_shear_preparation(state)
+
+    assert preparation.ready is False
+    assert any("exact one-sided station-force row" in message for message in preparation.errors)
+    assert any("C1-R" in message for message in preparation.errors)
+
+
+def test_crossbeam_shear_chart_breaks_support_regions_and_dedupes_capacity_legends() -> None:
+    import pandas as pd
+
+    from concrete_pmm_pro.ui.analysis_page import (
+        _crossbeam_shear_chart_rows,
+        _crossbeam_shear_demand_plot_rows,
+        _make_crossbeam_uls_shear_figure,
+    )
+
+    preparation = build_crossbeam_uls_shear_preparation(_ready_state(include_guard_rows=False))
+    result = run_crossbeam_uls_shear(preparation)
+    result_df = pd.DataFrame(result["rows"])
+    capacity_df = _crossbeam_shear_chart_rows(result_df)
+    demand_df = _crossbeam_shear_demand_plot_rows(result_df)
+    guard_df = result_df[result_df["Location type"].astype(str) == "PHYSICAL SEGMENT JOINT"]
+    support_df = result_df[
+        result_df["Location type"].isin(["COLUMN FACE", "ACI h/2 CRITICAL SECTION"])
+    ]
+
+    figure = _make_crossbeam_uls_shear_figure(
+        demand_df,
+        capacity_df,
+        guard_df,
+        support_df,
+        result["support_footprints"],
+    )
+
+    visible_legend_names = [trace.name for trace in figure.data if trace.showlegend is not False]
+    assert visible_legend_names.count("±φVn") == 1
+    assert visible_legend_names.count("±φVc") == 1
+    assert "-φVn" not in visible_legend_names
+    assert "Column Face check" in visible_legend_names
+    assert "ACI h/2 check" in visible_legend_names
+
+    demand_trace = next(trace for trace in figure.data if trace.name == "Demand Vu — ULS-01")
+    assert None in list(demand_trace.x)
+    assert None in list(demand_trace.y)
+    assert sum(shape.type == "rect" for shape in figure.layout.shapes) == 2
+    assert "support footprints omitted" in str(figure.layout.title.text)

@@ -63,7 +63,7 @@ def test_crossbeam_shear_removes_redundant_amber_scope_warning_and_metadata_nois
     assert 'with st.expander("Calculation limitations"' in shear
     assert 'with st.expander("Source notes"' in shear
     assert 'st.markdown(f"- {message}")' in shear
-    assert "imported station-force row" in shear
+    assert "station-force source" in shear
 
 
 def test_crossbeam_uls_dashboard_uses_on_demand_result_mode_not_runtime_pass() -> None:

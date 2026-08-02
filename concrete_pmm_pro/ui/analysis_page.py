@@ -20906,49 +20906,214 @@ def _crossbeam_shear_chart_rows(result_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(chosen).drop(columns=["__station", "__capacity", "__dc"], errors="ignore")
 
 
+def _crossbeam_shear_demand_plot_rows(result_df: pd.DataFrame) -> pd.DataFrame:
+    """Build the plotted Vu source from checked rows, excluding support interiors."""
+
+    if result_df.empty:
+        return pd.DataFrame(columns=["Station x (m)", "Case Name", "Vuy", "Mux", "Nu", "Tu"])
+    source = result_df.copy()
+    source["__station"] = pd.to_numeric(source.get("Station s (m)"), errors="coerce")
+    source["__v2"] = pd.to_numeric(source.get("V2 kN"), errors="coerce")
+    source = source[source["__station"].notna() & source["__v2"].notna()].copy()
+    if source.empty:
+        return pd.DataFrame(columns=["Station x (m)", "Case Name", "Vuy", "Mux", "Nu", "Tu"])
+    source = source.drop_duplicates(subset=["Case", "__station", "Location type"], keep="first")
+    return pd.DataFrame(
+        {
+            "Station x (m)": source["__station"].astype(float),
+            "Case Name": source.get("Case", pd.Series(["ULS"] * len(source))).astype(str),
+            "Vuy": source["__v2"].astype(float),
+            "Mux": pd.to_numeric(source.get("M3 kN-m"), errors="coerce"),
+            "Nu": pd.to_numeric(source.get("P kN"), errors="coerce"),
+            "Tu": pd.to_numeric(source.get("T kN-m"), errors="coerce"),
+        }
+    )
+
+
+def _crossbeam_break_trace_over_supports(trace: go.Scatter, support_footprints: list[dict[str, object]]) -> None:
+    """Insert Plotly gaps wherever a line would cross a support footprint."""
+
+    if "lines" not in str(getattr(trace, "mode", "")):
+        return
+    raw_x = getattr(trace, "x", None)
+    raw_y = getattr(trace, "y", None)
+    if raw_x is None or raw_y is None:
+        return
+    x_values = list(raw_x)
+    y_values = list(raw_y)
+    if len(x_values) < 2 or len(x_values) != len(y_values):
+        return
+    output_x: list[object] = [x_values[0]]
+    output_y: list[object] = [y_values[0]]
+    for index in range(1, len(x_values)):
+        previous = x_values[index - 1]
+        current = x_values[index]
+        try:
+            x0 = float(previous)
+            x1 = float(current)
+        except (TypeError, ValueError):
+            output_x.append(current)
+            output_y.append(y_values[index])
+            continue
+        lower = min(x0, x1)
+        upper = max(x0, x1)
+        crosses = False
+        for footprint in support_footprints:
+            left = _beam_uls_float(footprint.get("s_left (m)"))
+            right = _beam_uls_float(footprint.get("s_right (m)"))
+            if math.isfinite(left) and math.isfinite(right) and lower <= left + 1.0e-9 and upper >= right - 1.0e-9:
+                crosses = True
+                break
+        if crosses:
+            output_x.append(None)
+            output_y.append(None)
+        output_x.append(current)
+        output_y.append(y_values[index])
+    trace.x = output_x
+    trace.y = output_y
+
+
 def _make_crossbeam_uls_shear_figure(
     demand_df: pd.DataFrame,
     capacity_df: pd.DataFrame,
     guard_df: pd.DataFrame,
+    support_check_df: pd.DataFrame,
+    support_footprints: list[dict[str, object]],
 ) -> go.Figure:
-    """Reuse the accepted Beam/Girder shear chart and mark excluded scope guards."""
+    """Render conservative Column Face + h/2 shear checks without support-region lines."""
 
     fig = _make_beam_uls_shear_capacity_figure(
         demand_df,
         capacity_df,
         code_label="ACI 318-19 · Crossbeam V2 → Vu",
     )
-    if guard_df.empty:
-        return fig
-    plotted_labels: set[str] = set()
-    for _, source in guard_df.iterrows():
-        station = _analysis_float_or_zero(source.get("Station s (m)"))
-        location_type = str(source.get("Location type") or "REVIEW")
-        label = "Physical joint — REVIEW" if "PHYSICAL" in location_type.upper() else "Support D-region — REVIEW"
-        fig.add_vline(
-            x=station,
-            line={"color": "#f59e0b", "width": 1.8, "dash": "dot"},
-            layer="above",
+
+    positive_vc_traces: list[go.Scatter] = []
+    shown_vn = False
+    shown_vc = False
+    for trace in list(fig.data):
+        name = str(getattr(trace, "name", "") or "")
+        if name.startswith("Demand Vuy"):
+            trace.name = name.replace("Demand Vuy", "Demand Vu", 1)
+        elif name == "φVn":
+            trace.name = "±φVn"
+            trace.legendgroup = "crossbeam_phi_vn"
+            trace.showlegend = not shown_vn
+            shown_vn = True
+        elif name == "-φVn":
+            trace.name = "±φVn"
+            trace.legendgroup = "crossbeam_phi_vn"
+            trace.showlegend = False
+        elif name == "φVc":
+            trace.name = "±φVc"
+            trace.legendgroup = "crossbeam_phi_vc"
+            trace.showlegend = not shown_vc
+            shown_vc = True
+            positive_vc_traces.append(trace)
+
+    for trace in positive_vc_traces:
+        negative = go.Scatter(
+            x=list(trace.x),
+            y=[-float(value) if value is not None and math.isfinite(float(value)) else None for value in list(trace.y)],
+            mode="lines",
+            name="±φVc",
+            legendgroup="crossbeam_phi_vc",
+            showlegend=False,
+            line=dict(_BEAM_ULS_REFERENCE_LINE_STYLE),
+            hovertemplate="x=%{x:.3f} m<br>-φVc=%{y:.3f} kN<extra></extra>",
         )
-        fig.add_annotation(
-            x=station,
-            y=1.03,
-            xref="x",
-            yref="paper",
-            text=label,
-            showarrow=False,
-            textangle=-90,
-            font={"size": 10, "color": "#b45309"},
+        fig.add_trace(negative)
+
+    for footprint in support_footprints:
+        left = _beam_uls_float(footprint.get("s_left (m)"))
+        right = _beam_uls_float(footprint.get("s_right (m)"))
+        support_id = str(footprint.get("Column") or "Support")
+        if not math.isfinite(left) or not math.isfinite(right) or right <= left:
+            continue
+        fig.add_vrect(
+            x0=left,
+            x1=right,
+            fillcolor="rgba(100, 116, 139, 0.10)",
+            line_width=0,
+            layer="below",
         )
-        plotted_labels.add(label)
-    if plotted_labels:
-        fig.update_layout(
-            title={
-                "text": "Shear Check — Strength ULS<br><sup>ACI 318-19 · Crossbeam V2 → Vu · sectional capacity with scope-guard markers</sup>",
-                "x": 0.5,
-                "xanchor": "center",
-            }
-        )
+        for face, side_label in ((left, "L"), (right, "R")):
+            fig.add_vline(
+                x=face,
+                line={"color": "rgba(71, 85, 105, 0.70)", "width": 1.1, "dash": "solid"},
+                layer="above",
+            )
+            fig.add_annotation(
+                x=face,
+                y=1.015,
+                xref="x",
+                yref="paper",
+                text=f"{support_id}-{side_label}",
+                showarrow=False,
+                font={"size": 9, "color": "#475569"},
+            )
+
+    if not support_check_df.empty:
+        face_rows = support_check_df[support_check_df["Location type"].astype(str) == "COLUMN FACE"].copy()
+        h2_rows = support_check_df[support_check_df["Location type"].astype(str) == "ACI h/2 CRITICAL SECTION"].copy()
+        for dataframe, name, symbol in (
+            (face_rows, "Column Face check", "circle-open"),
+            (h2_rows, "ACI h/2 check", "diamond-open"),
+        ):
+            if dataframe.empty:
+                continue
+            x = pd.to_numeric(dataframe.get("Station s (m)"), errors="coerce")
+            y = pd.to_numeric(dataframe.get("V2 kN"), errors="coerce")
+            valid = x.notna() & y.notna()
+            if not valid.any():
+                continue
+            fig.add_trace(
+                go.Scatter(
+                    x=x[valid],
+                    y=y[valid],
+                    mode="markers",
+                    name=name,
+                    marker={"size": 9, "symbol": symbol, "line": {"width": 1.5}},
+                    hovertemplate="x=%{x:.3f} m<br>Vu=%{y:.3f} kN<extra></extra>",
+                )
+            )
+        for _, source in h2_rows.iterrows():
+            station = _analysis_float_or_zero(source.get("Station s (m)"))
+            fig.add_vline(
+                x=station,
+                line={"color": "rgba(59, 130, 246, 0.45)", "width": 1.0, "dash": "dot"},
+                layer="below",
+            )
+
+    for trace in fig.data:
+        _crossbeam_break_trace_over_supports(trace, support_footprints)
+
+    if not guard_df.empty:
+        for _, source in guard_df.iterrows():
+            station = _analysis_float_or_zero(source.get("Station s (m)"))
+            fig.add_vline(
+                x=station,
+                line={"color": "#f59e0b", "width": 1.5, "dash": "dot"},
+                layer="above",
+            )
+            fig.add_annotation(
+                x=station,
+                y=0.985,
+                xref="x",
+                yref="paper",
+                text="Physical joint — REVIEW",
+                showarrow=False,
+                textangle=-90,
+                font={"size": 9, "color": "#b45309"},
+            )
+
+    fig.update_layout(
+        title={
+            "text": "Shear Check — Strength ULS<br><sup>ACI 318-19 · conservative Column Face + h/2 checks · support footprints omitted</sup>",
+            "x": 0.5,
+            "xanchor": "center",
+        }
+    )
     return fig
 
 
@@ -20980,8 +21145,8 @@ def _render_crossbeam_uls_shear_workspace() -> None:
     with command_cols[0]:
         if preparation.ready:
             st.success(
-                f"ULS Shear source ready — {len(preparation.demand_rows):,} imported row(s) expand to "
-                f"{len(preparation.rows):,} station/scope check(s)."
+                f"ULS Shear source ready — {len(preparation.demand_rows):,} imported row(s) produce "
+                f"{len(preparation.rows):,} sectional check(s), including {len(preparation.derived_support_rows):,} generated support check row(s)."
             )
         else:
             st.error("ULS Shear source blocked — resolve the Loads, Section/Rebar, Tendon, Effective Prestress, or Column/Support source below.")
@@ -21033,9 +21198,9 @@ def _render_crossbeam_uls_shear_workspace() -> None:
             "strong": True,
         },
         {
-            "title": "Station / scope checks",
+            "title": "Section checks",
             "value": f"{len(preparation.rows):,}",
-            "detail": f"from {len(preparation.demand_rows):,} imported row(s)",
+            "detail": f"{len(preparation.derived_support_rows):,} Column Face / h/2 row(s)",
             "status": "info",
         },
         {
@@ -21070,8 +21235,13 @@ def _render_crossbeam_uls_shear_workspace() -> None:
     governing_dc = _beam_uls_float(governing.get("Governing D/C value")) if governing else float("nan")
     governing_gate = "-"
     if governing:
-        if str(governing.get("Location type") or "") in {"PHYSICAL SEGMENT JOINT", "COLUMN / SUPPORT D-REGION"}:
+        location_type = str(governing.get("Location type") or "")
+        if location_type == "PHYSICAL SEGMENT JOINT":
             governing_gate = "SCOPE GUARD"
+        elif location_type == "COLUMN FACE":
+            governing_gate = "COLUMN FACE"
+        elif location_type == "ACI h/2 CRITICAL SECTION":
+            governing_gate = "ACI h/2"
         elif str(governing.get("Detailing status") or "") == "FAIL":
             governing_gate = "DETAILING"
         else:
@@ -21097,9 +21267,9 @@ def _render_crossbeam_uls_shear_workspace() -> None:
             "status": "warning" if governing_gate == "SCOPE GUARD" else "info",
         },
         {
-            "title": "Station checks",
-            "value": f"{int(result.get('station_checks') or 0):,}",
-            "detail": "on-demand · cached by source fingerprint",
+            "title": "Support checks",
+            "value": f"{int(result.get('support_checks') or 0):,}",
+            "detail": f"of {int(result.get('station_checks') or 0):,} total sectional checks",
             "status": "neutral",
         },
     ]
@@ -21108,16 +21278,28 @@ def _render_crossbeam_uls_shear_workspace() -> None:
     if not result_df.empty:
         chart_df = _crossbeam_shear_chart_rows(result_df)
         guard_df = result_df[
+            result_df.get("Location type", pd.Series(dtype=str)).astype(str) == "PHYSICAL SEGMENT JOINT"
+        ].copy()
+        support_check_df = result_df[
             result_df.get("Location type", pd.Series(dtype=str)).astype(str).isin(
-                ["PHYSICAL SEGMENT JOINT", "COLUMN / SUPPORT D-REGION"]
+                ["COLUMN FACE", "ACI h/2 CRITICAL SECTION"]
             )
         ].copy()
+        plotted_demand_df = _crossbeam_shear_demand_plot_rows(result_df)
+        support_footprints = list(result.get("support_footprints") or [])
         _render_beam_uls_static_plotly_figure(
-            _make_crossbeam_uls_shear_figure(demand_df, chart_df, guard_df)
+            _make_crossbeam_uls_shear_figure(
+                plotted_demand_df,
+                chart_df,
+                guard_df,
+                support_check_df,
+                support_footprints,
+            )
         )
         st.caption(
-            "The demand curve retains signed imported V2. Capacity traces show eligible sectional stations only; amber markers identify physical joints or support D-regions that cannot receive beam-shear PASS. "
-            "P, T, and M3 remain coupled to the same imported station-force row. Torsion interaction is not included in this milestone."
+            "Signed Vu and the ±φVn / ±φVc traces are broken across each shaded support footprint. Open circles mark Column Face checks; open diamonds mark ACI h/2 checks. "
+            "Both locations are checked conservatively and the larger D/C governs. P, T, and M3 remain row-coupled to the same exact or same-side interpolated station-force source. "
+            "Physical segment-joint transfer and torsion interaction remain outside this milestone."
         )
         compact_columns = [
             "Status", "Strength status", "Detailing status", "Station s (m)", "Check Point", "Case",

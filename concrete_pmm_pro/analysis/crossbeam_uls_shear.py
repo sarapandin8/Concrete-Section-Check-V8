@@ -1,11 +1,14 @@
 """Station-specific ACI 318-19 ULS shear checks for Portal Frame Crossbeams.
 
-``CROSSBEAM.ANALYSIS2`` consumes the accepted canonical Crossbeam ULS
+``CROSSBEAM.ANALYSIS2B`` consumes the accepted canonical Crossbeam ULS
 station-force rows and the same Section/Rebar/Tendon sources used by the
-Crossbeam flexure adapter.  It evaluates one-way sectional shear for segment /
-zone interiors only.  A row located exactly at a Precast physical segment joint
-is retained for traceability but is never certified by the beam-shear route;
-interface/joint shear transfer remains a separate engineering check.
+Crossbeam flexure adapter.  In addition to ordinary beam stations, it generates
+conservative support checks at each available beam-side Column Face and at h/2
+measured outward from that face.  Exact one-sided source rows are required at
+faces; h/2 resultants may be row-coupled interpolations on the same beam side.
+The support-footprint D-region itself is omitted from the sectional route.  A
+row located exactly at a Precast physical segment joint remains a separate
+interface/joint-shear REVIEW item.
 
 The production PASS route is intentionally narrow and source-complete:
 
@@ -159,6 +162,8 @@ class CrossbeamShearPreparation:
     info: tuple[str, ...]
     fingerprint: str
     demand_rows: tuple[dict[str, Any], ...]
+    derived_support_rows: tuple[dict[str, Any], ...]
+    support_footprints: tuple[dict[str, Any], ...]
     member_length_m: float
 
 
@@ -350,73 +355,309 @@ def _physical_joint_row(
     )
 
 
-def _support_scope_guard_row(
+def _station_inside_support_interior(
+    station_m: float,
+    support_footprints: list[dict[str, Any]],
     *,
-    station: float,
-    check_point: str,
-    case: str,
-    demand: Mapping[str, Any],
-    contexts: list[dict[str, Any]],
-    definitions_by_id: Mapping[str, dict[str, Any]],
-    materials_by_name: Mapping[str, ConcreteMaterial],
-    support_ids: list[str],
-) -> tuple[PreparedCrossbeamShearRow | None, list[str]]:
-    """Keep support-footprint rows traceable without certifying a D-region."""
+    tolerance: float,
+) -> bool:
+    """Return True only for the open interior of an applied support footprint."""
 
-    first = contexts[0] if contexts else {}
-    section_id = str(first.get("Section ID") or "")
-    definition = definitions_by_id.get(section_id)
-    if definition is None:
-        return None, [f"{case} at s = {station:.6f} m: support-region Section ID is unavailable."]
-    material_name = str(definition.get("Material") or "")
-    concrete = materials_by_name.get(material_name)
-    if concrete is None:
-        return None, [f"{case} at s = {station:.6f} m: concrete material {material_name or '(blank)'} is unavailable."]
-    try:
-        geometry = build_geometry_for_definition(definition)
-    except Exception as exc:
-        return None, [f"{case} at s = {station:.6f} m: unable to build support-region section: {exc}"]
-    support_label = " / ".join(dict.fromkeys(support_ids)) or "Column / Support"
-    signature = _fingerprint(
-        {
-            "station": station,
-            "case": case,
-            "support_ids": support_ids,
-            "section": section_id,
-            "demand": dict(demand),
-            "schema": "crossbeam-analysis2-support-d-region-guard-v1",
-        }
+    for footprint in support_footprints:
+        left = _finite_float(footprint.get("s_left (m)"), float("nan"))
+        right = _finite_float(footprint.get("s_right (m)"), float("nan"))
+        if math.isfinite(left) and math.isfinite(right) and left + tolerance < station_m < right - tolerance:
+            return True
+    return False
+
+
+def _rows_at_unique_station(
+    rows: list[dict[str, Any]],
+    *,
+    station_m: float,
+    side: str,
+    tolerance: float,
+) -> tuple[dict[str, Any] | None, str | None]:
+    candidates = [
+        row for row in rows
+        if abs(_finite_float(row.get("Station s (m)"), float("nan")) - station_m) <= tolerance
+    ]
+    if not candidates:
+        return None, None
+    explicit = [
+        row for row in candidates
+        if side in str(row.get("Check Point") or "").strip().casefold()
+    ]
+    if explicit:
+        candidates = explicit
+    reference = candidates[0]
+    fields = ("P", "V2", "T", "M3")
+    for other in candidates[1:]:
+        if any(
+            abs(_finite_float(other.get(field), 0.0) - _finite_float(reference.get(field), 0.0)) > 1.0e-8
+            for field in fields
+        ):
+            return None, (
+                f"multiple non-identical station-force rows exist at s = {station_m:.6f} m; "
+                f"label an explicit {side.title()} Check Point or keep one row-coupled source state."
+            )
+    return dict(reference), None
+
+
+def _interpolate_support_demand(
+    *,
+    case_rows: list[dict[str, Any]],
+    target_m: float,
+    support_face_m: float,
+    side: str,
+    support_footprints: list[dict[str, Any]],
+    tolerance: float,
+    exact_required: bool,
+) -> tuple[dict[str, Any] | None, str | None, str]:
+    """Return one row-coupled demand vector at a support check station.
+
+    Column-face checks require an exact one-sided source row because shear may
+    jump through the support/joint region.  The h/2 check may use linear
+    interpolation, but both bracket rows must lie on the same beam side and
+    outside all support-footprint interiors.
+    """
+
+    exact, exact_error = _rows_at_unique_station(
+        case_rows,
+        station_m=target_m,
+        side=side,
+        tolerance=tolerance,
     )
-    return (
-        PreparedCrossbeamShearRow(
+    if exact_error:
+        return None, exact_error, ""
+    if exact is not None:
+        return exact, None, f"Exact imported row at s = {target_m:.6f} m."
+    if exact_required:
+        return None, (
+            f"an exact one-sided station-force row is required at the {side} Column Face "
+            f"s = {target_m:.6f} m; interpolation across a support reaction is not permitted."
+        ), ""
+
+    eligible: list[dict[str, Any]] = []
+    for row in case_rows:
+        station = _finite_float(row.get("Station s (m)"), float("nan"))
+        if not math.isfinite(station):
+            continue
+        if side == "left" and station > support_face_m + tolerance:
+            continue
+        if side == "right" and station < support_face_m - tolerance:
+            continue
+        if _station_inside_support_interior(station, support_footprints, tolerance=tolerance):
+            continue
+        eligible.append(row)
+
+    station_groups: dict[float, list[dict[str, Any]]] = {}
+    for row in eligible:
+        station = _finite_float(row.get("Station s (m)"), float("nan"))
+        station_groups.setdefault(round(station, 9), []).append(row)
+    unique_rows: list[dict[str, Any]] = []
+    for key in sorted(station_groups):
+        station = float(key)
+        selected, ambiguity = _rows_at_unique_station(
+            station_groups[key],
             station_m=station,
-            check_point=check_point,
-            case_name=case,
-            section_face="SUPPORT FOOTPRINT",
-            location_type="COLUMN / SUPPORT D-REGION",
-            segment_id=str(first.get("Segment") or ""),
-            section_id=section_id,
-            rebar_zone_id="",
-            rebar_template_id="",
-            transverse_template_id="",
-            source_p_kn=_finite_float(demand.get("P")),
-            source_v2_kn=_finite_float(demand.get("V2")),
-            source_t_knm=_finite_float(demand.get("T")),
-            source_m3_knm=_finite_float(demand.get("M3")),
-            geometry=geometry,
-            definition=dict(definition),
-            concrete=concrete,
-            rebars=(),
-            rebar_materials=(),
-            prestress_groups=(),
-            transverse_template=None,
-            source_signature=signature,
-            notes=(
-                f"Imported station lies inside the applied support footprint of {support_label}; sectional beam shear does not certify this D-region.",
-            ),
-        ),
-        [],
+            side=side,
+            tolerance=tolerance,
+        )
+        if ambiguity:
+            return None, ambiguity, ""
+        if selected is not None:
+            unique_rows.append(selected)
+
+    lower = [row for row in unique_rows if _finite_float(row.get("Station s (m)"), float("nan")) < target_m - tolerance]
+    upper = [row for row in unique_rows if _finite_float(row.get("Station s (m)"), float("nan")) > target_m + tolerance]
+    if not lower or not upper:
+        return None, (
+            f"the ACI h/2 station s = {target_m:.6f} m is not bracketed by two active rows "
+            f"on the {side} beam side of the support."
+        ), ""
+    lo = max(lower, key=lambda row: _finite_float(row.get("Station s (m)"), -1.0e99))
+    hi = min(upper, key=lambda row: _finite_float(row.get("Station s (m)"), 1.0e99))
+    x0 = _finite_float(lo.get("Station s (m)"), float("nan"))
+    x1 = _finite_float(hi.get("Station s (m)"), float("nan"))
+    if not math.isfinite(x0) or not math.isfinite(x1) or x1 <= x0 + tolerance:
+        return None, f"invalid interpolation bracket for s = {target_m:.6f} m.", ""
+    ratio = (target_m - x0) / (x1 - x0)
+    derived = {
+        "Active": True,
+        "Station s (m)": target_m,
+        "Case Name": str(lo.get("Case Name") or hi.get("Case Name") or "ULS"),
+        "P": _finite_float(lo.get("P")) + ratio * (_finite_float(hi.get("P")) - _finite_float(lo.get("P"))),
+        "V2": _finite_float(lo.get("V2")) + ratio * (_finite_float(hi.get("V2")) - _finite_float(lo.get("V2"))),
+        "T": _finite_float(lo.get("T")) + ratio * (_finite_float(hi.get("T")) - _finite_float(lo.get("T"))),
+        "M3": _finite_float(lo.get("M3")) + ratio * (_finite_float(hi.get("M3")) - _finite_float(lo.get("M3"))),
+    }
+    return derived, None, f"Row-coupled linear interpolation from s = {x0:.6f} and {x1:.6f} m."
+
+
+def _support_side_section_depth(
+    *,
+    face_m: float,
+    side: str,
+    segment_rows: list[dict[str, Any]],
+    definitions: list[dict[str, Any]],
+    member_length_m: float,
+) -> tuple[float | None, float, str | None]:
+    tolerance = max(1.0e-7, member_length_m * 1.0e-9)
+    probe_offset = max(1.0e-6, member_length_m * 1.0e-8)
+    probe = face_m - probe_offset if side == "left" else face_m + probe_offset
+    probe = min(max(probe, 0.0), member_length_m)
+    if side == "left" and face_m <= tolerance:
+        return None, probe, None
+    if side == "right" and face_m >= member_length_m - tolerance:
+        return None, probe, None
+    contexts = station_section_contexts(
+        probe,
+        segment_rows,
+        definitions,
+        length_m=member_length_m,
     )
+    section_ids = list(dict.fromkeys(str(item.get("Section ID") or "") for item in contexts if str(item.get("Section ID") or "")))
+    if not section_ids:
+        return None, probe, f"no beam-side Section ID is assigned adjacent to the {side} Column Face at s = {face_m:.6f} m."
+    if len(section_ids) > 1:
+        return None, probe, (
+            f"more than one beam-side Section ID is active adjacent to the {side} Column Face at s = {face_m:.6f} m: "
+            + ", ".join(section_ids)
+            + "."
+        )
+    definition = definition_map(definitions).get(section_ids[0])
+    if definition is None:
+        return None, probe, f"Section ID {section_ids[0]} is unavailable at the {side} Column Face."
+    try:
+        polygon = to_shapely_polygon(build_geometry_for_definition(definition))
+        h_mm = float(polygon.bounds[3]) - float(polygon.bounds[1])
+    except Exception as exc:
+        return None, probe, f"unable to determine beam depth at the {side} Column Face: {exc}"
+    if not math.isfinite(h_mm) or h_mm <= 0.0:
+        return None, probe, f"beam depth h is invalid at the {side} Column Face."
+    return h_mm, probe, None
+
+
+def _derived_support_check_demands(
+    *,
+    active_demands: list[dict[str, Any]],
+    support_footprints: list[dict[str, Any]],
+    segment_rows: list[dict[str, Any]],
+    definitions: list[dict[str, Any]],
+    member_length_m: float,
+) -> tuple[list[dict[str, Any]], list[str], list[str]]:
+    """Generate conservative Column Face and ACI h/2 station-force rows."""
+
+    tolerance = max(1.0e-7, member_length_m * 1.0e-9)
+    case_groups: dict[str, list[dict[str, Any]]] = {}
+    for row in active_demands:
+        case_groups.setdefault(str(row.get("Case Name") or "ULS"), []).append(row)
+
+    output: list[dict[str, Any]] = []
+    errors: list[str] = []
+    info: list[str] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for case_name, case_rows in case_groups.items():
+        for footprint in support_footprints:
+            support_id = str(footprint.get("Column") or "Column / Support")
+            left = _finite_float(footprint.get("s_left (m)"), float("nan"))
+            right = _finite_float(footprint.get("s_right (m)"), float("nan"))
+            if not math.isfinite(left) or not math.isfinite(right) or right <= left + tolerance:
+                errors.append(f"{support_id}: invalid support-footprint limits for ULS Shear.")
+                continue
+            for side, face in (("left", left), ("right", right)):
+                h_mm, context_station, depth_error = _support_side_section_depth(
+                    face_m=face,
+                    side=side,
+                    segment_rows=segment_rows,
+                    definitions=definitions,
+                    member_length_m=member_length_m,
+                )
+                if depth_error:
+                    errors.append(f"{case_name} · {support_id}: {depth_error}")
+                    continue
+                if h_mm is None:
+                    continue
+                side_label = "L" if side == "left" else "R"
+                face_source, face_error, face_note = _interpolate_support_demand(
+                    case_rows=case_rows,
+                    target_m=face,
+                    support_face_m=face,
+                    side=side,
+                    support_footprints=support_footprints,
+                    tolerance=tolerance,
+                    exact_required=True,
+                )
+                if face_error or face_source is None:
+                    errors.append(f"{case_name} · {support_id}-{side_label}: {face_error}")
+                    continue
+                face_key = (case_name, support_id, side, "COLUMN FACE")
+                if face_key not in seen:
+                    seen.add(face_key)
+                    row = dict(face_source)
+                    row.update(
+                        {
+                            "Active": True,
+                            "Station s (m)": face,
+                            "Check Point": f"{support_id}-{side_label} Face",
+                            "Case Name": case_name,
+                            "Note": face_note,
+                            "__Derived support check": True,
+                            "__Location type": "COLUMN FACE",
+                            "__Context station s (m)": context_station,
+                            "__Support ID": support_id,
+                            "__Support side": side.upper(),
+                        }
+                    )
+                    output.append(row)
+
+                offset_m = h_mm / 2000.0
+                critical = face - offset_m if side == "left" else face + offset_m
+                if critical < -tolerance or critical > member_length_m + tolerance:
+                    info.append(
+                        f"{case_name} · {support_id}-{side_label}: ACI h/2 station lies outside the modeled member; the Column Face check remains active."
+                    )
+                    continue
+                critical = min(max(critical, 0.0), member_length_m)
+                if _station_inside_support_interior(critical, support_footprints, tolerance=tolerance):
+                    errors.append(
+                        f"{case_name} · {support_id}-{side_label}: ACI h/2 station s = {critical:.6f} m lies inside a support footprint."
+                    )
+                    continue
+                critical_source, critical_error, critical_note = _interpolate_support_demand(
+                    case_rows=case_rows,
+                    target_m=critical,
+                    support_face_m=face,
+                    side=side,
+                    support_footprints=support_footprints,
+                    tolerance=tolerance,
+                    exact_required=False,
+                )
+                if critical_error or critical_source is None:
+                    errors.append(f"{case_name} · {support_id}-{side_label}: {critical_error}")
+                    continue
+                critical_key = (case_name, support_id, side, "ACI h/2 CRITICAL SECTION")
+                if critical_key not in seen:
+                    seen.add(critical_key)
+                    row = dict(critical_source)
+                    row.update(
+                        {
+                            "Active": True,
+                            "Station s (m)": critical,
+                            "Check Point": f"{support_id}-{side_label} h/2",
+                            "Case Name": case_name,
+                            "Note": critical_note,
+                            "__Derived support check": True,
+                            "__Location type": "ACI h/2 CRITICAL SECTION",
+                            "__Context station s (m)": critical,
+                            "__Support ID": support_id,
+                            "__Support side": side.upper(),
+                        }
+                    )
+                    output.append(row)
+    output.sort(key=lambda row: (str(row.get("Case Name") or ""), _finite_float(row.get("Station s (m)"))))
+    return output, _dedupe(errors), _dedupe(info)
 
 
 def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparation:
@@ -516,7 +757,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
 
     if errors:
         payload = {
-            "schema": "crossbeam-analysis2-shear-blocked-v1",
+            "schema": "crossbeam-analysis2b-shear-blocked-v1",
             "contract": contract,
             "demands": demand_rows,
             "errors": _dedupe(errors),
@@ -529,18 +770,61 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
             info=(),
             fingerprint=_fingerprint(payload),
             demand_rows=tuple(demand_rows),
+            derived_support_rows=(),
+            support_footprints=tuple(support_footprints),
+            member_length_m=member_length_m,
+        )
+
+    derived_support_rows, support_errors, support_info = _derived_support_check_demands(
+        active_demands=active_demands,
+        support_footprints=support_footprints,
+        segment_rows=segment_rows,
+        definitions=definitions,
+        member_length_m=member_length_m,
+    )
+    errors.extend(support_errors)
+    info.extend(support_info)
+    if errors:
+        payload = {
+            "schema": "crossbeam-analysis2b-support-check-source-blocked-v1",
+            "contract": contract,
+            "demands": demand_rows,
+            "derived_support_rows": derived_support_rows,
+            "support_footprints": support_footprints,
+            "errors": _dedupe(errors),
+        }
+        return CrossbeamShearPreparation(
+            ready=False,
+            rows=(),
+            errors=tuple(_dedupe(errors)),
+            warnings=tuple(_dedupe(warnings)),
+            info=tuple(_dedupe(info)),
+            fingerprint=_fingerprint(payload),
+            demand_rows=tuple(demand_rows),
+            derived_support_rows=tuple(derived_support_rows),
+            support_footprints=tuple(support_footprints),
             member_length_m=member_length_m,
         )
 
     joint_stations = segment_joint_stations(segment_rows, length_m=member_length_m)
     profile_rows = _get(state, CB_PROFILE_ROWS_KEY, [])
     prepared: list[PreparedCrossbeamShearRow] = []
+    tolerance = max(1.0e-7, member_length_m * 1.0e-9)
+    derived_station_keys = {
+        (str(row.get("Case Name") or "ULS"), round(_finite_float(row.get("Station s (m)")), 9))
+        for row in derived_support_rows
+    }
+    omitted_support_rows = 0
 
-    for demand in active_demands:
+    for demand in [*active_demands, *derived_support_rows]:
         station = _finite_float(demand.get("Station s (m)"), 0.0)
         case = str(demand.get("Case Name") or "ULS")
         check_point = str(demand.get("Check Point") or "")
-        tolerance = max(1.0e-7, member_length_m * 1.0e-9)
+        is_derived_support = bool(demand.get("__Derived support check"))
+        if not is_derived_support and (case, round(station, 9)) in derived_station_keys:
+            continue
+        location_override = str(demand.get("__Location type") or "").strip()
+        context_station = _finite_float(demand.get("__Context station s (m)"), station)
         at_joint = construction_method == CONSTRUCTION_METHOD_PRECAST and any(
             abs(station - joint) <= tolerance for joint in joint_stations
         )
@@ -551,8 +835,12 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
             <= station
             <= _finite_float(footprint.get("s_right (m)"), float("nan")) + tolerance
         ]
+        if support_hits and not is_derived_support:
+            omitted_support_rows += 1
+            continue
+
         contexts = station_section_contexts(
-            station,
+            context_station,
             segment_rows,
             definitions,
             length_m=member_length_m,
@@ -577,22 +865,6 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
                 prepared.append(joint_row)
             continue
 
-        if support_hits:
-            support_row, support_errors = _support_scope_guard_row(
-                station=station,
-                check_point=check_point,
-                case=case,
-                demand=demand,
-                contexts=contexts,
-                definitions_by_id=definitions_by_id,
-                materials_by_name=materials_by_name,
-                support_ids=[str(item.get("Column") or "") for item in support_hits],
-            )
-            errors.extend(support_errors)
-            if support_row is not None:
-                prepared.append(support_row)
-            continue
-
         for context in contexts:
             section_id = str(context.get("Section ID") or "")
             segment_id = str(context.get("Segment") or "")
@@ -613,7 +885,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
 
             zone_candidates = _zones_for_context(
                 zones,
-                station_m=station,
+                station_m=context_station,
                 segment_id=segment_id,
                 check_point=check_point,
                 length_m=member_length_m,
@@ -650,15 +922,21 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
                 )
                 errors.extend(f"{case} at s = {station:.6f} m: {message}" for message in rebar_errors)
                 row_notes = list(tendon_warnings) + list(rebar_warnings)
+                if is_derived_support and str(demand.get("Note") or "").strip():
+                    row_notes.append(str(demand.get("Note") or ""))
                 face = _context_face(context, at_joint=False)
-                if len(zone_candidates) > 1:
+                if location_override:
+                    face = str(check_point or location_override).upper()
+                elif len(zone_candidates) > 1:
                     face = f"{face} / {str(zone.get('Zone ID') or 'ZONE LIMIT')}"
                 source_signature = _fingerprint(
                     {
-                        "schema": "crossbeam-analysis2-shear-row-v1",
+                        "schema": "crossbeam-analysis2b-shear-row-v1",
                         "station": station,
+                        "context_station": context_station,
                         "case": case,
                         "face": face,
+                        "location_type": location_override or "SEGMENT / ZONE INTERIOR",
                         "section": definition,
                         "zone": zone,
                         "transverse": transverse_template,
@@ -674,7 +952,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
                         check_point=check_point,
                         case_name=case,
                         section_face=face,
-                        location_type="SEGMENT / ZONE INTERIOR",
+                        location_type=location_override or "SEGMENT / ZONE INTERIOR",
                         segment_id=segment_id,
                         section_id=section_id,
                         rebar_zone_id=str(zone.get("Zone ID") or ""),
@@ -699,20 +977,28 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
     errors = _dedupe(errors)
     warnings = _dedupe(warnings)
     if prepared:
+        support_check_count = sum(
+            row.location_type in {"COLUMN FACE", "ACI h/2 CRITICAL SECTION"}
+            for row in prepared
+        )
         info.extend(
             [
                 f"Prepared Crossbeam ULS Shear station checks: {len(prepared)}.",
+                f"Conservative support checks generated: {support_check_count} Column Face / ACI h/2 row(s).",
                 f"Active imported ULS rows: {len(active_demands)}.",
+                f"Imported rows omitted inside support footprints or replaced by exact support checks: {omitted_support_rows}.",
                 "Demand mapping: V2 → Vu; P/T/M3 remain row-coupled source values.",
-                "ACI 318-19 prestressed shear uses the current Effective Prestress source; imported FEA resultants are not modified.",
+                "ACI 318-19 9.4.3 is implemented conservatively by checking both the beam-side Column Face and h/2 from that face where the station lies within the modeled member.",
+                "ACI 318-19 prestressed shear uses the current Effective Prestress source; imported resultants are not modified.",
             ]
         )
     fingerprint = _fingerprint(
         {
-            "schema": "crossbeam-analysis2-aci-prestressed-shear-v1",
+            "schema": "crossbeam-analysis2b-aci-prestressed-shear-v1",
             "construction_method": construction_method,
             "contract": contract,
             "demands": demand_rows,
+            "derived_support_rows": derived_support_rows,
             "support_footprints": support_footprints,
             "row_signatures": [row.source_signature for row in prepared],
         }
@@ -725,6 +1011,8 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
         info=tuple(_dedupe(info)),
         fingerprint=fingerprint,
         demand_rows=tuple(demand_rows),
+        derived_support_rows=tuple(derived_support_rows),
+        support_footprints=tuple(support_footprints),
         member_length_m=member_length_m,
     )
 
@@ -1146,49 +1434,6 @@ def _joint_result_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
     }
 
 
-def _support_result_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
-    return {
-        "Check": "Shear",
-        "Status": "REVIEW",
-        "Strength status": "NOT CHECKED",
-        "Detailing status": "NOT CHECKED",
-        "Section limit status": "NOT CHECKED",
-        "Station type": "COLUMN / SUPPORT D-REGION",
-        "Governing x": f"{row.station_m:.3f} m",
-        "Station s (m)": row.station_m,
-        "Check Point": row.check_point,
-        "Case": row.case_name,
-        "Section face": row.section_face,
-        "Location type": row.location_type,
-        "Segment": row.segment_id,
-        "Section ID": row.section_id,
-        "Rebar Zone": "D-region review required",
-        "Transverse Template": "No sectional certification",
-        "P kN": row.source_p_kn,
-        "V2 kN": row.source_v2_kn,
-        "T kN-m": row.source_t_knm,
-        "M3 kN-m": row.source_m3_knm,
-        "Demand": f"{row.source_v2_kn:,.3f} kN",
-        "Capacity": "Support D-region not checked",
-        "Utilization": "-",
-        "Demand kN": row.source_v2_kn,
-        "Abs demand kN": abs(row.source_v2_kn),
-        "φVn kN": float("nan"),
-        "φVc kN": float("nan"),
-        "φVs kN": float("nan"),
-        "D/C value": float("nan"),
-        "Strength D/C value": float("nan"),
-        "Detailing D/C value": float("nan"),
-        "Governing D/C value": float("nan"),
-        "Code basis": "ACI 318-19 sectional beam shear is not a D-region certification",
-        "Method": "Column/support footprint scope guard",
-        "Notes": (
-            "The imported station is inside an applied Column / Support footprint. Support-face/joint transfer, strut-and-tie action, "
-            "local bearing, hanger reinforcement, anchorage, and confinement require a separate D-region check; this row cannot produce PASS."
-        ),
-    }
-
-
 def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str, Any]:
     """Evaluate ACI 318-19 prestressed one-way shear for prepared rows."""
 
@@ -1200,9 +1445,6 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
     for row in preparation.rows:
         if row.location_type == "PHYSICAL SEGMENT JOINT":
             result_rows.append(_joint_result_row(row))
-            continue
-        if row.location_type == "COLUMN / SUPPORT D-REGION":
-            result_rows.append(_support_result_row(row))
             continue
         try:
             result = _governing_direction(row)
@@ -1230,7 +1472,11 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
                 "Strength status": result.get("Strength status", "REVIEW"),
                 "Detailing status": result.get("Detailing status", "REVIEW"),
                 "Section limit status": result.get("Section limit status", "REVIEW"),
-                "Station type": "LOAD STATION",
+                "Station type": (
+                    row.location_type
+                    if row.location_type in {"COLUMN FACE", "ACI h/2 CRITICAL SECTION"}
+                    else "LOAD STATION"
+                ),
                 "Governing x": f"{row.station_m:.3f} m",
                 "Station s (m)": row.station_m,
                 "Check Point": row.check_point,
@@ -1327,7 +1573,7 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
 
     governing = max(result_rows, key=_governing_rank, default=None)
     return {
-        "schema": "crossbeam-analysis2-aci-prestressed-shear-result-v1",
+        "schema": "crossbeam-analysis2b-aci-prestressed-shear-result-v1",
         "input_fingerprint": preparation.fingerprint,
         "status": overall,
         "rows": result_rows,
@@ -1335,9 +1581,17 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
         "warnings": _dedupe(warnings),
         "errors": _dedupe(errors),
         "station_checks": len(preparation.rows),
+        "support_checks": sum(
+            str(item.get("Location type") or "") in {"COLUMN FACE", "ACI h/2 CRITICAL SECTION"}
+            for item in result_rows
+        ),
+        "support_footprints": [dict(item) for item in preparation.support_footprints],
+        "derived_support_rows": [dict(item) for item in preparation.derived_support_rows],
         "scope": (
-            "ULS sectional one-way shear only. Exact Precast physical-joint shear transfer, column-joint/support D-regions, "
-            "ACI 9.4.3 support critical-section adoption, post-tensioning anchorage/end zones, hanger reinforcement, "
+            "ULS sectional one-way shear only. ACI 318-19 9.4.3 is applied conservatively by checking both each available beam-side "
+            "Column Face and the h/2 critical section measured outward from that face; the more severe result governs. "
+            "The beam-column joint/support-footprint D-region itself remains outside this sectional check and does not reduce a completed "
+            "sectional PASS to REVIEW. Exact Precast physical-joint shear transfer, post-tensioning anchorage/end zones, hanger reinforcement, "
             "anchorage/development, torsion, combined V+T, fatigue, and seismic detailing remain separate. "
             "The ACI 22.5.6.2 PASS route requires fully transferred effective prestress and the prestress-dominance applicability gate; "
             "refined Vci/Vcw is not synthesized from incomplete load-stage sources."
