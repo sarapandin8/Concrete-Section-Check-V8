@@ -20813,23 +20813,29 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
 
 def _crossbeam_transfer_demand_dataframe(preparation: object) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
-    for source in list(getattr(preparation, "demand_rows", ()) or ()):
-        if not bool(source.get("Active", True)):
-            continue
-        rows.append(
-            {
-                "Active": True,
-                "Station s (m)": source.get("Station s (m)"),
-                "Check Point": source.get("Check Point"),
-                "Case": source.get("Case Name"),
-                "Stage": source.get("Stage"),
-                "P kN": source.get("P"),
-                "V2 kN": source.get("V2"),
-                "T kN-m": source.get("T"),
-                "M3 kN-m": source.get("M3"),
-                "Note": source.get("Note"),
-            }
-        )
+    sources = (
+        ("IMPORTED", list(getattr(preparation, "demand_rows", ()) or ())),
+        ("AUTO-INTERPOLATED JOINT", list(getattr(preparation, "derived_joint_rows", ()) or ())),
+    )
+    for source_type, source_rows in sources:
+        for source in source_rows:
+            if not bool(source.get("Active", True)):
+                continue
+            rows.append(
+                {
+                    "Source": source_type,
+                    "Active": True,
+                    "Station s (m)": source.get("Station s (m)"),
+                    "Check Point": source.get("Check Point"),
+                    "Case": source.get("Case Name"),
+                    "Stage": source.get("Stage"),
+                    "P kN": source.get("P"),
+                    "V2 kN": source.get("V2"),
+                    "T kN-m": source.get("T"),
+                    "M3 kN-m": source.get("M3"),
+                    "Note": source.get("Note"),
+                }
+            )
     return pd.DataFrame(rows)
 
 
@@ -21096,6 +21102,11 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
                 if is_precast
                 else "- Cast-in-Place Section/Zone boundaries do not activate the Precast physical-joint coverage or minimum-compression gate.\n"
             )
+            + (
+                "- When a Precast joint has no exact imported row, P/V2/T/M3 are linearly interpolated from the nearest unambiguous active Transfer rows that bracket the joint; one derived resultant checks both Section faces. Exact or explicitly side-labelled joint rows remain authoritative, and extrapolation is not allowed.\n"
+                if is_precast
+                else ""
+            )
             + "- V2/T, principal stress, shear/torsion, anchorage-zone, local D-region, and transfer/development length remain separate."
         )
 
@@ -21107,9 +21118,11 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
     control_cols = st.columns([2.2, 1.0])
     with control_cols[0]:
         if preparation.ready:
+            derived_count = len(preparation.derived_joint_rows)
             st.success(
                 f"TRANSFER SOURCE READY — {len(preparation.demand_rows):,} imported row(s) expand to "
-                f"{len(preparation.rows):,} station/face check(s)."
+                f"{len(preparation.rows):,} station/face check(s)"
+                + (f", including {derived_count:,} auto-interpolated physical-joint station(s)." if derived_count else ".")
             )
         else:
             blocker_count = len(preparation.errors)
@@ -21167,7 +21180,7 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
             "title": "Station / face checks",
             "value": f"{len(preparation.rows):,}",
             "detail": (
-                f"{len(preparation.joint_stations_m):,} physical joint station(s)"
+                f"{len(preparation.joint_stations_m):,} physical joint station(s) · {len(preparation.derived_joint_rows):,} auto-interpolated"
                 if is_precast
                 else "Cast-in-Place · no physical-joint gate"
             ),

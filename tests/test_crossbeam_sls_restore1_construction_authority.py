@@ -138,6 +138,7 @@ def test_true_precast_project_still_requires_physical_joint_coverage() -> None:
     state = _cip_source_state()
     state[CB_LOSS_ES_CONSTRUCTION_METHOD_KEY] = CONSTRUCTION_METHOD_PRECAST
     state[CROSSBEAM_CONSTRUCTION_METHOD_LAST_STATE_KEY] = CONSTRUCTION_METHOD_PRECAST
+    state["crossbeam_sls_loads_table"] = [_transfer_row(0.0)]
     project = project_from_json(project_to_json(project_from_session_state(state)))
     restored: dict[str, object] = {}
     apply_project_to_session_state(project, restored)
@@ -147,3 +148,26 @@ def test_true_precast_project_still_requires_physical_joint_coverage() -> None:
     assert preparation.joint_stations_m
     assert preparation.ready is False
     assert any("physical joint" in error for error in preparation.errors)
+
+
+def test_true_precast_project_round_trip_auto_derives_bracketed_joint_checks() -> None:
+    state = _cip_source_state()
+    state[CB_LOSS_ES_CONSTRUCTION_METHOD_KEY] = CONSTRUCTION_METHOD_PRECAST
+    state[CROSSBEAM_CONSTRUCTION_METHOD_LAST_STATE_KEY] = CONSTRUCTION_METHOD_PRECAST
+    project = project_from_json(project_to_json(project_from_session_state(state)))
+    restored: dict[str, object] = {}
+    apply_project_to_session_state(project, restored)
+
+    preparation = build_crossbeam_transfer_stress_preparation(restored)
+    assert preparation.construction_method == CONSTRUCTION_METHOD_PRECAST
+    assert preparation.ready, preparation.errors
+    assert preparation.derived_joint_rows
+    assert all(
+        {
+            row.section_face
+            for row in preparation.rows
+            if abs(row.station_m - station) <= 1.0e-9
+        }
+        == {"LEFT LIMIT (s-)", "RIGHT LIMIT (s+)"}
+        for station in preparation.joint_stations_m
+    )

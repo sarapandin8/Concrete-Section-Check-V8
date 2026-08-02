@@ -102,6 +102,7 @@ class CrossbeamTransferPreparation:
     stressing_strength_ratio: float
     joint_stations_m: tuple[float, ...]
     column_rows: tuple[dict[str, Any], ...]
+    derived_joint_rows: tuple[dict[str, Any], ...] = ()
 
 
 def _get(state: Any, key: str, default: Any = None) -> Any:
@@ -224,10 +225,13 @@ def _joint_coverage_errors(
     cases: list[str],
     joint_stations: list[float],
     tolerance_m: float,
+    skip_pairs: set[tuple[str, float]] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     for case in cases:
         for joint in joint_stations:
+            if (case, float(joint)) in (skip_pairs or set()):
+                continue
             rows = [
                 row
                 for row in prepared
@@ -243,6 +247,115 @@ def _joint_coverage_errors(
                     f"missing {', '.join(missing)}. Import one unlabeled joint row or explicit Left/Right rows."
                 )
     return errors
+
+
+def _finite_station(row: Mapping[str, Any]) -> float | None:
+    try:
+        station = float(row.get("Station s (m)"))
+    except (TypeError, ValueError):
+        return None
+    return station if math.isfinite(station) else None
+
+
+def _interpolation_source_row(
+    rows: list[dict[str, Any]],
+    *,
+    station_m: float,
+    tolerance_m: float,
+) -> dict[str, Any] | None:
+    """Return one unambiguous row at an interpolation bracket station."""
+
+    at_station = [
+        row
+        for row in rows
+        if (value := _finite_station(row)) is not None
+        and abs(value - float(station_m)) <= tolerance_m
+    ]
+    if not at_station:
+        return None
+    unlabeled = [row for row in at_station if not str(row.get("Check Point") or "").strip()]
+    if len(unlabeled) == 1:
+        return unlabeled[0]
+    candidates = unlabeled or at_station
+    first = candidates[0]
+    for other in candidates[1:]:
+        for key in ("P", "V2", "T", "M3"):
+            try:
+                delta = abs(float(other.get(key) or 0.0) - float(first.get(key) or 0.0))
+            except (TypeError, ValueError):
+                return None
+            if delta > 1.0e-9:
+                return None
+    return first
+
+
+def _derive_precast_joint_demands(
+    active_demands: list[dict[str, Any]],
+    *,
+    joint_stations: list[float],
+    tolerance_m: float,
+) -> tuple[list[dict[str, Any]], list[str], set[tuple[str, float]]]:
+    """Linearly interpolate missing Precast joint resultants without extrapolation.
+
+    One derived resultant is expanded to the left and right Section faces by the
+    normal preparation route.  Exact imported joint rows always remain
+    authoritative, including intentionally side-labelled rows.
+    """
+
+    derived: list[dict[str, Any]] = []
+    blockers: list[str] = []
+    blocked_pairs: set[tuple[str, float]] = set()
+    cases = sorted({str(row.get("Case Name") or "") for row in active_demands})
+    for case in cases:
+        case_rows = [row for row in active_demands if str(row.get("Case Name") or "") == case]
+        stations = sorted(
+            {
+                value
+                for row in case_rows
+                if (value := _finite_station(row)) is not None
+            }
+        )
+        for joint in joint_stations:
+            if any(abs(value - joint) <= tolerance_m for value in stations):
+                continue
+            lower = [value for value in stations if value < joint - tolerance_m]
+            upper = [value for value in stations if value > joint + tolerance_m]
+            if not lower or not upper:
+                blockers.append(
+                    f"{case}: physical joint at s = {joint:.6f} m cannot be auto-interpolated because active Transfer rows do not bracket the joint."
+                )
+                blocked_pairs.add((case, float(joint)))
+                continue
+            s0 = max(lower)
+            s1 = min(upper)
+            row0 = _interpolation_source_row(case_rows, station_m=s0, tolerance_m=tolerance_m)
+            row1 = _interpolation_source_row(case_rows, station_m=s1, tolerance_m=tolerance_m)
+            if row0 is None or row1 is None or s1 <= s0:
+                blockers.append(
+                    f"{case}: physical joint at s = {joint:.6f} m cannot be auto-interpolated because a bracketing station has ambiguous duplicate Transfer resultants."
+                )
+                blocked_pairs.add((case, float(joint)))
+                continue
+            ratio = (joint - s0) / (s1 - s0)
+            interpolated: dict[str, Any] = {
+                "Active": True,
+                "Station s (m)": float(joint),
+                "Check Point": "AUTO JOINT INTERPOLATION",
+                "Case Name": case,
+                "Stage": "Transfer stage",
+                "Note": (
+                    f"Auto-interpolated physical-joint resultant from s={s0:.6f} m and "
+                    f"s={s1:.6f} m; used for both s-/s+ Section faces."
+                ),
+                "_auto_joint_interpolated": True,
+                "_interpolation_from_m": [float(s0), float(s1)],
+            }
+            for key in ("P", "V2", "T", "M3"):
+                value0 = float(row0.get(key) or 0.0)
+                value1 = float(row1.get(key) or 0.0)
+                interpolated[key] = value0 + ratio * (value1 - value0)
+            derived.append(interpolated)
+    return derived, _dedupe(blockers), blocked_pairs
 
 
 def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransferPreparation:
@@ -324,7 +437,7 @@ def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransfer
     )
     if errors:
         payload = {
-            "schema": "crossbeam-sls1a-transfer-preparation-v1",
+            "schema": "crossbeam-sls1a-transfer-preparation-v2",
             "contract": contract,
             "demands": demand_rows,
             "errors": _dedupe(errors),
@@ -342,11 +455,22 @@ def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransfer
             stressing_strength_ratio=stressing_ratio,
             joint_stations_m=tuple(joint_stations),
             column_rows=tuple(column_rows),
+            derived_joint_rows=(),
         )
 
     tolerance_m = max(_STATION_TOLERANCE_MIN_M, length_m * 1.0e-9)
+    derived_joint_rows: list[dict[str, Any]] = []
+    interpolation_blocked_pairs: set[tuple[str, float]] = set()
+    if construction_method == CONSTRUCTION_METHOD_PRECAST:
+        derived_joint_rows, interpolation_errors, interpolation_blocked_pairs = _derive_precast_joint_demands(
+            active_demands,
+            joint_stations=joint_stations,
+            tolerance_m=tolerance_m,
+        )
+        errors.extend(interpolation_errors)
+    check_demands = active_demands + derived_joint_rows
     prepared: list[PreparedCrossbeamTransferRow] = []
-    for demand in active_demands:
+    for demand in check_demands:
         station = float(demand.get("Station s (m)") or 0.0)
         case = str(demand.get("Case Name") or "SLS-TR")
         check_point = str(demand.get("Check Point") or "")
@@ -401,6 +525,9 @@ def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransfer
             if fci_mpa <= 0.0:
                 errors.append(f"{case} at s = {station:.6f} m: Section ID {section_id} f'ci is not positive.")
                 continue
+            source_notes = list(summary.warnings)
+            if bool(demand.get("_auto_joint_interpolated")):
+                source_notes.append(str(demand.get("Note") or "Auto-interpolated physical-joint resultant."))
             prepared.append(
                 PreparedCrossbeamTransferRow(
                     station_m=station,
@@ -428,7 +555,7 @@ def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransfer
                     z_top_mm3=float(summary.z_top_mm3),
                     z_bottom_mm3=float(summary.z_bottom_mm3),
                     is_physical_joint=at_joint,
-                    notes=tuple(summary.warnings),
+                    notes=tuple(source_notes),
                 )
             )
 
@@ -440,6 +567,7 @@ def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransfer
                 cases=cases,
                 joint_stations=joint_stations,
                 tolerance_m=tolerance_m,
+                skip_pairs=interpolation_blocked_pairs,
             )
         )
 
@@ -452,17 +580,22 @@ def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransfer
                 "Imported FEA Transfer resultants are used exactly once; prestress and secondary effects are not added again.",
             ]
         )
+    if derived_joint_rows:
+        warnings.append(
+            f"{len(derived_joint_rows)} physical-joint resultant row(s) were linearly interpolated from active bracketing Transfer stations and expanded to both s-/s+ Section faces."
+        )
     warnings.append(
         "Stress lines connect verified imported stations for visualization only; no compliance is inferred between unverified stations."
     )
     errors = _dedupe(errors)
     warnings = _dedupe(warnings)
     fingerprint_payload = {
-        "schema": "crossbeam-sls1a-transfer-preparation-v1",
+        "schema": "crossbeam-sls1a-transfer-preparation-v2",
         "construction_method": construction_method,
         "stressing_strength_ratio": stressing_ratio,
         "contract": contract,
         "demands": demand_rows,
+        "derived_joint_demands": derived_joint_rows,
         "sections": definitions,
         "materials": [material.model_dump(mode="json") for material in materials_by_name.values()],
         "prepared_faces": [
@@ -485,6 +618,7 @@ def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransfer
         stressing_strength_ratio=stressing_ratio,
         joint_stations_m=tuple(joint_stations),
         column_rows=tuple(column_rows),
+        derived_joint_rows=tuple(derived_joint_rows),
     )
 
 

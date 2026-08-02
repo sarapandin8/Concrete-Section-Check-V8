@@ -197,13 +197,39 @@ def test_precast_preparation_blocks_missing_joint_for_every_transfer_case() -> N
     state = _base_state()
     state["crossbeam_sls_loads_table"] = _complete_joint_rows(case="TR-1") + [
         _transfer_row(0.0, case="TR-2"),
-        _transfer_row(20.0, case="TR-2"),
     ]
     preparation = build_crossbeam_transfer_stress_preparation(state)
 
     assert preparation.ready is False
     assert any("TR-2: physical joint at s = 3.000000 m" in error for error in preparation.errors)
     assert not any("TR-1: physical joint" in error for error in preparation.errors)
+
+
+def test_precast_preparation_auto_interpolates_missing_joint_stations_and_both_faces() -> None:
+    state = _base_state()
+    state["crossbeam_sls_loads_table"] = [
+        _transfer_row(float(station), p=3000.0 + 10.0 * station, m3=100.0 * station)
+        for station in range(0, 21, 2)
+    ]
+
+    preparation = build_crossbeam_transfer_stress_preparation(state)
+
+    assert preparation.ready, preparation.errors
+    assert [row["Station s (m)"] for row in preparation.derived_joint_rows] == pytest.approx(
+        [3.0, 7.0, 13.0, 17.0]
+    )
+    joint_3 = preparation.derived_joint_rows[0]
+    assert joint_3["P"] == pytest.approx(3030.0)
+    assert joint_3["M3"] == pytest.approx(300.0)
+    assert joint_3["_interpolation_from_m"] == pytest.approx([2.0, 4.0])
+    for station in preparation.joint_stations_m:
+        faces = {
+            row.section_face
+            for row in preparation.rows
+            if row.station_m == pytest.approx(station)
+        }
+        assert faces == {"LEFT LIMIT (s-)", "RIGHT LIMIT (s+)"}
+    assert any("linearly interpolated" in warning for warning in preparation.warnings)
 
 
 def test_explicit_single_joint_side_is_blocked_until_opposite_face_is_imported() -> None:
