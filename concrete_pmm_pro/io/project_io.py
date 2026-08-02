@@ -85,9 +85,14 @@ from concrete_pmm_pro.crossbeam.tendon_persistence import (
 )
 from concrete_pmm_pro.crossbeam.prestress_loss import (
     CROSSBEAM_PRESTRESS_LOSS_METADATA_KEY,
+    CB_LOSS_ES_CONSTRUCTION_METHOD_KEY,
     CB_LOSS_TD_PERMANENT_LOAD_AGE_DAYS_KEY,
     crossbeam_prestress_loss_settings_from_session_state,
     restore_crossbeam_prestress_loss_project_state,
+)
+from concrete_pmm_pro.crossbeam.construction_stage import (
+    CONSTRUCTION_METHOD_PRECAST,
+    normalize_construction_method,
 )
 from concrete_pmm_pro.data.prestress_tendon_products import (
     DEFAULT_STRAND_DIAMETER_MM,
@@ -320,6 +325,17 @@ def _crossbeam_input_metadata_from_session(session_state: Any) -> dict[str, Any]
         if definitions
         else list(segment_rows or [])
     )
+    construction_method = normalize_construction_method(
+        _get_session_value(
+            session_state,
+            CROSSBEAM_CONSTRUCTION_METHOD_LAST_STATE_KEY,
+            _get_session_value(
+                session_state,
+                CB_LOSS_ES_CONSTRUCTION_METHOD_KEY,
+                CONSTRUCTION_METHOD_PRECAST,
+            ),
+        )
+    )
     return {
         "schema_version": SECLIB_SCHEMA_VERSION,
         "section_definitions": _clean_table_value(definitions),
@@ -332,9 +348,11 @@ def _crossbeam_input_metadata_from_session(session_state: Any) -> dict[str, Any]
         "cast_in_place_zone_rows": _clean_table_value(
             _get_session_value(session_state, CROSSBEAM_CIP_LAYOUT_STATE_KEY, [])
         ),
-        "construction_method_last": _get_session_value(
-            session_state, CROSSBEAM_CONSTRUCTION_METHOD_LAST_STATE_KEY, None
-        ),
+        # Construction Type is member geometry/configuration, not a
+        # Prestress-Loss setting.  Persist it here as the authoritative source;
+        # ``construction_method_last`` remains for legacy-file compatibility.
+        "construction_method": construction_method,
+        "construction_method_last": construction_method,
     }
 
 
@@ -1346,6 +1364,7 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
     session_state["include_default_stress_check_points"] = project.include_default_stress_check_points
 
     crossbeam_input = project.metadata.get(SECLIB_METADATA_KEY)
+    restored_member_construction_method: str | None = None
     if isinstance(crossbeam_input, dict):
         definitions = canonical_section_definitions(crossbeam_input.get("section_definitions") or [])
         if definitions:
@@ -1394,9 +1413,21 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
                 if definitions
                 else list(cip_rows)
             )
-        construction_last = crossbeam_input.get("construction_method_last")
-        if construction_last is not None:
-            session_state[CROSSBEAM_CONSTRUCTION_METHOD_LAST_STATE_KEY] = construction_last
+        # New files carry an explicit member-level source.  Legacy CIP1 files
+        # used ``construction_method_last`` for the same active-member state.
+        # Both must outrank the duplicated historical value inside the
+        # Prestress-Loss block so a CIP Project cannot reopen as Precast and
+        # invent physical Segment-joint SLS gates.
+        construction_source = crossbeam_input.get("construction_method")
+        if construction_source is None:
+            construction_source = crossbeam_input.get("construction_method_last")
+        if construction_source is not None:
+            restored_member_construction_method = normalize_construction_method(
+                construction_source
+            )
+            session_state[CROSSBEAM_CONSTRUCTION_METHOD_LAST_STATE_KEY] = (
+                restored_member_construction_method
+            )
         # A canonical Project-JSON block is authoritative.  Mark the historical
         # new-project seed migration complete so a later Streamlit rerun cannot
         # reinterpret a valid saved 30 m layout as the current 20 m default.
@@ -1420,6 +1451,13 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
         section_definitions=session_state.get(CB_SECLIB_DEFINITIONS_KEY, []),
     )
     restore_crossbeam_prestress_loss_project_state(project.metadata, session_state)
+    if restored_member_construction_method is not None:
+        session_state[CB_LOSS_ES_CONSTRUCTION_METHOD_KEY] = (
+            restored_member_construction_method
+        )
+        session_state[CROSSBEAM_CONSTRUCTION_METHOD_LAST_STATE_KEY] = (
+            restored_member_construction_method
+        )
     effective_link = project.metadata.get(CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY)
     if isinstance(effective_link, dict):
         session_state[CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY] = canonical_effective_prestress_link(effective_link)

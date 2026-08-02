@@ -93,6 +93,15 @@ def test_ui_upload1_uses_readable_theme_status_colors_without_styling_remove_x()
     ) not in APP
 
 
+def test_selected_file_replaces_truncated_native_pill_with_explicit_actions() -> None:
+    assert 'div[data-testid="stFileUploader"] {\n  display: none !important;' in APP
+    assert "Apply Loaded Project" in APP
+    assert "Change File" in APP
+    assert "ui_commercial4_3_sidebar_uploader_revision" in APP
+    assert "_sidebar_project_load_notice" in APP
+    assert "-webkit-text-fill-color:#061b35!important" in APP
+
+
 @pytest.mark.parametrize(
     ("foreground", "background"),
     [

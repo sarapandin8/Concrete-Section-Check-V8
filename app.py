@@ -1033,6 +1033,10 @@ section[data-testid="stSidebar"] div[data-testid="stFileUploader"] small {
   margin: 0.42rem 0 0.50rem 0;
   box-shadow: 0 7px 16px rgba(7, 26, 51, 0.075);
 }
+section[data-testid="stSidebar"] .cpmm-sidebar-project-upload-card,
+section[data-testid="stSidebar"] .cpmm-sidebar-project-upload-card * {
+  opacity: 1 !important;
+}
 .cpmm-sidebar-project-upload-card.ready {
   border-color: #66b7a6;
   background: linear-gradient(180deg, #f8fffd 0%, #e7f8f3 100%);
@@ -1059,6 +1063,7 @@ section[data-testid="stSidebar"] div[data-testid="stFileUploader"] small {
 }
 .cpmm-sidebar-project-upload-name {
   color: #061b35 !important;
+  -webkit-text-fill-color: #061b35 !important;
   font-size: 0.78rem;
   font-weight: 950;
   line-height: 1.27;
@@ -1070,6 +1075,7 @@ section[data-testid="stSidebar"] div[data-testid="stFileUploader"] small {
 .cpmm-sidebar-project-upload-workflow,
 .cpmm-sidebar-project-upload-detail {
   color: #34536f !important;
+  -webkit-text-fill-color: #34536f !important;
   font-size: 0.66rem;
   font-weight: 750;
   line-height: 1.30;
@@ -1078,6 +1084,7 @@ section[data-testid="stSidebar"] div[data-testid="stFileUploader"] small {
 }
 .cpmm-sidebar-project-upload-detail {
   color: #7f1d2d !important;
+  -webkit-text-fill-color: #7f1d2d !important;
 }
 .cpmm-sidebar-project-upload-state {
   color: #0b3a66 !important;
@@ -1086,6 +1093,14 @@ section[data-testid="stSidebar"] div[data-testid="stFileUploader"] small {
   letter-spacing: 0.045em;
   text-transform: uppercase;
   margin-top: 0.30rem;
+}
+.cpmm-sidebar-project-upload-card.ready .cpmm-sidebar-project-upload-kicker,
+.cpmm-sidebar-project-upload-card.ready .cpmm-sidebar-project-upload-state {
+  -webkit-text-fill-color: #0f6f60 !important;
+}
+.cpmm-sidebar-project-upload-card.invalid .cpmm-sidebar-project-upload-kicker,
+.cpmm-sidebar-project-upload-card.invalid .cpmm-sidebar-project-upload-state {
+  -webkit-text-fill-color: #9f2033 !important;
 }
 .cpmm-sidebar-blocked-notice {
   border: 1px solid #dfa1aa;
@@ -1439,11 +1454,11 @@ def _render_sidebar_project_upload_review(review: Mapping[str, object]) -> None:
         st.markdown(
             f"""
 <div class="cpmm-sidebar-project-upload-card invalid">
-  <div class="cpmm-sidebar-project-upload-kicker">Project file invalid</div>
-  <div class="cpmm-sidebar-project-upload-name" title="{filename}">{filename}</div>
-  <div class="cpmm-sidebar-project-upload-meta">{size_label} · JSON validation failed</div>
-  <div class="cpmm-sidebar-project-upload-detail">{escape(str(error))}</div>
-  <div class="cpmm-sidebar-project-upload-state">Select a valid Project JSON</div>
+  <div class="cpmm-sidebar-project-upload-kicker" style="color:#9f2033!important;-webkit-text-fill-color:#9f2033!important;">Project file invalid</div>
+  <div class="cpmm-sidebar-project-upload-name" style="color:#061b35!important;-webkit-text-fill-color:#061b35!important;" title="{filename}">{filename}</div>
+  <div class="cpmm-sidebar-project-upload-meta" style="color:#34536f!important;-webkit-text-fill-color:#34536f!important;">{size_label} · JSON validation failed</div>
+  <div class="cpmm-sidebar-project-upload-detail" style="color:#7f1d2d!important;-webkit-text-fill-color:#7f1d2d!important;">{escape(str(error))}</div>
+  <div class="cpmm-sidebar-project-upload-state" style="color:#9f2033!important;-webkit-text-fill-color:#9f2033!important;">Select a valid Project JSON</div>
 </div>
 """,
             unsafe_allow_html=True,
@@ -1454,11 +1469,11 @@ def _render_sidebar_project_upload_review(review: Mapping[str, object]) -> None:
     st.markdown(
         f"""
 <div class="cpmm-sidebar-project-upload-card ready">
-  <div class="cpmm-sidebar-project-upload-kicker">Project file selected</div>
-  <div class="cpmm-sidebar-project-upload-name" title="{filename}">{filename}</div>
-  <div class="cpmm-sidebar-project-upload-meta">{size_label} · JSON validated</div>
-  <div class="cpmm-sidebar-project-upload-workflow">Workflow in file: {workflow}</div>
-  <div class="cpmm-sidebar-project-upload-state">Ready to apply</div>
+  <div class="cpmm-sidebar-project-upload-kicker" style="color:#0f6f60!important;-webkit-text-fill-color:#0f6f60!important;">Project file selected</div>
+  <div class="cpmm-sidebar-project-upload-name" style="color:#061b35!important;-webkit-text-fill-color:#061b35!important;" title="{filename}">{filename}</div>
+  <div class="cpmm-sidebar-project-upload-meta" style="color:#34536f!important;-webkit-text-fill-color:#34536f!important;">{size_label} · JSON validated</div>
+  <div class="cpmm-sidebar-project-upload-workflow" style="color:#34536f!important;-webkit-text-fill-color:#34536f!important;">Workflow in file: {workflow}</div>
+  <div class="cpmm-sidebar-project-upload-state" style="color:#0f6f60!important;-webkit-text-fill-color:#0f6f60!important;">Ready to apply</div>
 </div>
 """,
         unsafe_allow_html=True,
@@ -1488,21 +1503,57 @@ def _render_sidebar_project_file_actions() -> None:
             type="primary",
             key="ui_commercial4_3_sidebar_save_project_json",
         )
+        load_notice = st.session_state.pop("_sidebar_project_load_notice", None)
+        if load_notice:
+            st.success(str(load_notice))
+        uploader_revision = int(
+            st.session_state.get("ui_commercial4_3_sidebar_uploader_revision", 0) or 0
+        )
+        uploader_key = (
+            f"ui_commercial4_3_sidebar_project_json_uploader_{uploader_revision}"
+        )
         uploaded_file = st.file_uploader(
             "Load Project JSON",
             type=["json"],
-            key="ui_commercial4_3_sidebar_project_json_uploader",
+            key=uploader_key,
         )
         if uploaded_file is not None:
+            # The native uploaded-file pill truncates long engineering Project
+            # names at sidebar width.  Keep the widget alive for Streamlit, but
+            # replace its selected state with the readable app review card.
+            st.markdown(
+                """
+<style>
+section[data-testid="stSidebar"] div[data-testid="stFileUploader"] {
+  display: none !important;
+}
+</style>
+""",
+                unsafe_allow_html=True,
+            )
             review = _review_sidebar_project_upload(uploaded_file)
             _render_sidebar_project_upload_review(review)
-            if st.button(
+            action_cols = st.columns([1.35, 1.0])
+            apply_clicked = action_cols[0].button(
                 "Apply Loaded Project",
                 use_container_width=True,
                 type="primary",
                 disabled=review.get("project") is None,
-                key="ui_commercial4_3_sidebar_apply_project_json",
-            ):
+                key=f"ui_commercial4_3_sidebar_apply_project_json_{uploader_revision}",
+            )
+            change_clicked = action_cols[1].button(
+                "Change File",
+                use_container_width=True,
+                key=f"ui_commercial4_3_sidebar_change_project_json_{uploader_revision}",
+            )
+            if change_clicked:
+                st.session_state["ui_commercial4_3_sidebar_uploader_revision"] = (
+                    uploader_revision + 1
+                )
+                rerun = getattr(st, "rerun", None)
+                if callable(rerun):
+                    rerun()
+            if apply_clicked:
                 try:
                     project = review.get("project")
                     if project is None:
@@ -1513,6 +1564,12 @@ def _render_sidebar_project_file_actions() -> None:
                 else:
                     st.session_state["_project_load_success"] = (
                         "Project JSON loaded. Review Section Builder, Rebar, Prestress, and Loads tabs before future analysis."
+                    )
+                    st.session_state["_sidebar_project_load_notice"] = (
+                        f"Loaded {review.get('filename')}."
+                    )
+                    st.session_state["ui_commercial4_3_sidebar_uploader_revision"] = (
+                        uploader_revision + 1
                     )
                 rerun = getattr(st, "rerun", None)
                 if callable(rerun):

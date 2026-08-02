@@ -21070,11 +21070,20 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
     """Render the complete SLS1A Transfer concrete-stress decision workspace."""
 
     st.markdown(_ANALYSIS_DASHBOARD_CSS, unsafe_allow_html=True)
+    preparation = build_crossbeam_transfer_stress_preparation(st.session_state)
+    is_precast = preparation.construction_method == "Precast Segmental"
     st.markdown("### Crossbeam SLS At Transfer — concrete stress")
-    st.caption(
-        "Checks gross-section top/bottom concrete stress at every imported Transfer station and both sides of every Precast physical joint. "
-        "Imported FEA P/M3 contain transfer-age prestress and secondary response and are used exactly once."
-    )
+    if is_precast:
+        st.caption(
+            "Checks gross-section top/bottom concrete stress at every imported Transfer station and both sides of every Precast physical joint. "
+            "Imported FEA P/M3 contain transfer-age prestress and secondary response and are used exactly once."
+        )
+    else:
+        st.caption(
+            "Checks gross-section top/bottom concrete stress at every imported Transfer station. "
+            "Cast-in-Place Section/Zone boundaries are monolithic property boundaries, not physical joints. "
+            "Imported FEA P/M3 contain transfer-age prestress and secondary response and are used exactly once."
+        )
     with st.expander("Transfer stress scope / engineering assumptions", expanded=False):
         st.markdown(
             "- Stress convention: compression negative; tension positive. Imported P is compression positive and M3 is sagging positive.\n"
@@ -21082,11 +21091,14 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
             "- ACI 318-19 all-other-location limits: compression <= 0.60f'ci and tension <= 0.25sqrt(f'ci).\n"
             "- The simply-supported-member end limits are not used for this Portal Frame Crossbeam.\n"
             "- ACI 318-19 24.5.3.2.1 bonded-reinforcement relief is not credited automatically.\n"
-            "- Every Precast physical joint must keep both s-/s+ top and bottom fibers at least 0.70 MPa in compression.\n"
-            "- V2/T, principal stress, shear/torsion, anchorage-zone, local D-region, and transfer/development length remain separate."
+            + (
+                "- Every Precast physical joint must keep both s-/s+ top and bottom fibers at least 0.70 MPa in compression.\n"
+                if is_precast
+                else "- Cast-in-Place Section/Zone boundaries do not activate the Precast physical-joint coverage or minimum-compression gate.\n"
+            )
+            + "- V2/T, principal stress, shear/torsion, anchorage-zone, local D-region, and transfer/development length remain separate."
         )
 
-    preparation = build_crossbeam_transfer_stress_preparation(st.session_state)
     demand_df = _crossbeam_transfer_demand_dataframe(preparation)
     cached = st.session_state.get(CROSSBEAM_TRANSFER_RESULT_KEY)
     cached_hash = str(st.session_state.get(CROSSBEAM_TRANSFER_RESULT_HASH_KEY) or "")
@@ -21100,7 +21112,11 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
                 f"{len(preparation.rows):,} station/face check(s)."
             )
         else:
-            st.error("TRANSFER SOURCE BLOCKED — resolve the stage force, Section/Material, f'ci, or physical-joint coverage items below.")
+            blocker_count = len(preparation.errors)
+            st.error(
+                f"TRANSFER SOURCE BLOCKED — {blocker_count} required action(s). "
+                "Open Run blocking actions below; each item identifies the exact page and correction."
+            )
     with control_cols[1]:
         run_clicked = st.button(
             "Run Transfer Stress",
@@ -21150,7 +21166,11 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
         {
             "title": "Station / face checks",
             "value": f"{len(preparation.rows):,}",
-            "detail": f"{len(preparation.joint_stations_m):,} physical joint station(s)",
+            "detail": (
+                f"{len(preparation.joint_stations_m):,} physical joint station(s)"
+                if is_precast
+                else "Cast-in-Place · no physical-joint gate"
+            ),
             "status": "info",
         },
         {
