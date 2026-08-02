@@ -216,7 +216,7 @@ def test_loads_page_keeps_old_member_ux_and_does_not_require_raw_i_j_element_out
     assert "Raw element I/J-end output is not required" in source
     assert "Check Point" in source
     assert "Canonical import preview — kN / kN·m" in source
-    assert "Each imported row is treated as one concurrent P/V2/T/M3 FEA state" in source
+    assert "every P/V2/T/M3 row must come from one FEA output state" in source
     block = source[source.index("def _render_crossbeam_uls_sls_load_tables"):source.index("def _commercial_load_dashboard_cards")]
     assert '"FEA Element"' not in block
     assert '"End / Side"' not in block

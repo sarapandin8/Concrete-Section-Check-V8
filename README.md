@@ -1,3 +1,7 @@
+### CROSSBEAM.ANALYSIS2A — Compact Loads Contract and Shear Visual Cleanup
+
+Removes user-facing FEA source metadata, source-unit/sign controls, duplicate stage declarations, and Crossbeam axis panels from Loads; fixes new imports to the canonical station-force contract; removes redundant amber Shear scope warnings; and replaces the misleading Crossbeam ULS runtime PASS card with an on-demand result-mode card without changing engineering equations. See `README_CROSSBEAM_ANALYSIS2A.md`.
+
 ### CROSSBEAM.TDSTATE1 — Durable TD Inputs, Explicit Schedule Decision, and Reset
 
 Preserves Crossbeam Time-Dependent environmental, age, drying, steel, and no-later-event inputs across Streamlit workspace navigation; replaces the ambiguous no-event checkbox with an explicit engineer adoption decision; and adds a safe `Reset to defaults` action that leaves imported FEA rows and permanent-load event mappings intact. See `README_CROSSBEAM_TDSTATE1.md`.

@@ -281,10 +281,6 @@ def validate_station_force_contract(
     item = canonical_station_force_contract(contract)
     errors: list[str] = []
     warnings: list[str] = []
-    if not item["fea_program"]:
-        warnings.append("FEA Program is blank; add it later for report traceability.")
-    if not item["model_revision"]:
-        warnings.append("FEA model / revision is blank; add it later for report traceability.")
     response = _text(response_type).upper()
     stage = canonical_sls_stage(sls_stage) if sls_stage else ""
     check_all = not response

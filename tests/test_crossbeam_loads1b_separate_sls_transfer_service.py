@@ -64,9 +64,10 @@ def _row(case: str, stage: str | None = None) -> dict[str, object]:
     return row
 
 
-def test_stage_context_validation_separates_transfer_from_final_service() -> None:
+def test_fixed_sls_tabs_do_not_require_repeated_stage_declarations() -> None:
     contract = _ready_contract()
     contract["confirmed_sls_service_response_basis"] = False
+    contract["confirmed_transfer_stage_response_basis"] = False
 
     transfer_errors, _ = validate_station_force_contract(
         contract, response_type="SLS", sls_stage="Transfer stage"
@@ -75,8 +76,8 @@ def test_stage_context_validation_separates_transfer_from_final_service() -> Non
         contract, response_type="SLS", sls_stage="Final service stage"
     )
 
-    assert not any("At Service" in error for error in transfer_errors)
-    assert any("At Service" in error for error in service_errors)
+    assert not transfer_errors
+    assert not service_errors
 
 
 def test_analysis_handoff_requires_uls_transfer_and_service_inputs() -> None:
@@ -178,7 +179,7 @@ def test_project_json_round_trip_preserves_both_sls_stage_rows_and_v2_contract()
     assert restored_contract["confirmed_sls_service_response_basis"] is True
 
 
-def test_loads1a_contract_migrates_final_declarations_but_requires_new_transfer_declarations() -> None:
+def test_legacy_contract_migrates_to_fixed_automatic_stage_declarations() -> None:
     migrated = canonical_station_force_contract(
         {
             "fea_program": "CSiBridge",
@@ -193,6 +194,7 @@ def test_loads1a_contract_migrates_final_declarations_but_requires_new_transfer_
     assert migrated["confirmed_final_prestress_applied_once"] is True
     assert migrated["confirmed_uls_final_stage_response_basis"] is True
     assert migrated["confirmed_sls_service_response_basis"] is True
-    assert migrated["confirmed_transfer_immediate_loss_basis"] is False
+    assert migrated["confirmed_transfer_immediate_loss_basis"] is True
+    assert migrated["confirmed_transfer_stage_response_basis"] is True
     errors, _ = validate_station_force_contract(migrated)
-    assert any("Transfer-stage prestress" in error for error in errors)
+    assert not any("Transfer-stage prestress" in error for error in errors)

@@ -30,19 +30,13 @@ from concrete_pmm_pro.crossbeam.station_force_contract import (
     CROSSBEAM_SLS_STAGE_OPTIONS as VERIFIED_CROSSBEAM_SLS_STAGE_OPTIONS,
     CROSSBEAM_SLS_STATION_FORCE_COLUMNS,
     CROSSBEAM_ULS_STATION_FORCE_COLUMNS,
-    FORCE_UNITS as CROSSBEAM_SOURCE_FORCE_UNITS,
-    M3_SIGNS,
-    MOMENT_UNITS as CROSSBEAM_SOURCE_MOMENT_UNITS,
-    P_SIGNS,
-    T_SIGNS,
-    V2_SIGNS,
     build_station_force_analysis_handoff,
     canonical_effective_prestress_link,
     canonical_station_force_contract,
+    canonical_storage_contract,
     canonical_sls_stage,
     default_station_force_contract,
     normalize_station_force_rows,
-    validate_station_force_contract,
     validate_station_force_rows,
 )
 from concrete_pmm_pro.serviceability.girder_sls_load_components import (
@@ -2886,180 +2880,29 @@ def _crossbeam_effective_prestress_link() -> dict[str, Any]:
 
 
 def _crossbeam_station_force_contract() -> dict[str, Any]:
+    """Return the fixed canonical Crossbeam station-force contract.
+
+    Legacy source metadata remains serializable for Project JSON compatibility,
+    but it is not exposed or required by the compact Loads workflow. New imports
+    always use the app's canonical units, axes, signs, and fixed stage tabs.
+    """
+
     link = _crossbeam_effective_prestress_link()
     current = st.session_state.get(CB_STATION_FORCE_CONTRACT_KEY)
     if not isinstance(current, dict):
         current = default_station_force_contract(effective_prestress_link=link)
     contract = canonical_station_force_contract(current, effective_prestress_link=link)
+    contract = canonical_storage_contract(contract)
     st.session_state[CB_STATION_FORCE_CONTRACT_KEY] = contract
     return contract
 
 
 def _render_crossbeam_station_force_contract() -> dict[str, Any]:
+    """Resolve the canonical contract without adding user-facing metadata controls."""
+
     contract = _crossbeam_station_force_contract()
-    link = _crossbeam_effective_prestress_link()
-    seed_payload = {
-        key: contract.get(key)
-        for key in (
-            "fea_program",
-            "model_revision",
-            "source_force_unit",
-            "source_moment_unit",
-            "p_sign",
-            "v2_sign",
-            "t_sign",
-            "m3_sign",
-            "adopted_total_loss_percent",
-            "prestress_source_id",
-            "prestress_contract_id",
-            "confirmed_final_prestress_applied_once",
-            "confirmed_external_fea_secondary",
-            "confirmed_uls_final_stage_response_basis",
-            "confirmed_sls_service_response_basis",
-            "confirmed_transfer_immediate_loss_basis",
-            "confirmed_transfer_stage_response_basis",
-            "confirmed_row_coupled_forces",
-        )
-    }
-    seed_token = repr(sorted(seed_payload.items()))
-    if st.session_state.get("crossbeam_loads1b_contract_seed") != seed_token:
-        for key, value in seed_payload.items():
-            st.session_state[f"crossbeam_loads1b_{key}"] = value
-        st.session_state["crossbeam_loads1b_contract_seed"] = seed_token
-    if link.get("ready"):
-        # Keep disabled linked widgets synchronized on every rerun. Their state
-        # may display the canonical values but never owns the Project contract.
-        for key in (
-            "adopted_total_loss_percent",
-            "prestress_source_id",
-            "prestress_contract_id",
-        ):
-            st.session_state[f"crossbeam_loads1b_{key}"] = contract.get(key)
-
-    loss = float(contract.get("adopted_total_loss_percent") or 0.0)
-    ratio = float(contract.get("effective_prestress_ratio_percent") or 100.0 - loss)
-    transfer_ready = bool(
-        contract.get("confirmed_transfer_immediate_loss_basis")
-        and contract.get("confirmed_transfer_stage_response_basis")
-    )
-    final_ready = bool(
-        contract.get("confirmed_final_prestress_applied_once")
-        and contract.get("confirmed_external_fea_secondary")
-        and contract.get("confirmed_uls_final_stage_response_basis")
-        and contract.get("confirmed_sls_service_response_basis")
-    )
-    _render_load_compact_cards(
-        [
-            {
-                "title": "SLS At Transfer basis",
-                "value": "IMMEDIATE LOSSES ONLY",
-                "detail": "Friction + Anchorage Set + ES · no long-term TD loss",
-                "status": "ready" if transfer_ready else "warning",
-            },
-            {
-                "title": "ULS / SLS At Service basis",
-                "value": f"Uniform final loss {loss:.3f}%" if loss > 0.0 else "SOURCE REQUIRED",
-                "detail": f"effective ratio {ratio:.3f}% · Source {contract.get('prestress_source_id') or '—'}",
-                "status": "ready" if bool(link.get("ready")) and final_ready else "warning",
-            },
-            {
-                "title": "Applied-table units",
-                "value": "kN / kN·m",
-                "detail": "canonical after import",
-                "status": "info",
-            },
-        ],
-        columns=3,
-    )
-
-    with st.expander(
-        "FEA source, units, axes, and Transfer / Service declarations",
-        expanded=False,
-    ):
-        st.caption(
-            "Source units and signs apply only when a new file is imported. Applied rows are stored canonically in kN and kN·m. "
-            "Transfer and final-service prestress states are declared separately."
-        )
-        row1 = st.columns([1.0, 1.15, 0.8, 0.8])
-        with row1[0]:
-            contract["fea_program"] = st.text_input(
-                "FEA program", key="crossbeam_loads1b_fea_program", placeholder="CSiBridge / SAP2000 / MIDAS Civil"
-            )
-        with row1[1]:
-            contract["model_revision"] = st.text_input(
-                "FEA model / revision", key="crossbeam_loads1b_model_revision", placeholder="e.g. CB-FINAL-R03"
-            )
-        with row1[2]:
-            contract["source_force_unit"] = st.selectbox(
-                "Source force unit", options=list(CROSSBEAM_SOURCE_FORCE_UNITS), key="crossbeam_loads1b_source_force_unit"
-            )
-        with row1[3]:
-            contract["source_moment_unit"] = st.selectbox(
-                "Source moment unit", options=list(CROSSBEAM_SOURCE_MOMENT_UNITS), key="crossbeam_loads1b_source_moment_unit"
-            )
-
-        source_cols = st.columns([0.9, 0.9, 1.0, 1.15])
-        with source_cols[0]:
-            contract["adopted_total_loss_percent"] = st.number_input(
-                "Final uniform loss (%)",
-                min_value=0.0,
-                max_value=60.0,
-                step=0.01,
-                format="%.4f",
-                key="crossbeam_loads1b_adopted_total_loss_percent",
-                disabled=bool(link.get("ready")),
-                help="Used by ULS and SLS At Service only. At Transfer uses the immediate-loss prestress state, not this final loss.",
-            )
-        with source_cols[1]:
-            st.metric("Final effective ratio", f"{100.0 - float(contract.get('adopted_total_loss_percent') or 0.0):.4f}%")
-        with source_cols[2]:
-            contract["prestress_source_id"] = st.text_input(
-                "Prestress Source ID", key="crossbeam_loads1b_prestress_source_id", disabled=bool(link.get("ready"))
-            )
-        with source_cols[3]:
-            contract["prestress_contract_id"] = st.text_input(
-                "Prestress Contract ID", key="crossbeam_loads1b_prestress_contract_id", disabled=bool(link.get("ready"))
-            )
-
-        st.info(
-            "Stage basis is assigned automatically by the upload target: ULS = factored final stage; "
-            "SLS At Service = verified final service; SLS At Transfer = transfer-age response with immediate losses only. "
-            "Each imported row is treated as one concurrent P/V2/T/M3 FEA state."
-        )
-        contract.update(
-            {
-                "confirmed_final_prestress_applied_once": True,
-                "confirmed_external_fea_secondary": True,
-                "confirmed_uls_final_stage_response_basis": True,
-                "confirmed_sls_service_response_basis": True,
-                "confirmed_transfer_immediate_loss_basis": True,
-                "confirmed_transfer_stage_response_basis": True,
-                "confirmed_row_coupled_forces": True,
-            }
-        )
-
-        with st.expander("Source-axis and sign mapping", expanded=False):
-            axes = st.columns(4)
-            with axes[0]:
-                contract["p_sign"] = st.selectbox("Source P sign", options=list(P_SIGNS), key="crossbeam_loads1b_p_sign")
-            with axes[1]:
-                contract["v2_sign"] = st.selectbox("Source V2 sign", options=list(V2_SIGNS), key="crossbeam_loads1b_v2_sign")
-            with axes[2]:
-                contract["t_sign"] = st.selectbox("Source T sign", options=list(T_SIGNS), key="crossbeam_loads1b_t_sign")
-            with axes[3]:
-                contract["m3_sign"] = st.selectbox("Source M3 sign", options=list(M3_SIGNS), key="crossbeam_loads1b_m3_sign")
-            st.caption(
-                "Canonical Crossbeam storage: P compression positive, V2 upward positive, T right-hand positive about increasing station s, and M3 sagging positive."
-            )
-
-    contract = canonical_station_force_contract(contract, effective_prestress_link=link)
     st.session_state[CB_STATION_FORCE_CONTRACT_KEY] = contract
     _sync_workflow_load_tables_metadata()
-    errors, warnings = validate_station_force_contract(contract)
-    if errors:
-        st.warning(f"Complete FEA stage contract requires {len(errors)} confirmation(s) before Analysis handoff is ready.")
-    for warning in warnings:
-        st.caption(f"• {warning}")
     return contract
 
 
@@ -3121,7 +2964,7 @@ def _render_crossbeam_station_force_import_tools(
             imported.to_dict(orient="records"),
             contract=contract,
             response_type=response_type,
-            rows_are_canonical=False,
+            rows_are_canonical=True,
         )
         canonical_df = _stringify_table(pd.DataFrame(canonical_rows), columns)
     except Exception as exc:  # pragma: no cover - UI guardrail
@@ -3257,7 +3100,7 @@ def _render_crossbeam_sls_stage_import_tools(
             imported_full.to_dict(orient="records"),
             contract=contract,
             response_type="SLS",
-            rows_are_canonical=False,
+            rows_are_canonical=True,
         )
         canonical_full = _stringify_table(pd.DataFrame(canonical_rows), CROSSBEAM_SLS_LOAD_COLUMNS)
         canonical_visible = _stringify_table(canonical_full, columns)
@@ -3628,9 +3471,6 @@ def _render_crossbeam_uls_sls_load_tables(force_unit: str, moment_unit: str) -> 
         st.caption(
             "Check Point is optional for one selected row at a station. Use labels such as C1-Left/C1-Right only when multiple rows share the same Case/Stage/Station."
         )
-    st.info(
-        "Analysis must use each imported FEA response at its declared stage. At Transfer uses immediate-loss prestress; At Service and ULS use the adopted final prestress state. Do not add effective prestress force, primary prestress moment, or secondary prestress again."
-    )
 
 
 def _commercial_load_dashboard_cards(force_unit: str, moment_unit: str, settings: AnalysisModeSettings) -> list[dict[str, object]]:
@@ -3659,6 +3499,12 @@ def _commercial_load_dashboard_cards(force_unit: str, moment_unit: str, settings
             active_rows += int(pd.Series(df["Active"]).fillna(False).astype(bool).sum())
     workflow_label = analysis_mode_label(settings)
     sls_source = "Auto + table" if settings.member_type in {"beam_girder", "building_beam_girder"} else ("Crossbeam At Transfer + At Service" if settings.member_type == "portal_frame_crossbeam" else "Manual table")
+    if settings.member_type == "portal_frame_crossbeam":
+        return [
+            {"title": "Workflow", "value": workflow_label, "detail": "Selected in Setup", "status": "info"},
+            {"title": "Input rows", "value": f"{total_rows:,}", "detail": f"{active_rows:,} active rows", "status": "ready" if active_rows else "warning"},
+            {"title": "Load tables", "value": "ULS + 2 SLS", "detail": "Final · Transfer · Service", "status": "info"},
+        ]
     return [
         {"title": "Workflow", "value": workflow_label, "detail": "Selected in Setup", "status": "info"},
         {"title": "Input rows", "value": f"{total_rows:,}", "detail": f"{active_rows:,} active rows", "status": "ready" if active_rows else "warning"},
@@ -3669,9 +3515,14 @@ def _commercial_load_dashboard_cards(force_unit: str, moment_unit: str, settings
 
 def render_loads_page() -> None:
     settings = _analysis_mode_from_session_state()
+    load_page_description = (
+        "Manage compact ULS and SLS station-force tables for the active Crossbeam workflow."
+        if settings.member_type == "portal_frame_crossbeam"
+        else "Manage ULS/SLS demand inputs with workflow-specific tables, unit controls, validation, and stage-aware service-load routing."
+    )
     render_page_header(
         "Loads",
-        "Manage ULS/SLS demand inputs with workflow-specific tables, unit controls, validation, and stage-aware service-load routing.",
+        load_page_description,
         icon="LD",
         kicker="Load workspace",
         badge="Demand inputs",
@@ -3684,9 +3535,6 @@ def render_loads_page() -> None:
     if settings.member_type == "portal_frame_crossbeam":
         force_unit = CROSSBEAM_CANONICAL_FORCE_UNIT
         moment_unit = CROSSBEAM_CANONICAL_MOMENT_UNIT
-        st.caption(
-            "Crossbeam applied tables use fixed canonical units kN and kN·m. Declare source-file units inside the FEA source expander; conversion occurs once during import."
-        )
     else:
         unit_cols = st.columns(2)
         with unit_cols[0]:
@@ -3707,8 +3555,9 @@ def render_loads_page() -> None:
     render_metric_cards(_commercial_load_dashboard_cards(force_unit, moment_unit, settings))
     render_section_bar("Load input tables", "ULS/SLS cases are edited below and remain the source of truth for analysis.", mark="Σ")
 
-    with st.expander("Axis convention for load input", expanded=False):
-        _render_axis_convention_panel()
+    if settings.member_type != "portal_frame_crossbeam":
+        with st.expander("Axis convention for load input", expanded=False):
+            _render_axis_convention_panel()
 
     if settings.member_type == "portal_frame_crossbeam":
         _render_crossbeam_uls_sls_load_tables(force_unit, moment_unit)

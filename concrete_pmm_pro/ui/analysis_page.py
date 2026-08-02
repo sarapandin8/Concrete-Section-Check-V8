@@ -20959,7 +20959,7 @@ def _render_crossbeam_uls_shear_workspace() -> None:
     st.markdown("### Crossbeam ULS Shear — station checks")
     st.caption(
         "Reads active row-coupled P/V2/T/M3 demands from Crossbeam Loads. V2 maps to Vu; "
-        "the Effective Prestress source is used only by the ACI prestressed shear resistance route and is not added to imported FEA demand."
+        "Effective Prestress is used only by the ACI prestressed shear resistance route and is not added to imported demand."
     )
     with st.expander("Crossbeam ULS Shear scope / engineering assumptions", expanded=False):
         st.markdown(
@@ -21020,15 +21020,15 @@ def _render_crossbeam_uls_shear_workspace() -> None:
                 )
             st.dataframe(pd.DataFrame(blocking_rows), use_container_width=True, hide_index=True)
     if preparation.warnings:
-        with st.expander("Source warnings", expanded=False):
+        with st.expander("Source notes", expanded=False):
             for message in preparation.warnings:
-                st.warning(message)
+                st.markdown(f"- {message}")
 
     source_cards = [
         {
             "title": "ULS source",
             "value": "READY" if preparation.ready else "SOURCE BLOCKED",
-            "detail": "Crossbeam Loads · canonical kN/kN-m",
+            "detail": f"{len(preparation.demand_rows):,} active station-force row(s)",
             "status": "ready" if preparation.ready else "danger",
             "strong": True,
         },
@@ -21105,9 +21105,6 @@ def _render_crossbeam_uls_shear_workspace() -> None:
     ]
     _render_analysis_summary_strip(result_cards, columns=4)
 
-    if governing and str(governing.get("Status") or "") == "REVIEW" and governing_gate == "SCOPE GUARD":
-        st.warning(str(governing.get("Notes") or "This governing station requires a separate engineering scope check."))
-
     if not result_df.empty:
         chart_df = _crossbeam_shear_chart_rows(result_df)
         guard_df = result_df[
@@ -21120,7 +21117,7 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         )
         st.caption(
             "The demand curve retains signed imported V2. Capacity traces show eligible sectional stations only; amber markers identify physical joints or support D-regions that cannot receive beam-shear PASS. "
-            "P, T, and M3 remain coupled to the same imported FEA row. Torsion interaction is not included in this milestone."
+            "P, T, and M3 remain coupled to the same imported station-force row. Torsion interaction is not included in this milestone."
         )
         compact_columns = [
             "Status", "Strength status", "Detailing status", "Station s (m)", "Check Point", "Case",
@@ -21148,12 +21145,14 @@ def _render_crossbeam_uls_shear_workspace() -> None:
                 hide_index=True,
             )
 
-    with st.expander("Calculation warnings / limitations", expanded=False):
+    with st.expander("Calculation limitations", expanded=False):
         for message in list(result.get("errors") or []):
             st.error(message)
         for message in list(result.get("warnings") or []):
-            st.warning(message)
-        st.info(str(result.get("scope") or ""))
+            st.markdown(f"- {message}")
+        scope = str(result.get("scope") or "").strip()
+        if scope:
+            st.caption(scope)
 
 
 def _crossbeam_transfer_demand_dataframe(preparation: object) -> pd.DataFrame:
@@ -22181,15 +22180,16 @@ def _commercial_analysis_dashboard_cards(settings: AnalysisModeSettings, active_
     else:
         route = "Building girder"
     readiness = st.session_state.get("analysis_status", "Ready to review")
-    status_title = "SLS check status" if (
-        is_portal_frame_crossbeam_workflow(settings)
-        and active_subpage == "SLS / Stress & Cracking"
-    ) else "Runtime state"
-    status_detail = (
-        "Current stored Transfer/Final engineering result; solver runtime is separate"
-        if status_title == "SLS check status"
-        else "Displayed status only; solver routing is unchanged"
-    )
+    if is_portal_frame_crossbeam_workflow(settings) and active_subpage == "ULS Strength":
+        status_title = "Result mode"
+        readiness = "ON-DEMAND"
+        status_detail = "The selected ULS check reports its engineering status below"
+    elif is_portal_frame_crossbeam_workflow(settings) and active_subpage == "SLS / Stress & Cracking":
+        status_title = "SLS check status"
+        status_detail = "Current stored Transfer/Final engineering result; solver runtime is separate"
+    else:
+        status_title = "Runtime state"
+        status_detail = "Displayed status only; solver routing is unchanged"
     return [
         {"title": "Active review", "value": active_subpage, "detail": "Only the selected analysis workspace is rendered", "status": "info"},
         {"title": "Workflow", "value": workflow_label, "detail": route, "status": "ready"},
