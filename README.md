@@ -1814,3 +1814,7 @@ Connects canonical Crossbeam ULS station forces to the existing ACI PMM engine w
 ## CROSSBEAM.ANALYSIS1B — Zero-Moment Endpoint Capacity & D/C Separation
 
 Calculates `phiMn(Pu)` at zero-M3 Crossbeam endpoints using the nearest nonzero bending direction in the same Load Case, reports Flexural D/C separately from Axial D/C, and conservatively selects duplicate joint-face capacity. See `README_CROSSBEAM_ANALYSIS1B.md`.
+
+## CROSSBEAM.ANALYSIS2 — ACI 318-19 Prestressed ULS Shear Station Checks
+
+Adds an on-demand Crossbeam Shear tab beside Flexure using the accepted Bridge/Beam lazy ULS pattern, ACI 318-19 prestressed sectional shear and provided transverse-reinforcement gates, explicit physical-joint/support D-region REVIEW guards, deterministic Crossbeam-only caching, and no duplicate prestress demand. See `README_CROSSBEAM_ANALYSIS2.md`.

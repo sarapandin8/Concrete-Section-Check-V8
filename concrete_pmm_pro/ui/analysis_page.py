@@ -24,6 +24,12 @@ from concrete_pmm_pro.analysis.crossbeam_uls import (
     build_crossbeam_uls_flexure_preparation,
     run_crossbeam_uls_flexure,
 )
+from concrete_pmm_pro.analysis.crossbeam_uls_shear import (
+    CROSSBEAM_ULS_SHEAR_RESULT_HASH_KEY,
+    CROSSBEAM_ULS_SHEAR_RESULT_KEY,
+    build_crossbeam_uls_shear_preparation,
+    run_crossbeam_uls_shear,
+)
 from concrete_pmm_pro.analysis.crossbeam_sls_transfer import (
     CROSSBEAM_SERVICE_RESULT_HASH_KEY,
     CROSSBEAM_SERVICE_RESULT_KEY,
@@ -20701,6 +20707,11 @@ def _crossbeam_uls_blocking_action(message: object) -> dict[str, str]:
             "Where to Fix": "Sections → Rebar",
             "Recommended Action": "Assign an active longitudinal and transverse template to every applicable Segment/Zone.",
         }
+    if "column / support" in lowered or "support-footprint" in lowered or "support footprint" in lowered:
+        return {
+            "Where to Fix": "Sections → Section Builder → Column / Support Layout",
+            "Recommended Action": "Apply a valid Column / Support Layout and keep every support footprint compatible with Solid Crossbeam regions.",
+        }
     if "section" in lowered or "segment" in lowered or "physical length" in lowered:
         return {
             "Where to Fix": "Sections → Section Builder",
@@ -20869,6 +20880,280 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
             if len(warnings) > 20:
                 st.caption(f"{len(warnings) - 20} additional repeated solver warning(s) are omitted from this compact view.")
             st.info(str(result.get("scope") or ""))
+
+
+def _crossbeam_shear_chart_rows(result_df: pd.DataFrame) -> pd.DataFrame:
+    """Return one conservative finite-capacity row per Case/station for plotting."""
+
+    if result_df.empty:
+        return result_df
+    source = result_df.copy()
+    source["__station"] = pd.to_numeric(source.get("Station s (m)"), errors="coerce")
+    source["__capacity"] = pd.to_numeric(source.get("φVn kN"), errors="coerce")
+    source["__dc"] = pd.to_numeric(source.get("Governing D/C value"), errors="coerce")
+    source = source[source["__station"].notna() & source["__capacity"].notna()].copy()
+    if source.empty:
+        return source.drop(columns=["__station", "__capacity", "__dc"], errors="ignore")
+    chosen: list[pd.Series] = []
+    for (_case, _station), group in source.groupby(["Case", "__station"], dropna=False, sort=False):
+        finite_dc = group[group["__dc"].notna()]
+        if not finite_dc.empty:
+            max_dc = float(finite_dc["__dc"].astype(float).max())
+            tied = finite_dc[(finite_dc["__dc"].astype(float) - max_dc).abs() <= 1.0e-12]
+            chosen.append(tied.loc[tied["__capacity"].astype(float).idxmin()])
+        else:
+            chosen.append(group.loc[group["__capacity"].astype(float).idxmin()])
+    return pd.DataFrame(chosen).drop(columns=["__station", "__capacity", "__dc"], errors="ignore")
+
+
+def _make_crossbeam_uls_shear_figure(
+    demand_df: pd.DataFrame,
+    capacity_df: pd.DataFrame,
+    guard_df: pd.DataFrame,
+) -> go.Figure:
+    """Reuse the accepted Beam/Girder shear chart and mark excluded scope guards."""
+
+    fig = _make_beam_uls_shear_capacity_figure(
+        demand_df,
+        capacity_df,
+        code_label="ACI 318-19 · Crossbeam V2 → Vu",
+    )
+    if guard_df.empty:
+        return fig
+    plotted_labels: set[str] = set()
+    for _, source in guard_df.iterrows():
+        station = _analysis_float_or_zero(source.get("Station s (m)"))
+        location_type = str(source.get("Location type") or "REVIEW")
+        label = "Physical joint — REVIEW" if "PHYSICAL" in location_type.upper() else "Support D-region — REVIEW"
+        fig.add_vline(
+            x=station,
+            line={"color": "#f59e0b", "width": 1.8, "dash": "dot"},
+            layer="above",
+        )
+        fig.add_annotation(
+            x=station,
+            y=1.03,
+            xref="x",
+            yref="paper",
+            text=label,
+            showarrow=False,
+            textangle=-90,
+            font={"size": 10, "color": "#b45309"},
+        )
+        plotted_labels.add(label)
+    if plotted_labels:
+        fig.update_layout(
+            title={
+                "text": "Shear Check — Strength ULS<br><sup>ACI 318-19 · Crossbeam V2 → Vu · sectional capacity with scope-guard markers</sup>",
+                "x": 0.5,
+                "xanchor": "center",
+            }
+        )
+    return fig
+
+
+def _render_crossbeam_uls_shear_workspace() -> None:
+    """Render on-demand ACI 318-19 prestressed Crossbeam shear station checks."""
+
+    st.markdown(_ANALYSIS_DASHBOARD_CSS, unsafe_allow_html=True)
+    st.markdown("### Crossbeam ULS Shear — station checks")
+    st.caption(
+        "Reads active row-coupled P/V2/T/M3 demands from Crossbeam Loads. V2 maps to Vu; "
+        "the Effective Prestress source is used only by the ACI prestressed shear resistance route and is not added to imported FEA demand."
+    )
+    with st.expander("Crossbeam ULS Shear scope / engineering assumptions", expanded=False):
+        st.markdown(
+            "- ACI 318-19 22.5.6.2 approximate prestressed Vc is used only when its Aps fse applicability gate is satisfied and the effective prestress is fully transferred to the concrete.\n"
+            "- Provided transverse reinforcement is checked for Vs, Av,min, spacing along the member, spacing across the width, and the 22.5.1.2 section limit.\n"
+            "- Exact Precast physical joints and stations inside applied Column / Support footprints are retained as REVIEW scope guards; beam-shear PASS is not issued there.\n"
+            "- Imported check stations remain Engineer-selected. ACI 9.4.3 support-face/critical-section conditions and post-tensioning anchorage/end zones require separate confirmation.\n"
+            "- Torsion and combined V+T are not calculated by ANALYSIS2. D-region, interface shear, anchorage, development, fatigue, and seismic detailing remain separate."
+        )
+
+    preparation = build_crossbeam_uls_shear_preparation(st.session_state)
+    demand_df = _crossbeam_uls_demand_dataframe(preparation)
+    cached = st.session_state.get(CROSSBEAM_ULS_SHEAR_RESULT_KEY)
+    cached_hash = str(st.session_state.get(CROSSBEAM_ULS_SHEAR_RESULT_HASH_KEY) or "")
+    cache_current = isinstance(cached, Mapping) and cached_hash == preparation.fingerprint
+
+    command_cols = st.columns([3.6, 1.25])
+    with command_cols[0]:
+        if preparation.ready:
+            st.success(
+                f"ULS Shear source ready — {len(preparation.demand_rows):,} imported row(s) expand to "
+                f"{len(preparation.rows):,} station/scope check(s)."
+            )
+        else:
+            st.error("ULS Shear source blocked — resolve the Loads, Section/Rebar, Tendon, Effective Prestress, or Column/Support source below.")
+    with command_cols[1]:
+        st.caption("Primary action")
+        run_clicked = st.button(
+            "Calculate Shear",
+            key="crossbeam_analysis2_calculate_shear",
+            type="primary" if preparation.ready else "secondary",
+            disabled=not preparation.ready,
+            use_container_width=True,
+            help="Runs only Crossbeam ULS Shear for the current station and source fingerprints.",
+        )
+
+    if run_clicked and preparation.ready:
+        with st.spinner("Calculating Crossbeam ULS shear capacities..."):
+            result = run_crossbeam_uls_shear(preparation)
+        st.session_state[CROSSBEAM_ULS_SHEAR_RESULT_KEY] = result
+        st.session_state[CROSSBEAM_ULS_SHEAR_RESULT_HASH_KEY] = preparation.fingerprint
+        st.session_state["analysis_status"] = str(result.get("status") or "REVIEW")
+        cached = result
+        cache_current = True
+
+    if preparation.errors:
+        with st.expander("Run blocking actions", expanded=True):
+            blocking_rows = []
+            for index, message in enumerate(preparation.errors, start=1):
+                action = _crossbeam_uls_blocking_action(message)
+                blocking_rows.append(
+                    {
+                        "Priority": index,
+                        "Where to Fix": action["Where to Fix"],
+                        "Issue": message,
+                        "Required Action": action["Recommended Action"],
+                    }
+                )
+            st.dataframe(pd.DataFrame(blocking_rows), use_container_width=True, hide_index=True)
+    if preparation.warnings:
+        with st.expander("Source warnings", expanded=False):
+            for message in preparation.warnings:
+                st.warning(message)
+
+    source_cards = [
+        {
+            "title": "ULS source",
+            "value": "READY" if preparation.ready else "SOURCE BLOCKED",
+            "detail": "Crossbeam Loads · canonical kN/kN-m",
+            "status": "ready" if preparation.ready else "danger",
+            "strong": True,
+        },
+        {
+            "title": "Station / scope checks",
+            "value": f"{len(preparation.rows):,}",
+            "detail": f"from {len(preparation.demand_rows):,} imported row(s)",
+            "status": "info",
+        },
+        {
+            "title": "Axis mapping",
+            "value": "V2 → Vu",
+            "detail": "signed source · |Vu| for resistance check",
+            "status": "neutral",
+        },
+        {
+            "title": "Code route",
+            "value": "ACI 318-19",
+            "detail": "prestressed Vc + provided Av/s",
+            "status": "info",
+        },
+    ]
+    _render_analysis_summary_strip(source_cards, columns=4)
+
+    if not cache_current:
+        if isinstance(cached, Mapping):
+            st.warning("Stored Crossbeam Shear result is STALE because station forces or mapped engineering sources changed.")
+        else:
+            st.markdown(_beam_uls_not_calculated_notice_html("Shear"), unsafe_allow_html=True)
+        with st.expander("ULS demand table — audit / source data", expanded=False):
+            st.dataframe(demand_df, use_container_width=True, hide_index=True)
+        return
+
+    result = dict(cached)
+    result_df = pd.DataFrame(list(result.get("rows") or []))
+    governing = result.get("governing_row") if isinstance(result.get("governing_row"), Mapping) else None
+    status = str(result.get("status") or "REVIEW")
+    status_style = "danger" if status == "FAIL" else ("ready" if status == "PASS" else "warning")
+    governing_dc = _beam_uls_float(governing.get("Governing D/C value")) if governing else float("nan")
+    governing_gate = "-"
+    if governing:
+        if str(governing.get("Location type") or "") in {"PHYSICAL SEGMENT JOINT", "COLUMN / SUPPORT D-REGION"}:
+            governing_gate = "SCOPE GUARD"
+        elif str(governing.get("Detailing status") or "") == "FAIL":
+            governing_gate = "DETAILING"
+        else:
+            governing_gate = "STRENGTH"
+    result_cards = [
+        {
+            "title": "Shear status",
+            "value": status,
+            "detail": "ACI 318-19 sectional shear review",
+            "status": status_style,
+            "strong": True,
+        },
+        {
+            "title": "Governing D/C",
+            "value": f"{governing_dc:.3f}" if math.isfinite(governing_dc) else "-",
+            "detail": "-" if governing is None else f"{governing.get('Case')} @ s={_format_beam_uls_x(governing.get('Station s (m)'))}",
+            "status": "info",
+        },
+        {
+            "title": "Governing gate",
+            "value": governing_gate,
+            "detail": "-" if governing is None else str(governing.get("Location type") or governing.get("Section ID") or "-"),
+            "status": "warning" if governing_gate == "SCOPE GUARD" else "info",
+        },
+        {
+            "title": "Station checks",
+            "value": f"{int(result.get('station_checks') or 0):,}",
+            "detail": "on-demand · cached by source fingerprint",
+            "status": "neutral",
+        },
+    ]
+    _render_analysis_summary_strip(result_cards, columns=4)
+
+    if governing and str(governing.get("Status") or "") == "REVIEW" and governing_gate == "SCOPE GUARD":
+        st.warning(str(governing.get("Notes") or "This governing station requires a separate engineering scope check."))
+
+    if not result_df.empty:
+        chart_df = _crossbeam_shear_chart_rows(result_df)
+        guard_df = result_df[
+            result_df.get("Location type", pd.Series(dtype=str)).astype(str).isin(
+                ["PHYSICAL SEGMENT JOINT", "COLUMN / SUPPORT D-REGION"]
+            )
+        ].copy()
+        _render_beam_uls_static_plotly_figure(
+            _make_crossbeam_uls_shear_figure(demand_df, chart_df, guard_df)
+        )
+        st.caption(
+            "The demand curve retains signed imported V2. Capacity traces show eligible sectional stations only; amber markers identify physical joints or support D-regions that cannot receive beam-shear PASS. "
+            "P, T, and M3 remain coupled to the same imported FEA row. Torsion interaction is not included in this milestone."
+        )
+        compact_columns = [
+            "Status", "Strength status", "Detailing status", "Station s (m)", "Check Point", "Case",
+            "Location type", "Section ID", "Rebar Zone", "Transverse Template", "V2 kN", "φVn kN",
+            "Strength D/C value", "Detailing D/C value", "Stirrup", "Av/s mm2/m", "Av/s required mm2/m",
+            "s max mm", "Spacing D/C",
+        ]
+        st.dataframe(
+            result_df[[column for column in compact_columns if column in result_df]],
+            use_container_width=True,
+            hide_index=True,
+        )
+        with st.expander("Calculation audit — ACI terms / all station rows", expanded=False):
+            audit_columns = [
+                "Status", "Station s (m)", "Case", "Section face", "Location type", "P kN", "V2 kN", "T kN-m", "M3 kN-m",
+                "bw mm", "h mm", "d raw mm", "d mm", "dp mm", "Tension face", "Bending direction",
+                "Aps mm2", "As tension mm2", "Aps fse kN", "Aps fpu kN", "As fy kN", "Prestress ratio",
+                "Vc(a) kN", "Vc(b) kN", "Vc(c) kN", "Vc lower kN", "Vc kN", "Vs kN", "φVn kN",
+                "Section limit D/C", "Av/s min D/C", "Across leg spacing mm", "Across s max mm", "Across spacing D/C",
+                "fyt input MPa", "fyt design MPa", "√f'c actual", "√f'c used for Vc", "Code basis", "Notes",
+            ]
+            st.dataframe(
+                result_df[[column for column in audit_columns if column in result_df]],
+                use_container_width=True,
+                hide_index=True,
+            )
+
+    with st.expander("Calculation warnings / limitations", expanded=False):
+        for message in list(result.get("errors") or []):
+            st.error(message)
+        for message in list(result.get("warnings") or []):
+            st.warning(message)
+        st.info(str(result.get("scope") or ""))
 
 
 def _crossbeam_transfer_demand_dataframe(preparation: object) -> pd.DataFrame:
@@ -21750,7 +22035,21 @@ def render_analysis_uls_pmm() -> None:
     st.subheader("ULS Strength")
     mode_settings = _analysis_mode_from_session()
     if is_portal_frame_crossbeam_workflow(mode_settings):
-        _render_crossbeam_uls_flexure_workspace()
+        selected_check_raw = st.radio(
+            "ULS check to calculate",
+            ["Flexure", "Shear"],
+            horizontal=True,
+            key="crossbeam_uls_lazy_check",
+            help=(
+                "The selected Crossbeam ULS check is not calculated until you press Calculate. "
+                "This matches the accepted Bridge/Beam lazy-calculation pattern and prevents hidden solver reruns."
+            ),
+        )
+        selected_check = str(selected_check_raw) if selected_check_raw in {"Flexure", "Shear"} else "Flexure"
+        if selected_check == "Shear":
+            _render_crossbeam_uls_shear_workspace()
+        else:
+            _render_crossbeam_uls_flexure_workspace()
         return
     if is_beam_girder_future_workflow(mode_settings) or is_building_beam_girder_workflow(mode_settings):
         _render_beam_girder_uls_workspace(mode_settings)
