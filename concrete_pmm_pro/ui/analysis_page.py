@@ -21160,16 +21160,23 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         and str(getattr(row, "requested_location_type", "") or "") == "ACI h/2 CRITICAL SECTION"
         for row in preparation.rows
     )
-    retained_joint_count = sum(
-        not bool(getattr(row, "generated_support_check", False))
+    physical_joint_review_count = sum(
+        str(getattr(row, "location_type", "") or "") == "PHYSICAL SEGMENT JOINT"
+        for row in preparation.rows
+    )
+    generated_support_joint_review_count = sum(
+        bool(getattr(row, "generated_support_check", False))
         and str(getattr(row, "location_type", "") or "") == "PHYSICAL SEGMENT JOINT"
         for row in preparation.rows
     )
-    regular_source_count = sum(
+    retained_source_count = len(preparation.rows) - generated_support_count
+    eligible_retained_count = sum(
         not bool(getattr(row, "generated_support_check", False))
         and str(getattr(row, "location_type", "") or "") != "PHYSICAL SEGMENT JOINT"
         for row in preparation.rows
     )
+    eligible_support_count = generated_support_count - generated_support_joint_review_count
+    eligible_sectional_count = len(preparation.rows) - physical_joint_review_count
     cached = st.session_state.get(CROSSBEAM_ULS_SHEAR_RESULT_KEY)
     cached_hash = str(st.session_state.get(CROSSBEAM_ULS_SHEAR_RESULT_HASH_KEY) or "")
     cache_current = isinstance(cached, Mapping) and cached_hash == preparation.fingerprint
@@ -21179,8 +21186,9 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         if preparation.ready:
             st.success(
                 f"ULS Shear source ready — {len(preparation.demand_rows):,} active station-force row(s) produce "
-                f"{regular_source_count:,} regular sectional row(s) + {generated_support_count:,} generated support row(s) + "
-                f"{retained_joint_count:,} physical-joint review row(s) = {len(preparation.rows):,} total check row(s)."
+                f"{retained_source_count:,} retained source row(s) + {generated_support_count:,} generated support row(s) "
+                f"= {len(preparation.rows):,} total check row(s); {eligible_sectional_count:,} eligible sectional check(s) "
+                f"and {physical_joint_review_count:,} physical-joint review location(s)."
             )
         else:
             st.error("ULS Shear source blocked — resolve the Loads, Section/Rebar, Tendon, Effective Prestress, or Column/Support source below.")
@@ -21234,23 +21242,20 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         {
             "title": "Total check rows",
             "value": f"{len(preparation.rows):,}",
-            "detail": (
-                f"{regular_source_count:,} regular + {generated_support_count:,} support + "
-                f"{retained_joint_count:,} joint review"
-            ),
+            "detail": f"{retained_source_count:,} retained source + {generated_support_count:,} generated support",
             "status": "info",
+        },
+        {
+            "title": "Eligible sectional checks",
+            "value": f"{eligible_sectional_count:,}",
+            "detail": f"{eligible_retained_count:,} retained + {eligible_support_count:,} support",
+            "status": "ready" if preparation.ready else "neutral",
         },
         {
             "title": "Generated support checks",
             "value": f"{generated_support_count:,}",
             "detail": f"{generated_face_count:,} Column Faces + {generated_h2_count:,} ACI h/2 sections",
             "status": "neutral",
-        },
-        {
-            "title": "Code route",
-            "value": "ACI 318-19",
-            "detail": "prestressed Vc + provided Av/s",
-            "status": "info",
         },
     ]
     _render_analysis_summary_strip(source_cards, columns=4)
@@ -21312,12 +21317,16 @@ def _render_crossbeam_uls_shear_workspace() -> None:
             "status": "danger" if sectional_status == "FAIL" else "info",
         },
         {
-            "title": "Physical joint check",
+            "title": "Physical joint review",
             "value": "REVIEW REQUIRED" if joint_review_count else "NOT APPLICABLE",
             "detail": (
-                f"{joint_review_count:,} joint location(s) outside sectional scope"
-                if joint_review_count
-                else "no Precast physical-joint review row"
+                f"{joint_review_count:,} generated support location(s) coincide with segment joints"
+                if joint_review_count and support_joint_reviews == joint_review_count
+                else (
+                    f"{joint_review_count:,} joint location(s) outside sectional scope"
+                    if joint_review_count
+                    else "no Precast physical-joint review location"
+                )
             ),
             "status": "warning" if joint_review_count else "neutral",
         },

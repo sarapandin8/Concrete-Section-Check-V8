@@ -613,10 +613,14 @@ def test_analysis2e_ui_copy_separates_counts_and_compacts_support_review() -> No
 
     assert '"title": "Sectional shear"' in workspace
     assert '"title": "Governing sectional D/C"' in workspace
-    assert '"title": "Physical joint check"' in workspace
+    assert '"title": "Physical joint review"' in workspace
     assert '"title": "Total check rows"' in workspace
+    assert '"title": "Eligible sectional checks"' in workspace
     assert '"title": "Generated support checks"' in workspace
     assert '"title": "Completed support checks"' in workspace
+    assert "physical-joint review row(s) =" not in workspace
+    assert "physical-joint review location(s)" in workspace
+    assert "retained source row(s) +" in workspace
     assert '"title": "Axis mapping"' not in workspace
     assert "Column Face / h/2 checks" in workspace
     assert '"Demand source": "Source"' in workspace
