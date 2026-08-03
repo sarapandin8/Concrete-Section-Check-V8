@@ -107,6 +107,7 @@ _ACI_VC_SQRT_FC_LIMIT_MPA_SQRT = 8.3
 _DEMAND_TOLERANCE_KN = 1.0e-9
 _MOMENT_TOLERANCE_KNM = 1.0e-9
 _SUPPORT_EXTRAPOLATION_LIMIT_RATIO = 0.25
+_JOINT_SIDE_EXTRAPOLATION_LIMIT_RATIO = 1.00
 
 
 @dataclass(frozen=True)
@@ -160,6 +161,9 @@ class PreparedCrossbeamShearRow:
     extrapolation_ratio: float | None = None
     generated_support_check: bool = False
     requested_location_type: str = ""
+    generated_joint_side_check: bool = False
+    joint_side: str = ""
+    joint_station_m: float | None = None
 
 
 @dataclass(frozen=True)
@@ -588,6 +592,208 @@ def _interpolate_support_demand(
     return derived, None, note
 
 
+
+def _recover_segment_side_demand(
+    *,
+    case_rows: list[dict[str, Any]],
+    target_m: float,
+    segment_start_m: float,
+    segment_end_m: float,
+    side: str,
+    tolerance: float,
+    station_label: str,
+) -> tuple[dict[str, Any] | None, str | None, str]:
+    """Recover a row-coupled one-sided demand at a physical segment joint.
+
+    Only rows strictly inside the requested adjacent segment are used.  The
+    routine never interpolates across the joint and applies the same 25%
+    limited-extrapolation rule used by support-face recovery.
+    """
+
+    side_key = str(side).strip().lower()
+    if side_key not in {"left", "right"}:
+        return None, f"invalid joint side {side!r}.", ""
+    lower_bound = min(float(segment_start_m), float(segment_end_m))
+    upper_bound = max(float(segment_start_m), float(segment_end_m))
+    eligible: list[dict[str, Any]] = []
+    exact_side_rows: list[dict[str, Any]] = []
+    for row in case_rows:
+        station = _finite_float(row.get("Station s (m)"), float("nan"))
+        if not math.isfinite(station):
+            continue
+        check_point = str(row.get("Check Point") or "").strip().lower()
+        if abs(station - target_m) <= tolerance:
+            if (side_key == "left" and ("left" in check_point or "s-" in check_point)) or (
+                side_key == "right" and ("right" in check_point or "s+" in check_point)
+            ):
+                exact_side_rows.append(row)
+            continue
+        if side_key == "left":
+            if lower_bound - tolerance <= station < target_m - tolerance:
+                eligible.append(row)
+        else:
+            if target_m + tolerance < station <= upper_bound + tolerance:
+                eligible.append(row)
+
+    if exact_side_rows:
+        selected, ambiguity = _rows_at_unique_station(
+            exact_side_rows, station_m=target_m, side=side_key, tolerance=tolerance
+        )
+        if ambiguity:
+            return None, ambiguity, ""
+        if selected is not None:
+            derived = dict(selected)
+            derived.update(
+                {
+                    "Station s (m)": target_m,
+                    "__Demand source": "EXACT ONE-SIDED",
+                    "__Source station 1 (m)": target_m,
+                    "__Source station 2 (m)": target_m,
+                    "__Source ratio": 0.0,
+                    "__Extrapolation ratio": 0.0,
+                }
+            )
+            return derived, None, f"Exact one-sided row at s = {target_m:.6f} m."
+
+    station_groups: dict[float, list[dict[str, Any]]] = {}
+    for row in eligible:
+        station = _finite_float(row.get("Station s (m)"), float("nan"))
+        station_groups.setdefault(round(station, 9), []).append(row)
+    unique_rows: list[dict[str, Any]] = []
+    for key in sorted(station_groups):
+        station = float(key)
+        selected, ambiguity = _rows_at_unique_station(
+            station_groups[key], station_m=station, side=side_key, tolerance=tolerance
+        )
+        if ambiguity:
+            return None, ambiguity, ""
+        if selected is not None:
+            unique_rows.append(selected)
+    if len(unique_rows) < 2:
+        return None, (
+            f"{station_label} at s = {target_m:.6f} m requires at least two active row-coupled "
+            f"station-force rows inside the adjacent {side_key} segment."
+        ), ""
+
+    if side_key == "left":
+        lo, hi = unique_rows[-2], unique_rows[-1]
+    else:
+        lo, hi = unique_rows[0], unique_rows[1]
+    x0 = _finite_float(lo.get("Station s (m)"), float("nan"))
+    x1 = _finite_float(hi.get("Station s (m)"), float("nan"))
+    if not math.isfinite(x0) or not math.isfinite(x1) or x1 <= x0 + tolerance:
+        return None, f"invalid one-sided source bracket for {station_label} at s = {target_m:.6f} m.", ""
+    ratio = (target_m - x0) / (x1 - x0)
+    nearest_distance = min(abs(target_m - x0), abs(target_m - x1))
+    extrapolation_ratio = nearest_distance / (x1 - x0)
+    if extrapolation_ratio > _JOINT_SIDE_EXTRAPOLATION_LIMIT_RATIO + 1.0e-12:
+        return None, (
+            f"{station_label} at s = {target_m:.6f} m needs one-sided extrapolation of "
+            f"{100.0 * extrapolation_ratio:.1f}% of source-row spacing, exceeding the "
+            f"{100.0 * _JOINT_SIDE_EXTRAPOLATION_LIMIT_RATIO:.0f}% physical-joint plotting limit."
+        ), ""
+    derived = {
+        "Active": True,
+        "Station s (m)": target_m,
+        "Case Name": str(lo.get("Case Name") or hi.get("Case Name") or "ULS"),
+        "P": _finite_float(lo.get("P")) + ratio * (_finite_float(hi.get("P")) - _finite_float(lo.get("P"))),
+        "V2": _finite_float(lo.get("V2")) + ratio * (_finite_float(hi.get("V2")) - _finite_float(lo.get("V2"))),
+        "T": _finite_float(lo.get("T")) + ratio * (_finite_float(hi.get("T")) - _finite_float(lo.get("T"))),
+        "M3": _finite_float(lo.get("M3")) + ratio * (_finite_float(hi.get("M3")) - _finite_float(lo.get("M3"))),
+        "__Demand source": "EXTRAPOLATED ONE-SIDED",
+        "__Source station 1 (m)": x0,
+        "__Source station 2 (m)": x1,
+        "__Source ratio": ratio,
+        "__Extrapolation ratio": extrapolation_ratio,
+    }
+    note = (
+        f"Row-coupled one-sided joint extrapolation from s = {x0:.6f} and {x1:.6f} m "
+        f"(r = {ratio:.6f}; extrapolation = {100.0 * extrapolation_ratio:.1f}% of spacing)."
+    )
+    return derived, None, note
+
+
+def _derived_physical_joint_side_demands(
+    *,
+    active_demands: list[dict[str, Any]],
+    segment_rows: list[dict[str, Any]],
+    member_length_m: float,
+) -> tuple[list[dict[str, Any]], list[str], list[str], list[float]]:
+    """Create left/right one-sided demand rows at every physical segment joint."""
+
+    tolerance = max(1.0e-7, member_length_m * 1.0e-9)
+    ordered_segments = sorted(
+        [
+            dict(row)
+            for row in segment_rows
+            if math.isfinite(_finite_float(row.get("s_start (m)", row.get("x_start_m")), float("nan")))
+            and math.isfinite(_finite_float(row.get("s_end (m)", row.get("x_end_m")), float("nan")))
+        ],
+        key=lambda row: _finite_float(row.get("s_start (m)", row.get("x_start_m")), float("inf")),
+    )
+    case_groups: dict[str, list[dict[str, Any]]] = {}
+    for row in active_demands:
+        case_groups.setdefault(str(row.get("Case Name") or "ULS"), []).append(row)
+    output: list[dict[str, Any]] = []
+    errors: list[str] = []
+    info: list[str] = []
+    joint_stations: list[float] = []
+    probe_offset = max(1.0e-5, member_length_m * 1.0e-7)
+    for index in range(len(ordered_segments) - 1):
+        left_segment = ordered_segments[index]
+        right_segment = ordered_segments[index + 1]
+        joint = _finite_float(left_segment.get("s_end (m)", left_segment.get("x_end_m")), float("nan"))
+        right_start = _finite_float(right_segment.get("s_start (m)", right_segment.get("x_start_m")), float("nan"))
+        if not math.isfinite(joint) or not math.isfinite(right_start) or abs(joint - right_start) > tolerance:
+            continue
+        if joint <= tolerance or joint >= member_length_m - tolerance:
+            continue
+        joint_stations.append(joint)
+        joint_id = f"J{index + 1}"
+        for case_name, case_rows in case_groups.items():
+            for side_key, segment, context_station, side_label in (
+                ("left", left_segment, max(0.0, joint - probe_offset), "L"),
+                ("right", right_segment, min(member_length_m, joint + probe_offset), "R"),
+            ):
+                segment_start = _finite_float(segment.get("s_start (m)", segment.get("x_start_m")), float("nan"))
+                segment_end = _finite_float(segment.get("s_end (m)", segment.get("x_end_m")), float("nan"))
+                source, error, note = _recover_segment_side_demand(
+                    case_rows=case_rows,
+                    target_m=joint,
+                    segment_start_m=segment_start,
+                    segment_end_m=segment_end,
+                    side=side_key,
+                    tolerance=tolerance,
+                    station_label=f"{joint_id}-{side_label} physical-joint side",
+                )
+                if error or source is None:
+                    errors.append(f"{case_name} · {joint_id}-{side_label}: {error}")
+                    continue
+                row = dict(source)
+                row.update(
+                    {
+                        "Active": True,
+                        "Station s (m)": joint,
+                        "Check Point": f"{joint_id}-{side_label}",
+                        "Case Name": case_name,
+                        "Note": note,
+                        "__Derived joint side check": True,
+                        "__Joint side": side_label,
+                        "__Joint station s (m)": joint,
+                        "__Location type": "PHYSICAL JOINT SIDE",
+                        "__Context station s (m)": context_station,
+                    }
+                )
+                output.append(row)
+    output.sort(
+        key=lambda row: (
+            str(row.get("Case Name") or ""),
+            _finite_float(row.get("Station s (m)")),
+            str(row.get("__Joint side") or ""),
+        )
+    )
+    return output, _dedupe(errors), _dedupe(info), sorted(set(round(value, 9) for value in joint_stations))
+
 def _support_side_section_depth(
     *,
     face_m: float,
@@ -882,12 +1088,24 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
     )
     errors.extend(support_errors)
     info.extend(support_info)
+    derived_joint_side_rows, joint_side_errors, joint_side_info, all_joint_stations = _derived_physical_joint_side_demands(
+        active_demands=active_demands,
+        segment_rows=segment_rows,
+        member_length_m=member_length_m,
+    )
+    warnings.extend(
+        f"Physical-joint one-sided plotting source unavailable: {message}"
+        for message in joint_side_errors
+    )
+    info.extend(joint_side_info)
     if errors:
         payload = {
             "schema": "crossbeam-analysis2c-support-check-source-blocked-v1",
             "contract": contract,
             "demands": demand_rows,
             "derived_support_rows": derived_support_rows,
+            "derived_joint_side_rows": derived_joint_side_rows,
+            "joint_stations_m": all_joint_stations,
             "support_footprints": support_footprints,
             "errors": _dedupe(errors),
         }
@@ -914,17 +1132,20 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
     }
     omitted_support_rows = 0
 
-    for demand in [*active_demands, *derived_support_rows]:
+    for demand in [*active_demands, *derived_support_rows, *derived_joint_side_rows]:
         station = _finite_float(demand.get("Station s (m)"), 0.0)
         case = str(demand.get("Case Name") or "ULS")
         check_point = str(demand.get("Check Point") or "")
         is_derived_support = bool(demand.get("__Derived support check"))
-        if not is_derived_support and (case, round(station, 9)) in derived_station_keys:
+        is_derived_joint_side = bool(demand.get("__Derived joint side check"))
+        if not is_derived_support and not is_derived_joint_side and (case, round(station, 9)) in derived_station_keys:
             continue
         location_override = str(demand.get("__Location type") or "").strip()
         context_station = _finite_float(demand.get("__Context station s (m)"), station)
-        at_joint = construction_method == CONSTRUCTION_METHOD_PRECAST and any(
-            abs(station - joint) <= tolerance for joint in joint_stations
+        at_joint = (
+            construction_method == CONSTRUCTION_METHOD_PRECAST
+            and not is_derived_joint_side
+            and any(abs(station - joint) <= tolerance for joint in joint_stations)
         )
         support_hits = [
             footprint
@@ -933,7 +1154,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
             <= station
             <= _finite_float(footprint.get("s_right (m)"), float("nan")) + tolerance
         ]
-        if support_hits and not is_derived_support:
+        if support_hits and not is_derived_support and not is_derived_joint_side:
             omitted_support_rows += 1
             continue
 
@@ -943,7 +1164,8 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
             definitions,
             length_m=member_length_m,
         )
-        contexts = _select_contexts(contexts, check_point=check_point, at_joint=at_joint)
+        context_check_point = "" if is_derived_joint_side else check_point
+        contexts = _select_contexts(contexts, check_point=context_check_point, at_joint=at_joint)
         if not contexts:
             errors.append(f"{case} at s = {station:.6f} m: no active Section ID is assigned.")
             continue
@@ -985,7 +1207,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
                 zones,
                 station_m=context_station,
                 segment_id=segment_id,
-                check_point=check_point,
+                check_point=context_check_point,
                 length_m=member_length_m,
             )
             if not zone_candidates:
@@ -993,7 +1215,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
                 continue
 
             tendon_groups, tendon_errors, tendon_warnings = _tendon_groups_at_station(
-                station_m=station,
+                station_m=context_station if is_derived_joint_side else station,
                 member_length_m=member_length_m,
                 geometry=geometry,
                 tendon_rows=tendon_rows,
@@ -1092,6 +1314,13 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
                         ),
                         generated_support_check=is_derived_support,
                         requested_location_type=location_override,
+                        generated_joint_side_check=is_derived_joint_side,
+                        joint_side=str(demand.get("__Joint side") or ""),
+                        joint_station_m=(
+                            _finite_float(demand.get("__Joint station s (m)"), float("nan"))
+                            if math.isfinite(_finite_float(demand.get("__Joint station s (m)"), float("nan")))
+                            else None
+                        ),
                     )
                 )
 
@@ -1541,6 +1770,9 @@ def _joint_result_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         "Extrapolation ratio": row.extrapolation_ratio,
         "Generated support check": row.generated_support_check,
         "Requested location type": row.requested_location_type,
+        "Generated joint side check": row.generated_joint_side_check,
+        "Joint side": row.joint_side,
+        "Joint station s (m)": row.joint_station_m,
         "Demand": f"{row.source_v2_kn:,.3f} kN",
         "Capacity": "Joint shear transfer not checked",
         "Utilization": "-",
@@ -1623,6 +1855,9 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
                 "Demand source": row.demand_source,
                 "Generated support check": row.generated_support_check,
                 "Requested location type": row.requested_location_type,
+                "Generated joint side check": row.generated_joint_side_check,
+                "Joint side": row.joint_side,
+                "Joint station s (m)": row.joint_station_m,
                 "Source station 1 (m)": row.source_station_1_m,
                 "Source station 2 (m)": row.source_station_2_m,
                 "Source ratio": row.source_ratio,
@@ -1693,6 +1928,8 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
         overall = "REVIEW"
     elif "FAIL" in statuses:
         overall = "FAIL"
+    elif any(bool(item.get("Generated joint side check")) for item in result_rows):
+        overall = "REVIEW"
     elif statuses == {"PASS"}:
         overall = "PASS"
     else:
@@ -1715,6 +1952,14 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
         item for item in result_rows
         if str(item.get("Location type") or "") == "PHYSICAL SEGMENT JOINT"
     ]
+    joint_side_rows = [item for item in result_rows if bool(item.get("Generated joint side check"))]
+    joint_review_stations = sorted(
+        {
+            round(_finite_float(item.get("Joint station s (m)"), float("nan")), 9)
+            for item in joint_side_rows
+            if math.isfinite(_finite_float(item.get("Joint station s (m)"), float("nan")))
+        }
+    )
     sectional_statuses = {str(item.get("Status") or "REVIEW") for item in sectional_rows}
     if errors or not sectional_rows:
         sectional_status = "REVIEW"
@@ -1735,7 +1980,8 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
         and str(item.get("Location type") or "") == "PHYSICAL SEGMENT JOINT"
         for item in result_rows
     )
-    retained_regular_checks = len(result_rows) - generated_support_checks
+    generated_joint_side_checks = len(joint_side_rows)
+    retained_regular_checks = len(result_rows) - generated_support_checks - generated_joint_side_checks
     return {
         "schema": "crossbeam-analysis2d-sectional-result-joint-review-v1",
         "input_fingerprint": preparation.fingerprint,
@@ -1745,7 +1991,10 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
         "governing_row": governing,
         "sectional_governing_row": sectional_governing,
         "joint_review_rows": joint_rows,
-        "joint_review_count": len(joint_rows),
+        "joint_side_rows": joint_side_rows,
+        "joint_review_count": len(joint_review_stations) if joint_review_stations else len(joint_rows),
+        "joint_review_stations_m": joint_review_stations,
+        "generated_joint_side_checks": generated_joint_side_checks,
         "warnings": _dedupe(warnings),
         "errors": _dedupe(errors),
         "station_checks": len(preparation.rows),

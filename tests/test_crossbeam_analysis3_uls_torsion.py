@@ -73,7 +73,7 @@ def test_torsion_preparation_reuses_accepted_station_and_support_contract() -> N
 
     assert preparation.ready, preparation.errors
     assert len(preparation.derived_support_rows) == 6
-    assert len(preparation.rows) == 13
+    assert len(preparation.rows) == 15
     assert sum(row.generated_support_check for row in preparation.rows) == 6
     assert any(row.location_type == "PHYSICAL SEGMENT JOINT" for row in preparation.rows)
     rebuilt = build_crossbeam_uls_torsion_preparation(state)
@@ -158,7 +158,7 @@ def test_below_threshold_route_does_not_require_a_closed_torsion_cage() -> None:
 
     result = run_crossbeam_uls_torsion(build_crossbeam_uls_torsion_preparation(state))
 
-    assert result["status"] == "BELOW THRESHOLD"
+    assert result["status"] == "REVIEW"
     assert result["sectional_status"] == "BELOW THRESHOLD"
     assert result["combined_review_required"] is False
     assert all(row["Status"] == "BELOW THRESHOLD" for row in result["rows"])
@@ -223,7 +223,7 @@ def test_physical_joint_review_is_separate_from_sectional_torsion_result() -> No
 
     assert result["sectional_status"] == "PASS"
     assert result["status"] == "REVIEW"
-    assert result["joint_review_count"] == 1
+    assert result["joint_review_count"] == 2
     joint = next(row for row in result["rows"] if row["Location type"] == "PHYSICAL SEGMENT JOINT")
     assert joint["Status"] == "REVIEW"
     assert joint["Detailing status"] == "NOT CHECKED"

@@ -29,7 +29,7 @@ requirements, and warping torsion remain separate.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import math
@@ -477,6 +477,9 @@ def _physical_joint_result(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         "Demand source": row.demand_source,
         "Generated support check": row.generated_support_check,
         "Requested location type": row.requested_location_type,
+        "Generated joint side check": row.generated_joint_side_check,
+        "Joint side": row.joint_side,
+        "Joint station s (m)": row.joint_station_m,
         "Source station 1 (m)": row.source_station_1_m,
         "Source station 2 (m)": row.source_station_2_m,
         "Source ratio": row.source_ratio,
@@ -502,6 +505,8 @@ def _base_result_fields(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         "Check Point": row.check_point,
         "Case": row.case_name,
         "Location type": row.location_type,
+        "Section face": row.section_face,
+        "Segment": row.segment_id,
         "Section ID": row.section_id,
         "Rebar Zone": row.rebar_zone_id,
         "Transverse Template": row.transverse_template_id,
@@ -512,6 +517,9 @@ def _base_result_fields(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         "Demand source": row.demand_source,
         "Generated support check": row.generated_support_check,
         "Requested location type": row.requested_location_type,
+        "Generated joint side check": row.generated_joint_side_check,
+        "Joint side": row.joint_side,
+        "Joint station s (m)": row.joint_station_m,
         "Source station 1 (m)": row.source_station_1_m,
         "Source station 2 (m)": row.source_station_2_m,
         "Source ratio": row.source_ratio,
@@ -574,9 +582,20 @@ def _below_threshold_result(
     tu_nmm = abs(float(row.source_t_knm)) * 1.0e6
     phi_tth = float(context["phiTth_Nmm"])
     threshold_dc = tu_nmm / phi_tth if phi_tth > 0.0 else float("nan")
+    informational_phi_tn = float("nan")
+    informational_tn_transverse = float("nan")
+    informational_tn_longitudinal = float("nan")
+    try:
+        probe_demand_knm = max(phi_tth / 1.0e6 * 1.01, abs(float(row.source_t_knm)), 1.0e-6)
+        probe_result = _torsion_result_for_row(replace(row, source_t_knm=probe_demand_knm))
+        informational_phi_tn = _finite(probe_result.get("phiTn kN-m"), float("nan"))
+        informational_tn_transverse = _finite(probe_result.get("Tn transverse kN-m"), float("nan"))
+        informational_tn_longitudinal = _finite(probe_result.get("Tn longitudinal kN-m"), float("nan"))
+    except Exception:
+        pass
     note = (
         "Tu < phi*Tth; ACI 318-19 22.7.1.1 permits torsional effects to be neglected at this station. "
-        "No closed-cage, At/s, or Al credit is required by this threshold route."
+        "Any reported phi*Tn is informational capacity of the provided cage/Outer-Al and does not change the threshold decision."
     )
     return {
         **_base_result_fields(row),
@@ -587,9 +606,9 @@ def _below_threshold_result(
         "Longitudinal status": "NOT REQUIRED",
         "Detailing status": "NOT REQUIRED",
         "Section limit status": "NOT REQUIRED",
-        "phiTn kN-m": float("nan"),
-        "Tn transverse kN-m": float("nan"),
-        "Tn longitudinal kN-m": float("nan"),
+        "phiTn kN-m": informational_phi_tn,
+        "Tn transverse kN-m": informational_tn_transverse,
+        "Tn longitudinal kN-m": informational_tn_longitudinal,
         "phiTth kN-m": phi_tth / 1.0e6,
         "phiTcr kN-m": float(context["phiTcr_Nmm"]) / 1.0e6,
         "Threshold D/C value": threshold_dc,
@@ -946,6 +965,14 @@ def run_crossbeam_uls_torsion(preparation: CrossbeamTorsionPreparation) -> dict[
 
     sectional_rows = [row for row in rows if str(row.get("Location type")) != "PHYSICAL SEGMENT JOINT"]
     joint_rows = [row for row in rows if str(row.get("Location type")) == "PHYSICAL SEGMENT JOINT"]
+    joint_side_rows = [row for row in rows if bool(row.get("Generated joint side check"))]
+    joint_review_stations = sorted(
+        {
+            round(_finite(row.get("Joint station s (m)"), float("nan")), 9)
+            for row in joint_side_rows
+            if math.isfinite(_finite(row.get("Joint station s (m)"), float("nan")))
+        }
+    )
     design_rows = [row for row in sectional_rows if str(row.get("Threshold status")) == "DESIGN REQUIRED"]
     below_rows = [row for row in sectional_rows if str(row.get("Threshold status")) == "BELOW THRESHOLD"]
     generated_support = [row for row in rows if bool(row.get("Generated support check"))]
@@ -967,7 +994,7 @@ def run_crossbeam_uls_torsion(preparation: CrossbeamTorsionPreparation) -> dict[
     combined_review_required = bool(design_rows)
     if sectional_status == "FAIL":
         overall_status = "FAIL"
-    elif errors or joint_rows or sectional_status == "REVIEW" or combined_review_required:
+    elif errors or joint_rows or joint_review_stations or sectional_status == "REVIEW" or combined_review_required:
         overall_status = "REVIEW"
     else:
         overall_status = sectional_status
@@ -982,7 +1009,10 @@ def run_crossbeam_uls_torsion(preparation: CrossbeamTorsionPreparation) -> dict[
         "sectional_checks": len(sectional_rows),
         "design_required_checks": len(design_rows),
         "below_threshold_checks": len(below_rows),
-        "joint_review_count": len(joint_rows),
+        "joint_review_count": len(joint_review_stations) if joint_review_stations else len(joint_rows),
+        "joint_review_stations_m": joint_review_stations,
+        "joint_side_rows": joint_side_rows,
+        "generated_joint_side_checks": len(joint_side_rows),
         "generated_support_checks": len(generated_support),
         "support_checks": len(support_sectional),
         "support_joint_reviews": len(support_joint_reviews),

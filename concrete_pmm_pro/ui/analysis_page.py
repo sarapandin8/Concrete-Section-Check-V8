@@ -19,6 +19,8 @@ from shapely.geometry import LineString
 
 from concrete_pmm_pro.analysis.capacity_check import DemandCapacitySummary, check_uls_demands_against_rc_pmm
 from concrete_pmm_pro.analysis.crossbeam_uls import (
+    CROSSBEAM_LENGTH_KEY,
+    CROSSBEAM_SEGMENT_ROWS_KEY,
     CROSSBEAM_ULS_RESULT_HASH_KEY,
     CROSSBEAM_ULS_RESULT_KEY,
     build_crossbeam_uls_flexure_preparation,
@@ -20979,26 +20981,176 @@ def _crossbeam_break_trace_over_supports(trace: go.Scatter, support_footprints: 
     trace.y = output_y
 
 
+
+def _crossbeam_segment_records(segment_rows: Any) -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    if isinstance(segment_rows, pd.DataFrame):
+        raw = segment_rows.to_dict(orient="records")
+    elif isinstance(segment_rows, (list, tuple)):
+        raw = [dict(item) for item in segment_rows if isinstance(item, Mapping)]
+    else:
+        raw = []
+    for item in raw:
+        start = _beam_uls_float(item.get("s_start (m)", item.get("x_start_m")))
+        end = _beam_uls_float(item.get("s_end (m)", item.get("x_end_m")))
+        if not math.isfinite(start) or not math.isfinite(end) or end <= start:
+            continue
+        records.append(
+            {
+                "Segment": str(item.get("Segment") or ""),
+                "Section ID": str(item.get("Section ID") or ""),
+                "start": start,
+                "end": end,
+            }
+        )
+    return sorted(records, key=lambda item: float(item["start"]))
+
+
+def _crossbeam_joint_stations_from_segments(segment_rows: Any) -> list[float]:
+    records = _crossbeam_segment_records(segment_rows)
+    stations: list[float] = []
+    for left, right in zip(records[:-1], records[1:]):
+        station = float(left["end"])
+        if abs(station - float(right["start"])) <= 1.0e-7:
+            stations.append(station)
+    return stations
+
+
+def _crossbeam_visible_intervals(
+    start: float,
+    end: float,
+    support_footprints: list[dict[str, object]],
+    *,
+    tolerance: float = 1.0e-9,
+) -> list[tuple[float, float]]:
+    intervals = [(float(start), float(end))]
+    for footprint in support_footprints:
+        left = _beam_uls_float(footprint.get("s_left (m)"))
+        right = _beam_uls_float(footprint.get("s_right (m)"))
+        if not math.isfinite(left) or not math.isfinite(right) or right <= left:
+            continue
+        next_intervals: list[tuple[float, float]] = []
+        for a, b in intervals:
+            if right <= a + tolerance or left >= b - tolerance:
+                next_intervals.append((a, b))
+                continue
+            if left > a + tolerance:
+                next_intervals.append((a, min(left, b)))
+            if right < b - tolerance:
+                next_intervals.append((max(right, a), b))
+        intervals = next_intervals
+    return [(a, b) for a, b in intervals if b > a + tolerance]
+
+
+def _crossbeam_joint_side_rows(result_df: pd.DataFrame) -> pd.DataFrame:
+    if result_df.empty or "Generated joint side check" not in result_df:
+        return pd.DataFrame()
+    mask = result_df["Generated joint side check"].fillna(False).astype(bool)
+    return result_df[mask].copy()
+
+
+def _crossbeam_plot_station_with_side_offset(
+    station: float,
+    side: str,
+    member_length_m: float,
+) -> float:
+    offset = max(0.003, 0.0008 * max(float(member_length_m), 1.0))
+    return float(station) - offset if str(side).upper() == "L" else float(station) + offset
+
+def _add_crossbeam_joint_side_capacity_markers(
+    fig: go.Figure,
+    joint_side_df: pd.DataFrame,
+    *,
+    member_length_m: float,
+    capacity_specs: list[tuple[str, str, str, str]],
+    unit: str,
+) -> None:
+    """Plot actual left/right capacity values at every physical joint.
+
+    The x positions are offset slightly only for legibility; hover retains the
+    exact joint station and one-sided source. Positive and negative capacities
+    are both shown without a connecting line, so the plot never implies that
+    transfer through the physical joint has been verified.
+    """
+
+    if joint_side_df.empty:
+        return
+    exact_station = pd.to_numeric(joint_side_df.get("Joint station s (m)"), errors="coerce")
+    side = joint_side_df.get("Joint side", pd.Series("", index=joint_side_df.index)).astype(str)
+    section_id = joint_side_df.get("Section ID", pd.Series("", index=joint_side_df.index)).astype(str)
+    segment_id = joint_side_df.get("Segment", pd.Series("", index=joint_side_df.index)).astype(str)
+    x_plot = [
+        _crossbeam_plot_station_with_side_offset(float(x), side_value, member_length_m)
+        if math.isfinite(float(x)) else float("nan")
+        for x, side_value in zip(exact_station.fillna(float("nan")), side)
+    ]
+    for column, label, color, symbol in capacity_specs:
+        values = pd.to_numeric(joint_side_df.get(column), errors="coerce")
+        x_values: list[float] = []
+        y_values: list[float] = []
+        custom: list[list[object]] = []
+        for x, exact, side_value, segment, section, value in zip(
+            x_plot, exact_station.fillna(float("nan")), side, segment_id, section_id, values.fillna(float("nan"))
+        ):
+            if not math.isfinite(float(x)) or not math.isfinite(float(value)):
+                continue
+            for sign in (1.0, -1.0):
+                x_values.append(float(x))
+                y_values.append(sign * float(value))
+                custom.append([float(exact), side_value, segment, section, sign])
+        if not x_values:
+            continue
+        fig.add_trace(
+            go.Scatter(
+                x=x_values,
+                y=y_values,
+                mode="markers",
+                name=label,
+                legendgroup=f"crossbeam_{column}_joint_side",
+                showlegend=False,
+                marker={
+                    "size": 7,
+                    "symbol": symbol,
+                    "color": color,
+                    "line": {"width": 1.4, "color": color},
+                },
+                customdata=custom,
+                hovertemplate=(
+                    "joint=%{customdata[0]:.3f} m · side %{customdata[1]}"
+                    "<br>Segment=%{customdata[2]} · Section=%{customdata[3]}"
+                    f"<br>{label.replace('Joint-side ', '')}=%{{y:.3f}} {unit}<extra></extra>"
+                ),
+            )
+        )
+
+
 def _make_crossbeam_uls_shear_figure(
     demand_df: pd.DataFrame,
     capacity_df: pd.DataFrame,
     guard_df: pd.DataFrame,
     support_check_df: pd.DataFrame,
     support_footprints: list[dict[str, object]],
+    segment_rows: Any = None,
 ) -> go.Figure:
-    """Render conservative Column Face + h/2 shear checks without support-region lines."""
+    """Render station-dependent shear capacity without crossing physical joints."""
 
     fig = _make_beam_uls_shear_capacity_figure(
         demand_df,
-        capacity_df,
+        _crossbeam_shear_chart_rows(capacity_df),
         code_label="ACI 318-19 · Crossbeam V2 → Vu",
     )
-
-    positive_vc_traces: list[go.Scatter] = []
-    shown_vn = False
-    shown_vc = False
+    # Keep the accepted demand/max/governing traces, but rebuild every capacity
+    # trace from segment-owned rows so no line can interpolate across a physical
+    # joint or a Solid/Hollow property boundary.
+    segments = _crossbeam_segment_records(segment_rows)
+    retained: list[go.BaseTraceType] = []
+    fallback_positive_vc: list[go.Scatter] = []
+    shown_vn_fallback = False
+    shown_vc_fallback = False
     for trace in list(fig.data):
         name = str(getattr(trace, "name", "") or "")
+        if name in {"φVn", "-φVn", "φVc"} and segments:
+            continue
         if name.startswith("Demand Vuy"):
             trace.name = name.replace("Demand Vuy", "Demand Vu", 1)
         elif name == "Governing demand":
@@ -21007,34 +21159,117 @@ def _make_crossbeam_uls_shear_figure(
                 trace.text = ["Max |Vu|" for _ in list(trace.text)]
         elif name == "Governing shear check":
             trace.name = "Gov. shear D/C"
-        elif name == "φVn":
+        elif not segments and name == "φVn":
             trace.name = "±φVn"
             trace.legendgroup = "crossbeam_phi_vn"
-            trace.showlegend = not shown_vn
-            shown_vn = True
-        elif name == "-φVn":
+            trace.showlegend = not shown_vn_fallback
+            shown_vn_fallback = True
+        elif not segments and name == "-φVn":
             trace.name = "±φVn"
             trace.legendgroup = "crossbeam_phi_vn"
             trace.showlegend = False
-        elif name == "φVc":
+        elif not segments and name == "φVc":
             trace.name = "±φVc"
             trace.legendgroup = "crossbeam_phi_vc"
-            trace.showlegend = not shown_vc
-            shown_vc = True
-            positive_vc_traces.append(trace)
+            trace.showlegend = not shown_vc_fallback
+            shown_vc_fallback = True
+            fallback_positive_vc.append(trace)
+        retained.append(trace)
+    fig.data = tuple(retained)
+    if not segments:
+        for trace in fallback_positive_vc:
+            fig.add_trace(go.Scatter(
+                x=list(trace.x),
+                y=[-float(value) if value is not None and math.isfinite(float(value)) else None for value in list(trace.y)],
+                mode="lines",
+                name="±φVc",
+                legendgroup="crossbeam_phi_vc",
+                showlegend=False,
+                line=dict(_BEAM_ULS_REFERENCE_LINE_STYLE),
+                hovertemplate="x=%{x:.3f} m<br>-φVc=%{y:.3f} kN<extra></extra>",
+            ))
 
-    for trace in positive_vc_traces:
-        negative = go.Scatter(
-            x=list(trace.x),
-            y=[-float(value) if value is not None and math.isfinite(float(value)) else None for value in list(trace.y)],
-            mode="lines",
-            name="±φVc",
-            legendgroup="crossbeam_phi_vc",
-            showlegend=False,
-            line=dict(_BEAM_ULS_REFERENCE_LINE_STYLE),
-            hovertemplate="x=%{x:.3f} m<br>-φVc=%{y:.3f} kN<extra></extra>",
-        )
-        fig.add_trace(negative)
+    member_length_m = max([float(item["end"]) for item in segments], default=0.0)
+    shown_vn = False
+    shown_vc = False
+    if segments and not capacity_df.empty:
+        source = capacity_df.copy()
+        source["__station"] = pd.to_numeric(source.get("Station s (m)"), errors="coerce")
+        source["__phi_vn"] = pd.to_numeric(source.get("φVn kN"), errors="coerce")
+        source["__phi_vc"] = pd.to_numeric(source.get("φVc kN"), errors="coerce")
+        source["__joint_side"] = source.get("Joint side", pd.Series("", index=source.index)).astype(str)
+        for case_name, case_df in source.groupby(source.get("Case", pd.Series("ULS", index=source.index)).astype(str), sort=False):
+            for segment in segments:
+                segment_id = str(segment["Segment"])
+                start_m = float(segment["start"])
+                end_m = float(segment["end"])
+                rows = case_df[case_df.get("Segment", pd.Series("", index=case_df.index)).astype(str) == segment_id].copy()
+                rows = rows[rows["__station"].notna()].copy()
+                if rows.empty:
+                    continue
+                # Keep one conservative row per station inside this segment.
+                chosen: list[pd.Series] = []
+                for _, group in rows.groupby("__station", sort=True):
+                    finite = group[group["__phi_vn"].notna()]
+                    chosen.append(finite.loc[finite["__phi_vn"].idxmin()] if not finite.empty else group.iloc[0])
+                rows = pd.DataFrame(chosen).sort_values("__station", kind="stable")
+                x_values: list[float] = []
+                vn_values: list[float] = []
+                vc_values: list[float] = []
+                for _, row in rows.iterrows():
+                    station = float(row["__station"])
+                    if bool(row.get("Generated joint side check", False)):
+                        station = _crossbeam_plot_station_with_side_offset(
+                            station,
+                            str(row.get("Joint side") or ""),
+                            member_length_m,
+                        )
+                    x_values.append(station)
+                    vn_values.append(_beam_uls_float(row.get("φVn kN")))
+                    vc_values.append(_beam_uls_float(row.get("φVc kN")))
+                for values, label, group_name, line_style in (
+                    (vn_values, "±φVn", "crossbeam_phi_vn", dict(_BEAM_ULS_CHECK_LINE_STYLE)),
+                    (vc_values, "±φVc", "crossbeam_phi_vc", dict(_BEAM_ULS_REFERENCE_LINE_STYLE)),
+                ):
+                    finite_pairs = [
+                        (x, y) for x, y in zip(x_values, values)
+                        if math.isfinite(float(x)) and math.isfinite(float(y))
+                    ]
+                    if not finite_pairs:
+                        continue
+                    x_plot = [item[0] for item in finite_pairs]
+                    y_plot = [item[1] for item in finite_pairs]
+                    show = not shown_vn if label == "±φVn" else not shown_vc
+                    positive = go.Scatter(
+                        x=x_plot,
+                        y=y_plot,
+                        mode="lines+markers",
+                        name=label,
+                        legendgroup=group_name,
+                        showlegend=show,
+                        line=line_style,
+                        marker={"size": 4},
+                        hovertemplate=f"{segment_id}<br>x=%{{x:.3f}} m<br>{label.replace('±','')}=%{{y:.3f}} kN<extra></extra>",
+                    )
+                    negative = go.Scatter(
+                        x=x_plot,
+                        y=[-float(value) for value in y_plot],
+                        mode="lines+markers",
+                        name=label,
+                        legendgroup=group_name,
+                        showlegend=False,
+                        line=line_style,
+                        marker={"size": 4},
+                        hovertemplate=f"{segment_id}<br>x=%{{x:.3f}} m<br>-{label.replace('±','')}=%{{y:.3f}} kN<extra></extra>",
+                    )
+                    _crossbeam_break_trace_over_supports(positive, support_footprints)
+                    _crossbeam_break_trace_over_supports(negative, support_footprints)
+                    fig.add_trace(positive)
+                    fig.add_trace(negative)
+                    if label == "±φVn":
+                        shown_vn = True
+                    else:
+                        shown_vc = True
 
     for footprint in support_footprints:
         left = _beam_uls_float(footprint.get("s_left (m)"))
@@ -21042,95 +21277,97 @@ def _make_crossbeam_uls_shear_figure(
         support_id = str(footprint.get("Column") or "Support")
         if not math.isfinite(left) or not math.isfinite(right) or right <= left:
             continue
-        fig.add_vrect(
-            x0=left,
-            x1=right,
-            fillcolor="rgba(100, 116, 139, 0.10)",
-            line_width=0,
-            layer="below",
-        )
+        fig.add_vrect(x0=left, x1=right, fillcolor="rgba(100, 116, 139, 0.10)", line_width=0, layer="below")
         for face, side_label in ((left, "L"), (right, "R")):
-            fig.add_vline(
-                x=face,
-                line={"color": "rgba(71, 85, 105, 0.70)", "width": 1.1, "dash": "solid"},
-                layer="above",
-            )
-            fig.add_annotation(
-                x=face,
-                y=1.015,
-                xref="x",
-                yref="paper",
-                text=f"{support_id}-{side_label}",
-                showarrow=False,
-                font={"size": 9, "color": "#475569"},
-            )
+            fig.add_vline(x=face, line={"color": "rgba(71, 85, 105, 0.70)", "width": 1.1}, layer="above")
+            fig.add_annotation(x=face, y=1.015, xref="x", yref="paper", text=f"{support_id}-{side_label}", showarrow=False, font={"size": 9, "color": "#475569"})
 
     if not support_check_df.empty:
-        face_rows = support_check_df[support_check_df["Location type"].astype(str) == "COLUMN FACE"].copy()
-        h2_rows = support_check_df[support_check_df["Location type"].astype(str) == "ACI h/2 CRITICAL SECTION"].copy()
-        for dataframe, name, symbol in (
-            (face_rows, "Column Face check", "circle-open"),
-            (h2_rows, "ACI h/2 check", "diamond-open"),
+        for location, name, symbol in (
+            ("COLUMN FACE", "Column Face check", "circle-open"),
+            ("ACI h/2 CRITICAL SECTION", "ACI h/2 check", "diamond-open"),
         ):
-            if dataframe.empty:
-                continue
+            dataframe = support_check_df[support_check_df["Location type"].astype(str) == location].copy()
             x = pd.to_numeric(dataframe.get("Station s (m)"), errors="coerce")
             y = pd.to_numeric(dataframe.get("V2 kN"), errors="coerce")
             valid = x.notna() & y.notna()
-            if not valid.any():
-                continue
-            fig.add_trace(
-                go.Scatter(
-                    x=x[valid],
-                    y=y[valid],
-                    mode="markers",
-                    name=name,
-                    marker={"size": 9, "symbol": symbol, "line": {"width": 1.5}},
-                    hovertemplate="x=%{x:.3f} m<br>Vu=%{y:.3f} kN<extra></extra>",
-                )
-            )
-        for _, source in h2_rows.iterrows():
-            station = _analysis_float_or_zero(source.get("Station s (m)"))
-            fig.add_vline(
-                x=station,
-                line={"color": "rgba(59, 130, 246, 0.45)", "width": 1.0, "dash": "dot"},
-                layer="below",
-            )
+            if valid.any():
+                fig.add_trace(go.Scatter(x=x[valid], y=y[valid], mode="markers", name=name, marker={"size": 9, "symbol": symbol, "line": {"width": 1.5}}, hovertemplate="x=%{x:.3f} m<br>Vu=%{y:.3f} kN<extra></extra>"))
+            if location == "ACI h/2 CRITICAL SECTION":
+                for station in x.dropna().astype(float):
+                    fig.add_vline(x=station, line={"color": "rgba(59, 130, 246, 0.45)", "width": 1.0, "dash": "dot"}, layer="below")
 
+    joint_side_df = _crossbeam_joint_side_rows(capacity_df)
+    joint_stations = _crossbeam_joint_stations_from_segments(segment_rows)
+    if not joint_stations and not guard_df.empty:
+        joint_stations = sorted(
+            set(
+                pd.to_numeric(guard_df.get("Station s (m)"), errors="coerce")
+                .dropna()
+                .astype(float)
+                .tolist()
+            )
+        )
+    if not joint_side_df.empty:
+        x_actual = pd.to_numeric(joint_side_df.get("Joint station s (m)"), errors="coerce")
+        y_demand = pd.to_numeric(joint_side_df.get("V2 kN"), errors="coerce")
+        side = joint_side_df.get("Joint side", pd.Series("", index=joint_side_df.index)).astype(str)
+        x_plot = [
+            _crossbeam_plot_station_with_side_offset(float(x), s, member_length_m)
+            if math.isfinite(float(x)) else float("nan")
+            for x, s in zip(x_actual.fillna(float("nan")), side)
+        ]
+        valid = [math.isfinite(x) and math.isfinite(float(y)) for x, y in zip(x_plot, y_demand.fillna(float("nan")))]
+        fig.add_trace(go.Scatter(
+            x=[x for x, keep in zip(x_plot, valid) if keep],
+            y=[float(y) for y, keep in zip(y_demand.fillna(float("nan")), valid) if keep],
+            mode="markers",
+            name="Joint s−/s+ demand",
+            marker={"size": 7, "symbol": ["triangle-left-open" if s.upper() == "L" else "triangle-right-open" for s, keep in zip(side, valid) if keep]},
+            customdata=[[float(x), s] for x, s, keep in zip(x_actual.fillna(float("nan")), side, valid) if keep],
+            hovertemplate="joint=%{customdata[0]:.3f} m · side %{customdata[1]}<br>Vu=%{y:.3f} kN<extra></extra>",
+        ))
+        _add_crossbeam_joint_side_capacity_markers(
+            fig,
+            joint_side_df,
+            member_length_m=member_length_m,
+            capacity_specs=[
+                ("φVn kN", "Joint-side φVn", str(_BEAM_ULS_CHECK_LINE_STYLE["color"]), "square-open"),
+                ("φVc kN", "Joint-side φVc", str(_BEAM_ULS_REFERENCE_LINE_STYLE["color"]), "circle-open"),
+            ],
+            unit="kN",
+        )
+
+    # Break all demand lines at every physical joint, not only at a station that
+    # happened to be imported or generated by another check.
     for trace in fig.data:
         _crossbeam_break_trace_over_supports(trace, support_footprints)
+        _crossbeam_break_trace_over_stations(trace, joint_stations)
 
-    if not guard_df.empty:
-        joint_x = pd.to_numeric(guard_df.get("Station s (m)"), errors="coerce")
-        joint_y = pd.to_numeric(guard_df.get("V2 kN"), errors="coerce")
-        valid_joint = joint_x.notna() & joint_y.notna()
-        if valid_joint.any():
-            fig.add_trace(
-                go.Scatter(
-                    x=joint_x[valid_joint],
-                    y=joint_y[valid_joint],
-                    mode="markers",
-                    name="Physical joint — REVIEW",
-                    marker={"size": 9, "symbol": "x-open", "color": "#f59e0b", "line": {"width": 1.5}},
-                    hovertemplate="x=%{x:.3f} m<br>Vu=%{y:.3f} kN<br>Physical-joint transfer: REVIEW<extra></extra>",
-                )
-            )
-        for station in joint_x.dropna().astype(float):
-            fig.add_vline(
-                x=station,
-                line={"color": "#f59e0b", "width": 1.2, "dash": "dot"},
-                layer="above",
-            )
+    if joint_stations:
+        for index, station in enumerate(joint_stations, start=1):
+            side_rows = joint_side_df[
+                (pd.to_numeric(joint_side_df.get("Joint station s (m)"), errors="coerce") - station).abs() <= 1.0e-7
+            ] if not joint_side_df.empty else pd.DataFrame()
+            demand_values = pd.to_numeric(side_rows.get("V2 kN"), errors="coerce").dropna() if not side_rows.empty else pd.Series(dtype=float)
+            if not demand_values.empty:
+                y_marker = float(demand_values.mean())
+            elif not guard_df.empty:
+                guard_values = pd.to_numeric(
+                    guard_df.loc[
+                        (pd.to_numeric(guard_df.get("Station s (m)"), errors="coerce") - station).abs() <= 1.0e-7,
+                        "V2 kN",
+                    ],
+                    errors="coerce",
+                ).dropna()
+                y_marker = float(guard_values.mean()) if not guard_values.empty else 0.0
+            else:
+                y_marker = 0.0
+            fig.add_trace(go.Scatter(x=[station], y=[y_marker], mode="markers", name="Physical joint — REVIEW" if index == 1 else "Physical joint — REVIEW", showlegend=index == 1, legendgroup="crossbeam_physical_joint", marker={"size": 9, "symbol": "x-open", "color": "#f59e0b", "line": {"width": 1.5}}, hovertemplate=f"J{index} · s={station:.3f} m<br>Left/right one-sided values plotted separately<br>Joint transfer: REVIEW<extra></extra>"))
+            fig.add_vline(x=station, line={"color": "#f59e0b", "width": 1.2, "dash": "dot"}, layer="above")
 
-    fig.update_layout(
-        title={
-            "text": "Shear Check — Strength ULS<br><sup>ACI 318-19 · conservative Column Face + h/2 checks · support footprints omitted</sup>",
-            "x": 0.5,
-            "xanchor": "center",
-        }
-    )
+    fig.update_layout(title={"text": "Shear Check — Strength ULS<br><sup>ACI 318-19 · station-dependent segment traces + one-sided physical-joint values · support footprints omitted</sup>", "x": 0.5, "xanchor": "center"})
     return fig
-
 
 def _render_crossbeam_uls_shear_workspace() -> None:
     """Render on-demand ACI 318-19 prestressed Crossbeam shear station checks."""
@@ -21166,23 +21403,36 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         and str(getattr(row, "requested_location_type", "") or "") == "ACI h/2 CRITICAL SECTION"
         for row in preparation.rows
     )
-    physical_joint_review_count = sum(
+    physical_joint_guard_count = sum(
         str(getattr(row, "location_type", "") or "") == "PHYSICAL SEGMENT JOINT"
         for row in preparation.rows
     )
+    generated_joint_side_count = sum(
+        bool(getattr(row, "generated_joint_side_check", False))
+        for row in preparation.rows
+    )
+    physical_joint_review_count = len(
+        {
+            round(float(getattr(row, "joint_station_m")), 9)
+            for row in preparation.rows
+            if bool(getattr(row, "generated_joint_side_check", False))
+            and getattr(row, "joint_station_m", None) is not None
+        }
+    ) or physical_joint_guard_count
     generated_support_joint_review_count = sum(
         bool(getattr(row, "generated_support_check", False))
         and str(getattr(row, "location_type", "") or "") == "PHYSICAL SEGMENT JOINT"
         for row in preparation.rows
     )
-    retained_source_count = len(preparation.rows) - generated_support_count
+    retained_source_count = len(preparation.rows) - generated_support_count - generated_joint_side_count
     eligible_retained_count = sum(
         not bool(getattr(row, "generated_support_check", False))
+        and not bool(getattr(row, "generated_joint_side_check", False))
         and str(getattr(row, "location_type", "") or "") != "PHYSICAL SEGMENT JOINT"
         for row in preparation.rows
     )
     eligible_support_count = generated_support_count - generated_support_joint_review_count
-    eligible_sectional_count = len(preparation.rows) - physical_joint_review_count
+    eligible_sectional_count = len(preparation.rows) - physical_joint_guard_count
     cached = st.session_state.get(CROSSBEAM_ULS_SHEAR_RESULT_KEY)
     cached_hash = str(st.session_state.get(CROSSBEAM_ULS_SHEAR_RESULT_HASH_KEY) or "")
     cache_current = isinstance(cached, Mapping) and cached_hash == preparation.fingerprint
@@ -21193,7 +21443,8 @@ def _render_crossbeam_uls_shear_workspace() -> None:
             st.success(
                 f"ULS Shear source ready — {len(preparation.demand_rows):,} active station-force row(s) produce "
                 f"{retained_source_count:,} retained source row(s) + {generated_support_count:,} generated support row(s) "
-                f"= {len(preparation.rows):,} total check row(s); {eligible_sectional_count:,} eligible sectional check(s) "
+                f"+ {generated_joint_side_count:,} one-sided joint row(s) = {len(preparation.rows):,} total calculation row(s); "
+                f"{eligible_sectional_count:,} eligible sectional check(s) "
                 f"and {physical_joint_review_count:,} physical-joint review location(s)."
             )
         else:
@@ -21248,7 +21499,7 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         {
             "title": "Total check rows",
             "value": f"{len(preparation.rows):,}",
-            "detail": f"{retained_source_count:,} retained source + {generated_support_count:,} generated support",
+            "detail": f"{retained_source_count:,} retained + {generated_support_count:,} support + {generated_joint_side_count:,} joint-side",
             "status": "info",
         },
         {
@@ -21260,7 +21511,7 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         {
             "title": "Generated support checks",
             "value": f"{generated_support_count:,}",
-            "detail": f"{generated_face_count:,} Column Faces + {generated_h2_count:,} ACI h/2 sections",
+            "detail": f"{generated_face_count:,} Column Faces + {generated_h2_count:,} ACI h/2; {generated_joint_side_count:,} joint-side rows",
             "status": "neutral",
         },
     ]
@@ -21351,7 +21602,7 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         )
 
     if not result_df.empty:
-        chart_df = _crossbeam_shear_chart_rows(result_df)
+        chart_df = result_df.copy()
         guard_df = result_df[
             result_df.get("Location type", pd.Series(dtype=str)).astype(str) == "PHYSICAL SEGMENT JOINT"
         ].copy()
@@ -21369,16 +21620,19 @@ def _render_crossbeam_uls_shear_workspace() -> None:
                 guard_df,
                 support_check_df,
                 support_footprints,
+                st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY, []),
             )
         )
         st.caption(
-            "Signed Vu and the ±φVn / ±φVc traces are broken across each shaded support footprint. Open circles mark Column Face checks; open diamonds mark ACI h/2 checks; amber X markers identify physical-joint REVIEW locations. "
+            "Signed Vu and the ±φVn / ±φVc traces are split by Segment and broken across each shaded support footprint. Every Precast physical joint plots separate one-sided left/right demand and capacity values without averaging or interpolation across the joint. "
             "Both support locations are checked conservatively and the larger D/C governs. P, T, and M3 remain row-coupled to the same exact, one-sided interpolated, or limited one-sided extrapolated station-force source. "
             "Physical segment-joint transfer and torsion interaction remain outside this milestone."
         )
         generated_mask = result_df.get("Generated support check", pd.Series(False, index=result_df.index)).fillna(False).astype(bool)
+        joint_side_mask = result_df.get("Generated joint side check", pd.Series(False, index=result_df.index)).fillna(False).astype(bool)
         generated_support_df = result_df[generated_mask].copy()
-        regular_df = result_df[~generated_mask].copy()
+        joint_side_df = result_df[joint_side_mask].copy()
+        regular_df = result_df[~generated_mask & ~joint_side_mask].copy()
         support_columns = [
             "Status", "Check Point", "Station s (m)", "Demand source", "V2 kN", "φVn kN",
             "Strength D/C value", "Detailing D/C value",
@@ -21400,6 +21654,20 @@ def _render_crossbeam_uls_shear_workspace() -> None:
                 use_container_width=True,
                 hide_index=True,
             )
+        if not joint_side_df.empty:
+            st.markdown("#### Physical joint one-sided capacities")
+            joint_columns = [
+                "Check Point", "Joint station s (m)", "Joint side", "Segment", "Section ID",
+                "Demand source", "V2 kN", "φVc kN", "φVn kN", "Strength D/C value",
+                "Source station 1 (m)", "Source station 2 (m)", "Extrapolation ratio",
+            ]
+            st.dataframe(
+                joint_side_df[[column for column in joint_columns if column in joint_side_df]].rename(
+                    columns={"V2 kN": "Vu kN", "Strength D/C value": "Strength D/C"}
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
         regular_columns = [
             "Status", "Strength status", "Detailing status", "Station s (m)", "Check Point", "Case",
             "Location type", "Section ID", "Rebar Zone", "Transverse Template", "V2 kN", "φVn kN",
@@ -21417,7 +21685,7 @@ def _render_crossbeam_uls_shear_workspace() -> None:
             )
         with st.expander("Calculation audit — ACI terms / all station rows", expanded=False):
             audit_columns = [
-                "Status", "Generated support check", "Requested location type", "Station s (m)", "Case",
+                "Status", "Generated support check", "Generated joint side check", "Joint side", "Joint station s (m)", "Requested location type", "Station s (m)", "Case",
                 "Section face", "Location type", "Demand source", "Source station 1 (m)", "Source station 2 (m)",
                 "Source ratio", "Extrapolation ratio", "P kN", "V2 kN", "T kN-m", "M3 kN-m",
                 "bw mm", "h mm", "d raw mm", "d mm", "dp mm", "Tension face", "Bending direction",
@@ -21596,88 +21864,125 @@ def _crossbeam_torsion_demand_plot_rows(result_df: pd.DataFrame) -> pd.DataFrame
 def _make_crossbeam_uls_torsion_figure(
     result_df: pd.DataFrame,
     support_footprints: list[dict[str, object]],
+    segment_rows: Any = None,
 ) -> go.Figure:
-    demand_df = _crossbeam_torsion_demand_plot_rows(result_df)
+    standard_df = result_df.copy()
+    if "Generated joint side check" in standard_df:
+        standard_df = standard_df[~standard_df["Generated joint side check"].fillna(False).astype(bool)].copy()
+    demand_df = _crossbeam_torsion_demand_plot_rows(standard_df)
     fig = _make_beam_uls_demand_figure(
         demand_df,
         column="Tu",
-        title="Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · h/2 critical sections + conservative support-face screens · support footprints omitted</sup>",
+        title="Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · segment-owned step capacities + one-sided physical-joint values · support footprints omitted</sup>",
         y_label="Torsion, Tu (kN-m)",
     )
-    # Reuse the accepted Bridge/Beam demand figure, then normalize its demand
-    # semantics for Crossbeam Torsion so only one maximum-demand marker exists.
     for trace in list(fig.data):
         name = str(getattr(trace, "name", "") or "")
-        if name.startswith("Demand Tu"):
-            trace.name = name.replace("Demand Tu", "Demand Tu", 1)
-        elif name == "Governing demand":
+        if name == "Governing demand":
             trace.name = "Max |Tu|"
             if getattr(trace, "text", None) is not None:
                 trace.text = ["Max |Tu|" for _ in list(trace.text)]
 
-    capacity_df = _crossbeam_torsion_chart_rows(result_df)
+    segments = _crossbeam_segment_records(segment_rows)
+    joint_stations = _crossbeam_joint_stations_from_segments(segment_rows)
+    if not joint_stations:
+        guard_rows = result_df[
+            result_df.get("Location type", pd.Series(dtype=object)).astype(str) == "PHYSICAL SEGMENT JOINT"
+        ].copy()
+        if not guard_rows.empty:
+            joint_stations = sorted(
+                set(
+                    pd.to_numeric(guard_rows.get("Station s (m)"), errors="coerce")
+                    .dropna()
+                    .astype(float)
+                    .tolist()
+                )
+            )
+    member_length_m = max([float(item["end"]) for item in segments], default=0.0)
+    if member_length_m <= 0.0:
+        finite_stations = pd.to_numeric(result_df.get("Station s (m)"), errors="coerce").dropna()
+        member_length_m = float(finite_stations.max()) if not finite_stations.empty else 1.0
+    source = result_df.copy()
+    source["__station"] = pd.to_numeric(source.get("Station s (m)"), errors="coerce")
+    source["__phi_tn"] = pd.to_numeric(source.get("phiTn kN-m"), errors="coerce")
+    source["__phi_tth"] = pd.to_numeric(source.get("phiTth kN-m"), errors="coerce")
     shown_tn = False
     shown_tth = False
-    if not capacity_df.empty:
-        capacity_df = capacity_df.sort_values(["Case", "Station s (m)"], kind="stable")
-        for _case, case_df in capacity_df.groupby("Case", sort=False):
-            x_values = pd.to_numeric(case_df.get("Station s (m)"), errors="coerce")
-            tn_values = pd.to_numeric(case_df.get("phiTn kN-m"), errors="coerce")
-            tth_values = pd.to_numeric(case_df.get("phiTth kN-m"), errors="coerce")
-            valid_tn = x_values.notna() & tn_values.notna()
-            valid_tth = x_values.notna() & tth_values.notna()
-            if valid_tn.any():
-                fig.add_trace(
-                    go.Scatter(
-                        x=x_values[valid_tn],
-                        y=tn_values[valid_tn],
-                        mode="lines",
-                        name="±φTn",
-                        legendgroup="crossbeam_phi_tn",
-                        showlegend=not shown_tn,
-                        line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
-                        hovertemplate="x=%{x:.3f} m<br>φTn=%{y:.3f} kN-m<extra></extra>",
-                    )
-                )
-                fig.add_trace(
-                    go.Scatter(
-                        x=x_values[valid_tn],
-                        y=-tn_values[valid_tn],
-                        mode="lines",
-                        name="±φTn",
-                        legendgroup="crossbeam_phi_tn",
-                        showlegend=False,
-                        line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
-                        hovertemplate="x=%{x:.3f} m<br>-φTn=%{y:.3f} kN-m<extra></extra>",
-                    )
-                )
-                shown_tn = True
-            if valid_tth.any():
-                fig.add_trace(
-                    go.Scatter(
-                        x=x_values[valid_tth],
-                        y=tth_values[valid_tth],
-                        mode="lines",
-                        name="±φTth",
-                        legendgroup="crossbeam_phi_tth",
-                        showlegend=not shown_tth,
-                        line=dict(_BEAM_ULS_REFERENCE_LINE_STYLE),
-                        hovertemplate="x=%{x:.3f} m<br>φTth=%{y:.3f} kN-m<extra></extra>",
-                    )
-                )
-                fig.add_trace(
-                    go.Scatter(
-                        x=x_values[valid_tth],
-                        y=-tth_values[valid_tth],
-                        mode="lines",
-                        name="±φTth",
-                        legendgroup="crossbeam_phi_tth",
-                        showlegend=False,
-                        line=dict(_BEAM_ULS_REFERENCE_LINE_STYLE),
-                        hovertemplate="x=%{x:.3f} m<br>-φTth=%{y:.3f} kN-m<extra></extra>",
-                    )
-                )
-                shown_tth = True
+    if not segments and not source.empty:
+        capacity_df = _crossbeam_torsion_chart_rows(source)
+        if not capacity_df.empty:
+            capacity_df = capacity_df.sort_values(["Case", "Station s (m)"], kind="stable")
+            for _case, case_df in capacity_df.groupby("Case", sort=False):
+                x_values = pd.to_numeric(case_df.get("Station s (m)"), errors="coerce")
+                tn_values = pd.to_numeric(case_df.get("phiTn kN-m"), errors="coerce")
+                tth_values = pd.to_numeric(case_df.get("phiTth kN-m"), errors="coerce")
+                for values, label, group_name, line_style in (
+                    (tn_values, "±φTn", "crossbeam_phi_tn", dict(_BEAM_ULS_CHECK_LINE_STYLE)),
+                    (tth_values, "±φTth", "crossbeam_phi_tth", dict(_BEAM_ULS_REFERENCE_LINE_STYLE)),
+                ):
+                    valid = x_values.notna() & values.notna()
+                    if not valid.any():
+                        continue
+                    show = not shown_tn if label == "±φTn" else not shown_tth
+                    fig.add_trace(go.Scatter(
+                        x=x_values[valid], y=values[valid], mode="lines",
+                        name=label, legendgroup=group_name, showlegend=show,
+                        line=line_style,
+                    ))
+                    fig.add_trace(go.Scatter(
+                        x=x_values[valid], y=-values[valid], mode="lines",
+                        name=label, legendgroup=group_name, showlegend=False,
+                        line=line_style,
+                    ))
+                    if label == "±φTn":
+                        shown_tn = True
+                    else:
+                        shown_tth = True
+    if segments and not source.empty:
+        case_series = source.get("Case", pd.Series("ULS", index=source.index)).astype(str)
+        for case_name, case_df in source.groupby(case_series, sort=False):
+            for segment in segments:
+                segment_id = str(segment["Segment"])
+                start_m = float(segment["start"])
+                end_m = float(segment["end"])
+                rows = case_df[case_df.get("Segment", pd.Series("", index=case_df.index)).astype(str) == segment_id].copy()
+                if rows.empty:
+                    continue
+                tth_values = pd.to_numeric(rows.get("phiTth kN-m"), errors="coerce").dropna()
+                tn_values = pd.to_numeric(rows.get("phiTn kN-m"), errors="coerce").dropna()
+                phi_tth = float(tth_values.min()) if not tth_values.empty else float("nan")
+                phi_tn = float(tn_values.min()) if not tn_values.empty else float("nan")
+                intervals = _crossbeam_visible_intervals(start_m, end_m, support_footprints)
+                for interval_start, interval_end in intervals:
+                    x0 = interval_start
+                    x1 = interval_end
+                    if any(abs(interval_start - station) <= 1.0e-7 for station in joint_stations):
+                        x0 = _crossbeam_plot_station_with_side_offset(interval_start, "R", member_length_m)
+                    if any(abs(interval_end - station) <= 1.0e-7 for station in joint_stations):
+                        x1 = _crossbeam_plot_station_with_side_offset(interval_end, "L", member_length_m)
+                    for value, label, group_name, line_style in (
+                        (phi_tn, "±φTn", "crossbeam_phi_tn", dict(_BEAM_ULS_CHECK_LINE_STYLE)),
+                        (phi_tth, "±φTth", "crossbeam_phi_tth", dict(_BEAM_ULS_REFERENCE_LINE_STYLE)),
+                    ):
+                        if not math.isfinite(value):
+                            continue
+                        show = not shown_tn if label == "±φTn" else not shown_tth
+                        fig.add_trace(go.Scatter(
+                            x=[x0, x1], y=[value, value], mode="lines",
+                            name=label, legendgroup=group_name, showlegend=show,
+                            line=line_style,
+                            hovertemplate=f"{segment_id} · {case_name}<br>x=%{{x:.3f}} m<br>{label.replace('±','')}={value:.3f} kN-m<extra></extra>",
+                        ))
+                        fig.add_trace(go.Scatter(
+                            x=[x0, x1], y=[-value, -value], mode="lines",
+                            name=label, legendgroup=group_name, showlegend=False,
+                            line=line_style,
+                            hovertemplate=f"{segment_id} · {case_name}<br>x=%{{x:.3f}} m<br>-{label.replace('±','')}={-value:.3f} kN-m<extra></extra>",
+                        ))
+                        if label == "±φTn":
+                            shown_tn = True
+                        else:
+                            shown_tth = True
 
     for footprint in support_footprints:
         left = _beam_uls_float(footprint.get("s_left (m)"))
@@ -21704,64 +22009,80 @@ def _make_crossbeam_uls_torsion_figure(
                 fig.add_trace(go.Scatter(x=x_values[valid], y=y_values[valid], mode="markers", name=name, marker={"size": 9, "symbol": symbol, "line": {"width": 1.5}}, hovertemplate="x=%{x:.3f} m<br>Tu=%{y:.3f} kN-m<extra></extra>"))
             if location == "ACI h/2 CRITICAL SECTION":
                 for station in x_values.dropna().astype(float):
-                    fig.add_vline(
-                        x=station,
-                        line={"color": "rgba(59, 130, 246, 0.45)", "width": 1.0, "dash": "dot"},
-                        layer="below",
-                    )
+                    fig.add_vline(x=station, line={"color": "rgba(59, 130, 246, 0.45)", "width": 1.0, "dash": "dot"}, layer="below")
 
-    guard_df = result_df[result_df.get("Location type", pd.Series(dtype=object)).astype(str) == "PHYSICAL SEGMENT JOINT"].copy()
-    if not guard_df.empty:
-        x_values = pd.to_numeric(guard_df.get("Station s (m)"), errors="coerce")
-        y_values = pd.to_numeric(guard_df.get("T kN-m"), errors="coerce")
-        valid = x_values.notna() & y_values.notna()
-        if valid.any():
-            fig.add_trace(go.Scatter(x=x_values[valid], y=y_values[valid], mode="markers", name="Physical joint — REVIEW", marker={"size": 9, "symbol": "x-open", "color": "#f59e0b", "line": {"width": 1.5}}, hovertemplate="x=%{x:.3f} m<br>Tu=%{y:.3f} kN-m<br>Joint torsion transfer: REVIEW<extra></extra>"))
-        for station in x_values.dropna().astype(float):
-            fig.add_vline(x=station, line={"color": "#f59e0b", "width": 1.2, "dash": "dot"}, layer="above")
-
-    decision = result_df[
-        result_df.get("Location type", pd.Series(dtype=object)).astype(str)
-        != "PHYSICAL SEGMENT JOINT"
-    ].copy()
-    decision["__strength_dc"] = pd.to_numeric(
-        decision.get("Strength D/C value"), errors="coerce"
-    )
-    if decision["__strength_dc"].notna().any():
-        gov = decision.loc[decision["__strength_dc"].idxmax()]
-        strength_dc = _beam_uls_float(gov.get("Strength D/C value"))
-        fig.add_trace(
-            go.Scatter(
-                x=[gov.get("Station s (m)")],
-                y=[gov.get("T kN-m")],
-                mode="markers+text",
-                text=[f"Gov. Tu/φTn {strength_dc:.3f}"],
-                textposition="top center",
-                name="Gov. Tu/φTn",
-                marker={"size": 9, "symbol": "diamond", "color": "#111827"},
-                hovertemplate=(
-                    "x=%{x:.3f} m<br>Tu=%{y:.3f} kN-m"
-                    f"<br>Tu/φTn={strength_dc:.3f}<extra></extra>"
-                ),
-            )
+    joint_side_df = _crossbeam_joint_side_rows(result_df)
+    if not joint_side_df.empty:
+        x_actual = pd.to_numeric(joint_side_df.get("Joint station s (m)"), errors="coerce")
+        y_demand = pd.to_numeric(joint_side_df.get("T kN-m"), errors="coerce")
+        side = joint_side_df.get("Joint side", pd.Series("", index=joint_side_df.index)).astype(str)
+        x_plot = [
+            _crossbeam_plot_station_with_side_offset(float(x), s, member_length_m)
+            if math.isfinite(float(x)) else float("nan")
+            for x, s in zip(x_actual.fillna(float("nan")), side)
+        ]
+        valid = [math.isfinite(x) and math.isfinite(float(y)) for x, y in zip(x_plot, y_demand.fillna(float("nan")))]
+        fig.add_trace(go.Scatter(
+            x=[x for x, keep in zip(x_plot, valid) if keep],
+            y=[float(y) for y, keep in zip(y_demand.fillna(float("nan")), valid) if keep],
+            mode="markers", name="Joint s−/s+ demand",
+            marker={"size": 7, "symbol": ["triangle-left-open" if s.upper() == "L" else "triangle-right-open" for s, keep in zip(side, valid) if keep]},
+            customdata=[[float(x), s] for x, s, keep in zip(x_actual.fillna(float("nan")), side, valid) if keep],
+            hovertemplate="joint=%{customdata[0]:.3f} m · side %{customdata[1]}<br>Tu=%{y:.3f} kN-m<extra></extra>",
+        ))
+        _add_crossbeam_joint_side_capacity_markers(
+            fig,
+            joint_side_df,
+            member_length_m=member_length_m,
+            capacity_specs=[
+                ("phiTn kN-m", "Joint-side φTn", str(_BEAM_ULS_CHECK_LINE_STYLE["color"]), "square-open"),
+                ("phiTth kN-m", "Joint-side φTth", str(_BEAM_ULS_REFERENCE_LINE_STYLE["color"]), "circle-open"),
+            ],
+            unit="kN-m",
         )
 
-    joint_stations = pd.to_numeric(
-        guard_df.get("Station s (m)"), errors="coerce"
-    ).dropna().astype(float).tolist() if not guard_df.empty else []
+    # Demand response may vary continuously inside a segment, but it must not
+    # bridge a physical joint or a support reaction region.
     for trace in fig.data:
         _crossbeam_break_trace_over_supports(trace, support_footprints)
         _crossbeam_break_trace_over_stations(trace, joint_stations)
+
+    for index, station in enumerate(joint_stations, start=1):
+        side_rows = joint_side_df[
+            (pd.to_numeric(joint_side_df.get("Joint station s (m)"), errors="coerce") - station).abs() <= 1.0e-7
+        ] if not joint_side_df.empty else pd.DataFrame()
+        demand_values = pd.to_numeric(side_rows.get("T kN-m"), errors="coerce").dropna() if not side_rows.empty else pd.Series(dtype=float)
+        if not demand_values.empty:
+            y_marker = float(demand_values.mean())
+        else:
+            guard_values = pd.to_numeric(
+                result_df.loc[
+                    (result_df.get("Location type", pd.Series(dtype=object)).astype(str) == "PHYSICAL SEGMENT JOINT")
+                    & ((pd.to_numeric(result_df.get("Station s (m)"), errors="coerce") - station).abs() <= 1.0e-7),
+                    "T kN-m",
+                ],
+                errors="coerce",
+            ).dropna()
+            y_marker = float(guard_values.mean()) if not guard_values.empty else 0.0
+        fig.add_trace(go.Scatter(x=[station], y=[y_marker], mode="markers", name="Physical joint — REVIEW", showlegend=index == 1, legendgroup="crossbeam_physical_joint", marker={"size": 9, "symbol": "x-open", "color": "#f59e0b", "line": {"width": 1.5}}, hovertemplate=f"J{index} · s={station:.3f} m<br>Left/right one-sided values plotted separately<br>Joint transfer: REVIEW<extra></extra>"))
+        fig.add_vline(x=station, line={"color": "#f59e0b", "width": 1.2, "dash": "dot"}, layer="above")
+
+    decision = result_df[
+        (result_df.get("Location type", pd.Series(dtype=object)).astype(str) != "PHYSICAL SEGMENT JOINT")
+        & (~result_df.get("Generated joint side check", pd.Series(False, index=result_df.index)).fillna(False).astype(bool))
+    ].copy()
+    decision["__strength_dc"] = pd.to_numeric(decision.get("Strength D/C value"), errors="coerce")
+    if decision["__strength_dc"].notna().any():
+        gov = decision.loc[decision["__strength_dc"].idxmax()]
+        strength_dc = _beam_uls_float(gov.get("Strength D/C value"))
+        fig.add_trace(go.Scatter(x=[gov.get("Station s (m)")], y=[gov.get("T kN-m")], mode="markers+text", text=[f"Gov. Tu/φTn {strength_dc:.3f}"], textposition="top center", name="Gov. Tu/φTn", marker={"size": 9, "symbol": "diamond", "color": "#111827"}, hovertemplate="x=%{x:.3f} m<br>Tu=%{y:.3f} kN-m" + f"<br>Tu/φTn={strength_dc:.3f}<extra></extra>"))
+
     y_range = _crossbeam_torsion_symmetric_y_range(result_df)
     fig.update_layout(
-        title=(
-            "Standalone Torsion Check — Strength ULS"
-            "<br><sup>ACI 318-19 · h/2 critical sections + conservative support-face screens · support footprints omitted</sup>"
-        ),
+        title="Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · segment-owned step capacities + one-sided physical-joint values · support footprints omitted</sup>",
         yaxis={"range": y_range} if y_range is not None else {},
     )
     return fig
-
 
 def _render_crossbeam_uls_torsion_workspace() -> None:
     """Render on-demand ACI 318-19 Crossbeam torsion station checks."""
@@ -21783,8 +22104,15 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
     preparation = build_crossbeam_uls_torsion_preparation(st.session_state)
     demand_df = _crossbeam_uls_demand_dataframe(preparation)
     generated_support_count = sum(bool(getattr(row, "generated_support_check", False)) for row in preparation.rows)
-    joint_review_count = sum(str(getattr(row, "location_type", "") or "") == "PHYSICAL SEGMENT JOINT" for row in preparation.rows)
-    eligible_count = len(preparation.rows) - joint_review_count
+    generated_joint_side_count = sum(bool(getattr(row, "generated_joint_side_check", False)) for row in preparation.rows)
+    joint_guard_count = sum(str(getattr(row, "location_type", "") or "") == "PHYSICAL SEGMENT JOINT" for row in preparation.rows)
+    joint_review_count = len({
+        round(float(getattr(row, "joint_station_m")), 9)
+        for row in preparation.rows
+        if bool(getattr(row, "generated_joint_side_check", False))
+        and getattr(row, "joint_station_m", None) is not None
+    }) or joint_guard_count
+    eligible_count = len(preparation.rows) - joint_guard_count
     cached = st.session_state.get(CROSSBEAM_ULS_TORSION_RESULT_KEY)
     cached_hash = str(st.session_state.get(CROSSBEAM_ULS_TORSION_RESULT_HASH_KEY) or "")
     cache_current = isinstance(cached, Mapping) and cached_hash == preparation.fingerprint
@@ -21794,8 +22122,9 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
         if preparation.ready:
             st.success(
                 f"ULS Torsion source ready — {len(preparation.demand_rows):,} active station-force row(s) produce "
-                f"{len(preparation.rows) - generated_support_count:,} retained source row(s) + {generated_support_count:,} generated support row(s) "
-                f"= {len(preparation.rows):,} total check row(s); {eligible_count:,} eligible sectional check(s) and {joint_review_count:,} physical-joint review location(s)."
+                f"{len(preparation.rows) - generated_support_count - generated_joint_side_count:,} retained source row(s) + {generated_support_count:,} generated support row(s) "
+                f"+ {generated_joint_side_count:,} one-sided joint row(s) = {len(preparation.rows):,} total calculation row(s); "
+                f"{eligible_count:,} eligible sectional check(s) and {joint_review_count:,} physical-joint review location(s)."
             )
         else:
             st.error("ULS Torsion source blocked — resolve the Loads, Section/Rebar, Tendon, Effective Prestress, or Column/Support source below.")
@@ -21885,23 +22214,53 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
 
     if not result_df.empty:
         _render_beam_uls_static_plotly_figure(
-            _make_crossbeam_uls_torsion_figure(result_df, list(preparation.support_footprints)),
+            _make_crossbeam_uls_torsion_figure(
+                result_df,
+                list(preparation.support_footprints),
+                st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY, []),
+            ),
             caption=(
-                "Signed Tu and ±φTn / ±φTth traces are broken across shaded support footprints and physical segment joints. Open circles mark conservative support-face screens; open diamonds mark ACI h/2 critical sections; amber X markers identify physical-joint REVIEW locations. "
-                "φTth is plotted across every eligible section and the symmetric y-axis fits all finite Tu, φTth, and φTn values. φTn is shown only where detailed torsion design is required. The black marker reports Tu/φTn only; longitudinal Al and section-limit utilization remain in the cards/tables and Combined V+T remains separate."
+                "Signed Tu is broken across support footprints and all physical segment joints. ±φTth and ±φTn are plotted as horizontal Segment-owned step capacities; Solid/Hollow boundaries are never linearly interpolated. "
+                "Every physical joint plots separate one-sided left/right values. The black marker reports Tu/φTn only; longitudinal Al and section-limit utilization remain in the cards/tables and Combined V+T remains separate."
             ),
         )
         support_df = result_df[result_df.get("Generated support check", False).astype(bool)].copy() if "Generated support check" in result_df else pd.DataFrame()
+        joint_side_df = _crossbeam_joint_side_rows(result_df)
         compact_columns = ["Status", "Check Point", "Station s (m)", "Demand source", "T kN-m", "phiTth kN-m", "phiTn kN-m", "Strength D/C value", "Longitudinal D/C value", "Section limit D/C value"]
         if not support_df.empty:
             st.markdown("#### Support-face / h/2 checks")
             st.dataframe(support_df[[column for column in compact_columns if column in support_df]].rename(columns={"Demand source": "Source", "phiTth kN-m": "φTth kN-m", "phiTn kN-m": "φTn kN-m", "Strength D/C value": "Strength D/C", "Longitudinal D/C value": "Al D/C", "Section limit D/C value": "Section-limit D/C"}), use_container_width=True, hide_index=True)
+        if not joint_side_df.empty:
+            st.markdown("#### Physical joint one-sided capacities")
+            joint_columns = [
+                "Check Point", "Joint station s (m)", "Joint side", "Segment", "Section ID",
+                "Demand source", "T kN-m", "phiTth kN-m", "phiTn kN-m",
+                "Strength D/C value", "Longitudinal D/C value",
+                "Source station 1 (m)", "Source station 2 (m)", "Extrapolation ratio",
+            ]
+            st.dataframe(
+                joint_side_df[[column for column in joint_columns if column in joint_side_df]].rename(
+                    columns={
+                        "phiTth kN-m": "φTth kN-m",
+                        "phiTn kN-m": "φTn kN-m",
+                        "Strength D/C value": "Strength D/C",
+                        "Longitudinal D/C value": "Al D/C",
+                    }
+                ),
+                use_container_width=True,
+                hide_index=True,
+            )
         with st.expander("Regular / imported station checks", expanded=False):
-            regular_df = result_df[~result_df.get("Generated support check", False).astype(bool)].copy() if "Generated support check" in result_df else result_df
+            if "Generated support check" in result_df:
+                regular_mask = ~result_df.get("Generated support check", False).astype(bool)
+                regular_mask &= ~result_df.get("Generated joint side check", pd.Series(False, index=result_df.index)).fillna(False).astype(bool)
+                regular_df = result_df[regular_mask].copy()
+            else:
+                regular_df = result_df
             st.dataframe(regular_df[[column for column in compact_columns if column in regular_df]], use_container_width=True, hide_index=True)
         with st.expander("Calculation audit — ACI terms / all station rows", expanded=False):
             audit_columns = [
-                "Status", "Generated support check", "Requested location type", "Station s (m)", "Case", "Location type", "Demand source", "Source station 1 (m)", "Source station 2 (m)", "Source ratio", "Extrapolation ratio",
+                "Status", "Generated support check", "Generated joint side check", "Joint side", "Joint station s (m)", "Requested location type", "Station s (m)", "Case", "Location type", "Demand source", "Source station 1 (m)", "Source station 2 (m)", "Source ratio", "Extrapolation ratio",
                 "P kN", "V2 kN", "T kN-m", "M3 kN-m", "Ag mm2", "Acp mm2", "pcp mm", "Aoh mm2", "Ao mm2", "ph mm", "Hoop offset mm", "fpc MPa", "Prestress ratio", "theta deg", "At/s mm2/mm", "At/s required mm2/mm",
                 "(Av+2At)/s provided mm2/mm", "(Av+2At)/s min mm2/mm", "Al strength required mm2", "Al minimum mm2", "Al required mm2", "Al provided mm2", "Outer bar max spacing mm", "Outer bar min diameter mm", "Corner coverage",
                 "Torsion stirrup spacing mm", "Torsion stirrup s max mm", "Hollow inside clearance mm", "Hollow clearance required mm", "Shear stress MPa", "Torsion stress MPa", "Section limit lhs MPa", "Section limit rhs MPa", "Method", "Notes",
