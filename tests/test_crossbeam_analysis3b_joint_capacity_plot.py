@@ -5,6 +5,10 @@ import math
 import pandas as pd
 import pytest
 
+from concrete_pmm_pro.analysis.crossbeam_uls import (
+    build_crossbeam_uls_flexure_preparation,
+    run_crossbeam_uls_flexure,
+)
 from concrete_pmm_pro.analysis.crossbeam_uls_shear import (
     build_crossbeam_uls_shear_preparation,
     run_crossbeam_uls_shear,
@@ -42,7 +46,10 @@ from concrete_pmm_pro.crossbeam.tendon_persistence import (
 )
 from concrete_pmm_pro.crossbeam.transverse import default_crossbeam_transverse_templates
 from concrete_pmm_pro.ui.analysis_page import (
+    _crossbeam_flexure_chart_rows,
     _crossbeam_shear_demand_plot_rows,
+    _crossbeam_uls_demand_dataframe,
+    _make_crossbeam_uls_flexure_figure,
     _make_crossbeam_uls_shear_figure,
     _make_crossbeam_uls_torsion_figure,
 )
@@ -235,3 +242,57 @@ def test_torsion_capacity_is_horizontal_per_segment_with_all_joint_sides_plotted
     assert len(list(traces["Joint-side φTth"].x)) == 20
     assert len(list(traces["Joint-side φTn"].x)) == 20
     assert sum(str(trace.name) == "Physical joint — REVIEW" for trace in figure.data) == 5
+
+
+def test_torsion_demand_is_segment_owned_and_omitted_only_inside_supports() -> None:
+    state, segments = _mixed_30m_state()
+    preparation = build_crossbeam_uls_shear_preparation(state)
+    result = run_crossbeam_uls_torsion(preparation)
+    rows = pd.DataFrame(result["rows"])
+    figure = _make_crossbeam_uls_torsion_figure(
+        rows,
+        list(preparation.support_footprints),
+        segments,
+    )
+
+    demand_traces = [trace for trace in figure.data if str(trace.name).startswith("Demand Tu")]
+    assert demand_traces
+    all_x = [
+        round(float(value), 6)
+        for trace in demand_traces
+        for value in list(trace.x)
+        if value is not None and math.isfinite(float(value))
+    ]
+    # Both adjacent Segment traces reach every physical joint except J3, which
+    # lies inside the C2 support footprint and is intentionally omitted.
+    for joint in [4.5, 10.5, 19.5, 25.5]:
+        assert all_x.count(round(joint, 6)) >= 2
+    assert round(15.0, 6) not in all_x
+
+    for footprint in preparation.support_footprints:
+        left = float(footprint["s_left (m)"])
+        right = float(footprint["s_right (m)"])
+        assert not any(left + 1.0e-8 < value < right - 1.0e-8 for value in all_x)
+
+
+def test_flexure_capacity_trace_never_interpolates_across_physical_joints() -> None:
+    state, segments = _mixed_30m_state()
+    preparation = build_crossbeam_uls_flexure_preparation(state)
+    assert preparation.ready, preparation.errors
+    result = run_crossbeam_uls_flexure(preparation)
+    result_df = pd.DataFrame(result["rows"])
+    figure = _make_crossbeam_uls_flexure_figure(
+        _crossbeam_uls_demand_dataframe(preparation),
+        _crossbeam_flexure_chart_rows(result_df),
+        segment_rows=segments,
+    )
+
+    capacity_traces = [trace for trace in figure.data if str(trace.name) == "φMn"]
+    assert len(capacity_traces) >= 6
+    for trace in capacity_traces:
+        finite_x = [float(value) for value in list(trace.x) if value is not None and math.isfinite(float(value))]
+        assert finite_x
+        assert not any(min(finite_x) < joint < max(finite_x) for joint in JOINTS)
+
+    title = str(figure.layout.title.text)
+    assert "physical joints not interpolated" in title

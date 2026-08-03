@@ -1,3 +1,7 @@
+### CROSSBEAM.ANALYSIS3C — Torsion Demand Continuity and Flexure Capacity Trace Semantics
+
+Plots `Tu` at every available Segment-owned station except inside Column/Support footprints, keeps recovered left/right joint demands at the exact physical-joint station without cross-joint interpolation, and splits `phiMn` traces at every physical joint so Solid/Hollow capacities are never connected by a false slope. ACI Flexure/Torsion equations and solver results are unchanged. See `README_CROSSBEAM_ANALYSIS3C.md`.
+
 ### CROSSBEAM.ANALYSIS3A — Torsion Chart Completeness and Capacity Semantics
 
 Completes `φTth` plotting across below-threshold Solid and Hollow sections, fits a symmetric y-axis to all finite `Tu`, `φTth`, and `φTn` values, breaks capacity traces across physical joints, and makes the force-graph governing marker report `Tu/φTn` instead of an unrelated longitudinal-`Al` utilization. No ACI equation or solver result is changed. See `README_CROSSBEAM_ANALYSIS3A.md`.

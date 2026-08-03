@@ -20697,6 +20697,145 @@ def _crossbeam_flexure_chart_rows(result_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(chosen).drop(columns=["__dc", "__capacity", "__station"], errors="ignore")
 
 
+def _make_crossbeam_uls_flexure_figure(
+    demand_df: pd.DataFrame,
+    flexure_df: pd.DataFrame,
+    *,
+    segment_rows: Any = None,
+) -> go.Figure:
+    """Plot station-specific phiMn without interpolating across physical joints.
+
+    The PMM engine still evaluates the actual section, Pu, ordinary reinforcement,
+    and bonded tendon geometry at each station.  Capacity may therefore vary
+    inside one Segment.  The chart only changes the visual connection rule: a
+    line is never drawn from one physical Segment to the next.
+    """
+
+    fig = _make_beam_uls_flexure_preview_figure(
+        demand_df,
+        flexure_df,
+        code_label="ACI 318-19 · Crossbeam M3 → Mux",
+    )
+    segments = _crossbeam_segment_records(segment_rows)
+    if not segments or flexure_df is None or flexure_df.empty:
+        return fig
+
+    # Rebuild only the capacity/governing traces. Demand remains the imported
+    # row-coupled M3 diagram and is not altered by this presentation cleanup.
+    retained: list[go.BaseTraceType] = []
+    for trace in list(fig.data):
+        if str(getattr(trace, "name", "") or "") in {"φMn", "Governing flexure check"}:
+            continue
+        retained.append(trace)
+    fig.data = tuple(retained)
+
+    source = flexure_df.copy()
+    source["__x_m"] = pd.to_numeric(
+        source.get("Station s (m)", source.get("Governing x", pd.Series(dtype=object))).map(
+            lambda value: "" if value is None else str(value).replace(" m", "")
+        ),
+        errors="coerce",
+    )
+    source["__demand_kNm"] = pd.to_numeric(source.get("Demand kN-m"), errors="coerce")
+    source["__capacity_kNm"] = pd.to_numeric(source.get("Capacity kN-m"), errors="coerce")
+    source["__utilization"] = pd.to_numeric(source.get("Utilization value"), errors="coerce")
+    source["__plot_sign"] = pd.to_numeric(source.get("Capacity plot sign"), errors="coerce")
+    source = source[source["__x_m"].notna() & source["__capacity_kNm"].notna()].copy()
+    if source.empty:
+        return fig
+
+    shown_capacity = False
+    case_series = source.get("Case", pd.Series("ULS", index=source.index)).astype(str)
+    for case_name, case_df in source.groupby(case_series, sort=False):
+        for segment in segments:
+            segment_id = str(segment["Segment"])
+            rows = case_df[
+                case_df.get("Segment", pd.Series("", index=case_df.index)).astype(str) == segment_id
+            ].copy()
+            rows = rows.sort_values("__x_m", kind="stable")
+            if rows.empty:
+                continue
+            # If an exact joint station was imported and produced two faces,
+            # keep the conservative lower capacity at the same segment/station.
+            chosen: list[pd.Series] = []
+            for _station, group in rows.groupby("__x_m", sort=True):
+                finite = group[group["__capacity_kNm"].notna()]
+                chosen.append(
+                    finite.loc[finite["__capacity_kNm"].astype(float).idxmin()]
+                    if not finite.empty
+                    else group.iloc[0]
+                )
+            rows = pd.DataFrame(chosen).sort_values("__x_m", kind="stable")
+            x_values: list[float] = []
+            y_values: list[float] = []
+            custom: list[list[object]] = []
+            for _, row in rows.iterrows():
+                station = float(row["__x_m"])
+                capacity = float(row["__capacity_kNm"])
+                sign = _beam_uls_float(row.get("__plot_sign"))
+                if not math.isfinite(sign) or abs(sign) <= 0.0:
+                    demand = _beam_uls_float(row.get("__demand_kNm"))
+                    sign = -1.0 if demand < 0.0 else 1.0
+                x_values.append(station)
+                y_values.append(sign * capacity)
+                custom.append([segment_id, case_name, str(row.get("Section ID") or "")])
+            fig.add_trace(
+                go.Scatter(
+                    x=x_values,
+                    y=y_values,
+                    mode="lines" if len(x_values) > 1 else "markers",
+                    name="φMn",
+                    legendgroup="crossbeam_phi_mn",
+                    showlegend=not shown_capacity,
+                    line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
+                    marker={"size": 6, "color": str(_BEAM_ULS_CHECK_LINE_STYLE["color"])},
+                    customdata=custom,
+                    hovertemplate=(
+                        "Segment=%{customdata[0]} · Case=%{customdata[1]}"
+                        "<br>Section=%{customdata[2]}<br>x=%{x:.3f} m"
+                        "<br>φMn=%{y:.3f} kN-m<extra></extra>"
+                    ),
+                )
+            )
+            shown_capacity = True
+
+    governing = source[source["__utilization"].notna()].copy()
+    if not governing.empty:
+        row = governing.loc[governing["__utilization"].astype(float).idxmax()]
+        capacity = float(row["__capacity_kNm"])
+        sign = _beam_uls_float(row.get("__plot_sign"))
+        if not math.isfinite(sign) or abs(sign) <= 0.0:
+            sign = -1.0 if _beam_uls_float(row.get("__demand_kNm")) < 0.0 else 1.0
+        utilization = float(row["__utilization"])
+        fig.add_trace(
+            go.Scatter(
+                x=[float(row["__x_m"])],
+                y=[sign * capacity],
+                mode="markers+text",
+                text=[f"D/C {utilization:.3f}"],
+                textposition="bottom center" if sign > 0.0 else "top center",
+                textfont={"size": 10},
+                marker={"size": 9, "color": "#111827"},
+                cliponaxis=False,
+                name="Governing flexure check",
+                hovertemplate=(
+                    "x=%{x:.3f} m<br>Governing φMn=%{y:.3f} kN-m"
+                    f"<br>D/C={utilization:.3f}<extra></extra>"
+                ),
+            )
+        )
+
+    fig.update_layout(
+        title={
+            "text": (
+                "Flexure Check — Strength ULS"
+                "<br><sup>ACI 318-19 · Crossbeam M3 → Mux · station-specific φMn · physical joints not interpolated</sup>"
+            )
+        }
+    )
+    return fig
+
+
 def _crossbeam_uls_blocking_action(message: object) -> dict[str, str]:
     text = str(message or "").strip()
     lowered = text.casefold()
@@ -20858,14 +20997,15 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
     if not result_df.empty:
         chart_df = _crossbeam_flexure_chart_rows(result_df)
         _render_beam_uls_static_plotly_figure(
-            _make_beam_uls_flexure_preview_figure(
+            _make_crossbeam_uls_flexure_figure(
                 demand_df,
                 chart_df,
-                code_label="ACI 318-19 · Crossbeam M3 → Mux",
+                segment_rows=st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY, []),
             )
         )
         st.caption(
             "The chart uses the governing face at duplicate Case/station locations; the audit table below retains every left/right limit. "
+            "φMn is calculated independently at each station from the actual Pu, Section/Rebar source, and bonded tendon geometry. It may vary inside one Segment, but the capacity trace is split at every physical joint so Solid/Hollow values are never linearly interpolated across a boundary. "
             "For zero-M3 rows, φMn(Pu) uses the bending sign from the nearest nonzero station in the same Load Case; Flexural D/C is 0.000 and Axial D/C is separate. "
             "At a Precast physical Segment joint, ordinary longitudinal rebar is zero and bonded Tendons remain the section-continuity source."
         )
@@ -21861,6 +22001,115 @@ def _crossbeam_torsion_demand_plot_rows(result_df: pd.DataFrame) -> pd.DataFrame
     )
 
 
+def _add_crossbeam_segmented_torsion_demand_traces(
+    fig: go.Figure,
+    result_df: pd.DataFrame,
+    *,
+    segments: list[dict[str, object]],
+    support_footprints: list[dict[str, object]],
+) -> None:
+    """Plot Tu at every available station, omitting only support interiors.
+
+    Each Segment is a separate trace. Adjacent traces terminate/start at the
+    exact physical-joint station using the recovered one-sided demand rows. If
+    left and right values differ, Plotly does not draw a false vertical or
+    diagonal connection across the joint.
+    """
+
+    if result_df.empty or not segments:
+        return
+    source = result_df.copy()
+    source["__station"] = pd.to_numeric(source.get("Station s (m)"), errors="coerce")
+    source["__tu"] = pd.to_numeric(source.get("T kN-m"), errors="coerce")
+    source = source[source["__station"].notna() & source["__tu"].notna()].copy()
+    source = source[
+        source.get("Location type", pd.Series("", index=source.index)).astype(str)
+        != "PHYSICAL SEGMENT JOINT"
+    ].copy()
+    if source.empty:
+        return
+
+    shown = False
+    case_series = source.get("Case", pd.Series("ULS", index=source.index)).astype(str)
+    for case_name, case_df in source.groupby(case_series, sort=False):
+        for segment in segments:
+            segment_id = str(segment["Segment"])
+            start_m = float(segment["start"])
+            end_m = float(segment["end"])
+            rows = case_df[
+                case_df.get("Segment", pd.Series("", index=case_df.index)).astype(str) == segment_id
+            ].copy()
+            if rows.empty:
+                continue
+            # One row per exact station within this Segment. Prefer the
+            # Segment-owned joint-side row where it exists.
+            selected: list[pd.Series] = []
+            for _station, group in rows.groupby("__station", sort=True):
+                joint_side = group[
+                    group.get("Generated joint side check", pd.Series(False, index=group.index))
+                    .fillna(False)
+                    .astype(bool)
+                ]
+                selected.append(joint_side.iloc[0] if not joint_side.empty else group.iloc[0])
+            rows = pd.DataFrame(selected).sort_values("__station", kind="stable")
+
+            for interval_start, interval_end in _crossbeam_visible_intervals(
+                start_m, end_m, support_footprints
+            ):
+                interval_rows = rows[
+                    (rows["__station"] >= interval_start - 1.0e-8)
+                    & (rows["__station"] <= interval_end + 1.0e-8)
+                ].copy()
+                if interval_rows.empty:
+                    continue
+                x_values = interval_rows["__station"].astype(float).tolist()
+                y_values = interval_rows["__tu"].astype(float).tolist()
+                custom = [
+                    [segment_id, case_name, str(row.get("Demand source") or "")]
+                    for _, row in interval_rows.iterrows()
+                ]
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_values,
+                        y=y_values,
+                        mode="lines+markers" if len(x_values) > 1 else "markers",
+                        name=f"Demand Tu — {case_name}",
+                        legendgroup=f"crossbeam_tu_{case_name}",
+                        showlegend=not shown,
+                        line=dict(_BEAM_ULS_DEMAND_LINE_STYLE),
+                        marker=dict(_BEAM_ULS_DEMAND_MARKER_STYLE),
+                        customdata=custom,
+                        hovertemplate=(
+                            "Segment=%{customdata[0]} · Case=%{customdata[1]}"
+                            "<br>Source=%{customdata[2]}<br>x=%{x:.3f} m"
+                            "<br>Tu=%{y:.3f} kN-m<extra></extra>"
+                        ),
+                    )
+                )
+                shown = True
+
+    imported = source[
+        ~source.get("Generated support check", pd.Series(False, index=source.index)).fillna(False).astype(bool)
+        & ~source.get("Generated joint side check", pd.Series(False, index=source.index)).fillna(False).astype(bool)
+    ].copy()
+    candidates = imported if not imported.empty else source
+    if not candidates.empty:
+        idx = candidates["__tu"].abs().astype(float).idxmax()
+        row = candidates.loc[idx]
+        fig.add_trace(
+            go.Scatter(
+                x=[float(row["__station"])],
+                y=[float(row["__tu"])],
+                mode="markers+text",
+                text=["Max |Tu|"],
+                textposition="top center",
+                name="Max |Tu|",
+                marker={"color": "#1f77b4", "size": 10, "symbol": "diamond"},
+                hovertemplate="x=%{x:.3f} m<br>Tu=%{y:.3f} kN-m<extra></extra>",
+            )
+        )
+
+
 def _make_crossbeam_uls_torsion_figure(
     result_df: pd.DataFrame,
     support_footprints: list[dict[str, object]],
@@ -21873,17 +22122,38 @@ def _make_crossbeam_uls_torsion_figure(
     fig = _make_beam_uls_demand_figure(
         demand_df,
         column="Tu",
-        title="Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · segment-owned step capacities + one-sided physical-joint values · support footprints omitted</sup>",
+        title="Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · complete Segment-owned Tu + step capacities · support footprints omitted</sup>",
         y_label="Torsion, Tu (kN-m)",
     )
-    for trace in list(fig.data):
-        name = str(getattr(trace, "name", "") or "")
-        if name == "Governing demand":
-            trace.name = "Max |Tu|"
-            if getattr(trace, "text", None) is not None:
-                trace.text = ["Max |Tu|" for _ in list(trace.text)]
-
     segments = _crossbeam_segment_records(segment_rows)
+    if segments:
+        # Replace the generic single demand polyline with Segment-owned traces.
+        # This keeps Tu visible at every available station and removes only the
+        # portions physically inside Column/Support footprints.
+        fig.data = tuple(
+            trace
+            for trace in list(fig.data)
+            if not (
+                str(getattr(trace, "name", "") or "").startswith("Demand Tu")
+                or str(getattr(trace, "name", "") or "") == "Governing demand"
+            )
+        )
+        _add_crossbeam_segmented_torsion_demand_traces(
+            fig,
+            result_df,
+            segments=segments,
+            support_footprints=support_footprints,
+        )
+    else:
+        # Preserve the established fallback when Segment Layout is unavailable.
+        for trace in list(fig.data):
+            name = str(getattr(trace, "name", "") or "")
+            if name == "Governing demand":
+                trace.name = "Max |Tu|"
+                if getattr(trace, "text", None) is not None:
+                    trace.text = ["Max |Tu|" for _ in list(trace.text)]
+            _crossbeam_break_trace_over_supports(trace, support_footprints)
+
     joint_stations = _crossbeam_joint_stations_from_segments(segment_rows)
     if not joint_stations:
         guard_rows = result_df[
@@ -22041,11 +22311,10 @@ def _make_crossbeam_uls_torsion_figure(
             unit="kN-m",
         )
 
-    # Demand response may vary continuously inside a segment, but it must not
-    # bridge a physical joint or a support reaction region.
-    for trace in fig.data:
-        _crossbeam_break_trace_over_supports(trace, support_footprints)
-        _crossbeam_break_trace_over_stations(trace, joint_stations)
+    # Segment-owned demand and capacity traces are already clipped to support
+    # faces and terminate/start at physical joints. Do not insert artificial
+    # plotting gaps at the joints: the exact left/right endpoint values remain
+    # visible at the same station, while separate traces prevent interpolation.
 
     for index, station in enumerate(joint_stations, start=1):
         side_rows = joint_side_df[
@@ -22079,7 +22348,7 @@ def _make_crossbeam_uls_torsion_figure(
 
     y_range = _crossbeam_torsion_symmetric_y_range(result_df)
     fig.update_layout(
-        title="Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · segment-owned step capacities + one-sided physical-joint values · support footprints omitted</sup>",
+        title="Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · complete Segment-owned Tu + step capacities · support footprints omitted</sup>",
         yaxis={"range": y_range} if y_range is not None else {},
     )
     return fig
@@ -22220,7 +22489,7 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
                 st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY, []),
             ),
             caption=(
-                "Signed Tu is broken across support footprints and all physical segment joints. ±φTth and ±φTn are plotted as horizontal Segment-owned step capacities; Solid/Hollow boundaries are never linearly interpolated. "
+                "Signed Tu is plotted at every available station and terminates only at Column/Support footprints. Adjacent Segment traces terminate and restart at each physical joint using the recovered left/right one-sided Tu values, without interpolating one side into the other. ±φTth and ±φTn are horizontal Segment-owned step capacities; Solid/Hollow boundaries are never linearly interpolated. "
                 "Every physical joint plots separate one-sided left/right values. The black marker reports Tu/φTn only; longitudinal Al and section-limit utilization remain in the cards/tables and Combined V+T remains separate."
             ),
         )
