@@ -20817,7 +20817,13 @@ def _make_crossbeam_uls_flexure_figure(
     *,
     segment_rows: Any = None,
 ) -> go.Figure:
-    """Plot direct P-M3 capacity by Segment and binary rebar-credit interval."""
+    """Plot the adopted direct P-M3 capacity as an engineering step envelope.
+
+    One dashed capacity trace is assembled per Segment and Load Case. Binary
+    ordinary-rebar credit changes are drawn as vertical steps inside a Segment;
+    physical joints remain true trace breaks with independently solved one-sided
+    capacity markers. Pale amber bands identify tendon-only/no-credit zones.
+    """
 
     fig = _make_beam_uls_flexure_preview_figure(
         demand_df,
@@ -20850,10 +20856,76 @@ def _make_crossbeam_uls_flexure_figure(
     if source.empty:
         return fig
 
-    shown_capacity = False
-    shown_joint = False
     case_series = source.get("Case", pd.Series("ULS", index=source.index)).astype(str)
+    case_names = list(dict.fromkeys(case_series.tolist()))
+    tolerance = 1.0e-8
+
+    # Identify and shade each unique tendon-only/no-credit interval once. These
+    # bands explain capacity changes without adding another engineering curve.
+    no_credit_intervals: set[tuple[str, float, float]] = set()
+    for segment in segments:
+        segment_id = str(segment["Segment"])
+        rows = source[
+            source.get("Segment", pd.Series("", index=source.index)).astype(str) == segment_id
+        ]
+        for _, row in rows.iterrows():
+            key, region_start, region_end = _crossbeam_flexure_region_bounds(
+                row,
+                segment_start_m=float(segment["start"]),
+                segment_end_m=float(segment["end"]),
+            )
+            credit = str(row.get("Ordinary rebar credit") or "").strip().upper()
+            if credit == "NO CREDIT" and region_end > region_start + tolerance:
+                no_credit_intervals.add((segment_id, round(region_start, 9), round(region_end, 9)))
+
+    for _segment_id, region_start, region_end in sorted(no_credit_intervals, key=lambda item: item[1]):
+        fig.add_vrect(
+            x0=float(region_start),
+            x1=float(region_end),
+            fillcolor="#f59e0b",
+            opacity=0.055,
+            line_width=0,
+            layer="below",
+        )
+    if no_credit_intervals:
+        fig.add_trace(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode="lines",
+                name="No rebar credit zone",
+                legendgroup="crossbeam_no_rebar_credit",
+                line={"color": "rgba(245,158,11,0.28)", "width": 9},
+                hoverinfo="skip",
+            )
+        )
+
+    joint_stations = _crossbeam_joint_stations_from_segments(segment_rows)
+    for joint_station in joint_stations:
+        fig.add_vline(
+            x=float(joint_station),
+            line_width=1.2,
+            line_dash="dot",
+            line_color="#f59e0b",
+            opacity=0.75,
+            layer="below",
+        )
+
+    # Small Segment labels provide the missing geometry context without turning
+    # the strength plot into a section-layout drawing.
+    for segment in segments:
+        fig.add_annotation(
+            x=0.5 * (float(segment["start"]) + float(segment["end"])),
+            y=1.015,
+            xref="x",
+            yref="paper",
+            text=str(segment["Segment"]),
+            showarrow=False,
+            font={"size": 9, "color": "#64748b"},
+        )
+
     for case_name, case_df in source.groupby(case_series, sort=False):
+        shown_capacity = False
         for segment in segments:
             segment_id = str(segment["Segment"])
             rows = case_df[
@@ -20874,6 +20946,7 @@ def _make_crossbeam_uls_flexure_figure(
                 rows.at[index, "__region_start"] = region_start
                 rows.at[index, "__region_end"] = region_end
 
+            region_records: list[dict[str, object]] = []
             for region_key, region_df in rows.groupby("__region_key", sort=False):
                 region_start = float(pd.to_numeric(region_df["__region_start"], errors="coerce").min())
                 region_end = float(pd.to_numeric(region_df["__region_end"], errors="coerce").max())
@@ -20887,59 +20960,127 @@ def _make_crossbeam_uls_flexure_figure(
                 for item in custom:
                     item[0] = segment_id
                     item[1] = case_name
-                fig.add_trace(
-                    go.Scatter(
-                        x=x_values,
-                        y=y_values,
-                        mode="lines" if len(x_values) > 1 else "markers",
-                        name="φMn",
-                        legendgroup="crossbeam_phi_mn",
-                        showlegend=not shown_capacity,
-                        line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
-                        marker={"size": 6, "color": str(_BEAM_ULS_CHECK_LINE_STYLE["color"])},
-                        customdata=custom,
-                        hovertemplate=(
-                            "Segment=%{customdata[0]} · Case=%{customdata[1]}"
-                            "<br>Section=%{customdata[2]}"
-                            "<br>Rebar credit=%{customdata[3]}"
-                            "<br>Region=%{customdata[4]}"
-                            "<br>Check=%{customdata[5]} · %{customdata[6]}"
-                            "<br>x=%{x:.3f} m<br>φMn=%{y:.3f} kN-m<extra></extra>"
-                        ),
-                    )
+                region_records.append(
+                    {
+                        "key": str(region_key),
+                        "start": region_start,
+                        "end": region_end,
+                        "x": x_values,
+                        "y": y_values,
+                        "custom": custom,
+                    }
                 )
-                shown_capacity = True
+            region_records.sort(key=lambda item: (float(item["start"]), float(item["end"])))
+            if not region_records:
+                continue
 
-            joint_rows = rows[
-                rows.get("Location type", pd.Series("", index=rows.index)).astype(str)
-                == "PHYSICAL SEGMENT JOINT"
-            ].copy()
-            if not joint_rows.empty:
-                joint_rows = joint_rows.sort_values("__x_m", kind="stable")
-                joint_y: list[float] = []
-                for _, row in joint_rows.iterrows():
-                    sign = _beam_uls_float(row.get("__plot_sign"))
-                    if not math.isfinite(sign) or abs(sign) <= 0.0:
-                        sign = -1.0 if _beam_uls_float(row.get("__demand_kNm")) < 0.0 else 1.0
-                    joint_y.append(sign * float(row["__capacity_kNm"]))
-                fig.add_trace(
-                    go.Scatter(
-                        x=joint_rows["__x_m"].astype(float).tolist(),
-                        y=joint_y,
-                        mode="markers",
-                        name="Joint φMn (s−/s+)",
-                        legendgroup="crossbeam_joint_phi_mn",
-                        showlegend=not shown_joint,
-                        marker={"symbol": "x-open", "size": 9, "color": "#f59e0b", "line": {"width": 2}},
-                        customdata=joint_rows[["Check Point", "Segment", "Section ID", "Ordinary rebar credit"]].astype(str).values,
-                        hovertemplate=(
-                            "%{customdata[0]} · Segment=%{customdata[1]}"
-                            "<br>Section=%{customdata[2]} · Rebar credit=%{customdata[3]}"
-                            "<br>x=%{x:.3f} m<br>φMn=%{y:.3f} kN-m<extra></extra>"
-                        ),
+            segment_x: list[float | None] = []
+            segment_y: list[float | None] = []
+            segment_custom: list[list[object] | None] = []
+            previous_end: float | None = None
+            for record in region_records:
+                x_values = list(record["x"])
+                y_values = list(record["y"])
+                custom = list(record["custom"])
+                if not x_values:
+                    continue
+                region_start = float(record["start"])
+                if segment_x:
+                    contiguous = previous_end is not None and abs(previous_end - region_start) <= tolerance
+                    endpoints_solved = (
+                        segment_x[-1] is not None
+                        and abs(float(segment_x[-1]) - region_start) <= tolerance
+                        and abs(float(x_values[0]) - region_start) <= tolerance
                     )
+                    if contiguous and endpoints_solved:
+                        # Duplicate x at the gate to draw a truthful vertical
+                        # step. No horizontal interpolation occurs between the
+                        # tendon-only and full-rebar capacities.
+                        segment_x.append(float(x_values[0]))
+                        segment_y.append(float(y_values[0]))
+                        segment_custom.append(custom[0])
+                        x_values = x_values[1:]
+                        y_values = y_values[1:]
+                        custom = custom[1:]
+                    else:
+                        segment_x.append(None)
+                        segment_y.append(None)
+                        segment_custom.append(None)
+                segment_x.extend(float(value) for value in x_values)
+                segment_y.extend(float(value) for value in y_values)
+                segment_custom.extend(custom)
+                previous_end = float(record["end"])
+
+            if not segment_x:
+                continue
+            capacity_name = (
+                "Adopted φMn"
+                if len(case_names) == 1
+                else f"Adopted φMn — {case_name}"
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=segment_x,
+                    y=segment_y,
+                    mode="lines",
+                    name=capacity_name,
+                    legendgroup=f"crossbeam_phi_mn_{case_name}",
+                    showlegend=not shown_capacity,
+                    line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
+                    connectgaps=False,
+                    customdata=segment_custom,
+                    hovertemplate=(
+                        "Segment=%{customdata[0]} · Case=%{customdata[1]}"
+                        "<br>Section=%{customdata[2]}"
+                        "<br>Rebar credit=%{customdata[3]}"
+                        "<br>Region=%{customdata[4]}"
+                        "<br>Check=%{customdata[5]} · %{customdata[6]}"
+                        "<br>x=%{x:.3f} m<br>Adopted φMn=%{y:.3f} kN-m<extra></extra>"
+                    ),
                 )
-                shown_joint = True
+            )
+            shown_capacity = True
+
+        # Plot all independently solved joint sides once per Case. Left/right
+        # open triangles retain both real values while avoiding the visual noise
+        # of ten large amber X markers.
+        joint_rows = case_df[
+            case_df.get("Location type", pd.Series("", index=case_df.index)).astype(str)
+            == "PHYSICAL SEGMENT JOINT"
+        ].copy()
+        if not joint_rows.empty:
+            joint_rows = joint_rows.sort_values(["__x_m", "Check Point"], kind="stable")
+            joint_y: list[float] = []
+            joint_symbols: list[str] = []
+            for _, row in joint_rows.iterrows():
+                sign = _beam_uls_float(row.get("__plot_sign"))
+                if not math.isfinite(sign) or abs(sign) <= 0.0:
+                    sign = -1.0 if _beam_uls_float(row.get("__demand_kNm")) < 0.0 else 1.0
+                joint_y.append(sign * float(row["__capacity_kNm"]))
+                check_point = str(row.get("Check Point") or "").strip().upper()
+                joint_symbols.append("triangle-left-open" if check_point.endswith("-L") else "triangle-right-open")
+            fig.add_trace(
+                go.Scatter(
+                    x=joint_rows["__x_m"].astype(float).tolist(),
+                    y=joint_y,
+                    mode="markers",
+                    name="Joint one-sided φMn",
+                    legendgroup=f"crossbeam_joint_phi_mn_{case_name}",
+                    showlegend=True,
+                    marker={
+                        "symbol": joint_symbols,
+                        "size": 8,
+                        "color": "#d97706",
+                        "line": {"width": 1.5, "color": "#d97706"},
+                    },
+                    customdata=joint_rows[["Check Point", "Segment", "Section ID", "Ordinary rebar credit"]].astype(str).values,
+                    hovertemplate=(
+                        "%{customdata[0]} · Segment=%{customdata[1]}"
+                        "<br>Section=%{customdata[2]} · Rebar credit=%{customdata[3]}"
+                        "<br>x=%{x:.3f} m<br>One-sided φMn=%{y:.3f} kN-m<extra></extra>"
+                    ),
+                )
+            )
 
     governing = source[source["__utilization"].notna()].copy()
     if not governing.empty:
@@ -20971,9 +21112,10 @@ def _make_crossbeam_uls_flexure_figure(
         title={
             "text": (
                 "Flexure Check — Strength ULS"
-                "<br><sup>ACI 318-19 · direct Crossbeam P–M3 · binary ordinary-rebar development credit</sup>"
+                "<br><sup>ACI 318-19 · direct Crossbeam P–M3 · adopted capacity envelope</sup>"
             )
-        }
+        },
+        margin={"l": 82, "r": 42, "t": 96, "b": 116},
     )
     return fig
 
@@ -21143,10 +21285,8 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
             )
         )
         st.caption(
-            "φMn is solved directly at each imported or generated station from Pu on the exact M3 bending axis. "
-            "For Precast Segmental construction, each Segment is split into tendon-only development zones and a fully developed interior using ACI 318-19 25.4.1.1 and the conservative Table 25.4.2.3 “Other cases” straight-bar development-length gate. Capacity traces are separated at every binary credit boundary and physical joint; no sloped interpolation is drawn between tendon-only and full-rebar strength. "
-            "Orange × markers show the actual one-sided joint capacities s−/s+. At zero-M3 rows, the nearest nonzero M3 sign in the same Load Case sets the checked bending direction; Flexural D/C remains 0.000 and Axial D/C is reported separately. "
-            "This sectional check does not certify joint shear/torsion transfer, anchorage/end zones, D-regions, fatigue, or seismic detailing."
+            "The red dashed line is the adopted direct-solver φMn envelope. Pale amber bands are tendon-only / no-ordinary-rebar-credit development zones; vertical capacity steps occur only at binary credit boundaries. Amber dotted lines mark physical Segment joints, where the small open left/right triangles retain the independently solved s−/s+ capacities and no capacity is interpolated across the joint. "
+            "At zero-M3 rows, the nearest nonzero M3 sign in the same Load Case sets the checked bending direction; Flexural D/C remains 0.000 and Axial D/C is reported separately. This sectional check does not certify joint shear/torsion transfer, anchorage/end zones, D-regions, fatigue, or seismic detailing."
         )
         display_columns = [
             "Status", "Station s (m)", "Check Point", "Case", "Segment", "Section face", "Location type",

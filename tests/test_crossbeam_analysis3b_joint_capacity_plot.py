@@ -276,7 +276,7 @@ def test_torsion_demand_is_segment_owned_and_omitted_only_inside_supports() -> N
         assert not any(left + 1.0e-8 < value < right - 1.0e-8 for value in all_x)
 
 
-def test_flexure_capacity_trace_never_interpolates_across_physical_joints_or_credit_gates() -> None:
+def test_flexure_capacity_is_one_clean_step_envelope_per_segment() -> None:
     state, segments = _mixed_30m_state()
     preparation = build_crossbeam_uls_flexure_preparation(state)
     assert preparation.ready, preparation.errors
@@ -288,31 +288,51 @@ def test_flexure_capacity_trace_never_interpolates_across_physical_joints_or_cre
         segment_rows=segments,
     )
 
-    capacity_traces = [trace for trace in figure.data if str(trace.name) == "φMn"]
-    assert len(capacity_traces) >= 18  # three binary-credit regions per Segment where applicable
-    traced_by_segment: dict[str, list[tuple[float, float]]] = {}
+    capacity_traces = [trace for trace in figure.data if str(trace.name) == "Adopted φMn"]
+    assert len(capacity_traces) == len(segments)
+    traced_by_segment: dict[str, object] = {}
     for trace in capacity_traces:
         finite_x = [float(value) for value in list(trace.x) if value is not None and math.isfinite(float(value))]
-        assert finite_x
+        finite_y = [float(value) for value in list(trace.y) if value is not None and math.isfinite(float(value))]
+        assert finite_x and finite_y
         assert not any(min(finite_x) < joint < max(finite_x) for joint in JOINTS)
-        custom = list(trace.customdata or [])
-        credits = {str(item[3]) for item in custom if len(item) > 3}
-        assert len(credits) <= 1
-        segment_id = str(custom[0][0]) if custom else ""
-        traced_by_segment.setdefault(segment_id, []).append((min(finite_x), max(finite_x)))
+        custom = [item for item in list(trace.customdata or []) if item is not None]
+        segment_id = str(custom[0][0])
+        traced_by_segment[segment_id] = trace
+
+        # In this symmetric benchmark each capacity region is constant. Any
+        # positive horizontal run must therefore remain level; capacity changes
+        # occur only at duplicate-x vertical steps.
+        raw_x = list(trace.x)
+        raw_y = list(trace.y)
+        for x0, x1, y0, y1 in zip(raw_x[:-1], raw_x[1:], raw_y[:-1], raw_y[1:]):
+            if None in (x0, x1, y0, y1):
+                continue
+            if float(x1) > float(x0) + 1.0e-9:
+                assert float(y1) == pytest.approx(float(y0), rel=1.0e-8, abs=1.0e-6)
 
     for segment in segments:
         segment_id = str(segment["Segment"])
-        intervals = traced_by_segment[segment_id]
-        assert min(item[0] for item in intervals) == pytest.approx(float(segment["x_start_m"]))
-        assert max(item[1] for item in intervals) == pytest.approx(float(segment["x_end_m"]))
+        trace = traced_by_segment[segment_id]
+        finite_x = [float(value) for value in list(trace.x) if value is not None]
+        assert min(finite_x) == pytest.approx(float(segment["x_start_m"]))
+        assert max(finite_x) == pytest.approx(float(segment["x_end_m"]))
 
-    joint_markers = [trace for trace in figure.data if str(trace.name) == "Joint φMn (s−/s+)"]
-    assert sum(len(list(trace.x)) for trace in joint_markers) == 10
+    joint_markers = [trace for trace in figure.data if str(trace.name) == "Joint one-sided φMn"]
+    assert len(joint_markers) == 1
+    assert len(list(joint_markers[0].x)) == 10
+    symbols = list(joint_markers[0].marker.symbol)
+    assert symbols.count("triangle-left-open") == 5
+    assert symbols.count("triangle-right-open") == 5
+
+    no_credit_legend = [trace for trace in figure.data if str(trace.name) == "No rebar credit zone"]
+    assert len(no_credit_legend) == 1
+    amber_bands = [shape for shape in figure.layout.shapes if str(shape.type) == "rect"]
+    assert len(amber_bands) >= 12
 
     title = str(figure.layout.title.text)
     assert "direct Crossbeam P–M3" in title
-    assert "binary ordinary-rebar development credit" in title
+    assert "adopted capacity envelope" in title
 
 def test_flexure_credit_region_trace_does_not_invent_boundary_values_when_capacity_varies() -> None:
     rows = pd.DataFrame(
