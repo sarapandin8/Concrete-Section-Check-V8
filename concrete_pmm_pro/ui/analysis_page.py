@@ -20697,18 +20697,86 @@ def _crossbeam_flexure_chart_rows(result_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(chosen).drop(columns=["__dc", "__capacity", "__station"], errors="ignore")
 
 
+def _crossbeam_flexure_segment_trace_points(
+    rows: pd.DataFrame,
+    *,
+    segment_start_m: float,
+    segment_end_m: float,
+) -> tuple[list[float], list[float], list[list[object]]]:
+    """Return truthful Segment-owned phiMn trace points.
+
+    Flexural capacity is still solved at the actual imported/generated stations.
+    When every finite capacity in one Segment is numerically identical (same Pu,
+    Section/Rebar/Tendon source, bending side, and resulting phiMn), the stable
+    solved value is extended to the exact Segment boundaries so the chart shows
+    the full capacity interval instead of isolated station fragments.  If the
+    solved capacities vary, only the actual station values are connected; no
+    artificial boundary value is invented.
+    """
+
+    if rows is None or rows.empty:
+        return [], [], []
+    working = rows.sort_values("__x_m", kind="stable").copy()
+    x_values: list[float] = []
+    y_values: list[float] = []
+    custom: list[list[object]] = []
+    for _, row in working.iterrows():
+        station = float(row["__x_m"])
+        capacity = float(row["__capacity_kNm"])
+        sign = _beam_uls_float(row.get("__plot_sign"))
+        if not math.isfinite(sign) or abs(sign) <= 0.0:
+            demand = _beam_uls_float(row.get("__demand_kNm"))
+            sign = -1.0 if demand < 0.0 else 1.0
+        x_values.append(station)
+        y_values.append(sign * capacity)
+        custom.append(
+            [
+                str(row.get("Segment") or ""),
+                str(row.get("Case") or "ULS"),
+                str(row.get("Section ID") or ""),
+                "SOLVED STATION",
+            ]
+        )
+
+    finite_y = [value for value in y_values if math.isfinite(value)]
+    stable = False
+    if finite_y:
+        scale = max(max(abs(value) for value in finite_y), 1.0)
+        stable = max(finite_y) - min(finite_y) <= max(1.0e-6 * scale, 1.0e-6)
+    if stable:
+        stable_value = float(sum(finite_y) / len(finite_y))
+        first_custom = list(custom[0])
+        last_custom = list(custom[-1])
+        if x_values[0] > float(segment_start_m) + 1.0e-9:
+            x_values.insert(0, float(segment_start_m))
+            y_values.insert(0, stable_value)
+            first_custom[3] = "STABLE SEGMENT LIMIT"
+            custom.insert(0, first_custom)
+        elif abs(x_values[0] - float(segment_start_m)) <= 1.0e-9:
+            x_values[0] = float(segment_start_m)
+        if x_values[-1] < float(segment_end_m) - 1.0e-9:
+            x_values.append(float(segment_end_m))
+            y_values.append(stable_value)
+            last_custom[3] = "STABLE SEGMENT LIMIT"
+            custom.append(last_custom)
+        elif abs(x_values[-1] - float(segment_end_m)) <= 1.0e-9:
+            x_values[-1] = float(segment_end_m)
+    return x_values, y_values, custom
+
+
 def _make_crossbeam_uls_flexure_figure(
     demand_df: pd.DataFrame,
     flexure_df: pd.DataFrame,
     *,
     segment_rows: Any = None,
 ) -> go.Figure:
-    """Plot station-specific phiMn without interpolating across physical joints.
+    """Plot Segment-owned phiMn without interpolating across physical joints.
 
-    The PMM engine still evaluates the actual section, Pu, ordinary reinforcement,
-    and bonded tendon geometry at each station.  Capacity may therefore vary
-    inside one Segment.  The chart only changes the visual connection rule: a
-    line is never drawn from one physical Segment to the next.
+    The PMM engine evaluates the actual Pu, Section/Rebar source, and bonded
+    tendon geometry at each station.  A Segment whose solved capacities are
+    identical is displayed continuously over its full physical extent.  A
+    varying Segment retains only actual station values.  Separate Plotly traces
+    are always used on opposite sides of every physical joint.
     """
 
     fig = _make_beam_uls_flexure_preview_figure(
@@ -20766,19 +20834,19 @@ def _make_crossbeam_uls_flexure_figure(
                     else group.iloc[0]
                 )
             rows = pd.DataFrame(chosen).sort_values("__x_m", kind="stable")
-            x_values: list[float] = []
-            y_values: list[float] = []
-            custom: list[list[object]] = []
-            for _, row in rows.iterrows():
-                station = float(row["__x_m"])
-                capacity = float(row["__capacity_kNm"])
-                sign = _beam_uls_float(row.get("__plot_sign"))
-                if not math.isfinite(sign) or abs(sign) <= 0.0:
-                    demand = _beam_uls_float(row.get("__demand_kNm"))
-                    sign = -1.0 if demand < 0.0 else 1.0
-                x_values.append(station)
-                y_values.append(sign * capacity)
-                custom.append([segment_id, case_name, str(row.get("Section ID") or "")])
+            x_values, y_values, custom = _crossbeam_flexure_segment_trace_points(
+                rows,
+                segment_start_m=float(segment["start"]),
+                segment_end_m=float(segment["end"]),
+            )
+            if not x_values:
+                continue
+            # Use the current Segment/Case identity in hover data even when the
+            # stable trace helper extended the first/last solved value to a
+            # Segment boundary.
+            for item in custom:
+                item[0] = segment_id
+                item[1] = case_name
             fig.add_trace(
                 go.Scatter(
                     x=x_values,
@@ -20792,8 +20860,8 @@ def _make_crossbeam_uls_flexure_figure(
                     customdata=custom,
                     hovertemplate=(
                         "Segment=%{customdata[0]} · Case=%{customdata[1]}"
-                        "<br>Section=%{customdata[2]}<br>x=%{x:.3f} m"
-                        "<br>φMn=%{y:.3f} kN-m<extra></extra>"
+                        "<br>Section=%{customdata[2]} · %{customdata[3]}"
+                        "<br>x=%{x:.3f} m<br>φMn=%{y:.3f} kN-m<extra></extra>"
                     ),
                 )
             )
@@ -20829,7 +20897,7 @@ def _make_crossbeam_uls_flexure_figure(
         title={
             "text": (
                 "Flexure Check — Strength ULS"
-                "<br><sup>ACI 318-19 · Crossbeam M3 → Mux · station-specific φMn · physical joints not interpolated</sup>"
+                "<br><sup>ACI 318-19 · Crossbeam M3 → Mux · Segment-owned φMn · physical joints not interpolated</sup>"
             )
         }
     )
@@ -21005,7 +21073,7 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
         )
         st.caption(
             "The chart uses the governing face at duplicate Case/station locations; the audit table below retains every left/right limit. "
-            "φMn is calculated independently at each station from the actual Pu, Section/Rebar source, and bonded tendon geometry. It may vary inside one Segment, but the capacity trace is split at every physical joint so Solid/Hollow values are never linearly interpolated across a boundary. "
+            "φMn is calculated independently at each station from the actual Pu, Section/Rebar source, and bonded tendon geometry. When all solved φMn values in one Segment are identical, that solved value is displayed continuously to the Segment limits; if capacity varies, only actual station values are connected. Separate traces are retained at every physical joint so Solid/Hollow values are never linearly interpolated across a boundary. "
             "For zero-M3 rows, φMn(Pu) uses the bending sign from the nearest nonzero station in the same Load Case; Flexural D/C is 0.000 and Axial D/C is separate. "
             "At a Precast physical Segment joint, ordinary longitudinal rebar is zero and bonded Tendons remain the section-continuity source."
         )

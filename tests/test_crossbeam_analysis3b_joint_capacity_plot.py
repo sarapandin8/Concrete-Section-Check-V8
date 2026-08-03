@@ -47,6 +47,7 @@ from concrete_pmm_pro.crossbeam.tendon_persistence import (
 from concrete_pmm_pro.crossbeam.transverse import default_crossbeam_transverse_templates
 from concrete_pmm_pro.ui.analysis_page import (
     _crossbeam_flexure_chart_rows,
+    _crossbeam_flexure_segment_trace_points,
     _crossbeam_shear_demand_plot_rows,
     _crossbeam_uls_demand_dataframe,
     _make_crossbeam_uls_flexure_figure,
@@ -289,10 +290,58 @@ def test_flexure_capacity_trace_never_interpolates_across_physical_joints() -> N
 
     capacity_traces = [trace for trace in figure.data if str(trace.name) == "φMn"]
     assert len(capacity_traces) >= 6
+    traced_intervals: set[tuple[float, float]] = set()
     for trace in capacity_traces:
         finite_x = [float(value) for value in list(trace.x) if value is not None and math.isfinite(float(value))]
         assert finite_x
         assert not any(min(finite_x) < joint < max(finite_x) for joint in JOINTS)
+        if len(finite_x) >= 2:
+            traced_intervals.add((round(min(finite_x), 6), round(max(finite_x), 6)))
+
+    # This benchmark has stable phiMn within every Segment.  The chart must
+    # therefore show each solved value over the full Segment extent instead of
+    # leaving gaps between the nearest imported station and the physical joint.
+    expected_intervals = {
+        (0.0, 4.5),
+        (4.5, 10.5),
+        (10.5, 15.0),
+        (15.0, 19.5),
+        (19.5, 25.5),
+        (25.5, 30.0),
+    }
+    assert expected_intervals.issubset(traced_intervals)
 
     title = str(figure.layout.title.text)
+    assert "Segment-owned φMn" in title
     assert "physical joints not interpolated" in title
+
+
+def test_flexure_segment_trace_does_not_invent_boundary_values_when_capacity_varies() -> None:
+    rows = pd.DataFrame(
+        [
+            {
+                "__x_m": 6.0,
+                "__capacity_kNm": 17000.0,
+                "__plot_sign": 1.0,
+                "__demand_kNm": 2000.0,
+                "Segment": "S2",
+                "Case": "ULS-01",
+                "Section ID": "CB-H01",
+            },
+            {
+                "__x_m": 10.0,
+                "__capacity_kNm": 16500.0,
+                "__plot_sign": 1.0,
+                "__demand_kNm": 7000.0,
+                "Segment": "S2",
+                "Case": "ULS-01",
+                "Section ID": "CB-H01",
+            },
+        ]
+    )
+    x_values, y_values, custom = _crossbeam_flexure_segment_trace_points(
+        rows, segment_start_m=4.5, segment_end_m=10.5
+    )
+    assert x_values == [6.0, 10.0]
+    assert y_values == [17000.0, 16500.0]
+    assert all(item[3] == "SOLVED STATION" for item in custom)
