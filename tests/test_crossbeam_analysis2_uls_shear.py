@@ -543,3 +543,73 @@ def test_crossbeam_shear_chart_breaks_support_regions_and_dedupes_capacity_legen
     assert None in list(demand_trace.y)
     assert sum(shape.type == "rect" for shape in figure.layout.shapes) == 2
     assert "support footprints omitted" in str(figure.layout.title.text)
+
+
+def test_sectional_result_is_reported_independently_from_physical_joint_review() -> None:
+    preparation = build_crossbeam_uls_shear_preparation(_ready_state())
+    result = run_crossbeam_uls_shear(preparation)
+
+    assert result["status"] == "REVIEW"
+    assert result["sectional_status"] == "PASS"
+    assert result["joint_review_count"] == 1
+    assert result["sectional_checks"] == 12
+    assert result["generated_support_checks"] == 6
+    assert result["support_checks"] == 6
+    assert result["support_joint_reviews"] == 0
+
+    overall_governing = result["governing_row"]
+    sectional_governing = result["sectional_governing_row"]
+    assert overall_governing["Location type"] == "PHYSICAL SEGMENT JOINT"
+    assert sectional_governing["Location type"] != "PHYSICAL SEGMENT JOINT"
+    assert math.isfinite(float(sectional_governing["Governing D/C value"]))
+
+
+def test_physical_joint_chart_uses_compact_marker_legend_not_vertical_text() -> None:
+    import pandas as pd
+
+    from concrete_pmm_pro.ui.analysis_page import (
+        _crossbeam_shear_chart_rows,
+        _crossbeam_shear_demand_plot_rows,
+        _make_crossbeam_uls_shear_figure,
+    )
+
+    preparation = build_crossbeam_uls_shear_preparation(_ready_state())
+    result = run_crossbeam_uls_shear(preparation)
+    result_df = pd.DataFrame(result["rows"])
+    capacity_df = _crossbeam_shear_chart_rows(result_df)
+    demand_df = _crossbeam_shear_demand_plot_rows(result_df)
+    guard_df = result_df[result_df["Location type"].astype(str) == "PHYSICAL SEGMENT JOINT"]
+    support_df = result_df[
+        result_df["Location type"].isin(["COLUMN FACE", "ACI h/2 CRITICAL SECTION"])
+    ]
+
+    figure = _make_crossbeam_uls_shear_figure(
+        demand_df,
+        capacity_df,
+        guard_df,
+        support_df,
+        result["support_footprints"],
+    )
+
+    visible_legend_names = [trace.name for trace in figure.data if trace.showlegend is not False]
+    assert "Physical joint — REVIEW" in visible_legend_names
+    assert all(
+        str(getattr(annotation, "text", "")) != "Physical joint — REVIEW"
+        for annotation in list(figure.layout.annotations or [])
+    )
+
+
+def test_analysis2d_ui_copy_separates_sectional_result_from_joint_scope() -> None:
+    from pathlib import Path
+
+    source = Path("concrete_pmm_pro/ui/analysis_page.py").read_text(encoding="utf-8")
+    start = source.index("def _render_crossbeam_uls_shear_workspace")
+    end = source.index("def _crossbeam_transfer_demand_dataframe", start)
+    workspace = source[start:end]
+
+    assert '"title": "Sectional shear"' in workspace
+    assert '"title": "Governing sectional D/C"' in workspace
+    assert '"title": "Physical joint check"' in workspace
+    assert '"title": "Axis mapping"' not in workspace
+    assert "Column Face / h/2 checks" in workspace
+    assert "stations inside applied Column / Support footprints are retained as REVIEW scope guards" not in workspace

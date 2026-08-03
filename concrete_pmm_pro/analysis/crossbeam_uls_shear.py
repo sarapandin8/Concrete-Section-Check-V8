@@ -158,6 +158,8 @@ class PreparedCrossbeamShearRow:
     source_station_2_m: float | None = None
     source_ratio: float | None = None
     extrapolation_ratio: float | None = None
+    generated_support_check: bool = False
+    requested_location_type: str = ""
 
 
 @dataclass(frozen=True)
@@ -357,6 +359,29 @@ def _physical_joint_row(
             notes=(
                 "Exact Precast physical segment joint: ACI beam one-way shear is not used to certify interface/joint shear transfer.",
             ),
+            demand_source=str(demand.get("__Demand source") or "IMPORTED"),
+            source_station_1_m=(
+                _finite_float(demand.get("__Source station 1 (m)"), float("nan"))
+                if math.isfinite(_finite_float(demand.get("__Source station 1 (m)"), float("nan")))
+                else None
+            ),
+            source_station_2_m=(
+                _finite_float(demand.get("__Source station 2 (m)"), float("nan"))
+                if math.isfinite(_finite_float(demand.get("__Source station 2 (m)"), float("nan")))
+                else None
+            ),
+            source_ratio=(
+                _finite_float(demand.get("__Source ratio"), float("nan"))
+                if math.isfinite(_finite_float(demand.get("__Source ratio"), float("nan")))
+                else None
+            ),
+            extrapolation_ratio=(
+                _finite_float(demand.get("__Extrapolation ratio"), float("nan"))
+                if math.isfinite(_finite_float(demand.get("__Extrapolation ratio"), float("nan")))
+                else None
+            ),
+            generated_support_check=bool(demand.get("__Derived support check")),
+            requested_location_type=str(demand.get("__Location type") or ""),
         ),
         errors,
     )
@@ -1065,6 +1090,8 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
                             if math.isfinite(_finite_float(demand.get("__Extrapolation ratio"), float("nan")))
                             else None
                         ),
+                        generated_support_check=is_derived_support,
+                        requested_location_type=location_override,
                     )
                 )
 
@@ -1507,6 +1534,13 @@ def _joint_result_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         "V2 kN": row.source_v2_kn,
         "T kN-m": row.source_t_knm,
         "M3 kN-m": row.source_m3_knm,
+        "Demand source": row.demand_source,
+        "Source station 1 (m)": row.source_station_1_m,
+        "Source station 2 (m)": row.source_station_2_m,
+        "Source ratio": row.source_ratio,
+        "Extrapolation ratio": row.extrapolation_ratio,
+        "Generated support check": row.generated_support_check,
+        "Requested location type": row.requested_location_type,
         "Demand": f"{row.source_v2_kn:,.3f} kN",
         "Capacity": "Joint shear transfer not checked",
         "Utilization": "-",
@@ -1587,6 +1621,8 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
                 "T kN-m": row.source_t_knm,
                 "M3 kN-m": row.source_m3_knm,
                 "Demand source": row.demand_source,
+                "Generated support check": row.generated_support_check,
+                "Requested location type": row.requested_location_type,
                 "Source station 1 (m)": row.source_station_1_m,
                 "Source station 2 (m)": row.source_station_2_m,
                 "Source ratio": row.source_ratio,
@@ -1671,28 +1707,63 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
         return status_rank, dc if math.isfinite(dc) else -1.0
 
     governing = max(result_rows, key=_governing_rank, default=None)
+    sectional_rows = [
+        item for item in result_rows
+        if str(item.get("Location type") or "") != "PHYSICAL SEGMENT JOINT"
+    ]
+    joint_rows = [
+        item for item in result_rows
+        if str(item.get("Location type") or "") == "PHYSICAL SEGMENT JOINT"
+    ]
+    sectional_statuses = {str(item.get("Status") or "REVIEW") for item in sectional_rows}
+    if errors or not sectional_rows:
+        sectional_status = "REVIEW"
+    elif "FAIL" in sectional_statuses:
+        sectional_status = "FAIL"
+    elif sectional_statuses == {"PASS"}:
+        sectional_status = "PASS"
+    else:
+        sectional_status = "REVIEW"
+    sectional_governing = max(sectional_rows, key=_governing_rank, default=None)
+    generated_support_checks = sum(bool(item.get("Generated support check")) for item in result_rows)
+    evaluated_support_checks = sum(
+        str(item.get("Location type") or "") in {"COLUMN FACE", "ACI h/2 CRITICAL SECTION"}
+        for item in result_rows
+    )
+    support_joint_reviews = sum(
+        bool(item.get("Generated support check"))
+        and str(item.get("Location type") or "") == "PHYSICAL SEGMENT JOINT"
+        for item in result_rows
+    )
+    retained_regular_checks = len(result_rows) - generated_support_checks
     return {
-        "schema": "crossbeam-analysis2c-aci-prestressed-shear-result-v1",
+        "schema": "crossbeam-analysis2d-sectional-result-joint-review-v1",
         "input_fingerprint": preparation.fingerprint,
         "status": overall,
+        "sectional_status": sectional_status,
         "rows": result_rows,
         "governing_row": governing,
+        "sectional_governing_row": sectional_governing,
+        "joint_review_rows": joint_rows,
+        "joint_review_count": len(joint_rows),
         "warnings": _dedupe(warnings),
         "errors": _dedupe(errors),
         "station_checks": len(preparation.rows),
-        "support_checks": sum(
-            str(item.get("Location type") or "") in {"COLUMN FACE", "ACI h/2 CRITICAL SECTION"}
-            for item in result_rows
-        ),
+        "sectional_checks": len(sectional_rows),
+        "retained_regular_checks": retained_regular_checks,
+        "generated_support_checks": generated_support_checks,
+        "support_checks": evaluated_support_checks,
+        "support_joint_reviews": support_joint_reviews,
         "support_footprints": [dict(item) for item in preparation.support_footprints],
         "derived_support_rows": [dict(item) for item in preparation.derived_support_rows],
         "scope": (
             "ULS sectional one-way shear only. ACI 318-19 9.4.3 is applied conservatively by checking both each available beam-side "
             "Column Face and the h/2 critical section measured outward from that face; the more severe result governs. "
-            "The beam-column joint/support-footprint D-region itself remains outside this sectional check and does not reduce a completed "
-            "sectional PASS to REVIEW. Exact Precast physical-joint shear transfer, post-tensioning anchorage/end zones, hanger reinforcement, "
-            "anchorage/development, torsion, combined V+T, fatigue, and seismic detailing remain separate. "
-            "The ACI 22.5.6.2 PASS route requires fully transferred effective prestress and the prestress-dominance applicability gate; "
-            "refined Vci/Vcw is not synthesized from incomplete load-stage sources."
+            "Support-footprint interiors are omitted from beam-shear checks. The beam-column joint/support-footprint D-region itself remains "
+            "outside this sectional check and does not reduce a completed sectional PASS to REVIEW. Exact Precast physical-joint shear transfer "
+            "is reported as a separate REVIEW item and does not hide the governing sectional D/C. Post-tensioning anchorage/end zones, hanger "
+            "reinforcement, anchorage/development, torsion, combined V+T, fatigue, and seismic detailing remain separate. The ACI 22.5.6.2 "
+            "PASS route requires fully transferred effective prestress and the prestress-dominance applicability gate; refined Vci/Vcw is not "
+            "synthesized from incomplete load-stage sources."
         ),
     }

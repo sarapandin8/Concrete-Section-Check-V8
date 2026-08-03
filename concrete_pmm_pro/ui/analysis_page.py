@@ -21089,22 +21089,25 @@ def _make_crossbeam_uls_shear_figure(
         _crossbeam_break_trace_over_supports(trace, support_footprints)
 
     if not guard_df.empty:
-        for _, source in guard_df.iterrows():
-            station = _analysis_float_or_zero(source.get("Station s (m)"))
+        joint_x = pd.to_numeric(guard_df.get("Station s (m)"), errors="coerce")
+        joint_y = pd.to_numeric(guard_df.get("V2 kN"), errors="coerce")
+        valid_joint = joint_x.notna() & joint_y.notna()
+        if valid_joint.any():
+            fig.add_trace(
+                go.Scatter(
+                    x=joint_x[valid_joint],
+                    y=joint_y[valid_joint],
+                    mode="markers",
+                    name="Physical joint — REVIEW",
+                    marker={"size": 9, "symbol": "x-open", "color": "#f59e0b", "line": {"width": 1.5}},
+                    hovertemplate="x=%{x:.3f} m<br>Vu=%{y:.3f} kN<br>Physical-joint transfer: REVIEW<extra></extra>",
+                )
+            )
+        for station in joint_x.dropna().astype(float):
             fig.add_vline(
                 x=station,
-                line={"color": "#f59e0b", "width": 1.5, "dash": "dot"},
+                line={"color": "#f59e0b", "width": 1.2, "dash": "dot"},
                 layer="above",
-            )
-            fig.add_annotation(
-                x=station,
-                y=0.985,
-                xref="x",
-                yref="paper",
-                text="Physical joint — REVIEW",
-                showarrow=False,
-                textangle=-90,
-                font={"size": 9, "color": "#b45309"},
             )
 
     fig.update_layout(
@@ -21130,13 +21133,18 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         st.markdown(
             "- ACI 318-19 22.5.6.2 approximate prestressed Vc is used only when its Aps fse applicability gate is satisfied and the effective prestress is fully transferred to the concrete.\n"
             "- Provided transverse reinforcement is checked for Vs, Av,min, spacing along the member, spacing across the width, and the 22.5.1.2 section limit.\n"
-            "- Exact Precast physical joints and stations inside applied Column / Support footprints are retained as REVIEW scope guards; beam-shear PASS is not issued there.\n"
-            "- Imported check stations remain Engineer-selected. ACI 9.4.3 support-face/critical-section conditions and post-tensioning anchorage/end zones require separate confirmation.\n"
+            "- Support-footprint interiors are omitted from sectional beam-shear checks. Each available beam-side Column Face and the ACI h/2 section measured outward from that face are generated and checked automatically.\n"
+            "- Exact Precast physical-joint shear transfer is reported separately as REVIEW REQUIRED; it does not hide or replace the governing sectional D/C.\n"
             "- Torsion and combined V+T are not calculated by ANALYSIS2. D-region, interface shear, anchorage, development, fatigue, and seismic detailing remain separate."
         )
 
     preparation = build_crossbeam_uls_shear_preparation(st.session_state)
     demand_df = _crossbeam_uls_demand_dataframe(preparation)
+    generated_support_count = sum(
+        bool(getattr(row, "generated_support_check", False))
+        for row in preparation.rows
+    )
+    retained_source_count = max(len(preparation.rows) - generated_support_count, 0)
     cached = st.session_state.get(CROSSBEAM_ULS_SHEAR_RESULT_KEY)
     cached_hash = str(st.session_state.get(CROSSBEAM_ULS_SHEAR_RESULT_HASH_KEY) or "")
     cache_current = isinstance(cached, Mapping) and cached_hash == preparation.fingerprint
@@ -21145,8 +21153,9 @@ def _render_crossbeam_uls_shear_workspace() -> None:
     with command_cols[0]:
         if preparation.ready:
             st.success(
-                f"ULS Shear source ready — {len(preparation.demand_rows):,} imported row(s) produce "
-                f"{len(preparation.rows):,} sectional check(s), including {len(preparation.derived_support_rows):,} generated support check row(s)."
+                f"ULS Shear source ready — {len(preparation.demand_rows):,} active station-force row(s); "
+                f"{retained_source_count:,} retained source/joint check(s) + {generated_support_count:,} generated Column Face / h/2 check(s) "
+                f"= {len(preparation.rows):,} total check row(s)."
             )
         else:
             st.error("ULS Shear source blocked — resolve the Loads, Section/Rebar, Tendon, Effective Prestress, or Column/Support source below.")
@@ -21200,13 +21209,13 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         {
             "title": "Section checks",
             "value": f"{len(preparation.rows):,}",
-            "detail": f"{len(preparation.derived_support_rows):,} Column Face / h/2 row(s)",
+            "detail": f"{retained_source_count:,} retained + {generated_support_count:,} generated",
             "status": "info",
         },
         {
-            "title": "Axis mapping",
-            "value": "V2 → Vu",
-            "detail": "signed source · |Vu| for resistance check",
+            "title": "Support checks",
+            "value": f"{generated_support_count:,}",
+            "detail": "Column Face + ACI h/2 generated automatically",
             "status": "neutral",
         },
         {
@@ -21229,51 +21238,73 @@ def _render_crossbeam_uls_shear_workspace() -> None:
 
     result = dict(cached)
     result_df = pd.DataFrame(list(result.get("rows") or []))
-    governing = result.get("governing_row") if isinstance(result.get("governing_row"), Mapping) else None
-    status = str(result.get("status") or "REVIEW")
-    status_style = "danger" if status == "FAIL" else ("ready" if status == "PASS" else "warning")
-    governing_dc = _beam_uls_float(governing.get("Governing D/C value")) if governing else float("nan")
-    governing_gate = "-"
-    if governing:
-        location_type = str(governing.get("Location type") or "")
-        if location_type == "PHYSICAL SEGMENT JOINT":
-            governing_gate = "SCOPE GUARD"
-        elif location_type == "COLUMN FACE":
-            governing_gate = "COLUMN FACE"
-        elif location_type == "ACI h/2 CRITICAL SECTION":
-            governing_gate = "ACI h/2"
-        elif str(governing.get("Detailing status") or "") == "FAIL":
-            governing_gate = "DETAILING"
-        else:
-            governing_gate = "STRENGTH"
+    sectional_governing = (
+        result.get("sectional_governing_row")
+        if isinstance(result.get("sectional_governing_row"), Mapping)
+        else None
+    )
+    sectional_status = str(result.get("sectional_status") or result.get("status") or "REVIEW")
+    sectional_style = (
+        "danger" if sectional_status == "FAIL" else ("ready" if sectional_status == "PASS" else "warning")
+    )
+    sectional_dc = (
+        _beam_uls_float(sectional_governing.get("Governing D/C value"))
+        if sectional_governing
+        else float("nan")
+    )
+    joint_review_count = int(result.get("joint_review_count") or 0)
+    generated_support_checks = int(result.get("generated_support_checks") or 0)
+    evaluated_support_checks = int(result.get("support_checks") or 0)
+    support_joint_reviews = int(result.get("support_joint_reviews") or 0)
+    support_detail = (
+        f"{support_joint_reviews:,} coincide with physical-joint review"
+        if support_joint_reviews
+        else "all generated Face / h/2 checks evaluated"
+    )
+    governing_detail = "-"
+    if sectional_governing:
+        location = str(sectional_governing.get("Location type") or "Sectional check")
+        governing_detail = (
+            f"{location} · {sectional_governing.get('Case')} @ "
+            f"s={_format_beam_uls_x(sectional_governing.get('Station s (m)'))}"
+        )
     result_cards = [
         {
-            "title": "Shear status",
-            "value": status,
-            "detail": "ACI 318-19 sectional shear review",
-            "status": status_style,
+            "title": "Sectional shear",
+            "value": sectional_status,
+            "detail": "ACI 318-19 one-way shear",
+            "status": sectional_style,
             "strong": True,
         },
         {
-            "title": "Governing D/C",
-            "value": f"{governing_dc:.3f}" if math.isfinite(governing_dc) else "-",
-            "detail": "-" if governing is None else f"{governing.get('Case')} @ s={_format_beam_uls_x(governing.get('Station s (m)'))}",
-            "status": "info",
+            "title": "Governing sectional D/C",
+            "value": f"{sectional_dc:.3f}" if math.isfinite(sectional_dc) else "-",
+            "detail": governing_detail,
+            "status": "danger" if sectional_status == "FAIL" else "info",
         },
         {
-            "title": "Governing gate",
-            "value": governing_gate,
-            "detail": "-" if governing is None else str(governing.get("Location type") or governing.get("Section ID") or "-"),
-            "status": "warning" if governing_gate == "SCOPE GUARD" else "info",
+            "title": "Physical joint check",
+            "value": "REVIEW REQUIRED" if joint_review_count else "NOT APPLICABLE",
+            "detail": (
+                f"{joint_review_count:,} joint location(s) outside sectional scope"
+                if joint_review_count
+                else "no Precast physical-joint review row"
+            ),
+            "status": "warning" if joint_review_count else "neutral",
         },
         {
             "title": "Support checks",
-            "value": f"{int(result.get('support_checks') or 0):,}",
-            "detail": f"of {int(result.get('station_checks') or 0):,} total sectional checks",
-            "status": "neutral",
+            "value": f"{evaluated_support_checks:,} / {generated_support_checks:,}",
+            "detail": support_detail,
+            "status": "warning" if support_joint_reviews else "neutral",
         },
     ]
     _render_analysis_summary_strip(result_cards, columns=4)
+    if joint_review_count and str(result.get("status") or "") == "REVIEW":
+        st.caption(
+            "Overall module state remains REVIEW until physical-joint shear transfer is verified; "
+            "the ACI sectional shear result and governing D/C are reported independently above."
+        )
 
     if not result_df.empty:
         chart_df = _crossbeam_shear_chart_rows(result_df)
@@ -21297,26 +21328,43 @@ def _render_crossbeam_uls_shear_workspace() -> None:
             )
         )
         st.caption(
-            "Signed Vu and the ±φVn / ±φVc traces are broken across each shaded support footprint. Open circles mark Column Face checks; open diamonds mark ACI h/2 checks. "
-            "Both locations are checked conservatively and the larger D/C governs. P, T, and M3 remain row-coupled to the same exact, one-sided interpolated, or limited one-sided extrapolated station-force source. "
+            "Signed Vu and the ±φVn / ±φVc traces are broken across each shaded support footprint. Open circles mark Column Face checks; open diamonds mark ACI h/2 checks; amber X markers identify physical-joint REVIEW locations. "
+            "Both support locations are checked conservatively and the larger D/C governs. P, T, and M3 remain row-coupled to the same exact, one-sided interpolated, or limited one-sided extrapolated station-force source. "
             "Physical segment-joint transfer and torsion interaction remain outside this milestone."
         )
-        compact_columns = [
+        generated_mask = result_df.get("Generated support check", pd.Series(False, index=result_df.index)).fillna(False).astype(bool)
+        generated_support_df = result_df[generated_mask].copy()
+        regular_df = result_df[~generated_mask].copy()
+        support_columns = [
+            "Status", "Check Point", "Station s (m)", "Case", "Requested location type", "Location type",
+            "Demand source", "Source station 1 (m)", "Source station 2 (m)", "Source ratio", "Extrapolation ratio",
+            "V2 kN", "φVn kN", "Strength D/C value", "Detailing D/C value", "Section ID", "Rebar Zone",
+            "Transverse Template",
+        ]
+        if not generated_support_df.empty:
+            st.markdown("#### Column Face / h/2 checks")
+            st.dataframe(
+                generated_support_df[[column for column in support_columns if column in generated_support_df]],
+                use_container_width=True,
+                hide_index=True,
+            )
+        regular_columns = [
             "Status", "Strength status", "Detailing status", "Station s (m)", "Check Point", "Case",
             "Location type", "Section ID", "Rebar Zone", "Transverse Template", "V2 kN", "φVn kN",
             "Strength D/C value", "Detailing D/C value", "Stirrup", "Av/s mm2/m", "Av/s required mm2/m",
             "s max mm", "Spacing D/C",
         ]
-        st.dataframe(
-            result_df[[column for column in compact_columns if column in result_df]],
-            use_container_width=True,
-            hide_index=True,
-        )
+        with st.expander("Regular / imported station checks", expanded=False):
+            st.dataframe(
+                regular_df[[column for column in regular_columns if column in regular_df]],
+                use_container_width=True,
+                hide_index=True,
+            )
         with st.expander("Calculation audit — ACI terms / all station rows", expanded=False):
             audit_columns = [
-                "Status", "Station s (m)", "Case", "Section face", "Location type", "Demand source",
-                "Source station 1 (m)", "Source station 2 (m)", "Source ratio", "Extrapolation ratio",
-                "P kN", "V2 kN", "T kN-m", "M3 kN-m",
+                "Status", "Generated support check", "Requested location type", "Station s (m)", "Case",
+                "Section face", "Location type", "Demand source", "Source station 1 (m)", "Source station 2 (m)",
+                "Source ratio", "Extrapolation ratio", "P kN", "V2 kN", "T kN-m", "M3 kN-m",
                 "bw mm", "h mm", "d raw mm", "d mm", "dp mm", "Tension face", "Bending direction",
                 "Aps mm2", "As tension mm2", "Aps fse kN", "Aps fpu kN", "As fy kN", "Prestress ratio",
                 "Vc(a) kN", "Vc(b) kN", "Vc(c) kN", "Vc lower kN", "Vc kN", "Vs kN", "φVn kN",
