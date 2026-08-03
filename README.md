@@ -1,3 +1,7 @@
+### CROSSBEAM.ANALYSIS3A — Torsion Chart Completeness and Capacity Semantics
+
+Completes `φTth` plotting across below-threshold Solid and Hollow sections, fits a symmetric y-axis to all finite `Tu`, `φTth`, and `φTn` values, breaks capacity traces across physical joints, and makes the force-graph governing marker report `Tu/φTn` instead of an unrelated longitudinal-`Al` utilization. No ACI equation or solver result is changed. See `README_CROSSBEAM_ANALYSIS3A.md`.
+
 ### CROSSBEAM.ANALYSIS3 — ACI 318-19 Prestressed ULS Torsion
 
 Adds the standalone Crossbeam ULS Torsion workspace after accepted Flexure and Shear, including ACI threshold routing, solid/hollow closed-cage and Outer longitudinal reinforcement checks, conservative Column Face and prestressed h/2 stations, section-size/detailing gates, and explicit Combined V+T adoption guards. See `README_CROSSBEAM_ANALYSIS3.md`.

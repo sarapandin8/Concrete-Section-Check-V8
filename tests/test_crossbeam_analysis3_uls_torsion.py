@@ -256,10 +256,12 @@ def test_torsion_chart_has_single_signed_capacity_and_threshold_legend_entries()
 
     assert names.count("±φTn") == 1
     assert names.count("±φTth") == 1
-    assert names.count("Column Face check") == 1
+    assert names.count("Support-face screen") == 1
     assert names.count("ACI h/2 check") == 1
     assert names.count("Physical joint — REVIEW") == 1
     assert names.count("Max |Tu|") == 1
+    assert names.count("Gov. Tu/φTn") == 1
+    assert "Gov. torsion D/C" not in names
     assert "Governing demand" not in names
     assert "capacity curves planned" not in str(figure.layout.title.text)
     dotted_blue_lines = [
@@ -269,6 +271,49 @@ def test_torsion_chart_has_single_signed_capacity_and_threshold_legend_entries()
         and "59, 130, 246" in str(getattr(getattr(shape, "line", None), "color", ""))
     ]
     assert dotted_blue_lines
+
+
+def test_torsion_chart_plots_threshold_for_below_threshold_solid_sections_and_fits_scale() -> None:
+    state = _mixed_state(torsion_knm=1_000.0)
+    preparation = build_crossbeam_uls_torsion_preparation(state)
+    result = run_crossbeam_uls_torsion(preparation)
+    rows = pd.DataFrame(result["rows"])
+    figure = _make_crossbeam_uls_torsion_figure(
+        rows, list(preparation.support_footprints)
+    )
+
+    positive_threshold = next(
+        trace
+        for trace in figure.data
+        if str(trace.name) == "±φTth"
+        and any(
+            float(value) > 0.0
+            for value in list(trace.y)
+            if value is not None and math.isfinite(float(value))
+        )
+    )
+    plotted_thresholds = {
+        round(float(value), 6)
+        for value in list(positive_threshold.y)
+        if value is not None and math.isfinite(float(value)) and float(value) > 0.0
+    }
+    expected_thresholds = {
+        round(float(value), 6)
+        for value in pd.to_numeric(rows["phiTth kN-m"], errors="coerce").dropna()
+        if math.isfinite(float(value)) and float(value) > 0.0
+    }
+    assert expected_thresholds.issubset(plotted_thresholds)
+
+    finite_plot_values = []
+    for column in ("T kN-m", "phiTth kN-m", "phiTn kN-m"):
+        finite_plot_values.extend(
+            abs(float(value))
+            for value in pd.to_numeric(rows[column], errors="coerce").dropna()
+            if math.isfinite(float(value))
+        )
+    y_range = list(figure.layout.yaxis.range)
+    assert y_range[0] == pytest.approx(-y_range[1])
+    assert y_range[1] >= 1.10 * max(finite_plot_values)
 
 
 def test_crossbeam_uls_navigation_exposes_torsion_without_shear_plus_torsion_placeholder() -> None:

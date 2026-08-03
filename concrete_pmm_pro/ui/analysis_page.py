@@ -21452,27 +21452,125 @@ def _render_crossbeam_uls_shear_workspace() -> None:
 
 
 def _crossbeam_torsion_chart_rows(result_df: pd.DataFrame) -> pd.DataFrame:
-    """Return one conservative finite torsion row per Case/station for plotting."""
+    """Return one conservative torsion row per Case/station for plotting.
+
+    ``phiTth`` is a threshold screen and remains meaningful even where the
+    detailed torsional-strength route is not required and ``phiTn`` is blank.
+    Do not filter those below-threshold rows out of the engineering figure.
+    """
 
     if result_df.empty:
         return result_df
     source = result_df.copy()
     source["__station"] = pd.to_numeric(source.get("Station s (m)"), errors="coerce")
     source["__capacity"] = pd.to_numeric(source.get("phiTn kN-m"), errors="coerce")
+    source["__threshold"] = pd.to_numeric(source.get("phiTth kN-m"), errors="coerce")
     source["__dc"] = pd.to_numeric(source.get("Governing D/C value"), errors="coerce")
-    source = source[source["__station"].notna() & source["__capacity"].notna()].copy()
+    source = source[
+        source["__station"].notna()
+        & (source["__capacity"].notna() | source["__threshold"].notna())
+    ].copy()
     if source.empty:
-        return source.drop(columns=["__station", "__capacity", "__dc"], errors="ignore")
+        return source.drop(
+            columns=["__station", "__capacity", "__threshold", "__dc"],
+            errors="ignore",
+        )
     chosen: list[pd.Series] = []
     for (_case, _station), group in source.groupby(["Case", "__station"], dropna=False, sort=False):
         finite_dc = group[group["__dc"].notna()]
         if not finite_dc.empty:
             max_dc = float(finite_dc["__dc"].astype(float).max())
             tied = finite_dc[(finite_dc["__dc"].astype(float) - max_dc).abs() <= 1.0e-12]
-            chosen.append(tied.loc[tied["__capacity"].astype(float).idxmin()])
+            finite_capacity = tied[tied["__capacity"].notna()]
+            if not finite_capacity.empty:
+                chosen.append(
+                    finite_capacity.loc[finite_capacity["__capacity"].astype(float).idxmin()]
+                )
+            else:
+                chosen.append(tied.loc[tied["__threshold"].astype(float).idxmin()])
         else:
-            chosen.append(group.loc[group["__capacity"].astype(float).idxmin()])
-    return pd.DataFrame(chosen).drop(columns=["__station", "__capacity", "__dc"], errors="ignore")
+            finite_capacity = group[group["__capacity"].notna()]
+            if not finite_capacity.empty:
+                chosen.append(
+                    finite_capacity.loc[finite_capacity["__capacity"].astype(float).idxmin()]
+                )
+            else:
+                chosen.append(group.loc[group["__threshold"].astype(float).idxmin()])
+    return pd.DataFrame(chosen).drop(
+        columns=["__station", "__capacity", "__threshold", "__dc"],
+        errors="ignore",
+    )
+
+
+def _crossbeam_torsion_symmetric_y_range(result_df: pd.DataFrame) -> list[float] | None:
+    """Return a symmetric chart range covering demand, threshold, and strength.
+
+    The accepted full-span chart must never clip a high-capacity Solid section
+    merely because the demand or an adjacent Hollow section controls the
+    automatic Plotly scale.
+    """
+
+    finite_values: list[float] = []
+    for column in ("T kN-m", "phiTth kN-m", "phiTn kN-m"):
+        values = pd.to_numeric(result_df.get(column), errors="coerce")
+        if values is None:
+            continue
+        finite_values.extend(
+            abs(float(value))
+            for value in values.dropna().tolist()
+            if math.isfinite(float(value))
+        )
+    if not finite_values:
+        return None
+    peak = max(finite_values)
+    if peak <= 0.0:
+        peak = 1.0
+    limit = 1.12 * peak
+    return [-limit, limit]
+
+
+def _crossbeam_break_trace_over_stations(
+    trace: go.Scatter,
+    stations: list[float],
+) -> None:
+    """Insert Plotly gaps wherever a line crosses a physical joint station."""
+
+    if "lines" not in str(getattr(trace, "mode", "")):
+        return
+    raw_x = getattr(trace, "x", None)
+    raw_y = getattr(trace, "y", None)
+    if raw_x is None or raw_y is None:
+        return
+    x_values = list(raw_x)
+    y_values = list(raw_y)
+    if len(x_values) < 2 or len(x_values) != len(y_values):
+        return
+    finite_stations = [
+        float(station) for station in stations if math.isfinite(float(station))
+    ]
+    if not finite_stations:
+        return
+    output_x: list[object] = [x_values[0]]
+    output_y: list[object] = [y_values[0]]
+    for index in range(1, len(x_values)):
+        previous = x_values[index - 1]
+        current = x_values[index]
+        try:
+            x0 = float(previous)
+            x1 = float(current)
+        except (TypeError, ValueError):
+            output_x.append(current)
+            output_y.append(y_values[index])
+            continue
+        lower = min(x0, x1)
+        upper = max(x0, x1)
+        if any(lower + 1.0e-9 < station < upper - 1.0e-9 for station in finite_stations):
+            output_x.append(None)
+            output_y.append(None)
+        output_x.append(current)
+        output_y.append(y_values[index])
+    trace.x = output_x
+    trace.y = output_y
 
 
 def _crossbeam_torsion_demand_plot_rows(result_df: pd.DataFrame) -> pd.DataFrame:
@@ -21503,7 +21601,7 @@ def _make_crossbeam_uls_torsion_figure(
     fig = _make_beam_uls_demand_figure(
         demand_df,
         column="Tu",
-        title="Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · conservative Column Face + h/2 checks · support footprints omitted</sup>",
+        title="Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · h/2 critical sections + conservative support-face screens · support footprints omitted</sup>",
         y_label="Torsion, Tu (kN-m)",
     )
     # Reuse the accepted Bridge/Beam demand figure, then normalize its demand
@@ -21595,7 +21693,7 @@ def _make_crossbeam_uls_torsion_figure(
     support_rows = result_df[result_df.get("Generated support check", False).astype(bool)].copy() if "Generated support check" in result_df else pd.DataFrame()
     if not support_rows.empty:
         for location, name, symbol in (
-            ("COLUMN FACE", "Column Face check", "circle-open"),
+            ("COLUMN FACE", "Support-face screen", "circle-open"),
             ("ACI h/2 CRITICAL SECTION", "ACI h/2 check", "diamond-open"),
         ):
             dataframe = support_rows[support_rows["Requested location type"].astype(str) == location].copy()
@@ -21622,19 +21720,45 @@ def _make_crossbeam_uls_torsion_figure(
         for station in x_values.dropna().astype(float):
             fig.add_vline(x=station, line={"color": "#f59e0b", "width": 1.2, "dash": "dot"}, layer="above")
 
-    decision = result_df[result_df.get("Location type", pd.Series(dtype=object)).astype(str) != "PHYSICAL SEGMENT JOINT"].copy()
-    decision["__dc"] = pd.to_numeric(decision.get("Governing D/C value"), errors="coerce")
-    if decision["__dc"].notna().any():
-        gov = decision.loc[decision["__dc"].idxmax()]
-        fig.add_trace(go.Scatter(x=[gov.get("Station s (m)")], y=[gov.get("T kN-m")], mode="markers+text", text=[f"{gov.get('Status')} · D/C {_beam_uls_float(gov.get('Governing D/C value')):.3f}"], textposition="top center", name="Gov. torsion D/C", marker={"size": 9, "symbol": "diamond", "color": "#111827"}, hovertemplate="x=%{x:.3f} m<br>Tu=%{y:.3f} kN-m<extra></extra>"))
+    decision = result_df[
+        result_df.get("Location type", pd.Series(dtype=object)).astype(str)
+        != "PHYSICAL SEGMENT JOINT"
+    ].copy()
+    decision["__strength_dc"] = pd.to_numeric(
+        decision.get("Strength D/C value"), errors="coerce"
+    )
+    if decision["__strength_dc"].notna().any():
+        gov = decision.loc[decision["__strength_dc"].idxmax()]
+        strength_dc = _beam_uls_float(gov.get("Strength D/C value"))
+        fig.add_trace(
+            go.Scatter(
+                x=[gov.get("Station s (m)")],
+                y=[gov.get("T kN-m")],
+                mode="markers+text",
+                text=[f"Gov. Tu/φTn {strength_dc:.3f}"],
+                textposition="top center",
+                name="Gov. Tu/φTn",
+                marker={"size": 9, "symbol": "diamond", "color": "#111827"},
+                hovertemplate=(
+                    "x=%{x:.3f} m<br>Tu=%{y:.3f} kN-m"
+                    f"<br>Tu/φTn={strength_dc:.3f}<extra></extra>"
+                ),
+            )
+        )
 
+    joint_stations = pd.to_numeric(
+        guard_df.get("Station s (m)"), errors="coerce"
+    ).dropna().astype(float).tolist() if not guard_df.empty else []
     for trace in fig.data:
         _crossbeam_break_trace_over_supports(trace, support_footprints)
+        _crossbeam_break_trace_over_stations(trace, joint_stations)
+    y_range = _crossbeam_torsion_symmetric_y_range(result_df)
     fig.update_layout(
         title=(
             "Standalone Torsion Check — Strength ULS"
-            "<br><sup>ACI 318-19 · conservative Column Face + h/2 checks · support footprints omitted</sup>"
-        )
+            "<br><sup>ACI 318-19 · h/2 critical sections + conservative support-face screens · support footprints omitted</sup>"
+        ),
+        yaxis={"range": y_range} if y_range is not None else {},
     )
     return fig
 
@@ -21652,7 +21776,7 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
             "- ACI 318-19 22.7.4 threshold torsion is evaluated for solid/hollow prestressed sections; imported Tu is not automatically reduced by compatibility redistribution.\n"
             "- ACI 22.7.6 checks both transverse At/s and Outer longitudinal Al; theta is 37.5 degrees only when the Aps fse dominance gate is satisfied, otherwise 45 degrees.\n"
             "- ACI 22.7.7 section-size stress limit, 9.6.4 minimum torsion reinforcement, 9.7.5 longitudinal perimeter spacing/diameter/corner coverage, and 9.7.6.3 closed-cage spacing are included.\n"
-            "- Support interiors are omitted. Each available beam-side Column Face and prestressed h/2 section is generated and checked conservatively.\n"
+            "- Support interiors are omitted. Prestressed h/2 sections are the ACI critical-section route; beam-side Column Faces are retained as conservative support-face screens.\n"
             "- Physical segment-joint torsion transfer is REVIEW REQUIRED. Additive shear-plus-torsion reinforcement and flexure-plus-Al interaction remain in the next Combined V+T milestone."
         )
 
@@ -21705,7 +21829,7 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
             {"title": "ULS source", "value": "READY" if preparation.ready else "SOURCE BLOCKED", "detail": f"{len(preparation.demand_rows):,} active station-force row(s)", "status": "ready" if preparation.ready else "danger", "strong": True},
             {"title": "Total check rows", "value": f"{len(preparation.rows):,}", "detail": f"{len(preparation.rows) - generated_support_count:,} retained + {generated_support_count:,} generated support", "status": "info"},
             {"title": "Eligible sectional checks", "value": f"{eligible_count:,}", "detail": f"{joint_review_count:,} physical-joint review location(s)", "status": "ready" if preparation.ready else "neutral"},
-            {"title": "Generated support checks", "value": f"{generated_support_count:,}", "detail": "Column Faces + ACI h/2 sections", "status": "neutral"},
+            {"title": "Generated support checks", "value": f"{generated_support_count:,}", "detail": "Conservative face screens + ACI h/2 sections", "status": "neutral"},
         ],
         columns=4,
     )
@@ -21763,14 +21887,14 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
         _render_beam_uls_static_plotly_figure(
             _make_crossbeam_uls_torsion_figure(result_df, list(preparation.support_footprints)),
             caption=(
-                "Signed Tu and ±φTn / ±φTth traces are broken across shaded support footprints. Open circles mark Column Face checks; open diamonds mark ACI h/2 checks; amber X markers identify physical-joint REVIEW locations. "
-                "φTth is the ACI threshold screen; φTn is the closed-cage/Outer-Al torsional strength. The 22.7.7 section-size stress gate is included, while additive V+T reinforcement remains separate."
+                "Signed Tu and ±φTn / ±φTth traces are broken across shaded support footprints and physical segment joints. Open circles mark conservative support-face screens; open diamonds mark ACI h/2 critical sections; amber X markers identify physical-joint REVIEW locations. "
+                "φTth is plotted across every eligible section and the symmetric y-axis fits all finite Tu, φTth, and φTn values. φTn is shown only where detailed torsion design is required. The black marker reports Tu/φTn only; longitudinal Al and section-limit utilization remain in the cards/tables and Combined V+T remains separate."
             ),
         )
         support_df = result_df[result_df.get("Generated support check", False).astype(bool)].copy() if "Generated support check" in result_df else pd.DataFrame()
         compact_columns = ["Status", "Check Point", "Station s (m)", "Demand source", "T kN-m", "phiTth kN-m", "phiTn kN-m", "Strength D/C value", "Longitudinal D/C value", "Section limit D/C value"]
         if not support_df.empty:
-            st.markdown("#### Column Face / h/2 checks")
+            st.markdown("#### Support-face / h/2 checks")
             st.dataframe(support_df[[column for column in compact_columns if column in support_df]].rename(columns={"Demand source": "Source", "phiTth kN-m": "φTth kN-m", "phiTn kN-m": "φTn kN-m", "Strength D/C value": "Strength D/C", "Longitudinal D/C value": "Al D/C", "Section limit D/C value": "Section-limit D/C"}), use_container_width=True, hide_index=True)
         with st.expander("Regular / imported station checks", expanded=False):
             regular_df = result_df[~result_df.get("Generated support check", False).astype(bool)].copy() if "Generated support check" in result_df else result_df
