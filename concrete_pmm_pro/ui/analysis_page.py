@@ -20697,31 +20697,75 @@ def _crossbeam_flexure_chart_rows(result_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(chosen).drop(columns=["__dc", "__capacity", "__station"], errors="ignore")
 
 
-def _crossbeam_flexure_segment_trace_points(
-    rows: pd.DataFrame,
+def _crossbeam_flexure_region_bounds(
+    row: Mapping[str, object],
     *,
     segment_start_m: float,
     segment_end_m: float,
+) -> tuple[str, float, float]:
+    """Return the binary strength-credit interval owned by one result row."""
+
+    start = float(segment_start_m)
+    end = float(segment_end_m)
+    ld = max(0.0, _beam_uls_float(row.get("ACI conservative ld m")))
+    if not math.isfinite(ld):
+        ld = 0.0
+    region = str(row.get("Development region") or "").strip().upper()
+    credit = str(row.get("Ordinary rebar credit") or "").strip().upper()
+    station = _beam_uls_float(row.get("__x_m", row.get("Station s (m)")))
+    tolerance = max(1.0e-9, max(end - start, 1.0) * 1.0e-9)
+
+    if region == "PHYSICAL JOINT":
+        if math.isfinite(station) and abs(station - start) <= abs(end - station):
+            region = "LEFT DEVELOPMENT ZONE"
+        else:
+            region = "RIGHT DEVELOPMENT ZONE"
+    if region in {"CIP / MONOLITHIC ZONE", "NO ACTIVE STRENGTH-CREDIT BAR SYSTEM"}:
+        return "FULL SEGMENT", start, end
+    if region == "SEGMENT SHORTER THAN TWO DEVELOPMENT LENGTHS" or end - start <= 2.0 * ld + tolerance:
+        return "NO-CREDIT FULL SEGMENT", start, end
+    if region == "LEFT DEVELOPMENT ZONE":
+        return "LEFT DEVELOPMENT ZONE", start, min(end, start + ld)
+    if region == "RIGHT DEVELOPMENT ZONE":
+        return "RIGHT DEVELOPMENT ZONE", max(start, end - ld), end
+    if region == "FULLY DEVELOPED INTERIOR" or credit == "FULL CREDIT":
+        return "FULLY DEVELOPED INTERIOR", min(end, start + ld), max(start, end - ld)
+    # Conservative fallback: a NO-CREDIT row is assigned to the nearest end.
+    if credit == "NO CREDIT" and math.isfinite(station):
+        if abs(station - start) <= abs(end - station):
+            return "LEFT DEVELOPMENT ZONE", start, min(end, start + ld)
+        return "RIGHT DEVELOPMENT ZONE", max(start, end - ld), end
+    return "FULL SEGMENT", start, end
+
+
+def _crossbeam_flexure_region_trace_points(
+    rows: pd.DataFrame,
+    *,
+    region_start_m: float,
+    region_end_m: float,
 ) -> tuple[list[float], list[float], list[list[object]]]:
-    """Return truthful Segment-owned phiMn trace points.
+    """Build one truthful capacity trace without crossing a binary credit gate."""
 
-    Flexural capacity is still solved at the actual imported/generated stations.
-    When every finite capacity in one Segment is numerically identical (same Pu,
-    Section/Rebar/Tendon source, bending side, and resulting phiMn), the stable
-    solved value is extended to the exact Segment boundaries so the chart shows
-    the full capacity interval instead of isolated station fragments.  If the
-    solved capacities vary, only the actual station values are connected; no
-    artificial boundary value is invented.
-    """
-
-    if rows is None or rows.empty:
+    if rows is None or rows.empty or region_end_m < region_start_m:
         return [], [], []
     working = rows.sort_values("__x_m", kind="stable").copy()
+    chosen: list[pd.Series] = []
+    for _station, group in working.groupby("__x_m", sort=True):
+        finite = group[group["__capacity_kNm"].notna()]
+        chosen.append(
+            finite.loc[finite["__capacity_kNm"].astype(float).idxmin()]
+            if not finite.empty
+            else group.iloc[0]
+        )
+    working = pd.DataFrame(chosen).sort_values("__x_m", kind="stable")
+
     x_values: list[float] = []
     y_values: list[float] = []
     custom: list[list[object]] = []
     for _, row in working.iterrows():
         station = float(row["__x_m"])
+        if station < float(region_start_m) - 1.0e-8 or station > float(region_end_m) + 1.0e-8:
+            continue
         capacity = float(row["__capacity_kNm"])
         sign = _beam_uls_float(row.get("__plot_sign"))
         if not math.isfinite(sign) or abs(sign) <= 0.0:
@@ -20734,33 +20778,36 @@ def _crossbeam_flexure_segment_trace_points(
                 str(row.get("Segment") or ""),
                 str(row.get("Case") or "ULS"),
                 str(row.get("Section ID") or ""),
-                "SOLVED STATION",
+                str(row.get("Ordinary rebar credit") or ""),
+                str(row.get("Development region") or ""),
+                str(row.get("Check Point") or ""),
+                "SOLVED CHECK",
             ]
         )
 
+    if not x_values:
+        return [], [], []
     finite_y = [value for value in y_values if math.isfinite(value)]
-    stable = False
-    if finite_y:
-        scale = max(max(abs(value) for value in finite_y), 1.0)
-        stable = max(finite_y) - min(finite_y) <= max(1.0e-6 * scale, 1.0e-6)
+    scale = max((abs(value) for value in finite_y), default=1.0)
+    stable = bool(finite_y) and max(finite_y) - min(finite_y) <= max(1.0e-6 * scale, 1.0e-6)
     if stable:
         stable_value = float(sum(finite_y) / len(finite_y))
         first_custom = list(custom[0])
         last_custom = list(custom[-1])
-        if x_values[0] > float(segment_start_m) + 1.0e-9:
-            x_values.insert(0, float(segment_start_m))
+        if x_values[0] > float(region_start_m) + 1.0e-9:
+            x_values.insert(0, float(region_start_m))
             y_values.insert(0, stable_value)
-            first_custom[3] = "STABLE SEGMENT LIMIT"
+            first_custom[6] = "STABLE CREDIT-LIMIT VALUE"
             custom.insert(0, first_custom)
-        elif abs(x_values[0] - float(segment_start_m)) <= 1.0e-9:
-            x_values[0] = float(segment_start_m)
-        if x_values[-1] < float(segment_end_m) - 1.0e-9:
-            x_values.append(float(segment_end_m))
+        elif abs(x_values[0] - float(region_start_m)) <= 1.0e-9:
+            x_values[0] = float(region_start_m)
+        if x_values[-1] < float(region_end_m) - 1.0e-9:
+            x_values.append(float(region_end_m))
             y_values.append(stable_value)
-            last_custom[3] = "STABLE SEGMENT LIMIT"
+            last_custom[6] = "STABLE CREDIT-LIMIT VALUE"
             custom.append(last_custom)
-        elif abs(x_values[-1] - float(segment_end_m)) <= 1.0e-9:
-            x_values[-1] = float(segment_end_m)
+        elif abs(x_values[-1] - float(region_end_m)) <= 1.0e-9:
+            x_values[-1] = float(region_end_m)
     return x_values, y_values, custom
 
 
@@ -20770,26 +20817,17 @@ def _make_crossbeam_uls_flexure_figure(
     *,
     segment_rows: Any = None,
 ) -> go.Figure:
-    """Plot Segment-owned phiMn without interpolating across physical joints.
-
-    The PMM engine evaluates the actual Pu, Section/Rebar source, and bonded
-    tendon geometry at each station.  A Segment whose solved capacities are
-    identical is displayed continuously over its full physical extent.  A
-    varying Segment retains only actual station values.  Separate Plotly traces
-    are always used on opposite sides of every physical joint.
-    """
+    """Plot direct P-M3 capacity by Segment and binary rebar-credit interval."""
 
     fig = _make_beam_uls_flexure_preview_figure(
         demand_df,
         flexure_df,
-        code_label="ACI 318-19 · Crossbeam M3 → Mux",
+        code_label="ACI 318-19 · Crossbeam direct P–M3",
     )
     segments = _crossbeam_segment_records(segment_rows)
     if not segments or flexure_df is None or flexure_df.empty:
         return fig
 
-    # Rebuild only the capacity/governing traces. Demand remains the imported
-    # row-coupled M3 diagram and is not altered by this presentation cleanup.
     retained: list[go.BaseTraceType] = []
     for trace in list(fig.data):
         if str(getattr(trace, "name", "") or "") in {"φMn", "Governing flexure check"}:
@@ -20813,6 +20851,7 @@ def _make_crossbeam_uls_flexure_figure(
         return fig
 
     shown_capacity = False
+    shown_joint = False
     case_series = source.get("Case", pd.Series("ULS", index=source.index)).astype(str)
     for case_name, case_df in source.groupby(case_series, sort=False):
         for segment in segments:
@@ -20820,52 +20859,87 @@ def _make_crossbeam_uls_flexure_figure(
             rows = case_df[
                 case_df.get("Segment", pd.Series("", index=case_df.index)).astype(str) == segment_id
             ].copy()
-            rows = rows.sort_values("__x_m", kind="stable")
             if rows.empty:
                 continue
-            # If an exact joint station was imported and produced two faces,
-            # keep the conservative lower capacity at the same segment/station.
-            chosen: list[pd.Series] = []
-            for _station, group in rows.groupby("__x_m", sort=True):
-                finite = group[group["__capacity_kNm"].notna()]
-                chosen.append(
-                    finite.loc[finite["__capacity_kNm"].astype(float).idxmin()]
-                    if not finite.empty
-                    else group.iloc[0]
+            rows["__region_key"] = ""
+            rows["__region_start"] = float(segment["start"])
+            rows["__region_end"] = float(segment["end"])
+            for index, row in rows.iterrows():
+                key, region_start, region_end = _crossbeam_flexure_region_bounds(
+                    row,
+                    segment_start_m=float(segment["start"]),
+                    segment_end_m=float(segment["end"]),
                 )
-            rows = pd.DataFrame(chosen).sort_values("__x_m", kind="stable")
-            x_values, y_values, custom = _crossbeam_flexure_segment_trace_points(
-                rows,
-                segment_start_m=float(segment["start"]),
-                segment_end_m=float(segment["end"]),
-            )
-            if not x_values:
-                continue
-            # Use the current Segment/Case identity in hover data even when the
-            # stable trace helper extended the first/last solved value to a
-            # Segment boundary.
-            for item in custom:
-                item[0] = segment_id
-                item[1] = case_name
-            fig.add_trace(
-                go.Scatter(
-                    x=x_values,
-                    y=y_values,
-                    mode="lines" if len(x_values) > 1 else "markers",
-                    name="φMn",
-                    legendgroup="crossbeam_phi_mn",
-                    showlegend=not shown_capacity,
-                    line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
-                    marker={"size": 6, "color": str(_BEAM_ULS_CHECK_LINE_STYLE["color"])},
-                    customdata=custom,
-                    hovertemplate=(
-                        "Segment=%{customdata[0]} · Case=%{customdata[1]}"
-                        "<br>Section=%{customdata[2]} · %{customdata[3]}"
-                        "<br>x=%{x:.3f} m<br>φMn=%{y:.3f} kN-m<extra></extra>"
-                    ),
+                rows.at[index, "__region_key"] = key
+                rows.at[index, "__region_start"] = region_start
+                rows.at[index, "__region_end"] = region_end
+
+            for region_key, region_df in rows.groupby("__region_key", sort=False):
+                region_start = float(pd.to_numeric(region_df["__region_start"], errors="coerce").min())
+                region_end = float(pd.to_numeric(region_df["__region_end"], errors="coerce").max())
+                x_values, y_values, custom = _crossbeam_flexure_region_trace_points(
+                    region_df,
+                    region_start_m=region_start,
+                    region_end_m=region_end,
                 )
-            )
-            shown_capacity = True
+                if not x_values:
+                    continue
+                for item in custom:
+                    item[0] = segment_id
+                    item[1] = case_name
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_values,
+                        y=y_values,
+                        mode="lines" if len(x_values) > 1 else "markers",
+                        name="φMn",
+                        legendgroup="crossbeam_phi_mn",
+                        showlegend=not shown_capacity,
+                        line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
+                        marker={"size": 6, "color": str(_BEAM_ULS_CHECK_LINE_STYLE["color"])},
+                        customdata=custom,
+                        hovertemplate=(
+                            "Segment=%{customdata[0]} · Case=%{customdata[1]}"
+                            "<br>Section=%{customdata[2]}"
+                            "<br>Rebar credit=%{customdata[3]}"
+                            "<br>Region=%{customdata[4]}"
+                            "<br>Check=%{customdata[5]} · %{customdata[6]}"
+                            "<br>x=%{x:.3f} m<br>φMn=%{y:.3f} kN-m<extra></extra>"
+                        ),
+                    )
+                )
+                shown_capacity = True
+
+            joint_rows = rows[
+                rows.get("Location type", pd.Series("", index=rows.index)).astype(str)
+                == "PHYSICAL SEGMENT JOINT"
+            ].copy()
+            if not joint_rows.empty:
+                joint_rows = joint_rows.sort_values("__x_m", kind="stable")
+                joint_y: list[float] = []
+                for _, row in joint_rows.iterrows():
+                    sign = _beam_uls_float(row.get("__plot_sign"))
+                    if not math.isfinite(sign) or abs(sign) <= 0.0:
+                        sign = -1.0 if _beam_uls_float(row.get("__demand_kNm")) < 0.0 else 1.0
+                    joint_y.append(sign * float(row["__capacity_kNm"]))
+                fig.add_trace(
+                    go.Scatter(
+                        x=joint_rows["__x_m"].astype(float).tolist(),
+                        y=joint_y,
+                        mode="markers",
+                        name="Joint φMn (s−/s+)",
+                        legendgroup="crossbeam_joint_phi_mn",
+                        showlegend=not shown_joint,
+                        marker={"symbol": "x-open", "size": 9, "color": "#f59e0b", "line": {"width": 2}},
+                        customdata=joint_rows[["Check Point", "Segment", "Section ID", "Ordinary rebar credit"]].astype(str).values,
+                        hovertemplate=(
+                            "%{customdata[0]} · Segment=%{customdata[1]}"
+                            "<br>Section=%{customdata[2]} · Rebar credit=%{customdata[3]}"
+                            "<br>x=%{x:.3f} m<br>φMn=%{y:.3f} kN-m<extra></extra>"
+                        ),
+                    )
+                )
+                shown_joint = True
 
     governing = source[source["__utilization"].notna()].copy()
     if not governing.empty:
@@ -20897,12 +20971,11 @@ def _make_crossbeam_uls_flexure_figure(
         title={
             "text": (
                 "Flexure Check — Strength ULS"
-                "<br><sup>ACI 318-19 · Crossbeam M3 → Mux · Segment-owned φMn · physical joints not interpolated</sup>"
+                "<br><sup>ACI 318-19 · direct Crossbeam P–M3 · binary ordinary-rebar development credit</sup>"
             )
         }
     )
     return fig
-
 
 def _crossbeam_uls_blocking_action(message: object) -> dict[str, str]:
     text = str(message or "").strip()
@@ -20956,33 +21029,32 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
     st.markdown("### Crossbeam ULS Flexure — station checks")
     st.caption(
         "Reads active row-coupled P/V2/T/M3 demands from Crossbeam Loads. "
-        "For this milestone P maps to Pu and sagging-positive M3 maps to PMM Mux; Pe and secondary prestress are not added to demand again."
+        "P maps to Pu and sagging-positive M3 maps to the exact section Mx axis; Pe and secondary prestress are not added to demand again."
     )
     with st.expander("Crossbeam ULS scope / engineering assumptions", expanded=False):
         st.markdown(
-            "- Section ID, concrete material, ordinary reinforcement, tendon position, bond state, and effective prestress are rebuilt at each imported station.\n"
-            "- Precast physical Segment joints receive zero ordinary longitudinal-rebar credit; bonded Tendons remain the continuity source.\n"
-            "- Cast-in-Place boundaries are Section/Rebar Zones, not physical joints.\n"
-            "- V2 and T remain coupled to the imported row for traceability; Shear, Torsion, and combined V+T are not calculated by ANALYSIS1A.\n"
-            "- Bonded-prestress PMM remains an engineering-review route; unbonded/external Tendons are not silently credited."
+            "- Production flexural capacity uses a Crossbeam-scoped direct uniaxial ACI 318-19 strain-compatibility solver on the exact P–M3 axis; no PMM angle/depth interpolation controls φMn.\n"
+            "- Section ID, concrete material, ordinary reinforcement, bonded tendon position, and effective prestress are rebuilt at every imported or generated check station.\n"
+            "- For Precast Segmental construction, ordinary longitudinal reinforcement receives full strength credit only in verified fully developed Segment interiors. Physical joints and conservative ACI 25.4 straight-bar development zones receive no ordinary-rebar flexural credit; bonded Tendons remain the global continuity source.\n"
+            "- Development credit is binary. The graph does not interpolate capacity between tendon-only and full-rebar regions.\n"
+            "- Cast-in-Place boundaries are monolithic Section/Rebar Zones; the Precast development/joint exclusion rule does not apply.\n"
+            "- Unbonded/external Tendons are not silently credited. V2 and T remain row-coupled audit demands; Shear, Torsion, combined V+T, D-regions, anchorage, fatigue, and seismic detailing remain separate."
         )
 
-    control_cols = st.columns([1.0, 2.2, 1.0])
-    with control_cols[0]:
-        st.selectbox(
-            "Accuracy preset",
-            list(ACCURACY_PRESET_RESOLUTIONS.keys()),
-            key="analysis_accuracy_preset",
-            help="Controls the existing PMM neutral-axis sweep. It does not change load mapping or engineering equations.",
-        )
+    # Preserve the accepted High Accuracy default for any legacy/reference PMM
+    # comparison without exposing an irrelevant production control. The direct
+    # Crossbeam P–M3 solver below is resolution-independent.
+    if str(st.session_state.get("crossbeam_flexure_accuracy_preset") or "") not in ACCURACY_PRESET_RESOLUTIONS:
+        st.session_state["crossbeam_flexure_accuracy_preset"] = "High Accuracy"
 
+    control_cols = st.columns([2.8, 1.0])
     preparation = build_crossbeam_uls_flexure_preparation(st.session_state)
     demand_df = _crossbeam_uls_demand_dataframe(preparation)
     cached = st.session_state.get(CROSSBEAM_ULS_RESULT_KEY)
     cached_hash = str(st.session_state.get(CROSSBEAM_ULS_RESULT_HASH_KEY) or "")
     cache_current = isinstance(cached, Mapping) and cached_hash == preparation.fingerprint
 
-    with control_cols[1]:
+    with control_cols[0]:
         if preparation.ready:
             st.success(
                 f"ULS source ready — {len(preparation.demand_rows):,} imported row(s) expand to "
@@ -20990,7 +21062,7 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
             )
         else:
             st.error("ULS source blocked — resolve the station-force, Section/Rebar, Tendon, or Effective Prestress items below.")
-    with control_cols[2]:
+    with control_cols[1]:
         run_clicked = st.button(
             "Calculate Flexure",
             key="crossbeam_analysis1a_calculate_flexure",
@@ -21034,8 +21106,8 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
 
     source_cards = [
         {"title": "ULS source", "value": "READY" if preparation.ready else "SOURCE BLOCKED", "detail": "Crossbeam Loads · canonical kN/kN-m", "status": "ready" if preparation.ready else "danger", "strong": True},
-        {"title": "Station / face checks", "value": f"{len(preparation.rows):,}", "detail": f"from {len(preparation.demand_rows):,} imported row(s)", "status": "info"},
-        {"title": "Axis mapping", "value": "M3 → Mux", "detail": "sagging positive · P compression positive", "status": "neutral"},
+        {"title": "Total check rows", "value": f"{len(preparation.rows):,}", "detail": f"{len(preparation.demand_rows):,} imported + generated joint/development checks", "status": "info"},
+        {"title": "Production solver", "value": "DIRECT P–M3", "detail": "exact axis · adaptive φPn = Pu root", "status": "ready"},
         {"title": "Prestress demand", "value": "NOT ADDED", "detail": "verified external-FEA resultants used once", "status": "ready"},
     ]
     _render_analysis_summary_strip(source_cards, columns=4)
@@ -21055,33 +21127,34 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
     status = str(result.get("status") or "REVIEW")
     status_style = "danger" if status == "FAIL" else ("ready" if status == "PASS" else "warning")
     result_cards = [
-        {"title": "Flexure status", "value": status, "detail": "ACI 318-19 station/face review", "status": status_style, "strong": True},
+        {"title": "Flexure status", "value": status, "detail": "ACI 318-19 direct P–M3 strength", "status": status_style, "strong": True},
         {"title": "Governing Flexural D/C", "value": "-" if governing is None else str(governing.get("Flexural D/C") or "-"), "detail": "-" if governing is None else f"{governing.get('Case')} @ s={_format_beam_uls_x(governing.get('Station s (m)'))}", "status": "info"},
-        {"title": "Governing source", "value": "-" if governing is None else str(governing.get("Section ID") or "-"), "detail": "-" if governing is None else str(governing.get("Section face") or "-"), "status": "info"},
-        {"title": "Structural solves", "value": f"{int(result.get('structural_solves') or 0):,}", "detail": f"{int(result.get('station_checks') or 0):,} station/face checks", "status": "neutral"},
+        {"title": "Governing credit basis", "value": "-" if governing is None else str(governing.get("Ordinary rebar credit") or "-"), "detail": "-" if governing is None else f"{governing.get('Check Point') or governing.get('Location type')} · {governing.get('Segment') or '-'}", "status": "warning" if governing is not None and str(governing.get("Ordinary rebar credit")) == "NO CREDIT" else "info"},
+        {"title": "Generated safety checks", "value": f"{int(result.get('physical_joint_side_checks') or 0):,} joint sides", "detail": f"{int(result.get('development_zone_checks') or 0):,} development-zone/boundary rows · {int(result.get('structural_solves') or 0):,} unique solves", "status": "neutral"},
     ]
     _render_analysis_summary_strip(result_cards, columns=4)
 
     if not result_df.empty:
-        chart_df = _crossbeam_flexure_chart_rows(result_df)
         _render_beam_uls_static_plotly_figure(
             _make_crossbeam_uls_flexure_figure(
                 demand_df,
-                chart_df,
+                result_df,
                 segment_rows=st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY, []),
             )
         )
         st.caption(
-            "The chart uses the governing face at duplicate Case/station locations; the audit table below retains every left/right limit. "
-            "φMn is calculated independently at each station from the actual Pu, Section/Rebar source, and bonded tendon geometry. When all solved φMn values in one Segment are identical, that solved value is displayed continuously to the Segment limits; if capacity varies, only actual station values are connected. Separate traces are retained at every physical joint so Solid/Hollow values are never linearly interpolated across a boundary. "
-            "For zero-M3 rows, φMn(Pu) uses the bending sign from the nearest nonzero station in the same Load Case; Flexural D/C is 0.000 and Axial D/C is separate. "
-            "At a Precast physical Segment joint, ordinary longitudinal rebar is zero and bonded Tendons remain the section-continuity source."
+            "φMn is solved directly at each imported or generated station from Pu on the exact M3 bending axis. "
+            "For Precast Segmental construction, each Segment is split into tendon-only development zones and a fully developed interior using ACI 318-19 25.4.1.1 and the conservative Table 25.4.2.3 “Other cases” straight-bar development-length gate. Capacity traces are separated at every binary credit boundary and physical joint; no sloped interpolation is drawn between tendon-only and full-rebar strength. "
+            "Orange × markers show the actual one-sided joint capacities s−/s+. At zero-M3 rows, the nearest nonzero M3 sign in the same Load Case sets the checked bending direction; Flexural D/C remains 0.000 and Axial D/C is reported separately. "
+            "This sectional check does not certify joint shear/torsion transfer, anchorage/end zones, D-regions, fatigue, or seismic detailing."
         )
         display_columns = [
-            "Status", "Station s (m)", "Check Point", "Case", "Section face", "Location type",
-            "Section ID", "Rebar Template", "P kN", "M3 kN-m", "φMn at Pu", "Flexural D/C", "Axial D/C",
+            "Status", "Station s (m)", "Check Point", "Case", "Segment", "Section face", "Location type",
+            "Section ID", "Ordinary rebar credit", "Development region", "ACI conservative ld m",
+            "P kN", "M3 kN-m", "φMn at Pu", "Flexural D/C", "Axial D/C",
+            "Neutral axis c mm", "φ value", "Force residual ratio",
             "Bending direction", "Direction reference",
-            "Ordinary bars credited", "Bonded tendons credited", "Unbonded tendons omitted",
+            "Ordinary bars credited", "Bonded tendons credited", "Unbonded tendons omitted", "Demand source",
         ]
         st.dataframe(result_df[[column for column in display_columns if column in result_df]], use_container_width=True, hide_index=True)
 

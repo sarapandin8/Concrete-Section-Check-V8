@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 import pytest
@@ -126,9 +126,11 @@ def test_crossbeam_adapter_runs_without_generic_load_cases_and_preserves_row_cou
     preparation = build_crossbeam_uls_flexure_preparation(state)
 
     assert preparation.ready, preparation.errors
-    assert len(preparation.rows) == 2
+    assert len(preparation.rows) == 3
     interior = next(row for row in preparation.rows if row.case_name == "ULS-INT")
-    joint = next(row for row in preparation.rows if row.case_name == "ULS-JOINT")
+    joint_rows = [row for row in preparation.rows if row.case_name == "ULS-JOINT"]
+    assert len(joint_rows) == 2
+    joint = joint_rows[0]
 
     assert interior.analysis_input.load_cases[0].Pu_N == pytest.approx(5_000_000.0)
     assert interior.analysis_input.load_cases[0].Mux_Nmm == pytest.approx(2_200_000_000.0)
@@ -166,51 +168,56 @@ def test_crossbeam_adapter_blocks_only_missing_engineering_source_not_model_revi
 
 
 @dataclass
-class _CapacityResult:
+class _DirectState:
+    c_mm: float = 500.0
+    a_mm: float = 400.0
+    eps_t: float = 0.005
+    strain_condition: str = "Tension-controlled"
+    prestress_compression_reversal_count: int = 0
+
+
+@dataclass
+class _DirectResult:
+    state: _DirectState | None = field(default_factory=_DirectState)
     capacity_phiMn_Nmm: float | None = 4_000_000_000.0
-    dcr: float | None = 0.65
+    nominal_Mn_Nmm: float | None = 4_500_000_000.0
+    phi: float | None = 0.9
+    axial_dcr: float | None = 0.057
     status: str = "PASS"
-    message: str = "Demand is within the directional PMM capacity."
-
-
-@dataclass
-class _CapacitySummary:
-    results: tuple[_CapacityResult, ...] = (_CapacityResult(),)
+    message: str = "Direct exact-axis equilibrium solved."
+    force_residual_N: float | None = 0.0
+    force_residual_ratio: float | None = 0.0
+    iterations: int = 12
+    bracket_count: int = 1
     warnings: tuple[str, ...] = ()
 
 
-@dataclass
-class _PmmResult:
-    warnings: tuple[str, ...] = ()
-
-
-def test_crossbeam_run_uses_existing_pmm_route_and_keeps_joint_audit(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_crossbeam_run_uses_direct_uniaxial_route_and_keeps_joint_audit(monkeypatch: pytest.MonkeyPatch) -> None:
     preparation = build_crossbeam_uls_flexure_preparation(_ready_state())
-    calls = {"solver": 0, "capacity": 0}
+    calls = {"direct": 0}
 
-    def _solver(_analysis_input: object) -> _PmmResult:
-        calls["solver"] += 1
-        return _PmmResult()
+    def _direct(_analysis_input: object, *, Pu_N: float, moment_sign: float) -> _DirectResult:
+        calls["direct"] += 1
+        assert Pu_N == pytest.approx(5_000_000.0)
+        assert moment_sign == pytest.approx(1.0)
+        return _DirectResult()
 
-    def _capacity(_pmm: object, _loads: object) -> _CapacitySummary:
-        calls["capacity"] += 1
-        return _CapacitySummary()
-
-    monkeypatch.setattr("concrete_pmm_pro.analysis.crossbeam_uls.run_pmm_solver", _solver)
     monkeypatch.setattr(
-        "concrete_pmm_pro.analysis.crossbeam_uls.check_uls_demands_against_rc_pmm",
-        _capacity,
+        "concrete_pmm_pro.analysis.crossbeam_uls.solve_crossbeam_uniaxial_flexure",
+        _direct,
     )
     result = run_crossbeam_uls_flexure(preparation)
 
-    assert result["status"] == "PASS"
-    assert result["station_checks"] == 2
-    assert calls["capacity"] == 2
-    assert calls["solver"] == result["structural_solves"] == 2
-    joint = next(row for row in result["rows"] if row["Location type"] == "PHYSICAL SEGMENT JOINT")
-    assert joint["Ordinary bars credited"] == 0
-    assert joint["Bonded tendons credited"] == 3
-
+    assert result["status"] == "REVIEW"
+    assert result["station_checks"] == 3
+    assert result["solver_route"] == "DIRECT UNIAXIAL P-M3"
+    assert result["accuracy_preset_dependency"].startswith("NONE")
+    assert calls["direct"] == result["structural_solves"] == 2
+    joints = [row for row in result["rows"] if row["Location type"] == "PHYSICAL SEGMENT JOINT"]
+    assert len(joints) == 2
+    assert {str(row["Check Point"])[-1] for row in joints} == {"L", "R"}
+    assert all(row["Ordinary bars credited"] == 0 for row in joints)
+    assert all(row["Bonded tendons credited"] == 3 for row in joints)
 
 def test_analysis_page_routes_crossbeam_before_generic_preflight() -> None:
     source = open("concrete_pmm_pro/ui/analysis_page.py", encoding="utf-8").read()
@@ -278,37 +285,9 @@ def test_zero_m3_endpoints_use_nearest_same_case_direction_and_keep_axial_dc_sep
     preparation = build_crossbeam_uls_flexure_preparation(_zero_moment_state())
     assert preparation.ready, preparation.errors
 
-    def _capacity(_pmm: object, loads: object) -> _CapacitySummary:
-        load = list(loads)[0]
-        if abs(float(load.Mux_Nmm)) <= 1.0e-9:
-            return _CapacitySummary(
-                results=(
-                    _CapacityResult(
-                        capacity_phiMn_Nmm=None,
-                        dcr=0.057,
-                        status="PASS",
-                        message="Axial-only prototype check.",
-                    ),
-                )
-            )
-        return _CapacitySummary(
-            results=(
-                _CapacityResult(
-                    capacity_phiMn_Nmm=4_000_000_000.0,
-                    dcr=abs(float(load.Mux_Nmm)) / 4_000_000_000.0,
-                    status="PASS",
-                    message="Directional capacity available.",
-                ),
-            )
-        )
-
     monkeypatch.setattr(
-        "concrete_pmm_pro.analysis.crossbeam_uls.run_pmm_solver",
-        lambda _analysis_input: _PmmResult(),
-    )
-    monkeypatch.setattr(
-        "concrete_pmm_pro.analysis.crossbeam_uls.check_uls_demands_against_rc_pmm",
-        _capacity,
+        "concrete_pmm_pro.analysis.crossbeam_uls.solve_crossbeam_uniaxial_flexure",
+        lambda _analysis_input, *, Pu_N, moment_sign: _DirectResult(),
     )
     result = run_crossbeam_uls_flexure(preparation)
     endpoints = {
@@ -352,27 +331,14 @@ def test_zero_m3_without_nonzero_same_case_is_review_and_not_guessed(
     assert preparation.ready, preparation.errors
 
     monkeypatch.setattr(
-        "concrete_pmm_pro.analysis.crossbeam_uls.run_pmm_solver",
-        lambda _analysis_input: _PmmResult(),
-    )
-    monkeypatch.setattr(
-        "concrete_pmm_pro.analysis.crossbeam_uls.check_uls_demands_against_rc_pmm",
-        lambda _pmm, _loads: _CapacitySummary(
-            results=(
-                _CapacityResult(
-                    capacity_phiMn_Nmm=None,
-                    dcr=0.057,
-                    status="PASS",
-                    message="Axial-only prototype check.",
-                ),
-            )
-        ),
+        "concrete_pmm_pro.analysis.crossbeam_uls.solve_crossbeam_uniaxial_flexure",
+        lambda _analysis_input, *, Pu_N, moment_sign: _DirectResult(),
     )
     row = run_crossbeam_uls_flexure(preparation)["rows"][0]
     assert row["Status"] == "REVIEW"
     assert row["Capacity"] == "-"
     assert row["Flexural D/C"] == "-"
-    assert row["Axial D/C"] == "0.057"
+    assert float(row["Axial D/C"]) == pytest.approx(0.060, abs=0.001)
     assert "no nonzero M3 row" in row["Direction reference"]
 
 

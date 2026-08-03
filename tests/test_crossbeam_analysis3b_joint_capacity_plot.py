@@ -47,7 +47,7 @@ from concrete_pmm_pro.crossbeam.tendon_persistence import (
 from concrete_pmm_pro.crossbeam.transverse import default_crossbeam_transverse_templates
 from concrete_pmm_pro.ui.analysis_page import (
     _crossbeam_flexure_chart_rows,
-    _crossbeam_flexure_segment_trace_points,
+    _crossbeam_flexure_region_trace_points,
     _crossbeam_shear_demand_plot_rows,
     _crossbeam_uls_demand_dataframe,
     _make_crossbeam_uls_flexure_figure,
@@ -276,7 +276,7 @@ def test_torsion_demand_is_segment_owned_and_omitted_only_inside_supports() -> N
         assert not any(left + 1.0e-8 < value < right - 1.0e-8 for value in all_x)
 
 
-def test_flexure_capacity_trace_never_interpolates_across_physical_joints() -> None:
+def test_flexure_capacity_trace_never_interpolates_across_physical_joints_or_credit_gates() -> None:
     state, segments = _mixed_30m_state()
     preparation = build_crossbeam_uls_flexure_preparation(state)
     assert preparation.ready, preparation.errors
@@ -284,39 +284,37 @@ def test_flexure_capacity_trace_never_interpolates_across_physical_joints() -> N
     result_df = pd.DataFrame(result["rows"])
     figure = _make_crossbeam_uls_flexure_figure(
         _crossbeam_uls_demand_dataframe(preparation),
-        _crossbeam_flexure_chart_rows(result_df),
+        result_df,
         segment_rows=segments,
     )
 
     capacity_traces = [trace for trace in figure.data if str(trace.name) == "φMn"]
-    assert len(capacity_traces) >= 6
-    traced_intervals: set[tuple[float, float]] = set()
+    assert len(capacity_traces) >= 18  # three binary-credit regions per Segment where applicable
+    traced_by_segment: dict[str, list[tuple[float, float]]] = {}
     for trace in capacity_traces:
         finite_x = [float(value) for value in list(trace.x) if value is not None and math.isfinite(float(value))]
         assert finite_x
         assert not any(min(finite_x) < joint < max(finite_x) for joint in JOINTS)
-        if len(finite_x) >= 2:
-            traced_intervals.add((round(min(finite_x), 6), round(max(finite_x), 6)))
+        custom = list(trace.customdata or [])
+        credits = {str(item[3]) for item in custom if len(item) > 3}
+        assert len(credits) <= 1
+        segment_id = str(custom[0][0]) if custom else ""
+        traced_by_segment.setdefault(segment_id, []).append((min(finite_x), max(finite_x)))
 
-    # This benchmark has stable phiMn within every Segment.  The chart must
-    # therefore show each solved value over the full Segment extent instead of
-    # leaving gaps between the nearest imported station and the physical joint.
-    expected_intervals = {
-        (0.0, 4.5),
-        (4.5, 10.5),
-        (10.5, 15.0),
-        (15.0, 19.5),
-        (19.5, 25.5),
-        (25.5, 30.0),
-    }
-    assert expected_intervals.issubset(traced_intervals)
+    for segment in segments:
+        segment_id = str(segment["Segment"])
+        intervals = traced_by_segment[segment_id]
+        assert min(item[0] for item in intervals) == pytest.approx(float(segment["x_start_m"]))
+        assert max(item[1] for item in intervals) == pytest.approx(float(segment["x_end_m"]))
+
+    joint_markers = [trace for trace in figure.data if str(trace.name) == "Joint φMn (s−/s+)"]
+    assert sum(len(list(trace.x)) for trace in joint_markers) == 10
 
     title = str(figure.layout.title.text)
-    assert "Segment-owned φMn" in title
-    assert "physical joints not interpolated" in title
+    assert "direct Crossbeam P–M3" in title
+    assert "binary ordinary-rebar development credit" in title
 
-
-def test_flexure_segment_trace_does_not_invent_boundary_values_when_capacity_varies() -> None:
+def test_flexure_credit_region_trace_does_not_invent_boundary_values_when_capacity_varies() -> None:
     rows = pd.DataFrame(
         [
             {
@@ -327,6 +325,9 @@ def test_flexure_segment_trace_does_not_invent_boundary_values_when_capacity_var
                 "Segment": "S2",
                 "Case": "ULS-01",
                 "Section ID": "CB-H01",
+                "Ordinary rebar credit": "FULL CREDIT",
+                "Development region": "FULLY DEVELOPED INTERIOR",
+                "Check Point": "",
             },
             {
                 "__x_m": 10.0,
@@ -336,12 +337,15 @@ def test_flexure_segment_trace_does_not_invent_boundary_values_when_capacity_var
                 "Segment": "S2",
                 "Case": "ULS-01",
                 "Section ID": "CB-H01",
+                "Ordinary rebar credit": "FULL CREDIT",
+                "Development region": "FULLY DEVELOPED INTERIOR",
+                "Check Point": "",
             },
         ]
     )
-    x_values, y_values, custom = _crossbeam_flexure_segment_trace_points(
-        rows, segment_start_m=4.5, segment_end_m=10.5
+    x_values, y_values, custom = _crossbeam_flexure_region_trace_points(
+        rows, region_start_m=4.5, region_end_m=10.5
     )
     assert x_values == [6.0, 10.0]
     assert y_values == [17000.0, 16500.0]
-    assert all(item[3] == "SOLVED STATION" for item in custom)
+    assert all(item[6] == "SOLVED CHECK" for item in custom)

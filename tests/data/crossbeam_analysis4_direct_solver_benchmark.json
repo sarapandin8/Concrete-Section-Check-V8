@@ -1,0 +1,1996 @@
+{
+  "project_name": "Untitled Project",
+  "designer": null,
+  "description": null,
+  "unit_system": "mm-MPa-N",
+  "code": "ACI 318",
+  "code_edition": "ACI 318-19",
+  "version": "PS.DB1.2",
+  "section_preset_key": "crossbeam_rectangular_solid_bottom_fillets",
+  "section_preset_name": "PC Crossbeam — Rectangular Solid with Bottom Fillets",
+  "section_parameters": {
+    "width_mm": 2500.0,
+    "height_mm": 1500.0,
+    "bottom_fillet_radius_mm": 200.0
+  },
+  "section_geometry": {
+    "name": "PC Crossbeam — Rectangular Solid with Bottom Fillets",
+    "outer_polygon": [
+      {
+        "x": -1050.0,
+        "y": -750.0
+      },
+      {
+        "x": 1050.0,
+        "y": -750.0
+      },
+      {
+        "x": 1069.603428065912,
+        "y": -749.0369453344393
+      },
+      {
+        "x": 1089.0180644032257,
+        "y": -746.157056080646
+      },
+      {
+        "x": 1108.0569354508925,
+        "y": -741.3880671464418
+      },
+      {
+        "x": 1126.5366864730179,
+        "y": -734.7759065022574
+      },
+      {
+        "x": 1144.2793473651996,
+        "y": -726.384252869671
+      },
+      {
+        "x": 1161.1140466039205,
+        "y": -716.2939224605091
+      },
+      {
+        "x": 1176.8786568327291,
+        "y": -704.6020906725474
+      },
+      {
+        "x": 1191.4213562373095,
+        "y": -691.4213562373095
+      },
+      {
+        "x": 1204.6020906725473,
+        "y": -676.8786568327291
+      },
+      {
+        "x": 1216.293922460509,
+        "y": -661.1140466039204
+      },
+      {
+        "x": 1226.384252869671,
+        "y": -644.2793473651996
+      },
+      {
+        "x": 1234.7759065022574,
+        "y": -626.536686473018
+      },
+      {
+        "x": 1241.3880671464417,
+        "y": -608.0569354508924
+      },
+      {
+        "x": 1246.157056080646,
+        "y": -589.0180644032257
+      },
+      {
+        "x": 1249.0369453344395,
+        "y": -569.6034280659121
+      },
+      {
+        "x": 1250.0,
+        "y": -550.0
+      },
+      {
+        "x": 1250.0,
+        "y": 750.0
+      },
+      {
+        "x": -1250.0,
+        "y": 750.0
+      },
+      {
+        "x": -1250.0,
+        "y": -550.0
+      },
+      {
+        "x": -1249.0369453344395,
+        "y": -569.6034280659121
+      },
+      {
+        "x": -1246.157056080646,
+        "y": -589.0180644032257
+      },
+      {
+        "x": -1241.3880671464417,
+        "y": -608.0569354508924
+      },
+      {
+        "x": -1234.7759065022574,
+        "y": -626.5366864730179
+      },
+      {
+        "x": -1226.384252869671,
+        "y": -644.2793473651996
+      },
+      {
+        "x": -1216.293922460509,
+        "y": -661.1140466039204
+      },
+      {
+        "x": -1204.6020906725475,
+        "y": -676.878656832729
+      },
+      {
+        "x": -1191.4213562373095,
+        "y": -691.4213562373095
+      },
+      {
+        "x": -1176.8786568327291,
+        "y": -704.6020906725473
+      },
+      {
+        "x": -1161.1140466039205,
+        "y": -716.2939224605091
+      },
+      {
+        "x": -1144.2793473651996,
+        "y": -726.384252869671
+      },
+      {
+        "x": -1126.536686473018,
+        "y": -734.7759065022573
+      },
+      {
+        "x": -1108.0569354508925,
+        "y": -741.3880671464417
+      },
+      {
+        "x": -1089.0180644032257,
+        "y": -746.157056080646
+      },
+      {
+        "x": -1069.603428065912,
+        "y": -749.0369453344395
+      },
+      {
+        "x": -1050.0,
+        "y": -750.0
+      }
+    ],
+    "holes": [],
+    "metadata": {
+      "preset": "crossbeam_rectangular_solid_bottom_fillets",
+      "bottom_fillet_radius_mm": 200.0,
+      "n_fillet": 16,
+      "crossbeam_section_role": "Solid"
+    }
+  },
+  "concrete_material": {
+    "name": "C45_PRECAST",
+    "fc_MPa": 45.0,
+    "ecu": 0.003,
+    "density_kg_m3": 2400.0,
+    "beta1": null,
+    "Ec_MPa": null,
+    "Ec_method": "ACI auto",
+    "note": "Precast prestressed girder / beam concrete"
+  },
+  "concrete_materials": [
+    {
+      "name": "C45_PRECAST",
+      "fc_MPa": 45.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Precast prestressed girder / beam concrete"
+    },
+    {
+      "name": "C35_TOPPING",
+      "fc_MPa": 35.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Cast-in-place deck / topping concrete"
+    },
+    {
+      "name": "C28",
+      "fc_MPa": 28.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Normal-weight concrete, f'c = 28 MPa"
+    },
+    {
+      "name": "C30",
+      "fc_MPa": 30.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Normal-weight concrete, f'c = 30 MPa"
+    },
+    {
+      "name": "C35",
+      "fc_MPa": 35.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Normal-weight concrete, f'c = 35 MPa"
+    },
+    {
+      "name": "C40",
+      "fc_MPa": 40.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Normal-weight concrete, f'c = 40 MPa"
+    },
+    {
+      "name": "C45",
+      "fc_MPa": 45.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Normal-weight concrete, f'c = 45 MPa"
+    },
+    {
+      "name": "C50",
+      "fc_MPa": 50.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Normal-weight concrete, f'c = 50 MPa"
+    },
+    {
+      "name": "C55",
+      "fc_MPa": 55.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Normal-weight concrete, f'c = 55 MPa"
+    },
+    {
+      "name": "C60",
+      "fc_MPa": 60.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Normal-weight concrete, f'c = 60 MPa"
+    }
+  ],
+  "active_concrete_material_name": "C45_PRECAST",
+  "deck_topping_material_name": "C35_TOPPING",
+  "rebar_materials": [],
+  "prestress_materials": [],
+  "active_rebar_material_name": null,
+  "active_prestress_material_name": null,
+  "loads": [],
+  "rebars": [],
+  "prestress_elements": [],
+  "analysis_mode_settings": {
+    "member_type": "portal_frame_crossbeam",
+    "analysis_workflow": "portal_frame_crossbeam",
+    "description": null,
+    "allow_pmm_workflow": false,
+    "allow_sls_workflow": false,
+    "allow_beam_girder_placeholder": true,
+    "note": null
+  },
+  "analysis_settings": {
+    "code": "ACI 318",
+    "analysis_type": "PMM Surface",
+    "strength_load_type": "ULS",
+    "include_rebars": true,
+    "include_prestress": true,
+    "use_phi_factor": true,
+    "transverse_reinforcement": "tied",
+    "prestress_stress_model": "bilinear",
+    "subtract_rebar_displaced_concrete": true,
+    "neutral_axis_angle_steps": 72,
+    "neutral_axis_depth_steps": 120,
+    "compression_positive": true,
+    "note": null
+  },
+  "serviceability_settings": {
+    "enabled": false,
+    "stress_sign_convention": "compression_negative",
+    "section_basis": "gross",
+    "check_load_type": "SLS",
+    "concrete_compression_limit_ratio": 0.45,
+    "concrete_tension_limit_mode": "user_defined",
+    "concrete_tension_limit_MPa": 0.0,
+    "concrete_tension_sqrt_fc_ratio": 0.5,
+    "allow_tension": true,
+    "no_tension_check": false,
+    "decompression_check": false,
+    "stress_zero_tolerance_MPa": 1e-6,
+    "critical_point_filter": "all",
+    "include_prestress_effective_force": false,
+    "use_transformed_section": false,
+    "concrete_Ec_MPa": null,
+    "Ec_method": "aci_normal_weight",
+    "transformed_include_rebar": true,
+    "transformed_include_prestress": true,
+    "transformed_area_convention": "net_steel",
+    "note": null
+  },
+  "custom_stress_check_points": [],
+  "include_default_stress_check_points": true,
+  "metadata": {
+    "section_has_ordinary_rebar": true,
+    "section_has_prestressing_steel": true,
+    "reinforcement_flags_preset_key": "crossbeam_rectangular_solid_bottom_fillets",
+    "section_builder_ordinary_rebar_enabled": true,
+    "section_builder_prestressing_steel_enabled": true,
+    "section_builder_steel_systems_preset_key": "crossbeam_rectangular_solid_bottom_fillets",
+    "workflow_load_tables": {
+      "column_uls_loads_table": [
+        {
+          "Active": true,
+          "Case Name": "ULS-01",
+          "Pu": "1000.0",
+          "Mux": "100.0",
+          "Muy": "50.0",
+          "Vux": "0.0",
+          "Vuy": "0.0",
+          "Tu": "0.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Case Name": "ULS-02",
+          "Pu": "1200.0",
+          "Mux": "120.0",
+          "Muy": "60.0",
+          "Vux": "0.0",
+          "Vuy": "0.0",
+          "Tu": "0.0",
+          "Note": ""
+        }
+      ],
+      "column_sls_loads_table": [
+        {
+          "Active": true,
+          "Case Name": "SLS-01",
+          "P": "700.0",
+          "Mx": "70.0",
+          "My": "35.0",
+          "Note": ""
+        }
+      ],
+      "beam_uls_loads_table": [
+        {
+          "Active": false,
+          "Station x (m)": 0.0,
+          "Case Name": "Strength I",
+          "Mux": 0.0,
+          "Vuy": 0.0,
+          "Tu": 0.0,
+          "Muy": 0.0,
+          "Vux": 0.0,
+          "Nu": 0.0,
+          "Note": "Primary AASHTO gravity strength combo. Enter factored station resultants from Strength I."
+        }
+      ],
+      "beam_sls_loads_table": [
+        {
+          "Active": true,
+          "Station x (m)": 0.0,
+          "Case Name": "SLS-TR",
+          "Stage": "Transfer stage",
+          "Load Component": "Girder self-weight",
+          "Section Basis": "Precast gross",
+          "N": 0.0,
+          "Mx": 0.0,
+          "My": 0.0,
+          "Vy": 0.0,
+          "Vx": 0.0,
+          "T": 0.0,
+          "Note": "Transfer external action: precast girder self-weight only; include Pe_transfer/initial prestress in Analysis."
+        },
+        {
+          "Active": true,
+          "Station x (m)": 0.0,
+          "Case Name": "SLS-CONST",
+          "Stage": "Construction stage",
+          "Load Component": "Girder self-weight + wet deck/topping",
+          "Section Basis": "Precast gross",
+          "N": 0.0,
+          "Mx": 0.0,
+          "My": 0.0,
+          "Vy": 0.0,
+          "Vx": 0.0,
+          "T": 0.0,
+          "Note": "Construction action: precast girder self-weight plus wet deck/topping before composite action."
+        },
+        {
+          "Active": true,
+          "Station x (m)": 0.0,
+          "Case Name": "SLS-SERV",
+          "Stage": "Service stage",
+          "Load Component": "Total SLS resultant",
+          "Section Basis": "Precast gross",
+          "N": 0.0,
+          "Mx": 0.0,
+          "My": 0.0,
+          "Vy": 0.0,
+          "Vx": 0.0,
+          "T": 0.0,
+          "Note": "Final service action: total SLS resultant including SDL and LL+IM. General / Non-composite Girder uses the gross section basis unless the engineer defines composite action separately. Active section family: Precast Composite Girder."
+        }
+      ],
+      "crossbeam_uls_loads_table": [
+        {
+          "Active": true,
+          "Station s (m)": "0.0",
+          "Check Point": "C1-Right",
+          "Case Name": "ULS-01",
+          "P": "5000.0",
+          "V2": "2000.0",
+          "T": "1000.0",
+          "M3": "0.0",
+          "Note": "Selected factored response at the design station."
+        },
+        {
+          "Active": true,
+          "Station s (m)": "2.0",
+          "Check Point": "Midspan",
+          "Case Name": "ULS-01",
+          "P": "5000.0",
+          "V2": "1750.0",
+          "T": "1000.0",
+          "M3": "100.0",
+          "Note": "Check Point is optional unless duplicate station rows must be distinguished."
+        },
+        {
+          "Active": true,
+          "Station s (m)": "4.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "P": "5000.0",
+          "V2": "1500.0",
+          "T": "1000.0",
+          "M3": "500.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "6.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "P": "5000.0",
+          "V2": "1250.0",
+          "T": "1000.0",
+          "M3": "2000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "8.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "P": "5000.0",
+          "V2": "1000.0",
+          "T": "1000.0",
+          "M3": "5000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "10.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "P": "5000.0",
+          "V2": "750.0",
+          "T": "1000.0",
+          "M3": "7000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "12.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "P": "5000.0",
+          "V2": "500.0",
+          "T": "1000.0",
+          "M3": "8000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "14.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "P": "5000.0",
+          "V2": "250.0",
+          "T": "1000.0",
+          "M3": "9000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "16.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "P": "5000.0",
+          "V2": "-250.0",
+          "T": "1000.0",
+          "M3": "9000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "18.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "P": "5000.0",
+          "V2": "-500.0",
+          "T": "1000.0",
+          "M3": "8000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "20.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "P": "5000.0",
+          "V2": "-750.0",
+          "T": "1000.0",
+          "M3": "7000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "22.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "P": "5000.0",
+          "V2": "-1000.0",
+          "T": "1000.0",
+          "M3": "5000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "24.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "P": "5000.0",
+          "V2": "-1250.0",
+          "T": "1000.0",
+          "M3": "2000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "26.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "P": "5000.0",
+          "V2": "-1500.0",
+          "T": "1000.0",
+          "M3": "500.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "28.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "P": "5000.0",
+          "V2": "-1750.0",
+          "T": "1000.0",
+          "M3": "100.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "30.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "P": "5000.0",
+          "V2": "-2000.0",
+          "T": "1000.0",
+          "M3": "0.0",
+          "Note": ""
+        }
+      ],
+      "crossbeam_sls_loads_table": [
+        {
+          "Active": true,
+          "Station s (m)": "0.0",
+          "Check Point": "C1-Right",
+          "Case Name": "ULS-01",
+          "Stage": "Transfer stage",
+          "P": "3000.0",
+          "V2": "2000.0",
+          "T": "1000.0",
+          "M3": "0.0",
+          "Note": "Selected transfer-stage response using the verified transfer-age support/contact and loading state."
+        },
+        {
+          "Active": true,
+          "Station s (m)": "2.0",
+          "Check Point": "Midspan",
+          "Case Name": "ULS-01",
+          "Stage": "Transfer stage",
+          "P": "3000.0",
+          "V2": "1750.0",
+          "T": "1000.0",
+          "M3": "100.0",
+          "Note": "Selected row-coupled SLS response at this stage."
+        },
+        {
+          "Active": true,
+          "Station s (m)": "4.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Transfer stage",
+          "P": "3000.0",
+          "V2": "1500.0",
+          "T": "1000.0",
+          "M3": "500.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "6.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Transfer stage",
+          "P": "3000.0",
+          "V2": "1250.0",
+          "T": "1000.0",
+          "M3": "2000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "8.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Transfer stage",
+          "P": "3000.0",
+          "V2": "1000.0",
+          "T": "1000.0",
+          "M3": "5000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "10.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Transfer stage",
+          "P": "3000.0",
+          "V2": "750.0",
+          "T": "1000.0",
+          "M3": "7000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "12.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Transfer stage",
+          "P": "3000.0",
+          "V2": "500.0",
+          "T": "1000.0",
+          "M3": "8000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "14.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Transfer stage",
+          "P": "3000.0",
+          "V2": "250.0",
+          "T": "1000.0",
+          "M3": "9000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "16.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Transfer stage",
+          "P": "3000.0",
+          "V2": "-250.0",
+          "T": "1000.0",
+          "M3": "9000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "18.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Transfer stage",
+          "P": "3000.0",
+          "V2": "-500.0",
+          "T": "1000.0",
+          "M3": "8000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "20.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Transfer stage",
+          "P": "3000.0",
+          "V2": "-750.0",
+          "T": "1000.0",
+          "M3": "7000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "22.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Transfer stage",
+          "P": "3000.0",
+          "V2": "-1000.0",
+          "T": "1000.0",
+          "M3": "5000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "24.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Transfer stage",
+          "P": "3000.0",
+          "V2": "-1250.0",
+          "T": "1000.0",
+          "M3": "2000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "26.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Transfer stage",
+          "P": "3000.0",
+          "V2": "-1500.0",
+          "T": "1000.0",
+          "M3": "500.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "28.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Transfer stage",
+          "P": "3000.0",
+          "V2": "-1750.0",
+          "T": "1000.0",
+          "M3": "100.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "30.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Transfer stage",
+          "P": "3000.0",
+          "V2": "-2000.0",
+          "T": "1000.0",
+          "M3": "0.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "0.0",
+          "Check Point": "C1-Right",
+          "Case Name": "ULS-01",
+          "Stage": "Final service stage",
+          "P": "3000.0",
+          "V2": "2000.0",
+          "T": "1000.0",
+          "M3": "0.0",
+          "Note": "Selected transfer-stage response using the verified transfer-age support/contact and loading state."
+        },
+        {
+          "Active": true,
+          "Station s (m)": "2.0",
+          "Check Point": "Midspan",
+          "Case Name": "ULS-01",
+          "Stage": "Final service stage",
+          "P": "3000.0",
+          "V2": "1750.0",
+          "T": "1000.0",
+          "M3": "100.0",
+          "Note": "Selected row-coupled SLS response at this stage."
+        },
+        {
+          "Active": true,
+          "Station s (m)": "4.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Final service stage",
+          "P": "3000.0",
+          "V2": "1500.0",
+          "T": "1000.0",
+          "M3": "500.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "6.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Final service stage",
+          "P": "3000.0",
+          "V2": "1250.0",
+          "T": "1000.0",
+          "M3": "2000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "8.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Final service stage",
+          "P": "3000.0",
+          "V2": "1000.0",
+          "T": "1000.0",
+          "M3": "5000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "10.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Final service stage",
+          "P": "3000.0",
+          "V2": "750.0",
+          "T": "1000.0",
+          "M3": "7000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "12.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Final service stage",
+          "P": "3000.0",
+          "V2": "500.0",
+          "T": "1000.0",
+          "M3": "8000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "14.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Final service stage",
+          "P": "3000.0",
+          "V2": "250.0",
+          "T": "1000.0",
+          "M3": "9000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "16.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Final service stage",
+          "P": "3000.0",
+          "V2": "-250.0",
+          "T": "1000.0",
+          "M3": "9000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "18.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Final service stage",
+          "P": "3000.0",
+          "V2": "-500.0",
+          "T": "1000.0",
+          "M3": "8000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "20.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Final service stage",
+          "P": "3000.0",
+          "V2": "-750.0",
+          "T": "1000.0",
+          "M3": "7000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "22.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Final service stage",
+          "P": "3000.0",
+          "V2": "-1000.0",
+          "T": "1000.0",
+          "M3": "5000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "24.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Final service stage",
+          "P": "3000.0",
+          "V2": "-1250.0",
+          "T": "1000.0",
+          "M3": "2000.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "26.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Final service stage",
+          "P": "3000.0",
+          "V2": "-1500.0",
+          "T": "1000.0",
+          "M3": "500.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "28.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Final service stage",
+          "P": "3000.0",
+          "V2": "-1750.0",
+          "T": "1000.0",
+          "M3": "100.0",
+          "Note": ""
+        },
+        {
+          "Active": true,
+          "Station s (m)": "30.0",
+          "Check Point": "",
+          "Case Name": "ULS-01",
+          "Stage": "Final service stage",
+          "P": "3000.0",
+          "V2": "-2000.0",
+          "T": "1000.0",
+          "M3": "0.0",
+          "Note": ""
+        }
+      ]
+    },
+    "crossbeam_loads_station_force_contract": {
+      "schema": "crossbeam-station-force-import-contract-v2",
+      "fea_program": "",
+      "model_revision": "",
+      "source_force_unit": "kN",
+      "source_moment_unit": "kN-m",
+      "p_sign": "COMPRESSION_POSITIVE",
+      "v2_sign": "UPWARD_POSITIVE",
+      "t_sign": "RIGHT_HAND_ABOUT_INCREASING_S",
+      "m3_sign": "SAGGING_POSITIVE",
+      "prestress_application_basis": "UNIFORM_SYSTEM_AVERAGE_LOSS",
+      "adopted_total_loss_percent": 17.286298785310976,
+      "effective_prestress_ratio_percent": 82.71370121468902,
+      "prestress_source_id": "7c1ca3ebc192",
+      "prestress_contract_id": "2c4db0164dc6e5a2",
+      "confirmed_final_prestress_applied_once": true,
+      "confirmed_external_fea_secondary": true,
+      "confirmed_uls_final_stage_response_basis": true,
+      "confirmed_sls_service_response_basis": true,
+      "confirmed_transfer_immediate_loss_basis": true,
+      "confirmed_transfer_stage_response_basis": true,
+      "confirmed_row_coupled_forces": true
+    },
+    "crossbeam_loads_effective_prestress_link": {
+      "schema": "crossbeam-effective-prestress-loads-link-v1",
+      "ready": true,
+      "source_id": "7c1ca3ebc192",
+      "contract_id": "2c4db0164dc6e5a2",
+      "source_fingerprint": "7c1ca3ebc1926954da7870a8c08fb8d8749e9e35708dd33ad8c862000348d553",
+      "application_route": "DIRECT_EFFECTIVE_FORCE",
+      "engineer_adopted_td": true,
+      "average_total_loss_percent": 17.286298785310976,
+      "effective_prestress_ratio_percent": 82.71370121468902,
+      "average_effective_stress_mpa": 1153.8561319449122,
+      "average_effective_force_kn": 24554.05848778773
+    },
+    "crossbeam_time_dependent_fea_response": {
+      "schema_version": 2,
+      "owner": "Sections/Prestress Loss/Time-Dependent",
+      "rows": [
+        {
+          "Active": false,
+          "Station x (m)": "0.0",
+          "Case Name": "",
+          "Step Type": "",
+          "Step Num": "",
+          "FEA Object": "",
+          "FEA Element": "",
+          "End / Side": "",
+          "Section ID": "",
+          "P": "0.0",
+          "V2": "0.0",
+          "M3": "0.0",
+          "Note": "Replace with verified incremental FEA resultants; then set Active."
+        },
+        {
+          "Active": false,
+          "Station x (m)": "1.5",
+          "Case Name": "",
+          "Step Type": "",
+          "Step Num": "",
+          "FEA Object": "",
+          "FEA Element": "",
+          "End / Side": "",
+          "Section ID": "",
+          "P": "0.0",
+          "V2": "0.0",
+          "M3": "0.0",
+          "Note": "Replace with verified incremental FEA resultants; then set Active."
+        },
+        {
+          "Active": false,
+          "Station x (m)": "10.0",
+          "Case Name": "",
+          "Step Type": "",
+          "Step Num": "",
+          "FEA Object": "",
+          "FEA Element": "",
+          "End / Side": "",
+          "Section ID": "",
+          "P": "0.0",
+          "V2": "0.0",
+          "M3": "0.0",
+          "Note": "Replace with verified incremental FEA resultants; then set Active."
+        },
+        {
+          "Active": false,
+          "Station x (m)": "18.5",
+          "Case Name": "",
+          "Step Type": "",
+          "Step Num": "",
+          "FEA Object": "",
+          "FEA Element": "",
+          "End / Side": "",
+          "Section ID": "",
+          "P": "0.0",
+          "V2": "0.0",
+          "M3": "0.0",
+          "Note": "Replace with verified incremental FEA resultants; then set Active."
+        },
+        {
+          "Active": false,
+          "Station x (m)": "20.0",
+          "Case Name": "",
+          "Step Type": "",
+          "Step Num": "",
+          "FEA Object": "",
+          "FEA Element": "",
+          "End / Side": "",
+          "Section ID": "",
+          "P": "0.0",
+          "V2": "0.0",
+          "M3": "0.0",
+          "Note": "Replace with verified incremental FEA resultants; then set Active."
+        }
+      ],
+      "source_declaration": {
+        "import_mode": "Incremental response — permanent loads activated at tp",
+        "fea_program": "",
+        "source_case_stage": "",
+        "permanent_load_groups": "",
+        "unfactored_confirmed": false,
+        "incremental_not_total_confirmed": false,
+        "excluded_transient_confirmed": false,
+        "common_activation_age_confirmed": false
+      },
+      "permanent_event_schedule": [
+        {
+          "Adopt": false,
+          "Event ID": "PL1",
+          "Permanent load group": "Beam / Girder permanent load — CIP / PC / Steel",
+          "Activation age (days)": "",
+          "Case Name": ""
+        },
+        {
+          "Adopt": false,
+          "Event ID": "PL2",
+          "Permanent load group": "Slab / Deck permanent load — CIP / PC / Steel deck",
+          "Activation age (days)": "",
+          "Case Name": ""
+        },
+        {
+          "Adopt": false,
+          "Event ID": "PL3",
+          "Permanent load group": "SDL on slab",
+          "Activation age (days)": "",
+          "Case Name": ""
+        },
+        {
+          "Adopt": false,
+          "Event ID": "PL4",
+          "Permanent load group": "Box girder permanent load",
+          "Activation age (days)": "",
+          "Case Name": ""
+        },
+        {
+          "Adopt": false,
+          "Event ID": "PL5",
+          "Permanent load group": "SDL track work / Utility",
+          "Activation age (days)": "",
+          "Case Name": ""
+        }
+      ]
+    },
+    "crossbeam_input_model": {
+      "schema_version": 1,
+      "section_definitions": [
+        {
+          "Section ID": "CB-S01",
+          "Section name": "Solid column region",
+          "Preset key": "crossbeam_rectangular_solid_bottom_fillets",
+          "Preset family": "PC Crossbeam — Rectangular Solid with Bottom Fillets",
+          "Section role": "Solid",
+          "Material": "C45_PRECAST",
+          "Parameters": {
+            "width_mm": 2500.0,
+            "height_mm": 1500.0,
+            "bottom_fillet_radius_mm": 200.0
+          }
+        },
+        {
+          "Section ID": "CB-H01",
+          "Section name": "Hollow typical",
+          "Preset key": "crossbeam_rectangular_hollow_bottom_fillets_inner_chamfers",
+          "Preset family": "PC Crossbeam — Rectangular Hollow with Bottom Fillets and Inner Chamfers",
+          "Section role": "Hollow",
+          "Material": "C45_PRECAST",
+          "Parameters": {
+            "width_mm": 2500.0,
+            "height_mm": 1500.0,
+            "t_top_mm": 300.0,
+            "t_bottom_mm": 350.0,
+            "t_left_mm": 300.0,
+            "t_right_mm": 300.0,
+            "bottom_fillet_radius_mm": 200.0,
+            "inner_chamfer_mm": 150.0
+          }
+        }
+      ],
+      "active_section_id": "CB-S01",
+      "length_m": 30.0,
+      "segment_rows": [
+        {
+          "Segment": "S1",
+          "x_start_m": 0.0,
+          "x_end_m": 4.5,
+          "Section ID": "CB-S01",
+          "Section name": "Solid column region",
+          "Section type / preset": "PC Crossbeam — Rectangular Solid with Bottom Fillets",
+          "Section preset key": "crossbeam_rectangular_solid_bottom_fillets",
+          "Section role": "Solid"
+        },
+        {
+          "Segment": "S2",
+          "x_start_m": 4.5,
+          "x_end_m": 10.5,
+          "Section ID": "CB-H01",
+          "Section name": "Hollow typical",
+          "Section type / preset": "PC Crossbeam — Rectangular Hollow with Bottom Fillets and Inner Chamfers",
+          "Section preset key": "crossbeam_rectangular_hollow_bottom_fillets_inner_chamfers",
+          "Section role": "Hollow"
+        },
+        {
+          "Segment": "S3",
+          "x_start_m": 10.5,
+          "x_end_m": 15.0,
+          "Section ID": "CB-S01",
+          "Section name": "Solid column region",
+          "Section type / preset": "PC Crossbeam — Rectangular Solid with Bottom Fillets",
+          "Section preset key": "crossbeam_rectangular_solid_bottom_fillets",
+          "Section role": "Solid"
+        },
+        {
+          "Segment": "S4",
+          "x_start_m": 15.0,
+          "x_end_m": 19.5,
+          "Section ID": "CB-S01",
+          "Section name": "Solid column region",
+          "Section type / preset": "PC Crossbeam — Rectangular Solid with Bottom Fillets",
+          "Section preset key": "crossbeam_rectangular_solid_bottom_fillets",
+          "Section role": "Solid"
+        },
+        {
+          "Segment": "S5",
+          "x_start_m": 19.5,
+          "x_end_m": 25.5,
+          "Section ID": "CB-H01",
+          "Section name": "Hollow typical",
+          "Section type / preset": "PC Crossbeam — Rectangular Hollow with Bottom Fillets and Inner Chamfers",
+          "Section preset key": "crossbeam_rectangular_hollow_bottom_fillets_inner_chamfers",
+          "Section role": "Hollow"
+        },
+        {
+          "Segment": "S6",
+          "x_start_m": 25.5,
+          "x_end_m": 30.0,
+          "Section ID": "CB-S01",
+          "Section name": "Solid column region",
+          "Section type / preset": "PC Crossbeam — Rectangular Solid with Bottom Fillets",
+          "Section preset key": "crossbeam_rectangular_solid_bottom_fillets",
+          "Section role": "Solid"
+        }
+      ],
+      "precast_segment_rows": [
+        {
+          "Segment": "S1",
+          "x_start_m": 0.0,
+          "x_end_m": 4.5,
+          "Section ID": "CB-S01",
+          "Section name": "Solid column region",
+          "Section type / preset": "PC Crossbeam — Rectangular Solid with Bottom Fillets",
+          "Section preset key": "crossbeam_rectangular_solid_bottom_fillets",
+          "Section role": "Solid"
+        },
+        {
+          "Segment": "S2",
+          "x_start_m": 4.5,
+          "x_end_m": 10.5,
+          "Section ID": "CB-H01",
+          "Section name": "Hollow typical",
+          "Section type / preset": "PC Crossbeam — Rectangular Hollow with Bottom Fillets and Inner Chamfers",
+          "Section preset key": "crossbeam_rectangular_hollow_bottom_fillets_inner_chamfers",
+          "Section role": "Hollow"
+        },
+        {
+          "Segment": "S3",
+          "x_start_m": 10.5,
+          "x_end_m": 15.0,
+          "Section ID": "CB-S01",
+          "Section name": "Solid column region",
+          "Section type / preset": "PC Crossbeam — Rectangular Solid with Bottom Fillets",
+          "Section preset key": "crossbeam_rectangular_solid_bottom_fillets",
+          "Section role": "Solid"
+        },
+        {
+          "Segment": "S4",
+          "x_start_m": 15.0,
+          "x_end_m": 19.5,
+          "Section ID": "CB-S01",
+          "Section name": "Solid column region",
+          "Section type / preset": "PC Crossbeam — Rectangular Solid with Bottom Fillets",
+          "Section preset key": "crossbeam_rectangular_solid_bottom_fillets",
+          "Section role": "Solid"
+        },
+        {
+          "Segment": "S5",
+          "x_start_m": 19.5,
+          "x_end_m": 25.5,
+          "Section ID": "CB-H01",
+          "Section name": "Hollow typical",
+          "Section type / preset": "PC Crossbeam — Rectangular Hollow with Bottom Fillets and Inner Chamfers",
+          "Section preset key": "crossbeam_rectangular_hollow_bottom_fillets_inner_chamfers",
+          "Section role": "Hollow"
+        },
+        {
+          "Segment": "S6",
+          "x_start_m": 25.5,
+          "x_end_m": 30.0,
+          "Section ID": "CB-S01",
+          "Section name": "Solid column region",
+          "Section type / preset": "PC Crossbeam — Rectangular Solid with Bottom Fillets",
+          "Section preset key": "crossbeam_rectangular_solid_bottom_fillets",
+          "Section role": "Solid"
+        }
+      ],
+      "cast_in_place_zone_rows": [],
+      "construction_method": "Precast Segmental",
+      "construction_method_last": "Precast Segmental"
+    },
+    "crossbeam_rebar_input_model": {
+      "schema_version": 1,
+      "longitudinal_templates": [
+        {
+          "Active": true,
+          "Template ID": "RB-HOLLOW-MIN",
+          "Template name": "Factory-cast hollow segment minimum reinforcement",
+          "Applicable role": "Hollow",
+          "Construction": "Factory precast",
+          "Longitudinal basis": "Segment-local",
+          "Credit inside segment": true,
+          "Top As mm²": 0.0,
+          "Bottom As mm²": 0.0,
+          "Side As mm²": 0.0,
+          "Av/s mm²/mm": 0.0,
+          "fy MPa": 390.0,
+          "Rebar material": "SD40",
+          "Outer face bars": true,
+          "Outer bar size": "DB16",
+          "Outer layout method": "By target spacing",
+          "Outer center offset mm": 50.0,
+          "Outer target spacing mm": 150.0,
+          "Outer exact bar count": 24,
+          "Inner face bars": true,
+          "Inner bar size": "DB16",
+          "Inner layout method": "By target spacing",
+          "Inner center offset mm": 50.0,
+          "Inner target spacing mm": 150.0,
+          "Inner exact bar count": 16,
+          "Notes": "Enter actual minimum/detailing reinforcement; no ordinary bar crosses either segment joint."
+        },
+        {
+          "Active": true,
+          "Template ID": "RB-SOLID-COLUMN",
+          "Template name": "Cast-in-place solid column-region reinforcement",
+          "Applicable role": "Solid",
+          "Construction": "Cast in place",
+          "Longitudinal basis": "Zone-local",
+          "Credit inside segment": true,
+          "Top As mm²": 0.0,
+          "Bottom As mm²": 0.0,
+          "Side As mm²": 0.0,
+          "Av/s mm²/mm": 0.0,
+          "fy MPa": 390.0,
+          "Rebar material": "SD40",
+          "Outer face bars": true,
+          "Outer bar size": "DB20",
+          "Outer layout method": "By target spacing",
+          "Outer center offset mm": 50.0,
+          "Outer target spacing mm": 150.0,
+          "Outer exact bar count": 24,
+          "Inner face bars": false,
+          "Inner bar size": "DB16",
+          "Inner layout method": "By target spacing",
+          "Inner center offset mm": 50.0,
+          "Inner target spacing mm": 150.0,
+          "Inner exact bar count": 16,
+          "Notes": "Define actual CIP reinforcement within the solid zone; column-joint and D-region review remain separate."
+        },
+        {
+          "Active": true,
+          "Template ID": "RB-SOLID-ANCHORAGE",
+          "Template name": "Anchorage/end-block local reinforcement",
+          "Applicable role": "Solid",
+          "Construction": "Cast in place",
+          "Longitudinal basis": "Zone-local",
+          "Credit inside segment": false,
+          "Top As mm²": 0.0,
+          "Bottom As mm²": 0.0,
+          "Side As mm²": 0.0,
+          "Av/s mm²/mm": 0.0,
+          "fy MPa": 390.0,
+          "Rebar material": "SD40",
+          "Outer face bars": true,
+          "Outer bar size": "DB16",
+          "Outer layout method": "By target spacing",
+          "Outer center offset mm": 50.0,
+          "Outer target spacing mm": 150.0,
+          "Outer exact bar count": 24,
+          "Inner face bars": false,
+          "Inner bar size": "DB16",
+          "Inner layout method": "By target spacing",
+          "Inner center offset mm": 50.0,
+          "Inner target spacing mm": 150.0,
+          "Inner exact bar count": 16,
+          "Notes": "Local anchorage/bursting reinforcement only; not credited by RB1 for global section strength."
+        }
+      ],
+      "transverse_templates": [
+        {
+          "Active": true,
+          "Template ID": "TR-HOLLOW-MIN",
+          "Template name": "Factory-cast hollow segment minimum shear reinforcement",
+          "Applicable role": "Hollow",
+          "Construction": "Factory precast",
+          "Credit inside segment": true,
+          "Rebar material": "SD40",
+          "fy MPa": 390.0,
+          "Bar size": "DB12",
+          "Spacing mm": 200.0,
+          "Left web legs": 2,
+          "Right web legs": 2,
+          "Effective legs": 4,
+          "Closed cage": true,
+          "Center offset mm": 50.0,
+          "First bar offset mm": 75.0,
+          "Last bar offset mm": 75.0,
+          "Notes": "Hollow detailing set: 2 closed web loops, 4 flange U-bars, and 4 chamfer bars; Av/s credit remains web-leg-only and no segment-joint shear credit is created."
+        },
+        {
+          "Active": true,
+          "Template ID": "TR-HOLLOW-END",
+          "Template name": "Hollow segment end-zone shear reinforcement",
+          "Applicable role": "Hollow",
+          "Construction": "Factory precast",
+          "Credit inside segment": true,
+          "Rebar material": "SD40",
+          "fy MPa": 390.0,
+          "Bar size": "DB12",
+          "Spacing mm": 100.0,
+          "Left web legs": 2,
+          "Right web legs": 2,
+          "Effective legs": 4,
+          "Closed cage": true,
+          "Center offset mm": 50.0,
+          "First bar offset mm": 75.0,
+          "Last bar offset mm": 75.0,
+          "Notes": "Dense Hollow detailing set near segment ends; Av/s credit remains web-leg-only and joint shear remains a separate check."
+        },
+        {
+          "Active": true,
+          "Template ID": "TR-SOLID-COLUMN",
+          "Template name": "Solid CIP column-region multi-leg ties",
+          "Applicable role": "Solid",
+          "Construction": "Cast in place",
+          "Credit inside segment": true,
+          "Rebar material": "SD40",
+          "fy MPa": 390.0,
+          "Bar size": "DB16",
+          "Spacing mm": 100.0,
+          "Left web legs": 2,
+          "Right web legs": 2,
+          "Effective legs": 6,
+          "Closed cage": true,
+          "Center offset mm": 50.0,
+          "First bar offset mm": 75.0,
+          "Last bar offset mm": 75.0,
+          "Notes": "Local solid-region shear reinforcement; column D-region review remains separate."
+        },
+        {
+          "Active": true,
+          "Template ID": "TR-SOLID-ANCHORAGE",
+          "Template name": "Solid anchorage/end-block transverse reinforcement",
+          "Applicable role": "Solid",
+          "Construction": "Cast in place",
+          "Credit inside segment": false,
+          "Rebar material": "SD40",
+          "fy MPa": 390.0,
+          "Bar size": "DB16",
+          "Spacing mm": 100.0,
+          "Left web legs": 2,
+          "Right web legs": 2,
+          "Effective legs": 8,
+          "Closed cage": true,
+          "Center offset mm": 50.0,
+          "First bar offset mm": 75.0,
+          "Last bar offset mm": 75.0,
+          "Notes": "Local anchorage/bursting reinforcement only; not a joint-shear certification."
+        }
+      ],
+      "zone_assignments": [
+        {
+          "Zone ID": "Z-S1",
+          "Segment": "S1",
+          "s_start_m": 0.0,
+          "s_end_m": 4.5,
+          "Rebar template": "RB-SOLID-COLUMN",
+          "Longitudinal template": "RB-SOLID-COLUMN",
+          "Transverse template": "TR-SOLID-COLUMN",
+          "Purpose": "Solid CIP column-region reinforcement"
+        },
+        {
+          "Zone ID": "Z-S2",
+          "Segment": "S2",
+          "s_start_m": 4.5,
+          "s_end_m": 10.5,
+          "Rebar template": "RB-HOLLOW-MIN",
+          "Longitudinal template": "RB-HOLLOW-MIN",
+          "Transverse template": "TR-HOLLOW-MIN",
+          "Purpose": "Minimum/detailing reinforcement"
+        },
+        {
+          "Zone ID": "Z-S3",
+          "Segment": "S3",
+          "s_start_m": 10.5,
+          "s_end_m": 15.0,
+          "Rebar template": "RB-SOLID-COLUMN",
+          "Longitudinal template": "RB-SOLID-COLUMN",
+          "Transverse template": "TR-SOLID-COLUMN",
+          "Purpose": "Solid CIP column-region reinforcement"
+        },
+        {
+          "Zone ID": "Z-S4",
+          "Segment": "S4",
+          "s_start_m": 15.0,
+          "s_end_m": 19.5,
+          "Rebar template": "RB-SOLID-COLUMN",
+          "Longitudinal template": "RB-SOLID-COLUMN",
+          "Transverse template": "TR-SOLID-COLUMN",
+          "Purpose": "Solid CIP column-region reinforcement"
+        },
+        {
+          "Zone ID": "Z-S5",
+          "Segment": "S5",
+          "s_start_m": 19.5,
+          "s_end_m": 25.5,
+          "Rebar template": "RB-HOLLOW-MIN",
+          "Longitudinal template": "RB-HOLLOW-MIN",
+          "Transverse template": "TR-HOLLOW-MIN",
+          "Purpose": "Minimum/detailing reinforcement"
+        },
+        {
+          "Zone ID": "Z-S6",
+          "Segment": "S6",
+          "s_start_m": 25.5,
+          "s_end_m": 30.0,
+          "Rebar template": "RB-SOLID-COLUMN",
+          "Longitudinal template": "RB-SOLID-COLUMN",
+          "Transverse template": "TR-SOLID-COLUMN",
+          "Purpose": "Solid CIP column-region reinforcement"
+        }
+      ]
+    },
+    "crossbeam_tendon_input_model": {
+      "schema_version": 3,
+      "tendon_system": [
+        {
+          "Tendon ID": "T1",
+          "Active": true,
+          "Type": "Internal",
+          "Bond state": "Bonded after grouting",
+          "Strands": 19,
+          "Strand system": "Seven-wire low-relaxation strand",
+          "Aps/strand mm²": 140.0,
+          "fpu MPa": 1860.0,
+          "fpj/fpu": 0.75,
+          "Jacking end": "Both",
+          "Left anchorage": "s = 0",
+          "Right anchorage": "s = L"
+        },
+        {
+          "Tendon ID": "T2",
+          "Active": true,
+          "Type": "Internal",
+          "Bond state": "Bonded after grouting",
+          "Strands": 19,
+          "Strand system": "Seven-wire low-relaxation strand",
+          "Aps/strand mm²": 140.0,
+          "fpu MPa": 1860.0,
+          "fpj/fpu": 0.75,
+          "Jacking end": "Both",
+          "Left anchorage": "s = 0",
+          "Right anchorage": "s = L"
+        },
+        {
+          "Tendon ID": "T3",
+          "Active": true,
+          "Type": "Internal",
+          "Bond state": "Bonded after grouting",
+          "Strands": 19,
+          "Strand system": "Seven-wire low-relaxation strand",
+          "Aps/strand mm²": 140.0,
+          "fpu MPa": 1860.0,
+          "fpj/fpu": 0.75,
+          "Jacking end": "Both",
+          "Left anchorage": "s = 0",
+          "Right anchorage": "s = L"
+        },
+        {
+          "Tendon ID": "T4",
+          "Active": true,
+          "Type": "Internal",
+          "Bond state": "Bonded after grouting",
+          "Strands": 19,
+          "Strand system": "Seven-wire low-relaxation strand",
+          "Aps/strand mm²": 140.0,
+          "fpu MPa": 1860.0,
+          "fpj/fpu": 0.75,
+          "Jacking end": "Both",
+          "Left anchorage": "s = 0",
+          "Right anchorage": "s = L"
+        },
+        {
+          "Tendon ID": "T5",
+          "Active": true,
+          "Type": "Internal",
+          "Bond state": "Bonded after grouting",
+          "Strands": 19,
+          "Strand system": "Seven-wire low-relaxation strand",
+          "Aps/strand mm²": 140.0,
+          "fpu MPa": 1860.0,
+          "fpj/fpu": 0.75,
+          "Jacking end": "Both",
+          "Left anchorage": "s = 0",
+          "Right anchorage": "s = L"
+        },
+        {
+          "Tendon ID": "T6",
+          "Active": true,
+          "Type": "Internal",
+          "Bond state": "Bonded after grouting",
+          "Strands": 19,
+          "Strand system": "Seven-wire low-relaxation strand",
+          "Aps/strand mm²": 140.0,
+          "fpu MPa": 1860.0,
+          "fpj/fpu": 0.75,
+          "Jacking end": "Both",
+          "Left anchorage": "s = 0",
+          "Right anchorage": "s = L"
+        },
+        {
+          "Tendon ID": "T7",
+          "Active": true,
+          "Type": "Internal",
+          "Bond state": "Bonded after grouting",
+          "Strands": 19,
+          "Strand system": "Seven-wire low-relaxation strand",
+          "Aps/strand mm²": 140.0,
+          "fpu MPa": 1860.0,
+          "fpj/fpu": 0.75,
+          "Jacking end": "Both",
+          "Left anchorage": "s = 0",
+          "Right anchorage": "s = L"
+        },
+        {
+          "Tendon ID": "T8",
+          "Active": true,
+          "Type": "Internal",
+          "Bond state": "Bonded after grouting",
+          "Strands": 19,
+          "Strand system": "Seven-wire low-relaxation strand",
+          "Aps/strand mm²": 140.0,
+          "fpu MPa": 1860.0,
+          "fpj/fpu": 0.75,
+          "Jacking end": "Both",
+          "Left anchorage": "s = 0",
+          "Right anchorage": "s = L"
+        }
+      ],
+      "profile_points": [
+        {
+          "Tendon ID": "T1",
+          "Point": "P1",
+          "s/L": 0.0,
+          "s (m)": 0.0,
+          "x lateral (mm)": -1100.0,
+          "dtop (mm)": 500.0,
+          "Curve role": "Anchorage"
+        },
+        {
+          "Tendon ID": "T1",
+          "Point": "P2",
+          "s/L": 0.5,
+          "s (m)": 15.0,
+          "x lateral (mm)": -1100.0,
+          "dtop (mm)": 500.0,
+          "Curve role": "Profile point"
+        },
+        {
+          "Tendon ID": "T1",
+          "Point": "P3",
+          "s/L": 1.0,
+          "s (m)": 30.0,
+          "x lateral (mm)": -1100.0,
+          "dtop (mm)": 500.0,
+          "Curve role": "Anchorage"
+        },
+        {
+          "Tendon ID": "T2",
+          "Point": "P1",
+          "s/L": 0.0,
+          "s (m)": 0.0,
+          "x lateral (mm)": -1100.0,
+          "dtop (mm)": 733.333,
+          "Curve role": "Anchorage"
+        },
+        {
+          "Tendon ID": "T2",
+          "Point": "P2",
+          "s/L": 0.5,
+          "s (m)": 15.0,
+          "x lateral (mm)": -1100.0,
+          "dtop (mm)": 733.333,
+          "Curve role": "Profile point"
+        },
+        {
+          "Tendon ID": "T2",
+          "Point": "P3",
+          "s/L": 1.0,
+          "s (m)": 30.0,
+          "x lateral (mm)": -1100.0,
+          "dtop (mm)": 733.333,
+          "Curve role": "Anchorage"
+        },
+        {
+          "Tendon ID": "T3",
+          "Point": "P1",
+          "s/L": 0.0,
+          "s (m)": 0.0,
+          "x lateral (mm)": -1100.0,
+          "dtop (mm)": 966.667,
+          "Curve role": "Anchorage"
+        },
+        {
+          "Tendon ID": "T3",
+          "Point": "P2",
+          "s/L": 0.5,
+          "s (m)": 15.0,
+          "x lateral (mm)": -1100.0,
+          "dtop (mm)": 966.667,
+          "Curve role": "Profile point"
+        },
+        {
+          "Tendon ID": "T3",
+          "Point": "P3",
+          "s/L": 1.0,
+          "s (m)": 30.0,
+          "x lateral (mm)": -1100.0,
+          "dtop (mm)": 966.667,
+          "Curve role": "Anchorage"
+        },
+        {
+          "Tendon ID": "T4",
+          "Point": "P1",
+          "s/L": 0.0,
+          "s (m)": 0.0,
+          "x lateral (mm)": -1100.0,
+          "dtop (mm)": 1200.0,
+          "Curve role": "Anchorage"
+        },
+        {
+          "Tendon ID": "T4",
+          "Point": "P2",
+          "s/L": 0.5,
+          "s (m)": 15.0,
+          "x lateral (mm)": -1100.0,
+          "dtop (mm)": 1200.0,
+          "Curve role": "Profile point"
+        },
+        {
+          "Tendon ID": "T4",
+          "Point": "P3",
+          "s/L": 1.0,
+          "s (m)": 30.0,
+          "x lateral (mm)": -1100.0,
+          "dtop (mm)": 1200.0,
+          "Curve role": "Anchorage"
+        },
+        {
+          "Tendon ID": "T5",
+          "Point": "P1",
+          "s/L": 0.0,
+          "s (m)": 0.0,
+          "x lateral (mm)": 1100.0,
+          "dtop (mm)": 500.0,
+          "Curve role": "Anchorage"
+        },
+        {
+          "Tendon ID": "T5",
+          "Point": "P2",
+          "s/L": 0.5,
+          "s (m)": 15.0,
+          "x lateral (mm)": 1100.0,
+          "dtop (mm)": 500.0,
+          "Curve role": "Profile point"
+        },
+        {
+          "Tendon ID": "T5",
+          "Point": "P3",
+          "s/L": 1.0,
+          "s (m)": 30.0,
+          "x lateral (mm)": 1100.0,
+          "dtop (mm)": 500.0,
+          "Curve role": "Anchorage"
+        },
+        {
+          "Tendon ID": "T6",
+          "Point": "P1",
+          "s/L": 0.0,
+          "s (m)": 0.0,
+          "x lateral (mm)": 1100.0,
+          "dtop (mm)": 733.333,
+          "Curve role": "Anchorage"
+        },
+        {
+          "Tendon ID": "T6",
+          "Point": "P2",
+          "s/L": 0.5,
+          "s (m)": 15.0,
+          "x lateral (mm)": 1100.0,
+          "dtop (mm)": 733.333,
+          "Curve role": "Profile point"
+        },
+        {
+          "Tendon ID": "T6",
+          "Point": "P3",
+          "s/L": 1.0,
+          "s (m)": 30.0,
+          "x lateral (mm)": 1100.0,
+          "dtop (mm)": 733.333,
+          "Curve role": "Anchorage"
+        },
+        {
+          "Tendon ID": "T7",
+          "Point": "P1",
+          "s/L": 0.0,
+          "s (m)": 0.0,
+          "x lateral (mm)": 1100.0,
+          "dtop (mm)": 966.667,
+          "Curve role": "Anchorage"
+        },
+        {
+          "Tendon ID": "T7",
+          "Point": "P2",
+          "s/L": 0.5,
+          "s (m)": 15.0,
+          "x lateral (mm)": 1100.0,
+          "dtop (mm)": 966.667,
+          "Curve role": "Profile point"
+        },
+        {
+          "Tendon ID": "T7",
+          "Point": "P3",
+          "s/L": 1.0,
+          "s (m)": 30.0,
+          "x lateral (mm)": 1100.0,
+          "dtop (mm)": 966.667,
+          "Curve role": "Anchorage"
+        },
+        {
+          "Tendon ID": "T8",
+          "Point": "P1",
+          "s/L": 0.0,
+          "s (m)": 0.0,
+          "x lateral (mm)": 1100.0,
+          "dtop (mm)": 1200.0,
+          "Curve role": "Anchorage"
+        },
+        {
+          "Tendon ID": "T8",
+          "Point": "P2",
+          "s/L": 0.5,
+          "s (m)": 15.0,
+          "x lateral (mm)": 1100.0,
+          "dtop (mm)": 1200.0,
+          "Curve role": "Profile point"
+        },
+        {
+          "Tendon ID": "T8",
+          "Point": "P3",
+          "s/L": 1.0,
+          "s (m)": 30.0,
+          "x lateral (mm)": 1100.0,
+          "dtop (mm)": 1200.0,
+          "Curve role": "Anchorage"
+        }
+      ],
+      "preview": {
+        "visible_tendon_ids": [
+          "T1",
+          "T2",
+          "T3",
+          "T4",
+          "T5",
+          "T6",
+          "T7",
+          "T8"
+        ],
+        "transparent_3d": true
+      }
+    },
+    "crossbeam_prestress_loss_settings": {
+      "schema_version": 9,
+      "basis": "AASHTO LRFD 5.9.3.2.2b",
+      "internal_mu": 0.2,
+      "internal_k_per_m": 0.0006561679790026247,
+      "external_deviator_mu": 0.25,
+      "external_inadvertent_angle_rad": 0.04,
+      "anchorage_set_mm": 6.0,
+      "ep_mpa": 195000.0,
+      "es_fcgp_override_enabled": false,
+      "es_fcgp_override_mpa": 12.190031742774707,
+      "es_eci_override_enabled": false,
+      "es_eci_override_mpa": 28200.0,
+      "es_construction_method": "Precast Segmental",
+      "es_stressing_strength_ratio": 0.8,
+      "es_stressing_strength_ratio_migrated": false,
+      "es_closure_required_mpa": 50.0,
+      "es_column_rows": [
+        {
+          "Column ID": "C1",
+          "Station s (m)": 2.75,
+          "Height (m)": 10.0,
+          "Shape": "Rectangular — Equal Chamfer 4 Corners",
+          "Btrans (mm)": 2000.0,
+          "Blong (mm)": 2000.0,
+          "Corner (mm)": 200.0,
+          "Diameter (mm)": 2000.0,
+          "f'c (MPa)": 35.0
+        },
+        {
+          "Column ID": "C2",
+          "Station s (m)": 15.0,
+          "Height (m)": 10.0,
+          "Shape": "Rectangular — Equal Chamfer 4 Corners",
+          "Btrans (mm)": 2000.0,
+          "Blong (mm)": 2000.0,
+          "Corner (mm)": 200.0,
+          "Diameter (mm)": 2000.0,
+          "f'c (MPa)": 35.0
+        },
+        {
+          "Column ID": "C3",
+          "Station s (m)": 27.25,
+          "Height (m)": 10.0,
+          "Shape": "Rectangular — Equal Chamfer 4 Corners",
+          "Btrans (mm)": 2000.0,
+          "Blong (mm)": 2000.0,
+          "Corner (mm)": 200.0,
+          "Diameter (mm)": 2000.0,
+          "f'c (MPa)": 35.0
+        }
+      ],
+      "es_pair_sequence": [
+        "G1",
+        "G2",
+        "G3",
+        "G4"
+      ],
+      "td_rh_percent": 75.0,
+      "td_load_age_days": 28.0,
+      "td_curing_end_age_days": 7.0,
+      "td_final_age_days": 27000.0,
+      "td_inner_perimeter_factor": 0.5,
+      "td_relaxation_steel_class": "Low-relaxation seven-wire strand",
+      "td_grout_age_days": 29.0,
+      "td_falsework_removal_age_days": 29.0,
+      "td_permanent_load_age_days": 90.0,
+      "td_later_load_delta_fcgp_mpa": 0.0,
+      "td_no_later_events_confirmed": true
+    },
+    "longitudinal_rebar_table": []
+  }
+}
