@@ -20995,6 +20995,12 @@ def _make_crossbeam_uls_shear_figure(
         name = str(getattr(trace, "name", "") or "")
         if name.startswith("Demand Vuy"):
             trace.name = name.replace("Demand Vuy", "Demand Vu", 1)
+        elif name == "Governing demand":
+            trace.name = "Max |Vu|"
+            if getattr(trace, "text", None) is not None:
+                trace.text = ["Max |Vu|" for _ in list(trace.text)]
+        elif name == "Governing shear check":
+            trace.name = "Gov. shear D/C"
         elif name == "φVn":
             trace.name = "±φVn"
             trace.legendgroup = "crossbeam_phi_vn"
@@ -21144,7 +21150,26 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         bool(getattr(row, "generated_support_check", False))
         for row in preparation.rows
     )
-    retained_source_count = max(len(preparation.rows) - generated_support_count, 0)
+    generated_face_count = sum(
+        bool(getattr(row, "generated_support_check", False))
+        and str(getattr(row, "requested_location_type", "") or "") == "COLUMN FACE"
+        for row in preparation.rows
+    )
+    generated_h2_count = sum(
+        bool(getattr(row, "generated_support_check", False))
+        and str(getattr(row, "requested_location_type", "") or "") == "ACI h/2 CRITICAL SECTION"
+        for row in preparation.rows
+    )
+    retained_joint_count = sum(
+        not bool(getattr(row, "generated_support_check", False))
+        and str(getattr(row, "location_type", "") or "") == "PHYSICAL SEGMENT JOINT"
+        for row in preparation.rows
+    )
+    regular_source_count = sum(
+        not bool(getattr(row, "generated_support_check", False))
+        and str(getattr(row, "location_type", "") or "") != "PHYSICAL SEGMENT JOINT"
+        for row in preparation.rows
+    )
     cached = st.session_state.get(CROSSBEAM_ULS_SHEAR_RESULT_KEY)
     cached_hash = str(st.session_state.get(CROSSBEAM_ULS_SHEAR_RESULT_HASH_KEY) or "")
     cache_current = isinstance(cached, Mapping) and cached_hash == preparation.fingerprint
@@ -21153,9 +21178,9 @@ def _render_crossbeam_uls_shear_workspace() -> None:
     with command_cols[0]:
         if preparation.ready:
             st.success(
-                f"ULS Shear source ready — {len(preparation.demand_rows):,} active station-force row(s); "
-                f"{retained_source_count:,} retained source/joint check(s) + {generated_support_count:,} generated Column Face / h/2 check(s) "
-                f"= {len(preparation.rows):,} total check row(s)."
+                f"ULS Shear source ready — {len(preparation.demand_rows):,} active station-force row(s) produce "
+                f"{regular_source_count:,} regular sectional row(s) + {generated_support_count:,} generated support row(s) + "
+                f"{retained_joint_count:,} physical-joint review row(s) = {len(preparation.rows):,} total check row(s)."
             )
         else:
             st.error("ULS Shear source blocked — resolve the Loads, Section/Rebar, Tendon, Effective Prestress, or Column/Support source below.")
@@ -21207,15 +21232,18 @@ def _render_crossbeam_uls_shear_workspace() -> None:
             "strong": True,
         },
         {
-            "title": "Section checks",
+            "title": "Total check rows",
             "value": f"{len(preparation.rows):,}",
-            "detail": f"{retained_source_count:,} retained + {generated_support_count:,} generated",
+            "detail": (
+                f"{regular_source_count:,} regular + {generated_support_count:,} support + "
+                f"{retained_joint_count:,} joint review"
+            ),
             "status": "info",
         },
         {
-            "title": "Support checks",
+            "title": "Generated support checks",
             "value": f"{generated_support_count:,}",
-            "detail": "Column Face + ACI h/2 generated automatically",
+            "detail": f"{generated_face_count:,} Column Faces + {generated_h2_count:,} ACI h/2 sections",
             "status": "neutral",
         },
         {
@@ -21253,6 +21281,7 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         else float("nan")
     )
     joint_review_count = int(result.get("joint_review_count") or 0)
+    sectional_check_count = int(result.get("sectional_checks") or 0)
     generated_support_checks = int(result.get("generated_support_checks") or 0)
     evaluated_support_checks = int(result.get("support_checks") or 0)
     support_joint_reviews = int(result.get("support_joint_reviews") or 0)
@@ -21272,7 +21301,7 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         {
             "title": "Sectional shear",
             "value": sectional_status,
-            "detail": "ACI 318-19 one-way shear",
+            "detail": f"{sectional_check_count:,} eligible ACI 318-19 one-way shear check(s)",
             "status": sectional_style,
             "strong": True,
         },
@@ -21293,7 +21322,7 @@ def _render_crossbeam_uls_shear_workspace() -> None:
             "status": "warning" if joint_review_count else "neutral",
         },
         {
-            "title": "Support checks",
+            "title": "Completed support checks",
             "value": f"{evaluated_support_checks:,} / {generated_support_checks:,}",
             "detail": support_detail,
             "status": "warning" if support_joint_reviews else "neutral",
@@ -21336,15 +21365,23 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         generated_support_df = result_df[generated_mask].copy()
         regular_df = result_df[~generated_mask].copy()
         support_columns = [
-            "Status", "Check Point", "Station s (m)", "Case", "Requested location type", "Location type",
-            "Demand source", "Source station 1 (m)", "Source station 2 (m)", "Source ratio", "Extrapolation ratio",
-            "V2 kN", "φVn kN", "Strength D/C value", "Detailing D/C value", "Section ID", "Rebar Zone",
-            "Transverse Template",
+            "Status", "Check Point", "Station s (m)", "Demand source", "V2 kN", "φVn kN",
+            "Strength D/C value", "Detailing D/C value",
         ]
         if not generated_support_df.empty:
             st.markdown("#### Column Face / h/2 checks")
+            support_display_df = generated_support_df[
+                [column for column in support_columns if column in generated_support_df]
+            ].rename(
+                columns={
+                    "Demand source": "Source",
+                    "V2 kN": "Vu kN",
+                    "Strength D/C value": "Strength D/C",
+                    "Detailing D/C value": "Detailing D/C",
+                }
+            )
             st.dataframe(
-                generated_support_df[[column for column in support_columns if column in generated_support_df]],
+                support_display_df,
                 use_container_width=True,
                 hide_index=True,
             )
@@ -21355,8 +21392,11 @@ def _render_crossbeam_uls_shear_workspace() -> None:
             "s max mm", "Spacing D/C",
         ]
         with st.expander("Regular / imported station checks", expanded=False):
+            regular_display_df = regular_df[
+                [column for column in regular_columns if column in regular_df]
+            ].rename(columns={"Location type": "Resolved Location"})
             st.dataframe(
-                regular_df[[column for column in regular_columns if column in regular_df]],
+                regular_display_df,
                 use_container_width=True,
                 hide_index=True,
             )
@@ -21371,8 +21411,16 @@ def _render_crossbeam_uls_shear_workspace() -> None:
                 "Section limit D/C", "Av/s min D/C", "Across leg spacing mm", "Across s max mm", "Across spacing D/C",
                 "fyt input MPa", "fyt design MPa", "√f'c actual", "√f'c used for Vc", "Code basis", "Notes",
             ]
+            audit_display_df = result_df[
+                [column for column in audit_columns if column in result_df]
+            ].rename(
+                columns={
+                    "Requested location type": "Requested Check",
+                    "Location type": "Resolved Location",
+                }
+            )
             st.dataframe(
-                result_df[[column for column in audit_columns if column in result_df]],
+                audit_display_df,
                 use_container_width=True,
                 hide_index=True,
             )

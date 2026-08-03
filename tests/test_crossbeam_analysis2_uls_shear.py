@@ -537,6 +537,10 @@ def test_crossbeam_shear_chart_breaks_support_regions_and_dedupes_capacity_legen
     assert "-φVn" not in visible_legend_names
     assert "Column Face check" in visible_legend_names
     assert "ACI h/2 check" in visible_legend_names
+    assert "Max |Vu|" in visible_legend_names
+    assert "Gov. shear D/C" in visible_legend_names
+    assert "Governing demand" not in visible_legend_names
+    assert "Governing shear check" not in visible_legend_names
 
     demand_trace = next(trace for trace in figure.data if trace.name == "Demand Vu — ULS-01")
     assert None in list(demand_trace.x)
@@ -599,7 +603,7 @@ def test_physical_joint_chart_uses_compact_marker_legend_not_vertical_text() -> 
     )
 
 
-def test_analysis2d_ui_copy_separates_sectional_result_from_joint_scope() -> None:
+def test_analysis2e_ui_copy_separates_counts_and_compacts_support_review() -> None:
     from pathlib import Path
 
     source = Path("concrete_pmm_pro/ui/analysis_page.py").read_text(encoding="utf-8")
@@ -610,6 +614,13 @@ def test_analysis2d_ui_copy_separates_sectional_result_from_joint_scope() -> Non
     assert '"title": "Sectional shear"' in workspace
     assert '"title": "Governing sectional D/C"' in workspace
     assert '"title": "Physical joint check"' in workspace
+    assert '"title": "Total check rows"' in workspace
+    assert '"title": "Generated support checks"' in workspace
+    assert '"title": "Completed support checks"' in workspace
     assert '"title": "Axis mapping"' not in workspace
     assert "Column Face / h/2 checks" in workspace
+    assert '"Demand source": "Source"' in workspace
+    assert '"V2 kN": "Vu kN"' in workspace
+    assert '"Requested location type": "Requested Check"' in workspace
+    assert '"Location type": "Resolved Location"' in workspace
     assert "stations inside applied Column / Support footprints are retained as REVIEW scope guards" not in workspace
