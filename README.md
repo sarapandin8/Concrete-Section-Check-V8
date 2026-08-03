@@ -1,3 +1,7 @@
+### CROSSBEAM.ANALYSIS3 — ACI 318-19 Prestressed ULS Torsion
+
+Adds the standalone Crossbeam ULS Torsion workspace after accepted Flexure and Shear, including ACI threshold routing, solid/hollow closed-cage and Outer longitudinal reinforcement checks, conservative Column Face and prestressed h/2 stations, section-size/detailing gates, and explicit Combined V+T adoption guards. See `README_CROSSBEAM_ANALYSIS3.md`.
+
 ### CROSSBEAM.ANALYSIS2A — Compact Loads Contract and Shear Visual Cleanup
 
 Removes user-facing FEA source metadata, source-unit/sign controls, duplicate stage declarations, and Crossbeam axis panels from Loads; fixes new imports to the canonical station-force contract; removes redundant amber Shear scope warnings; and replaces the misleading Crossbeam ULS runtime PASS card with an on-demand result-mode card without changing engineering equations. See `README_CROSSBEAM_ANALYSIS2A.md`.
