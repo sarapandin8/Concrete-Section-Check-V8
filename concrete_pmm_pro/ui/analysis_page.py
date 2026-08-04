@@ -23548,6 +23548,547 @@ def _make_crossbeam_uls_combined_vt_figure(
     )
     return fig
 
+
+def _crossbeam_combined_vt_component_spec(component: str) -> dict[str, object]:
+    """Return one-check chart semantics for the standardized Combined V+T review."""
+
+    specs: dict[str, dict[str, object]] = {
+        "stress": {
+            "label": "Section-size stress",
+            "chart_title": "Section-Size Interaction — Combined V+T ULS",
+            "subtitle": "ACI 318-19 22.7.7 · concurrent row-coupled V2/T",
+            "column": "Stress D/C value",
+            "status_column": "Stress status",
+            "trace_name": "Stress D/C",
+            "line": dict(_BEAM_ULS_UTIL_STRESS_LINE_STYLE),
+            "marker": dict(_BEAM_ULS_UTIL_MARKER_STYLE["Stress D/C value"]),
+            "governing_label": "Gov. section-size D/C",
+            "code": "ACI 22.7.7",
+        },
+        "transverse": {
+            "label": "Transverse reinforcement",
+            "chart_title": "Combined Transverse Reinforcement — ULS",
+            "subtitle": "ACI 318-19 9.5.4.3 · unique physical vertical-leg pool",
+            "column": "Transverse D/C value",
+            "status_column": "Transverse status",
+            "trace_name": "Transverse D/C",
+            "line": dict(_BEAM_ULS_UTIL_TRANSVERSE_LINE_STYLE),
+            "marker": dict(_BEAM_ULS_UTIL_MARKER_STYLE["Transverse D/C value"]),
+            "governing_label": "Gov. transverse D/C",
+            "code": "ACI 9.5.4.3",
+        },
+        "longitudinal": {
+            "label": "Longitudinal reinforcement",
+            "chart_title": "Longitudinal Torsion Reinforcement — ULS",
+            "subtitle": "ACI 318-19 9.5.4.4 / 9.6.4 / 9.7.5 · cage-associated Aℓ",
+            "column": "Longitudinal D/C value",
+            "status_column": "Longitudinal status",
+            "trace_name": "Longitudinal D/C",
+            "line": {**dict(_BEAM_ULS_UTIL_LONGITUDINAL_LINE_STYLE), "shape": "hv"},
+            "marker": dict(_BEAM_ULS_UTIL_MARKER_STYLE["Longitudinal D/C value"]),
+            "governing_label": "Gov. longitudinal D/C",
+            "code": "ACI 9.5.4.4 / 9.6.4 / 9.7.5",
+        },
+    }
+    return dict(specs.get(str(component), specs["stress"]))
+
+
+def _crossbeam_combined_vt_component_governing(
+    result_df: pd.DataFrame,
+    component: str,
+) -> Mapping[str, object] | None:
+    """Return the governing non-joint row for one Combined V+T component."""
+
+    if result_df is None or result_df.empty:
+        return None
+    spec = _crossbeam_combined_vt_component_spec(component)
+    column = str(spec["column"])
+    frame = result_df[
+        result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str)
+        != "PHYSICAL JOINT SIDE"
+    ].copy()
+    frame["__component_dc"] = pd.to_numeric(frame.get(column), errors="coerce")
+    frame = frame[frame["__component_dc"].notna()].copy()
+    if frame.empty:
+        return None
+    return frame.loc[frame["__component_dc"].idxmax()]
+
+
+def _crossbeam_combined_vt_longitudinal_summary(
+    row: Mapping[str, object] | None,
+) -> dict[str, object]:
+    """Return the controlling longitudinal sub-check without comparing other modes."""
+
+    if isinstance(row, pd.Series):
+        row = row.to_dict()
+    if not isinstance(row, Mapping):
+        return {
+            "label": "Not calculated",
+            "short_label": "Not calculated",
+            "code": "-",
+            "dc": float("nan"),
+            "required": "-",
+            "provided": "-",
+            "shortfall": "-",
+            "action": "Calculate the current check.",
+            "status": "REVIEW",
+        }
+    candidates = {
+        "al_min": _beam_uls_float(row.get("Al minimum D/C value")),
+        "detailing": _beam_uls_float(row.get("Longitudinal detailing D/C value")),
+        "interaction": _beam_uls_float(row.get("Flexure+torsion D/C value")),
+    }
+    finite = {key: value for key, value in candidates.items() if math.isfinite(value)}
+    subtype = max(finite, key=finite.get) if finite else "al_min"
+    if subtype == "interaction":
+        dc = candidates["interaction"]
+        return {
+            "label": "Flexure plus torsional longitudinal tension",
+            "short_label": "flexure+T D/C",
+            "code": "ACI 9.5.4.4",
+            "dc": dc,
+            "required": f"Mu = {_beam_uls_float(row.get('M3 kN-m')):,.1f} kN·m",
+            "provided": f"φMn = {_beam_uls_float(row.get('Flexure+torsion phiMn kN-m')):,.1f} kN·m",
+            "shortfall": "-",
+            "action": "Revise developed longitudinal reinforcement, tendons, or section capacity.",
+            "status": "FAIL" if math.isfinite(dc) and dc > 1.0 + 1.0e-9 else "PASS",
+        }
+    if subtype == "detailing":
+        dc = candidates["detailing"]
+        return {
+            "label": "Longitudinal torsion perimeter detailing",
+            "short_label": "Aℓ detailing D/C",
+            "code": "ACI 9.7.5",
+            "dc": dc,
+            "required": "Spacing / diameter / corner coverage",
+            "provided": "Actual cage-associated outer bars",
+            "shortfall": "-",
+            "action": "Revise perimeter spacing, bar size, corner bars, or cage association.",
+            "status": "FAIL" if math.isfinite(dc) and dc > 1.0 + 1.0e-9 else "PASS",
+        }
+    required = _beam_uls_float(row.get("Al minimum required mm2"))
+    provided = _beam_uls_float(row.get("Al provided mm2"))
+    shortfall = required - provided if math.isfinite(required) and math.isfinite(provided) else float("nan")
+    dc = candidates.get("al_min", _beam_uls_float(row.get("Longitudinal D/C value")))
+    return {
+        "label": "Minimum longitudinal torsion reinforcement Aℓ",
+        "short_label": "Aℓ,min D/C",
+        "code": "ACI 9.6.4",
+        "dc": dc,
+        "required": _crossbeam_format_area(required),
+        "provided": _crossbeam_format_area(provided),
+        "shortfall": "0 mm²" if math.isfinite(shortfall) and shortfall <= 0.0 else _crossbeam_format_area(shortfall),
+        "action": "Increase developed outer-cage-associated longitudinal bars; do not add Aℓ to As a second time.",
+        "status": "FAIL" if math.isfinite(dc) and dc > 1.0 + 1.0e-9 else "PASS",
+    }
+
+
+def _crossbeam_combined_vt_component_summary(
+    row: Mapping[str, object] | None,
+    component: str,
+) -> dict[str, object]:
+    """Return decision cards for exactly one standardized Combined V+T view."""
+
+    if isinstance(row, pd.Series):
+        row = row.to_dict()
+    if not isinstance(row, Mapping):
+        return {
+            "label": "Not calculated",
+            "short_label": "Not calculated",
+            "code": "-",
+            "dc": float("nan"),
+            "required": "-",
+            "provided": "-",
+            "shortfall": "-",
+            "action": "Calculate the current check.",
+            "status": "REVIEW",
+        }
+    if component == "longitudinal":
+        return _crossbeam_combined_vt_longitudinal_summary(row)
+    if component == "transverse":
+        required = _beam_uls_float(row.get("(Av+2At)/s adopted required mm2/mm"))
+        provided = _beam_uls_float(row.get("Unique transverse provided/s mm2/mm"))
+        shortfall = required - provided if math.isfinite(required) and math.isfinite(provided) else float("nan")
+        dc = _beam_uls_float(row.get("Transverse D/C value"))
+        status = str(row.get("Transverse status") or ("FAIL" if math.isfinite(dc) and dc > 1.0 + 1.0e-9 else "PASS"))
+        return {
+            "label": "Combined transverse reinforcement",
+            "short_label": "(Av+2At)/s D/C",
+            "code": "ACI 9.5.4.3",
+            "dc": dc,
+            "required": _crossbeam_format_ratio_area(required),
+            "provided": _crossbeam_format_ratio_area(provided),
+            "shortfall": "0.000 mm²/mm" if math.isfinite(shortfall) and shortfall <= 0.0 else _crossbeam_format_ratio_area(shortfall),
+            "action": "Revise the unique physical vertical-leg pool or spacing only if this gate fails.",
+            "status": status,
+        }
+    dc = _beam_uls_float(row.get("Stress D/C value"))
+    status = str(row.get("Stress status") or ("FAIL" if math.isfinite(dc) and dc > 1.0 + 1.0e-9 else "PASS"))
+    return {
+        "label": "Combined section-size interaction",
+        "short_label": "section-size D/C",
+        "code": "ACI 22.7.7",
+        "dc": dc,
+        "required": "Concurrent V/T stress",
+        "provided": "ACI section-size limit",
+        "shortfall": "-",
+        "action": "Increase section/web dimensions or revise concurrent V and T demand only if this gate fails.",
+        "status": status,
+    }
+
+
+def _crossbeam_combined_vt_add_context_to_figure(
+    fig: go.Figure,
+    *,
+    result_df: pd.DataFrame,
+    support_footprints: list[Mapping[str, object]],
+    segment_rows: object,
+    show_joint_review_wording: bool = False,
+) -> None:
+    """Add the shared member context used by every one-check Combined V+T figure."""
+
+    for item in support_footprints:
+        bounds = _crossbeam_support_bounds(item)
+        if bounds is None:
+            continue
+        left, right = bounds
+        support_id = str(item.get("Column") or "Support")
+        fig.add_vrect(
+            x0=left,
+            x1=right,
+            fillcolor="rgba(100,116,139,0.10)",
+            line_width=0,
+            layer="below",
+        )
+        for face, side_label in ((left, "L"), (right, "R")):
+            fig.add_vline(
+                x=face,
+                line={"color": "rgba(71,85,105,0.68)", "width": 1.0},
+                layer="above",
+            )
+            fig.add_annotation(
+                x=face,
+                y=1.005,
+                xref="x",
+                yref="paper",
+                text=f"{support_id}-{side_label}",
+                showarrow=False,
+                font={"size": 8, "color": "#475569"},
+            )
+
+    joint_rows = result_df[
+        result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str)
+        == "PHYSICAL JOINT SIDE"
+    ].copy()
+    joint_stations = _crossbeam_joint_stations_from_segments(segment_rows)
+    if not joint_stations and not joint_rows.empty:
+        joint_stations = sorted(
+            set(
+                pd.to_numeric(joint_rows.get("Joint station s (m)"), errors="coerce")
+                .dropna()
+                .astype(float)
+            )
+        )
+    for index, station in enumerate(joint_stations, start=1):
+        fig.add_vline(
+            x=station,
+            line={"color": "rgba(245,158,11,0.72)", "width": 1.0, "dash": "dot"},
+            layer="above",
+        )
+        fig.add_annotation(
+            x=station,
+            y=0.985,
+            xref="x",
+            yref="paper",
+            text=f"J{index} REVIEW" if show_joint_review_wording else f"J{index}",
+            showarrow=False,
+            textangle=-90 if show_joint_review_wording else 0,
+            font={"size": 8, "color": "#b45309"},
+        )
+
+    for segment in _crossbeam_segment_records(segment_rows):
+        fig.add_annotation(
+            x=0.5 * (float(segment["start"]) + float(segment["end"])),
+            y=1.045,
+            xref="x",
+            yref="paper",
+            text=str(segment["Segment"]),
+            showarrow=False,
+            font={"size": 9, "color": "#64748b"},
+        )
+
+
+def _make_crossbeam_uls_combined_vt_component_figure(
+    result_df: pd.DataFrame,
+    support_footprints: list[Mapping[str, object]],
+    segment_rows: object,
+    *,
+    component: str,
+) -> go.Figure:
+    """Return one standardized Combined V+T chart with one engineering meaning."""
+
+    spec = _crossbeam_combined_vt_component_spec(component)
+    column = str(spec["column"])
+    fig = go.Figure()
+    groups = _crossbeam_combined_vt_plot_groups(result_df, support_footprints)
+    legend_shown = False
+    for group in groups:
+        x = pd.to_numeric(group.get("__x"), errors="coerce")
+        y = pd.to_numeric(group.get(column), errors="coerce")
+        valid = x.notna() & y.notna()
+        if not valid.any():
+            continue
+        custom = pd.DataFrame(
+            {
+                "Case": group.get("Case", pd.Series("ULS", index=group.index)).astype(str),
+                "Segment": group.get("Segment", pd.Series("", index=group.index)).astype(str),
+                "Check": group.get("Check Point", pd.Series("", index=group.index)).astype(str),
+                "Status": group.get(str(spec["status_column"]), pd.Series("", index=group.index)).astype(str),
+            }
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=x[valid],
+                y=y[valid],
+                mode="lines+markers",
+                name=str(spec["trace_name"]),
+                legendgroup=column,
+                showlegend=not legend_shown,
+                line=dict(spec["line"]),
+                marker=dict(spec["marker"]),
+                customdata=custom.loc[valid].to_numpy(),
+                hovertemplate=(
+                    f"{spec['trace_name']}<br>s=%{{x:.3f}} m<br>D/C=%{{y:.3f}}"
+                    "<br>Case=%{customdata[0]}<br>Segment=%{customdata[1]}"
+                    "<br>Check=%{customdata[2]}<br>Status=%{customdata[3]}<extra></extra>"
+                ),
+            )
+        )
+        legend_shown = True
+
+    finite_x = pd.to_numeric(result_df.get("Station s (m)"), errors="coerce").dropna()
+    x_min = float(finite_x.min()) if not finite_x.empty else 0.0
+    x_max = float(finite_x.max()) if not finite_x.empty else 1.0
+    fig.add_trace(
+        go.Scatter(
+            x=[x_min, x_max],
+            y=[1.0, 1.0],
+            mode="lines",
+            name="Limit = 1.0",
+            line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
+            hovertemplate="D/C limit = 1.0<extra></extra>",
+        )
+    )
+
+    _crossbeam_combined_vt_add_context_to_figure(
+        fig,
+        result_df=result_df,
+        support_footprints=support_footprints,
+        segment_rows=segment_rows,
+    )
+
+    support_rows = result_df[
+        result_df.get("Generated support check", pd.Series(False, index=result_df.index))
+        .map(lambda value: bool(value) if pd.notna(value) else False)
+        & (
+            result_df.get("Station type", pd.Series("", index=result_df.index)).astype(str)
+            != "PHYSICAL JOINT SIDE"
+        )
+    ].copy()
+    for location, name, symbol in (
+        ("COLUMN FACE", "Column Face check", "circle-open"),
+        ("ACI h/2 CRITICAL SECTION", "ACI h/2 check", "diamond-open"),
+    ):
+        data = support_rows[
+            support_rows.get("Requested location type", pd.Series("", index=support_rows.index)).astype(str)
+            == location
+        ].copy()
+        x_values = pd.to_numeric(data.get("Station s (m)"), errors="coerce")
+        y_values = pd.to_numeric(data.get(column), errors="coerce")
+        valid = x_values.notna() & y_values.notna()
+        if valid.any():
+            custom = pd.DataFrame(
+                {
+                    "Check": data.get("Check Point", pd.Series("", index=data.index)).astype(str),
+                    "Status": data.get(str(spec["status_column"]), pd.Series("", index=data.index)).astype(str),
+                    "Segment": data.get("Segment", pd.Series("", index=data.index)).astype(str),
+                }
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=x_values[valid],
+                    y=y_values[valid],
+                    mode="markers",
+                    name=name,
+                    marker={
+                        "size": 10,
+                        "symbol": symbol,
+                        "color": "#111827",
+                        "line": {"width": 1.5, "color": "#111827"},
+                    },
+                    customdata=custom.loc[valid].to_numpy(),
+                    hovertemplate=(
+                        "s=%{x:.3f} m<br>D/C=%{y:.3f}<br>Check=%{customdata[0]}"
+                        "<br>Status=%{customdata[1]}<br>Segment=%{customdata[2]}<extra></extra>"
+                    ),
+                )
+            )
+        if location == "ACI h/2 CRITICAL SECTION":
+            for station in x_values.dropna().astype(float):
+                fig.add_vline(
+                    x=station,
+                    line={"color": "rgba(59,130,246,0.34)", "width": 0.9, "dash": "dot"},
+                    layer="below",
+                )
+
+    governing = _crossbeam_combined_vt_component_governing(result_df, component)
+    summary = _crossbeam_combined_vt_component_summary(governing, component)
+    governing_dc = _beam_uls_float(summary.get("dc"))
+    if governing is not None and math.isfinite(governing_dc):
+        station = _beam_uls_float(governing.get("Station s (m)"))
+        label = str(summary.get("short_label") or spec["governing_label"])
+        fig.add_trace(
+            go.Scatter(
+                x=[station],
+                y=[governing_dc],
+                mode="markers+text",
+                text=[f"Gov. {label} {governing_dc:.3f}"],
+                textposition="top center",
+                name=f"Gov. {label}",
+                marker={
+                    "symbol": "diamond",
+                    "size": 11,
+                    "color": "#111827",
+                    "line": {"color": "#ffffff", "width": 1.4},
+                },
+                hovertemplate=(
+                    f"{summary.get('label')}<br>s=%{{x:.3f}} m<br>D/C=%{{y:.3f}}"
+                    f"<br>Required={summary.get('required')}<br>Provided={summary.get('provided')}<extra></extra>"
+                ),
+            )
+        )
+
+    component_values = pd.to_numeric(result_df.get(column), errors="coerce").dropna()
+    finite_values = [float(value) for value in component_values if math.isfinite(float(value))]
+    y_peak = max([1.0, *finite_values])
+    fig.update_layout(
+        title={
+            "text": f"{spec['chart_title']}<br><sup>{spec['subtitle']} · Segment-owned traces</sup>",
+            "x": 0.5,
+            "xanchor": "center",
+        },
+        xaxis_title="Distance from left end of member (m)",
+        yaxis={"title": "Demand / Capacity ratio", "range": [0.0, 1.16 * y_peak]},
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="top", y=-0.22, xanchor="center", x=0.5),
+        margin=dict(l=82, r=42, t=100, b=116),
+        height=_BEAM_ULS_STATIC_FIG_HEIGHT,
+    )
+    return fig
+
+
+def _make_crossbeam_uls_combined_vt_joint_review_figure(
+    result_df: pd.DataFrame,
+    support_footprints: list[Mapping[str, object]],
+    segment_rows: object,
+) -> go.Figure:
+    """Return a clean member map for physical-joint review without artificial D/C."""
+
+    fig = go.Figure()
+    finite_x = pd.to_numeric(result_df.get("Station s (m)"), errors="coerce").dropna()
+    x_min = float(finite_x.min()) if not finite_x.empty else 0.0
+    x_max = float(finite_x.max()) if not finite_x.empty else 1.0
+    fig.add_trace(
+        go.Scatter(
+            x=[x_min, x_max],
+            y=[0.0, 0.0],
+            mode="lines",
+            name="Crossbeam axis",
+            line={"color": "#475569", "width": 4},
+            hoverinfo="skip",
+        )
+    )
+    _crossbeam_combined_vt_add_context_to_figure(
+        fig,
+        result_df=result_df,
+        support_footprints=support_footprints,
+        segment_rows=segment_rows,
+        show_joint_review_wording=True,
+    )
+    joint_stations = _crossbeam_joint_stations_from_segments(segment_rows)
+    if joint_stations:
+        fig.add_trace(
+            go.Scatter(
+                x=joint_stations,
+                y=[0.0] * len(joint_stations),
+                mode="markers",
+                name="Physical joint — REVIEW",
+                marker={
+                    "size": 11,
+                    "symbol": "x",
+                    "color": "#f59e0b",
+                    "line": {"width": 1.5, "color": "#b45309"},
+                },
+                hovertemplate="Joint station s=%{x:.3f} m<br>Transfer status=REVIEW REQUIRED<extra></extra>",
+            )
+        )
+    fig.update_layout(
+        title={
+            "text": "Physical Joint V+T Review Map<br><sup>Adjacent one-sided section evidence only · no artificial joint D/C</sup>",
+            "x": 0.5,
+            "xanchor": "center",
+        },
+        xaxis_title="Distance from left end of member (m)",
+        yaxis={"visible": False, "range": [-0.45, 0.45], "fixedrange": True},
+        hovermode="closest",
+        legend=dict(orientation="h", yanchor="top", y=-0.22, xanchor="center", x=0.5),
+        margin=dict(l=82, r=42, t=100, b=116),
+        height=_BEAM_ULS_STATIC_FIG_HEIGHT,
+    )
+    return fig
+
+
+def _crossbeam_combined_vt_component_table(
+    result_df: pd.DataFrame,
+    component: str,
+) -> pd.DataFrame:
+    """Return a compact one-check evidence table for the selected Combined V+T view."""
+
+    if result_df is None or result_df.empty:
+        return pd.DataFrame()
+    frame = result_df[
+        result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str)
+        != "PHYSICAL JOINT SIDE"
+    ].copy()
+    frame["Source"] = frame.apply(
+        lambda row: (
+            str(row.get("Requested location type") or "Generated support")
+            if bool(row.get("Generated support check"))
+            else "Imported / Segment"
+        ),
+        axis=1,
+    )
+    if component == "transverse":
+        columns = [
+            "Source", "Status", "Station s (m)", "Check Point", "Case", "Segment", "Section ID",
+            "(Av+2At)/s adopted required mm2/mm", "Unique transverse provided/s mm2/mm",
+            "Transverse D/C value", "Torsion station development status", "Torsion support anchorage status",
+        ]
+    elif component == "longitudinal":
+        columns = [
+            "Source", "Status", "Station s (m)", "Check Point", "Case", "Segment", "Section ID",
+            "Al minimum required mm2", "Al provided mm2", "Al minimum D/C value",
+            "Flexure+torsion D/C value", "Longitudinal D/C value",
+            "Ordinary rebar credit", "Development region", "Torsion station development status",
+            "Torsion support anchorage status",
+        ]
+    else:
+        columns = [
+            "Source", "Status", "Station s (m)", "Check Point", "Case", "Segment", "Section ID",
+            "V2 kN", "T kN-m", "Stress D/C value",
+        ]
+    return frame[[column for column in columns if column in frame.columns]].copy()
+
 def _render_crossbeam_uls_combined_vt_workspace() -> None:
     """Render the on-demand ACI Crossbeam combined V+T adoption gate."""
 
@@ -23727,41 +24268,186 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
         )
 
     if not result_df.empty:
-        _render_beam_uls_static_plotly_figure(
-            _make_crossbeam_uls_combined_vt_figure(
-                result_df,
-                list(preparation.support_footprints),
-                st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY, []),
-            ),
-            caption=(
-                "Combined V+T is plotted as utilization because Vu and Tu use different units. Stress D/C is the ACI 22.7.7 section-size interaction; Transverse D/C compares required Av/s + 2At/s with the unique physical vertical-leg pool; Longitudinal D/C is a Segment-owned step trace covering minimum Aℓ, perimeter detailing, and the direct ACI 9.5.4.4 flexure-plus-torsional-tension gate. "
-                "Shaded support footprints, Column Face circles, and ACI h/2 diamonds expose generated checks. Physical joints are shown as J1–Jn REVIEW lines with no artificial D/C value and no trace interpolation through the joint."
-            ),
+        st.markdown("#### Combined check review")
+        st.caption(
+            "One view shows one engineering meaning. Select the section-size, transverse, longitudinal, or physical-joint review without combining unrelated utilization modes on one chart."
         )
-        compact_columns = [
-            "Status", "Station s (m)", "Check Point", "Case", "Location type", "Segment", "Section ID",
-            "V2 kN", "T kN-m", "M3 kN-m", "Stress D/C value", "Transverse D/C value",
-            "Longitudinal D/C value", "Overall D/C value", "Ordinary rebar credit", "Development region",
-        ]
-        non_joint_mask = result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str) != "PHYSICAL JOINT SIDE"
-        support_mask = result_df.get("Generated support check", pd.Series(False, index=result_df.index)).fillna(False).astype(bool)
-        sectional_df = result_df[non_joint_mask & ~support_mask].copy()
-        support_df = result_df[non_joint_mask & support_mask].copy()
-        st.markdown("#### Imported / Segment station checks")
-        st.dataframe(sectional_df[[column for column in compact_columns if column in sectional_df]], use_container_width=True, hide_index=True)
-        if not support_df.empty:
-            st.markdown("#### Column Face / ACI h/2 combined checks")
-            support_columns = [
-                "Status", "Check Point", "Station s (m)", "Requested location type", "Case", "Segment", "Section ID",
-                "Stress D/C value", "Transverse D/C value", "Longitudinal D/C value", "Overall D/C value",
-                "Torsion station development status", "Torsion support anchorage status",
-            ]
-            st.table(support_df[[column for column in support_columns if column in support_df]].rename(columns={"Requested location type": "Check type"}))
-        joint_df = result_df[result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str) == "PHYSICAL JOINT SIDE"].copy()
-        if not joint_df.empty:
+        view_label = st.radio(
+            "Combined check view",
+            options=[
+                "Section-size stress",
+                "Transverse reinforcement",
+                "Longitudinal reinforcement",
+                "Joint review",
+            ],
+            horizontal=True,
+            key="crossbeam_analysis4c4_combined_check_view",
+            label_visibility="collapsed",
+        )
+        component_by_view = {
+            "Section-size stress": "stress",
+            "Transverse reinforcement": "transverse",
+            "Longitudinal reinforcement": "longitudinal",
+        }
+        support_footprints = list(preparation.support_footprints)
+        segment_rows = st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY, [])
+
+        if view_label in component_by_view:
+            component = component_by_view[view_label]
+            component_row = _crossbeam_combined_vt_component_governing(result_df, component)
+            component_summary = _crossbeam_combined_vt_component_summary(component_row, component)
+            component_dc = _beam_uls_float(component_summary.get("dc"))
+            component_status = str(component_summary.get("status") or "REVIEW")
+            component_style = (
+                "danger" if component_status == "FAIL"
+                else ("ready" if component_status == "PASS" else "warning")
+            )
+            station_detail = "-"
+            if component_row is not None:
+                station_detail = (
+                    f"{component_row.get('Case')} · {component_row.get('Segment')} "
+                    f"@ s={_format_beam_uls_x(component_row.get('Station s (m)'))}"
+                )
+            _render_analysis_summary_strip(
+                [
+                    {
+                        "title": str(component_summary.get("label") or view_label),
+                        "value": component_status,
+                        "detail": str(component_summary.get("code") or "ACI 318-19"),
+                        "status": component_style,
+                        "strong": True,
+                    },
+                    {
+                        "title": "Governing D/C",
+                        "value": f"{component_dc:.3f}" if math.isfinite(component_dc) else "-",
+                        "detail": station_detail,
+                        "status": "danger" if math.isfinite(component_dc) and component_dc > 1.0 + 1.0e-9 else "info",
+                    },
+                    {
+                        "title": "Required",
+                        "value": str(component_summary.get("required") or "-"),
+                        "detail": str(component_summary.get("short_label") or "Selected component"),
+                        "status": "info",
+                    },
+                    {
+                        "title": "Provided / limit",
+                        "value": str(component_summary.get("provided") or "-"),
+                        "detail": "Adopted verified source",
+                        "status": "ready" if component_status == "PASS" else "neutral",
+                    },
+                ],
+                columns=4,
+            )
+            action_text = str(component_summary.get("action") or "Review the selected component.")
+            shortfall_text = str(component_summary.get("shortfall") or "-")
+            decision_text = (
+                f"Required action: {action_text}"
+                if shortfall_text in {"", "-", "0 mm²", "0.000 mm²/mm"}
+                else f"Shortfall: {shortfall_text}. Required action: {action_text}"
+            )
+            if component_status == "FAIL":
+                st.error(decision_text)
+            elif component_status == "PASS":
+                st.success(decision_text)
+            else:
+                st.warning(decision_text)
+
+            captions = {
+                "stress": (
+                    "Section-size interaction only. The blue trace is the ACI 22.7.7 concurrent V/T stress utilization and the red dashed line is D/C = 1.0. "
+                    "Column Face circles and ACI h/2 diamonds show generated support checks. Physical joints are trace breaks; transfer is reviewed separately."
+                ),
+                "transverse": (
+                    "Combined transverse reinforcement only. The green trace compares required Av/s + 2At/s with the unique physical vertical-leg pool, counting additional cage legs once and never duplicating shared legs. "
+                    "The red dashed line is D/C = 1.0."
+                ),
+                "longitudinal": (
+                    "Longitudinal torsion reinforcement only. The amber Segment-owned step trace covers minimum Aℓ, perimeter detailing, and direct flexure-plus-torsional-tension utilization. "
+                    "Aℓ is a cage-associated subset of physical As, not additional duplicate steel."
+                ),
+            }
+            _render_beam_uls_static_plotly_figure(
+                _make_crossbeam_uls_combined_vt_component_figure(
+                    result_df,
+                    support_footprints,
+                    segment_rows,
+                    component=component,
+                ),
+                caption=captions[component],
+            )
+            with st.expander(f"{view_label} — station and support evidence", expanded=False):
+                component_table = _crossbeam_combined_vt_component_table(result_df, component)
+                st.dataframe(component_table, use_container_width=True, hide_index=True)
+        else:
+            joint_df = result_df[
+                result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str)
+                == "PHYSICAL JOINT SIDE"
+            ].copy()
+            joint_locations = int(result.get("joint_review_count") or 0)
+            _render_analysis_summary_strip(
+                [
+                    {
+                        "title": "Physical-joint V+T transfer",
+                        "value": "REVIEW REQUIRED" if joint_locations else "NONE",
+                        "detail": "Not certified by sectional route",
+                        "status": "warning" if joint_locations else "ready",
+                        "strong": True,
+                    },
+                    {
+                        "title": "Joint locations",
+                        "value": f"{joint_locations:,}",
+                        "detail": "Physical Precast Segment joints",
+                        "status": "warning" if joint_locations else "neutral",
+                    },
+                    {
+                        "title": "One-sided audit rows",
+                        "value": f"{len(joint_df):,}",
+                        "detail": "Adjacent-section s− / s+ evidence",
+                        "status": "info",
+                    },
+                    {
+                        "title": "Required action",
+                        "value": "VERIFY",
+                        "detail": "Keys · interface · anchorage · transfer",
+                        "status": "warning",
+                    },
+                ],
+                columns=4,
+            )
+            st.warning(
+                "No joint D/C is created by this workspace. Verify one-sided V/T transfer, joint keys/interface friction, anchorage, and local D-region detailing separately."
+            )
+            _render_beam_uls_static_plotly_figure(
+                _make_crossbeam_uls_combined_vt_joint_review_figure(
+                    result_df,
+                    support_footprints,
+                    segment_rows,
+                ),
+                caption=(
+                    "Member map only. J1–Jn are physical Precast Segment joints requiring separate transfer verification. "
+                    "The one-sided table below reports adjacent section demand/capacity evidence and does not certify the joint interface."
+                ),
+            )
             st.markdown("#### Physical joint one-sided audit")
-            joint_columns = ["Check Point", "Joint station s (m)", "Joint side", "Segment", "Section ID", "V2 kN", "T kN-m", "phiVn kN", "phiTn kN-m", "Status"]
-            st.dataframe(joint_df[[column for column in joint_columns if column in joint_df]], use_container_width=True, hide_index=True)
+            joint_columns = [
+                "Check Point", "Joint station s (m)", "Joint side", "Segment", "Section ID",
+                "V2 kN", "T kN-m", "phiVn kN", "phiTn kN-m", "Status",
+            ]
+            st.table(joint_df[[column for column in joint_columns if column in joint_df]])
+
+        with st.expander("All combined station results — audit", expanded=False):
+            compact_columns = [
+                "Status", "Station s (m)", "Check Point", "Case", "Location type", "Segment", "Section ID",
+                "V2 kN", "T kN-m", "M3 kN-m", "Stress D/C value", "Transverse D/C value",
+                "Longitudinal D/C value", "Overall D/C value", "Ordinary rebar credit", "Development region",
+            ]
+            non_joint_mask = result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str) != "PHYSICAL JOINT SIDE"
+            st.dataframe(
+                result_df[non_joint_mask][[column for column in compact_columns if column in result_df]],
+                use_container_width=True,
+                hide_index=True,
+            )
+
         with st.expander("Calculation audit — ACI combined terms", expanded=False):
             audit_columns = [
                 "Status", "Station s (m)", "Check Point", "Case", "Segment", "Section ID", "P kN", "V2 kN", "T kN-m", "M3 kN-m",
