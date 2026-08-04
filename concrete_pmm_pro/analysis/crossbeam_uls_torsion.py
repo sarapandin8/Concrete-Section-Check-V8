@@ -744,11 +744,14 @@ def _torsion_result_for_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
     strength_dc = tu_nmm / phi_tn if phi_tn > 0.0 else float("inf")
     transverse_dc = at_req / at_per_s if at_per_s > 0.0 else float("inf")
 
-    # ACI 9.6.4.2 defines Av as the two side legs of a closed stirrup and At as
-    # one leg. Inner multi-leg shear bars are not credited in this torsion
-    # minimum-reinforcement expression.
+    # ACI R9.5.4.3 requires the *required* shear and torsion areas to be
+    # added before selecting the outer closed stirrup.  The same physical side
+    # legs cannot be credited twice as both Av and 2At.  For a single closed
+    # cage, the actual outer-side transverse area available to satisfy the
+    # combined/minimum expression is therefore 2At/s.  Inner multi-leg shear
+    # bars are not credited because they are ineffective for torsion.
     av_side_per_s = 2.0 * at_per_s
-    combined_transverse_provided = av_side_per_s + 2.0 * at_per_s
+    combined_transverse_provided = av_side_per_s
     combined_transverse_min = _minimum_transverse_per_s(
         fc_mpa=fc,
         bw_mm=bw,
@@ -839,8 +842,8 @@ def _torsion_result_for_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         "Imported P/V2/T/M3 remain row-coupled; effective prestress is used only in fpc/theta and is not added to Tu.",
         str(longitudinal["notes"]),
         "Tu is treated as imported equilibrium demand; compatibility-torsion redistribution to phi*Tcr is not applied automatically.",
-        "Standalone Al credit does not complete ACI 9.5.4.4 flexure-plus-torsion longitudinal interaction; the later Combined V+T milestone owns that final adoption.",
-        "The later Combined V+T milestone also owns additive shear-plus-torsion transverse reinforcement adoption.",
+        "Standalone Al credit is a component source; final ACI 9.5.4.4 flexure-plus-torsion longitudinal interaction is evaluated in the Shear + Torsion workspace.",
+        "Additive shear-plus-torsion transverse reinforcement is evaluated in the Shear + Torsion workspace without double-counting the same outer closed-stirrup legs.",
         *list(geometry.get("warnings") or []),
     ]
     if section_limit_status == "REVIEW":
@@ -881,6 +884,7 @@ def _torsion_result_for_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         "At/s mm2/mm": at_per_s,
         "At/s required mm2/mm": at_req,
         "Av side/s mm2/mm": av_side_per_s,
+        "Outer side legs/s provided mm2/mm": combined_transverse_provided,
         "(Av+2At)/s provided mm2/mm": combined_transverse_provided,
         "(Av+2At)/s min mm2/mm": combined_transverse_min,
         "Al strength required mm2": al_strength_req,
@@ -889,6 +893,7 @@ def _torsion_result_for_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         "Al minimum (b) mm2": al_min_b,
         "Al required mm2": al_required,
         "Al provided mm2": float(longitudinal["provided_mm2"]),
+        "Longitudinal fy MPa": fy,
         "Outer bar max spacing mm": float(longitudinal["max_perimeter_spacing_mm"]),
         "Outer bar spacing D/C": float(longitudinal["spacing_dc"]),
         "Outer bar min diameter mm": float(longitudinal["min_diameter_mm"]),
@@ -1023,8 +1028,8 @@ def run_crossbeam_uls_torsion(preparation: CrossbeamTorsionPreparation) -> dict[
         "scope": (
             "ACI 318-19 standalone sectional torsion: threshold, transverse and longitudinal torsion strength, minimum reinforcement, "
             "closed-cage/perimeter detailing, and the 22.7.7 section-size stress limit. Column Face and prestressed h/2 checks are both evaluated conservatively. "
-            "Physical segment-joint torsion transfer, compatibility-torsion redistribution, additive shear-plus-torsion reinforcement adoption, "
-            "and ACI 9.5.4.4 flexure-plus-Al interaction remain separate and keep a design-required standalone result at overall REVIEW until Combined V+T closes. "
+            "Physical segment-joint torsion transfer and compatibility-torsion redistribution remain separate. Additive transverse reinforcement and "
+            "ACI 9.5.4.4 flexure-plus-Al interaction are evaluated in the dedicated Combined V+T (Shear + Torsion) workspace. "
             "Anchorage/development, PT end zones, fatigue, seismic detailing, and warping torsion remain separate."
         ),
     }

@@ -316,13 +316,13 @@ def test_torsion_chart_plots_threshold_for_below_threshold_solid_sections_and_fi
     assert y_range[1] >= 1.10 * max(finite_plot_values)
 
 
-def test_crossbeam_uls_navigation_exposes_torsion_without_shear_plus_torsion_placeholder() -> None:
+def test_crossbeam_uls_navigation_exposes_torsion_and_combined_vt_workspace() -> None:
     source = Path("concrete_pmm_pro/ui/analysis_page.py").read_text(encoding="utf-8")
 
-    assert '["Flexure", "Shear", "Torsion"]' in source
+    assert '["Flexure", "Shear", "Torsion", "Shear + Torsion"]' in source
     assert '_render_crossbeam_uls_torsion_workspace()' in source
+    assert '_render_crossbeam_uls_combined_vt_workspace()' in source
     assert "CROSSBEAM_ULS_TORSION_RESULT_KEY" in source
     assert "CROSSBEAM_ULS_TORSION_RESULT_HASH_KEY" in source
-    # Combined V+T is intentionally not exposed for Crossbeam until its solver exists.
-    crossbeam_block = source[source.index("def render_analysis_uls_pmm"):source.index("def render_analysis_sls_stress")]
-    assert '["Flexure", "Shear", "Torsion", "Shear + Torsion"]' not in crossbeam_block
+    assert "CROSSBEAM_ULS_COMBINED_VT_RESULT_KEY" in source
+    assert "CROSSBEAM_ULS_COMBINED_VT_RESULT_HASH_KEY" in source
