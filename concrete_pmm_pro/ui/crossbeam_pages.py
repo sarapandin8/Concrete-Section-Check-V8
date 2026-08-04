@@ -304,6 +304,7 @@ LEGACY_PROFILE_ROWS_KEY = "crossbeam_wf1_tendon_profile_rows"
 CB_LENGTH_KEY = "crossbeam_ui1_length_m"
 CB_SEGMENT_ROWS_KEY = "crossbeam_ui1_segment_layout_rows"
 CB_SEGMENT_REV_KEY = "crossbeam_ui1_segment_editor_revision"
+CB_SEGMENT_DELETE_NOTICE_KEY = "crossbeam_ui1_segment_delete_notice"
 CB_PRECAST_SEGMENT_ROWS_KEY = "crossbeam_cip1_precast_segment_rows"
 CB_CIP_ZONE_ROWS_KEY = "crossbeam_cip1_cast_in_place_zone_rows"
 CB_CONSTRUCTION_METHOD_LAST_KEY = "crossbeam_cip1_last_construction_method"
@@ -782,6 +783,29 @@ def _segment_rows_from_editor_rows(
             }
         )
     return updated
+
+
+def _segment_rows_without_selected_indices(
+    rows: list[dict[str, Any]],
+    selected_indices: Iterable[Any],
+) -> list[dict[str, Any]]:
+    """Return canonical Segment rows after explicit user-selected deletion.
+
+    The helper deliberately does not seed a replacement row.  The caller owns
+    the minimum-one-row product rule so an attempted delete-all action can be
+    rejected visibly instead of silently restoring a default layout.
+    """
+
+    canonical = _canonical_segment_rows(rows)
+    selected: set[int] = set()
+    for value in selected_indices:
+        try:
+            index = int(value)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= index < len(canonical):
+            selected.add(index)
+    return [row for index, row in enumerate(canonical) if index not in selected]
 
 
 def _commit_segment_layout_editor(
@@ -1871,11 +1895,20 @@ def _column_rows_from_batched_form(
     geometry_payloads: Mapping[str, Any],
     fallback_rows: list[dict[str, Any]],
     length_m: float,
+    delete_source_indices: Iterable[Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Merge one batched Streamlit form submission into canonical column rows."""
 
     current = canonical_column_stage_rows(fallback_rows, length_m=length_m)
     summary_rows = data_editor_payload_to_records(summary_payload, _ptloss3b1_column_summary_editor_rows(current))
+    delete_indices: set[int] = set()
+    for value in delete_source_indices or ():
+        try:
+            source_index = int(value)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= source_index < len(current):
+            delete_indices.add(source_index)
     updated: list[dict[str, Any]] = []
     source_index_to_row: dict[int, dict[str, Any]] = {}
 
@@ -1895,6 +1928,8 @@ def _column_rows_from_batched_form(
             source_index = int(edited.get("_Source Index"))
         except (TypeError, ValueError):
             source_index = -1
+        if source_index in delete_indices:
+            continue
         if 0 <= source_index < len(current):
             row = dict(current[source_index])
         else:
@@ -1951,6 +1986,8 @@ def _column_rows_from_batched_form(
                     edited.get(corner_key), row.get("Corner (mm)")
                 )
 
+    if delete_indices and not updated:
+        return []
     return canonical_column_stage_rows(updated, length_m=length_m)
 
 
@@ -2266,6 +2303,21 @@ def render_crossbeam_construction_support_source_workspace(length_m: float) -> N
                 },
             )
 
+            delete_column_indices = st.multiselect(
+                "Column row(s) to delete",
+                options=list(range(len(rows))),
+                format_func=lambda idx: (
+                    f"{rows[int(idx)].get('Column ID')} · "
+                    f"s={_finite_float(rows[int(idx)].get('Station s (m)')):.3f} m · "
+                    f"{rows[int(idx)].get('Shape')}"
+                ),
+                key=f"crossbeam_section_builder_column_delete_rows_{revision}",
+                help=(
+                    "Select one or more stored Column rows, then press Delete selected Column row(s). "
+                    "Any edits to the remaining rows in this form are applied in the same batched action."
+                ),
+            )
+
             st.markdown("##### Column section geometry")
             st.caption(
                 "Rectangular sections use Btrans and Blong plus Chamfer c or Fillet radius r. Circular sections use Diameter D only. "
@@ -2305,13 +2357,21 @@ def render_crossbeam_construction_support_source_workspace(length_m: float) -> N
                     column_config=config,
                 )
 
-            apply_columns = st.form_submit_button(
-                "Apply Column / Support Layout",
-                type="primary",
-                use_container_width=True,
-            )
+            apply_col, delete_col = st.columns(2, gap="medium")
+            with apply_col:
+                apply_columns = st.form_submit_button(
+                    "Apply Column / Support Layout",
+                    type="primary",
+                    use_container_width=True,
+                )
+            with delete_col:
+                delete_columns = st.form_submit_button(
+                    "Delete selected Column row(s)",
+                    use_container_width=True,
+                    disabled=not bool(delete_column_indices),
+                )
 
-        if apply_columns:
+        if apply_columns or delete_columns:
             previous_rows = canonical_column_stage_rows(
                 st.session_state.get(CB_LOSS_ES_COLUMN_ROWS_KEY),
                 length_m=length_m,
@@ -2321,8 +2381,14 @@ def render_crossbeam_construction_support_source_workspace(length_m: float) -> N
                 geometry_payloads=geometry_payloads,
                 fallback_rows=previous_rows,
                 length_m=float(length_m),
+                delete_source_indices=(delete_column_indices if delete_columns else ()),
             )
-            if applied_rows != previous_rows:
+            if delete_columns and not applied_rows:
+                st.session_state[CB_SUPPORTQA1_NOTICE_KEY] = (
+                    "Delete blocked: at least one Column / support row is required. "
+                    "Add or retain one row before deleting the others."
+                )
+            elif applied_rows != previous_rows:
                 st.session_state[CB_LOSS_ES_COLUMN_ROWS_KEY] = applied_rows
                 st.session_state["crossbeam_ptloss3b1_column_editor_revision"] = revision + 1
                 _invalidate_crossbeam_support_dependent_state(
@@ -2331,9 +2397,15 @@ def render_crossbeam_construction_support_source_workspace(length_m: float) -> N
                         "Column / support layout changed; Elastic Shortening, Time-Dependent loss, Effective Prestress FEA handoff, and the Loads FEA contract require refresh."
                     ),
                 )
-                st.session_state[CB_SUPPORTQA1_NOTICE_KEY] = (
-                    f"Applied {len(applied_rows)} column/support row(s). Prestress-Loss and FEA handoff evidence is now stale until recalculated."
-                )
+                if delete_columns:
+                    st.session_state[CB_SUPPORTQA1_NOTICE_KEY] = (
+                        f"Deleted {len(delete_column_indices)} selected Column/support row(s); "
+                        f"{len(applied_rows)} row(s) remain. Prestress-Loss and FEA handoff evidence is now stale until recalculated."
+                    )
+                else:
+                    st.session_state[CB_SUPPORTQA1_NOTICE_KEY] = (
+                        f"Applied {len(applied_rows)} column/support row(s). Prestress-Loss and FEA handoff evidence is now stale until recalculated."
+                    )
             st.rerun()
 
         notice = st.session_state.pop(CB_SUPPORTQA1_NOTICE_KEY, None)
@@ -4651,6 +4723,14 @@ def render_crossbeam_segment_layout_page() -> None:
         st.session_state[CB_SEGMENT_REV_KEY] = int(st.session_state.get(CB_SEGMENT_REV_KEY, 0)) + 1
         st.rerun()
 
+    delete_notice = st.session_state.pop(CB_SEGMENT_DELETE_NOTICE_KEY, None)
+    if isinstance(delete_notice, Mapping):
+        message = str(delete_notice.get("message") or "")
+        if str(delete_notice.get("kind") or "") == "error":
+            st.error(message)
+        else:
+            st.success(message)
+
     active_section_id = str(st.session_state.get("crossbeam_seclib1_active_section_id") or "Not selected")
     st.info(
         (
@@ -4695,6 +4775,64 @@ def render_crossbeam_segment_layout_page() -> None:
         },
         disabled=["Section name", "Section role", "Preset family"],
     )
+
+    current_delete_rows = _canonical_segment_rows(
+        _records(st.session_state.get(CB_SEGMENT_ROWS_KEY))
+    )
+    delete_segment_indices = st.multiselect(
+        "Zone row(s) to delete" if is_cip else "Segment row(s) to delete",
+        options=list(range(len(current_delete_rows))),
+        format_func=lambda idx: (
+            f"{current_delete_rows[int(idx)].get('Segment')} · "
+            f"{_finite_float(current_delete_rows[int(idx)].get('x_start_m')):.3f}–"
+            f"{_finite_float(current_delete_rows[int(idx)].get('x_end_m')):.3f} m · "
+            f"{current_delete_rows[int(idx)].get('Section ID')}"
+        ),
+        key=f"crossbeam_ui1_segment_delete_rows_{revision}",
+        help=(
+            "Select one or more stored rows, then press the delete button. "
+            "After deletion, revise adjacent s_start/s_end values as needed so the layout remains continuous from 0 to L."
+        ),
+    )
+    delete_label = (
+        "Delete selected Zone row(s)"
+        if is_cip
+        else "Delete selected Segment row(s)"
+    )
+    if st.button(
+        delete_label,
+        key=f"crossbeam_ui1_delete_segments_{revision}",
+        use_container_width=True,
+        disabled=not bool(delete_segment_indices),
+    ):
+        remaining_rows = _segment_rows_without_selected_indices(
+            current_delete_rows,
+            delete_segment_indices,
+        )
+        if not remaining_rows:
+            st.session_state[CB_SEGMENT_DELETE_NOTICE_KEY] = {
+                "kind": "error",
+                "message": (
+                    "Delete blocked: at least one Section/Zone row is required."
+                    if is_cip
+                    else "Delete blocked: at least one Segment row is required."
+                ),
+            }
+        else:
+            active_layout_key = CB_CIP_ZONE_ROWS_KEY if is_cip else CB_PRECAST_SEGMENT_ROWS_KEY
+            st.session_state[CB_SEGMENT_ROWS_KEY] = remaining_rows
+            st.session_state[active_layout_key] = remaining_rows
+            st.session_state[CB_SEGMENT_REV_KEY] = revision + 1
+            st.session_state[CB_SEGMENT_DELETE_NOTICE_KEY] = {
+                "kind": "success",
+                "message": (
+                    f"Deleted {len(delete_segment_indices)} selected Zone row(s); {len(remaining_rows)} row(s) remain."
+                    if is_cip
+                    else f"Deleted {len(delete_segment_indices)} selected Segment row(s); {len(remaining_rows)} row(s) remain."
+                ),
+            }
+        st.rerun()
+
     # Canonical Segment state is committed in the editor callback so the first
     # patch survives Streamlit reruns.  Re-read the durable source here instead
     # of trusting a stale pre-callback dataframe return value.

@@ -11,6 +11,7 @@ from concrete_pmm_pro.crossbeam.workflow import (
 from concrete_pmm_pro.ui.crossbeam_pages import (
     _canonical_segment_rows,
     _segment_rows_from_editor_rows,
+    _segment_rows_without_selected_indices,
     _validate_segments,
 )
 
@@ -64,6 +65,23 @@ def test_segment_layout_editor_uses_project_section_id_selectbox():
     assert "Section IDs are created and edited in Section Builder" in source
     assert 'TextColumn("Section name", disabled=True)' in source
     assert 'TextColumn("Preset family", disabled=True)' in source
+    assert "Segment row(s) to delete" in source
+    assert "Delete selected Segment row(s)" in source
+
+
+def test_segment_layout_explicit_delete_removes_selected_rows_without_default_seed():
+    rows = _canonical_segment_rows(default_crossbeam_segment_rows(20.0))
+    remaining = _segment_rows_without_selected_indices(rows, {1, 3})
+
+    assert len(remaining) == len(rows) - 2
+    assert [row["Segment"] for row in remaining] == ["S1", "S3", "S5", "S6"]
+
+
+def test_segment_layout_delete_all_returns_empty_for_visible_ui_gate():
+    rows = _canonical_segment_rows(default_crossbeam_segment_rows(20.0))
+    remaining = _segment_rows_without_selected_indices(rows, range(len(rows)))
+
+    assert remaining == []
 
 
 def test_segment_layout_editor_commits_first_patch_and_derives_library_metadata():

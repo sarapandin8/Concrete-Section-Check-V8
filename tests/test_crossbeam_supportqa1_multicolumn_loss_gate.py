@@ -140,6 +140,61 @@ def test_supportqa1_batched_column_form_preserves_four_rows_and_sorts_once() -> 
     assert rows[-1]["Btrans (mm)"] == 2300.0
 
 
+def test_supportqa1_batched_column_form_deletes_selected_source_rows() -> None:
+    fallback = _columns([1.5, 7.0, 13.0, 18.5])
+    summary = pd.DataFrame(
+        [
+            {
+                "_Source Index": index,
+                "Column ID": row["Column ID"],
+                "Station s (m)": row["Station s (m)"],
+                "Column Height (m)": row["Height (m)"],
+                "Shape": row["Shape"],
+                "f'c (MPa)": row["f'c (MPa)"],
+            }
+            for index, row in enumerate(fallback)
+        ]
+    )
+
+    rows = _column_rows_from_batched_form(
+        summary_payload=summary,
+        geometry_payloads={},
+        fallback_rows=fallback,
+        length_m=20.0,
+        delete_source_indices={1, 2},
+    )
+
+    assert [row["Column ID"] for row in rows] == ["C1", "C4"]
+    assert [row["Station s (m)"] for row in rows] == [1.5, 18.5]
+
+
+def test_supportqa1_batched_column_form_returns_empty_for_delete_all_gate() -> None:
+    fallback = _columns([1.5, 18.5])
+    summary = pd.DataFrame(
+        [
+            {
+                "_Source Index": index,
+                "Column ID": row["Column ID"],
+                "Station s (m)": row["Station s (m)"],
+                "Column Height (m)": row["Height (m)"],
+                "Shape": row["Shape"],
+                "f'c (MPa)": row["f'c (MPa)"],
+            }
+            for index, row in enumerate(fallback)
+        ]
+    )
+
+    rows = _column_rows_from_batched_form(
+        summary_payload=summary,
+        geometry_payloads={},
+        fallback_rows=fallback,
+        length_m=20.0,
+        delete_source_indices={0, 1},
+    )
+
+    assert rows == []
+
+
 def test_supportqa1_editor_is_batched_in_a_form_without_per_cell_callbacks() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
     block = source.split("def render_crossbeam_construction_support_source_workspace", 1)[1].split(
@@ -147,6 +202,8 @@ def test_supportqa1_editor_is_batched_in_a_form_without_per_cell_callbacks() -> 
     )[0]
     assert "with st.form(" in block
     assert "Apply Column / Support Layout" in block
+    assert "Delete selected Column row(s)" in block
+    assert "Column row(s) to delete" in block
     assert "on_change=_commit_ptloss3b1_column_summary_editor" not in block
     assert "on_change=_commit_ptloss3b1_column_geometry_editor" not in block
     assert "typing does not rebuild" in block
