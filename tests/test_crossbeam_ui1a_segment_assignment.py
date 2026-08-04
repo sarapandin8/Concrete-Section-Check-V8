@@ -10,6 +10,7 @@ from concrete_pmm_pro.crossbeam.workflow import (
 )
 from concrete_pmm_pro.ui.crossbeam_pages import (
     _canonical_segment_rows,
+    _segment_editor_rows,
     _segment_rows_from_editor_rows,
     _segment_rows_without_selected_indices,
     _validate_segments,
@@ -65,8 +66,19 @@ def test_segment_layout_editor_uses_project_section_id_selectbox():
     assert "Section IDs are created and edited in Section Builder" in source
     assert 'TextColumn("Section name", disabled=True)' in source
     assert 'TextColumn("Preset family", disabled=True)' in source
-    assert "Segment row(s) to delete" in source
-    assert "Delete selected Segment row(s)" in source
+    assert 'CheckboxColumn(\n                "Delete"' in source
+    assert '"Delete checked row(s)"' in source
+    assert "CB_PRECAST_SEGMENT_DELETE_SELECTION_KEY" in source
+    assert "CB_CIP_ZONE_DELETE_SELECTION_KEY" in source
+
+
+def test_segment_editor_rows_expose_delete_checkbox_selection():
+    rows = _canonical_segment_rows(default_crossbeam_segment_rows(20.0))
+    editor_rows = _segment_editor_rows(rows, {1, 3})
+
+    assert editor_rows[0]["Delete"] is False
+    assert editor_rows[1]["Delete"] is True
+    assert editor_rows[3]["Delete"] is True
 
 
 def test_segment_layout_explicit_delete_removes_selected_rows_without_default_seed():

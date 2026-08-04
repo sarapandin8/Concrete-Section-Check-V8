@@ -1842,3 +1842,7 @@ Adds an on-demand Crossbeam Shear tab beside Flexure using the accepted Bridge/B
 ## CROSSBEAM.ANALYSIS2C — One-Sided Column-Face Demand Recovery
 
 Recovers missing Column-Face and ACI h/2 station forces from exact rows, row-coupled one-sided interpolation, or 25%-limited one-sided extrapolation without crossing support centerlines, and exposes the source trace only in the collapsed Shear audit. No accepted ACI shear equation or user-facing Loads input is changed. See `README_CROSSBEAM_ANALYSIS2C.md`.
+
+## CROSSBEAM.UI.ROWDELETE2 — In-table checkbox row deletion
+
+Replaces the separate multiselect deletion controls with a direct `Delete` checkbox in the Column/support and Segment/Zone tables plus one delete button immediately below each table. Delete-all remains blocked, Precast/CIP layout isolation is preserved, and Column deletion retains the accepted downstream stale-state safeguards. See `README_CROSSBEAM_UI_ROW_DELETE2.md`.

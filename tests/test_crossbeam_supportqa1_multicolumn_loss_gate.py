@@ -7,8 +7,10 @@ import pandas as pd
 from concrete_pmm_pro.core.concrete_materials import default_concrete_materials
 from concrete_pmm_pro.crossbeam.construction_stage import (
     COLUMN_SHAPE_RECT_CHAMFER,
+    canonical_column_stage_rows,
     column_loss_evaluation_regions,
     column_support_footprint_summary,
+    default_column_stage_rows,
 )
 from concrete_pmm_pro.crossbeam.later_permanent_response import _route_candidates
 from concrete_pmm_pro.crossbeam.lightweight_elastic_shortening import (
@@ -28,6 +30,7 @@ from concrete_pmm_pro.ui.crossbeam_pages import (
     CB_PTL_LIGHTWEIGHT_ES_RESULT_KEY,
     CB_PTL_TIME_DEPENDENT_RESULT_KEY,
     _column_rows_from_batched_form,
+    _ptloss3b1_column_summary_editor_rows,
     _invalidate_crossbeam_support_dependent_state,
 )
 from concrete_pmm_pro.crossbeam.prestress_loss import CB_LOSS_ES_COLUMN_ROWS_KEY
@@ -195,6 +198,23 @@ def test_supportqa1_batched_column_form_returns_empty_for_delete_all_gate() -> N
     assert rows == []
 
 
+def test_supportqa1_checkbox_delete_removes_checked_rows():
+    fallback = canonical_column_stage_rows(default_column_stage_rows(20.0), length_m=20.0)
+    summary = _ptloss3b1_column_summary_editor_rows(fallback)
+    summary[1]["Delete"] = True
+
+    rows = _column_rows_from_batched_form(
+        summary_payload=summary,
+        geometry_payloads={},
+        fallback_rows=fallback,
+        length_m=20.0,
+        delete_checked_rows=True,
+    )
+
+    assert len(rows) == len(fallback) - 1
+    assert fallback[1]["Column ID"] not in {row["Column ID"] for row in rows}
+
+
 def test_supportqa1_editor_is_batched_in_a_form_without_per_cell_callbacks() -> None:
     source = Path("concrete_pmm_pro/ui/crossbeam_pages.py").read_text(encoding="utf-8")
     block = source.split("def render_crossbeam_construction_support_source_workspace", 1)[1].split(
@@ -202,8 +222,9 @@ def test_supportqa1_editor_is_batched_in_a_form_without_per_cell_callbacks() -> 
     )[0]
     assert "with st.form(" in block
     assert "Apply Column / Support Layout" in block
-    assert "Delete selected Column row(s)" in block
-    assert "Column row(s) to delete" in block
+    assert 'CheckboxColumn(\n                        "Delete"' in block
+    assert '"Delete checked row(s)"' in block
+    assert "Column row(s) to delete" not in block
     assert "on_change=_commit_ptloss3b1_column_summary_editor" not in block
     assert "on_change=_commit_ptloss3b1_column_geometry_editor" not in block
     assert "typing does not rebuild" in block
