@@ -155,3 +155,54 @@ def test_valid_custom_rebar_subdivision_is_preserved_without_one_click_reset() -
     assert audit["rebar"]["geometry_consistent"] is True
     assert audit["rebar"]["one_zone_per_segment"] is False
     assert audit["rebar"]["reset_supported"] is False
+
+
+def test_cip_geometry_audit_uses_active_cip_rebar_assignments_not_dormant_precast_rows() -> None:
+    active_layout = [
+        {
+            "Segment": "Z1",
+            "x_start_m": 0.0,
+            "x_end_m": 30.0,
+            "Section ID": "CB-S01",
+        }
+    ]
+    active_cip_zones = [
+        {
+            "Zone ID": "Z1",
+            "Segment": "Z1",
+            "s_start_m": 0.0,
+            "s_end_m": 30.0,
+            "Longitudinal template": "RB-SOLID-COLUMN",
+            "Transverse template": "TR-SOLID-COLUMN",
+        }
+    ]
+    dormant_precast_zones = [
+        {
+            "Zone ID": "Z-S1",
+            "Segment": "S1",
+            "s_start_m": 0.0,
+            "s_end_m": 4.5,
+        },
+        {
+            "Zone ID": "Z-S2",
+            "Segment": "S2",
+            "s_start_m": 4.5,
+            "s_end_m": 30.0,
+        },
+    ]
+    state = {
+        "crossbeam_ui1_length_m": 30.0,
+        "crossbeam_ui1_segment_layout_rows": active_layout,
+        "crossbeam_ptloss3b1_construction_method": "Cast-in-Place",
+        "crossbeam_rb_cip2a_zone_assignment_rows": active_cip_zones,
+        "crossbeam_rb1_zone_assignment_rows": dormant_precast_zones,
+    }
+
+    audit = crossbeam_project_geometry_audit(state)
+
+    assert audit["status"] == "READY"
+    assert audit["construction_method"] == "Cast-in-Place"
+    assert audit["active_rebar_zone_key"] == "crossbeam_rb_cip2a_zone_assignment_rows"
+    assert audit["rebar_zone_count"] == 1
+    assert audit["rebar"]["geometry_consistent"] is True
+    assert not any(issue.get("Component") == "Rebar Zones" for issue in audit["issues"])

@@ -57,22 +57,39 @@ def render_crossbeam_project_geometry_notice(
         if rebar_issue
         else "Review the listed project-coordinate inconsistencies before analysis."
     )
+    where_to_fix = str(
+        (rebar_issue or {}).get("Where to fix")
+        or next((issue.get("Where to fix") for issue in issues if issue.get("Where to fix")), "Project inputs")
+    )
+    rebar = dict(audit.get("rebar") or {})
+    if rebar_issue and bool(rebar.get("reset_supported")):
+        action_text = "Use the reset button below, or review " + where_to_fix + "."
+    elif rebar_issue:
+        action_text = (
+            "Open " + where_to_fix
+            + ". Custom subdivisions are preserved and will not be replaced automatically."
+        )
+    else:
+        action_text = "Review " + where_to_fix + " before analysis."
+
     if str(key_prefix).startswith("sidebar_"):
         st.markdown(
             (
-                '<div class="cpmm-sidebar-blocked-notice">'
-                "PROJECT GEOMETRY INCONSISTENT — BLOCKED"
-                f"<br>{escape(issue_detail)}"
-                "</div>"
+                '<div class="cpmm-sidebar-blocked-notice" role="alert">'
+                '<div class="cpmm-sidebar-blocked-title">PROJECT GEOMETRY INCONSISTENT — BLOCKED</div>'
+                f'<div class="cpmm-sidebar-blocked-detail">{escape(issue_detail)}</div>'
+                '<div class="cpmm-sidebar-blocked-action">'
+                '<span class="cpmm-sidebar-blocked-action-label">ACTION</span>'
+                f'{escape(action_text)}'
+                "</div></div>"
             ),
             unsafe_allow_html=True,
         )
     else:
         st.error("PROJECT GEOMETRY INCONSISTENT — BLOCKED")
-        if rebar_issue:
-            st.caption(issue_detail)
+        st.markdown(f"**Reason:** {issue_detail}")
+        st.warning(f"Action: {action_text}")
 
-    rebar = dict(audit.get("rebar") or {})
     if rebar_issue and bool(rebar.get("reset_supported")):
         if st.button(
             "Reset Rebar Zones from Segment Layout",
@@ -93,10 +110,10 @@ def render_crossbeam_project_geometry_notice(
             rerun = getattr(st, "rerun", None)
             if callable(rerun):
                 rerun()
-    elif rebar_issue:
+    elif rebar_issue and not str(key_prefix).startswith("sidebar_"):
         st.caption(
-            "Custom Rebar subdivisions were detected. Open Sections → Rebar → "
-            "Segment / Zone to review them; the app will not replace them automatically."
+            "Custom Rebar subdivisions are preserved. Review the active assignment "
+            "boundaries before analysis; the app will not replace them automatically."
         )
 
     if len(issues) > (1 if rebar_issue else 0):

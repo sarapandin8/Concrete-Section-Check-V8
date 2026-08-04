@@ -17,6 +17,9 @@ CROSSBEAM_PROJECT_GEOMETRY_AUDIT_KEY = "crossbeam_project_json1_geometry_audit"
 CROSSBEAM_LENGTH_KEY = "crossbeam_ui1_length_m"
 CROSSBEAM_SEGMENT_ROWS_KEY = "crossbeam_ui1_segment_layout_rows"
 CROSSBEAM_REBAR_ZONE_ROWS_KEY = "crossbeam_rb1_zone_assignment_rows"
+CROSSBEAM_CIP_REBAR_ZONE_ROWS_KEY = "crossbeam_rb_cip2a_zone_assignment_rows"
+CROSSBEAM_CONSTRUCTION_METHOD_KEY = "crossbeam_ptloss3b1_construction_method"
+CONSTRUCTION_METHOD_CIP = "Cast-in-Place"
 CROSSBEAM_TENDON_SYSTEM_ROWS_KEY = "crossbeam_pt1_tendon_system_rows"
 CROSSBEAM_TENDON_PROFILE_ROWS_KEY = "crossbeam_ui1_tendon_profile_points"
 CROSSBEAM_COLUMN_ROWS_KEY = "crossbeam_ptloss3b1_column_rows"
@@ -174,6 +177,8 @@ def _rebar_alignment(
     return {
         "extent_start_m": None if extent is None else extent[0],
         "extent_end_m": None if extent is None else extent[1],
+        "layout_ids": sorted(segment_by_id),
+        "zone_segment_ids": sorted(zones_by_segment),
         "one_zone_per_segment": one_zone_per_segment,
         "geometry_consistent": geometry_consistent,
         "aligned_one_to_one": geometry_consistent and one_zone_per_segment,
@@ -186,7 +191,19 @@ def crossbeam_project_geometry_audit(session_state: Mapping[str, Any]) -> dict[s
 
     length_m = max(_number(session_state.get(CROSSBEAM_LENGTH_KEY), 0.0), 0.0)
     segment_rows = _records(session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY))
-    zone_rows = _records(session_state.get(CROSSBEAM_REBAR_ZONE_ROWS_KEY))
+    construction_method = str(
+        session_state.get(CROSSBEAM_CONSTRUCTION_METHOD_KEY) or ""
+    ).strip()
+    cip_mode = construction_method == CONSTRUCTION_METHOD_CIP
+    active_rebar_zone_key = (
+        CROSSBEAM_CIP_REBAR_ZONE_ROWS_KEY
+        if cip_mode
+        else CROSSBEAM_REBAR_ZONE_ROWS_KEY
+    )
+    # Precast and Cast-in-Place reinforcement inputs are intentionally stored
+    # independently.  Audit only the source owned by the active construction
+    # mode; dormant assignments must never create a false geometry blocker.
+    zone_rows = _records(session_state.get(active_rebar_zone_key))
     profile_rows = _records(session_state.get(CROSSBEAM_TENDON_PROFILE_ROWS_KEY))
     column_rows = _records(session_state.get(CROSSBEAM_COLUMN_ROWS_KEY))
     uls_rows = _records(session_state.get(CROSSBEAM_ULS_LOAD_ROWS_KEY))
@@ -197,6 +214,8 @@ def crossbeam_project_geometry_audit(session_state: Mapping[str, Any]) -> dict[s
         return {
             "status": "NOT APPLICABLE",
             "length_m": length_m,
+            "construction_method": construction_method,
+            "active_rebar_zone_key": active_rebar_zone_key,
             "issues": [],
             "rebar": _rebar_alignment(segment_rows, zone_rows, length_m),
         }
@@ -216,15 +235,46 @@ def crossbeam_project_geometry_audit(session_state: Mapping[str, Any]) -> dict[s
     if zone_rows and not rebar["geometry_consistent"]:
         start_m = rebar.get("extent_start_m")
         end_m = rebar.get("extent_end_m")
-        if start_m is not None and end_m is not None:
+        tolerance = max(1e-6, abs(length_m) * 1e-6)
+        extent_matches = (
+            start_m is not None
+            and end_m is not None
+            and abs(float(start_m)) <= tolerance
+            and abs(float(end_m) - length_m) <= tolerance
+        )
+        layout_ids = set(rebar.get("layout_ids") or [])
+        zone_ids = set(rebar.get("zone_segment_ids") or [])
+        if layout_ids != zone_ids:
+            missing = sorted(layout_ids - zone_ids)
+            extra = sorted(zone_ids - layout_ids)
+            parts: list[str] = []
+            if missing:
+                parts.append("missing active IDs: " + ", ".join(missing))
+            if extra:
+                parts.append("inactive/dormant IDs: " + ", ".join(extra))
+            detail = (
+                "Rebar assignments do not match the active "
+                + ("Section/Zone layout" if cip_mode else "Segment layout")
+                + (" (" + "; ".join(parts) + ")." if parts else ".")
+            )
+        elif start_m is not None and end_m is not None and not extent_matches:
             detail = f"Rebar Zone extent = {float(start_m):.3f}–{float(end_m):.3f} m, but Crossbeam length = {length_m:.3f} m."
+        elif extent_matches:
+            detail = (
+                "Rebar assignments span the full member but contain a gap, overlap, "
+                "or boundary mismatch within the active layout."
+            )
         else:
             detail = "Rebar Zone station extent cannot be read from the restored rows."
         issues.append(
             _issue(
                 "Rebar Zones",
                 detail,
-                "Sections → Rebar → Segment / Zone",
+                (
+                    "Sections → Rebar → Section / Zone"
+                    if cip_mode
+                    else "Sections → Rebar → Segment / Zone"
+                ),
                 blocks_rebar_solver=True,
             )
         )
@@ -282,6 +332,8 @@ def crossbeam_project_geometry_audit(session_state: Mapping[str, Any]) -> dict[s
     return {
         "status": "READY" if not unique_issues else "INCONSISTENT",
         "length_m": length_m,
+        "construction_method": construction_method,
+        "active_rebar_zone_key": active_rebar_zone_key,
         "segment_count": len(segment_rows),
         "rebar_zone_count": len(zone_rows),
         "issues": unique_issues,
