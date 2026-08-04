@@ -2117,14 +2117,29 @@ def _render_combined_reinforcement_preview(
                 "status":"ready" if bool(torsion.get("Adopted")) else "warning",
             },
             {
+                "title":"Longitudinal flexure — As",
+                "value":f"{total_area:,.0f} mm²" if total_rebars else "LAYOUT REQUIRED",
+                "detail":(
+                    f"PHYSICAL ORDINARY BARS: {len(total_rebars)} bars · "
+                    f"Outer {len(outer_rebars)} = {outer_area:,.0f} mm²"
+                    + (
+                        f" · Inner {len(inner_rebars)} = {inner_area:,.0f} mm²"
+                        if role == "Hollow"
+                        else ""
+                    )
+                    + " · FLEXURE SOURCE: INCLUDED; station development / physical-joint gate applies in Analysis"
+                ),
+                "status":"ready" if total_rebars else "warning",
+            },
+            {
                 "title":"Longitudinal torsion — Aℓ",
                 "value":f"{al_adopted:,.0f} mm²" if bool(torsion.get("Adopted")) else "SOURCE BLOCKED",
                 "detail":(
-                    f"Outer-associated: {len(outer_rebars)} bars = {outer_area:,.0f} mm² INCLUDED · "
+                    f"Outer-associated: {len(outer_rebars)} bars = {outer_area:,.0f} mm² INCLUDED AS Aℓ SUBSET OF As · "
                     + (
-                        f"Inner-face: {len(inner_rebars)} bars = {inner_area:,.0f} mm² EXCLUDED BY RULE"
+                        f"Inner-face: {len(inner_rebars)} bars = {inner_area:,.0f} mm² RETAINED IN As / EXCLUDED FROM Aℓ"
                         if role == "Hollow"
-                        else "No separate inner-face bar set"
+                        else "No separate inner-face bar set; Aℓ is not additional duplicate steel"
                     )
                 ),
                 "status":"ready" if bool(torsion.get("Adopted")) else "warning",

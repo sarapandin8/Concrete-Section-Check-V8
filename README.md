@@ -1,3 +1,7 @@
+### CROSSBEAM.ANALYSIS4C1A — As / Aℓ Role Summary
+
+Adds a dedicated `Longitudinal flexure — As` source-audit card beside `Av`, `At`, and `Aℓ` in the Crossbeam Combined Reinforcement Preview, and states explicitly that outer-cage `Aℓ` is a subset of physical ordinary `As`, not additional duplicate steel. No solver equation, result, or Project JSON behavior changes. See `README_CROSSBEAM_ANALYSIS4C1A.md`.
+
 ### CROSSBEAM.ANALYSIS3C — Torsion Demand Continuity and Flexure Capacity Trace Semantics
 
 Plots `Tu` at every available Segment-owned station except inside Column/Support footprints, keeps recovered left/right joint demands at the exact physical-joint station without cross-joint interpolation, and splits `phiMn` traces at every physical joint so Solid/Hollow capacities are never connected by a false slope. ACI Flexure/Torsion equations and solver results are unchanged. See `README_CROSSBEAM_ANALYSIS3C.md`.
