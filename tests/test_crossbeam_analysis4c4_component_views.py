@@ -101,7 +101,7 @@ def test_joint_review_map_has_no_artificial_utilization_trace(combined_result) -
 
 def test_workspace_uses_selective_component_views_instead_of_legacy_combined_chart() -> None:
     source = inspect.getsource(_render_crossbeam_uls_combined_vt_workspace)
-    assert "Section-size stress" in source
+    assert "Section-size interaction" in source
     assert "Transverse reinforcement" in source
     assert "Longitudinal reinforcement" in source
     assert "Joint review" in source

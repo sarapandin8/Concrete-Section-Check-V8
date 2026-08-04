@@ -23219,12 +23219,16 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
 def _crossbeam_combined_vt_plot_groups(
     result_df: pd.DataFrame,
     support_footprints: list[Mapping[str, object]],
+    *,
+    include_support_checks: bool = False,
 ) -> list[pd.DataFrame]:
-    """Split imported V+T utilization traces by Segment and support interior.
+    """Split V+T utilization traces by Segment and excluded support interior.
 
-    Generated Column Face / h/2 rows are plotted with dedicated markers rather
-    than being connected into the imported station lines. Physical-joint rows
-    remain a separate one-sided audit source.
+    Physical-joint rows remain a separate one-sided audit source.  The legacy
+    combined chart keeps generated Column Face / h/2 rows as markers only,
+    while the standardized one-check Section-size and Transverse views may
+    include those evaluated rows in the connected trace.  No line is drawn
+    through a support footprint or across a Segment boundary.
     """
 
     if result_df is None or result_df.empty:
@@ -23234,8 +23238,12 @@ def _crossbeam_combined_vt_plot_groups(
         frame.get("Station type", pd.Series(index=frame.index, dtype=object)).astype(str)
         != "PHYSICAL JOINT SIDE"
     ]
-    if "Generated support check" in frame:
-        frame = frame[~frame["Generated support check"].map(lambda value: bool(value) if pd.notna(value) else False)].copy()
+    if not include_support_checks and "Generated support check" in frame:
+        frame = frame[
+            ~frame["Generated support check"].map(
+                lambda value: bool(value) if pd.notna(value) else False
+            )
+        ].copy()
     frame["__x"] = pd.to_numeric(frame.get("Station s (m)"), errors="coerce")
     frame = frame[frame["__x"].notna()].copy()
     if frame.empty:
@@ -23253,11 +23261,11 @@ def _crossbeam_combined_vt_plot_groups(
         previous_x: float | None = None
         for index, row in segment_df.iterrows():
             x = float(row["__x"])
-            crosses_support = previous_x is not None and any(
+            crosses_support_interior = previous_x is not None and any(
                 previous_x <= left + 1.0e-9 and x >= right - 1.0e-9
                 for left, right in footprints
             )
-            if crosses_support and current:
+            if crosses_support_interior and current:
                 groups.append(segment_df.loc[current].copy())
                 current = []
             current.append(index)
@@ -23265,7 +23273,6 @@ def _crossbeam_combined_vt_plot_groups(
         if current:
             groups.append(segment_df.loc[current].copy())
     return groups
-
 
 def _make_crossbeam_uls_combined_vt_figure(
     result_df: pd.DataFrame,
@@ -23554,7 +23561,7 @@ def _crossbeam_combined_vt_component_spec(component: str) -> dict[str, object]:
 
     specs: dict[str, dict[str, object]] = {
         "stress": {
-            "label": "Section-size stress",
+            "label": "Section-size interaction",
             "chart_title": "Section-Size Interaction — Combined V+T ULS",
             "subtitle": "ACI 318-19 22.7.7 · concurrent row-coupled V2/T",
             "column": "Stress D/C value",
@@ -23591,6 +23598,73 @@ def _crossbeam_combined_vt_component_spec(component: str) -> dict[str, object]:
         },
     }
     return dict(specs.get(str(component), specs["stress"]))
+
+
+def _crossbeam_combined_vt_view_guidance(component: str) -> dict[str, str]:
+    """Return visible user guidance for one Combined V+T review meaning."""
+
+    guidance = {
+        "stress": {
+            "title": "What this check verifies",
+            "verifies": (
+                "Checks whether the concrete section and web dimensions are adequate for concurrent "
+                "shear Vu and torsion Tu under ACI 22.7.7."
+            ),
+            "read": (
+                "D/C < 1.0 means the combined V–T section-size interaction limit is satisfied. "
+                "Connected lines join evaluated imported, Column Face, and ACI h/2 results only within the same valid Segment region."
+            ),
+            "excludes": (
+                "This check does not verify transverse reinforcement, longitudinal torsion reinforcement, "
+                "or physical-joint force transfer."
+            ),
+        },
+        "transverse": {
+            "title": "What this check verifies",
+            "verifies": (
+                "Checks the combined transverse reinforcement required for concurrent shear and torsion: "
+                "Av/s + 2At/s under ACI 9.5.4.3."
+            ),
+            "read": (
+                "D/C compares the required reinforcement with the unique physical vertical-leg pool. "
+                "Additional outer-cage legs are counted once and shared cage legs are not duplicated. "
+                "Where torsion is below threshold, its At demand is zero but the shear contribution remains eligible."
+            ),
+            "excludes": (
+                "This check does not verify longitudinal Aℓ, flexure-plus-torsional tension, "
+                "or physical-joint force transfer."
+            ),
+        },
+        "longitudinal": {
+            "title": "What this check verifies",
+            "verifies": (
+                "Checks torsion-related longitudinal reinforcement, including minimum Aℓ, perimeter detailing, "
+                "and direct flexure plus torsional longitudinal tension."
+            ),
+            "read": (
+                "D/C < 1.0 is required for every applicable longitudinal gate. Aℓ is a cage-associated subset "
+                "of the physical As and is not additional duplicate steel."
+            ),
+            "excludes": (
+                "Segments below the torsion threshold are shown as Aℓ not applicable rather than D/C = 0. "
+                "Excess transverse reinforcement cannot compensate for insufficient Aℓ."
+            ),
+        },
+        "joint": {
+            "title": "What this review verifies",
+            "verifies": (
+                "Shows actual one-sided left/right demand and adjacent-section capacity evidence at every physical Segment joint."
+            ),
+            "read": (
+                "J1–Jn remain REVIEW REQUIRED. The map locates the joints; the table reports the adjacent s− and s+ section evidence."
+            ),
+            "excludes": (
+                "No artificial joint D/C is created. Joint keys, interface shear/friction, anchorage, local D-regions, "
+                "and force transfer across the interface require separate verification."
+            ),
+        },
+    }
+    return dict(guidance.get(str(component), guidance["stress"]))
 
 
 def _crossbeam_combined_vt_component_governing(
@@ -23830,7 +23904,11 @@ def _make_crossbeam_uls_combined_vt_component_figure(
     spec = _crossbeam_combined_vt_component_spec(component)
     column = str(spec["column"])
     fig = go.Figure()
-    groups = _crossbeam_combined_vt_plot_groups(result_df, support_footprints)
+    groups = _crossbeam_combined_vt_plot_groups(
+        result_df,
+        support_footprints,
+        include_support_checks=component in {"stress", "transverse"},
+    )
     legend_shown = False
     for group in groups:
         x = pd.to_numeric(group.get("__x"), errors="coerce")
@@ -23886,6 +23964,42 @@ def _make_crossbeam_uls_combined_vt_component_figure(
         support_footprints=support_footprints,
         segment_rows=segment_rows,
     )
+
+    if component == "longitudinal":
+        non_joint = result_df[
+            result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str)
+            != "PHYSICAL JOINT SIDE"
+        ].copy()
+        applicable_segments = set(
+            non_joint.loc[
+                non_joint.get("Torsion required", pd.Series(False, index=non_joint.index))
+                .map(lambda value: bool(value) if pd.notna(value) else False),
+                "Segment",
+            ].astype(str)
+        )
+        for segment in _crossbeam_segment_records(segment_rows):
+            segment_id = str(segment["Segment"])
+            if segment_id in applicable_segments:
+                continue
+            start = float(segment["start"])
+            end = float(segment["end"])
+            fig.add_vrect(
+                x0=start,
+                x1=end,
+                fillcolor="rgba(148,163,184,0.055)",
+                line_width=0,
+                layer="below",
+            )
+            fig.add_annotation(
+                x=0.5 * (start + end),
+                y=0.055,
+                xref="x",
+                yref="paper",
+                text="Aℓ N/A<br><span style='font-size:8px'>below torsion threshold</span>",
+                showarrow=False,
+                font={"size": 9, "color": "#64748b"},
+                align="center",
+            )
 
     support_rows = result_df[
         result_df.get("Generated support check", pd.Series(False, index=result_df.index))
@@ -24275,7 +24389,7 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
         view_label = st.radio(
             "Combined check view",
             options=[
-                "Section-size stress",
+                "Section-size interaction",
                 "Transverse reinforcement",
                 "Longitudinal reinforcement",
                 "Joint review",
@@ -24285,12 +24399,17 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
             label_visibility="collapsed",
         )
         component_by_view = {
-            "Section-size stress": "stress",
+            "Section-size interaction": "stress",
             "Transverse reinforcement": "transverse",
             "Longitudinal reinforcement": "longitudinal",
         }
         support_footprints = list(preparation.support_footprints)
         segment_rows = st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY, [])
+        guidance_key = component_by_view.get(view_label, "joint")
+        guidance = _crossbeam_combined_vt_view_guidance(guidance_key)
+        st.info(
+            f"**{guidance['title']}**  \n{guidance['verifies']}  \n\n**How to read it:** {guidance['read']}  \n\n**Not covered by this view:** {guidance['excludes']}"
+        )
 
         if view_label in component_by_view:
             component = component_by_view[view_label]
@@ -24354,16 +24473,16 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
 
             captions = {
                 "stress": (
-                    "Section-size interaction only. The blue trace is the ACI 22.7.7 concurrent V/T stress utilization and the red dashed line is D/C = 1.0. "
-                    "Column Face circles and ACI h/2 diamonds show generated support checks. Physical joints are trace breaks; transfer is reviewed separately."
+                    "Section-size interaction only. The blue trace connects evaluated imported, Column Face, and ACI h/2 results within each valid Segment region; it is not a continuous FEA solution. "
+                    "The trace never crosses a physical joint or an excluded support footprint. The red dashed line is D/C = 1.0."
                 ),
                 "transverse": (
-                    "Combined transverse reinforcement only. The green trace compares required Av/s + 2At/s with the unique physical vertical-leg pool, counting additional cage legs once and never duplicating shared legs. "
-                    "The red dashed line is D/C = 1.0."
+                    "Combined transverse reinforcement only. The green trace connects evaluated station and support results within each valid Segment region and compares required Av/s + 2At/s with the unique physical vertical-leg pool. "
+                    "Below the torsion threshold, At demand is zero while the shear contribution remains eligible. Shared legs are never counted twice; physical joints and excluded support interiors remain trace breaks."
                 ),
                 "longitudinal": (
-                    "Longitudinal torsion reinforcement only. The amber Segment-owned step trace covers minimum Aℓ, perimeter detailing, and direct flexure-plus-torsional-tension utilization. "
-                    "Aℓ is a cage-associated subset of physical As, not additional duplicate steel."
+                    "Longitudinal torsion reinforcement only. The amber Segment-owned step trace covers minimum Aℓ, perimeter detailing, and direct flexure-plus-torsional-tension utilization where torsion design applies. "
+                    "Pale Aℓ N/A bands identify Segments below the torsion threshold; they are not D/C = 0. Aℓ is a cage-associated subset of physical As, not additional duplicate steel."
                 ),
             }
             _render_beam_uls_static_plotly_figure(
