@@ -29,3 +29,17 @@ def test_summary_card_order_is_av_at_as_al() -> None:
     as_ = SOURCE.index('"title":"Longitudinal flexure — As"', at)
     al = SOURCE.index('"title":"Longitudinal torsion — Aℓ"', as_)
     assert start < at < as_ < al
+
+
+def test_unverified_torsion_source_gives_direct_user_action() -> None:
+    assert 'torsion_card_value = "VERIFY CLOSED LOOP"' in SOURCE
+    assert "Outer torsion cage source → set Closure = Verified closed loop, then Apply" in SOURCE
+    assert 'al_card_value = "Aℓ CREDIT PENDING"' in SOURCE
+    assert "VERIFY OUTER CAGE TO ENABLE Aℓ CREDIT" in SOURCE
+    assert "Aℓ credit will then become available automatically" in SOURCE
+
+
+def test_missing_torsion_cage_gives_definition_action() -> None:
+    assert 'torsion_card_value = "DEFINE OUTER CAGE"' in SOURCE
+    assert 'al_card_value = "Aℓ CREDIT UNAVAILABLE"' in SOURCE
+    assert "define Bar, Spacing, Relationship, and Closure" in SOURCE

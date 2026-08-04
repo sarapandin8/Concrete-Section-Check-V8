@@ -2068,7 +2068,40 @@ def _render_combined_reinforcement_preview(
     avs = transverse_avs_record(transverse)
     torsion = transverse_torsion_cage_record(transverse)
     role = str(definition.get("Section role") or "Solid")
-    al_adopted = outer_area if bool(torsion.get("Adopted")) else 0.0
+    torsion_adopted = bool(torsion.get("Adopted"))
+    torsion_status = str(torsion.get("Status") or "LAYOUT REQUIRED")
+    al_adopted = outer_area if torsion_adopted else 0.0
+    if torsion_adopted:
+        torsion_card_value = f"{torsion['At/s mm²/mm']:.4f} mm²/mm"
+        torsion_card_detail = (
+            f"GEOMETRIC PROVIDED → SOLVER ADOPTED: {torsion_status} · "
+            f"{torsion['Bar']} @ {torsion['Spacing mm']:.0f} mm · {torsion['Relationship']}"
+        )
+        al_card_value = f"{al_adopted:,.0f} mm²"
+        torsion_action_message = ""
+    elif torsion_status == "REVIEW REQUIRED":
+        torsion_card_value = "VERIFY CLOSED LOOP"
+        torsion_card_detail = (
+            f"ACTION: Rebar → Transverse / Shear → Outer torsion cage source → set Closure = Verified closed loop, then Apply · "
+            f"Identified {torsion['Bar']} @ {torsion['Spacing mm']:.0f} mm · {torsion['Relationship']}"
+        )
+        al_card_value = "Aℓ CREDIT PENDING"
+        torsion_action_message = (
+            "TORSION SOURCE ACTION — The outer cage geometry is identified but not adopted. "
+            "Open Rebar → Transverse / Shear, locate the active template's Outer torsion cage source, "
+            "set Closure to Verified closed loop, and apply the table. Aℓ credit will then become available automatically."
+        )
+    else:
+        torsion_card_value = "DEFINE OUTER CAGE"
+        torsion_card_detail = (
+            "ACTION: Rebar → Transverse / Shear → define Bar, Spacing, Relationship, and Closure in Outer torsion cage source, then Apply"
+        )
+        al_card_value = "Aℓ CREDIT UNAVAILABLE"
+        torsion_action_message = (
+            "TORSION SOURCE ACTION — No adopted outer torsion cage is available. "
+            "Open Rebar → Transverse / Shear, define the active template's Outer torsion cage source, "
+            "set Closure to Verified closed loop, and apply the table."
+        )
     render_metric_cards(
         [
             {"title":"Selected section","value":section_id,"detail":f"{definition.get('Section name','')} · {definition.get('Section role','')}","status":"info"},
@@ -2105,16 +2138,9 @@ def _render_combined_reinforcement_preview(
             },
             {
                 "title":"Outer torsion cage — At",
-                "value":(
-                    f"{torsion['At/s mm²/mm']:.4f} mm²/mm"
-                    if bool(torsion.get("Adopted"))
-                    else str(torsion.get("Status") or "LAYOUT REQUIRED")
-                ),
-                "detail":(
-                    f"GEOMETRIC PROVIDED → SOLVER ADOPTED: {torsion['Status']} · "
-                    f"{torsion['Bar']} @ {torsion['Spacing mm']:.0f} mm · {torsion['Relationship']}"
-                ),
-                "status":"ready" if bool(torsion.get("Adopted")) else "warning",
+                "value":torsion_card_value,
+                "detail":torsion_card_detail,
+                "status":"ready" if torsion_adopted else "warning",
             },
             {
                 "title":"Longitudinal flexure — As",
@@ -2133,19 +2159,22 @@ def _render_combined_reinforcement_preview(
             },
             {
                 "title":"Longitudinal torsion — Aℓ",
-                "value":f"{al_adopted:,.0f} mm²" if bool(torsion.get("Adopted")) else "SOURCE BLOCKED",
+                "value":al_card_value,
                 "detail":(
-                    f"Outer-associated: {len(outer_rebars)} bars = {outer_area:,.0f} mm² INCLUDED AS Aℓ SUBSET OF As · "
+                    f"Outer-associated: {len(outer_rebars)} bars = {outer_area:,.0f} mm² "
+                    + ("INCLUDED AS Aℓ SUBSET OF As · " if torsion_adopted else "IDENTIFIED; VERIFY OUTER CAGE TO ENABLE Aℓ CREDIT · ")
                     + (
                         f"Inner-face: {len(inner_rebars)} bars = {inner_area:,.0f} mm² RETAINED IN As / EXCLUDED FROM Aℓ"
                         if role == "Hollow"
                         else "No separate inner-face bar set; Aℓ is not additional duplicate steel"
                     )
                 ),
-                "status":"ready" if bool(torsion.get("Adopted")) else "warning",
+                "status":"ready" if torsion_adopted else "warning",
             },
         ]
     )
+    if torsion_action_message:
+        st.warning(torsion_action_message)
     fig, review = _combined_reinforcement_preview_figure(
         geometry,
         definition,
