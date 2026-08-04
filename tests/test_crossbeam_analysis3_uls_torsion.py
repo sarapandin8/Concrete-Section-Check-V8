@@ -63,6 +63,17 @@ def _mixed_state(*, torsion_knm: float) -> dict[str, object]:
         state[CB_RB_TEMPLATE_ROWS_KEY],
         state[CB_TR_TEMPLATE_ROWS_KEY],
     )
+    # ANALYSIS4C1: Hollow torsion capacity is available only from an explicit
+    # engineer-defined outer closed cage.  This fixture opts in deliberately;
+    # legacy/default Hollow templates remain LAYOUT REQUIRED.
+    for template in state[CB_TR_TEMPLATE_ROWS_KEY]:
+        if template.get("Applicable role") == "Hollow":
+            template["Use outer torsion cage"] = True
+            template["Torsion cage bar size"] = template["Bar size"]
+            template["Torsion cage spacing mm"] = template["Spacing mm"]
+            template["Torsion cage center offset mm"] = template["Center offset mm"]
+            template["Torsion cage relationship"] = "Additional outer cage"
+            template["Torsion cage closure"] = "Verified closed loop"
     _set_torsion(state, torsion_knm)
     return state
 
@@ -238,10 +249,10 @@ def test_hollow_section_uses_local_wall_limit_and_keeps_piecewise_cage_review_vi
 
     assert hollow["Threshold status"] == "DESIGN REQUIRED"
     assert hollow["Hollow threshold route"] is True
-    assert hollow["Hollow cage continuity review"] is True
+    assert hollow["Hollow cage continuity review"] is False
     assert hollow["Hollow stress basis"] == "ACI 22.7.7.2 local minimum wall thickness"
     assert hollow["Hollow wall thickness mm"] < hollow["Aoh/ph mm"]
-    assert "continuity, lap, and anchorage review" in hollow["Notes"]
+    assert "engineer-defined outer closed torsion-cage centerline" in hollow["Notes"]
 
 
 def test_torsion_chart_has_single_signed_capacity_and_threshold_legend_entries() -> None:
@@ -316,13 +327,13 @@ def test_torsion_chart_plots_threshold_for_below_threshold_solid_sections_and_fi
     assert y_range[1] >= 1.10 * max(finite_plot_values)
 
 
-def test_crossbeam_uls_navigation_exposes_torsion_and_combined_vt_workspace() -> None:
+def test_crossbeam_uls_navigation_exposes_torsion_without_shear_plus_torsion_placeholder() -> None:
     source = Path("concrete_pmm_pro/ui/analysis_page.py").read_text(encoding="utf-8")
 
-    assert '["Flexure", "Shear", "Torsion", "Shear + Torsion"]' in source
+    assert '["Flexure", "Shear", "Torsion"]' in source
     assert '_render_crossbeam_uls_torsion_workspace()' in source
-    assert '_render_crossbeam_uls_combined_vt_workspace()' in source
     assert "CROSSBEAM_ULS_TORSION_RESULT_KEY" in source
     assert "CROSSBEAM_ULS_TORSION_RESULT_HASH_KEY" in source
-    assert "CROSSBEAM_ULS_COMBINED_VT_RESULT_KEY" in source
-    assert "CROSSBEAM_ULS_COMBINED_VT_RESULT_HASH_KEY" in source
+    # Combined V+T is intentionally not exposed for Crossbeam until its solver exists.
+    crossbeam_block = source[source.index("def render_analysis_uls_pmm"):source.index("def render_analysis_sls_stress")]
+    assert '["Flexure", "Shear", "Torsion", "Shear + Torsion"]' not in crossbeam_block

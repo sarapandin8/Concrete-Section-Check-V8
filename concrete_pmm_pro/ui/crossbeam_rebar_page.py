@@ -137,6 +137,7 @@ from concrete_pmm_pro.crossbeam.transverse import (
     TRANSVERSE_BAR_SIZE_OPTIONS,
     TRANSVERSE_FY_BY_MATERIAL,
     TRANSVERSE_MATERIAL_OPTIONS,
+    build_outer_torsion_cage_geometry,
     build_transverse_cage_geometry,
     canonical_transverse_templates,
     default_crossbeam_transverse_templates,
@@ -146,6 +147,8 @@ from concrete_pmm_pro.crossbeam.transverse import (
     place_longitudinal_bars_relative_to_cages,
     review_longitudinal_bar_containment,
     transverse_bar_diameter_mm,
+    transverse_avs_record,
+    transverse_torsion_cage_record,
     transverse_template_map,
 )
 from concrete_pmm_pro.crossbeam.section_library import (
@@ -1948,6 +1951,14 @@ def _combined_reinforcement_preview_figure(
         fig.add_trace(trace)
 
     add_transverse_cage_traces(fig, cages, legend_name="Transverse cage / tie")
+    torsion_cage = build_outer_torsion_cage_geometry(geometry, transverse_template)
+    if torsion_cage.paths:
+        add_transverse_cage_traces(
+            fig,
+            torsion_cage,
+            legend_name="Outer torsion cage",
+            color="#7c3aed",
+        )
 
     enhanced = str(marker_mode) != "True bar diameter"
     if not enhanced:
@@ -2050,8 +2061,14 @@ def _render_combined_reinforcement_preview(
 ) -> None:
     total_rebars = outer_rebars + inner_rebars
     total_area = _generated_area_mm2(total_rebars)
+    outer_area = _generated_area_mm2(outer_rebars)
+    inner_area = _generated_area_mm2(inner_rebars)
     cages = build_transverse_cage_geometry(geometry, definition, transverse)
     review = review_longitudinal_bar_containment(cages, total_rebars)
+    avs = transverse_avs_record(transverse)
+    torsion = transverse_torsion_cage_record(transverse)
+    role = str(definition.get("Section role") or "Solid")
+    al_adopted = outer_area if bool(torsion.get("Adopted")) else 0.0
     render_metric_cards(
         [
             {"title":"Selected section","value":section_id,"detail":f"{definition.get('Section name','')} · {definition.get('Section role','')}","status":"info"},
@@ -2067,6 +2084,50 @@ def _render_combined_reinforcement_preview(
                     else f"{review.conflict_count} conflict(s) · {len(cages.closed_loops)} closed tie(s)"
                 ),
                 "status":("info" if str(definition.get("Section role")) == "Hollow" else "ready") if review.ok else "warning",
+            },
+        ]
+    )
+    render_metric_cards(
+        [
+            {
+                "title":"Shear reinforcement — Av",
+                "value":f"{avs['Av,total/s mm²/mm']:.4f} mm²/mm",
+                "detail":(
+                    f"GEOMETRIC PROVIDED = SOLVER SOURCE · {transverse.get('Bar size','')} @ "
+                    f"{float(transverse.get('Spacing mm') or 0.0):.0f} mm · "
+                    + (
+                        f"L/R legs {int(transverse.get('Left web legs') or 0)}/{int(transverse.get('Right web legs') or 0)}"
+                        if role == "Hollow"
+                        else f"{int(transverse.get('Effective legs') or 0)} effective legs"
+                    )
+                ),
+                "status":"ready",
+            },
+            {
+                "title":"Outer torsion cage — At",
+                "value":(
+                    f"{torsion['At/s mm²/mm']:.4f} mm²/mm"
+                    if bool(torsion.get("Adopted"))
+                    else str(torsion.get("Status") or "LAYOUT REQUIRED")
+                ),
+                "detail":(
+                    f"GEOMETRIC PROVIDED → SOLVER ADOPTED: {torsion['Status']} · "
+                    f"{torsion['Bar']} @ {torsion['Spacing mm']:.0f} mm · {torsion['Relationship']}"
+                ),
+                "status":"ready" if bool(torsion.get("Adopted")) else "warning",
+            },
+            {
+                "title":"Longitudinal torsion — Aℓ",
+                "value":f"{al_adopted:,.0f} mm²" if bool(torsion.get("Adopted")) else "SOURCE BLOCKED",
+                "detail":(
+                    f"Outer-associated: {len(outer_rebars)} bars = {outer_area:,.0f} mm² INCLUDED · "
+                    + (
+                        f"Inner-face: {len(inner_rebars)} bars = {inner_area:,.0f} mm² EXCLUDED BY RULE"
+                        if role == "Hollow"
+                        else "No separate inner-face bar set"
+                    )
+                ),
+                "status":"ready" if bool(torsion.get("Adopted")) else "warning",
             },
         ]
     )

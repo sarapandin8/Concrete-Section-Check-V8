@@ -39,6 +39,14 @@ TRANSVERSE_MATERIAL_OPTIONS = ("SD40", "SD50")
 TRANSVERSE_FY_OPTIONS = (390.0, 490.0)
 TRANSVERSE_FY_BY_MATERIAL = {"SD40": 390.0, "SD50": 490.0}
 TRANSVERSE_MATERIAL_BY_FY = {390.0: "SD40", 490.0: "SD50"}
+TORSION_CAGE_RELATIONSHIP_OPTIONS = (
+    "Additional outer cage",
+    "Shared with existing outer shear loop",
+)
+TORSION_CAGE_CLOSURE_OPTIONS = (
+    "Verified closed loop",
+    "Review required",
+)
 TRANSVERSE_DIAMETER_BY_SIZE = {
     "DB10": 10.0,
     "DB12": 12.0,
@@ -154,11 +162,13 @@ def _template_defaults(role: str, template_id: str) -> dict[str, Any]:
     role_text = str(role or "Any").strip().title()
     end_zone = str(template_id) in {TR_HOLLOW_END, TR_SOLID_ANCHORAGE}
     solid_column = str(template_id) == TR_SOLID_COLUMN
+    bar_size = "DB16" if role_text == "Solid" else "DB12"
+    spacing_mm = 100.0 if end_zone or solid_column else 200.0
     return {
         "Rebar material": "SD40",
         "fy MPa": 390.0,
-        "Bar size": "DB16" if role_text == "Solid" else "DB12",
-        "Spacing mm": 100.0 if end_zone or solid_column else 200.0,
+        "Bar size": bar_size,
+        "Spacing mm": spacing_mm,
         "Left web legs": 2,
         "Right web legs": 2,
         "Effective legs": 6 if solid_column else (8 if end_zone and role_text == "Solid" else 4),
@@ -166,6 +176,21 @@ def _template_defaults(role: str, template_id: str) -> dict[str, Any]:
         "Center offset mm": 50.0,
         "First bar offset mm": 75.0,
         "Last bar offset mm": 75.0,
+        # Torsion source contract.  Legacy Hollow templates intentionally
+        # migrate to LAYOUT REQUIRED instead of silently reusing the schematic
+        # web-loop/U-bar/chamfer topology as a global closed torsion cage.
+        "Use outer torsion cage": role_text == "Solid",
+        "Torsion cage bar size": bar_size,
+        "Torsion cage spacing mm": spacing_mm,
+        "Torsion cage center offset mm": 50.0,
+        "Torsion cage relationship": (
+            "Shared with existing outer shear loop"
+            if role_text == "Solid"
+            else "Additional outer cage"
+        ),
+        "Torsion cage closure": (
+            "Verified closed loop" if role_text == "Solid" else "Review required"
+        ),
     }
 
 
@@ -238,6 +263,21 @@ def canonical_transverse_templates(rows: list[dict[str, Any]]) -> list[dict[str,
         else:
             fy_mpa = 490.0 if abs(raw_fy - 490.0) < abs(raw_fy - 390.0) else 390.0
             material = TRANSVERSE_MATERIAL_BY_FY[fy_mpa]
+        torsion_bar_size = str(
+            row.get("Torsion cage bar size") or defaults["Torsion cage bar size"]
+        ).strip().upper()
+        if torsion_bar_size not in TRANSVERSE_BAR_SIZE_OPTIONS:
+            torsion_bar_size = str(defaults["Torsion cage bar size"])
+        torsion_relationship = str(
+            row.get("Torsion cage relationship") or defaults["Torsion cage relationship"]
+        ).strip()
+        if torsion_relationship not in TORSION_CAGE_RELATIONSHIP_OPTIONS:
+            torsion_relationship = str(defaults["Torsion cage relationship"])
+        torsion_closure = str(
+            row.get("Torsion cage closure") or defaults["Torsion cage closure"]
+        ).strip()
+        if torsion_closure not in TORSION_CAGE_CLOSURE_OPTIONS:
+            torsion_closure = str(defaults["Torsion cage closure"])
         canonical.append(
             {
                 "Active": _bool(row.get("Active"), True),
@@ -257,6 +297,27 @@ def canonical_transverse_templates(rows: list[dict[str, Any]]) -> list[dict[str,
                 "Center offset mm": max(_float(row.get("Center offset mm"), float(defaults["Center offset mm"])), 1.0),
                 "First bar offset mm": max(_float(row.get("First bar offset mm"), float(defaults["First bar offset mm"])), 0.0),
                 "Last bar offset mm": max(_float(row.get("Last bar offset mm"), float(defaults["Last bar offset mm"])), 0.0),
+                "Use outer torsion cage": _bool(
+                    row.get("Use outer torsion cage"),
+                    bool(defaults["Use outer torsion cage"]),
+                ),
+                "Torsion cage bar size": torsion_bar_size,
+                "Torsion cage spacing mm": max(
+                    _float(
+                        row.get("Torsion cage spacing mm"),
+                        float(defaults["Torsion cage spacing mm"]),
+                    ),
+                    1.0,
+                ),
+                "Torsion cage center offset mm": max(
+                    _float(
+                        row.get("Torsion cage center offset mm"),
+                        float(defaults["Torsion cage center offset mm"]),
+                    ),
+                    1.0,
+                ),
+                "Torsion cage relationship": torsion_relationship,
+                "Torsion cage closure": torsion_closure,
                 "Notes": str(row.get("Notes") or "").strip(),
             }
         )
@@ -343,6 +404,132 @@ def transverse_avs_record(template: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def transverse_torsion_cage_record(template: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the user-owned outer torsion-cage source contract.
+
+    This helper reports source readiness only.  It does not calculate torsional
+    strength and does not infer a cage from the concrete outline.
+    """
+
+    row = canonical_transverse_templates([dict(template)])[0]
+    enabled = bool(row.get("Use outer torsion cage"))
+    closure = str(row.get("Torsion cage closure") or "Review required")
+    relationship = str(row.get("Torsion cage relationship") or "Additional outer cage")
+    bar_size = str(row.get("Torsion cage bar size") or "")
+    spacing = max(float(row.get("Torsion cage spacing mm") or 0.0), 1.0)
+    offset = max(float(row.get("Torsion cage center offset mm") or 0.0), 1.0)
+    area = transverse_bar_area_mm2(bar_size)
+
+    status = "LAYOUT REQUIRED"
+    adopted = False
+    note = "No user-defined outer closed torsion cage is active."
+    if enabled:
+        if closure != "Verified closed loop":
+            status = "REVIEW REQUIRED"
+            note = "Outer cage is enabled, but closed-loop continuity is not verified."
+        elif relationship == "Shared with existing outer shear loop":
+            same_bar = bar_size == str(row.get("Bar size") or "")
+            same_spacing = abs(spacing - float(row.get("Spacing mm") or 0.0)) <= 1.0e-9
+            closed_shear = bool(row.get("Closed cage"))
+            if same_bar and same_spacing and closed_shear:
+                status = "MATCH"
+                adopted = True
+                note = "Verified outer torsion cage is the same physical outer shear loop."
+            else:
+                status = "MISMATCH"
+                note = "Shared outer torsion cage is not confirmed as a closed torsion cage with matching bar size and spacing."
+        else:
+            status = "USER DEFINED"
+            adopted = True
+            note = "Verified additional outer closed torsion cage."
+
+    return {
+        "Template ID": row["Template ID"],
+        "Role": row["Applicable role"],
+        "Enabled": enabled,
+        "Relationship": relationship,
+        "Closure": closure,
+        "Bar": bar_size,
+        "Spacing mm": spacing,
+        "Center offset mm": offset,
+        "At mm²": area,
+        "At/s mm²/mm": area / spacing if adopted else float("nan"),
+        "2At/s mm²/mm": 2.0 * area / spacing if adopted else float("nan"),
+        "Status": status,
+        "Adopted": adopted,
+        "Note": note,
+    }
+
+
+def build_outer_torsion_cage_geometry(
+    geometry: Any,
+    template: Mapping[str, Any],
+) -> TransverseCageGeometry:
+    """Build the user-defined outer torsion-cage centerline for preview/audit.
+
+    The cage follows the inward offset of the actual outer concrete face using
+    the engineer-entered centerline offset.  It is not included in the legacy
+    transverse cage topology and therefore cannot alter longitudinal placement
+    or shear-leg counting.
+    """
+
+    source = transverse_torsion_cage_record(template)
+    role = str(source.get("Role") or "Any")
+    offset = float(source.get("Center offset mm") or 0.0)
+    diameter = transverse_bar_diameter_mm(source.get("Bar"))
+    if not bool(source.get("Adopted")):
+        return TransverseCageGeometry(
+            role,
+            offset,
+            TRANSVERSE_PREVIEW_BEND_RADIUS_MM,
+            diameter,
+            (),
+            (str(source.get("Note") or "Outer torsion cage source is not ready."),),
+            (),
+        )
+
+    outer = [
+        (float(point.x), float(point.y))
+        for point in list(getattr(geometry, "outer_polygon", []) or [])
+    ]
+    if len(outer) < 3:
+        return TransverseCageGeometry(
+            role, offset, TRANSVERSE_PREVIEW_BEND_RADIUS_MM, diameter, (),
+            ("Concrete outer boundary is unavailable for the torsion-cage preview.",), (),
+        )
+    outer_polygon = Polygon(outer)
+    inset = outer_polygon.buffer(-offset, join_style=2)
+    if inset.is_empty:
+        return TransverseCageGeometry(
+            role, offset, TRANSVERSE_PREVIEW_BEND_RADIUS_MM, diameter, (),
+            ("Outer torsion cage is empty at the entered centerline offset.",), (),
+        )
+    if hasattr(inset, "geoms"):
+        inset = max(inset.geoms, key=lambda item: float(item.area))
+    if not isinstance(inset, Polygon) or not inset.is_valid or inset.area <= 0.0:
+        return TransverseCageGeometry(
+            role, offset, TRANSVERSE_PREVIEW_BEND_RADIUS_MM, diameter, (),
+            ("Outer torsion-cage centerline geometry is invalid.",), (),
+        )
+    points = tuple((float(x), float(y)) for x, y in inset.exterior.coords)
+    path = TransverseCagePath(
+        label="User-defined outer torsion cage",
+        points=points,
+        envelope=tuple(float(value) for value in inset.bounds),
+        effective_legs=2,
+        kind=TRANSVERSE_PATH_CLOSED_LOOP,
+    )
+    return TransverseCageGeometry(
+        role,
+        offset,
+        TRANSVERSE_PREVIEW_BEND_RADIUS_MM,
+        diameter,
+        (path,),
+        (),
+        (),
+    )
+
+
 def transverse_set_stations(
     template: Mapping[str, Any],
     start_m: float,
@@ -379,6 +566,11 @@ def validate_transverse_templates(rows: list[dict[str, Any]]) -> tuple[list[dict
             errors.append(f"{template_id}: spacing must be positive.")
         if str(row["Applicable role"]) == "Hollow" and not bool(row["Closed cage"]):
             warnings.append(f"{template_id}: open web reinforcement is a detailing preview only; closed-cage/tie review remains required.")
+        torsion = transverse_torsion_cage_record(row)
+        if str(torsion.get("Status")) == "MISMATCH":
+            errors.append(f"{template_id}: {torsion.get('Note')}")
+        elif str(torsion.get("Status")) in {"LAYOUT REQUIRED", "REVIEW REQUIRED"}:
+            warnings.append(f"{template_id}: torsion cage {str(torsion.get('Status')).lower()}; {torsion.get('Note')}")
         if float(row["First bar offset mm"]) + float(row["Last bar offset mm"]) > 2000.0:
             warnings.append(f"{template_id}: large end offsets may leave short zones without transverse sets.")
     return canonical, errors, warnings

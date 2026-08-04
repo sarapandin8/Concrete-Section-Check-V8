@@ -90,6 +90,14 @@ def _mixed_30m_state() -> tuple[dict[str, object], list[dict[str, object]]]:
 
     longitudinal = default_crossbeam_rebar_templates()
     transverse = default_crossbeam_transverse_templates()
+    for template in transverse:
+        if template.get("Applicable role") == "Hollow":
+            template["Use outer torsion cage"] = True
+            template["Torsion cage bar size"] = template["Bar size"]
+            template["Torsion cage spacing mm"] = template["Spacing mm"]
+            template["Torsion cage center offset mm"] = template["Center offset mm"]
+            template["Torsion cage relationship"] = "Additional outer cage"
+            template["Torsion cage closure"] = "Verified closed loop"
     zones = default_crossbeam_rebar_zones(segments, longitudinal, transverse)
 
     tendons = default_tendon_system_rows(3)

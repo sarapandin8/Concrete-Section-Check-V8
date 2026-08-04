@@ -44,7 +44,10 @@ from concrete_pmm_pro.analysis.crossbeam_uls_shear import (
     build_crossbeam_uls_shear_preparation,
 )
 from concrete_pmm_pro.core.models import Rebar
-from concrete_pmm_pro.crossbeam.transverse import transverse_bar_area_mm2
+from concrete_pmm_pro.crossbeam.transverse import (
+    transverse_bar_area_mm2,
+    transverse_torsion_cage_record,
+)
 from concrete_pmm_pro.geometry.summary import to_shapely_polygon
 
 
@@ -173,37 +176,42 @@ def _equivalent_hoop_geometry(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
             "ready": False,
             "errors": ["Assigned transverse template is detailing-only and receives no sectional torsion credit."],
         }
-    if not bool(template.get("Closed cage", False)):
+    cage_source = transverse_torsion_cage_record(template)
+    if not bool(cage_source.get("Adopted")):
         return {
             "ready": False,
-            "errors": ["Assigned transverse template is not confirmed as a closed torsion cage."],
+            "errors": [
+                "Outer torsion-cage source is not ready: "
+                + str(cage_source.get("Note") or cage_source.get("Status") or "LAYOUT REQUIRED")
+            ],
+            "source_status": str(cage_source.get("Status") or "LAYOUT REQUIRED"),
         }
 
     metrics = _outer_metrics(row)
     outer_polygon: Polygon = metrics["outer_polygon"]
     concrete_polygon = metrics["concrete_polygon"]
-    offset = _finite(template.get("Center offset mm"), 0.0)
-    bar_size = str(template.get("Bar size") or "")
-    spacing = _finite(template.get("Spacing mm"), 0.0)
+    offset = _finite(cage_source.get("Center offset mm"), 0.0)
+    bar_size = str(cage_source.get("Bar") or "")
+    spacing = _finite(cage_source.get("Spacing mm"), 0.0)
     fyt_input = _finite(template.get("fy MPa"), 0.0)
     if offset <= 0.0 or spacing <= 0.0 or fyt_input <= 0.0:
         return {
             "ready": False,
-            "errors": ["Closed-cage center offset, spacing, and fyt must be positive."],
+            "errors": ["User-defined torsion-cage center offset, spacing, and fyt must be positive."],
         }
 
     inset = outer_polygon.buffer(-offset, join_style=2)
     if inset.is_empty:
         return {
             "ready": False,
-            "errors": ["Equivalent outer torsion cage is empty at the assigned center offset."],
+            "errors": ["User-defined outer torsion cage is empty at the assigned center offset."],
         }
     if hasattr(inset, "geoms"):
         inset = max(inset.geoms, key=lambda geometry: float(geometry.area))
     if not isinstance(inset, Polygon) or not inset.is_valid or inset.area <= 0.0:
         return {
             "ready": False,
-            "errors": ["Equivalent outer torsion cage geometry is invalid."],
+            "errors": ["User-defined outer torsion-cage geometry is invalid."],
         }
     hoop_line = LineString(inset.exterior.coords)
     bar_area = transverse_bar_area_mm2(bar_size)
@@ -212,7 +220,7 @@ def _equivalent_hoop_geometry(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
     errors: list[str] = []
     warnings: list[str] = []
     if not concrete_polygon.buffer(1.0e-7).covers(steel_envelope):
-        errors.append("Equivalent closed-cage bar envelope leaves the concrete or enters the section void.")
+        errors.append("User-defined outer closed-cage bar envelope leaves the concrete or enters the section void.")
 
     aoh = float(inset.area)
     ph = float(inset.exterior.length)
@@ -236,12 +244,10 @@ def _equivalent_hoop_geometry(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
             warnings.append("Hollow-section inside-face clearance could not be verified from the active void geometry.")
 
     cage_continuity_review = False
-    if bool(metrics["is_hollow"]):
-        cage_continuity_review = True
-        warnings.append(
-            "Hollow-section Aoh is evaluated from an equivalent outer closed torsion path at the active center offset. "
-            "The current piecewise web-loop/flange-bar topology still requires continuity, lap, and anchorage review before final PASS."
-        )
+    warnings.append(
+        "Aoh and ph are evaluated from the engineer-defined outer closed torsion-cage centerline. "
+        "Development, anchorage, lap/closure detailing, and physical-joint transfer remain separate checks."
+    )
 
     return {
         "ready": not errors,
@@ -262,6 +268,9 @@ def _equivalent_hoop_geometry(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         "fyt_design_mpa": min(fyt_input, _ACI_TORSION_FY_MAX_MPA),
         "bar_size": bar_size,
         "bar_diameter_mm": bar_diameter,
+        "cage_source_status": str(cage_source.get("Status") or ""),
+        "cage_relationship": str(cage_source.get("Relationship") or ""),
+        "cage_closure": str(cage_source.get("Closure") or ""),
         "hollow_clearance_mm": hollow_wall_clearance,
         "hollow_clearance_required_mm": hollow_clearance_required,
         "hollow_clearance_dc": hollow_clearance_dc,
@@ -744,14 +753,11 @@ def _torsion_result_for_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
     strength_dc = tu_nmm / phi_tn if phi_tn > 0.0 else float("inf")
     transverse_dc = at_req / at_per_s if at_per_s > 0.0 else float("inf")
 
-    # ACI R9.5.4.3 requires the *required* shear and torsion areas to be
-    # added before selecting the outer closed stirrup.  The same physical side
-    # legs cannot be credited twice as both Av and 2At.  For a single closed
-    # cage, the actual outer-side transverse area available to satisfy the
-    # combined/minimum expression is therefore 2At/s.  Inner multi-leg shear
-    # bars are not credited because they are ineffective for torsion.
+    # ACI 9.6.4.2 defines Av as the two side legs of a closed stirrup and At as
+    # one leg. Inner multi-leg shear bars are not credited in this torsion
+    # minimum-reinforcement expression.
     av_side_per_s = 2.0 * at_per_s
-    combined_transverse_provided = av_side_per_s
+    combined_transverse_provided = av_side_per_s + 2.0 * at_per_s
     combined_transverse_min = _minimum_transverse_per_s(
         fc_mpa=fc,
         bw_mm=bw,
@@ -842,8 +848,8 @@ def _torsion_result_for_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         "Imported P/V2/T/M3 remain row-coupled; effective prestress is used only in fpc/theta and is not added to Tu.",
         str(longitudinal["notes"]),
         "Tu is treated as imported equilibrium demand; compatibility-torsion redistribution to phi*Tcr is not applied automatically.",
-        "Standalone Al credit is a component source; final ACI 9.5.4.4 flexure-plus-torsion longitudinal interaction is evaluated in the Shear + Torsion workspace.",
-        "Additive shear-plus-torsion transverse reinforcement is evaluated in the Shear + Torsion workspace without double-counting the same outer closed-stirrup legs.",
+        "Standalone Al credit does not complete ACI 9.5.4.4 flexure-plus-torsion longitudinal interaction; the later Combined V+T milestone owns that final adoption.",
+        "The later Combined V+T milestone also owns additive shear-plus-torsion transverse reinforcement adoption.",
         *list(geometry.get("warnings") or []),
     ]
     if section_limit_status == "REVIEW":
@@ -884,7 +890,6 @@ def _torsion_result_for_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         "At/s mm2/mm": at_per_s,
         "At/s required mm2/mm": at_req,
         "Av side/s mm2/mm": av_side_per_s,
-        "Outer side legs/s provided mm2/mm": combined_transverse_provided,
         "(Av+2At)/s provided mm2/mm": combined_transverse_provided,
         "(Av+2At)/s min mm2/mm": combined_transverse_min,
         "Al strength required mm2": al_strength_req,
@@ -893,7 +898,6 @@ def _torsion_result_for_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         "Al minimum (b) mm2": al_min_b,
         "Al required mm2": al_required,
         "Al provided mm2": float(longitudinal["provided_mm2"]),
-        "Longitudinal fy MPa": fy,
         "Outer bar max spacing mm": float(longitudinal["max_perimeter_spacing_mm"]),
         "Outer bar spacing D/C": float(longitudinal["spacing_dc"]),
         "Outer bar min diameter mm": float(longitudinal["min_diameter_mm"]),
@@ -1028,8 +1032,8 @@ def run_crossbeam_uls_torsion(preparation: CrossbeamTorsionPreparation) -> dict[
         "scope": (
             "ACI 318-19 standalone sectional torsion: threshold, transverse and longitudinal torsion strength, minimum reinforcement, "
             "closed-cage/perimeter detailing, and the 22.7.7 section-size stress limit. Column Face and prestressed h/2 checks are both evaluated conservatively. "
-            "Physical segment-joint torsion transfer and compatibility-torsion redistribution remain separate. Additive transverse reinforcement and "
-            "ACI 9.5.4.4 flexure-plus-Al interaction are evaluated in the dedicated Combined V+T (Shear + Torsion) workspace. "
+            "Physical segment-joint torsion transfer, compatibility-torsion redistribution, additive shear-plus-torsion reinforcement adoption, "
+            "and ACI 9.5.4.4 flexure-plus-Al interaction remain separate and keep a design-required standalone result at overall REVIEW until Combined V+T closes. "
             "Anchorage/development, PT end zones, fatigue, seismic detailing, and warping torsion remain separate."
         ),
     }

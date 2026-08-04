@@ -41,7 +41,7 @@ from concrete_pmm_pro.crossbeam.project_geometry import (
 
 
 CROSSBEAM_REBAR_METADATA_KEY = "crossbeam_rebar_input_model"
-CROSSBEAM_REBAR_SCHEMA_VERSION = 1
+CROSSBEAM_REBAR_SCHEMA_VERSION = 2
 
 CB_RB_TEMPLATE_ROWS_KEY = "crossbeam_rb1_template_rows"
 CB_RB_TEMPLATE_REV_KEY = "crossbeam_rb1_template_editor_revision"

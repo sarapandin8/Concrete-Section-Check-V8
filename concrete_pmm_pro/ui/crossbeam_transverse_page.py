@@ -33,6 +33,8 @@ from concrete_pmm_pro.crossbeam.rebar_persistence import (
     CB_TR_TEMPLATE_ROWS_KEY,
 )
 from concrete_pmm_pro.crossbeam.transverse import (
+    TORSION_CAGE_CLOSURE_OPTIONS,
+    TORSION_CAGE_RELATIONSHIP_OPTIONS,
     TRANSVERSE_BAR_SIZE_OPTIONS,
     TRANSVERSE_CONSTRUCTION_OPTIONS,
     TRANSVERSE_FY_BY_MATERIAL,
@@ -41,12 +43,14 @@ from concrete_pmm_pro.crossbeam.transverse import (
     TRANSVERSE_MATERIAL_OPTIONS,
     TRANSVERSE_ROLE_OPTIONS,
     TransverseCageGeometry,
+    build_outer_torsion_cage_geometry,
     build_transverse_cage_geometry,
     canonical_transverse_templates,
     default_crossbeam_transverse_templates,
     duplicate_transverse_template,
     new_transverse_template,
     transverse_avs_record,
+    transverse_torsion_cage_record,
     transverse_set_stations,
     transverse_template_map,
     validate_transverse_templates,
@@ -475,6 +479,64 @@ def render_crossbeam_transverse_template_library(
         )
         rows = _merge_fields(rows, _records(solid_editor), solid_field_map); _store(rows)
 
+    st.markdown("#### Outer torsion cage source")
+    st.caption(
+        "Define the actual outer closed cage used by the torsion solver. Hollow templates do not inherit a global torsion cage "
+        "from web loops, flange U-bars, chamfer bars, or the concrete outline. A Shared cage must match the existing outer shear loop."
+    )
+    torsion_rows = [
+        {
+            "Template ID": row["Template ID"],
+            "Use for torsion": row["Use outer torsion cage"],
+            "Bar": row["Torsion cage bar size"],
+            "Spacing (mm)": row["Torsion cage spacing mm"],
+            "Centerline offset (mm)": row["Torsion cage center offset mm"],
+            "Relationship": row["Torsion cage relationship"],
+            "Closure": row["Torsion cage closure"],
+        }
+        for row in rows
+    ]
+    torsion_field_map = {
+        "Use for torsion": "Use outer torsion cage",
+        "Bar": "Torsion cage bar size",
+        "Spacing (mm)": "Torsion cage spacing mm",
+        "Centerline offset (mm)": "Torsion cage center offset mm",
+        "Relationship": "Torsion cage relationship",
+        "Closure": "Torsion cage closure",
+    }
+    torsion_editor_key = f"crossbeam_tr1_torsion_cage_{revision}"
+    torsion_editor = st.data_editor(
+        pd.DataFrame(torsion_rows),
+        use_container_width=True,
+        hide_index=True,
+        num_rows="fixed",
+        key=torsion_editor_key,
+        on_change=_commit_transverse_fields_editor,
+        args=(torsion_editor_key, rows, torsion_rows, torsion_field_map),
+        disabled=["Template ID"],
+        column_config={
+            "Template ID": st.column_config.TextColumn(width="medium"),
+            "Use for torsion": st.column_config.CheckboxColumn(width="small"),
+            "Bar": st.column_config.SelectboxColumn(
+                options=list(TRANSVERSE_BAR_SIZE_OPTIONS), required=True, width="small"
+            ),
+            "Spacing (mm)": st.column_config.NumberColumn(
+                min_value=25.0, step=25.0, format="%.0f", width="small"
+            ),
+            "Centerline offset (mm)": st.column_config.NumberColumn(
+                min_value=1.0, step=5.0, format="%.0f", width="medium"
+            ),
+            "Relationship": st.column_config.SelectboxColumn(
+                options=list(TORSION_CAGE_RELATIONSHIP_OPTIONS), required=True, width="large"
+            ),
+            "Closure": st.column_config.SelectboxColumn(
+                options=list(TORSION_CAGE_CLOSURE_OPTIONS), required=True, width="medium"
+            ),
+        },
+    )
+    rows = _merge_fields(rows, _records(torsion_editor), torsion_field_map)
+    _store(rows)
+
     st.markdown("#### Cross-section cage placement")
     st.caption(
         "Measured inward, normal to the concrete face in the cross-section. "
@@ -599,6 +661,31 @@ def render_crossbeam_transverse_template_library(
         },
     )
 
+    st.markdown("#### Torsion-cage source preview")
+    torsion_records = [transverse_torsion_cage_record(row) for row in rows]
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Template ID": record["Template ID"],
+                    "Source status": record["Status"],
+                    "Bar @ spacing": f"{record['Bar']} @ {record['Spacing mm']:.0f}",
+                    "At/s (mm²/mm)": record["At/s mm²/mm"],
+                    "2At/s (mm²/mm)": record["2At/s mm²/mm"],
+                    "Relationship": record["Relationship"],
+                    "Closure": record["Closure"],
+                }
+                for record in torsion_records
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "At/s (mm²/mm)": st.column_config.NumberColumn(format="%.4f"),
+            "2At/s (mm²/mm)": st.column_config.NumberColumn(format="%.4f"),
+        },
+    )
+
     with st.expander("Template notes and reset", expanded=False):
         notes_rows = [{"Template ID":row["Template ID"], "Notes":row["Notes"]} for row in rows]
         notes_field_map = {"Notes":"Notes"}
@@ -632,6 +719,14 @@ def transverse_cross_section_figure(
     fig = create_section_preview(geometry)
     cages = build_transverse_cage_geometry(geometry, definition, template)
     add_transverse_cage_traces(fig, cages)
+    torsion_cage = build_outer_torsion_cage_geometry(geometry, template)
+    if torsion_cage.paths:
+        add_transverse_cage_traces(
+            fig,
+            torsion_cage,
+            legend_name="Outer torsion cage",
+            color="#7c3aed",
+        )
     if cages.errors:
         fig.add_annotation(
             x=0.5,
@@ -886,17 +981,38 @@ def render_transverse_preview_summary(
     row = canonical_transverse_templates([dict(template)])[0]
     cages = build_transverse_cage_geometry(geometry, definition, row)
     avs = transverse_avs_record(row)
+    torsion = transverse_torsion_cage_record(row)
     stations = transverse_set_stations(row, start_m, end_m)
     hollow = str(definition.get("Section role")) == "Hollow"
     render_metric_cards([
-        {"title":"Transverse template","value":row["Template ID"],"detail":f"{row['Bar size']} @ {row['Spacing mm']:.0f} mm","status":"info"},
         {
-            "title":"Hollow topology" if hollow else "Effective legs",
-            "value":f"{len(cages.closed_loops)} loops · {len(cages.u_bars)} U · {len(cages.straight_bars)} diagonal" if hollow else row["Effective legs"],
-            "detail":f"Credited web legs L/R {row['Left web legs']}/{row['Right web legs']}" if hollow else "Solid multi-leg tie",
-            "status":"info",
+            "title":"Shear reinforcement — Av",
+            "value":f"{avs['Av,total/s mm²/mm']:.4f} mm²/mm",
+            "detail":(
+                f"{row['Bar size']} @ {row['Spacing mm']:.0f} mm · "
+                + (f"L/R legs {row['Left web legs']}/{row['Right web legs']}" if hollow else f"{row['Effective legs']} effective legs")
+                + " · GEOMETRIC PROVIDED = SOLVER SOURCE"
+            ),
+            "status":"ready",
         },
-        {"title":"Av,total / s","value":f"{avs['Av,total/s mm²/mm']:.4f} mm²/mm","detail":"Web-leg input only — no φVn calculation","status":"warning"},
+        {
+            "title":"Outer torsion cage — At",
+            "value":(
+                f"{torsion['At/s mm²/mm']:.4f} mm²/mm"
+                if bool(torsion.get("Adopted"))
+                else str(torsion.get("Status") or "LAYOUT REQUIRED")
+            ),
+            "detail":(
+                f"{torsion['Bar']} @ {torsion['Spacing mm']:.0f} mm · {torsion['Relationship']} · {torsion['Closure']}"
+            ),
+            "status":"ready" if bool(torsion.get("Adopted")) else "warning",
+        },
+        {
+            "title":"Template / source status",
+            "value":row["Template ID"],
+            "detail":f"Torsion source: {torsion['Status']} · {torsion['Note']}",
+            "status":"info" if bool(torsion.get("Adopted")) else "warning",
+        },
         {"title":"Sets in zone","value":len(stations),"detail":f"Offsets {row['First bar offset mm']:.0f}/{row['Last bar offset mm']:.0f} mm","status":"ready" if stations else "warning"},
     ])
     st.plotly_chart(transverse_cross_section_figure(geometry, definition, row, title=f"Transverse Cage Preview — {segment_id} / {zone_id} · {row['Template ID']}"), use_container_width=True, config=dict(figure_config))
@@ -904,6 +1020,7 @@ def render_transverse_preview_summary(
         st.caption(
             "Hollow transverse detailing topology: 2 complete closed web loops + 4 flange U-bars "
             "(Outer/Inner, Top/Bottom) + 4 straight bars parallel to the void chamfers. "
+            "The purple line is the separately user-defined outer torsion cage when its source is verified. "
             "The 25 mm bend radius is a preview value; longitudinal bars are omitted in this view."
         )
     else:

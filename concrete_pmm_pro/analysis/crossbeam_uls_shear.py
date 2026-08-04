@@ -1626,16 +1626,6 @@ def _direction_result(row: PreparedCrossbeamShearRow, direction_sign: float, dir
         bw_mm=bw_mm,
         d_mm=float(geom["d_mm"]),
     )
-    av_strength_required_per_s = (
-        vs_required_n / (fyt * float(geom["d_mm"]))
-        if fyt > 0.0 and float(geom["d_mm"]) > 0.0
-        else float("nan")
-    )
-    av_minimum_required_per_s = av_required if shear_reinforcement_required else 0.0
-    av_adopted_required_per_s = max(
-        av_strength_required_per_s if math.isfinite(av_strength_required_per_s) else 0.0,
-        av_minimum_required_per_s,
-    )
     av_dc = av_required / av_per_s if av_per_s > 0.0 else float("inf")
     along_dc = float(transverse["spacing_mm"]) / along_smax if along_smax > 0.0 else float("nan")
     across_spacing = float(transverse["across_spacing_mm"])
@@ -1704,9 +1694,6 @@ def _direction_result(row: PreparedCrossbeamShearRow, direction_sign: float, dir
         "shear_reinforcement_required": shear_reinforcement_required,
         "Vs_required_N": vs_required_n,
         "Av_per_s": av_per_s,
-        "Av_strength_required_per_s": av_strength_required_per_s,
-        "Av_minimum_required_per_s": av_minimum_required_per_s,
-        "Av_adopted_required_per_s": av_adopted_required_per_s,
         "Av_required_per_s": av_required,
         "Av_base_per_s": av_base,
         "Av_prestress_specific_per_s": av_ps,
@@ -1898,11 +1885,6 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
                 "Stirrup": result.get("stirrup", "-"),
                 "Av/s mm2/mm": result.get("Av_per_s", float("nan")),
                 "Av/s mm2/m": _finite_float(result.get("Av_per_s"), float("nan")) * 1000.0,
-                "Shear reinforcement required": bool(result.get("shear_reinforcement_required")),
-                "Vs required kN": _finite_float(result.get("Vs_required_N"), float("nan")) / 1000.0,
-                "Av/s strength required mm2/mm": result.get("Av_strength_required_per_s", float("nan")),
-                "Av/s minimum required mm2/mm": result.get("Av_minimum_required_per_s", float("nan")),
-                "Av/s adopted required mm2/mm": result.get("Av_adopted_required_per_s", float("nan")),
                 "Av/s required mm2/mm": result.get("Av_required_per_s", float("nan")),
                 "Av/s required mm2/m": _finite_float(result.get("Av_required_per_s"), float("nan")) * 1000.0,
                 "Av/s min D/C": result.get("Av_dc", float("nan")),
