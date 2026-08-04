@@ -271,8 +271,8 @@ def test_torsion_chart_has_single_signed_capacity_and_threshold_legend_entries()
     assert names.count("ACI h/2 check") == 1
     assert names.count("Physical joint — REVIEW") == 1
     assert names.count("Max |Tu|") == 1
-    assert names.count("Gov. Tu/φTn") == 1
-    assert "Gov. torsion D/C" not in names
+    assert names.count("Gov. torsional-strength D/C") == 1
+    assert "Gov. Tu/φTn" not in names
     assert "Governing demand" not in names
     assert "capacity curves planned" not in str(figure.layout.title.text)
     dotted_blue_lines = [

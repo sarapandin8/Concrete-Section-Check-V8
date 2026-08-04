@@ -250,7 +250,9 @@ def test_torsion_capacity_is_horizontal_per_segment_with_all_joint_sides_plotted
     assert len(list(traces["Joint s−/s+ demand"].x)) == 10
     assert len(list(traces["Joint-side φTth"].x)) == 20
     assert len(list(traces["Joint-side φTn"].x)) == 20
-    assert sum(str(trace.name) == "Physical joint — REVIEW" for trace in figure.data) == 5
+    assert sum(str(trace.name) == "Physical joint — REVIEW" for trace in figure.data) == 1
+    joint_labels = {str(annotation.text) for annotation in figure.layout.annotations if str(annotation.text).startswith("J")}
+    assert {"J1 REVIEW", "J2 REVIEW", "J3 REVIEW", "J4 REVIEW", "J5 REVIEW"}.issubset(joint_labels)
 
 
 def test_torsion_demand_is_segment_owned_and_omitted_only_inside_supports() -> None:

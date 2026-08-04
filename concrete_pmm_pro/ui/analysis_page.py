@@ -22426,6 +22426,218 @@ def _add_crossbeam_segmented_torsion_demand_traces(
         )
 
 
+
+def _crossbeam_support_bounds(item: Mapping[str, object]) -> tuple[float, float] | None:
+    """Return normalized Crossbeam support-footprint limits from accepted key variants."""
+
+    left = _beam_uls_float(
+        item.get("s_left (m)", item.get("s_start_m", item.get("x0_m")))
+    )
+    right = _beam_uls_float(
+        item.get("s_right (m)", item.get("s_end_m", item.get("x1_m")))
+    )
+    if not math.isfinite(left) or not math.isfinite(right) or abs(right - left) <= 1.0e-12:
+        return None
+    return (min(left, right), max(left, right))
+
+
+def _crossbeam_format_area(value: object) -> str:
+    number = _beam_uls_float(value)
+    return "-" if not math.isfinite(number) else f"{number:,.0f} mm²"
+
+
+def _crossbeam_format_ratio_area(value: object) -> str:
+    number = _beam_uls_float(value)
+    return "-" if not math.isfinite(number) else f"{number:,.3f} mm²/mm"
+
+
+def _crossbeam_governing_component_summary(
+    row: Mapping[str, object] | None,
+    *,
+    combined: bool,
+) -> dict[str, object]:
+    """Return decision-first wording and required/provided evidence for V+T UI.
+
+    The calculation rows already own the engineering equations.  This helper
+    only resolves which stored component controls so the UI never labels an
+    Al,min failure as a generic ``V+T`` failure.
+    """
+
+    if isinstance(row, pd.Series):
+        row = row.to_dict()
+    if not isinstance(row, Mapping):
+        return {
+            "label": "Not calculated",
+            "short_label": "Not calculated",
+            "code": "-",
+            "dc": float("nan"),
+            "required": "-",
+            "provided": "-",
+            "shortfall": "-",
+            "action": "Calculate the current check.",
+        }
+
+    if combined:
+        stress_dc = _beam_uls_float(row.get("Stress D/C value"))
+        transverse_dc = _beam_uls_float(row.get("Transverse D/C value"))
+        longitudinal_dc = _beam_uls_float(row.get("Longitudinal D/C value"))
+        component_values = {
+            "stress": stress_dc,
+            "transverse": transverse_dc,
+            "longitudinal": longitudinal_dc,
+        }
+        finite_components = {key: value for key, value in component_values.items() if math.isfinite(value)}
+        component = max(finite_components, key=finite_components.get) if finite_components else "review"
+
+        if component == "stress":
+            return {
+                "label": "Combined section-size interaction",
+                "short_label": "section-size D/C",
+                "code": "ACI 22.7.7",
+                "dc": stress_dc,
+                "required": "Demand stress interaction",
+                "provided": "ACI section-size limit",
+                "shortfall": "-",
+                "action": "Increase section/web dimensions or revise concurrent V and T demand.",
+            }
+        if component == "transverse":
+            required_value = _beam_uls_float(row.get("(Av+2At)/s adopted required mm2/mm"))
+            provided_value = _beam_uls_float(row.get("Unique transverse provided/s mm2/mm"))
+            shortfall_value = required_value - provided_value if math.isfinite(required_value) and math.isfinite(provided_value) else float("nan")
+            return {
+                "label": "Combined transverse reinforcement",
+                "short_label": "(Av+2At)/s D/C",
+                "code": "ACI 9.5.4.3",
+                "dc": transverse_dc,
+                "required": _crossbeam_format_ratio_area(required_value),
+                "provided": _crossbeam_format_ratio_area(provided_value),
+                "shortfall": "0.000 mm²/mm" if math.isfinite(shortfall_value) and shortfall_value <= 0.0 else _crossbeam_format_ratio_area(shortfall_value),
+                "action": "Revise the unique physical transverse-leg pool or spacing.",
+            }
+
+        longitudinal_candidates = {
+            "al_min": _beam_uls_float(row.get("Al minimum D/C value")),
+            "detailing": _beam_uls_float(row.get("Longitudinal detailing D/C value")),
+            "interaction": _beam_uls_float(row.get("Flexure+torsion D/C value")),
+        }
+        finite_longitudinal = {
+            key: value for key, value in longitudinal_candidates.items() if math.isfinite(value)
+        }
+        subtype = max(finite_longitudinal, key=finite_longitudinal.get) if finite_longitudinal else "al_min"
+        if subtype == "interaction":
+            return {
+                "label": "Flexure plus torsional longitudinal tension",
+                "short_label": "flexure+T D/C",
+                "code": "ACI 9.5.4.4",
+                "dc": longitudinal_candidates["interaction"],
+                "required": f"Mu = {_beam_uls_float(row.get('M3 kN-m')):,.1f} kN·m",
+                "provided": f"φMn = {_beam_uls_float(row.get('Flexure+torsion phiMn kN-m')):,.1f} kN·m",
+                "shortfall": "-",
+                "action": "Revise developed longitudinal reinforcement, tendons, or section capacity.",
+            }
+        if subtype == "detailing":
+            return {
+                "label": "Longitudinal torsion perimeter detailing",
+                "short_label": "Aℓ detailing D/C",
+                "code": "ACI 9.7.5",
+                "dc": longitudinal_candidates["detailing"],
+                "required": "Spacing / diameter / corner coverage",
+                "provided": "Actual cage-associated outer bars",
+                "shortfall": "-",
+                "action": "Revise perimeter spacing, bar size, corner bars, or cage association.",
+            }
+        required_value = _beam_uls_float(row.get("Al minimum required mm2"))
+        provided_value = _beam_uls_float(row.get("Al provided mm2"))
+        shortfall_value = required_value - provided_value if math.isfinite(required_value) and math.isfinite(provided_value) else float("nan")
+        return {
+            "label": "Minimum longitudinal torsion reinforcement Aℓ",
+            "short_label": "Aℓ,min D/C",
+            "code": "ACI 9.6.4",
+            "dc": longitudinal_candidates.get("al_min", longitudinal_dc),
+            "required": _crossbeam_format_area(required_value),
+            "provided": _crossbeam_format_area(provided_value),
+            "shortfall": "0 mm²" if math.isfinite(shortfall_value) and shortfall_value <= 0.0 else _crossbeam_format_area(shortfall_value),
+            "action": "Increase developed outer-cage-associated longitudinal bars; do not add Aℓ to As a second time.",
+        }
+
+    candidates = {
+        "strength": _beam_uls_float(row.get("Strength D/C value")),
+        "transverse": _beam_uls_float(row.get("Transverse D/C value")),
+        "longitudinal": _beam_uls_float(row.get("Longitudinal D/C value")),
+        "detailing": _beam_uls_float(row.get("Detailing D/C value")),
+        "section": _beam_uls_float(row.get("Section limit D/C value")),
+    }
+    finite = {key: value for key, value in candidates.items() if math.isfinite(value)}
+    component = max(finite, key=finite.get) if finite else "review"
+    if component == "longitudinal":
+        required_value = _beam_uls_float(row.get("Al required mm2", row.get("Al minimum mm2")))
+        provided_value = _beam_uls_float(row.get("Al provided mm2"))
+        shortfall_value = required_value - provided_value if math.isfinite(required_value) and math.isfinite(provided_value) else float("nan")
+        return {
+            "label": "Minimum longitudinal torsion reinforcement Aℓ",
+            "short_label": "Aℓ,min D/C",
+            "code": "ACI 9.6.4 / 22.7.6.3",
+            "dc": candidates["longitudinal"],
+            "required": _crossbeam_format_area(required_value),
+            "provided": _crossbeam_format_area(provided_value),
+            "shortfall": "0 mm²" if math.isfinite(shortfall_value) and shortfall_value <= 0.0 else _crossbeam_format_area(shortfall_value),
+            "action": "Increase developed outer-cage-associated longitudinal bars.",
+        }
+    if component == "strength":
+        return {
+            "label": "Torsional strength Tu/φTn",
+            "short_label": "Tu/φTn",
+            "code": "ACI 22.7.6",
+            "dc": candidates["strength"],
+            "required": f"Tu = {_beam_uls_float(row.get('T kN-m')):,.1f} kN·m",
+            "provided": f"φTn = {_beam_uls_float(row.get('phiTn kN-m')):,.1f} kN·m",
+            "shortfall": "-",
+            "action": "Increase verified At/cage geometry or revise section and demand.",
+        }
+    if component == "transverse":
+        return {
+            "label": "Transverse torsion reinforcement At",
+            "short_label": "At D/C",
+            "code": "ACI 22.7.6.1",
+            "dc": candidates["transverse"],
+            "required": _crossbeam_format_ratio_area(row.get("At/s required mm2/mm")),
+            "provided": _crossbeam_format_ratio_area(row.get("At/s mm2/mm")),
+            "shortfall": "-",
+            "action": "Increase verified outer-cage bar area or reduce spacing.",
+        }
+    if component == "detailing":
+        return {
+            "label": "Torsion reinforcement detailing",
+            "short_label": "detailing D/C",
+            "code": "ACI 9.7.5 / 9.7.6.3",
+            "dc": candidates["detailing"],
+            "required": "Spacing / diameter / clearance",
+            "provided": "Actual verified cage and Aℓ bars",
+            "shortfall": "-",
+            "action": "Revise spacing, bar size, corner coverage, or hollow clearance.",
+        }
+    if component == "section":
+        return {
+            "label": "Torsion section-size interaction",
+            "short_label": "section-size D/C",
+            "code": "ACI 22.7.7",
+            "dc": candidates["section"],
+            "required": "Combined shear/torsion stress",
+            "provided": "ACI section-size limit",
+            "shortfall": "-",
+            "action": "Increase section/web dimensions or revise demand.",
+        }
+    return {
+        "label": "Engineering review",
+        "short_label": "review",
+        "code": "ACI 318-19",
+        "dc": _beam_uls_float(row.get("Governing D/C value")),
+        "required": "-",
+        "provided": "-",
+        "shortfall": "-",
+        "action": "Review source, development, anchorage, and joint-transfer gates.",
+    }
+
 def _make_crossbeam_uls_torsion_figure(
     result_df: pd.DataFrame,
     support_footprints: list[dict[str, object]],
@@ -22438,7 +22650,7 @@ def _make_crossbeam_uls_torsion_figure(
     fig = _make_beam_uls_demand_figure(
         demand_df,
         column="Tu",
-        title="Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · complete Segment-owned Tu + step capacities · support footprints omitted</sup>",
+        title="Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · Segment-owned Tu and step capacities · support interiors omitted; face/h/2 checks shown</sup>",
         y_label="Torsion, Tu (kN-m)",
     )
     segments = _crossbeam_segment_records(segment_rows)
@@ -22632,25 +22844,41 @@ def _make_crossbeam_uls_torsion_figure(
     # plotting gaps at the joints: the exact left/right endpoint values remain
     # visible at the same station, while separate traces prevent interpolation.
 
+    if joint_stations:
+        fig.add_trace(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode="lines",
+                name="Physical joint — REVIEW",
+                legendgroup="crossbeam_physical_joint",
+                line={"color": "#f59e0b", "width": 1.2, "dash": "dot"},
+                hoverinfo="skip",
+            )
+        )
     for index, station in enumerate(joint_stations, start=1):
-        side_rows = joint_side_df[
-            (pd.to_numeric(joint_side_df.get("Joint station s (m)"), errors="coerce") - station).abs() <= 1.0e-7
-        ] if not joint_side_df.empty else pd.DataFrame()
-        demand_values = pd.to_numeric(side_rows.get("T kN-m"), errors="coerce").dropna() if not side_rows.empty else pd.Series(dtype=float)
-        if not demand_values.empty:
-            y_marker = float(demand_values.mean())
-        else:
-            guard_values = pd.to_numeric(
-                result_df.loc[
-                    (result_df.get("Location type", pd.Series(dtype=object)).astype(str) == "PHYSICAL SEGMENT JOINT")
-                    & ((pd.to_numeric(result_df.get("Station s (m)"), errors="coerce") - station).abs() <= 1.0e-7),
-                    "T kN-m",
-                ],
-                errors="coerce",
-            ).dropna()
-            y_marker = float(guard_values.mean()) if not guard_values.empty else 0.0
-        fig.add_trace(go.Scatter(x=[station], y=[y_marker], mode="markers", name="Physical joint — REVIEW", showlegend=index == 1, legendgroup="crossbeam_physical_joint", marker={"size": 9, "symbol": "x-open", "color": "#f59e0b", "line": {"width": 1.5}}, hovertemplate=f"J{index} · s={station:.3f} m<br>Left/right one-sided values plotted separately<br>Joint transfer: REVIEW<extra></extra>"))
         fig.add_vline(x=station, line={"color": "#f59e0b", "width": 1.2, "dash": "dot"}, layer="above")
+        fig.add_annotation(
+            x=station,
+            y=0.985,
+            xref="x",
+            yref="paper",
+            text=f"J{index} REVIEW",
+            showarrow=False,
+            textangle=-90,
+            font={"size": 8, "color": "#b45309"},
+        )
+
+    for segment in segments:
+        fig.add_annotation(
+            x=0.5 * (float(segment["start"]) + float(segment["end"])),
+            y=1.04,
+            xref="x",
+            yref="paper",
+            text=str(segment["Segment"]),
+            showarrow=False,
+            font={"size": 9, "color": "#64748b"},
+        )
 
     decision = result_df[
         (result_df.get("Location type", pd.Series(dtype=object)).astype(str) != "PHYSICAL SEGMENT JOINT")
@@ -22658,14 +22886,53 @@ def _make_crossbeam_uls_torsion_figure(
     ].copy()
     decision["__strength_dc"] = pd.to_numeric(decision.get("Strength D/C value"), errors="coerce")
     if decision["__strength_dc"].notna().any():
-        gov = decision.loc[decision["__strength_dc"].idxmax()]
-        strength_dc = _beam_uls_float(gov.get("Strength D/C value"))
-        fig.add_trace(go.Scatter(x=[gov.get("Station s (m)")], y=[gov.get("T kN-m")], mode="markers+text", text=[f"Gov. Tu/φTn {strength_dc:.3f}"], textposition="top center", name="Gov. Tu/φTn", marker={"size": 9, "symbol": "diamond", "color": "#111827"}, hovertemplate="x=%{x:.3f} m<br>Tu=%{y:.3f} kN-m" + f"<br>Tu/φTn={strength_dc:.3f}<extra></extra>"))
+        gov_strength = decision.loc[decision["__strength_dc"].idxmax()]
+        strength_dc = _beam_uls_float(gov_strength.get("Strength D/C value"))
+        fig.add_trace(
+            go.Scatter(
+                x=[gov_strength.get("Station s (m)")],
+                y=[gov_strength.get("T kN-m")],
+                mode="markers+text",
+                text=[f"Gov. torsional strength {strength_dc:.3f}"],
+                textposition="top center",
+                name="Gov. torsional-strength D/C",
+                marker={"size": 9, "symbol": "diamond", "color": "#111827"},
+                hovertemplate="x=%{x:.3f} m<br>Tu=%{y:.3f} kN-m" + f"<br>Tu/φTn={strength_dc:.3f}<extra></extra>",
+            )
+        )
+
+    decision["__overall_dc"] = pd.to_numeric(decision.get("Governing D/C value"), errors="coerce")
+    if decision["__overall_dc"].notna().any():
+        gov_overall = decision.loc[decision["__overall_dc"].idxmax()]
+        summary = _crossbeam_governing_component_summary(gov_overall, combined=False)
+        overall_dc = _beam_uls_float(summary.get("dc"))
+        status_word = "FAIL" if math.isfinite(overall_dc) and overall_dc > 1.0 + 1.0e-9 else "PASS"
+        fig.add_annotation(
+            x=0.01,
+            y=0.98,
+            xref="paper",
+            yref="paper",
+            xanchor="left",
+            yanchor="top",
+            align="left",
+            text=(
+                f"<b>{status_word} — {summary.get('label')}</b><br>"
+                f"D/C = {overall_dc:.3f} · Required {summary.get('required')} · Provided {summary.get('provided')}"
+                if math.isfinite(overall_dc)
+                else f"<b>REVIEW — {summary.get('label')}</b>"
+            ),
+            showarrow=False,
+            bgcolor="rgba(254,226,226,0.90)" if status_word == "FAIL" else "rgba(220,252,231,0.90)",
+            bordercolor="#ef4444" if status_word == "FAIL" else "#16a34a",
+            borderwidth=1,
+            font={"size": 9, "color": "#7f1d1d" if status_word == "FAIL" else "#166534"},
+        )
 
     y_range = _crossbeam_torsion_symmetric_y_range(result_df)
     fig.update_layout(
-        title="Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · complete Segment-owned Tu + step capacities · support footprints omitted</sup>",
+        title="Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · Segment-owned Tu and step capacities · support interiors omitted; face/h/2 checks shown</sup>",
         yaxis={"range": y_range} if y_range is not None else {},
+        margin=dict(l=82, r=42, t=105, b=116),
     )
     return fig
 
@@ -22688,16 +22955,32 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
 
     preparation = build_crossbeam_uls_torsion_preparation(st.session_state)
     demand_df = _crossbeam_uls_demand_dataframe(preparation)
-    generated_support_count = sum(bool(getattr(row, "generated_support_check", False)) for row in preparation.rows)
-    generated_joint_side_count = sum(bool(getattr(row, "generated_joint_side_check", False)) for row in preparation.rows)
-    joint_guard_count = sum(str(getattr(row, "location_type", "") or "") == "PHYSICAL SEGMENT JOINT" for row in preparation.rows)
+    generated_joint_side_count = sum(
+        bool(getattr(row, "generated_joint_side_check", False)) for row in preparation.rows
+    )
+    joint_guard_count = sum(
+        str(getattr(row, "location_type", "") or "") == "PHYSICAL SEGMENT JOINT"
+        for row in preparation.rows
+    )
+    retained_source_count = sum(
+        not bool(getattr(row, "generated_support_check", False))
+        and not bool(getattr(row, "generated_joint_side_check", False))
+        and str(getattr(row, "location_type", "") or "") != "PHYSICAL SEGMENT JOINT"
+        for row in preparation.rows
+    )
+    generated_support_count = sum(
+        bool(getattr(row, "generated_support_check", False))
+        and not bool(getattr(row, "generated_joint_side_check", False))
+        and str(getattr(row, "location_type", "") or "") != "PHYSICAL SEGMENT JOINT"
+        for row in preparation.rows
+    )
+    sectional_check_count = retained_source_count + generated_support_count
     joint_review_count = len({
         round(float(getattr(row, "joint_station_m")), 9)
         for row in preparation.rows
         if bool(getattr(row, "generated_joint_side_check", False))
         and getattr(row, "joint_station_m", None) is not None
     }) or joint_guard_count
-    eligible_count = len(preparation.rows) - joint_guard_count
     cached = st.session_state.get(CROSSBEAM_ULS_TORSION_RESULT_KEY)
     cached_hash = str(st.session_state.get(CROSSBEAM_ULS_TORSION_RESULT_HASH_KEY) or "")
     cache_current = isinstance(cached, Mapping) and cached_hash == preparation.fingerprint
@@ -22707,9 +22990,9 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
         if preparation.ready:
             st.success(
                 f"ULS Torsion source ready — {len(preparation.demand_rows):,} active station-force row(s) produce "
-                f"{len(preparation.rows) - generated_support_count - generated_joint_side_count:,} retained source row(s) + {generated_support_count:,} generated support row(s) "
-                f"+ {generated_joint_side_count:,} one-sided joint row(s) = {len(preparation.rows):,} total calculation row(s); "
-                f"{eligible_count:,} eligible sectional check(s) and {joint_review_count:,} physical-joint review location(s)."
+                f"{retained_source_count:,} retained section row(s) + {generated_support_count:,} generated support row(s) "
+                f"+ {generated_joint_side_count:,} one-sided joint audit row(s) = {len(preparation.rows):,} total calculation row(s); "
+                f"{sectional_check_count:,} sectional decision check(s) and {joint_review_count:,} physical-joint review location(s)."
             )
         else:
             st.error("ULS Torsion source blocked — resolve the Loads, Section/Rebar, Tendon, Effective Prestress, or Column/Support source below.")
@@ -22741,9 +23024,9 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
     _render_analysis_summary_strip(
         [
             {"title": "ULS source", "value": "READY" if preparation.ready else "SOURCE BLOCKED", "detail": f"{len(preparation.demand_rows):,} active station-force row(s)", "status": "ready" if preparation.ready else "danger", "strong": True},
-            {"title": "Total check rows", "value": f"{len(preparation.rows):,}", "detail": f"{len(preparation.rows) - generated_support_count:,} retained + {generated_support_count:,} generated support", "status": "info"},
-            {"title": "Eligible sectional checks", "value": f"{eligible_count:,}", "detail": f"{joint_review_count:,} physical-joint review location(s)", "status": "ready" if preparation.ready else "neutral"},
-            {"title": "Generated support checks", "value": f"{generated_support_count:,}", "detail": "Conservative face screens + ACI h/2 sections", "status": "neutral"},
+            {"title": "Sectional decision checks", "value": f"{sectional_check_count:,}", "detail": f"{retained_source_count:,} retained + {generated_support_count:,} generated support", "status": "ready" if preparation.ready else "neutral"},
+            {"title": "Joint-side audit rows", "value": f"{generated_joint_side_count:,}", "detail": f"{joint_review_count:,} physical-joint review location(s)", "status": "warning" if generated_joint_side_count else "neutral"},
+            {"title": "Total calculation rows", "value": f"{len(preparation.rows):,}", "detail": "Section checks + one-sided joint audit", "status": "info"},
         ],
         columns=4,
     )
@@ -22763,38 +23046,110 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
     sectional_status = str(result.get("sectional_status") or result.get("status") or "REVIEW")
     sectional_style = "danger" if sectional_status == "FAIL" else ("ready" if sectional_status in {"PASS", "BELOW THRESHOLD"} else "warning")
     governing_dc = _beam_uls_float(governing.get("Governing D/C value")) if governing else float("nan")
+    decision_summary = _crossbeam_governing_component_summary(governing, combined=False)
+    decision_dc = _beam_uls_float(decision_summary.get("dc"))
     _render_analysis_summary_strip(
         [
             {
                 "title": "Standalone torsion",
                 "value": sectional_status,
-                "detail": (
-                    "Component check; Combined V+T closure pending"
-                    if bool(result.get("combined_review_required"))
-                    else f"{int(result.get('sectional_checks') or 0):,} eligible ACI 318-19 torsion check(s)"
-                ),
+                "detail": f"{int(result.get('design_required_checks') or 0):,} design check(s) · {int(result.get('below_threshold_checks') or 0):,} below φTth",
                 "status": sectional_style,
                 "strong": True,
             },
-            {"title": "Governing standalone D/C", "value": "-" if not math.isfinite(governing_dc) else f"{governing_dc:.3f}", "detail": "-" if governing is None else f"{governing.get('Case')} @ s={_format_beam_uls_x(governing.get('Station s (m)'))}", "status": "info"},
-            {"title": "Threshold routing", "value": f"{int(result.get('design_required_checks') or 0):,} DESIGN", "detail": f"{int(result.get('below_threshold_checks') or 0):,} below φTth", "status": "info"},
-            {"title": "Physical joint review", "value": "REVIEW REQUIRED" if int(result.get('joint_review_count') or 0) else "NONE", "detail": f"{int(result.get('joint_review_count') or 0):,} joint location(s) outside sectional scope", "status": "warning" if int(result.get('joint_review_count') or 0) else "ready"},
+            {
+                "title": "Governing check",
+                "value": str(decision_summary.get("label") or "-"),
+                "detail": str(decision_summary.get("code") or "-"),
+                "status": "danger" if sectional_status == "FAIL" else ("warning" if sectional_status == "REVIEW" else "info"),
+            },
+            {
+                "title": "Governing D/C",
+                "value": "-" if not math.isfinite(decision_dc) else f"{decision_dc:.3f}",
+                "detail": "-" if governing is None else f"{governing.get('Case')} · {governing.get('Segment')} @ s={_format_beam_uls_x(governing.get('Station s (m)'))}",
+                "status": "danger" if math.isfinite(decision_dc) and decision_dc > 1.0 + 1.0e-9 else "info",
+            },
+            {
+                "title": "Required action",
+                "value": "REVISE" if sectional_status == "FAIL" else ("REVIEW" if sectional_status == "REVIEW" else "NONE"),
+                "detail": str(decision_summary.get("action") or "Review the controlling check."),
+                "status": "danger" if sectional_status == "FAIL" else ("warning" if sectional_status == "REVIEW" else "ready"),
+            },
+            {"title": "Required", "value": str(decision_summary.get("required") or "-"), "detail": str(decision_summary.get("label") or ""), "status": "info"},
+            {"title": "Provided", "value": str(decision_summary.get("provided") or "-"), "detail": "Adopted verified reinforcement / capacity source", "status": "info"},
+            {"title": "Shortfall", "value": str(decision_summary.get("shortfall") or "-"), "detail": "Zero or dash means no numeric area shortfall", "status": "danger" if sectional_status == "FAIL" else "neutral"},
+            {"title": "Physical joint transfer", "value": "REVIEW REQUIRED" if int(result.get('joint_review_count') or 0) else "NONE", "detail": f"{int(result.get('joint_review_count') or 0):,} joint location(s) outside sectional scope", "status": "warning" if int(result.get('joint_review_count') or 0) else "ready"},
         ],
         columns=4,
     )
 
+    if governing is not None:
+        strength_dc = _beam_uls_float(governing.get("Strength D/C value"))
+        transverse_dc = _beam_uls_float(governing.get("Transverse D/C value"))
+        longitudinal_dc = _beam_uls_float(governing.get("Longitudinal D/C value"))
+        section_dc = _beam_uls_float(governing.get("Section limit D/C value"))
+        decision_rows = [
+            {
+                "Check": "Torsional strength Tu / φTn",
+                "Status": str(governing.get("Strength status") or ("PASS" if math.isfinite(strength_dc) and strength_dc <= 1.0 else "FAIL")),
+                "Required": f"Tu = {_beam_uls_float(governing.get('T kN-m')):,.1f} kN·m",
+                "Provided": f"φTn = {_beam_uls_float(governing.get('phiTn kN-m')):,.1f} kN·m",
+                "D/C": "-" if not math.isfinite(strength_dc) else f"{strength_dc:.3f}",
+                "Required action": "Increase verified At/cage capacity only if this D/C exceeds 1.0.",
+            },
+            {
+                "Check": "Transverse torsion reinforcement At",
+                "Status": str(governing.get("Transverse status") or "REVIEW"),
+                "Required": _crossbeam_format_ratio_area(governing.get("At/s required mm2/mm")),
+                "Provided": _crossbeam_format_ratio_area(governing.get("At/s mm2/mm")),
+                "D/C": "-" if not math.isfinite(transverse_dc) else f"{transverse_dc:.3f}",
+                "Required action": "Increase cage bar area or reduce spacing only if this gate fails.",
+            },
+            {
+                "Check": "Minimum longitudinal torsion reinforcement Aℓ",
+                "Status": str(governing.get("Longitudinal status") or "REVIEW"),
+                "Required": _crossbeam_format_area(governing.get("Al required mm2", governing.get("Al minimum mm2"))),
+                "Provided": _crossbeam_format_area(governing.get("Al provided mm2")),
+                "D/C": "-" if not math.isfinite(longitudinal_dc) else f"{longitudinal_dc:.3f}",
+                "Required action": "Increase developed outer-cage-associated bars; Aℓ remains a subset of physical As.",
+            },
+            {
+                "Check": "Section-size interaction",
+                "Status": str(governing.get("Section limit status") or "REVIEW"),
+                "Required": "Combined shear/torsion stress",
+                "Provided": "ACI 22.7.7 limit",
+                "D/C": "-" if not math.isfinite(section_dc) else f"{section_dc:.3f}",
+                "Required action": "Increase section/web dimensions only if this gate fails.",
+            },
+            {
+                "Check": "Physical-joint torsion transfer",
+                "Status": "REVIEW REQUIRED" if int(result.get("joint_review_count") or 0) else "NONE",
+                "Required": "Keys/interface/anchorage verification",
+                "Provided": "Not certified by sectional route",
+                "D/C": "-",
+                "Required action": "Verify one-sided transfer and joint detailing separately.",
+            },
+        ]
+        st.markdown("#### Why this result")
+        st.table(pd.DataFrame(decision_rows))
+
     review_reasons: list[str] = []
     if bool(result.get("combined_review_required")):
         review_reasons.append(
-            "Combined V+T must close additive transverse reinforcement and ACI 9.5.4.4 flexure-plus-Al interaction"
+            "the dedicated Shear + Torsion workspace must close concurrent transverse reinforcement and ACI 9.5.4.4 longitudinal interaction"
         )
     if int(result.get("joint_review_count") or 0):
         review_reasons.append("physical-joint torsion transfer requires separate verification")
-    if review_reasons:
+    if sectional_status == "FAIL":
         st.caption(
-            "Overall module state remains REVIEW until "
+            f"Standalone sectional result is FAIL because {decision_summary.get('label')}. "
+            + ("Additional review remains: " + "; and ".join(review_reasons) + "." if review_reasons else "")
+        )
+    elif review_reasons:
+        st.caption(
+            "Standalone sectional result is reported above; overall adoption remains REVIEW because "
             + "; and ".join(review_reasons)
-            + ". The standalone ACI torsion component result and governing D/C are reported independently above."
+            + "."
         )
 
     if not result_df.empty:
@@ -22805,8 +23160,8 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
                 st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY, []),
             ),
             caption=(
-                "Signed Tu is plotted at every available station and terminates only at Column/Support footprints. Adjacent Segment traces terminate and restart at each physical joint using the recovered left/right one-sided Tu values, without interpolating one side into the other. ±φTth and ±φTn are horizontal Segment-owned step capacities; Solid/Hollow boundaries are never linearly interpolated. "
-                "Every physical joint plots separate one-sided left/right values. The black marker reports Tu/φTn only; longitudinal Al and section-limit utilization remain in the cards/tables and Combined V+T remains separate."
+                "Signed Tu is plotted at every available station and stops at Column/Support interiors. Segment-owned demand and the horizontal ±φTth / ±φTn capacities terminate at every physical joint; one-sided s−/s+ demand and capacities remain separate and are never interpolated through the joint. "
+                "The black diamond reports torsional-strength Tu/φTn only. The decision annotation and Why this result table identify the actual overall controlling check, including minimum longitudinal Aℓ when it governs."
             ),
         )
         support_df = result_df[result_df.get("Generated support check", False).astype(bool)].copy() if "Generated support check" in result_df else pd.DataFrame()
@@ -22814,7 +23169,7 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
         compact_columns = ["Status", "Check Point", "Station s (m)", "Demand source", "T kN-m", "phiTth kN-m", "phiTn kN-m", "Strength D/C value", "Longitudinal D/C value", "Section limit D/C value"]
         if not support_df.empty:
             st.markdown("#### Support-face / h/2 checks")
-            st.dataframe(support_df[[column for column in compact_columns if column in support_df]].rename(columns={"Demand source": "Source", "phiTth kN-m": "φTth kN-m", "phiTn kN-m": "φTn kN-m", "Strength D/C value": "Strength D/C", "Longitudinal D/C value": "Al D/C", "Section limit D/C value": "Section-limit D/C"}), use_container_width=True, hide_index=True)
+            st.table(support_df[[column for column in compact_columns if column in support_df]].rename(columns={"Demand source": "Source", "phiTth kN-m": "φTth kN-m", "phiTn kN-m": "φTn kN-m", "Strength D/C value": "Strength D/C", "Longitudinal D/C value": "Aℓ D/C", "Section limit D/C value": "Section-limit D/C"}))
         if not joint_side_df.empty:
             st.markdown("#### Physical joint one-sided capacities")
             joint_columns = [
@@ -22865,31 +23220,41 @@ def _crossbeam_combined_vt_plot_groups(
     result_df: pd.DataFrame,
     support_footprints: list[Mapping[str, object]],
 ) -> list[pd.DataFrame]:
-    """Split V+T utilization traces at Segment changes and support interiors."""
+    """Split imported V+T utilization traces by Segment and support interior.
+
+    Generated Column Face / h/2 rows are plotted with dedicated markers rather
+    than being connected into the imported station lines. Physical-joint rows
+    remain a separate one-sided audit source.
+    """
 
     if result_df is None or result_df.empty:
         return []
     frame = result_df.copy()
-    frame = frame[frame.get("Station type", pd.Series(index=frame.index, dtype=object)).astype(str) != "PHYSICAL JOINT SIDE"]
+    frame = frame[
+        frame.get("Station type", pd.Series(index=frame.index, dtype=object)).astype(str)
+        != "PHYSICAL JOINT SIDE"
+    ]
+    if "Generated support check" in frame:
+        frame = frame[~frame["Generated support check"].map(lambda value: bool(value) if pd.notna(value) else False)].copy()
     frame["__x"] = pd.to_numeric(frame.get("Station s (m)"), errors="coerce")
     frame = frame[frame["__x"].notna()].copy()
     if frame.empty:
         return []
-    footprints: list[tuple[float, float]] = []
-    for item in support_footprints:
-        x0 = _beam_uls_float(item.get("s_start_m", item.get("x0_m")))
-        x1 = _beam_uls_float(item.get("s_end_m", item.get("x1_m")))
-        if math.isfinite(x0) and math.isfinite(x1):
-            footprints.append((min(x0, x1), max(x0, x1)))
 
+    footprints = [
+        bounds for item in support_footprints
+        if (bounds := _crossbeam_support_bounds(item)) is not None
+    ]
     groups: list[pd.DataFrame] = []
-    for (_case, _segment), segment_df in frame.sort_values(["Case", "Segment", "__x"], kind="stable").groupby(["Case", "Segment"], sort=False):
+    for (_case, _segment), segment_df in frame.sort_values(
+        ["Case", "Segment", "__x"], kind="stable"
+    ).groupby(["Case", "Segment"], sort=False):
         current: list[int] = []
         previous_x: float | None = None
         for index, row in segment_df.iterrows():
             x = float(row["__x"])
             crosses_support = previous_x is not None and any(
-                previous_x < right - 1.0e-9 and x > left + 1.0e-9
+                previous_x <= left + 1.0e-9 and x >= right - 1.0e-9
                 for left, right in footprints
             )
             if crosses_support and current:
@@ -22907,9 +23272,10 @@ def _make_crossbeam_uls_combined_vt_figure(
     support_footprints: list[Mapping[str, object]],
     segment_rows: object,
 ) -> go.Figure:
-    """Return the shared engineering utilization chart for Crossbeam V+T."""
+    """Return the Crossbeam decision-first V+T utilization chart."""
 
     fig = go.Figure()
+    segments = _crossbeam_segment_records(segment_rows)
     groups = _crossbeam_combined_vt_plot_groups(result_df, support_footprints)
     trace_specs = [
         ("Stress D/C", "Stress D/C value"),
@@ -22919,21 +23285,33 @@ def _make_crossbeam_uls_combined_vt_figure(
     legend_seen: set[str] = set()
     for group in groups:
         x = pd.to_numeric(group["__x"], errors="coerce")
+        custom_frame = pd.DataFrame(
+            {
+                "Case": group.get("Case", pd.Series("ULS", index=group.index)).astype(str),
+                "Segment": group.get("Segment", pd.Series("", index=group.index)).astype(str),
+                "Check Point": group.get("Check Point", pd.Series("", index=group.index)).astype(str),
+                "Status": group.get("Status", pd.Series("", index=group.index)).astype(str),
+            }
+        )
         for label, column in trace_specs:
             values = pd.to_numeric(group.get(column), errors="coerce")
-            if not values.notna().any():
+            valid = x.notna() & values.notna()
+            if not valid.any():
                 continue
             fig.add_trace(
                 go.Scatter(
-                    x=x,
-                    y=values,
+                    x=x[valid],
+                    y=values[valid],
                     mode="lines+markers",
                     name=label,
                     legendgroup=column,
                     showlegend=label not in legend_seen,
-                    line=dict(_BEAM_ULS_UTIL_LINE_STYLE[column]),
+                    line={
+                        **dict(_BEAM_ULS_UTIL_LINE_STYLE[column]),
+                        **({"shape": "hv"} if column == "Longitudinal D/C value" else {}),
+                    },
                     marker=dict(_BEAM_ULS_UTIL_MARKER_STYLE[column]),
-                    customdata=group[["Case", "Segment", "Check Point", "Status"]].to_numpy(),
+                    customdata=custom_frame.loc[valid].to_numpy(),
                     hovertemplate=(
                         f"{label}<br>s=%{{x:.3f}} m<br>D/C=%{{y:.3f}}<br>"
                         "Case=%{customdata[0]}<br>Segment=%{customdata[1]}<br>"
@@ -22957,59 +23335,218 @@ def _make_crossbeam_uls_combined_vt_figure(
         )
     )
 
-    sectional = result_df[result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str) != "PHYSICAL JOINT SIDE"].copy()
-    sectional["__dc"] = pd.to_numeric(sectional.get("Overall D/C value"), errors="coerce")
-    if sectional["__dc"].notna().any():
-        governing = sectional.loc[sectional["__dc"].idxmax()]
-        fig.add_trace(
-            go.Scatter(
-                x=[_beam_uls_float(governing.get("Station s (m)"))],
-                y=[_beam_uls_float(governing.get("Overall D/C value"))],
-                mode="markers+text",
-                text=[f"Gov. V+T {_beam_uls_float(governing.get('Overall D/C value')):.3f}"],
-                textposition="top center",
-                name="Gov. V+T",
-                marker={"symbol": "diamond", "size": 12, "color": "#111827", "line": {"color": "#ffffff", "width": 1.5}},
-                hovertemplate="s=%{x:.3f} m<br>Governing D/C=%{y:.3f}<extra></extra>",
+    # Support footprints and generated critical-section evidence.
+    for item in support_footprints:
+        bounds = _crossbeam_support_bounds(item)
+        if bounds is None:
+            continue
+        left, right = bounds
+        support_id = str(item.get("Column") or "Support")
+        fig.add_vrect(
+            x0=left,
+            x1=right,
+            fillcolor="rgba(100,116,139,0.10)",
+            line_width=0,
+            layer="below",
+        )
+        for face, side_label in ((left, "L"), (right, "R")):
+            fig.add_vline(
+                x=face,
+                line={"color": "rgba(71,85,105,0.70)", "width": 1.1},
+                layer="above",
+            )
+            fig.add_annotation(
+                x=face,
+                y=1.005,
+                xref="x",
+                yref="paper",
+                text=f"{support_id}-{side_label}",
+                showarrow=False,
+                font={"size": 8, "color": "#475569"},
+            )
+
+    support_rows = result_df[
+        result_df.get("Generated support check", pd.Series(False, index=result_df.index))
+        .map(lambda value: bool(value) if pd.notna(value) else False)
+        & (
+            result_df.get("Station type", pd.Series("", index=result_df.index)).astype(str)
+            != "PHYSICAL JOINT SIDE"
+        )
+    ].copy()
+    if not support_rows.empty:
+        for location, name, symbol in (
+            ("COLUMN FACE", "Column Face combined check", "circle-open"),
+            ("ACI h/2 CRITICAL SECTION", "ACI h/2 combined check", "diamond-open"),
+        ):
+            data = support_rows[
+                support_rows.get("Requested location type", pd.Series("", index=support_rows.index)).astype(str)
+                == location
+            ].copy()
+            x_values = pd.to_numeric(data.get("Station s (m)"), errors="coerce")
+            y_values = pd.to_numeric(data.get("Overall D/C value"), errors="coerce")
+            valid = x_values.notna() & y_values.notna()
+            if valid.any():
+                custom = data.loc[valid, [
+                    column for column in (
+                        "Check Point", "Status", "Stress D/C value",
+                        "Transverse D/C value", "Longitudinal D/C value",
+                    ) if column in data
+                ]].to_numpy()
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_values[valid],
+                        y=y_values[valid],
+                        mode="markers",
+                        name=name,
+                        marker={
+                            "size": 10,
+                            "symbol": symbol,
+                            "color": "#111827",
+                            "line": {"width": 1.6, "color": "#111827"},
+                        },
+                        customdata=custom,
+                        hovertemplate=(
+                            "s=%{x:.3f} m<br>Overall D/C=%{y:.3f}"
+                            "<br>Check=%{customdata[0]}<br>Status=%{customdata[1]}"
+                            "<br>Stress=%{customdata[2]:.3f}"
+                            "<br>Transverse=%{customdata[3]:.3f}"
+                            "<br>Longitudinal=%{customdata[4]:.3f}<extra></extra>"
+                        ),
+                    )
+                )
+            if location == "ACI h/2 CRITICAL SECTION":
+                for station in x_values.dropna().astype(float):
+                    fig.add_vline(
+                        x=station,
+                        line={"color": "rgba(59,130,246,0.42)", "width": 1.0, "dash": "dot"},
+                        layer="below",
+                    )
+
+    joint_rows = result_df[
+        result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str)
+        == "PHYSICAL JOINT SIDE"
+    ].copy()
+    joint_stations = _crossbeam_joint_stations_from_segments(segment_rows)
+    if not joint_stations and not joint_rows.empty:
+        joint_stations = sorted(
+            set(
+                pd.to_numeric(joint_rows.get("Joint station s (m)"), errors="coerce")
+                .dropna()
+                .astype(float)
             )
         )
-
-    joint_rows = result_df[result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str) == "PHYSICAL JOINT SIDE"].copy()
-    joint_stations = sorted(set(pd.to_numeric(joint_rows.get("Joint station s (m)"), errors="coerce").dropna().astype(float))) if not joint_rows.empty else []
-    for index, station in enumerate(joint_stations):
-        fig.add_vline(x=station, line={"color": "#f59e0b", "width": 1.2, "dash": "dot"}, layer="above")
+    if joint_stations:
+        fig.add_trace(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode="lines",
+                name="Physical joint — REVIEW",
+                line={"color": "#f59e0b", "width": 1.2, "dash": "dot"},
+                hoverinfo="skip",
+            )
+        )
+    for index, station in enumerate(joint_stations, start=1):
+        fig.add_vline(
+            x=station,
+            line={"color": "#f59e0b", "width": 1.2, "dash": "dot"},
+            layer="above",
+        )
         fig.add_annotation(
             x=station,
-            y=1.02,
+            y=0.985,
             xref="x",
             yref="paper",
-            text="JOINT REVIEW",
+            text=f"J{index} REVIEW",
             showarrow=False,
             textangle=-90,
             font={"size": 8, "color": "#b45309"},
         )
 
-    for item in support_footprints:
-        x0 = _beam_uls_float(item.get("s_start_m", item.get("x0_m")))
-        x1 = _beam_uls_float(item.get("s_end_m", item.get("x1_m")))
-        if math.isfinite(x0) and math.isfinite(x1):
-            fig.add_vrect(x0=min(x0, x1), x1=max(x0, x1), fillcolor="rgba(100,116,139,0.10)", line_width=0, layer="below")
+    for segment in segments:
+        fig.add_annotation(
+            x=0.5 * (float(segment["start"]) + float(segment["end"])),
+            y=1.045,
+            xref="x",
+            yref="paper",
+            text=str(segment["Segment"]),
+            showarrow=False,
+            font={"size": 9, "color": "#64748b"},
+        )
 
+    sectional = result_df[
+        result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str)
+        != "PHYSICAL JOINT SIDE"
+    ].copy()
+    sectional["__dc"] = pd.to_numeric(sectional.get("Overall D/C value"), errors="coerce")
+    if sectional["__dc"].notna().any():
+        governing = sectional.loc[sectional["__dc"].idxmax()]
+        summary = _crossbeam_governing_component_summary(governing, combined=True)
+        governing_dc = _beam_uls_float(summary.get("dc"))
+        station = _beam_uls_float(governing.get("Station s (m)"))
+        label = str(summary.get("short_label") or "V+T D/C")
+        fig.add_trace(
+            go.Scatter(
+                x=[station],
+                y=[governing_dc],
+                mode="markers+text",
+                text=[f"Gov. {label} {governing_dc:.3f}"],
+                textposition="top center",
+                name=f"Gov. {label}",
+                marker={
+                    "symbol": "diamond",
+                    "size": 12,
+                    "color": "#111827",
+                    "line": {"color": "#ffffff", "width": 1.5},
+                },
+                hovertemplate=(
+                    f"{summary.get('label')}<br>s=%{{x:.3f}} m<br>D/C=%{{y:.3f}}"
+                    f"<br>Required={summary.get('required')}<br>Provided={summary.get('provided')}<extra></extra>"
+                ),
+            )
+        )
+        status_word = "FAIL" if math.isfinite(governing_dc) and governing_dc > 1.0 + 1.0e-9 else "PASS"
+        fig.add_annotation(
+            x=0.01,
+            y=0.98,
+            xref="paper",
+            yref="paper",
+            xanchor="left",
+            yanchor="top",
+            align="left",
+            text=(
+                f"<b>{status_word} — {summary.get('label')}</b><br>"
+                f"Required {summary.get('required')} · Provided {summary.get('provided')} · Shortfall {summary.get('shortfall')}"
+            ),
+            showarrow=False,
+            bgcolor="rgba(254,226,226,0.90)" if status_word == "FAIL" else "rgba(220,252,231,0.90)",
+            bordercolor="#ef4444" if status_word == "FAIL" else "#16a34a",
+            borderwidth=1,
+            font={"size": 9, "color": "#7f1d1d" if status_word == "FAIL" else "#166534"},
+        )
+
+    finite_utilization: list[float] = []
+    for column in ("Stress D/C value", "Transverse D/C value", "Longitudinal D/C value", "Overall D/C value"):
+        values = pd.to_numeric(result_df.get(column), errors="coerce")
+        if values is not None:
+            finite_utilization.extend(
+                float(value) for value in values.dropna() if math.isfinite(float(value))
+            )
+    y_peak = max([1.0, *finite_utilization])
     fig.update_layout(
         title={
-            "text": "Combined Shear + Torsion — Strength ULS<br><sup>ACI 318-19 · concurrent row-coupled V2/T/M3 · support footprints omitted</sup>",
+            "text": "Combined Shear + Torsion — Utilization ULS<br><sup>ACI 318-19 · row-coupled V2/T/M3 · Segment-owned traces · support face/h/2 evidence shown</sup>",
             "x": 0.5,
             "xanchor": "center",
         },
         xaxis_title="Distance from left end of member (m)",
-        yaxis_title="Demand / Capacity ratio",
+        yaxis={"title": "Demand / Capacity ratio", "range": [0.0, 1.16 * y_peak]},
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="top", y=-0.22, xanchor="center", x=0.5),
-        margin=dict(l=82, r=42, t=86, b=116),
+        margin=dict(l=82, r=42, t=108, b=116),
         height=_BEAM_ULS_STATIC_FIG_HEIGHT,
     )
     return fig
-
 
 def _render_crossbeam_uls_combined_vt_workspace() -> None:
     """Render the on-demand ACI Crossbeam combined V+T adoption gate."""
@@ -23098,7 +23635,7 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
             {"title": "ULS source", "value": "READY" if preparation.ready else "SOURCE BLOCKED", "detail": f"{source_rows:,} active station-force row(s)", "status": "ready" if preparation.ready else "danger", "strong": True},
             {"title": "Section checks", "value": f"{sectional_source_count:,}", "detail": f"{generated_support_count:,} generated support checks", "status": "info"},
             {"title": "Physical joints", "value": "REVIEW REQUIRED" if joint_review_count else "NONE", "detail": f"{joint_review_count:,} joint location(s) · {joint_side_count:,} one-sided rows", "status": "warning" if joint_review_count else "ready"},
-            {"title": "Code route", "value": "ACI 9.5.4 / 22.7.7", "detail": "Unique transverse steel + direct longitudinal interaction", "status": "neutral"},
+            {"title": "Code route", "value": "ACI 9.5.4 / 9.6.4 / 22.7.7", "detail": "Combined transverse · minimum Aℓ · direct longitudinal interaction", "status": "neutral"},
         ],
         columns=4,
     )
@@ -23116,25 +23653,78 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
     sectional_status = str(result.get("sectional_status") or result.get("status") or "REVIEW")
     governing_dc = _beam_uls_float(governing.get("Overall D/C value")) if governing else float("nan")
     status_style = "danger" if sectional_status == "FAIL" else ("ready" if sectional_status == "PASS" else "warning")
-    governing_cause = "-"
-    if governing:
-        candidates = {
-            "Stress": _beam_uls_float(governing.get("Stress D/C value")),
-            "Transverse": _beam_uls_float(governing.get("Transverse D/C value")),
-            "Longitudinal": _beam_uls_float(governing.get("Longitudinal D/C value")),
-        }
-        finite = {key: value for key, value in candidates.items() if math.isfinite(value)}
-        if finite:
-            governing_cause = max(finite, key=finite.get)
+    decision_summary = _crossbeam_governing_component_summary(governing, combined=True)
+    decision_dc = _beam_uls_float(decision_summary.get("dc"))
     _render_analysis_summary_strip(
         [
             {"title": "Combined V+T", "value": sectional_status, "detail": f"{int(result.get('sectional_checks') or 0):,} eligible ACI station checks", "status": status_style, "strong": True},
-            {"title": "Governing D/C", "value": f"{governing_dc:.3f}" if math.isfinite(governing_dc) else "-", "detail": "-" if governing is None else f"{governing.get('Case')} @ s={_format_beam_uls_x(governing.get('Station s (m)'))}", "status": "danger" if sectional_status == "FAIL" else "info"},
-            {"title": "Governing component", "value": governing_cause.upper(), "detail": "Stress / transverse / longitudinal adoption", "status": "info"},
+            {"title": "Governing check", "value": str(decision_summary.get("label") or "-"), "detail": str(decision_summary.get("code") or "-"), "status": "danger" if sectional_status == "FAIL" else "info"},
+            {"title": "Governing D/C", "value": f"{decision_dc:.3f}" if math.isfinite(decision_dc) else "-", "detail": "-" if governing is None else f"{governing.get('Case')} · {governing.get('Segment')} @ s={_format_beam_uls_x(governing.get('Station s (m)'))}", "status": "danger" if math.isfinite(decision_dc) and decision_dc > 1.0 + 1.0e-9 else "info"},
+            {"title": "Required action", "value": "REVISE" if sectional_status == "FAIL" else ("REVIEW" if sectional_status == "REVIEW" else "NONE"), "detail": str(decision_summary.get("action") or "Review the controlling check."), "status": "danger" if sectional_status == "FAIL" else ("warning" if sectional_status == "REVIEW" else "ready")},
+            {"title": "Required", "value": str(decision_summary.get("required") or "-"), "detail": str(decision_summary.get("label") or ""), "status": "info"},
+            {"title": "Provided", "value": str(decision_summary.get("provided") or "-"), "detail": "Adopted verified source", "status": "info"},
+            {"title": "Shortfall", "value": str(decision_summary.get("shortfall") or "-"), "detail": "Zero or dash means no numeric area shortfall", "status": "danger" if sectional_status == "FAIL" else "neutral"},
             {"title": "Joint transfer", "value": "REVIEW REQUIRED" if int(result.get('joint_review_count') or 0) else "NONE", "detail": f"{int(result.get('joint_review_count') or 0):,} physical joint location(s)", "status": "warning" if int(result.get('joint_review_count') or 0) else "ready"},
         ],
         columns=4,
     )
+
+    if governing is not None:
+        stress_dc = _beam_uls_float(governing.get("Stress D/C value"))
+        transverse_dc = _beam_uls_float(governing.get("Transverse D/C value"))
+        longitudinal_dc = _beam_uls_float(governing.get("Longitudinal D/C value"))
+        al_min_dc = _beam_uls_float(governing.get("Al minimum D/C value"))
+        flexure_torsion_dc = _beam_uls_float(governing.get("Flexure+torsion D/C value"))
+        decision_rows = [
+            {
+                "Check": "Section-size interaction",
+                "Status": str(governing.get("Stress status") or "REVIEW"),
+                "Required": "Concurrent V/T stress",
+                "Provided": "ACI 22.7.7 limit",
+                "D/C": "-" if not math.isfinite(stress_dc) else f"{stress_dc:.3f}",
+                "Required action": "Increase section/web dimensions only if this gate fails.",
+            },
+            {
+                "Check": "Combined transverse reinforcement Av/s + 2At/s",
+                "Status": str(governing.get("Transverse status") or "REVIEW"),
+                "Required": _crossbeam_format_ratio_area(governing.get("(Av+2At)/s adopted required mm2/mm")),
+                "Provided": _crossbeam_format_ratio_area(governing.get("Unique transverse provided/s mm2/mm")),
+                "D/C": "-" if not math.isfinite(transverse_dc) else f"{transverse_dc:.3f}",
+                "Required action": "Increase the unique physical vertical-leg pool only if this gate fails.",
+            },
+            {
+                "Check": "Minimum longitudinal torsion reinforcement Aℓ",
+                "Status": "FAIL" if math.isfinite(al_min_dc) and al_min_dc > 1.0 + 1.0e-9 else ("PASS" if math.isfinite(al_min_dc) else "REVIEW"),
+                "Required": _crossbeam_format_area(governing.get("Al minimum required mm2")),
+                "Provided": _crossbeam_format_area(governing.get("Al provided mm2")),
+                "D/C": "-" if not math.isfinite(al_min_dc) else f"{al_min_dc:.3f}",
+                "Required action": "Increase developed outer-cage-associated bars; Aℓ is not additional duplicate As.",
+            },
+            {
+                "Check": "Direct flexure + torsional longitudinal tension",
+                "Status": str(governing.get("Flexure+torsion status") or "REVIEW"),
+                "Required": f"Mu = {_beam_uls_float(governing.get('M3 kN-m')):,.1f} kN·m",
+                "Provided": f"φMn = {_beam_uls_float(governing.get('Flexure+torsion phiMn kN-m')):,.1f} kN·m",
+                "D/C": "-" if not math.isfinite(flexure_torsion_dc) else f"{flexure_torsion_dc:.3f}",
+                "Required action": "Revise developed As/tendons or section only if this interaction fails.",
+            },
+            {
+                "Check": "Physical-joint V+T transfer",
+                "Status": "REVIEW REQUIRED" if int(result.get("joint_review_count") or 0) else "NONE",
+                "Required": "Keys/interface/anchorage verification",
+                "Provided": "Not certified by sectional route",
+                "D/C": "-",
+                "Required action": "Verify one-sided V/T transfer and joint detailing separately.",
+            },
+        ]
+        st.markdown("#### Why this result")
+        st.table(pd.DataFrame(decision_rows))
+
+    if sectional_status == "FAIL":
+        st.caption(
+            f"Combined sectional result is FAIL because {decision_summary.get('label')}. "
+            "Physical-joint transfer and torsion continuation/anchorage reviews remain separate from this numerical failure."
+        )
 
     if not result_df.empty:
         _render_beam_uls_static_plotly_figure(
@@ -23144,9 +23734,8 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
                 st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY, []),
             ),
             caption=(
-                "Combined V+T is plotted as utilization because Vu and Tu have different units. Stress D/C is the ACI 22.7.7 section-size interaction; "
-                "Transverse D/C compares required Av/s + 2At/s with the unique physical vertical-leg pool; additional cage legs are included once and shared cage legs are not duplicated; Longitudinal D/C governs minimum Al/perimeter detailing and the direct ACI 9.5.4.4 flexure-plus-torsional-tension check. "
-                "The red dashed line is D/C = 1.0. Physical-joint transfer remains REVIEW outside the sectional route."
+                "Combined V+T is plotted as utilization because Vu and Tu use different units. Stress D/C is the ACI 22.7.7 section-size interaction; Transverse D/C compares required Av/s + 2At/s with the unique physical vertical-leg pool; Longitudinal D/C is a Segment-owned step trace covering minimum Aℓ, perimeter detailing, and the direct ACI 9.5.4.4 flexure-plus-torsional-tension gate. "
+                "Shaded support footprints, Column Face circles, and ACI h/2 diamonds expose generated checks. Physical joints are shown as J1–Jn REVIEW lines with no artificial D/C value and no trace interpolation through the joint."
             ),
         )
         compact_columns = [
@@ -23154,9 +23743,20 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
             "V2 kN", "T kN-m", "M3 kN-m", "Stress D/C value", "Transverse D/C value",
             "Longitudinal D/C value", "Overall D/C value", "Ordinary rebar credit", "Development region",
         ]
-        sectional_df = result_df[result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str) != "PHYSICAL JOINT SIDE"].copy()
-        st.markdown("#### Combined station checks")
+        non_joint_mask = result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str) != "PHYSICAL JOINT SIDE"
+        support_mask = result_df.get("Generated support check", pd.Series(False, index=result_df.index)).fillna(False).astype(bool)
+        sectional_df = result_df[non_joint_mask & ~support_mask].copy()
+        support_df = result_df[non_joint_mask & support_mask].copy()
+        st.markdown("#### Imported / Segment station checks")
         st.dataframe(sectional_df[[column for column in compact_columns if column in sectional_df]], use_container_width=True, hide_index=True)
+        if not support_df.empty:
+            st.markdown("#### Column Face / ACI h/2 combined checks")
+            support_columns = [
+                "Status", "Check Point", "Station s (m)", "Requested location type", "Case", "Segment", "Section ID",
+                "Stress D/C value", "Transverse D/C value", "Longitudinal D/C value", "Overall D/C value",
+                "Torsion station development status", "Torsion support anchorage status",
+            ]
+            st.table(support_df[[column for column in support_columns if column in support_df]].rename(columns={"Requested location type": "Check type"}))
         joint_df = result_df[result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str) == "PHYSICAL JOINT SIDE"].copy()
         if not joint_df.empty:
             st.markdown("#### Physical joint one-sided audit")
