@@ -47,6 +47,7 @@ from concrete_pmm_pro.core.models import Rebar
 from concrete_pmm_pro.crossbeam.transverse import (
     transverse_bar_area_mm2,
     transverse_torsion_cage_record,
+    transverse_unique_steel_record,
 )
 from concrete_pmm_pro.geometry.summary import to_shapely_polygon
 
@@ -274,6 +275,9 @@ def _equivalent_hoop_geometry(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         "hollow_clearance_mm": hollow_wall_clearance,
         "hollow_clearance_required_mm": hollow_clearance_required,
         "hollow_clearance_dc": hollow_clearance_dc,
+        "cage_polygon": inset,
+        "cage_line": hoop_line,
+        "bt_mm": float(inset.bounds[2] - inset.bounds[0]),
     }
 
 
@@ -290,6 +294,8 @@ def _outer_longitudinal_review(
     *,
     spacing_transverse_mm: float,
     al_required_mm2: float,
+    cage_polygon: Polygon,
+    cage_line: LineString,
 ) -> dict[str, Any]:
     outer_bars = [bar for bar in row.rebars if str(bar.label or "").startswith("Outer:")]
     if not outer_bars:
@@ -331,8 +337,11 @@ def _outer_longitudinal_review(
             "notes": "Outer longitudinal bars do not have a valid rebar-material source.",
         }
 
-    outer_polygon = Polygon([(float(point.x), float(point.y)) for point in row.geometry.outer_polygon])
-    perimeter = LineString(outer_polygon.exterior.coords)
+    perimeter = cage_line
+    outside_cage = [
+        bar for bar in outer_bars
+        if not cage_polygon.buffer(1.0e-7).covers(Point(float(bar.x_mm), float(bar.y_mm)))
+    ]
     projected = sorted(float(perimeter.project(Point(float(bar.x_mm), float(bar.y_mm)))) for bar in outer_bars)
     perimeter_length = float(perimeter.length)
     gaps: list[float] = []
@@ -342,7 +351,7 @@ def _outer_longitudinal_review(
     max_spacing = max(gaps) if gaps else float("inf")
     spacing_dc = max_spacing / 300.0 if math.isfinite(max_spacing) else float("inf")
 
-    min_x, min_y, max_x, max_y = outer_polygon.bounds
+    min_x, min_y, max_x, max_y = cage_polygon.bounds
     cx = 0.5 * (min_x + max_x)
     cy = 0.5 * (min_y + max_y)
     quadrants = {
@@ -353,10 +362,12 @@ def _outer_longitudinal_review(
     diameter_required = max(0.042 * spacing_transverse_mm, 10.0)
     diameter_dc = diameter_required / max(min_diameter, 1.0e-12)
     area_dc = al_required_mm2 / provided_area if provided_area > 0.0 else float("inf")
-    status = "PASS" if max(area_dc, spacing_dc, diameter_dc, 4.0 / max(corner_coverage, 1)) <= 1.0 + 1.0e-9 else "FAIL"
+    association_dc = float("inf") if outside_cage else 0.0
+    status = "PASS" if max(area_dc, spacing_dc, diameter_dc, 4.0 / max(corner_coverage, 1), association_dc) <= 1.0 + 1.0e-9 else "FAIL"
     notes = (
-        f"Al credit uses {len(outer_bars)} active Outer longitudinal bar(s) only; "
-        f"max perimeter spacing = {max_spacing:.1f} mm and quadrant/corner coverage = {corner_coverage}/4."
+        f"Al credit uses {len(outer_bars)} active Outer longitudinal bar(s) associated with the verified cage; "
+        f"max spacing measured along the actual cage perimeter = {max_spacing:.1f} mm, "
+        f"quadrant/corner coverage = {corner_coverage}/4, and outside-cage bar centers = {len(outside_cage)}."
     )
     return {
         "status": status,
@@ -369,6 +380,8 @@ def _outer_longitudinal_review(
         "min_diameter_mm": min_diameter,
         "diameter_dc": diameter_dc,
         "corner_coverage": corner_coverage,
+        "outside_cage_count": len(outside_cage),
+        "association_dc": association_dc,
         "fy_min_mpa": min(fy_values),
         "notes": notes,
     }
@@ -740,6 +753,8 @@ def _torsion_result_for_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         row,
         spacing_transverse_mm=spacing,
         al_required_mm2=al_required,
+        cage_polygon=geometry["cage_polygon"],
+        cage_line=geometry["cage_line"],
     )
 
     tn_transverse = 2.0 * ao * at_per_s * fyt * cot_theta
@@ -753,11 +768,13 @@ def _torsion_result_for_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
     strength_dc = tu_nmm / phi_tn if phi_tn > 0.0 else float("inf")
     transverse_dc = at_req / at_per_s if at_per_s > 0.0 else float("inf")
 
-    # ACI 9.6.4.2 defines Av as the two side legs of a closed stirrup and At as
-    # one leg. Inner multi-leg shear bars are not credited in this torsion
-    # minimum-reinforcement expression.
-    av_side_per_s = 2.0 * at_per_s
-    combined_transverse_provided = av_side_per_s + 2.0 * at_per_s
+    # Use unique physical vertical legs.  A verified additional outer cage
+    # contributes two new side legs; a shared cage is already included in the
+    # base Av source and is never counted a second time.
+    steel = transverse_unique_steel_record(row.transverse_template or {})
+    base_av_per_s = float(steel["Base Av/s mm²/mm"])
+    additional_cage_av_per_s = float(steel["Additional cage shear legs/s mm²/mm"])
+    combined_transverse_provided = float(steel["Combined unique provided/s mm²/mm"])
     combined_transverse_min = _minimum_transverse_per_s(
         fc_mpa=fc,
         bw_mm=bw,
@@ -778,6 +795,7 @@ def _torsion_result_for_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         hollow_clearance_dc,
         float(longitudinal["spacing_dc"]),
         float(longitudinal["diameter_dc"]),
+        float(longitudinal.get("association_dc", 0.0)),
         corner_dc,
     )
 
@@ -849,7 +867,7 @@ def _torsion_result_for_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         str(longitudinal["notes"]),
         "Tu is treated as imported equilibrium demand; compatibility-torsion redistribution to phi*Tcr is not applied automatically.",
         "Standalone Al credit does not complete ACI 9.5.4.4 flexure-plus-torsion longitudinal interaction; the later Combined V+T milestone owns that final adoption.",
-        "The later Combined V+T milestone also owns additive shear-plus-torsion transverse reinforcement adoption.",
+        "The Combined V+T workspace owns allocation of the unique physical transverse-steel pool to concurrent shear and torsion demands.",
         *list(geometry.get("warnings") or []),
     ]
     if section_limit_status == "REVIEW":
@@ -885,11 +903,18 @@ def _torsion_result_for_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         "Aoh mm2": aoh,
         "Ao mm2": ao,
         "ph mm": ph,
+        "bt mm": float(geometry.get("bt_mm", float("nan"))),
         "Hoop offset mm": float(geometry["offset_mm"]),
+        "Torsion cage relationship": str(geometry.get("cage_relationship") or ""),
+        "Torsion cage source status": str(geometry.get("cage_source_status") or ""),
+        "Torsion cage closure": str(geometry.get("cage_closure") or ""),
         "At mm2": at,
         "At/s mm2/mm": at_per_s,
         "At/s required mm2/mm": at_req,
-        "Av side/s mm2/mm": av_side_per_s,
+        "Base Av/s mm2/mm": base_av_per_s,
+        "Additional cage Av/s mm2/mm": additional_cage_av_per_s,
+        "Unique transverse provided/s mm2/mm": combined_transverse_provided,
+        "Outer side legs/s provided mm2/mm": 2.0 * at_per_s,
         "(Av+2At)/s provided mm2/mm": combined_transverse_provided,
         "(Av+2At)/s min mm2/mm": combined_transverse_min,
         "Al strength required mm2": al_strength_req,
@@ -898,6 +923,9 @@ def _torsion_result_for_row(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         "Al minimum (b) mm2": al_min_b,
         "Al required mm2": al_required,
         "Al provided mm2": float(longitudinal["provided_mm2"]),
+        "Longitudinal fy MPa": float(longitudinal.get("fy_min_mpa", fy)),
+        "Outer bars outside cage": int(longitudinal.get("outside_cage_count", 0)),
+        "Cage association D/C": float(longitudinal.get("association_dc", 0.0)),
         "Outer bar max spacing mm": float(longitudinal["max_perimeter_spacing_mm"]),
         "Outer bar spacing D/C": float(longitudinal["spacing_dc"]),
         "Outer bar min diameter mm": float(longitudinal["min_diameter_mm"]),

@@ -1,6 +1,6 @@
 """Combined ACI 318-19 shear + torsion checks for Portal Frame Crossbeams.
 
-This workflow-scoped module closes the Crossbeam ULS V+T adoption route without
+This workflow-scoped module implements the Crossbeam ULS V+T solver-adoption route without
 changing the generic PMM, Beam/Girder, or Column/Pier solvers.  It combines the
 accepted Crossbeam Shear and standalone Torsion station contracts and performs:
 
@@ -43,10 +43,16 @@ from concrete_pmm_pro.analysis.crossbeam_uls_torsion import (
     build_crossbeam_uls_torsion_preparation,
     run_crossbeam_uls_torsion,
 )
+from concrete_pmm_pro.crossbeam.construction_stage import (
+    CONSTRUCTION_METHOD_CIP,
+    CONSTRUCTION_METHOD_PRECAST,
+    normalize_construction_method,
+)
+from concrete_pmm_pro.crossbeam.prestress_loss import CB_LOSS_ES_CONSTRUCTION_METHOD_KEY
 
 
-CROSSBEAM_ULS_COMBINED_VT_RESULT_KEY = "crossbeam_analysis4b_uls_combined_vt_result"
-CROSSBEAM_ULS_COMBINED_VT_RESULT_HASH_KEY = "crossbeam_analysis4b_uls_combined_vt_input_hash"
+CROSSBEAM_ULS_COMBINED_VT_RESULT_KEY = "crossbeam_analysis4c2_uls_combined_vt_result"
+CROSSBEAM_ULS_COMBINED_VT_RESULT_HASH_KEY = "crossbeam_analysis4c2_uls_combined_vt_input_hash"
 
 
 @dataclass(frozen=True)
@@ -61,6 +67,7 @@ class CrossbeamCombinedVtPreparation:
     fingerprint: str
     support_footprints: tuple[dict[str, Any], ...]
     member_length_m: float
+    construction_method: str
 
 
 def _dedupe(items: list[str]) -> tuple[str, ...]:
@@ -153,11 +160,17 @@ def build_crossbeam_uls_combined_vt_preparation(state: Any) -> CrossbeamCombined
                 f"resolved to {len(matches)} section inputs; exactly one is required."
             )
 
+    construction_method = normalize_construction_method(
+        state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY, CONSTRUCTION_METHOD_PRECAST)
+        if hasattr(state, "get")
+        else CONSTRUCTION_METHOD_PRECAST
+    )
     payload = {
-        "schema": "crossbeam-analysis4b-combined-vt-v1",
+        "schema": "crossbeam-analysis4c2-combined-vt-v2",
         "shear": shear.fingerprint,
         "torsion": torsion.fingerprint,
         "flexure": flexure.fingerprint,
+        "construction_method": construction_method,
         "section_keys": sorted(expected_keys),
     }
     return CrossbeamCombinedVtPreparation(
@@ -171,6 +184,7 @@ def build_crossbeam_uls_combined_vt_preparation(state: Any) -> CrossbeamCombined
         fingerprint=_fingerprint(payload),
         support_footprints=tuple(shear.support_footprints),
         member_length_m=float(shear.member_length_m),
+        construction_method=construction_method,
     )
 
 
@@ -248,15 +262,17 @@ def _section_combined_row(
     torsion_row: Mapping[str, Any],
     flexure_row: PreparedCrossbeamUlsRow,
     flexure_candidates: list[PreparedCrossbeamUlsRow],
+    *,
+    construction_method: str,
 ) -> dict[str, Any]:
     torsion_required = str(torsion_row.get("Threshold status") or "") == "DESIGN REQUIRED"
     torsion_layout_required = torsion_required and str(torsion_row.get("Status") or "") == "LAYOUT REQUIRED"
 
-    # ACI 9.5.4.3 requires the shear reinforcement needed for concurrent Vu
-    # (strength plus any applicable minimum) to be added to 2At/s needed for
-    # Tu.  Only the physical outer side legs of the closed stirrup are credited
-    # as provided; the same bars are not counted twice and inner multi-leg shear
-    # bars are excluded from the torsion summation per R9.5.4.3.
+    # ACI 9.5.4.3 adds the required allocations for concurrent shear and
+    # torsion.  The provided side is the unique physical vertical-leg pool:
+    # all shear-effective legs plus two side legs from an *additional* verified
+    # torsion cage.  A cage shared with the shear loop is already inside Av and
+    # is never counted a second time.
     shear_strength_req = max(_finite(shear_row.get("Av/s strength required mm2/mm"), 0.0), 0.0)
     shear_min_req = max(_finite(shear_row.get("Av/s minimum required mm2/mm"), 0.0), 0.0)
     shear_adopted_req = max(
@@ -272,8 +288,8 @@ def _section_combined_row(
         combined_required = max(combined_strength_req, combined_min_req)
         combined_provided = _finite(
             torsion_row.get(
-                "Outer side legs/s provided mm2/mm",
-                torsion_row.get("Av side/s mm2/mm"),
+                "Unique transverse provided/s mm2/mm",
+                shear_row.get("Unique combined provided/s mm2/mm", shear_provided),
             )
         )
         transverse_dc = combined_required / combined_provided if combined_provided > 0.0 else float("inf")
@@ -337,6 +353,49 @@ def _section_combined_row(
             else:
                 interaction_status = "PASS"
 
+    bt_mm = _finite(torsion_row.get("bt mm"), 0.0) if torsion_required else 0.0
+    d_mm = _finite(torsion_row.get("d mm"), 0.0) if torsion_required else 0.0
+    extension_length_m = (bt_mm + d_mm) / 1000.0 if bt_mm > 0.0 and d_mm > 0.0 else float("nan")
+    location_text = f"{source.location_type} {source.requested_location_type} {source.check_point}".upper()
+    at_support_face = torsion_required and "COLUMN FACE" in location_text
+    available_extension_m = _finite(flexure_row.distance_to_nearest_segment_end_m, float("nan"))
+    extension_dc = (
+        extension_length_m / available_extension_m
+        if torsion_required
+        and construction_method == CONSTRUCTION_METHOD_PRECAST
+        and math.isfinite(extension_length_m)
+        and extension_length_m > 0.0
+        and math.isfinite(available_extension_m)
+        and available_extension_m > 0.0
+        else float("nan")
+    )
+    if not torsion_required:
+        station_development_status = "NOT REQUIRED"
+        support_anchorage_status = "NOT REQUIRED"
+    elif construction_method == CONSTRUCTION_METHOD_PRECAST:
+        # ACI 9.7.5.3 and 9.7.6.3.2 require longitudinal and transverse
+        # torsion reinforcement to continue at least bt+d beyond the point
+        # where it is required.  The template is known to cover the assigned
+        # physical Segment, so the nearest Segment end is the maximum
+        # automatically verifiable continuation distance.  Crossing the
+        # physical joint is never assumed.
+        if (
+            not math.isfinite(extension_length_m)
+            or extension_length_m <= 0.0
+            or not math.isfinite(available_extension_m)
+            or available_extension_m + 1.0e-9 < extension_length_m
+        ):
+            station_development_status = "REVIEW"
+        else:
+            station_development_status = "PASS"
+        support_anchorage_status = "REVIEW" if at_support_face else "NOT APPLICABLE"
+    else:
+        # CIP zone boundaries are not physical joints in the Crossbeam model.
+        # The active reinforcement source is treated as monolithic, while
+        # actual bar cut-off and support anchorage remain drawing/detail checks.
+        station_development_status = "PASS"
+        support_anchorage_status = "REVIEW" if at_support_face else "NOT APPLICABLE"
+
     longitudinal_detailing_values = [
         _finite(torsion_row.get("Outer bar spacing D/C")),
         _finite(torsion_row.get("Outer bar diameter D/C")),
@@ -356,16 +415,18 @@ def _section_combined_row(
     stress_status = "PASS" if math.isfinite(stress_dc) and stress_dc <= 1.0 + 1.0e-9 else ("FAIL" if math.isfinite(stress_dc) else "REVIEW")
     if not torsion_required:
         longitudinal_status = "NOT REQUIRED"
-    elif torsion_layout_required or interaction_status == "REVIEW":
-        longitudinal_status = "REVIEW"
     elif any(
         math.isfinite(value) and value > 1.0 + 1.0e-9
         for value in (al_minimum_dc, interaction_dc, longitudinal_detailing_dc)
     ) or interaction_status == "FAIL":
         longitudinal_status = "FAIL"
-    elif flexure_row.rebar_credit_status == "NO CREDIT" and al_minimum > 0.0:
-        # Minimum distributed torsion bars must be developed at the checked
-        # section even if bonded tendon overstrength satisfies 9.5.4.4.
+    elif (
+        torsion_layout_required
+        or interaction_status == "REVIEW"
+        or station_development_status == "REVIEW"
+        or support_anchorage_status == "REVIEW"
+        or (flexure_row.rebar_credit_status == "NO CREDIT" and al_minimum > 0.0)
+    ):
         longitudinal_status = "REVIEW"
     else:
         longitudinal_status = "PASS"
@@ -411,16 +472,23 @@ def _section_combined_row(
     ]
     overall_dc = max(finite_dcs) if finite_dcs else float("nan")
     notes = [
-        "ACI 9.5.4.3 adds the required concurrent shear area to 2At/s and compares the sum with the actual outer closed-stirrup side legs; the same bars are not credited twice.",
+        "ACI 9.5.4.3 compares required Av/s + 2At/s with the unique physical vertical-leg pool; additional cage side legs are included once and shared cage legs are not duplicated.",
         "ACI 9.5.4.4 is checked by solving the exact-axis Crossbeam section at Pu minus the concentric torsional tensile force Al,strength·fy while retaining concurrent row-coupled Mu.",
         "Al,min and longitudinal perimeter detailing remain ordinary-reinforcement gates independent of bonded tendon overstrength.",
+        "The assigned torsion template covers the full Segment; the reported bt+d extension length is audited, while physical-joint transfer remains a separate REVIEW.",
     ]
     if torsion_required and flexure_row.rebar_credit_status == "NO CREDIT":
         notes.append(
-            f"Ordinary longitudinal strength credit is NO CREDIT ({flexure_row.development_region}); minimum torsion-bar development remains REVIEW even if bonded tendon overstrength passes the direct interaction."
+            f"Ordinary longitudinal flexure credit is NO CREDIT ({flexure_row.development_region}); the direct interaction therefore does not reuse undeveloped As. Torsion bt+d continuation is audited separately."
+        )
+    if torsion_required and station_development_status == "REVIEW":
+        notes.append(
+            f"ACI torsion continuation review: available distance to the nearest physical Segment end = {available_extension_m:.3f} m versus required bt+d = {extension_length_m:.3f} m. Reinforcement continuity across a Precast joint is not assumed."
         )
     if bool(torsion_row.get("Hollow cage continuity review")):
         notes.append("Hollow closed-cage continuity, lap, and anchorage remain REVIEW.")
+    if at_support_face:
+        notes.append("ACI support-face development/anchorage is REVIEW because hooks, embedment, and support anchorage details are not modeled in the template source.")
 
     return {
         "Check": "Shear + Torsion",
@@ -461,8 +529,11 @@ def _section_combined_row(
         "(Av+2At)/s strength required mm2/mm": combined_strength_req,
         "(Av+2At)/s minimum required mm2/mm": combined_min_req,
         "(Av+2At)/s adopted required mm2/mm": combined_required,
-        "Outer side legs/s provided mm2/mm": combined_provided,
+        "Unique transverse provided/s mm2/mm": combined_provided,
+        "Outer side legs/s provided mm2/mm": _finite(torsion_row.get("Outer side legs/s provided mm2/mm")),
         "(Av+2At)/s provided mm2/mm": combined_provided,
+        "Torsion cage relationship": str(torsion_row.get("Torsion cage relationship") or ""),
+        "Torsion cage source status": str(torsion_row.get("Torsion cage source status") or ""),
         "Al strength equivalent mm2": al_strength,
         "Al strength required mm2": al_strength,
         "Al minimum required mm2": al_minimum,
@@ -484,6 +555,12 @@ def _section_combined_row(
         "Ordinary rebar credit": flexure_row.rebar_credit_status,
         "Development region": flexure_row.development_region,
         "Development length m": flexure_row.development_length_m,
+        "Torsion bt mm": bt_mm,
+        "Torsion bt+d extension m": extension_length_m,
+        "Available extension to nearest Segment end m": available_extension_m,
+        "Torsion extension D/C value": extension_dc,
+        "Torsion station development status": station_development_status,
+        "Torsion support anchorage status": support_anchorage_status,
         "phiVn kN": _finite(shear_row.get("φVn kN")),
         "phiTn kN-m": _finite(torsion_row.get("phiTn kN-m")),
         "Section limit lhs MPa": _finite(torsion_row.get("Section limit lhs MPa")),
@@ -529,7 +606,16 @@ def run_crossbeam_uls_combined_vt(preparation: CrossbeamCombinedVtPreparation) -
             errors.append(f"Missing combined source at {key[0]} s={key[1]:.6f} m / {key[2] or 'interior'}.")
             continue
         try:
-            rows.append(_section_combined_row(source, shear_row, torsion_row, flexure_row, flexure_candidates))
+            rows.append(
+                _section_combined_row(
+                    source,
+                    shear_row,
+                    torsion_row,
+                    flexure_row,
+                    flexure_candidates,
+                    construction_method=preparation.construction_method,
+                )
+            )
         except Exception as exc:
             errors.append(f"{source.case_name} at s={source.station_m:.6f} m: {exc}")
 
@@ -566,8 +652,9 @@ def run_crossbeam_uls_combined_vt(preparation: CrossbeamCombinedVtPreparation) -
         "errors": list(_dedupe(errors)),
         "warnings": list(preparation.warnings),
         "fingerprint": preparation.fingerprint,
+        "construction_method": preparation.construction_method,
         "scope": (
-            "ACI 318-19 Crossbeam combined V+T: 9.5.4.3 additive required Av/s + 2At/s checked against the actual outer closed-stirrup side legs without double counting, 9.5.4.4 prestressed flexure plus concurrent torsional longitudinal tension, "
+            "ACI 318-19 Crossbeam combined V+T: 9.5.4.3 additive required Av/s + 2At/s checked against the unique physical transverse-leg pool without double counting, 9.5.4.4 prestressed flexure plus concurrent torsional longitudinal tension, "
             "and 22.7.7 solid/hollow section-size stress limits. Physical-joint transfer, compatibility-torsion redistribution, hollow cage lap/anchorage, "
             "PT anchorage/end zones, D-regions, fatigue, and seismic detailing remain separate project checks."
         ),

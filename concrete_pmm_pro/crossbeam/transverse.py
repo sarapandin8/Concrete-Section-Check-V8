@@ -461,6 +461,42 @@ def transverse_torsion_cage_record(template: Mapping[str, Any]) -> dict[str, Any
     }
 
 
+
+def transverse_unique_steel_record(template: Mapping[str, Any]) -> dict[str, Any]:
+    """Return unique physical transverse-steel accounting for shear and V+T.
+
+    ``Av`` is the total area of all effective vertical legs that may resist
+    shear. A verified *additional* outer torsion cage contributes its two side
+    legs to Av; a cage shared with the existing outer shear loop contributes no
+    additional physical steel. ``Unique provided`` is the same non-duplicated
+    vertical-leg area used by the combined Av + 2At adoption gate.
+    """
+
+    row = canonical_transverse_templates([dict(template)])[0]
+    av = transverse_avs_record(row)
+    cage = transverse_torsion_cage_record(row)
+    base_av = float(av["Av,total/s mm²/mm"])
+    added = 0.0
+    if bool(cage.get("Adopted")) and str(cage.get("Relationship")) == "Additional outer cage":
+        added = float(cage.get("2At/s mm²/mm") or 0.0)
+    total = base_av + added
+    return {
+        "Template ID": row["Template ID"],
+        "Role": row["Applicable role"],
+        "Base Av/s mm²/mm": base_av,
+        "Additional cage shear legs/s mm²/mm": added,
+        "Av,total unique/s mm²/mm": total,
+        "Combined unique provided/s mm²/mm": total,
+        "Torsion cage adopted": bool(cage.get("Adopted")),
+        "Torsion cage relationship": str(cage.get("Relationship") or ""),
+        "Torsion cage status": str(cage.get("Status") or ""),
+        "Note": (
+            "Additional verified outer-cage side legs are included once in Av and in the combined physical-steel pool."
+            if added > 0.0
+            else "No additional physical legs are added; a shared cage is already included in the base Av source."
+        ),
+    }
+
 def build_outer_torsion_cage_geometry(
     geometry: Any,
     template: Mapping[str, Any],
@@ -468,9 +504,7 @@ def build_outer_torsion_cage_geometry(
     """Build the user-defined outer torsion-cage centerline for preview/audit.
 
     The cage follows the inward offset of the actual outer concrete face using
-    the engineer-entered centerline offset.  It is not included in the legacy
-    transverse cage topology and therefore cannot alter longitudinal placement
-    or shear-leg counting.
+    the engineer-entered centerline offset.  It remains separate from the legacy transverse cage topology for drawing and longitudinal placement. Solver accounting may include its two side legs once when the relationship is Additional outer cage.
     """
 
     source = transverse_torsion_cage_record(template)

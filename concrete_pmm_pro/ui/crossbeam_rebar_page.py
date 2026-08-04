@@ -149,6 +149,7 @@ from concrete_pmm_pro.crossbeam.transverse import (
     transverse_bar_diameter_mm,
     transverse_avs_record,
     transverse_torsion_cage_record,
+    transverse_unique_steel_record,
     transverse_template_map,
 )
 from concrete_pmm_pro.crossbeam.section_library import (
@@ -2067,6 +2068,7 @@ def _render_combined_reinforcement_preview(
     review = review_longitudinal_bar_containment(cages, total_rebars)
     avs = transverse_avs_record(transverse)
     torsion = transverse_torsion_cage_record(transverse)
+    unique_steel = transverse_unique_steel_record(transverse)
     role = str(definition.get("Section role") or "Solid")
     torsion_adopted = bool(torsion.get("Adopted"))
     torsion_status = str(torsion.get("Status") or "LAYOUT REQUIRED")
@@ -2124,15 +2126,15 @@ def _render_combined_reinforcement_preview(
         [
             {
                 "title":"Shear reinforcement — Av",
-                "value":f"{avs['Av,total/s mm²/mm']:.4f} mm²/mm",
+                "value":f"{unique_steel['Av,total unique/s mm²/mm']:.4f} mm²/mm",
                 "detail":(
-                    f"GEOMETRIC PROVIDED = SOLVER SOURCE · {transverse.get('Bar size','')} @ "
-                    f"{float(transverse.get('Spacing mm') or 0.0):.0f} mm · "
+                    f"BASE Av/s {avs['Av,total/s mm²/mm']:.4f}"
                     + (
-                        f"L/R legs {int(transverse.get('Left web legs') or 0)}/{int(transverse.get('Right web legs') or 0)}"
-                        if role == "Hollow"
-                        else f"{int(transverse.get('Effective legs') or 0)} effective legs"
+                        f" + ADDITIONAL CAGE SIDE LEGS {unique_steel['Additional cage shear legs/s mm²/mm']:.4f}"
+                        if float(unique_steel['Additional cage shear legs/s mm²/mm']) > 0.0
+                        else ""
                     )
+                    + f" = SOLVER ADOPTED · {transverse.get('Bar size','')} @ {float(transverse.get('Spacing mm') or 0.0):.0f} mm"
                 ),
                 "status":"ready",
             },
@@ -2188,7 +2190,7 @@ def _render_combined_reinforcement_preview(
     st.caption(
         "Geometric/detailing preview only. Layer order is concrete → void → transverse cage/tie → longitudinal bars → centroid. "
         f"Longitudinal preview centers are derived from the active transverse path using Dt/2 + Dl/2; {cage_adjusted_count} closed-loop-associated coordinate(s) follow the actual path. "
-        "Template quantities and solver inputs are not changed."
+        "Displayed quantities mirror the current solver-adopted reinforcement source; physical bars are counted once."
     )
     if review.ok:
         if str(definition.get("Section role")) == "Hollow":

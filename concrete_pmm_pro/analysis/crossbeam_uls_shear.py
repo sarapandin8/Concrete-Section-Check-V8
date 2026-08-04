@@ -93,6 +93,7 @@ from concrete_pmm_pro.crossbeam.transverse import (
     canonical_transverse_templates,
     transverse_bar_area_mm2,
     transverse_template_map,
+    transverse_unique_steel_record,
 )
 from concrete_pmm_pro.geometry.summary import to_shapely_polygon
 
@@ -1498,7 +1499,10 @@ def _transverse_values(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
     fyt_input = _finite_float(template.get("fy MPa"), float("nan"))
     fyt_design = min(fyt_input, _ACI_SHEAR_FYT_MAX_MPA) if math.isfinite(fyt_input) else float("nan")
     credit = bool(template.get("Credit inside segment", True)) and area > 0.0 and spacing > 0.0 and legs > 0
-    av_per_s = area * legs / spacing if credit else 0.0
+    steel = transverse_unique_steel_record(template)
+    base_av_per_s = float(steel["Base Av/s mm²/mm"]) if credit else 0.0
+    additional_cage_av_per_s = float(steel["Additional cage shear legs/s mm²/mm"]) if credit else 0.0
+    av_per_s = float(steel["Av,total unique/s mm²/mm"]) if credit else 0.0
     cages = build_transverse_cage_geometry(row.geometry, row.definition, template)
     across_candidates: list[float] = []
     for path in cages.closed_loops:
@@ -1509,6 +1513,11 @@ def _transverse_values(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
     return {
         "credit": credit,
         "Av_per_s": av_per_s,
+        "Base_Av_per_s": base_av_per_s,
+        "Additional_cage_Av_per_s": additional_cage_av_per_s,
+        "Unique_combined_provided_per_s": float(steel["Combined unique provided/s mm²/mm"]) if credit else 0.0,
+        "Torsion_cage_relationship": str(steel["Torsion cage relationship"]),
+        "Torsion_cage_status": str(steel["Torsion cage status"]),
         "spacing_mm": spacing,
         "fyt_input_mpa": fyt_input,
         "fyt_design_mpa": fyt_design,
@@ -1516,7 +1525,10 @@ def _transverse_values(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         "across_spacing_mm": across_spacing,
         "cage_errors": tuple(cages.errors),
         "cage_warnings": tuple(cages.warnings),
-        "stirrup": f"{template.get('Bar size') or '-'} × {legs} legs @ {spacing:.0f} mm",
+        "stirrup": (
+            f"{template.get('Bar size') or '-'} × {legs} base legs @ {spacing:.0f} mm"
+            + (f" + additional outer-cage side legs ({additional_cage_av_per_s:.4f} mm²/mm)" if additional_cage_av_per_s > 0.0 else "")
+        ),
     }
 
 
@@ -1694,6 +1706,11 @@ def _direction_result(row: PreparedCrossbeamShearRow, direction_sign: float, dir
         "shear_reinforcement_required": shear_reinforcement_required,
         "Vs_required_N": vs_required_n,
         "Av_per_s": av_per_s,
+        "Base_Av_per_s": float(transverse.get("Base_Av_per_s", av_per_s)),
+        "Additional_cage_Av_per_s": float(transverse.get("Additional_cage_Av_per_s", 0.0)),
+        "Unique_combined_provided_per_s": float(transverse.get("Unique_combined_provided_per_s", av_per_s)),
+        "Torsion_cage_relationship": str(transverse.get("Torsion_cage_relationship") or ""),
+        "Torsion_cage_status": str(transverse.get("Torsion_cage_status") or ""),
         "Av_required_per_s": av_required,
         "Av_base_per_s": av_base,
         "Av_prestress_specific_per_s": av_ps,
@@ -1884,6 +1901,11 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
                 "Zone": row.rebar_zone_id,
                 "Stirrup": result.get("stirrup", "-"),
                 "Av/s mm2/mm": result.get("Av_per_s", float("nan")),
+                "Base Av/s mm2/mm": result.get("Base_Av_per_s", float("nan")),
+                "Additional cage Av/s mm2/mm": result.get("Additional_cage_Av_per_s", float("nan")),
+                "Unique combined provided/s mm2/mm": result.get("Unique_combined_provided_per_s", float("nan")),
+                "Torsion cage relationship": result.get("Torsion_cage_relationship", ""),
+                "Torsion cage source status": result.get("Torsion_cage_status", ""),
                 "Av/s mm2/m": _finite_float(result.get("Av_per_s"), float("nan")) * 1000.0,
                 "Av/s required mm2/mm": result.get("Av_required_per_s", float("nan")),
                 "Av/s required mm2/m": _finite_float(result.get("Av_required_per_s"), float("nan")) * 1000.0,

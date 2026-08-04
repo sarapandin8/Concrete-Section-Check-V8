@@ -51,6 +51,7 @@ from concrete_pmm_pro.crossbeam.transverse import (
     new_transverse_template,
     transverse_avs_record,
     transverse_torsion_cage_record,
+    transverse_unique_steel_record,
     transverse_set_stations,
     transverse_template_map,
     validate_transverse_templates,
@@ -646,10 +647,19 @@ def render_crossbeam_transverse_template_library(
 
     st.markdown("#### Av/s input preview")
     avs = [transverse_avs_record(row) for row in rows]
+    unique_records = [transverse_unique_steel_record(row) for row in rows]
     st.dataframe(
         pd.DataFrame([
-            {"Template ID": row["Template ID"], "Bar @ spacing": f"{row['Bar']} @ {row['Spacing mm']:.0f}", "Av,L/s": row["Av,left/s mm²/mm"], "Av,R/s": row["Av,right/s mm²/mm"], "Av,total/s": row["Av,total/s mm²/mm"]}
-            for row in avs
+            {
+                "Template ID": row["Template ID"],
+                "Bar @ spacing": f"{row['Bar']} @ {row['Spacing mm']:.0f}",
+                "Av,L/s": row["Av,left/s mm²/mm"],
+                "Av,R/s": row["Av,right/s mm²/mm"],
+                "Base Av/s": row["Av,total/s mm²/mm"],
+                "Additional cage legs/s": unique["Additional cage shear legs/s mm²/mm"],
+                "Solver-adopted Av/s": unique["Av,total unique/s mm²/mm"],
+            }
+            for row, unique in zip(avs, unique_records)
         ]),
         use_container_width=True, hide_index=True,
         column_config={
@@ -657,7 +667,9 @@ def render_crossbeam_transverse_template_library(
             "Bar @ spacing": st.column_config.TextColumn(width="medium"),
             "Av,L/s": st.column_config.NumberColumn(format="%.4f", width="small"),
             "Av,R/s": st.column_config.NumberColumn(format="%.4f", width="small"),
-            "Av,total/s": st.column_config.NumberColumn(format="%.4f", width="small"),
+            "Base Av/s": st.column_config.NumberColumn(format="%.4f", width="small"),
+            "Additional cage legs/s": st.column_config.NumberColumn(format="%.4f", width="small"),
+            "Solver-adopted Av/s": st.column_config.NumberColumn(format="%.4f", width="small"),
         },
     )
 
@@ -982,16 +994,17 @@ def render_transverse_preview_summary(
     cages = build_transverse_cage_geometry(geometry, definition, row)
     avs = transverse_avs_record(row)
     torsion = transverse_torsion_cage_record(row)
+    unique = transverse_unique_steel_record(row)
     stations = transverse_set_stations(row, start_m, end_m)
     hollow = str(definition.get("Section role")) == "Hollow"
     render_metric_cards([
         {
             "title":"Shear reinforcement — Av",
-            "value":f"{avs['Av,total/s mm²/mm']:.4f} mm²/mm",
+            "value":f"{unique['Av,total unique/s mm²/mm']:.4f} mm²/mm",
             "detail":(
-                f"{row['Bar size']} @ {row['Spacing mm']:.0f} mm · "
-                + (f"L/R legs {row['Left web legs']}/{row['Right web legs']}" if hollow else f"{row['Effective legs']} effective legs")
-                + " · GEOMETRIC PROVIDED = SOLVER SOURCE"
+                f"Base {avs['Av,total/s mm²/mm']:.4f}"
+                + (f" + additional cage legs {unique['Additional cage shear legs/s mm²/mm']:.4f}" if float(unique['Additional cage shear legs/s mm²/mm']) > 0.0 else "")
+                + " · unique physical legs = solver source"
             ),
             "status":"ready",
         },
