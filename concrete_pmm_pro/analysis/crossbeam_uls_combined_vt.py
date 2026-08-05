@@ -458,6 +458,15 @@ def _section_combined_row(
         or torsion_detailing_status == "FAIL"
         or torsion_section_status == "FAIL"
     )
+    effective_prestress_mode = str(
+        shear_row.get("Effective prestress mode")
+        or torsion_row.get("Effective prestress mode")
+        or flexure_row.effective_prestress_mode
+        or ""
+    )
+    uniform_effective_prestress_override = (
+        effective_prestress_mode == "UNIFORM_AVERAGE_OVERRIDE"
+    )
     source_review = (
         "REVIEW" in shear_component_statuses
         or torsion_layout_required
@@ -465,6 +474,7 @@ def _section_combined_row(
         or torsion_section_status == "REVIEW"
         or bool(torsion_row.get("Hollow cage continuity review"))
         or source.source_p_kn < -1.0e-9
+        or uniform_effective_prestress_override
     )
     if source_fail or "FAIL" in {stress_status, transverse_status, longitudinal_status}:
         status = "FAIL"
@@ -504,6 +514,10 @@ def _section_combined_row(
         notes.append("Hollow closed-cage continuity, lap, and anchorage remain REVIEW.")
     if at_support_face:
         notes.append("ACI support-face development/anchorage is REVIEW because hooks, embedment, and support anchorage details are not modeled in the template source.")
+    if uniform_effective_prestress_override:
+        notes.append(
+            "Uniform-average Effective Prestress override is active; the combined result remains REVIEW until the tendon/station profile is refreshed."
+        )
 
     return {
         "Check": "Shear + Torsion",
@@ -523,6 +537,18 @@ def _section_combined_row(
         "T kN-m": source.source_t_knm,
         "M3 kN-m": source.source_m3_knm,
         "Demand source": source.demand_source,
+        "Effective prestress mode": str(
+            shear_row.get("Effective prestress mode")
+            or torsion_row.get("Effective prestress mode")
+            or flexure_row.effective_prestress_mode
+            or ""
+        ),
+        "Local fse min MPa": _finite(shear_row.get("Local fse min MPa")),
+        "Local fse max MPa": _finite(shear_row.get("Local fse max MPa")),
+        "Local fse source": str(shear_row.get("Local fse source") or ""),
+        "Local fpe min MPa": flexure_row.effective_prestress_min_mpa,
+        "Local fpe max MPa": flexure_row.effective_prestress_max_mpa,
+        "Local fpe source": flexure_row.effective_prestress_source,
         "Generated support check": source.generated_support_check,
         "Requested location type": source.requested_location_type,
         "Torsion required": torsion_required,

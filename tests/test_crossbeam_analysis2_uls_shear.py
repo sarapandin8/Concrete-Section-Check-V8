@@ -73,13 +73,31 @@ def _ready_state(*, include_guard_rows: bool = True) -> dict[str, object]:
         width_mm=2500.0,
         height_mm=1500.0,
     )
+    profile_rows = [
+        {
+            "Tendon": tendon_id,
+            "Station s (m)": station,
+            "Point": point,
+            "Aps (mm²)": float(tendon["Strands"]) * float(tendon["Aps/strand mm²"]),
+            "fpj (MPa)": float(tendon["fpu MPa"]) * float(tendon["fpj/fpu"]),
+            "fpe (MPa)": 1300.0,
+        }
+        for tendon in tendons
+        for tendon_id in [str(tendon["Tendon ID"])]
+        for station, point in ((0.0, "P1"), (0.5 * length_m, "P2"), (length_m, "P3"))
+    ]
     link = {
+        "schema": "crossbeam-effective-prestress-loads-link-v2",
         "ready": True,
         "source_id": "analysis2-ready-source",
         "contract_id": "analysis2-ready-contract",
         "average_total_loss_percent": 20.0,
         "effective_prestress_ratio_percent": 80.0,
         "average_effective_stress_mpa": 1300.0,
+        "member_length_m": length_m,
+        "profile_ready": True,
+        "tendon_station_profiles": profile_rows,
+        "allow_uniform_average_uls_override": False,
     }
     loads = []
     base_rows = [
@@ -246,6 +264,10 @@ def test_effective_prestress_applicability_gate_returns_review_not_false_pass() 
     state = _ready_state(include_guard_rows=False)
     link = dict(state[CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY])
     link["average_effective_stress_mpa"] = 50.0
+    link["tendon_station_profiles"] = [
+        {**row, "fpe (MPa)": 50.0}
+        for row in link.get("tendon_station_profiles", [])
+    ]
     state[CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY] = link
     state[CB_STATION_FORCE_CONTRACT_KEY] = default_station_force_contract(
         effective_prestress_link=link

@@ -14,6 +14,12 @@ import json
 import math
 from typing import Any, Iterable, Mapping, Sequence
 
+from concrete_pmm_pro.crossbeam.uls_effective_prestress import (
+    PROFILE_BASIS_PROJECTED_STATION,
+    canonical_effective_prestress_profile_rows,
+    effective_prestress_profile_fingerprint,
+)
+
 
 CROSSBEAM_STATION_FORCE_CONTRACT_SCHEMA = "crossbeam-station-force-import-contract-v2"
 CROSSBEAM_STATION_FORCE_HANDOFF_SCHEMA = "crossbeam-station-force-analysis-handoff-v2"
@@ -147,8 +153,26 @@ def canonical_effective_prestress_link(value: Mapping[str, Any] | None) -> dict[
         0.0,
         min(_float(source.get("effective_prestress_ratio_percent"), 100.0 - loss), 100.0),
     )
+    profile_rows = canonical_effective_prestress_profile_rows(
+        source.get("tendon_station_profiles")
+        or source.get("effective_station_rows")
+        or []
+    )
+    profile_fingerprint = effective_prestress_profile_fingerprint(profile_rows)
+    tendon_count = len({str(row.get("Tendon") or "") for row in profile_rows if str(row.get("Tendon") or "")})
+    source_schema = _text(source.get("schema"))
+    average_fpe = _float(source.get("average_effective_stress_mpa"), 0.0)
+    legacy_uniform_migration = bool(
+        not profile_rows
+        and _bool(source.get("ready"), False)
+        and average_fpe > 0.0
+        and source_schema != "crossbeam-effective-prestress-loads-link-v2"
+    )
+    allow_uniform_override = _bool(
+        source.get("allow_uniform_average_uls_override"), False
+    )
     return {
-        "schema": "crossbeam-effective-prestress-loads-link-v1",
+        "schema": "crossbeam-effective-prestress-loads-link-v2",
         "ready": _bool(source.get("ready"), False),
         "source_id": _text(source.get("source_id")),
         "contract_id": _text(source.get("contract_id")),
@@ -157,8 +181,19 @@ def canonical_effective_prestress_link(value: Mapping[str, Any] | None) -> dict[
         "engineer_adopted_td": _bool(source.get("engineer_adopted_td"), False),
         "average_total_loss_percent": loss,
         "effective_prestress_ratio_percent": ratio,
-        "average_effective_stress_mpa": _float(source.get("average_effective_stress_mpa"), 0.0),
+        "average_effective_stress_mpa": average_fpe,
         "average_effective_force_kn": _float(source.get("average_effective_force_kn"), 0.0),
+        "member_length_m": max(_float(source.get("member_length_m"), 0.0), 0.0),
+        "profile_basis": _text(source.get("profile_basis")) or PROFILE_BASIS_PROJECTED_STATION,
+        "profile_ready": _bool(source.get("profile_ready"), bool(profile_rows)),
+        "profile_fingerprint": _text(source.get("profile_fingerprint")) or profile_fingerprint,
+        "profile_tendon_count": tendon_count,
+        "profile_point_count": len(profile_rows),
+        "tendon_station_profiles": profile_rows,
+        "allow_uniform_average_uls_override": allow_uniform_override,
+        "legacy_uniform_average_migration": legacy_uniform_migration,
+        "stale": _bool(source.get("stale"), False),
+        "stale_reason": _text(source.get("stale_reason")),
     }
 
 

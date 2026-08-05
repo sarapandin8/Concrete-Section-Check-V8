@@ -330,7 +330,7 @@
     "allow_tension": true,
     "no_tension_check": false,
     "decompression_check": false,
-    "stress_zero_tolerance_MPa": 1e-6,
+    "stress_zero_tolerance_MPa": 1e-06,
     "critical_point_filter": "all",
     "include_prestress_effective_force": false,
     "use_transformed_section": false,
@@ -1035,7 +1035,7 @@
       "confirmed_row_coupled_forces": true
     },
     "crossbeam_loads_effective_prestress_link": {
-      "schema": "crossbeam-effective-prestress-loads-link-v1",
+      "schema": "crossbeam-effective-prestress-loads-link-v2",
       "ready": true,
       "source_id": "7c1ca3ebc192",
       "contract_id": "2c4db0164dc6e5a2",
@@ -1045,7 +1045,229 @@
       "average_total_loss_percent": 17.286298785310976,
       "effective_prestress_ratio_percent": 82.71370121468902,
       "average_effective_stress_mpa": 1153.8561319449122,
-      "average_effective_force_kn": 24554.05848778773
+      "average_effective_force_kn": 24554.05848778773,
+      "member_length_m": 30.0,
+      "profile_basis": "TENDON_SPECIFIC_PROJECTED_STATION_LINEAR_INTERPOLATION",
+      "profile_ready": true,
+      "tendon_station_profiles": [
+        {
+          "Tendon": "T1",
+          "Station s (m)": 0.0,
+          "Point": "P1",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T1",
+          "Station s (m)": 15.0,
+          "Point": "P2",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T1",
+          "Station s (m)": 30.0,
+          "Point": "P3",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T2",
+          "Station s (m)": 0.0,
+          "Point": "P1",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T2",
+          "Station s (m)": 15.0,
+          "Point": "P2",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T2",
+          "Station s (m)": 30.0,
+          "Point": "P3",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T3",
+          "Station s (m)": 0.0,
+          "Point": "P1",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T3",
+          "Station s (m)": 15.0,
+          "Point": "P2",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T3",
+          "Station s (m)": 30.0,
+          "Point": "P3",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T4",
+          "Station s (m)": 0.0,
+          "Point": "P1",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T4",
+          "Station s (m)": 15.0,
+          "Point": "P2",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T4",
+          "Station s (m)": 30.0,
+          "Point": "P3",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T5",
+          "Station s (m)": 0.0,
+          "Point": "P1",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T5",
+          "Station s (m)": 15.0,
+          "Point": "P2",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T5",
+          "Station s (m)": 30.0,
+          "Point": "P3",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T6",
+          "Station s (m)": 0.0,
+          "Point": "P1",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T6",
+          "Station s (m)": 15.0,
+          "Point": "P2",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T6",
+          "Station s (m)": 30.0,
+          "Point": "P3",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T7",
+          "Station s (m)": 0.0,
+          "Point": "P1",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T7",
+          "Station s (m)": 15.0,
+          "Point": "P2",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T7",
+          "Station s (m)": 30.0,
+          "Point": "P3",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T8",
+          "Station s (m)": 0.0,
+          "Point": "P1",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T8",
+          "Station s (m)": 15.0,
+          "Point": "P2",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        },
+        {
+          "Tendon": "T8",
+          "Station s (m)": 30.0,
+          "Point": "P3",
+          "Aps (mm²)": 2660.0,
+          "fpj (MPa)": 1395.0,
+          "fpe (MPa)": 1153.8561319449122,
+          "Pe (kN)": 3069.2573109734662
+        }
+      ],
+      "allow_uniform_average_uls_override": false
     },
     "crossbeam_time_dependent_fea_response": {
       "schema_version": 2,

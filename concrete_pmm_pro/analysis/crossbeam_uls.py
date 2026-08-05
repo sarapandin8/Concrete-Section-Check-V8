@@ -95,6 +95,11 @@ from concrete_pmm_pro.crossbeam.tendon_persistence import (
     CB_TENDON_SYSTEM_ROWS_KEY,
 )
 from concrete_pmm_pro.crossbeam.uls_rebar_source import build_crossbeam_uls_rebar_source_contract
+from concrete_pmm_pro.crossbeam.uls_effective_prestress import (
+    PROFILE_MODE_UNIFORM_OVERRIDE,
+    resolve_tendon_effective_prestress,
+    validate_effective_prestress_profiles,
+)
 from concrete_pmm_pro.crossbeam.uls_station_geometry import (
     canonical_pt_end_zone_settings,
     end_zone_exclusion_record,
@@ -146,6 +151,10 @@ class PreparedCrossbeamUlsRow:
     ordinary_rebar_area_mm2: float
     bonded_tendon_count: int
     bonded_tendon_area_mm2: float
+    effective_prestress_mode: str
+    effective_prestress_min_mpa: float
+    effective_prestress_max_mpa: float
+    effective_prestress_source: str
     omitted_unbonded_tendon_count: int
     development_length_m: float
     distance_to_nearest_segment_end_m: float
@@ -881,8 +890,15 @@ def _prestress_at_station(
     geometry: Any,
     system_rows: list[dict[str, Any]],
     profile_rows: Any,
-    fpe_mpa: float,
-) -> tuple[list[PrestressElement], list[PrestressSteelMaterial], int, list[str], list[str]]:
+    effective_prestress_link: Mapping[str, Any],
+) -> tuple[
+    list[PrestressElement],
+    list[PrestressSteelMaterial],
+    int,
+    list[str],
+    list[str],
+    list[dict[str, Any]],
+]:
     positions = {
         str(row.get("Tendon ID") or ""): row
         for row in tendon_positions_at_station(
@@ -899,6 +915,7 @@ def _prestress_at_station(
     materials: dict[str, PrestressSteelMaterial] = {}
     errors: list[str] = []
     warnings: list[str] = []
+    resolutions: list[dict[str, Any]] = []
     omitted_unbonded = 0
     for tendon in system_rows:
         if not bool(tendon.get("Active", True)):
@@ -926,15 +943,42 @@ def _prestress_at_station(
         aps_per_strand = float(tendon.get("Aps/strand mm²") or 0.0)
         area = strands * aps_per_strand
         fpu = float(tendon.get("fpu MPa") or 0.0)
+        resolution = resolve_tendon_effective_prestress(
+            effective_prestress_link.get("tendon_station_profiles") or [],
+            tendon_id=tendon_id,
+            station_m=station_m,
+            member_length_m=length_m,
+            average_effective_stress_mpa=float(
+                effective_prestress_link.get("average_effective_stress_mpa") or 0.0
+            ),
+            allow_uniform_average_override=bool(
+                effective_prestress_link.get("allow_uniform_average_uls_override")
+            ),
+        )
+        if not resolution.ready or resolution.fpe_mpa is None:
+            errors.append(resolution.message)
+            continue
+        fpe_mpa = float(resolution.fpe_mpa)
         if area <= 0.0 or fpu <= 0.0 or fpe_mpa <= 0.0:
             errors.append(f"{tendon_id}: Aps, fpu, and effective stress must be positive.")
             continue
         if fpe_mpa >= fpu:
             errors.append(
-                f"{tendon_id}: adopted average effective stress {fpe_mpa:,.3f} MPa "
+                f"{tendon_id}: local effective stress {fpe_mpa:,.3f} MPa at s={station_m:.6f} m "
                 f"must be lower than fpu = {fpu:,.3f} MPa."
             )
             continue
+        resolutions.append(
+            {
+                "Tendon": tendon_id,
+                "fpe (MPa)": fpe_mpa,
+                "Mode": resolution.mode,
+                "Source station 1 (m)": resolution.source_station_1_m,
+                "Source station 2 (m)": resolution.source_station_2_m,
+                "Interpolation ratio": resolution.interpolation_ratio,
+                "Exact": resolution.exact,
+            }
+        )
         ep = 195000.0
         fpy = 0.90 * fpu
         material_name = f"Crossbeam PT {fpu:g}"
@@ -972,7 +1016,14 @@ def _prestress_at_station(
         warnings.append(
             f"{omitted_unbonded} permanently unbonded/external tendon(s) are excluded from the current section-strain flexure route; PASS is downgraded to REVIEW."
         )
-    return elements, list(materials.values()), omitted_unbonded, _dedupe(errors), _dedupe(warnings)
+    return (
+        elements,
+        list(materials.values()),
+        omitted_unbonded,
+        _dedupe(errors),
+        _dedupe(warnings),
+        resolutions,
+    )
 
 
 def build_crossbeam_uls_flexure_preparation(
@@ -1074,12 +1125,40 @@ def build_crossbeam_uls_flexure_preparation(
     )
     if active_tendons and not bool(effective_link.get("ready")):
         errors.append("Effective Prestress source is not CURRENT/CLOSED for Crossbeam ULS tendon strain compatibility.")
-    fpe_mpa = float(effective_link.get("average_effective_stress_mpa") or 0.0)
-    if active_tendons and fpe_mpa <= 0.0:
-        errors.append("Average effective prestress fpe must be positive before bonded tendons can receive ULS flexure credit.")
+    active_tendon_ids = [str(row.get("Tendon ID") or "").strip() for row in active_tendons]
+    profile_validation = validate_effective_prestress_profiles(
+        effective_link.get("tendon_station_profiles") or [],
+        tendon_ids=active_tendon_ids,
+        member_length_m=length_m,
+    )
+    warnings.extend(profile_validation.warnings)
+    average_override = bool(effective_link.get("allow_uniform_average_uls_override"))
+    average_fpe_mpa = float(effective_link.get("average_effective_stress_mpa") or 0.0)
+    if active_tendons and not profile_validation.ready:
+        if average_override and average_fpe_mpa > 0.0:
+            warnings.extend(
+                [
+                    "Effective Prestress station profile is incomplete; an explicit uniform-average ULS override is active.",
+                    *profile_validation.errors,
+                ]
+            )
+        else:
+            errors.extend(
+                [
+                    "Station-dependent Effective Prestress is required for Crossbeam ULS. "
+                    "Refresh Prestress Loss → Effective Prestress after loading this project.",
+                    *profile_validation.errors,
+                ]
+            )
 
     if errors:
-        payload = {"contract": contract, "demands": demand_rows, "rebar_source_fingerprint": rebar_source.fingerprint, "errors": _dedupe(errors)}
+        payload = {
+            "contract": contract,
+            "demands": demand_rows,
+            "rebar_source_fingerprint": rebar_source.fingerprint,
+            "effective_prestress_profile_fingerprint": profile_validation.fingerprint,
+            "errors": _dedupe(errors),
+        }
         return CrossbeamUlsPreparation(
             ready=False,
             rows=(),
@@ -1280,16 +1359,37 @@ def build_crossbeam_uls_flexure_preparation(
                         f"ACI conservative ld = {development_length_m:.3f} m; nearest Segment end = {distance_to_end_m:.3f} m."
                     )
 
-                prestress_rows, prestress_materials, omitted_unbonded, ps_errors, ps_warnings = _prestress_at_station(
+                (
+                    prestress_rows,
+                    prestress_materials,
+                    omitted_unbonded,
+                    ps_errors,
+                    ps_warnings,
+                    ps_resolutions,
+                ) = _prestress_at_station(
                     station_m=context_station if is_derived_support else station,
                     length_m=length_m,
                     geometry=geometry,
                     system_rows=tendon_system,
                     profile_rows=profile_rows,
-                    fpe_mpa=fpe_mpa,
+                    effective_prestress_link=effective_link,
                 )
                 errors.extend(f"{case} at s = {station:.6f} m: {message}" for message in ps_errors)
                 row_notes.extend(ps_warnings)
+                if ps_resolutions:
+                    local_fpe = [float(item["fpe (MPa)"]) for item in ps_resolutions]
+                    source_mode = (
+                        PROFILE_MODE_UNIFORM_OVERRIDE
+                        if any(item.get("Mode") == PROFILE_MODE_UNIFORM_OVERRIDE for item in ps_resolutions)
+                        else "STATION_DEPENDENT"
+                    )
+                    row_notes.append(
+                        f"Effective prestress source: {source_mode}; tendon fpe range "
+                        f"{min(local_fpe):.3f} to {max(local_fpe):.3f} MPa at the checked station."
+                    )
+                else:
+                    local_fpe = []
+                    source_mode = "SOURCE_BLOCKED"
                 if not rebar_rows and not prestress_rows:
                     errors.append(
                         f"{case} at s = {station:.6f} m: no ordinary rebar or bonded tendon is available for ULS flexure capacity."
@@ -1356,6 +1456,13 @@ def build_crossbeam_uls_flexure_preparation(
                         ordinary_rebar_area_mm2=sum(bar.area_mm2 for bar in rebar_rows),
                         bonded_tendon_count=len(prestress_rows),
                         bonded_tendon_area_mm2=sum(item.total_area_mm2 for item in prestress_rows),
+                        effective_prestress_mode=source_mode,
+                        effective_prestress_min_mpa=min(local_fpe) if local_fpe else float("nan"),
+                        effective_prestress_max_mpa=max(local_fpe) if local_fpe else float("nan"),
+                        effective_prestress_source="; ".join(
+                            f"{item.get('Tendon')}: {float(item.get('fpe (MPa)') or 0.0):.3f} MPa"
+                            for item in ps_resolutions
+                        ),
                         omitted_unbonded_tendon_count=omitted_unbonded,
                         development_length_m=development_length_m,
                         distance_to_nearest_segment_end_m=distance_to_end_m,
@@ -1387,6 +1494,7 @@ def build_crossbeam_uls_flexure_preparation(
                 f"Active imported ULS rows: {len(active_demands)}.",
                 "Demand mapping: P → Pu; M3 → Mux; V2/T retained for row-coupled audit only.",
                 "Imported FEA resultants are used directly; Pe or secondary prestress is not added to demand again.",
+                "Bonded tendon initial strain uses tendon-specific station-dependent fpe with exact-match or bracketed linear interpolation.",
             ]
         )
     fingerprint_payload = {
@@ -1399,6 +1507,7 @@ def build_crossbeam_uls_flexure_preparation(
         "pt_end_zone": pt_end_zone.as_dict(),
         "excluded_end_zone_rows": excluded_end_zone_rows,
         "rebar_source_fingerprint": rebar_source.fingerprint,
+        "effective_prestress_profile_fingerprint": profile_validation.fingerprint,
         "capacity_signatures": [row.capacity_signature for row in prepared],
         "source_faces": [
             [row.station_m, row.case_name, row.section_face, row.section_id, row.rebar_zone_id]
@@ -1533,6 +1642,12 @@ def run_crossbeam_uls_flexure(preparation: CrossbeamUlsPreparation) -> dict[str,
 
             if status == "PASS" and row.omitted_unbonded_tendon_count:
                 status = "REVIEW"
+            if status == "PASS" and row.effective_prestress_mode == PROFILE_MODE_UNIFORM_OVERRIDE:
+                status = "REVIEW"
+                result_message = (
+                    f"{result_message} Uniform-average Effective Prestress override is active; "
+                    "refresh the tendon/station profile before production acceptance."
+                ).strip()
             if zero_m3 and direction_reference is not None:
                 bending_direction = "Sagging reference (+M3)" if direction_reference.sign > 0.0 else "Hogging reference (-M3)"
                 tension_face = "Bottom face" if direction_reference.sign > 0.0 else "Top face"
@@ -1607,6 +1722,10 @@ def run_crossbeam_uls_flexure(preparation: CrossbeamUlsPreparation) -> dict[str,
                 "Ordinary As credited mm²": row.ordinary_rebar_area_mm2,
                 "Bonded tendons credited": row.bonded_tendon_count,
                 "Bonded Aps credited mm²": row.bonded_tendon_area_mm2,
+                "Effective prestress mode": row.effective_prestress_mode,
+                "Local fpe min MPa": row.effective_prestress_min_mpa,
+                "Local fpe max MPa": row.effective_prestress_max_mpa,
+                "Local fpe source": row.effective_prestress_source,
                 "Unbonded tendons omitted": row.omitted_unbonded_tendon_count,
                 "Demand source": row.demand_source,
                 "Source station 1 m": row.source_station_1_m,

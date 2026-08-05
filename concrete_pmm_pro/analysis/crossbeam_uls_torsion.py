@@ -552,6 +552,20 @@ def _base_result_fields(row: PreparedCrossbeamShearRow) -> dict[str, Any]:
         "Extrapolation ratio": row.extrapolation_ratio,
         "Demand kN-m": row.source_t_knm,
         "Abs demand kN-m": abs(row.source_t_knm),
+        "Effective prestress mode": (
+            "UNIFORM_AVERAGE_OVERRIDE"
+            if any(
+                group.effective_prestress_mode == "UNIFORM_AVERAGE_OVERRIDE"
+                for group in row.prestress_groups
+            )
+            else "STATION_DEPENDENT"
+        ),
+        "Local fse min MPa": min((group.fse_mpa for group in row.prestress_groups), default=float("nan")),
+        "Local fse max MPa": max((group.fse_mpa for group in row.prestress_groups), default=float("nan")),
+        "Local fse source": "; ".join(
+            f"{group.tendon_id}: {group.fse_mpa:.3f} MPa"
+            for group in row.prestress_groups
+        ),
     }
 
 
@@ -1000,7 +1014,17 @@ def run_crossbeam_uls_torsion(preparation: CrossbeamTorsionPreparation) -> dict[
             rows.append(_physical_joint_result(row))
             continue
         try:
-            rows.append(_torsion_result_for_row(row))
+            result = _torsion_result_for_row(row)
+            if (
+                str(result.get("Status") or "") in {"PASS", "BELOW THRESHOLD"}
+                and str(result.get("Effective prestress mode") or "") == "UNIFORM_AVERAGE_OVERRIDE"
+            ):
+                result["Status"] = "REVIEW"
+                result["Notes"] = (
+                    f"{result.get('Notes') or ''} | Uniform-average Effective Prestress override is active; "
+                    "refresh the tendon/station profile before production acceptance."
+                ).strip(" |")
+            rows.append(result)
         except Exception as exc:
             errors.append(f"{row.case_name} at s = {row.station_m:.6f} m: {exc}")
 

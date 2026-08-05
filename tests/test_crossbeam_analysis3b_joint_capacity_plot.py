@@ -109,13 +109,31 @@ def _mixed_30m_state() -> tuple[dict[str, object], list[dict[str, object]]]:
         width_mm=2500.0,
         height_mm=1500.0,
     )
+    profile_rows = [
+        {
+            "Tendon": tendon_id,
+            "Station s (m)": station,
+            "Point": point,
+            "Aps (mm²)": float(tendon["Strands"]) * float(tendon["Aps/strand mm²"]),
+            "fpj (MPa)": float(tendon["fpu MPa"]) * float(tendon["fpj/fpu"]),
+            "fpe (MPa)": 1300.0,
+        }
+        for tendon in tendons
+        for tendon_id in [str(tendon["Tendon ID"])]
+        for station, point in ((0.0, "P1"), (0.5 * length_m, "P2"), (length_m, "P3"))
+    ]
     link = {
+        "schema": "crossbeam-effective-prestress-loads-link-v2",
         "ready": True,
         "source_id": "analysis3b-source",
         "contract_id": "analysis3b-contract",
         "average_total_loss_percent": 20.0,
         "effective_prestress_ratio_percent": 80.0,
         "average_effective_stress_mpa": 1300.0,
+        "member_length_m": length_m,
+        "profile_ready": True,
+        "tendon_station_profiles": profile_rows,
+        "allow_uniform_average_uls_override": False,
     }
     columns = []
     for index, station in enumerate((2.75, 15.0, 27.25), start=1):

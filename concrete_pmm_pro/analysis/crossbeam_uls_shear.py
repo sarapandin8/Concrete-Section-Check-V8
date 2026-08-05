@@ -89,6 +89,11 @@ from concrete_pmm_pro.crossbeam.tendon_persistence import (
     CB_TENDON_SYSTEM_ROWS_KEY,
 )
 from concrete_pmm_pro.crossbeam.uls_rebar_source import build_crossbeam_uls_rebar_source_contract
+from concrete_pmm_pro.crossbeam.uls_effective_prestress import (
+    PROFILE_MODE_UNIFORM_OVERRIDE,
+    resolve_tendon_effective_prestress,
+    validate_effective_prestress_profiles,
+)
 from concrete_pmm_pro.crossbeam.uls_station_geometry import (
     canonical_pt_end_zone_settings,
     end_zone_exclusion_record,
@@ -128,6 +133,10 @@ class CrossbeamShearPrestressGroup:
     area_mm2: float
     fse_mpa: float
     fpu_mpa: float
+    effective_prestress_mode: str
+    source_station_1_m: float | None
+    source_station_2_m: float | None
+    interpolation_ratio: float | None
 
     @property
     def effective_force_n(self) -> float:
@@ -257,7 +266,7 @@ def _tendon_groups_at_station(
     geometry: SectionGeometry,
     tendon_rows: list[dict[str, Any]],
     profile_rows: Any,
-    fse_mpa: float,
+    effective_prestress_link: Mapping[str, Any],
 ) -> tuple[list[CrossbeamShearPrestressGroup], list[str], list[str]]:
     positions = {
         str(row.get("Tendon ID") or ""): row
@@ -286,8 +295,30 @@ def _tendon_groups_at_station(
         area_per_strand = _finite_float(tendon.get("Aps/strand mm²"), 0.0)
         area = float(strands) * area_per_strand
         fpu = _finite_float(tendon.get("fpu MPa"), 0.0)
+        resolution = resolve_tendon_effective_prestress(
+            effective_prestress_link.get("tendon_station_profiles") or [],
+            tendon_id=tendon_id,
+            station_m=station_m,
+            member_length_m=member_length_m,
+            average_effective_stress_mpa=_finite_float(
+                effective_prestress_link.get("average_effective_stress_mpa"), 0.0
+            ),
+            allow_uniform_average_override=bool(
+                effective_prestress_link.get("allow_uniform_average_uls_override")
+            ),
+        )
+        if not resolution.ready or resolution.fpe_mpa is None:
+            errors.append(resolution.message)
+            continue
+        fse_mpa = float(resolution.fpe_mpa)
         if area <= 0.0 or fpu <= 0.0 or fse_mpa <= 0.0:
             errors.append(f"{tendon_id}: Aps, fpu, and effective stress must be positive for the prestressed shear route.")
+            continue
+        if fse_mpa >= fpu:
+            errors.append(
+                f"{tendon_id}: local effective stress {fse_mpa:,.3f} MPa at s={station_m:.6f} m "
+                f"must be lower than fpu = {fpu:,.3f} MPa."
+            )
             continue
         x_mm = _finite_float(position.get("x lateral (mm)"), 0.0)
         y_mm = y_top - _finite_float(position.get("dtop (mm)"), 0.0)
@@ -308,6 +339,10 @@ def _tendon_groups_at_station(
                 area_mm2=area,
                 fse_mpa=float(fse_mpa),
                 fpu_mpa=fpu,
+                effective_prestress_mode=resolution.mode,
+                source_station_1_m=resolution.source_station_1_m,
+                source_station_2_m=resolution.source_station_2_m,
+                interpolation_ratio=resolution.interpolation_ratio,
             )
         )
     return groups, _dedupe(errors), _dedupe(warnings)
@@ -1077,9 +1112,31 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
         errors.append("Crossbeam prestressed shear route requires at least one active Tendon System row.")
     if active_tendons and not bool(effective_link.get("ready")):
         errors.append("Effective Prestress source is not CURRENT/CLOSED for Crossbeam ULS Shear.")
-    fse_mpa = _finite_float(effective_link.get("average_effective_stress_mpa"), 0.0)
-    if active_tendons and fse_mpa <= 0.0:
-        errors.append("Average effective prestress fse must be positive for ACI 318-19 22.5.6.")
+    active_tendon_ids = [str(row.get("Tendon ID") or "").strip() for row in active_tendons]
+    profile_validation = validate_effective_prestress_profiles(
+        effective_link.get("tendon_station_profiles") or [],
+        tendon_ids=active_tendon_ids,
+        member_length_m=member_length_m,
+    )
+    warnings.extend(profile_validation.warnings)
+    average_override = bool(effective_link.get("allow_uniform_average_uls_override"))
+    average_fse_mpa = _finite_float(effective_link.get("average_effective_stress_mpa"), 0.0)
+    if active_tendons and not profile_validation.ready:
+        if average_override and average_fse_mpa > 0.0:
+            warnings.extend(
+                [
+                    "Effective Prestress station profile is incomplete; an explicit uniform-average ULS override is active.",
+                    *profile_validation.errors,
+                ]
+            )
+        else:
+            errors.extend(
+                [
+                    "Station-dependent Effective Prestress is required for Crossbeam ULS Shear/Torsion. "
+                    "Refresh Prestress Loss → Effective Prestress after loading this project.",
+                    *profile_validation.errors,
+                ]
+            )
 
     if errors:
         payload = {
@@ -1087,6 +1144,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
             "contract": contract,
             "demands": demand_rows,
             "rebar_source_fingerprint": rebar_source.fingerprint,
+            "effective_prestress_profile_fingerprint": profile_validation.fingerprint,
             "errors": _dedupe(errors),
         }
         return CrossbeamShearPreparation(
@@ -1265,7 +1323,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
                 geometry=geometry,
                 tendon_rows=tendon_rows,
                 profile_rows=profile_rows,
-                fse_mpa=fse_mpa,
+                effective_prestress_link=effective_link,
             )
             errors.extend(f"{case} at s = {station:.6f} m: {message}" for message in tendon_errors)
 
@@ -1287,6 +1345,17 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
                 )
                 errors.extend(f"{case} at s = {station:.6f} m: {message}" for message in rebar_errors)
                 row_notes = list(tendon_warnings) + list(rebar_warnings)
+                if tendon_groups:
+                    fse_values = [float(group.fse_mpa) for group in tendon_groups]
+                    source_mode = (
+                        PROFILE_MODE_UNIFORM_OVERRIDE
+                        if any(group.effective_prestress_mode == PROFILE_MODE_UNIFORM_OVERRIDE for group in tendon_groups)
+                        else "STATION_DEPENDENT"
+                    )
+                    row_notes.append(
+                        f"Effective prestress source: {source_mode}; tendon fse range "
+                        f"{min(fse_values):.3f} to {max(fse_values):.3f} MPa at the checked station."
+                    )
                 if is_derived_support and str(demand.get("Note") or "").strip():
                     row_notes.append(str(demand.get("Note") or ""))
                 face = _context_face(context, at_joint=False)
@@ -1384,7 +1453,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
                 f"Imported rows omitted inside support footprints or replaced by exact support checks: {omitted_support_rows}.",
                 "Demand mapping: V2 → Vu; P/T/M3 remain row-coupled source values.",
                 "ACI 318-19 9.4.3 is implemented conservatively by checking both the beam-side Column Face and h/2 from that face where the station lies within the modeled member.",
-                "ACI 318-19 prestressed shear uses the current Effective Prestress source; imported resultants are not modified.",
+                "ACI 318-19 prestressed shear uses tendon-specific station-dependent Effective Prestress; imported resultants are not modified.",
             ]
         )
     fingerprint = _fingerprint(
@@ -1398,6 +1467,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
             "pt_end_zone": pt_end_zone.as_dict(),
             "excluded_end_zone_rows": excluded_end_zone_rows,
             "rebar_source_fingerprint": rebar_source.fingerprint,
+            "effective_prestress_profile_fingerprint": profile_validation.fingerprint,
             "row_signatures": [row.source_signature for row in prepared],
         }
     )
@@ -1879,6 +1949,16 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
             continue
 
         status = str(result.get("Status") or "REVIEW")
+        uniform_override = any(
+            group.effective_prestress_mode == PROFILE_MODE_UNIFORM_OVERRIDE
+            for group in row.prestress_groups
+        )
+        if status == "PASS" and uniform_override:
+            status = "REVIEW"
+            result["Notes"] = (
+                f"{result.get('Notes') or ''} | Uniform-average Effective Prestress override is active; "
+                "refresh the tendon/station profile before production acceptance."
+            ).strip(" |")
         phi_vn_n = _finite_float(result.get("phiVn_N"), float("nan"))
         strength_dc = _finite_float(result.get("strength_dc"), float("nan"))
         detailing_dc = _finite_float(result.get("detailing_dc"), float("nan"))
@@ -1974,6 +2054,17 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
                 "Bending direction": result.get("Direction", "-"),
                 "Aps mm2": result.get("Aps_mm2", float("nan")),
                 "As tension mm2": result.get("As_mm2", float("nan")),
+                "Effective prestress mode": (
+                    PROFILE_MODE_UNIFORM_OVERRIDE
+                    if any(group.effective_prestress_mode == PROFILE_MODE_UNIFORM_OVERRIDE for group in row.prestress_groups)
+                    else "STATION_DEPENDENT"
+                ),
+                "Local fse min MPa": min((group.fse_mpa for group in row.prestress_groups), default=float("nan")),
+                "Local fse max MPa": max((group.fse_mpa for group in row.prestress_groups), default=float("nan")),
+                "Local fse source": "; ".join(
+                    f"{group.tendon_id}: {group.fse_mpa:.3f} MPa"
+                    for group in row.prestress_groups
+                ),
                 "Aps fse kN": _finite_float(result.get("Aps_fse_N"), float("nan")) / 1000.0,
                 "Aps fpu kN": _finite_float(result.get("Aps_fpu_N"), float("nan")) / 1000.0,
                 "As fy kN": _finite_float(result.get("Asfy_N"), float("nan")) / 1000.0,

@@ -21352,7 +21352,26 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
             "status": "info",
         },
         {"title": "Production solver", "value": "DIRECT P–M3", "detail": "exact axis · adaptive φPn = Pu root", "status": "ready"},
-        {"title": "Prestress demand", "value": "NOT ADDED", "detail": "verified external-FEA resultants used once", "status": "ready"},
+        {
+            "title": "Prestress handling",
+            "value": (
+                "UNIFORM OVERRIDE"
+                if any(
+                    str(getattr(row, "effective_prestress_mode", "")) == "UNIFORM_AVERAGE_OVERRIDE"
+                    for row in preparation.rows
+                )
+                else "LOCAL fpe(s)"
+            ),
+            "detail": "tendon-specific capacity strain · Pe not added again to FEA demand",
+            "status": (
+                "warning"
+                if any(
+                    str(getattr(row, "effective_prestress_mode", "")) == "UNIFORM_AVERAGE_OVERRIDE"
+                    for row in preparation.rows
+                )
+                else "ready"
+            ),
+        },
     ]
     _render_analysis_summary_strip(source_cards, columns=4)
 
@@ -21412,6 +21431,7 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
             "Section ID", "Ordinary rebar credit", "Development region", "ACI conservative ld m",
             "P kN", "M3 kN-m", "φMn at Pu", "Flexural D/C", "Axial D/C",
             "Neutral axis c mm", "φ value", "Force residual ratio",
+            "Effective prestress mode", "Local fpe min MPa", "Local fpe max MPa", "Local fpe source",
             "Bending direction", "Direction reference",
             "Ordinary bars credited", "Bonded tendons credited", "Unbonded tendons omitted", "Demand source",
         ]
@@ -22342,7 +22362,9 @@ def _render_crossbeam_uls_shear_workspace() -> None:
             )
         regular_columns = [
             "Status", "Strength status", "Detailing status", "Station s (m)", "Check Point", "Case",
-            "Location type", "Section ID", "Rebar Zone", "Transverse Template", "V2 kN", "φVn kN",
+            "Location type", "Section ID", "Rebar Zone", "Transverse Template",
+            "Effective prestress mode", "Local fse min MPa", "Local fse max MPa",
+            "V2 kN", "φVn kN",
             "Strength D/C value", "Detailing D/C value", "Stirrup", "Av/s mm2/m", "Av/s required mm2/m",
             "s max mm", "Spacing D/C",
         ]
@@ -22359,7 +22381,9 @@ def _render_crossbeam_uls_shear_workspace() -> None:
             audit_columns = [
                 "Status", "Generated support check", "Generated joint side check", "Joint side", "Joint station s (m)", "Requested location type", "Station s (m)", "Case",
                 "Section face", "Location type", "Demand source", "Source station 1 (m)", "Source station 2 (m)",
-                "Source ratio", "Extrapolation ratio", "P kN", "V2 kN", "T kN-m", "M3 kN-m",
+                "Source ratio", "Extrapolation ratio",
+                "Effective prestress mode", "Local fse min MPa", "Local fse max MPa", "Local fse source",
+                "P kN", "V2 kN", "T kN-m", "M3 kN-m",
                 "bw mm", "h mm", "d raw mm", "d mm", "dp mm", "Tension face", "Bending direction",
                 "Aps mm2", "As tension mm2", "Aps fse kN", "Aps fpu kN", "As fy kN", "Prestress ratio",
                 "Vc(a) kN", "Vc(b) kN", "Vc(c) kN", "Vc lower kN", "Vc kN", "Vs kN", "φVn kN",
@@ -23410,7 +23434,12 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
         )
         support_df = result_df[result_df.get("Generated support check", False).astype(bool)].copy() if "Generated support check" in result_df else pd.DataFrame()
         joint_side_df = _crossbeam_joint_side_rows(result_df)
-        compact_columns = ["Status", "Check Point", "Station s (m)", "Demand source", "T kN-m", "phiTth kN-m", "phiTn kN-m", "Strength D/C value", "Longitudinal D/C value", "Section limit D/C value"]
+        compact_columns = [
+            "Status", "Check Point", "Station s (m)", "Demand source",
+            "Effective prestress mode", "Local fse min MPa", "Local fse max MPa",
+            "T kN-m", "phiTth kN-m", "phiTn kN-m",
+            "Strength D/C value", "Longitudinal D/C value", "Section limit D/C value",
+        ]
         if not support_df.empty:
             st.markdown("#### Support-face / h/2 checks")
             st.table(support_df[[column for column in compact_columns if column in support_df]].rename(columns={"Demand source": "Source", "phiTth kN-m": "φTth kN-m", "phiTn kN-m": "φTn kN-m", "Strength D/C value": "Strength D/C", "Longitudinal D/C value": "Aℓ D/C", "Section limit D/C value": "Section-limit D/C"}))
@@ -23445,6 +23474,7 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
         with st.expander("Calculation audit — ACI terms / all station rows", expanded=False):
             audit_columns = [
                 "Status", "Generated support check", "Generated joint side check", "Joint side", "Joint station s (m)", "Requested location type", "Station s (m)", "Case", "Location type", "Demand source", "Source station 1 (m)", "Source station 2 (m)", "Source ratio", "Extrapolation ratio",
+                "Effective prestress mode", "Local fse min MPa", "Local fse max MPa", "Local fse source",
                 "P kN", "V2 kN", "T kN-m", "M3 kN-m", "Ag mm2", "Acp mm2", "pcp mm", "Aoh mm2", "Ao mm2", "ph mm", "Hoop offset mm", "fpc MPa", "Prestress ratio", "theta deg", "At/s mm2/mm", "At/s required mm2/mm",
                 "(Av+2At)/s provided mm2/mm", "(Av+2At)/s min mm2/mm", "Al strength required mm2", "Al minimum mm2", "Al required mm2", "Al provided mm2", "Outer bar max spacing mm", "Outer bar min diameter mm", "Corner coverage",
                 "Torsion stirrup spacing mm", "Torsion stirrup s max mm", "Hollow inside clearance mm", "Hollow clearance required mm", "Shear stress MPa", "Torsion stress MPa", "Section limit lhs MPa", "Section limit rhs MPa", "Method", "Notes",
@@ -24918,7 +24948,9 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
         with st.expander("All combined station results — audit", expanded=False):
             compact_columns = [
                 "Status", "Station s (m)", "Check Point", "Case", "Location type", "Segment", "Section ID",
-                "V2 kN", "T kN-m", "M3 kN-m", "Stress D/C value", "Transverse D/C value",
+                "V2 kN", "T kN-m", "M3 kN-m",
+                "Effective prestress mode", "Local fse min MPa", "Local fse max MPa",
+                "Stress D/C value", "Transverse D/C value",
                 "Longitudinal D/C value", "Overall D/C value", "Ordinary rebar credit", "Development region",
             ]
             non_joint_mask = result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str) != "PHYSICAL JOINT SIDE"
@@ -24931,6 +24963,7 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
         with st.expander("Calculation audit — ACI combined terms", expanded=False):
             audit_columns = [
                 "Status", "Station s (m)", "Check Point", "Case", "Segment", "Section ID", "P kN", "V2 kN", "T kN-m", "M3 kN-m",
+                "Effective prestress mode", "Local fse min MPa", "Local fse max MPa", "Local fse source", "Local fpe min MPa", "Local fpe max MPa", "Local fpe source",
                 "Stress status", "Transverse status", "Longitudinal status", "Stress D/C value", "Transverse D/C value", "Longitudinal D/C value", "Overall D/C value",
                 "Av/s strength required mm2/mm", "Av/s minimum required mm2/mm", "Av/s adopted required mm2/mm", "Av/s provided all shear legs mm2/mm", "At/s required mm2/mm", "(Av+2At)/s strength required mm2/mm", "(Av+2At)/s minimum required mm2/mm", "(Av+2At)/s adopted required mm2/mm", "Unique transverse provided/s mm2/mm", "Outer side legs/s provided mm2/mm",
                 "Al strength equivalent mm2", "Al minimum required mm2", "Al provided mm2", "Al minimum D/C value", "Longitudinal detailing D/C value", "Longitudinal fy MPa", "Torsional tensile force kN",

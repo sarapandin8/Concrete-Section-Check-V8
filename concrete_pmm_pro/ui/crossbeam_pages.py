@@ -161,6 +161,10 @@ from concrete_pmm_pro.crossbeam.station_force_contract import (
     CB_STATION_FORCE_CONTRACT_KEY,
     CB_STATION_FORCE_VALIDATION_KEY,
 )
+from concrete_pmm_pro.crossbeam.uls_effective_prestress import (
+    PROFILE_BASIS_PROJECTED_STATION,
+    canonical_effective_prestress_profile_rows,
+)
 from concrete_pmm_pro.crossbeam.time_dependent_loss import (
     AASHTO_TIME_DEPENDENT_BASIS,
     LIGHTWEIGHT_TD_METHOD,
@@ -8599,8 +8603,16 @@ def _render_crossbeam_effective_prestress_fea_handoff(
     tendon_rows = list(handoff.get("tendon_rows") or [])
     fingerprint = str(handoff.get("source_fingerprint") or "")
     source_id = str(handoff.get("source_id") or fingerprint[:12])
+    uls_profile_rows = canonical_effective_prestress_profile_rows(
+        summary_payload.get("effective_station_rows") or []
+    )
+    uls_profile_ready = bool(
+        download_ready
+        and summary_payload.get("projected_coverage_ready")
+        and uls_profile_rows
+    )
     st.session_state[CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY] = {
-        "ready": bool(download_ready),
+        "ready": bool(uls_profile_ready),
         "source_id": source_id,
         "contract_id": str(handoff.get("contract_id") or ""),
         "source_fingerprint": fingerprint,
@@ -8610,6 +8622,11 @@ def _render_crossbeam_effective_prestress_fea_handoff(
         "effective_prestress_ratio_percent": 100.0 - float(summary_payload.get("average_total_loss_percent") or 0.0),
         "average_effective_stress_mpa": float(summary_payload.get("average_effective_stress_mpa") or 0.0),
         "average_effective_force_kn": float(summary_payload.get("average_effective_force_kn") or 0.0),
+        "member_length_m": float(summary_payload.get("member_length_m") or 0.0),
+        "profile_basis": PROFILE_BASIS_PROJECTED_STATION,
+        "profile_ready": bool(uls_profile_ready),
+        "tendon_station_profiles": uls_profile_rows,
+        "allow_uniform_average_uls_override": False,
     }
 
     if not ready:
