@@ -45,13 +45,6 @@ from concrete_pmm_pro.analysis.crossbeam_uls_combined_vt import (
     run_crossbeam_uls_combined_vt,
 )
 from concrete_pmm_pro.crossbeam.uls_station_geometry import (
-    CB_ULS_PT_END_ZONE_BASIS_KEY,
-    CB_ULS_PT_END_ZONE_LEFT_M_KEY,
-    CB_ULS_PT_END_ZONE_RIGHT_M_KEY,
-    CB_ULS_PT_END_ZONE_BASIS_LOCAL_DEPTH,
-    CB_ULS_PT_END_ZONE_BASIS_MANUAL,
-    CB_ULS_PT_END_ZONE_BASIS_OPTIONS,
-    canonical_pt_end_zone_settings,
     trace_owner_label,
 )
 from concrete_pmm_pro.crossbeam.section_library import (
@@ -21207,7 +21200,7 @@ def _make_crossbeam_uls_flexure_figure(
         title={
             "text": (
                 "Flexure Check — Strength ULS"
-                f"<br><sup>ACI 318-19 · direct Crossbeam P–M3 · {owner_label} capacity envelope · support/PT end zones omitted</sup>"
+                f"<br><sup>ACI 318-19 · direct Crossbeam P–M3 · {owner_label} capacity envelope · support interiors omitted; full-span PT end stations retained</sup>"
             )
         },
         margin={"l": 82, "r": 42, "t": 96, "b": 116},
@@ -21385,17 +21378,6 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
     ]
     _render_analysis_summary_strip(result_cards, columns=4)
 
-    excluded_end_zone_df = pd.DataFrame(list(result.get("excluded_pt_end_zone_rows") or []))
-    if not excluded_end_zone_df.empty:
-        with st.expander(
-            f"PT end-zone exclusions — {len(excluded_end_zone_df.index):,} row(s) outside ordinary B-region governing",
-            expanded=False,
-        ):
-            st.dataframe(excluded_end_zone_df, use_container_width=True, hide_index=True)
-            st.caption(
-                "These demand rows remain visible for audit but are not eligible to govern the ordinary Flexure B-region result. "
-                "PT anchorage/end-zone design remains a separate D-region review."
-            )
 
     if not result_df.empty:
         _render_beam_uls_static_plotly_figure(
@@ -21416,14 +21398,14 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
         )
         owner = trace_owner_label(construction_method)
         st.caption(
-            f"The red dashed line is the adopted direct-solver φMn envelope. {owner} traces stop through shaded support footprints and the pale PT end-zone bands are excluded from ordinary B-region governing. "
+            f"The red dashed line is the adopted direct-solver φMn envelope. {owner} traces stop through shaded support footprints while valid PT end stations remain in the full-member sectional envelope. "
             "Pale amber development bands identify tendon-only/no-ordinary-rebar-credit regions; vertical capacity steps occur only at binary credit boundaries. "
             + (
                 "Amber dotted lines mark physical Segment joints, where independently solved s−/s+ capacities remain separate and no capacity is interpolated across the joint. "
                 if construction_method == "Precast Segmental"
                 else "Cast-in-Place Zone boundaries are property boundaries only and do not create artificial physical-joint breaks. "
             )
-            + "At zero-M3 rows, the nearest nonzero M3 sign in the same Load Case sets the checked bending direction; Flexural D/C remains 0.000 and Axial D/C is reported separately. PT anchorage/end-zone and beam-column-joint D-regions remain separate reviews."
+            + "At zero-M3 rows, the nearest nonzero M3 sign in the same Load Case sets the checked bending direction; Flexural D/C remains 0.000 and Axial D/C is reported separately. PT anchorage local/general-zone design and beam-column-joint D-regions remain separate project checks."
         )
         display_columns = [
             "Status", "Station s (m)", "Check Point", "Case", "Segment", "Section face", "Location type",
@@ -21580,60 +21562,9 @@ def _crossbeam_clip_trace_to_pt_b_region(
     *,
     member_length_m: float,
 ) -> None:
-    """Remove ordinary B-region line content inside the adopted PT end zones."""
+    """Compatibility no-op: PT end stations remain in full-span ULS traces."""
 
-    if "lines" not in str(getattr(trace, "mode", "")) or not isinstance(settings, Mapping):
-        return
-    left_boundary = _beam_uls_float(settings.get("Left boundary s (m)"))
-    right_boundary = _beam_uls_float(settings.get("Right boundary s (m)"))
-    if not math.isfinite(left_boundary):
-        left_boundary = 0.0
-    if not math.isfinite(right_boundary):
-        right_boundary = float(member_length_m)
-    raw_x = getattr(trace, "x", None)
-    raw_y = getattr(trace, "y", None)
-    if raw_x is None or raw_y is None:
-        return
-    x_values = list(raw_x)
-    y_values = list(raw_y)
-    if len(x_values) != len(y_values):
-        return
-    raw_custom = getattr(trace, "customdata", None)
-    custom_values = list(raw_custom) if raw_custom is not None and len(raw_custom) == len(x_values) else None
-    output_x: list[object] = []
-    output_y: list[object] = []
-    output_custom: list[object] | None = [] if custom_values is not None else None
-
-    def _append_gap() -> None:
-        if output_x and output_x[-1] is not None:
-            output_x.append(None)
-            output_y.append(None)
-            if output_custom is not None:
-                output_custom.append(None)
-
-    for index, (x_value, y_value) in enumerate(zip(x_values, y_values)):
-        if x_value is None or y_value is None:
-            _append_gap()
-            continue
-        try:
-            station = float(x_value)
-        except (TypeError, ValueError):
-            _append_gap()
-            continue
-        if station < left_boundary - 1.0e-9 or station > right_boundary + 1.0e-9:
-            _append_gap()
-            continue
-        output_x.append(x_value)
-        output_y.append(y_value)
-        if output_custom is not None:
-            output_custom.append(custom_values[index])
-
-    trace.x = output_x
-    trace.y = output_y
-    if output_custom is not None:
-        trace.customdata = output_custom
-
-
+    del trace, settings, member_length_m
 
 def _crossbeam_segment_records(segment_rows: Any) -> list[dict[str, object]]:
     records: list[dict[str, object]] = []
@@ -21676,49 +21607,9 @@ def _crossbeam_add_pt_end_zone_context(
     member_length_m: float,
     showlegend: bool = True,
 ) -> None:
-    """Shade engineer-adopted PT end zones without creating a fake capacity trace."""
+    """Compatibility no-op: no PT end-zone bands are drawn on ULS charts."""
 
-    if not isinstance(settings, Mapping) or member_length_m <= 0.0:
-        return
-    left_boundary = _beam_uls_float(settings.get("Left boundary s (m)"))
-    right_boundary = _beam_uls_float(settings.get("Right boundary s (m)"))
-    ranges: list[tuple[float, float, str]] = []
-    if math.isfinite(left_boundary) and left_boundary > 0.0:
-        ranges.append((0.0, min(left_boundary, member_length_m), "Left PT end zone"))
-    if math.isfinite(right_boundary) and right_boundary < member_length_m:
-        ranges.append((max(0.0, right_boundary), member_length_m, "Right PT end zone"))
-    for start, end, label in ranges:
-        if end <= start:
-            continue
-        fig.add_vrect(
-            x0=start,
-            x1=end,
-            fillcolor="rgba(245, 158, 11, 0.075)",
-            line_width=0,
-            layer="below",
-        )
-        fig.add_annotation(
-            x=0.5 * (start + end),
-            y=0.985,
-            xref="x",
-            yref="paper",
-            text=f"{label} · REVIEW",
-            showarrow=False,
-            font={"size": 8, "color": "#9a6700"},
-        )
-    if ranges and showlegend:
-        fig.add_trace(
-            go.Scatter(
-                x=[None],
-                y=[None],
-                mode="lines",
-                name="PT end zone — REVIEW",
-                legendgroup="crossbeam_pt_end_zone",
-                line={"color": "rgba(245,158,11,0.34)", "width": 9},
-                hoverinfo="skip",
-            )
-        )
-
+    del fig, settings, member_length_m, showlegend
 
 def _crossbeam_add_support_context(
     fig: go.Figure,
@@ -22118,7 +22009,7 @@ def _make_crossbeam_uls_shear_figure(
         title={
             "text": (
                 "Shear Check — Strength ULS"
-                f"<br><sup>ACI 318-19 · station-dependent {owner_label.lower()} traces · support/PT end zones omitted"
+                f"<br><sup>ACI 318-19 · station-dependent {owner_label.lower()} traces · support interiors omitted; full-span PT end stations retained"
                 + (" · one-sided physical-joint values" if is_precast else "")
                 + "</sup>"
             ),
@@ -22367,16 +22258,6 @@ def _render_crossbeam_uls_shear_workspace() -> None:
             "the ACI sectional shear result and governing D/C are reported independently above."
         )
 
-    excluded_end_zone_df = pd.DataFrame(list(result.get("excluded_pt_end_zone_rows") or []))
-    if not excluded_end_zone_df.empty:
-        with st.expander(
-            f"PT end-zone exclusions — {len(excluded_end_zone_df.index):,} row(s) outside ordinary B-region governing",
-            expanded=False,
-        ):
-            st.dataframe(excluded_end_zone_df, use_container_width=True, hide_index=True)
-            st.caption(
-                "The excluded rows remain demand evidence only. PT anchorage/end-zone shear design is a separate D-region review."
-            )
 
     if not result_df.empty:
         chart_df = result_df.copy()
@@ -22410,7 +22291,7 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         )
         owner = trace_owner_label(construction_method)
         st.caption(
-            f"Signed Vu and the ±φVn / ±φVc traces use {owner} routing and break across every shaded support footprint; pale PT end-zone bands are excluded from ordinary B-region governing. "
+            f"Signed Vu and the ±φVn / ±φVc traces use {owner} routing and break across every shaded support footprint; valid PT end stations remain in the full-member sectional envelope. "
             + (
                 "Every Precast physical joint plots separate one-sided left/right demand and capacity values without averaging or interpolation across the joint. "
                 if construction_method == "Precast Segmental"
@@ -23017,7 +22898,7 @@ def _make_crossbeam_uls_torsion_figure(
     fig = _make_beam_uls_demand_figure(
         demand_df,
         column="Tu",
-        title=f"Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · {owner_label} Tu and step capacities · support/PT end zones omitted; face/h/2 checks shown</sup>",
+        title=f"Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · {owner_label} Tu and step capacities · support interiors omitted; full-span PT end stations retained; face/h/2 checks shown</sup>",
         y_label="Torsion, Tu (kN-m)",
     )
     segments = _crossbeam_segment_records(segment_rows)
@@ -23281,7 +23162,7 @@ def _make_crossbeam_uls_torsion_figure(
 
     y_range = _crossbeam_torsion_symmetric_y_range(result_df)
     fig.update_layout(
-        title=f"Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · {owner_label} Tu and step capacities · support/PT end zones omitted; face/h/2 checks shown</sup>",
+        title=f"Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · {owner_label} Tu and step capacities · support interiors omitted; full-span PT end stations retained; face/h/2 checks shown</sup>",
         yaxis={"range": y_range} if y_range is not None else {},
         margin=dict(l=82, r=42, t=105, b=116),
     )
@@ -23504,16 +23385,6 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
         )
 
     if not result_df.empty:
-        excluded_end_zone_df = pd.DataFrame(list(result.get("excluded_pt_end_zone_rows") or []))
-        if not excluded_end_zone_df.empty:
-            with st.expander(
-                f"PT end-zone exclusions — {len(excluded_end_zone_df.index):,} row(s) outside ordinary B-region governing",
-                expanded=False,
-            ):
-                st.dataframe(excluded_end_zone_df, use_container_width=True, hide_index=True)
-                st.caption(
-                    "The excluded rows remain demand evidence only. PT anchorage/end-zone torsion design is a separate D-region review."
-                )
         construction_method = normalize_construction_method(
             st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
         )
@@ -23528,7 +23399,7 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
                 member_length_m=_beam_uls_float(result.get("member_length_m")),
             ),
             caption=(
-                f"Signed Tu uses {owner} routing, stops at Column/Support interiors, and excludes the pale PT end-zone bands from ordinary B-region governing. "
+                f"Signed Tu uses {owner} routing, stops at Column/Support interiors, while retaining all valid end stations in the full-member sectional envelope. "
                 + (
                     "The horizontal ±φTth / ±φTn capacities terminate at every physical joint; one-sided s−/s+ demand and capacities remain separate and are never interpolated through the joint. "
                     if construction_method == "Precast Segmental"
@@ -24592,7 +24463,7 @@ def _make_crossbeam_uls_combined_vt_component_figure(
     owner_label = trace_owner_label(normalize_construction_method(construction_method))
     fig.update_layout(
         title={
-            "text": f"{spec['chart_title']}<br><sup>{spec['subtitle']} · {owner_label} traces · support/PT end zones omitted</sup>",
+            "text": f"{spec['chart_title']}<br><sup>{spec['subtitle']} · {owner_label} traces · support interiors omitted; full-span PT end stations retained</sup>",
             "x": 0.5,
             "xanchor": "center",
         },
@@ -24854,16 +24725,6 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
             "Physical-joint transfer and torsion continuation/anchorage reviews remain separate from this numerical failure."
         )
 
-    excluded_end_zone_df = pd.DataFrame(list(result.get("excluded_pt_end_zone_rows") or []))
-    if not excluded_end_zone_df.empty:
-        with st.expander(
-            f"PT end-zone exclusions — {len(excluded_end_zone_df.index):,} row(s) outside ordinary B-region governing",
-            expanded=False,
-        ):
-            st.dataframe(excluded_end_zone_df, use_container_width=True, hide_index=True)
-            st.caption(
-                "The excluded rows remain demand evidence only. PT anchorage/end-zone V+T design is a separate D-region review."
-            )
 
     if not result_df.empty:
         st.markdown("#### Combined check review")
@@ -25962,68 +25823,15 @@ def _render_crossbeam_service_stress_workspace() -> None:
 
 
 def _render_crossbeam_uls_station_geometry_controls() -> None:
-    """Render the shared ULS station-eligibility and PT end-zone source."""
+    """Show the shared ULS station policy without PT end-zone clipping controls."""
 
-    length_m = _beam_uls_float(st.session_state.get(CROSSBEAM_LENGTH_KEY))
-    segment_rows = list(st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY) or [])
-    definitions = canonical_section_definitions(
-        st.session_state.get(CB_SECLIB_DEFINITIONS_KEY, [])
+    construction_method = normalize_construction_method(
+        st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
     )
-    initial = canonical_pt_end_zone_settings(
-        st.session_state,
-        member_length_m=max(length_m, 0.0),
-        segment_rows=segment_rows,
-        definitions=definitions,
-    )
-    if CB_ULS_PT_END_ZONE_BASIS_KEY not in st.session_state:
-        st.session_state[CB_ULS_PT_END_ZONE_BASIS_KEY] = CB_ULS_PT_END_ZONE_BASIS_LOCAL_DEPTH
-    if CB_ULS_PT_END_ZONE_LEFT_M_KEY not in st.session_state and initial.left_length_m > 0.0:
-        st.session_state[CB_ULS_PT_END_ZONE_LEFT_M_KEY] = float(initial.left_length_m)
-    if CB_ULS_PT_END_ZONE_RIGHT_M_KEY not in st.session_state and initial.right_length_m > 0.0:
-        st.session_state[CB_ULS_PT_END_ZONE_RIGHT_M_KEY] = float(initial.right_length_m)
-
-    with st.expander("ULS station eligibility / PT end zones", expanded=False):
+    with st.expander("ULS station routing / scope", expanded=False):
         st.caption(
-            "One shared geometry source is used by Flexure, Shear, Torsion, and Combined V+T. "
-            "Support-footprint interiors and the adopted PT anchorage/end-zone lengths are excluded from ordinary B-region governing."
-        )
-        basis = st.selectbox(
-            "PT end-zone exclusion basis",
-            list(CB_ULS_PT_END_ZONE_BASIS_OPTIONS),
-            key=CB_ULS_PT_END_ZONE_BASIS_KEY,
-            help=(
-                "Local section depth h is the conservative starter basis. Manual lengths are engineer-adopted project inputs; "
-                "PT anchorage/end-zone design remains a separate D-region check."
-            ),
-        )
-        if basis == CB_ULS_PT_END_ZONE_BASIS_MANUAL:
-            cols = st.columns(2)
-            with cols[0]:
-                st.number_input(
-                    "Left PT end-zone length (m)",
-                    min_value=0.001,
-                    max_value=max(0.001, 0.49 * max(length_m, 0.002)),
-                    step=0.05,
-                    format="%.3f",
-                    key=CB_ULS_PT_END_ZONE_LEFT_M_KEY,
-                )
-            with cols[1]:
-                st.number_input(
-                    "Right PT end-zone length (m)",
-                    min_value=0.001,
-                    max_value=max(0.001, 0.49 * max(length_m, 0.002)),
-                    step=0.05,
-                    format="%.3f",
-                    key=CB_ULS_PT_END_ZONE_RIGHT_M_KEY,
-                )
-        settings = canonical_pt_end_zone_settings(
-            st.session_state,
-            member_length_m=max(length_m, 0.0),
-            segment_rows=segment_rows,
-            definitions=definitions,
-        )
-        construction_method = normalize_construction_method(
-            st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
+            "Flexure, Shear, Torsion, and Combined V+T use one shared station source. "
+            "Valid end stations from s = 0 to s = L remain in the sectional envelope; only Column/support interiors and Precast physical-joint trace crossings are treated as breaks."
         )
         _render_analysis_summary_strip(
             [
@@ -26034,26 +25842,23 @@ def _render_crossbeam_uls_station_geometry_controls() -> None:
                     "status": "info",
                 },
                 {
-                    "title": "Left PT end zone",
-                    "value": f"0.000–{settings.left_boundary_m:.3f} m" if settings.ready else "SOURCE BLOCKED",
-                    "detail": settings.basis,
-                    "status": "warning" if settings.ready else "danger",
+                    "title": "Sectional station range",
+                    "value": "FULL MEMBER",
+                    "detail": "s = 0 to s = L stays eligible for governing",
+                    "status": "ready",
                 },
                 {
-                    "title": "Right PT end zone",
-                    "value": f"{settings.right_boundary_m:.3f}–{length_m:.3f} m" if settings.ready else "SOURCE BLOCKED",
-                    "detail": settings.basis,
-                    "status": "warning" if settings.ready else "danger",
+                    "title": "PT anchorage design",
+                    "value": "SEPARATE CHECK",
+                    "detail": "Local/general-zone design is not certified by sectional ULS",
+                    "status": "warning",
                 },
             ],
             columns=3,
         )
-        for message in settings.errors:
-            st.error(message)
         st.info(
-            "PT end-zone rows remain visible as excluded REVIEW evidence; they cannot govern ordinary Flexure/Shear/Torsion/V+T B-region PASS/FAIL."
+            "Sectional ULS results remain complete over the full member length. PT anchorage bearing, bursting, spalling/edge tension, confinement, and general-zone D-region verification remain separate project checks."
         )
-
 
 def render_analysis_uls_pmm() -> None:
     st.subheader("ULS Strength")

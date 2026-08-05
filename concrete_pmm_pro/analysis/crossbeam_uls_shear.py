@@ -2076,13 +2076,13 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
         "support_joint_reviews": support_joint_reviews,
         "support_footprints": [dict(item) for item in preparation.support_footprints],
         "derived_support_rows": [dict(item) for item in preparation.derived_support_rows],
-        "excluded_pt_end_zone_rows": [dict(item) for item in preparation.excluded_end_zone_rows],
+        "excluded_pt_end_zone_rows": [],
         "pt_end_zone_settings": dict(preparation.pt_end_zone_settings or {}),
         "member_length_m": float(preparation.member_length_m),
         "scope": (
             "ULS sectional one-way shear only. ACI 318-19 9.4.3 is applied conservatively by checking both each available beam-side "
             "Column Face and the h/2 critical section measured outward from that face; the more severe result governs. "
-            "Support-footprint interiors and the adopted PT anchorage/end-zone lengths are omitted from ordinary beam-shear B-region checks. The beam-column joint/support-footprint D-region itself remains "
+            "Support-footprint interiors are omitted from ordinary beam-shear traces, while every valid end station from s = 0 to s = L remains eligible for sectional governing. The beam-column joint/support-footprint D-region itself remains "
             "outside this sectional check and does not reduce a completed sectional PASS to REVIEW. Exact Precast physical-joint shear transfer "
             "is reported as a separate REVIEW item and does not hide the governing sectional D/C. Post-tensioning anchorage/end zones, hanger "
             "reinforcement, anchorage/development, torsion, combined V+T, fatigue, and seismic detailing remain separate. The ACI 22.5.6.2 "

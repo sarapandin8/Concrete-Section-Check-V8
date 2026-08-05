@@ -151,8 +151,8 @@ def test_preparation_generates_conservative_column_face_and_h2_rows() -> None:
 
     assert preparation.ready, preparation.errors
     assert len(preparation.derived_support_rows) == 6
-    assert len(preparation.rows) == 11
-    assert len(preparation.excluded_end_zone_rows) == 8
+    assert len(preparation.rows) == 15
+    assert len(preparation.excluded_end_zone_rows) == 0
 
     interior = next(row for row in preparation.rows if row.station_m == pytest.approx(5.0))
     assert interior.source_p_kn == pytest.approx(5000.0)
@@ -169,7 +169,7 @@ def test_preparation_generates_conservative_column_face_and_h2_rows() -> None:
         row for row in preparation.rows
         if row.location_type in {"COLUMN FACE", "ACI h/2 CRITICAL SECTION"}
     ]
-    assert len(support_rows) == 4
+    assert len(support_rows) == 6
     assert all(row.transverse_template is not None for row in support_rows)
     assert not any(row.location_type == "COLUMN / SUPPORT D-REGION" for row in preparation.rows)
 
@@ -192,8 +192,8 @@ def test_run_checks_support_faces_and_h2_without_d_region_status_penalty() -> No
     result = run_crossbeam_uls_shear(preparation)
 
     assert result["status"] == "REVIEW"  # physical segment joint remains a separate scope guard
-    assert result["support_checks"] == 4
-    assert result["station_checks"] == 11
+    assert result["support_checks"] == 6
+    assert result["station_checks"] == 15
 
     interior = next(row for row in result["rows"] if row["Station s (m)"] == pytest.approx(5.0))
     assert interior["Strength status"] == "PASS"
@@ -205,7 +205,7 @@ def test_run_checks_support_faces_and_h2_without_d_region_status_penalty() -> No
         row for row in result["rows"]
         if row["Location type"] in {"COLUMN FACE", "ACI h/2 CRITICAL SECTION"}
     ]
-    assert len(support_rows) == 4
+    assert len(support_rows) == 6
     assert all(row["Status"] == "PASS" for row in support_rows)
     assert all(math.isfinite(float(row["φVn kN"])) for row in support_rows)
     assert not any(row["Location type"] == "COLUMN / SUPPORT D-REGION" for row in result["rows"])
@@ -225,7 +225,7 @@ def test_interior_and_support_checks_can_close_with_pass_without_double_counting
     assert result["status"] == "REVIEW"
     assert result["sectional_status"] == "PASS"
     assert result["joint_review_count"] == 2
-    assert result["support_checks"] == 4
+    assert result["support_checks"] == 6
     assert all(row["Status"] == "PASS" for row in result["rows"])
     interior = next(row for row in result["rows"] if row["Station s (m)"] == pytest.approx(5.0))
     assert interior["P kN"] == pytest.approx(5000.0)
@@ -556,8 +556,8 @@ def test_crossbeam_shear_chart_breaks_support_regions_and_dedupes_capacity_legen
         left = float(footprint["s_left (m)"])
         right = float(footprint["s_right (m)"])
         assert not any(left < station < right for station in finite_x)
-    assert sum(shape.type == "rect" for shape in figure.layout.shapes) == 4
-    assert "support/PT end zones omitted" in str(figure.layout.title.text)
+    assert sum(shape.type == "rect" for shape in figure.layout.shapes) == 2
+    assert "full-span PT end stations retained" in str(figure.layout.title.text)
 
 
 def test_sectional_result_is_reported_independently_from_physical_joint_review() -> None:
@@ -567,9 +567,9 @@ def test_sectional_result_is_reported_independently_from_physical_joint_review()
     assert result["status"] == "REVIEW"
     assert result["sectional_status"] == "PASS"
     assert result["joint_review_count"] == 2
-    assert result["sectional_checks"] == 10
-    assert result["generated_support_checks"] == 4
-    assert result["support_checks"] == 4
+    assert result["sectional_checks"] == 14
+    assert result["generated_support_checks"] == 6
+    assert result["support_checks"] == 6
     assert result["support_joint_reviews"] == 0
 
     overall_governing = result["governing_row"]

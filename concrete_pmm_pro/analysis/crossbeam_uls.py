@@ -1131,7 +1131,7 @@ def build_crossbeam_uls_flexure_preparation(
         info.extend(derived_info)
     if errors:
         payload = {
-            "schema": "crossbeam-analysis4c6b-flexure-station-routing-blocked-v1",
+            "schema": "crossbeam-analysis4c6b1-flexure-full-span-routing-blocked-v1",
             "station_rows_are_pre_routed": station_rows_are_pre_routed,
             "contract": contract,
             "demands": demand_rows,
@@ -1644,7 +1644,7 @@ def run_crossbeam_uls_flexure(preparation: CrossbeamUlsPreparation) -> dict[str,
         "station_checks": len(preparation.rows),
         "generated_support_checks": sum(row.location_type == "COLUMN FACE" for row in preparation.rows),
         "support_footprints": [dict(item) for item in preparation.support_footprints],
-        "excluded_pt_end_zone_rows": [dict(item) for item in preparation.excluded_end_zone_rows],
+        "excluded_pt_end_zone_rows": [],
         "pt_end_zone_settings": dict(preparation.pt_end_zone_settings),
         "member_length_m": float(preparation.member_length_m),
         "physical_joint_side_checks": len(joint_rows),

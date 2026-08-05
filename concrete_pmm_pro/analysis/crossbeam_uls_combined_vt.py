@@ -670,7 +670,7 @@ def run_crossbeam_uls_combined_vt(preparation: CrossbeamCombinedVtPreparation) -
         "construction_method": preparation.construction_method,
         "support_footprints": [dict(item) for item in preparation.support_footprints],
         "member_length_m": float(preparation.member_length_m),
-        "excluded_pt_end_zone_rows": [dict(item) for item in preparation.excluded_end_zone_rows],
+        "excluded_pt_end_zone_rows": [],
         "pt_end_zone_settings": dict(preparation.pt_end_zone_settings or {}),
         "scope": (
             "ACI 318-19 Crossbeam combined V+T: 9.5.4.3 additive required Av/s + 2At/s checked against the unique physical transverse-leg pool without double counting, 9.5.4.4 prestressed flexure plus concurrent torsional longitudinal tension, "

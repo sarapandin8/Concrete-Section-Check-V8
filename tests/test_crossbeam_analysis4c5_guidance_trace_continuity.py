@@ -48,15 +48,15 @@ def test_connected_groups_include_support_checks_but_never_cross_support_interio
     )
     x_groups = [tuple(pd.to_numeric(group["__x"]).astype(float)) for group in groups]
 
-    # The adopted PT end zone removes the end and h/2 rows. The eligible
-    # Column Face remains, and the opposite face starts a new trace.
-    assert any(group == (1.75,) for group in x_groups)
+    # Full-span routing retains the end and h/2 rows while support interiors
+    # remain true trace breaks.
+    assert any(group == (0.0, 1.0, 1.75) for group in x_groups)
     assert any(group == (3.75, 4.0) for group in x_groups)
     assert not any(1.75 in group and 3.75 in group for group in x_groups)
 
-    # C3 behaves the same way near the right PT end zone.
+    # C3 behaves the same way while retaining the right end station.
     assert any(group == (26.0, 26.25) for group in x_groups)
-    assert any(group == (28.25,) for group in x_groups)
+    assert any(group == (28.25, 29.0, 30.0) for group in x_groups)
     assert not any(26.25 in group and 28.25 in group for group in x_groups)
 
 
@@ -75,8 +75,9 @@ def test_stress_and_transverse_traces_use_evaluated_support_points_for_visual_co
         traces = [trace for trace in figure.data if str(trace.name) == trace_name]
         assert traces
         x_groups = [tuple(float(value) for value in trace.x) for trace in traces]
-        assert any(group == (1.75,) for group in x_groups)
+        assert any(group == (0.0, 1.0, 1.75) for group in x_groups)
         assert any(group == (3.75, 4.0) for group in x_groups)
+        assert any(group == (28.25, 29.0, 30.0) for group in x_groups)
         assert not any(1.75 in group and 3.75 in group for group in x_groups)
 
 

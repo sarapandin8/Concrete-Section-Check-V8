@@ -358,7 +358,7 @@ def test_flexure_capacity_is_one_clean_step_envelope_per_segment() -> None:
     title = str(figure.layout.title.text)
     assert "direct Crossbeam P–M3" in title
     assert "Segment-owned capacity envelope" in title
-    assert "support/PT end zones omitted" in title
+    assert "full-span PT end stations retained" in title
 
 def test_flexure_credit_region_trace_does_not_invent_boundary_values_when_capacity_varies() -> None:
     rows = pd.DataFrame(

@@ -3,7 +3,7 @@
 This module owns only station geometry and row-coupled demand recovery.  It does
 not calculate Flexure, Shear, Torsion, or Combined V+T resistance.  All ULS
 modules use the same Column/support footprints, beam-side support-face recovery,
-PT end-zone exclusion, and construction-mode terminology.
+full-member sectional eligibility, and construction-mode terminology.
 """
 
 from __future__ import annotations
@@ -173,57 +173,34 @@ def canonical_pt_end_zone_settings(
     segment_rows: list[dict[str, Any]],
     definitions: list[dict[str, Any]],
 ) -> CrossbeamPtEndZoneSettings:
+    """Return the compatibility payload for full-member sectional ULS checks.
+
+    ANALYSIS4C6B1 restores every valid end station to the Flexure, Shear,
+    Torsion, and Combined V+T envelopes.  Historical Project JSON end-zone
+    fields remain readable for backward compatibility, but they no longer clip
+    traces, remove rows, change governing searches, or stale ULS results.
+    Anchorage local-zone/general-zone verification remains a separate project
+    check and is stated in the ULS scope notes instead.
+    """
+
+    del state, segment_rows, definitions  # Retained in the public API for compatibility.
     errors: list[str] = []
-    notes: list[str] = []
-    basis = str(_get(state, CB_ULS_PT_END_ZONE_BASIS_KEY, CB_ULS_PT_END_ZONE_BASIS_LOCAL_DEPTH) or "")
-    if basis not in CB_ULS_PT_END_ZONE_BASIS_OPTIONS:
-        basis = CB_ULS_PT_END_ZONE_BASIS_LOCAL_DEPTH
-    probe = max(1.0e-6, member_length_m * 1.0e-8)
-    left_auto, left_error = _section_depth_at_probe(
-        probe_m=min(probe, max(member_length_m, 0.0)),
-        segment_rows=segment_rows,
-        definitions=definitions,
-        member_length_m=member_length_m,
-    )
-    right_auto, right_error = _section_depth_at_probe(
-        probe_m=max(0.0, member_length_m - probe),
-        segment_rows=segment_rows,
-        definitions=definitions,
-        member_length_m=member_length_m,
-    )
-    if left_error:
-        errors.append(f"Left PT end zone: {left_error}")
-    if right_error:
-        errors.append(f"Right PT end zone: {right_error}")
-    left_default = left_auto or 0.0
-    right_default = right_auto or 0.0
-    if basis == CB_ULS_PT_END_ZONE_BASIS_MANUAL:
-        left = _finite(_get(state, CB_ULS_PT_END_ZONE_LEFT_M_KEY, left_default), left_default)
-        right = _finite(_get(state, CB_ULS_PT_END_ZONE_RIGHT_M_KEY, right_default), right_default)
-        notes.append("PT end-zone lengths are engineer-adopted manual ULS B-region exclusion lengths.")
-    else:
-        left = left_default
-        right = right_default
-        notes.append("PT end-zone lengths use the local end-section overall depth h as the conservative starter basis.")
-    if left <= 0.0:
-        errors.append("Left PT end-zone length must be positive.")
-    if right <= 0.0:
-        errors.append("Right PT end-zone length must be positive.")
-    if member_length_m <= 0.0:
+    if not math.isfinite(float(member_length_m)) or float(member_length_m) <= 0.0:
         errors.append("Crossbeam member length must be positive.")
-    if left + right >= member_length_m - max(1.0e-7, member_length_m * 1.0e-9):
-        errors.append("Left and right PT end zones overlap; adopt shorter end-zone lengths before ULS sectional checks.")
+    length = max(0.0, _finite(member_length_m, 0.0))
     return CrossbeamPtEndZoneSettings(
-        basis=basis,
-        left_length_m=max(0.0, left),
-        right_length_m=max(0.0, right),
-        left_boundary_m=max(0.0, left),
-        right_boundary_m=max(0.0, member_length_m - right),
+        basis="Full-member sectional ULS (no automatic PT end-zone exclusion)",
+        left_length_m=0.0,
+        right_length_m=0.0,
+        left_boundary_m=0.0,
+        right_boundary_m=length,
         ready=not errors,
         errors=tuple(_dedupe(errors)),
-        notes=tuple(_dedupe(notes)),
+        notes=(
+            "All valid stations from s = 0 to s = L remain eligible for sectional ULS governing.",
+            "PT anchorage local-zone and general-zone verification remains a separate project check.",
+        ),
     )
-
 
 def pt_end_zone_side(
     station_m: float,
@@ -231,12 +208,10 @@ def pt_end_zone_side(
     *,
     tolerance: float,
 ) -> str:
-    if station_m <= settings.left_boundary_m + tolerance:
-        return "LEFT"
-    if station_m >= settings.right_boundary_m - tolerance:
-        return "RIGHT"
-    return ""
+    """Return no exclusion side; full-member sectional ULS is intentional."""
 
+    del station_m, settings, tolerance
+    return ""
 
 def end_zone_exclusion_record(row: Mapping[str, Any], *, side: str, source_kind: str) -> dict[str, Any]:
     return {

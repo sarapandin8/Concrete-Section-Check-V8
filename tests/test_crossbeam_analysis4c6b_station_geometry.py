@@ -52,7 +52,7 @@ def _cip_ready_state() -> dict[str, object]:
     return state
 
 
-def test_default_pt_end_zone_uses_local_end_section_depth_and_excludes_end_rows() -> None:
+def test_full_member_policy_retains_end_rows_and_disables_pt_exclusion() -> None:
     state = _ready_state()
     settings = canonical_pt_end_zone_settings(
         state,
@@ -62,27 +62,21 @@ def test_default_pt_end_zone_uses_local_end_section_depth_and_excludes_end_rows(
     )
 
     assert settings.ready, settings.errors
-    assert settings.basis == CB_ULS_PT_END_ZONE_BASIS_LOCAL_DEPTH
-    assert settings.left_length_m == pytest.approx(1.5)
-    assert settings.right_length_m == pytest.approx(1.5)
-    assert settings.left_boundary_m == pytest.approx(1.5)
-    assert settings.right_boundary_m == pytest.approx(18.5)
+    assert settings.basis == "Full-member sectional ULS (no automatic PT end-zone exclusion)"
+    assert settings.left_length_m == pytest.approx(0.0)
+    assert settings.right_length_m == pytest.approx(0.0)
+    assert settings.left_boundary_m == pytest.approx(0.0)
+    assert settings.right_boundary_m == pytest.approx(20.0)
 
     preparation = build_crossbeam_uls_shear_preparation(state)
     assert preparation.ready, preparation.errors
-    excluded_stations = {
-        round(float(row["Station s (m)"]), 6)
-        for row in preparation.excluded_end_zone_rows
-    }
-    assert {0.0, 0.5, 1.5, 18.5, 19.5, 20.0}.issubset(excluded_stations)
-    assert all(
-        1.5 < row.station_m < 18.5
-        or row.location_type in {"PHYSICAL SEGMENT JOINT", "PHYSICAL JOINT SIDE"}
-        for row in preparation.rows
-    )
+    assert preparation.excluded_end_zone_rows == ()
+    stations = {round(float(row.station_m), 6) for row in preparation.rows}
+    assert 0.0 in stations
+    assert 20.0 in stations
 
 
-def test_manual_pt_end_zone_changes_fingerprint_and_project_json_round_trips() -> None:
+def test_legacy_pt_end_zone_fields_round_trip_without_changing_uls_fingerprint() -> None:
     state = _ready_state()
     baseline = build_crossbeam_uls_shear_preparation(state)
 
@@ -92,9 +86,10 @@ def test_manual_pt_end_zone_changes_fingerprint_and_project_json_round_trips() -
     manual = build_crossbeam_uls_shear_preparation(state)
 
     assert manual.ready, manual.errors
-    assert manual.fingerprint != baseline.fingerprint
-    assert manual.pt_end_zone_settings["Left boundary s (m)"] == pytest.approx(1.2)
-    assert manual.pt_end_zone_settings["Right boundary s (m)"] == pytest.approx(18.6)
+    assert manual.fingerprint == baseline.fingerprint
+    assert manual.pt_end_zone_settings["Left boundary s (m)"] == pytest.approx(0.0)
+    assert manual.pt_end_zone_settings["Right boundary s (m)"] == pytest.approx(20.0)
+    assert manual.excluded_end_zone_rows == ()
 
     restored: dict[str, object] = {}
     project = project_from_session_state(state)
@@ -151,10 +146,12 @@ def test_construction_mode_terminology_is_explicit() -> None:
     assert trace_owner_label("Precast Segmental") == "Segment-owned"
 
 
-def test_analysis_ui_uses_shared_pt_end_zone_and_mode_aware_chart_context() -> None:
+def test_analysis_ui_uses_full_member_policy_and_mode_aware_chart_context() -> None:
     source = Path("concrete_pmm_pro/ui/analysis_page.py").read_text(encoding="utf-8")
-    assert "ULS station eligibility / PT end zones" in source
-    assert "PT end-zone exclusions" in source
+    assert "ULS station routing / scope" in source
+    assert "FULL MEMBER" in source
+    assert "s = 0 to s = L stays eligible for governing" in source
     assert "trace_owner_label(construction_method)" in source
-    assert "support/PT end zones omitted" in source
+    assert "full-span PT end stations retained" in source
     assert "Cast-in-Place Zone boundaries" in source
+    assert "PT end-zone exclusions" not in source
