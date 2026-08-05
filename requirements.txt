@@ -1,4 +1,8 @@
-streamlit>=1.37
+# Deployment-critical web stack: exact pins prevent a known incompatibility
+# between Streamlit 1.61.0 and Starlette 1.4.0 GZipResponder.
+streamlit==1.61.0
+starlette==1.3.1
+
 pydantic>=2.7
 shapely>=2.0
 plotly>=5.22,<6
