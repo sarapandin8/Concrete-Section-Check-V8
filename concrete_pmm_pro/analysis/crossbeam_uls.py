@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 import math
@@ -95,6 +95,15 @@ from concrete_pmm_pro.crossbeam.tendon_persistence import (
     CB_TENDON_SYSTEM_ROWS_KEY,
 )
 from concrete_pmm_pro.crossbeam.uls_rebar_source import build_crossbeam_uls_rebar_source_contract
+from concrete_pmm_pro.crossbeam.uls_station_geometry import (
+    canonical_pt_end_zone_settings,
+    end_zone_exclusion_record,
+    generate_support_check_demands,
+    interior_location_type,
+    pt_end_zone_side,
+    station_inside_support_interior,
+    support_footprints_from_state,
+)
 from concrete_pmm_pro.crossbeam.transverse import (
     build_transverse_cage_geometry,
     canonical_transverse_templates,
@@ -161,6 +170,11 @@ class CrossbeamUlsPreparation:
     info: tuple[str, ...]
     fingerprint: str
     demand_rows: tuple[dict[str, Any], ...]
+    derived_support_rows: tuple[dict[str, Any], ...] = ()
+    support_footprints: tuple[dict[str, Any], ...] = ()
+    excluded_end_zone_rows: tuple[dict[str, Any], ...] = ()
+    pt_end_zone_settings: Mapping[str, Any] = field(default_factory=dict)
+    member_length_m: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -961,7 +975,11 @@ def _prestress_at_station(
     return elements, list(materials.values()), omitted_unbonded, _dedupe(errors), _dedupe(warnings)
 
 
-def build_crossbeam_uls_flexure_preparation(state: Any) -> CrossbeamUlsPreparation:
+def build_crossbeam_uls_flexure_preparation(
+    state: Any,
+    *,
+    station_rows_are_pre_routed: bool = False,
+) -> CrossbeamUlsPreparation:
     """Return validated station-specific AnalysisInput rows for Crossbeam ULS flexure."""
 
     errors: list[str] = []
@@ -1004,6 +1022,26 @@ def build_crossbeam_uls_flexure_preparation(state: Any) -> CrossbeamUlsPreparati
     construction_method = normalize_construction_method(
         _get(state, CB_LOSS_ES_CONSTRUCTION_METHOD_KEY, CONSTRUCTION_METHOD_PRECAST)
     )
+    support_footprints, support_geometry_errors = support_footprints_from_state(
+        state,
+        member_length_m=max(length_m, 0.0),
+        segment_rows=segment_rows,
+    )
+    errors.extend(support_geometry_errors)
+    for footprint in support_footprints:
+        if str(footprint.get("Status") or "") != "COMPATIBLE":
+            errors.append(
+                f"{footprint.get('Column') or 'Column / Support'}: support-footprint source is not compatible — "
+                f"{footprint.get('Issue') or 'review the applied Column / Support Layout.'}"
+            )
+    pt_end_zone = canonical_pt_end_zone_settings(
+        state,
+        member_length_m=max(length_m, 0.0),
+        segment_rows=segment_rows,
+        definitions=definitions,
+    )
+    errors.extend(pt_end_zone.errors)
+    info.extend(pt_end_zone.notes)
     if construction_method == CONSTRUCTION_METHOD_PRECAST:
         geometry_audit = crossbeam_project_geometry_audit(state)
         errors.extend(
@@ -1050,20 +1088,71 @@ def build_crossbeam_uls_flexure_preparation(state: Any) -> CrossbeamUlsPreparati
             info=(),
             fingerprint=_fingerprint(payload),
             demand_rows=tuple(demand_rows),
+            support_footprints=tuple(support_footprints),
+            pt_end_zone_settings=pt_end_zone.as_dict(),
+            member_length_m=length_m,
         )
 
-    derived_demands, derived_errors, derived_info = _derived_crossbeam_flexure_demands(
-        active_demands=active_demands,
-        segment_rows=segment_rows,
-        definitions_by_id=definition_by_id,
-        material_by_name=material_by_name,
-        zones=zones,
-        templates_by_id=templates_by_id,
-        member_length_m=length_m,
-        construction_method=construction_method,
-    )
-    warnings.extend(f"Flexure generated-check source review: {message}" for message in derived_errors)
-    info.extend(derived_info)
+    if station_rows_are_pre_routed:
+        # Combined V+T supplies the already accepted Shear/Torsion station set
+        # (imported, Column Face, and prestressed h/2 rows).  Re-generating
+        # support or development rows here would duplicate stations and can
+        # demand source points that were intentionally excluded by the shared
+        # station-eligibility route.
+        support_demands: list[dict[str, Any]] = []
+        derived_demands: list[dict[str, Any]] = []
+        info.append(
+            "Flexure section inputs use the pre-routed combined V+T station set; "
+            "no additional support, physical-joint, or development-boundary rows were generated."
+        )
+    else:
+        support_demands, support_errors, support_info = generate_support_check_demands(
+            active_demands=active_demands,
+            support_footprints=support_footprints,
+            segment_rows=segment_rows,
+            definitions=definitions,
+            member_length_m=length_m,
+            include_h2=False,
+        )
+        errors.extend(support_errors)
+        info.extend(support_info)
+
+        derived_demands, derived_errors, derived_info = _derived_crossbeam_flexure_demands(
+            active_demands=active_demands,
+            segment_rows=segment_rows,
+            definitions_by_id=definition_by_id,
+            material_by_name=material_by_name,
+            zones=zones,
+            templates_by_id=templates_by_id,
+            member_length_m=length_m,
+            construction_method=construction_method,
+        )
+        warnings.extend(f"Flexure generated-check source review: {message}" for message in derived_errors)
+        info.extend(derived_info)
+    if errors:
+        payload = {
+            "schema": "crossbeam-analysis4c6b-flexure-station-routing-blocked-v1",
+            "station_rows_are_pre_routed": station_rows_are_pre_routed,
+            "contract": contract,
+            "demands": demand_rows,
+            "support_demands": support_demands,
+            "support_footprints": support_footprints,
+            "pt_end_zone": pt_end_zone.as_dict(),
+            "errors": _dedupe(errors),
+        }
+        return CrossbeamUlsPreparation(
+            ready=False,
+            rows=(),
+            errors=tuple(_dedupe(errors)),
+            warnings=tuple(_dedupe(warnings)),
+            info=tuple(_dedupe(info)),
+            fingerprint=_fingerprint(payload),
+            demand_rows=tuple(demand_rows),
+            derived_support_rows=tuple(support_demands),
+            support_footprints=tuple(support_footprints),
+            pt_end_zone_settings=pt_end_zone.as_dict(),
+            member_length_m=length_m,
+        )
     joint_stations = segment_joint_stations(segment_rows, length_m=length_m)
     derived_joint_keys = {
         (str(row.get("Case Name") or "ULS"), round(_finite_float(row.get("Station s (m)")), 9))
@@ -1072,24 +1161,52 @@ def build_crossbeam_uls_flexure_preparation(state: Any) -> CrossbeamUlsPreparati
     }
     settings = _analysis_settings(state)
     prepared: list[PreparedCrossbeamUlsRow] = []
+    excluded_end_zone_rows: list[dict[str, Any]] = []
     profile_rows = _get(state, CB_PROFILE_ROWS_KEY, [])
+    tolerance = max(1.0e-7, length_m * 1.0e-9)
+    support_station_keys = {
+        (str(row.get("Case Name") or "ULS"), round(_finite_float(row.get("Station s (m)")), 9))
+        for row in support_demands
+    }
 
-    for demand in [*active_demands, *derived_demands]:
+    for demand in [*active_demands, *support_demands, *derived_demands]:
         station = float(demand.get("Station s (m)") or 0.0)
         case = str(demand.get("Case Name") or "ULS")
         check_point = str(demand.get("Check Point") or "")
-        tolerance = max(1.0e-7, length_m * 1.0e-9)
         is_derived = bool(demand.get("__Derived flexure check"))
+        is_derived_support = bool(demand.get("__Derived support check"))
+        is_joint_side = str(demand.get("__Flexure check type") or "") == "PHYSICAL JOINT SIDE"
+        is_physical_joint_station = (
+            construction_method == CONSTRUCTION_METHOD_PRECAST
+            and any(abs(station - joint) <= tolerance for joint in joint_stations)
+        )
+        if (not is_derived and not is_derived_support) and (case, round(station, 9)) in support_station_keys:
+            continue
+        if (
+            station_inside_support_interior(station, support_footprints, tolerance=tolerance)
+            and not is_joint_side
+            and not is_physical_joint_station
+        ):
+            continue
+        end_side = pt_end_zone_side(station, pt_end_zone, tolerance=tolerance)
+        if end_side and not is_joint_side:
+            excluded_end_zone_rows.append(
+                end_zone_exclusion_record(
+                    demand,
+                    side=end_side,
+                    source_kind="GENERATED SUPPORT" if is_derived_support else "IMPORTED",
+                )
+            )
+            continue
         if (not is_derived) and (case, round(station, 9)) in derived_joint_keys and any(
             abs(station - joint) <= tolerance for joint in joint_stations
         ):
             # The generated J-L/J-R rows own the exact physical-joint check.
             continue
-        at_joint = construction_method == CONSTRUCTION_METHOD_PRECAST and any(
-            abs(station - joint) <= tolerance for joint in joint_stations
-        )
+        at_joint = is_physical_joint_station
+        context_station = _finite_float(demand.get("__Context station s (m)"), station)
         contexts = station_section_contexts(
-            station,
+            context_station,
             segment_rows,
             definitions,
             length_m=length_m,
@@ -1125,7 +1242,7 @@ def build_crossbeam_uls_flexure_preparation(state: Any) -> CrossbeamUlsPreparati
 
             zone_candidates = [] if at_joint else _zones_for_context(
                 zones,
-                station_m=station,
+                station_m=context_station,
                 segment_id=segment_id,
                 check_point=check_point,
                 length_m=length_m,
@@ -1164,7 +1281,7 @@ def build_crossbeam_uls_flexure_preparation(state: Any) -> CrossbeamUlsPreparati
                     )
 
                 prestress_rows, prestress_materials, omitted_unbonded, ps_errors, ps_warnings = _prestress_at_station(
-                    station_m=station,
+                    station_m=context_station if is_derived_support else station,
                     length_m=length_m,
                     geometry=geometry,
                     system_rows=tendon_system,
@@ -1180,7 +1297,10 @@ def build_crossbeam_uls_flexure_preparation(state: Any) -> CrossbeamUlsPreparati
                     continue
 
                 face = _context_face(context, at_joint=at_joint)
-                if len(zone_candidates) > 1 and zone:
+                location_override = str(demand.get("__Location type") or "").strip()
+                if location_override:
+                    face = str(check_point or location_override).upper()
+                elif len(zone_candidates) > 1 and zone:
                     face = f"{face} / {str(zone.get('Zone ID') or 'ZONE LIMIT')}"
                 load = LoadCase(
                     name=f"{case} @ s={station:.6f} m · {face}",
@@ -1214,13 +1334,15 @@ def build_crossbeam_uls_flexure_preparation(state: Any) -> CrossbeamUlsPreparati
                         case_name=case,
                         section_face=face,
                         location_type=(
-                            "PHYSICAL SEGMENT JOINT"
+                            location_override
+                            if location_override
+                            else "PHYSICAL SEGMENT JOINT"
                             if at_joint
                             else "DEVELOPMENT BOUNDARY"
                             if str(demand.get("__Flexure check type") or "") == "DEVELOPMENT BOUNDARY"
                             else "DEVELOPMENT ZONE"
                             if rebar_credit_status == "NO CREDIT" and construction_method == CONSTRUCTION_METHOD_PRECAST
-                            else "SEGMENT / ZONE INTERIOR"
+                            else interior_location_type(construction_method)
                         ),
                         segment_id=segment_id,
                         section_id=section_id,
@@ -1272,6 +1394,10 @@ def build_crossbeam_uls_flexure_preparation(state: Any) -> CrossbeamUlsPreparati
         "construction_method": construction_method,
         "contract": contract,
         "demands": demand_rows,
+        "support_demands": support_demands,
+        "support_footprints": support_footprints,
+        "pt_end_zone": pt_end_zone.as_dict(),
+        "excluded_end_zone_rows": excluded_end_zone_rows,
         "rebar_source_fingerprint": rebar_source.fingerprint,
         "capacity_signatures": [row.capacity_signature for row in prepared],
         "source_faces": [
@@ -1287,6 +1413,11 @@ def build_crossbeam_uls_flexure_preparation(state: Any) -> CrossbeamUlsPreparati
         info=tuple(_dedupe(info)),
         fingerprint=_fingerprint(fingerprint_payload),
         demand_rows=tuple(demand_rows),
+        derived_support_rows=tuple(support_demands),
+        support_footprints=tuple(support_footprints),
+        excluded_end_zone_rows=tuple(excluded_end_zone_rows),
+        pt_end_zone_settings=pt_end_zone.as_dict(),
+        member_length_m=length_m,
     )
 
 
@@ -1511,6 +1642,11 @@ def run_crossbeam_uls_flexure(preparation: CrossbeamUlsPreparation) -> dict[str,
         "errors": _dedupe(solver_errors),
         "structural_solves": len(solved),
         "station_checks": len(preparation.rows),
+        "generated_support_checks": sum(row.location_type == "COLUMN FACE" for row in preparation.rows),
+        "support_footprints": [dict(item) for item in preparation.support_footprints],
+        "excluded_pt_end_zone_rows": [dict(item) for item in preparation.excluded_end_zone_rows],
+        "pt_end_zone_settings": dict(preparation.pt_end_zone_settings),
+        "member_length_m": float(preparation.member_length_m),
         "physical_joint_side_checks": len(joint_rows),
         "development_zone_checks": len(development_rows),
         "solver_route": "DIRECT UNIAXIAL P-M3",
@@ -1519,7 +1655,8 @@ def run_crossbeam_uls_flexure(preparation: CrossbeamUlsPreparation) -> dict[str,
             "ULS Crossbeam P-M3 flexure using direct ACI 318-19 strain compatibility. For Precast Segmental, ordinary "
             "longitudinal reinforcement receives strength credit only in fully developed Segment interiors; physical joints "
             "and conservative ACI 25.4 straight-bar development zones use bonded-tendon continuity without ordinary-rebar credit. "
-            "Shear, Torsion, combined V+T, joint shear/torsion transfer, anchorage end zones, D-regions, fatigue, and seismic detailing remain separate."
+            "Shear, Torsion, combined V+T, joint shear/torsion transfer, PT anchorage/end-zone D-regions, fatigue, and seismic detailing remain separate. "
+            "Ordinary B-region governing excludes the adopted PT end-zone lengths and support-footprint interiors."
         ),
     }
 

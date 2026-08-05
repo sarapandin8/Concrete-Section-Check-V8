@@ -10,7 +10,9 @@ from concrete_pmm_pro.analysis.crossbeam_uls import (
     run_crossbeam_uls_flexure,
 )
 from concrete_pmm_pro.core.concrete_materials import default_concrete_materials
+from concrete_pmm_pro.crossbeam.construction_stage import default_column_stage_rows
 from concrete_pmm_pro.crossbeam.prestress_loss import CB_LOSS_ES_CONSTRUCTION_METHOD_KEY
+from concrete_pmm_pro.crossbeam.project_geometry import CROSSBEAM_COLUMN_ROWS_KEY
 from concrete_pmm_pro.crossbeam.rebar import (
     default_crossbeam_rebar_templates,
     default_crossbeam_rebar_zones,
@@ -42,6 +44,31 @@ from concrete_pmm_pro.crossbeam.tendon_persistence import (
 from concrete_pmm_pro.crossbeam.transverse import default_crossbeam_transverse_templates
 from concrete_pmm_pro.crossbeam.workflow import default_crossbeam_segment_rows
 
+
+
+def _center_column_rows(length_m: float) -> list[dict[str, object]]:
+    row = dict(default_column_stage_rows(length_m)[0])
+    row["Column ID"] = "C1"
+    row["Station s (m)"] = 0.5 * length_m
+    row["Blong (mm)"] = 2000.0
+    return [row]
+
+
+def _support_source_rows(case_name: str, *, p_kn: float = 5000.0) -> list[dict[str, object]]:
+    return [
+        {
+            "Active": True,
+            "Station s (m)": station,
+            "Check Point": "",
+            "Case Name": case_name,
+            "P": p_kn,
+            "V2": 0.0,
+            "T": 0.0,
+            "M3": moment,
+            "Note": "exact Column Face source row",
+        }
+        for station, moment in ((9.0, 2400.0), (11.0, 2400.0))
+    ]
 
 def _ready_state() -> dict[str, object]:
     length_m = 20.0
@@ -85,6 +112,7 @@ def _ready_state() -> dict[str, object]:
         CB_TR_TEMPLATE_ROWS_KEY: transverse,
         CB_TENDON_SYSTEM_ROWS_KEY: tendons,
         CB_PROFILE_ROWS_KEY: profile,
+        CROSSBEAM_COLUMN_ROWS_KEY: _center_column_rows(length_m),
         CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY: link,
         CB_STATION_FORCE_CONTRACT_KEY: default_station_force_contract(
             effective_prestress_link=link
@@ -106,6 +134,7 @@ def _ready_state() -> dict[str, object]:
                 "M3": 2200.0,
                 "Note": "interior row",
             },
+            *_support_source_rows("ULS-INT"),
             {
                 "Active": True,
                 "Station s (m)": 10.0,
@@ -117,6 +146,7 @@ def _ready_state() -> dict[str, object]:
                 "M3": 2600.0,
                 "Note": "physical joint row",
             },
+            *_support_source_rows("ULS-JOINT"),
         ],
     }
 
@@ -126,9 +156,15 @@ def test_crossbeam_adapter_runs_without_generic_load_cases_and_preserves_row_cou
     preparation = build_crossbeam_uls_flexure_preparation(state)
 
     assert preparation.ready, preparation.errors
-    assert len(preparation.rows) == 3
-    interior = next(row for row in preparation.rows if row.case_name == "ULS-INT")
-    joint_rows = [row for row in preparation.rows if row.case_name == "ULS-JOINT"]
+    assert len(preparation.derived_support_rows) == 4
+    interior = next(
+        row for row in preparation.rows
+        if row.case_name == "ULS-INT" and row.check_point == "Interior"
+    )
+    joint_rows = [
+        row for row in preparation.rows
+        if row.case_name == "ULS-JOINT" and row.location_type == "PHYSICAL SEGMENT JOINT"
+    ]
     assert len(joint_rows) == 2
     joint = joint_rows[0]
 
@@ -209,11 +245,15 @@ def test_crossbeam_run_uses_direct_uniaxial_route_and_keeps_joint_audit(monkeypa
     result = run_crossbeam_uls_flexure(preparation)
 
     assert result["status"] == "REVIEW"
-    assert result["station_checks"] == 3
+    assert result["station_checks"] == len(preparation.rows)
     assert result["solver_route"] == "DIRECT UNIAXIAL P-M3"
     assert result["accuracy_preset_dependency"].startswith("NONE")
-    assert calls["direct"] == result["structural_solves"] == 2
-    joints = [row for row in result["rows"] if row["Location type"] == "PHYSICAL SEGMENT JOINT"]
+    assert calls["direct"] == result["structural_solves"]
+    assert result["structural_solves"] >= 2
+    joints = [
+        row for row in result["rows"]
+        if row["Case"] == "ULS-JOINT" and row["Location type"] == "PHYSICAL SEGMENT JOINT"
+    ]
     assert len(joints) == 2
     assert {str(row["Check Point"])[-1] for row in joints} == {"L", "R"}
     assert all(row["Ordinary bars credited"] == 0 for row in joints)
@@ -233,14 +273,14 @@ def _zero_moment_state() -> dict[str, object]:
     state["crossbeam_uls_loads_table"] = [
         {
             "Active": True,
-            "Station s (m)": 0.0,
-            "Check Point": "Left end",
+            "Station s (m)": 4.0,
+            "Check Point": "Left zero",
             "Case Name": "ULS-ENV",
             "P": 5000.0,
             "V2": 0.0,
             "T": 0.0,
             "M3": 0.0,
-            "Note": "zero left endpoint",
+            "Note": "eligible zero-moment left station",
         },
         {
             "Active": True,
@@ -255,6 +295,28 @@ def _zero_moment_state() -> dict[str, object]:
         },
         {
             "Active": True,
+            "Station s (m)": 9.0,
+            "Check Point": "",
+            "Case Name": "ULS-ENV",
+            "P": 5000.0,
+            "V2": 0.0,
+            "T": 0.0,
+            "M3": 1200.0,
+            "Note": "left Column Face source",
+        },
+        {
+            "Active": True,
+            "Station s (m)": 11.0,
+            "Check Point": "",
+            "Case Name": "ULS-ENV",
+            "P": 5000.0,
+            "V2": 0.0,
+            "T": 0.0,
+            "M3": -1200.0,
+            "Note": "right Column Face source",
+        },
+        {
+            "Active": True,
             "Station s (m)": 15.0,
             "Check Point": "Right reference",
             "Case Name": "ULS-ENV",
@@ -266,14 +328,14 @@ def _zero_moment_state() -> dict[str, object]:
         },
         {
             "Active": True,
-            "Station s (m)": 20.0,
-            "Check Point": "Right end",
+            "Station s (m)": 16.0,
+            "Check Point": "Right zero",
             "Case Name": "ULS-ENV",
             "P": 5000.0,
             "V2": 0.0,
             "T": 0.0,
             "M3": 0.0,
-            "Note": "zero right endpoint",
+            "Note": "eligible zero-moment right station",
         },
     ]
     return state
@@ -293,21 +355,21 @@ def test_zero_m3_endpoints_use_nearest_same_case_direction_and_keep_axial_dc_sep
     endpoints = {
         float(row["Station s (m)"]): row
         for row in result["rows"]
-        if float(row["Station s (m)"]) in {0.0, 20.0}
+        if float(row["Station s (m)"]) in {4.0, 16.0}
     }
 
-    assert endpoints[0.0]["Capacity kN-m"] == pytest.approx(4000.0)
-    assert endpoints[20.0]["Capacity kN-m"] == pytest.approx(4000.0)
-    assert endpoints[0.0]["φMn at Pu"] == "4,000.000 kN-m"
-    assert endpoints[20.0]["φMn at Pu"] == "4,000.000 kN-m"
-    assert endpoints[0.0]["Flexural D/C"] == "0.000"
-    assert endpoints[20.0]["Flexural D/C"] == "0.000"
-    assert endpoints[0.0]["Axial D/C"] == "0.057"
-    assert endpoints[20.0]["Axial D/C"] == "0.057"
-    assert endpoints[0.0]["Capacity plot sign"] == pytest.approx(1.0)
-    assert endpoints[20.0]["Capacity plot sign"] == pytest.approx(-1.0)
-    assert "s = 5.000 m" in endpoints[0.0]["Direction reference"]
-    assert "s = 15.000 m" in endpoints[20.0]["Direction reference"]
+    assert endpoints[4.0]["Capacity kN-m"] == pytest.approx(4000.0)
+    assert endpoints[16.0]["Capacity kN-m"] == pytest.approx(4000.0)
+    assert endpoints[4.0]["φMn at Pu"] == "4,000.000 kN-m"
+    assert endpoints[16.0]["φMn at Pu"] == "4,000.000 kN-m"
+    assert endpoints[4.0]["Flexural D/C"] == "0.000"
+    assert endpoints[16.0]["Flexural D/C"] == "0.000"
+    assert endpoints[4.0]["Axial D/C"] == "0.057"
+    assert endpoints[16.0]["Axial D/C"] == "0.057"
+    assert endpoints[4.0]["Capacity plot sign"] == pytest.approx(1.0)
+    assert endpoints[16.0]["Capacity plot sign"] == pytest.approx(-1.0)
+    assert "s = 5.000 m" in endpoints[4.0]["Direction reference"]
+    assert "s = 15.000 m" in endpoints[16.0]["Direction reference"]
 
 
 def test_zero_m3_without_nonzero_same_case_is_review_and_not_guessed(
@@ -317,8 +379,8 @@ def test_zero_m3_without_nonzero_same_case_is_review_and_not_guessed(
     state["crossbeam_uls_loads_table"] = [
         {
             "Active": True,
-            "Station s (m)": 5.0,
-            "Check Point": "Zero-only case",
+            "Station s (m)": station,
+            "Check Point": "Zero-only case" if station == 5.0 else "",
             "Case Name": "ULS-ZERO-ONLY",
             "P": 5000.0,
             "V2": 0.0,
@@ -326,6 +388,7 @@ def test_zero_m3_without_nonzero_same_case_is_review_and_not_guessed(
             "M3": 0.0,
             "Note": "direction intentionally unavailable",
         }
+        for station in (5.0, 9.0, 11.0, 15.0)
     ]
     preparation = build_crossbeam_uls_flexure_preparation(state)
     assert preparation.ready, preparation.errors
@@ -334,7 +397,10 @@ def test_zero_m3_without_nonzero_same_case_is_review_and_not_guessed(
         "concrete_pmm_pro.analysis.crossbeam_uls.solve_crossbeam_uniaxial_flexure",
         lambda _analysis_input, *, Pu_N, moment_sign: _DirectResult(),
     )
-    row = run_crossbeam_uls_flexure(preparation)["rows"][0]
+    row = next(
+        item for item in run_crossbeam_uls_flexure(preparation)["rows"]
+        if item["Check Point"] == "Zero-only case"
+    )
     assert row["Status"] == "REVIEW"
     assert row["Capacity"] == "-"
     assert row["Flexural D/C"] == "-"

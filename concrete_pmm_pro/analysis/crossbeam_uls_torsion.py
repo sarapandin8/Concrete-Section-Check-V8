@@ -73,6 +73,8 @@ class CrossbeamTorsionPreparation:
     derived_support_rows: tuple[dict[str, Any], ...]
     support_footprints: tuple[dict[str, Any], ...]
     member_length_m: float
+    excluded_end_zone_rows: tuple[dict[str, Any], ...] = ()
+    pt_end_zone_settings: Mapping[str, Any] | None = None
 
 
 def _finite(value: Any, default: float = float("nan")) -> float:
@@ -145,6 +147,8 @@ def build_crossbeam_uls_torsion_preparation(state: Any) -> CrossbeamTorsionPrepa
         derived_support_rows=tuple(shear.derived_support_rows),
         support_footprints=tuple(shear.support_footprints),
         member_length_m=float(shear.member_length_m),
+        excluded_end_zone_rows=tuple(shear.excluded_end_zone_rows),
+        pt_end_zone_settings=dict(shear.pt_end_zone_settings or {}),
     )
 
 
@@ -1057,6 +1061,10 @@ def run_crossbeam_uls_torsion(preparation: CrossbeamTorsionPreparation) -> dict[
         "errors": _dedupe(errors),
         "warnings": _dedupe(warnings),
         "fingerprint": preparation.fingerprint,
+        "support_footprints": [dict(item) for item in preparation.support_footprints],
+        "member_length_m": float(preparation.member_length_m),
+        "excluded_pt_end_zone_rows": [dict(item) for item in preparation.excluded_end_zone_rows],
+        "pt_end_zone_settings": dict(preparation.pt_end_zone_settings or {}),
         "scope": (
             "ACI 318-19 standalone sectional torsion: threshold, transverse and longitudinal torsion strength, minimum reinforcement, "
             "closed-cage/perimeter detailing, and the 22.7.7 section-size stress limit. Column Face and prestressed h/2 checks are both evaluated conservatively. "

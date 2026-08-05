@@ -1850,3 +1850,7 @@ Replaces the separate multiselect deletion controls with a direct `Delete` check
 ## CROSSBEAM.ANALYSIS4C5B — ULS Governing Evidence and Count Consistency
 
 Aligns the Combined V+T overview table with each component's actual governing row and clarifies the Shear section-capacity count breakdown to include one-sided physical-joint audit rows, without changing engineering equations or developing the deferred Joint review workspace. See `README_CROSSBEAM_ANALYSIS4C5B.md`.
+
+## CROSSBEAM.ANALYSIS4C6B — Shared ULS Station Eligibility and Geometry Routing
+
+Adds one construction-mode-aware station contract for Crossbeam Flexure, Shear, Torsion, and Combined V+T, including Flexure Column Faces, Shear/Torsion Face + prestressed h/2 checks, PT end-zone exclusion, support-footprint trace clipping, and explicit CIP Zone versus Precast Segment ownership without changing resistance equations. See `README_CROSSBEAM_ANALYSIS4C6B.md`.

@@ -94,6 +94,11 @@ from concrete_pmm_pro.crossbeam.construction_stage import (
     CONSTRUCTION_METHOD_PRECAST,
     normalize_construction_method,
 )
+from concrete_pmm_pro.crossbeam.uls_station_geometry import (
+    CB_ULS_PT_END_ZONE_BASIS_KEY,
+    CB_ULS_PT_END_ZONE_LEFT_M_KEY,
+    CB_ULS_PT_END_ZONE_RIGHT_M_KEY,
+)
 from concrete_pmm_pro.data.prestress_tendon_products import (
     DEFAULT_STRAND_DIAMETER_MM,
     DEFAULT_STRAND_EP_MPA,
@@ -252,6 +257,9 @@ _CROSSBEAM_RESTORE_WIDGET_KEYS = (
     "crossbeam_cip1a_construction_method_widget",
     "crossbeam_cip1a_construction_method_widget_synced",
     "crossbeam_cip1a_construction_method_notice",
+    CB_ULS_PT_END_ZONE_BASIS_KEY,
+    CB_ULS_PT_END_ZONE_LEFT_M_KEY,
+    CB_ULS_PT_END_ZONE_RIGHT_M_KEY,
 )
 
 _CROSSBEAM_RESTORE_EDITOR_PREFIXES = (
@@ -353,6 +361,15 @@ def _crossbeam_input_metadata_from_session(session_state: Any) -> dict[str, Any]
         # ``construction_method_last`` remains for legacy-file compatibility.
         "construction_method": construction_method,
         "construction_method_last": construction_method,
+        "uls_pt_end_zone_basis": _clean_table_value(
+            _get_session_value(session_state, CB_ULS_PT_END_ZONE_BASIS_KEY, None)
+        ),
+        "uls_pt_end_zone_left_m": _clean_table_value(
+            _get_session_value(session_state, CB_ULS_PT_END_ZONE_LEFT_M_KEY, None)
+        ),
+        "uls_pt_end_zone_right_m": _clean_table_value(
+            _get_session_value(session_state, CB_ULS_PT_END_ZONE_RIGHT_M_KEY, None)
+        ),
     }
 
 
@@ -1428,6 +1445,12 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
             session_state[CROSSBEAM_CONSTRUCTION_METHOD_LAST_STATE_KEY] = (
                 restored_member_construction_method
             )
+        if crossbeam_input.get("uls_pt_end_zone_basis") is not None:
+            session_state[CB_ULS_PT_END_ZONE_BASIS_KEY] = crossbeam_input.get("uls_pt_end_zone_basis")
+        if crossbeam_input.get("uls_pt_end_zone_left_m") is not None:
+            session_state[CB_ULS_PT_END_ZONE_LEFT_M_KEY] = crossbeam_input.get("uls_pt_end_zone_left_m")
+        if crossbeam_input.get("uls_pt_end_zone_right_m") is not None:
+            session_state[CB_ULS_PT_END_ZONE_RIGHT_M_KEY] = crossbeam_input.get("uls_pt_end_zone_right_m")
         # A canonical Project-JSON block is authoritative.  Mark the historical
         # new-project seed migration complete so a later Streamlit rerun cannot
         # reinterpret a valid saved 30 m layout as the current 20 m default.

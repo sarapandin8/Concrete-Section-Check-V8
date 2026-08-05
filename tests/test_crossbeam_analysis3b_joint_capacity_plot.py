@@ -296,6 +296,10 @@ def test_flexure_capacity_is_one_clean_step_envelope_per_segment() -> None:
         _crossbeam_uls_demand_dataframe(preparation),
         result_df,
         segment_rows=segments,
+        support_footprints=list(preparation.support_footprints),
+        pt_end_zone_settings=preparation.pt_end_zone_settings,
+        construction_method=str(state[CB_LOSS_ES_CONSTRUCTION_METHOD_KEY]),
+        member_length_m=preparation.member_length_m,
     )
 
     capacity_traces = [trace for trace in figure.data if str(trace.name) == "Adopted φMn"]
@@ -325,8 +329,19 @@ def test_flexure_capacity_is_one_clean_step_envelope_per_segment() -> None:
         segment_id = str(segment["Segment"])
         trace = traced_by_segment[segment_id]
         finite_x = [float(value) for value in list(trace.x) if value is not None]
-        assert min(finite_x) == pytest.approx(float(segment["x_start_m"]))
-        assert max(finite_x) == pytest.approx(float(segment["x_end_m"]))
+        assert finite_x
+        assert min(finite_x) >= float(segment["x_start_m"]) - 1.0e-9
+        assert max(finite_x) <= float(segment["x_end_m"]) + 1.0e-9
+        for footprint in preparation.support_footprints:
+            left = float(footprint["s_left (m)"])
+            right = float(footprint["s_right (m)"])
+            assert not any(left + 1.0e-8 < value < right - 1.0e-8 for value in finite_x)
+        left_end = float(preparation.pt_end_zone_settings.get("left_length_m", 0.0))
+        right_start = preparation.member_length_m - float(
+            preparation.pt_end_zone_settings.get("right_length_m", 0.0)
+        )
+        assert not any(value < left_end - 1.0e-8 for value in finite_x)
+        assert not any(value > right_start + 1.0e-8 for value in finite_x)
 
     joint_markers = [trace for trace in figure.data if str(trace.name) == "Joint one-sided φMn"]
     assert len(joint_markers) == 1
@@ -342,7 +357,8 @@ def test_flexure_capacity_is_one_clean_step_envelope_per_segment() -> None:
 
     title = str(figure.layout.title.text)
     assert "direct Crossbeam P–M3" in title
-    assert "adopted capacity envelope" in title
+    assert "Segment-owned capacity envelope" in title
+    assert "support/PT end zones omitted" in title
 
 def test_flexure_credit_region_trace_does_not_invent_boundary_values_when_capacity_varies() -> None:
     rows = pd.DataFrame(

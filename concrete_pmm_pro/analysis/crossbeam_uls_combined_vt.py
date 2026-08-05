@@ -68,6 +68,8 @@ class CrossbeamCombinedVtPreparation:
     support_footprints: tuple[dict[str, Any], ...]
     member_length_m: float
     construction_method: str
+    excluded_end_zone_rows: tuple[dict[str, Any], ...] = ()
+    pt_end_zone_settings: Mapping[str, Any] | None = None
 
 
 def _dedupe(items: list[str]) -> tuple[str, ...]:
@@ -120,6 +122,14 @@ def _combined_demand_rows(preparation: CrossbeamShearPreparation) -> list[dict[s
                 "T": row.source_t_knm,
                 "M3": row.source_m3_knm,
                 "Note": "Combined V+T generated from the accepted row-coupled Shear/Torsion station contract.",
+                "__Derived support check": bool(row.generated_support_check),
+                "__Location type": row.location_type,
+                "__Context station s (m)": row.station_m,
+                "__Demand source": row.demand_source,
+                "__Source station 1 (m)": row.source_station_1_m,
+                "__Source station 2 (m)": row.source_station_2_m,
+                "__Source ratio": row.source_ratio,
+                "__Extrapolation ratio": row.extrapolation_ratio,
             }
         )
     return rows
@@ -141,7 +151,10 @@ def build_crossbeam_uls_combined_vt_preparation(state: Any) -> CrossbeamCombined
     except Exception:
         temporary_state = copy(state)
     temporary_state[CROSSBEAM_ULS_LOAD_TABLE_KEY] = _combined_demand_rows(shear)
-    flexure = build_crossbeam_uls_flexure_preparation(temporary_state)
+    flexure = build_crossbeam_uls_flexure_preparation(
+        temporary_state,
+        station_rows_are_pre_routed=True,
+    )
     errors.extend(flexure.errors)
     warnings.extend(flexure.warnings)
     info.extend(flexure.info)
@@ -185,6 +198,8 @@ def build_crossbeam_uls_combined_vt_preparation(state: Any) -> CrossbeamCombined
         support_footprints=tuple(shear.support_footprints),
         member_length_m=float(shear.member_length_m),
         construction_method=construction_method,
+        excluded_end_zone_rows=tuple(shear.excluded_end_zone_rows),
+        pt_end_zone_settings=dict(shear.pt_end_zone_settings or {}),
     )
 
 
@@ -653,6 +668,10 @@ def run_crossbeam_uls_combined_vt(preparation: CrossbeamCombinedVtPreparation) -
         "warnings": list(preparation.warnings),
         "fingerprint": preparation.fingerprint,
         "construction_method": preparation.construction_method,
+        "support_footprints": [dict(item) for item in preparation.support_footprints],
+        "member_length_m": float(preparation.member_length_m),
+        "excluded_pt_end_zone_rows": [dict(item) for item in preparation.excluded_end_zone_rows],
+        "pt_end_zone_settings": dict(preparation.pt_end_zone_settings or {}),
         "scope": (
             "ACI 318-19 Crossbeam combined V+T: 9.5.4.3 additive required Av/s + 2At/s checked against the unique physical transverse-leg pool without double counting, 9.5.4.4 prestressed flexure plus concurrent torsional longitudinal tension, "
             "and 22.7.7 solid/hollow section-size stress limits. Physical-joint transfer, compatibility-torsion redistribution, hollow cage lap/anchorage, "

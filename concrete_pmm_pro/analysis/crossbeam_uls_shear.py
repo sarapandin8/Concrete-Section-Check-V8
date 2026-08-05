@@ -89,6 +89,13 @@ from concrete_pmm_pro.crossbeam.tendon_persistence import (
     CB_TENDON_SYSTEM_ROWS_KEY,
 )
 from concrete_pmm_pro.crossbeam.uls_rebar_source import build_crossbeam_uls_rebar_source_contract
+from concrete_pmm_pro.crossbeam.uls_station_geometry import (
+    canonical_pt_end_zone_settings,
+    end_zone_exclusion_record,
+    generate_support_check_demands,
+    interior_location_type,
+    pt_end_zone_side,
+)
 from concrete_pmm_pro.crossbeam.transverse import (
     build_transverse_cage_geometry,
     canonical_transverse_templates,
@@ -180,6 +187,8 @@ class CrossbeamShearPreparation:
     derived_support_rows: tuple[dict[str, Any], ...]
     support_footprints: tuple[dict[str, Any], ...]
     member_length_m: float
+    excluded_end_zone_rows: tuple[dict[str, Any], ...] = ()
+    pt_end_zone_settings: Mapping[str, Any] | None = None
 
 
 def _finite_float(value: Any, default: float = 0.0) -> float:
@@ -1014,6 +1023,14 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
     construction_method = normalize_construction_method(
         _get(state, CB_LOSS_ES_CONSTRUCTION_METHOD_KEY, CONSTRUCTION_METHOD_PRECAST)
     )
+    pt_end_zone = canonical_pt_end_zone_settings(
+        state,
+        member_length_m=max(member_length_m, 0.0),
+        segment_rows=segment_rows,
+        definitions=definitions,
+    )
+    errors.extend(pt_end_zone.errors)
+    info.extend(pt_end_zone.notes)
     if construction_method == CONSTRUCTION_METHOD_PRECAST:
         geometry_audit = crossbeam_project_geometry_audit(state)
         errors.extend(
@@ -1083,22 +1100,27 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
             derived_support_rows=(),
             support_footprints=tuple(support_footprints),
             member_length_m=member_length_m,
+            pt_end_zone_settings=pt_end_zone.as_dict(),
         )
 
-    derived_support_rows, support_errors, support_info = _derived_support_check_demands(
+    derived_support_rows, support_errors, support_info = generate_support_check_demands(
         active_demands=active_demands,
         support_footprints=support_footprints,
         segment_rows=segment_rows,
         definitions=definitions,
         member_length_m=member_length_m,
+        include_h2=True,
     )
     errors.extend(support_errors)
     info.extend(support_info)
-    derived_joint_side_rows, joint_side_errors, joint_side_info, all_joint_stations = _derived_physical_joint_side_demands(
-        active_demands=active_demands,
-        segment_rows=segment_rows,
-        member_length_m=member_length_m,
-    )
+    if construction_method == CONSTRUCTION_METHOD_PRECAST:
+        derived_joint_side_rows, joint_side_errors, joint_side_info, all_joint_stations = _derived_physical_joint_side_demands(
+            active_demands=active_demands,
+            segment_rows=segment_rows,
+            member_length_m=member_length_m,
+        )
+    else:
+        derived_joint_side_rows, joint_side_errors, joint_side_info, all_joint_stations = [], [], [], []
     warnings.extend(
         f"Physical-joint one-sided plotting source unavailable: {message}"
         for message in joint_side_errors
@@ -1127,9 +1149,14 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
             derived_support_rows=tuple(derived_support_rows),
             support_footprints=tuple(support_footprints),
             member_length_m=member_length_m,
+            pt_end_zone_settings=pt_end_zone.as_dict(),
         )
 
-    joint_stations = segment_joint_stations(segment_rows, length_m=member_length_m)
+    joint_stations = (
+        segment_joint_stations(segment_rows, length_m=member_length_m)
+        if construction_method == CONSTRUCTION_METHOD_PRECAST
+        else []
+    )
     profile_rows = _get(state, CB_PROFILE_ROWS_KEY, [])
     prepared: list[PreparedCrossbeamShearRow] = []
     tolerance = max(1.0e-7, member_length_m * 1.0e-9)
@@ -1138,6 +1165,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
         for row in derived_support_rows
     }
     omitted_support_rows = 0
+    excluded_end_zone_rows: list[dict[str, Any]] = []
 
     for demand in [*active_demands, *derived_support_rows, *derived_joint_side_rows]:
         station = _finite_float(demand.get("Station s (m)"), 0.0)
@@ -1145,6 +1173,16 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
         check_point = str(demand.get("Check Point") or "")
         is_derived_support = bool(demand.get("__Derived support check"))
         is_derived_joint_side = bool(demand.get("__Derived joint side check"))
+        end_side = pt_end_zone_side(station, pt_end_zone, tolerance=tolerance)
+        if end_side and not is_derived_joint_side:
+            excluded_end_zone_rows.append(
+                end_zone_exclusion_record(
+                    demand,
+                    side=end_side,
+                    source_kind="GENERATED SUPPORT" if is_derived_support else "IMPORTED",
+                )
+            )
+            continue
         if not is_derived_support and not is_derived_joint_side and (case, round(station, 9)) in derived_station_keys:
             continue
         location_override = str(demand.get("__Location type") or "").strip()
@@ -1263,7 +1301,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
                         "context_station": context_station,
                         "case": case,
                         "face": face,
-                        "location_type": location_override or "SEGMENT / ZONE INTERIOR",
+                        "location_type": location_override or interior_location_type(construction_method),
                         "section": definition,
                         "zone": zone,
                         "transverse": transverse_template,
@@ -1279,7 +1317,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
                         check_point=check_point,
                         case_name=case,
                         section_face=face,
-                        location_type=location_override or "SEGMENT / ZONE INTERIOR",
+                        location_type=location_override or interior_location_type(construction_method),
                         segment_id=segment_id,
                         section_id=section_id,
                         rebar_zone_id=str(zone.get("Zone ID") or ""),
@@ -1357,6 +1395,8 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
             "demands": demand_rows,
             "derived_support_rows": derived_support_rows,
             "support_footprints": support_footprints,
+            "pt_end_zone": pt_end_zone.as_dict(),
+            "excluded_end_zone_rows": excluded_end_zone_rows,
             "rebar_source_fingerprint": rebar_source.fingerprint,
             "row_signatures": [row.source_signature for row in prepared],
         }
@@ -1372,6 +1412,8 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
         derived_support_rows=tuple(derived_support_rows),
         support_footprints=tuple(support_footprints),
         member_length_m=member_length_m,
+        excluded_end_zone_rows=tuple(excluded_end_zone_rows),
+        pt_end_zone_settings=pt_end_zone.as_dict(),
     )
 
 
@@ -2034,10 +2076,13 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
         "support_joint_reviews": support_joint_reviews,
         "support_footprints": [dict(item) for item in preparation.support_footprints],
         "derived_support_rows": [dict(item) for item in preparation.derived_support_rows],
+        "excluded_pt_end_zone_rows": [dict(item) for item in preparation.excluded_end_zone_rows],
+        "pt_end_zone_settings": dict(preparation.pt_end_zone_settings or {}),
+        "member_length_m": float(preparation.member_length_m),
         "scope": (
             "ULS sectional one-way shear only. ACI 318-19 9.4.3 is applied conservatively by checking both each available beam-side "
             "Column Face and the h/2 critical section measured outward from that face; the more severe result governs. "
-            "Support-footprint interiors are omitted from beam-shear checks. The beam-column joint/support-footprint D-region itself remains "
+            "Support-footprint interiors and the adopted PT anchorage/end-zone lengths are omitted from ordinary beam-shear B-region checks. The beam-column joint/support-footprint D-region itself remains "
             "outside this sectional check and does not reduce a completed sectional PASS to REVIEW. Exact Precast physical-joint shear transfer "
             "is reported as a separate REVIEW item and does not hide the governing sectional D/C. Post-tensioning anchorage/end zones, hanger "
             "reinforcement, anchorage/development, torsion, combined V+T, fatigue, and seismic detailing remain separate. The ACI 22.5.6.2 "

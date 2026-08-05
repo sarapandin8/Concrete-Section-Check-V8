@@ -44,6 +44,23 @@ from concrete_pmm_pro.analysis.crossbeam_uls_combined_vt import (
     build_crossbeam_uls_combined_vt_preparation,
     run_crossbeam_uls_combined_vt,
 )
+from concrete_pmm_pro.crossbeam.uls_station_geometry import (
+    CB_ULS_PT_END_ZONE_BASIS_KEY,
+    CB_ULS_PT_END_ZONE_LEFT_M_KEY,
+    CB_ULS_PT_END_ZONE_RIGHT_M_KEY,
+    CB_ULS_PT_END_ZONE_BASIS_LOCAL_DEPTH,
+    CB_ULS_PT_END_ZONE_BASIS_MANUAL,
+    CB_ULS_PT_END_ZONE_BASIS_OPTIONS,
+    canonical_pt_end_zone_settings,
+    trace_owner_label,
+)
+from concrete_pmm_pro.crossbeam.section_library import (
+    CB_SECLIB_DEFINITIONS_KEY,
+    canonical_section_definitions,
+)
+from concrete_pmm_pro.crossbeam.prestress_loss import CB_LOSS_ES_CONSTRUCTION_METHOD_KEY
+from concrete_pmm_pro.crossbeam.construction_stage import normalize_construction_method
+
 from concrete_pmm_pro.analysis.crossbeam_sls_transfer import (
     CROSSBEAM_SERVICE_RESULT_HASH_KEY,
     CROSSBEAM_SERVICE_RESULT_KEY,
@@ -20826,6 +20843,10 @@ def _make_crossbeam_uls_flexure_figure(
     flexure_df: pd.DataFrame,
     *,
     segment_rows: Any = None,
+    support_footprints: list[dict[str, object]] | None = None,
+    pt_end_zone_settings: Mapping[str, object] | None = None,
+    construction_method: str = "Precast Segmental",
+    member_length_m: float = 0.0,
 ) -> go.Figure:
     """Plot the adopted direct P-M3 capacity as an engineering step envelope.
 
@@ -20841,6 +20862,12 @@ def _make_crossbeam_uls_flexure_figure(
         code_label="ACI 318-19 · Crossbeam direct P–M3",
     )
     segments = _crossbeam_segment_records(segment_rows)
+    support_footprints = list(support_footprints or [])
+    construction_method = normalize_construction_method(construction_method)
+    owner_label = trace_owner_label(construction_method)
+    is_precast = construction_method == "Precast Segmental"
+    if member_length_m <= 0.0:
+        member_length_m = max([float(item["end"]) for item in segments], default=0.0)
     if not segments or flexure_df is None or flexure_df.empty:
         return fig
 
@@ -20910,7 +20937,7 @@ def _make_crossbeam_uls_flexure_figure(
             )
         )
 
-    joint_stations = _crossbeam_joint_stations_from_segments(segment_rows)
+    joint_stations = _crossbeam_joint_stations_from_segments(segment_rows) if is_precast else []
     for joint_station in joint_stations:
         fig.add_vline(
             x=float(joint_station),
@@ -20921,7 +20948,7 @@ def _make_crossbeam_uls_flexure_figure(
             layer="below",
         )
 
-    # Small Segment labels provide the missing geometry context without turning
+    # Small Segment/Zone labels provide geometry context without turning
     # the strength plot into a section-layout drawing.
     for segment in segments:
         fig.add_annotation(
@@ -21023,6 +21050,32 @@ def _make_crossbeam_uls_flexure_figure(
 
             if not segment_x:
                 continue
+
+            # A checked bending direction can reverse between adjacent eligible
+            # stations (for example across a portal support).  Do not connect
+            # positive and negative one-direction capacities with a fictitious
+            # sloping line; retain a truthful trace break instead.
+            signed_x: list[float | None] = []
+            signed_y: list[float | None] = []
+            signed_custom: list[list[object] | None] = []
+            for x_value, y_value, custom_value in zip(segment_x, segment_y, segment_custom):
+                if (
+                    signed_x
+                    and signed_x[-1] is not None
+                    and signed_y[-1] is not None
+                    and x_value is not None
+                    and y_value is not None
+                    and float(x_value) > float(signed_x[-1]) + tolerance
+                    and float(y_value) * float(signed_y[-1]) < 0.0
+                ):
+                    signed_x.append(None)
+                    signed_y.append(None)
+                    signed_custom.append(None)
+                signed_x.append(x_value)
+                signed_y.append(y_value)
+                signed_custom.append(custom_value)
+            segment_x, segment_y, segment_custom = signed_x, signed_y, signed_custom
+
             capacity_name = (
                 "Adopted φMn"
                 if len(case_names) == 1
@@ -21092,6 +21145,38 @@ def _make_crossbeam_uls_flexure_figure(
                 )
             )
 
+    # Demand/capacity lines must not imply an ordinary B-region solution through
+    # the beam-column joint/support footprint.
+    for trace in fig.data:
+        _crossbeam_break_trace_over_supports(trace, support_footprints)
+        _crossbeam_clip_trace_to_pt_b_region(
+            trace,
+            pt_end_zone_settings,
+            member_length_m=member_length_m,
+        )
+
+    _crossbeam_add_support_context(fig, support_footprints)
+    _crossbeam_add_pt_end_zone_context(
+        fig,
+        pt_end_zone_settings,
+        member_length_m=member_length_m,
+    )
+
+    face_rows = source[
+        source.get("Location type", pd.Series("", index=source.index)).astype(str) == "COLUMN FACE"
+    ].copy()
+    if not face_rows.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=face_rows["__x_m"].astype(float).tolist(),
+                y=face_rows["__demand_kNm"].astype(float).tolist(),
+                mode="markers",
+                name="Column Face check",
+                marker={"size": 8, "symbol": "circle-open", "line": {"width": 1.5}},
+                hovertemplate="Column Face<br>x=%{x:.3f} m<br>Mu=%{y:.3f} kN-m<extra></extra>",
+            )
+        )
+
     governing = source[source["__utilization"].notna()].copy()
     if not governing.empty:
         row = governing.loc[governing["__utilization"].astype(float).idxmax()]
@@ -21122,7 +21207,7 @@ def _make_crossbeam_uls_flexure_figure(
         title={
             "text": (
                 "Flexure Check — Strength ULS"
-                "<br><sup>ACI 318-19 · direct Crossbeam P–M3 · adopted capacity envelope</sup>"
+                f"<br><sup>ACI 318-19 · direct Crossbeam P–M3 · {owner_label} capacity envelope · support/PT end zones omitted</sup>"
             )
         },
         margin={"l": 82, "r": 42, "t": 96, "b": 116},
@@ -21256,9 +21341,23 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
             for message in preparation.warnings:
                 st.warning(message)
 
+    generated_support_count = len(preparation.derived_support_rows)
+    generated_joint_development_count = max(
+        0,
+        len(preparation.rows) - len(preparation.demand_rows) - generated_support_count,
+    )
+
     source_cards = [
         {"title": "ULS source", "value": "READY" if preparation.ready else "SOURCE BLOCKED", "detail": "Crossbeam Loads · canonical kN/kN-m", "status": "ready" if preparation.ready else "danger", "strong": True},
-        {"title": "Total check rows", "value": f"{len(preparation.rows):,}", "detail": f"{len(preparation.demand_rows):,} imported + generated joint/development checks", "status": "info"},
+        {
+            "title": "Total check rows",
+            "value": f"{len(preparation.rows):,}",
+            "detail": (
+                f"{len(preparation.demand_rows):,} imported sources + {generated_support_count:,} Column Faces + "
+                f"{generated_joint_development_count:,} joint/development rows after station eligibility"
+            ),
+            "status": "info",
+        },
         {"title": "Production solver", "value": "DIRECT P–M3", "detail": "exact axis · adaptive φPn = Pu root", "status": "ready"},
         {"title": "Prestress demand", "value": "NOT ADDED", "detail": "verified external-FEA resultants used once", "status": "ready"},
     ]
@@ -21286,17 +21385,45 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
     ]
     _render_analysis_summary_strip(result_cards, columns=4)
 
+    excluded_end_zone_df = pd.DataFrame(list(result.get("excluded_pt_end_zone_rows") or []))
+    if not excluded_end_zone_df.empty:
+        with st.expander(
+            f"PT end-zone exclusions — {len(excluded_end_zone_df.index):,} row(s) outside ordinary B-region governing",
+            expanded=False,
+        ):
+            st.dataframe(excluded_end_zone_df, use_container_width=True, hide_index=True)
+            st.caption(
+                "These demand rows remain visible for audit but are not eligible to govern the ordinary Flexure B-region result. "
+                "PT anchorage/end-zone design remains a separate D-region review."
+            )
+
     if not result_df.empty:
         _render_beam_uls_static_plotly_figure(
             _make_crossbeam_uls_flexure_figure(
                 demand_df,
                 result_df,
                 segment_rows=st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY, []),
+                support_footprints=list(result.get("support_footprints") or []),
+                pt_end_zone_settings=result.get("pt_end_zone_settings") if isinstance(result.get("pt_end_zone_settings"), Mapping) else None,
+                construction_method=normalize_construction_method(
+                    st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
+                ),
+                member_length_m=_beam_uls_float(result.get("member_length_m")),
             )
         )
+        construction_method = normalize_construction_method(
+            st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
+        )
+        owner = trace_owner_label(construction_method)
         st.caption(
-            "The red dashed line is the adopted direct-solver φMn envelope. Pale amber bands are tendon-only / no-ordinary-rebar-credit development zones; vertical capacity steps occur only at binary credit boundaries. Amber dotted lines mark physical Segment joints, where the small open left/right triangles retain the independently solved s−/s+ capacities and no capacity is interpolated across the joint. "
-            "At zero-M3 rows, the nearest nonzero M3 sign in the same Load Case sets the checked bending direction; Flexural D/C remains 0.000 and Axial D/C is reported separately. This sectional check does not certify joint shear/torsion transfer, anchorage/end zones, D-regions, fatigue, or seismic detailing."
+            f"The red dashed line is the adopted direct-solver φMn envelope. {owner} traces stop through shaded support footprints and the pale PT end-zone bands are excluded from ordinary B-region governing. "
+            "Pale amber development bands identify tendon-only/no-ordinary-rebar-credit regions; vertical capacity steps occur only at binary credit boundaries. "
+            + (
+                "Amber dotted lines mark physical Segment joints, where independently solved s−/s+ capacities remain separate and no capacity is interpolated across the joint. "
+                if construction_method == "Precast Segmental"
+                else "Cast-in-Place Zone boundaries are property boundaries only and do not create artificial physical-joint breaks. "
+            )
+            + "At zero-M3 rows, the nearest nonzero M3 sign in the same Load Case sets the checked bending direction; Flexural D/C remains 0.000 and Axial D/C is reported separately. PT anchorage/end-zone and beam-column-joint D-regions remain separate reviews."
         )
         display_columns = [
             "Status", "Station s (m)", "Check Point", "Case", "Segment", "Section face", "Location type",
@@ -21370,7 +21497,7 @@ def _crossbeam_shear_demand_plot_rows(result_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _crossbeam_break_trace_over_supports(trace: go.Scatter, support_footprints: list[dict[str, object]]) -> None:
-    """Insert Plotly gaps wherever a line would cross a support footprint."""
+    """Remove line content inside supports and preserve explicit face-to-face gaps."""
 
     if "lines" not in str(getattr(trace, "mode", "")):
         return
@@ -21382,34 +21509,129 @@ def _crossbeam_break_trace_over_supports(trace: go.Scatter, support_footprints: 
     y_values = list(raw_y)
     if len(x_values) < 2 or len(x_values) != len(y_values):
         return
-    output_x: list[object] = [x_values[0]]
-    output_y: list[object] = [y_values[0]]
-    for index in range(1, len(x_values)):
-        previous = x_values[index - 1]
-        current = x_values[index]
+    raw_custom = getattr(trace, "customdata", None)
+    custom_values = list(raw_custom) if raw_custom is not None and len(raw_custom) == len(x_values) else None
+
+    def _inside_support(value: object) -> bool:
+        try:
+            station = float(value)
+        except (TypeError, ValueError):
+            return False
+        for footprint in support_footprints:
+            left = _beam_uls_float(footprint.get("s_left (m)"))
+            right = _beam_uls_float(footprint.get("s_right (m)"))
+            if math.isfinite(left) and math.isfinite(right) and left + 1.0e-9 < station < right - 1.0e-9:
+                return True
+        return False
+
+    def _crosses_full_support(previous: object, current: object) -> bool:
         try:
             x0 = float(previous)
             x1 = float(current)
         except (TypeError, ValueError):
-            output_x.append(current)
-            output_y.append(y_values[index])
-            continue
+            return False
         lower = min(x0, x1)
         upper = max(x0, x1)
-        crosses = False
         for footprint in support_footprints:
             left = _beam_uls_float(footprint.get("s_left (m)"))
             right = _beam_uls_float(footprint.get("s_right (m)"))
             if math.isfinite(left) and math.isfinite(right) and lower <= left + 1.0e-9 and upper >= right - 1.0e-9:
-                crosses = True
-                break
-        if crosses:
+                return True
+        return False
+
+    output_x: list[object] = []
+    output_y: list[object] = []
+    output_custom: list[object] | None = [] if custom_values is not None else None
+
+    def _append_gap() -> None:
+        if output_x and output_x[-1] is not None:
             output_x.append(None)
             output_y.append(None)
-        output_x.append(current)
-        output_y.append(y_values[index])
+            if output_custom is not None:
+                output_custom.append(None)
+
+    previous_kept_x: object | None = None
+    for index, (x_value, y_value) in enumerate(zip(x_values, y_values)):
+        if x_value is None or y_value is None:
+            _append_gap()
+            previous_kept_x = None
+            continue
+        if _inside_support(x_value):
+            _append_gap()
+            previous_kept_x = None
+            continue
+        if previous_kept_x is not None and _crosses_full_support(previous_kept_x, x_value):
+            _append_gap()
+        output_x.append(x_value)
+        output_y.append(y_value)
+        if output_custom is not None:
+            output_custom.append(custom_values[index])
+        previous_kept_x = x_value
+
     trace.x = output_x
     trace.y = output_y
+    if output_custom is not None:
+        trace.customdata = output_custom
+
+
+def _crossbeam_clip_trace_to_pt_b_region(
+    trace: go.Scatter,
+    settings: Mapping[str, object] | None,
+    *,
+    member_length_m: float,
+) -> None:
+    """Remove ordinary B-region line content inside the adopted PT end zones."""
+
+    if "lines" not in str(getattr(trace, "mode", "")) or not isinstance(settings, Mapping):
+        return
+    left_boundary = _beam_uls_float(settings.get("Left boundary s (m)"))
+    right_boundary = _beam_uls_float(settings.get("Right boundary s (m)"))
+    if not math.isfinite(left_boundary):
+        left_boundary = 0.0
+    if not math.isfinite(right_boundary):
+        right_boundary = float(member_length_m)
+    raw_x = getattr(trace, "x", None)
+    raw_y = getattr(trace, "y", None)
+    if raw_x is None or raw_y is None:
+        return
+    x_values = list(raw_x)
+    y_values = list(raw_y)
+    if len(x_values) != len(y_values):
+        return
+    raw_custom = getattr(trace, "customdata", None)
+    custom_values = list(raw_custom) if raw_custom is not None and len(raw_custom) == len(x_values) else None
+    output_x: list[object] = []
+    output_y: list[object] = []
+    output_custom: list[object] | None = [] if custom_values is not None else None
+
+    def _append_gap() -> None:
+        if output_x and output_x[-1] is not None:
+            output_x.append(None)
+            output_y.append(None)
+            if output_custom is not None:
+                output_custom.append(None)
+
+    for index, (x_value, y_value) in enumerate(zip(x_values, y_values)):
+        if x_value is None or y_value is None:
+            _append_gap()
+            continue
+        try:
+            station = float(x_value)
+        except (TypeError, ValueError):
+            _append_gap()
+            continue
+        if station < left_boundary - 1.0e-9 or station > right_boundary + 1.0e-9:
+            _append_gap()
+            continue
+        output_x.append(x_value)
+        output_y.append(y_value)
+        if output_custom is not None:
+            output_custom.append(custom_values[index])
+
+    trace.x = output_x
+    trace.y = output_y
+    if output_custom is not None:
+        trace.customdata = output_custom
 
 
 
@@ -21445,6 +21667,93 @@ def _crossbeam_joint_stations_from_segments(segment_rows: Any) -> list[float]:
         if abs(station - float(right["start"])) <= 1.0e-7:
             stations.append(station)
     return stations
+
+
+def _crossbeam_add_pt_end_zone_context(
+    fig: go.Figure,
+    settings: Mapping[str, object] | None,
+    *,
+    member_length_m: float,
+    showlegend: bool = True,
+) -> None:
+    """Shade engineer-adopted PT end zones without creating a fake capacity trace."""
+
+    if not isinstance(settings, Mapping) or member_length_m <= 0.0:
+        return
+    left_boundary = _beam_uls_float(settings.get("Left boundary s (m)"))
+    right_boundary = _beam_uls_float(settings.get("Right boundary s (m)"))
+    ranges: list[tuple[float, float, str]] = []
+    if math.isfinite(left_boundary) and left_boundary > 0.0:
+        ranges.append((0.0, min(left_boundary, member_length_m), "Left PT end zone"))
+    if math.isfinite(right_boundary) and right_boundary < member_length_m:
+        ranges.append((max(0.0, right_boundary), member_length_m, "Right PT end zone"))
+    for start, end, label in ranges:
+        if end <= start:
+            continue
+        fig.add_vrect(
+            x0=start,
+            x1=end,
+            fillcolor="rgba(245, 158, 11, 0.075)",
+            line_width=0,
+            layer="below",
+        )
+        fig.add_annotation(
+            x=0.5 * (start + end),
+            y=0.985,
+            xref="x",
+            yref="paper",
+            text=f"{label} · REVIEW",
+            showarrow=False,
+            font={"size": 8, "color": "#9a6700"},
+        )
+    if ranges and showlegend:
+        fig.add_trace(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode="lines",
+                name="PT end zone — REVIEW",
+                legendgroup="crossbeam_pt_end_zone",
+                line={"color": "rgba(245,158,11,0.34)", "width": 9},
+                hoverinfo="skip",
+            )
+        )
+
+
+def _crossbeam_add_support_context(
+    fig: go.Figure,
+    support_footprints: list[dict[str, object]],
+) -> None:
+    """Shade support D-regions and identify beam-side Column Faces."""
+
+    for footprint in support_footprints:
+        left = _beam_uls_float(footprint.get("s_left (m)"))
+        right = _beam_uls_float(footprint.get("s_right (m)"))
+        support_id = str(footprint.get("Column") or "Support")
+        if not math.isfinite(left) or not math.isfinite(right) or right <= left:
+            continue
+        fig.add_vrect(
+            x0=left,
+            x1=right,
+            fillcolor="rgba(100, 116, 139, 0.10)",
+            line_width=0,
+            layer="below",
+        )
+        for face, side_label in ((left, "L"), (right, "R")):
+            fig.add_vline(
+                x=face,
+                line={"color": "rgba(71, 85, 105, 0.70)", "width": 1.1},
+                layer="above",
+            )
+            fig.add_annotation(
+                x=face,
+                y=1.015,
+                xref="x",
+                yref="paper",
+                text=f"{support_id}-{side_label}",
+                showarrow=False,
+                font={"size": 9, "color": "#475569"},
+            )
 
 
 def _crossbeam_visible_intervals(
@@ -21562,6 +21871,9 @@ def _make_crossbeam_uls_shear_figure(
     support_check_df: pd.DataFrame,
     support_footprints: list[dict[str, object]],
     segment_rows: Any = None,
+    pt_end_zone_settings: Mapping[str, object] | None = None,
+    construction_method: str = "Precast Segmental",
+    member_length_m: float = 0.0,
 ) -> go.Figure:
     """Render station-dependent shear capacity without crossing physical joints."""
 
@@ -21574,6 +21886,9 @@ def _make_crossbeam_uls_shear_figure(
     # trace from segment-owned rows so no line can interpolate across a physical
     # joint or a Solid/Hollow property boundary.
     segments = _crossbeam_segment_records(segment_rows)
+    construction_method = normalize_construction_method(construction_method)
+    is_precast = construction_method == "Precast Segmental"
+    owner_label = trace_owner_label(construction_method)
     retained: list[go.BaseTraceType] = []
     fallback_positive_vc: list[go.Scatter] = []
     shown_vn_fallback = False
@@ -21620,7 +21935,8 @@ def _make_crossbeam_uls_shear_figure(
                 hovertemplate="x=%{x:.3f} m<br>-φVc=%{y:.3f} kN<extra></extra>",
             ))
 
-    member_length_m = max([float(item["end"]) for item in segments], default=0.0)
+    if member_length_m <= 0.0:
+        member_length_m = max([float(item["end"]) for item in segments], default=0.0)
     shown_vn = False
     shown_vc = False
     if segments and not capacity_df.empty:
@@ -21702,16 +22018,12 @@ def _make_crossbeam_uls_shear_figure(
                     else:
                         shown_vc = True
 
-    for footprint in support_footprints:
-        left = _beam_uls_float(footprint.get("s_left (m)"))
-        right = _beam_uls_float(footprint.get("s_right (m)"))
-        support_id = str(footprint.get("Column") or "Support")
-        if not math.isfinite(left) or not math.isfinite(right) or right <= left:
-            continue
-        fig.add_vrect(x0=left, x1=right, fillcolor="rgba(100, 116, 139, 0.10)", line_width=0, layer="below")
-        for face, side_label in ((left, "L"), (right, "R")):
-            fig.add_vline(x=face, line={"color": "rgba(71, 85, 105, 0.70)", "width": 1.1}, layer="above")
-            fig.add_annotation(x=face, y=1.015, xref="x", yref="paper", text=f"{support_id}-{side_label}", showarrow=False, font={"size": 9, "color": "#475569"})
+    _crossbeam_add_support_context(fig, support_footprints)
+    _crossbeam_add_pt_end_zone_context(
+        fig,
+        pt_end_zone_settings,
+        member_length_m=member_length_m,
+    )
 
     if not support_check_df.empty:
         for location, name, symbol in (
@@ -21729,7 +22041,7 @@ def _make_crossbeam_uls_shear_figure(
                     fig.add_vline(x=station, line={"color": "rgba(59, 130, 246, 0.45)", "width": 1.0, "dash": "dot"}, layer="below")
 
     joint_side_df = _crossbeam_joint_side_rows(capacity_df)
-    joint_stations = _crossbeam_joint_stations_from_segments(segment_rows)
+    joint_stations = _crossbeam_joint_stations_from_segments(segment_rows) if is_precast else []
     if not joint_stations and not guard_df.empty:
         joint_stations = sorted(
             set(
@@ -21773,6 +22085,11 @@ def _make_crossbeam_uls_shear_figure(
     # happened to be imported or generated by another check.
     for trace in fig.data:
         _crossbeam_break_trace_over_supports(trace, support_footprints)
+        _crossbeam_clip_trace_to_pt_b_region(
+            trace,
+            pt_end_zone_settings,
+            member_length_m=member_length_m,
+        )
         _crossbeam_break_trace_over_stations(trace, joint_stations)
 
     if joint_stations:
@@ -21797,7 +22114,18 @@ def _make_crossbeam_uls_shear_figure(
             fig.add_trace(go.Scatter(x=[station], y=[y_marker], mode="markers", name="Physical joint — REVIEW" if index == 1 else "Physical joint — REVIEW", showlegend=index == 1, legendgroup="crossbeam_physical_joint", marker={"size": 9, "symbol": "x-open", "color": "#f59e0b", "line": {"width": 1.5}}, hovertemplate=f"J{index} · s={station:.3f} m<br>Left/right one-sided values plotted separately<br>Joint transfer: REVIEW<extra></extra>"))
             fig.add_vline(x=station, line={"color": "#f59e0b", "width": 1.2, "dash": "dot"}, layer="above")
 
-    fig.update_layout(title={"text": "Shear Check — Strength ULS<br><sup>ACI 318-19 · station-dependent segment traces + one-sided physical-joint values · support footprints omitted</sup>", "x": 0.5, "xanchor": "center"})
+    fig.update_layout(
+        title={
+            "text": (
+                "Shear Check — Strength ULS"
+                f"<br><sup>ACI 318-19 · station-dependent {owner_label.lower()} traces · support/PT end zones omitted"
+                + (" · one-sided physical-joint values" if is_precast else "")
+                + "</sup>"
+            ),
+            "x": 0.5,
+            "xanchor": "center",
+        }
+    )
     return fig
 
 def _render_crossbeam_uls_shear_workspace() -> None:
@@ -22039,6 +22367,17 @@ def _render_crossbeam_uls_shear_workspace() -> None:
             "the ACI sectional shear result and governing D/C are reported independently above."
         )
 
+    excluded_end_zone_df = pd.DataFrame(list(result.get("excluded_pt_end_zone_rows") or []))
+    if not excluded_end_zone_df.empty:
+        with st.expander(
+            f"PT end-zone exclusions — {len(excluded_end_zone_df.index):,} row(s) outside ordinary B-region governing",
+            expanded=False,
+        ):
+            st.dataframe(excluded_end_zone_df, use_container_width=True, hide_index=True)
+            st.caption(
+                "The excluded rows remain demand evidence only. PT anchorage/end-zone shear design is a separate D-region review."
+            )
+
     if not result_df.empty:
         chart_df = result_df.copy()
         guard_df = result_df[
@@ -22059,12 +22398,26 @@ def _render_crossbeam_uls_shear_workspace() -> None:
                 support_check_df,
                 support_footprints,
                 st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY, []),
+                pt_end_zone_settings=result.get("pt_end_zone_settings") if isinstance(result.get("pt_end_zone_settings"), Mapping) else None,
+                construction_method=normalize_construction_method(
+                    st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
+                ),
+                member_length_m=_beam_uls_float(result.get("member_length_m")),
             )
         )
+        construction_method = normalize_construction_method(
+            st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
+        )
+        owner = trace_owner_label(construction_method)
         st.caption(
-            "Signed Vu and the ±φVn / ±φVc traces are split by Segment and broken across each shaded support footprint. Every Precast physical joint plots separate one-sided left/right demand and capacity values without averaging or interpolation across the joint. "
-            "Both support locations are checked conservatively and the larger D/C governs. P, T, and M3 remain row-coupled to the same exact, one-sided interpolated, or limited one-sided extrapolated station-force source. "
-            "Physical segment-joint transfer and torsion interaction remain outside this milestone."
+            f"Signed Vu and the ±φVn / ±φVc traces use {owner} routing and break across every shaded support footprint; pale PT end-zone bands are excluded from ordinary B-region governing. "
+            + (
+                "Every Precast physical joint plots separate one-sided left/right demand and capacity values without averaging or interpolation across the joint. "
+                if construction_method == "Precast Segmental"
+                else "Cast-in-Place Zone boundaries remain monolithic property boundaries and do not create physical-joint reviews. "
+            )
+            + "Both support locations are checked conservatively and the larger D/C governs. P, T, and M3 remain row-coupled to the same exact, one-sided interpolated, or limited one-sided extrapolated station-force source. "
+            + "Physical segment-joint transfer and torsion interaction remain outside this milestone."
         )
         generated_mask = result_df.get("Generated support check", pd.Series(False, index=result_df.index)).fillna(False).astype(bool)
         joint_side_mask = result_df.get("Generated joint side check", pd.Series(False, index=result_df.index)).fillna(False).astype(bool)
@@ -22649,7 +23002,14 @@ def _make_crossbeam_uls_torsion_figure(
     result_df: pd.DataFrame,
     support_footprints: list[dict[str, object]],
     segment_rows: Any = None,
+    *,
+    pt_end_zone_settings: Mapping[str, object] | None = None,
+    construction_method: str = "Precast Segmental",
+    member_length_m: float = 0.0,
 ) -> go.Figure:
+    construction_method = normalize_construction_method(construction_method)
+    is_precast = construction_method == "Precast Segmental"
+    owner_label = trace_owner_label(construction_method)
     standard_df = result_df.copy()
     if "Generated joint side check" in standard_df:
         standard_df = standard_df[~standard_df["Generated joint side check"].fillna(False).astype(bool)].copy()
@@ -22657,7 +23017,7 @@ def _make_crossbeam_uls_torsion_figure(
     fig = _make_beam_uls_demand_figure(
         demand_df,
         column="Tu",
-        title="Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · Segment-owned Tu and step capacities · support interiors omitted; face/h/2 checks shown</sup>",
+        title=f"Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · {owner_label} Tu and step capacities · support/PT end zones omitted; face/h/2 checks shown</sup>",
         y_label="Torsion, Tu (kN-m)",
     )
     segments = _crossbeam_segment_records(segment_rows)
@@ -22689,8 +23049,8 @@ def _make_crossbeam_uls_torsion_figure(
                     trace.text = ["Max |Tu|" for _ in list(trace.text)]
             _crossbeam_break_trace_over_supports(trace, support_footprints)
 
-    joint_stations = _crossbeam_joint_stations_from_segments(segment_rows)
-    if not joint_stations:
+    joint_stations = _crossbeam_joint_stations_from_segments(segment_rows) if is_precast else []
+    if is_precast and not joint_stations:
         guard_rows = result_df[
             result_df.get("Location type", pd.Series(dtype=object)).astype(str) == "PHYSICAL SEGMENT JOINT"
         ].copy()
@@ -22703,7 +23063,8 @@ def _make_crossbeam_uls_torsion_figure(
                     .tolist()
                 )
             )
-    member_length_m = max([float(item["end"]) for item in segments], default=0.0)
+    if member_length_m <= 0.0:
+        member_length_m = max([float(item["end"]) for item in segments], default=0.0)
     if member_length_m <= 0.0:
         finite_stations = pd.to_numeric(result_df.get("Station s (m)"), errors="coerce").dropna()
         member_length_m = float(finite_stations.max()) if not finite_stations.empty else 1.0
@@ -22789,16 +23150,20 @@ def _make_crossbeam_uls_torsion_figure(
                         else:
                             shown_tth = True
 
-    for footprint in support_footprints:
-        left = _beam_uls_float(footprint.get("s_left (m)"))
-        right = _beam_uls_float(footprint.get("s_right (m)"))
-        support_id = str(footprint.get("Column") or "Support")
-        if not math.isfinite(left) or not math.isfinite(right) or right <= left:
-            continue
-        fig.add_vrect(x0=left, x1=right, fillcolor="rgba(100, 116, 139, 0.10)", line_width=0, layer="below")
-        for face, side_label in ((left, "L"), (right, "R")):
-            fig.add_vline(x=face, line={"color": "rgba(71, 85, 105, 0.70)", "width": 1.1}, layer="above")
-            fig.add_annotation(x=face, y=1.015, xref="x", yref="paper", text=f"{support_id}-{side_label}", showarrow=False, font={"size": 9, "color": "#475569"})
+    for trace in fig.data:
+        _crossbeam_break_trace_over_supports(trace, support_footprints)
+        _crossbeam_clip_trace_to_pt_b_region(
+            trace,
+            pt_end_zone_settings,
+            member_length_m=member_length_m,
+        )
+
+    _crossbeam_add_support_context(fig, support_footprints)
+    _crossbeam_add_pt_end_zone_context(
+        fig,
+        pt_end_zone_settings,
+        member_length_m=member_length_m,
+    )
 
     support_rows = result_df[result_df.get("Generated support check", False).astype(bool)].copy() if "Generated support check" in result_df else pd.DataFrame()
     if not support_rows.empty:
@@ -22916,7 +23281,7 @@ def _make_crossbeam_uls_torsion_figure(
 
     y_range = _crossbeam_torsion_symmetric_y_range(result_df)
     fig.update_layout(
-        title="Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · Segment-owned Tu and step capacities · support interiors omitted; face/h/2 checks shown</sup>",
+        title=f"Standalone Torsion Check — Strength ULS<br><sup>ACI 318-19 · {owner_label} Tu and step capacities · support/PT end zones omitted; face/h/2 checks shown</sup>",
         yaxis={"range": y_range} if y_range is not None else {},
         margin=dict(l=82, r=42, t=105, b=116),
     )
@@ -23139,15 +23504,37 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
         )
 
     if not result_df.empty:
+        excluded_end_zone_df = pd.DataFrame(list(result.get("excluded_pt_end_zone_rows") or []))
+        if not excluded_end_zone_df.empty:
+            with st.expander(
+                f"PT end-zone exclusions — {len(excluded_end_zone_df.index):,} row(s) outside ordinary B-region governing",
+                expanded=False,
+            ):
+                st.dataframe(excluded_end_zone_df, use_container_width=True, hide_index=True)
+                st.caption(
+                    "The excluded rows remain demand evidence only. PT anchorage/end-zone torsion design is a separate D-region review."
+                )
+        construction_method = normalize_construction_method(
+            st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
+        )
+        owner = trace_owner_label(construction_method)
         _render_beam_uls_static_plotly_figure(
             _make_crossbeam_uls_torsion_figure(
                 result_df,
                 list(preparation.support_footprints),
                 st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY, []),
+                pt_end_zone_settings=result.get("pt_end_zone_settings") if isinstance(result.get("pt_end_zone_settings"), Mapping) else None,
+                construction_method=construction_method,
+                member_length_m=_beam_uls_float(result.get("member_length_m")),
             ),
             caption=(
-                "Signed Tu is plotted at every available station and stops at Column/Support interiors. Segment-owned demand and the horizontal ±φTth / ±φTn capacities terminate at every physical joint; one-sided s−/s+ demand and capacities remain separate and are never interpolated through the joint. "
-                "The black diamond reports torsional-strength Tu/φTn only. The decision annotation and Why this result table identify the actual overall controlling check, including minimum longitudinal Aℓ when it governs."
+                f"Signed Tu uses {owner} routing, stops at Column/Support interiors, and excludes the pale PT end-zone bands from ordinary B-region governing. "
+                + (
+                    "The horizontal ±φTth / ±φTn capacities terminate at every physical joint; one-sided s−/s+ demand and capacities remain separate and are never interpolated through the joint. "
+                    if construction_method == "Precast Segmental"
+                    else "Cast-in-Place Zone boundaries remain monolithic property boundaries and create no physical-joint transfer review. "
+                )
+                + "The black diamond reports torsional-strength Tu/φTn only. The cards and Why-this-result table own the engineering decision."
             ),
         )
         support_df = result_df[result_df.get("Generated support check", False).astype(bool)].copy() if "Generated support check" in result_df else pd.DataFrame()
@@ -23933,44 +24320,40 @@ def _crossbeam_combined_vt_add_context_to_figure(
     support_footprints: list[Mapping[str, object]],
     segment_rows: object,
     show_joint_review_wording: bool = False,
+    pt_end_zone_settings: Mapping[str, object] | None = None,
+    construction_method: str = "Precast Segmental",
+    member_length_m: float = 0.0,
 ) -> None:
     """Add the shared member context used by every one-check Combined V+T figure."""
 
-    for item in support_footprints:
-        bounds = _crossbeam_support_bounds(item)
-        if bounds is None:
-            continue
-        left, right = bounds
-        support_id = str(item.get("Column") or "Support")
-        fig.add_vrect(
-            x0=left,
-            x1=right,
-            fillcolor="rgba(100,116,139,0.10)",
-            line_width=0,
-            layer="below",
+    construction_method = normalize_construction_method(construction_method)
+    is_precast = construction_method == "Precast Segmental"
+    if member_length_m <= 0.0:
+        segment_records = _crossbeam_segment_records(segment_rows)
+        member_length_m = max([float(item["end"]) for item in segment_records], default=0.0)
+    for trace in fig.data:
+        _crossbeam_break_trace_over_supports(trace, [dict(item) for item in support_footprints])
+        _crossbeam_clip_trace_to_pt_b_region(
+            trace,
+            pt_end_zone_settings,
+            member_length_m=member_length_m,
         )
-        for face, side_label in ((left, "L"), (right, "R")):
-            fig.add_vline(
-                x=face,
-                line={"color": "rgba(71,85,105,0.68)", "width": 1.0},
-                layer="above",
-            )
-            fig.add_annotation(
-                x=face,
-                y=1.005,
-                xref="x",
-                yref="paper",
-                text=f"{support_id}-{side_label}",
-                showarrow=False,
-                font={"size": 8, "color": "#475569"},
-            )
+    _crossbeam_add_support_context(fig, [dict(item) for item in support_footprints])
+    if member_length_m <= 0.0:
+        segment_records = _crossbeam_segment_records(segment_rows)
+        member_length_m = max([float(item["end"]) for item in segment_records], default=0.0)
+    _crossbeam_add_pt_end_zone_context(
+        fig,
+        pt_end_zone_settings,
+        member_length_m=member_length_m,
+    )
 
     joint_rows = result_df[
         result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str)
         == "PHYSICAL JOINT SIDE"
     ].copy()
-    joint_stations = _crossbeam_joint_stations_from_segments(segment_rows)
-    if not joint_stations and not joint_rows.empty:
+    joint_stations = _crossbeam_joint_stations_from_segments(segment_rows) if is_precast else []
+    if is_precast and not joint_stations and not joint_rows.empty:
         joint_stations = sorted(
             set(
                 pd.to_numeric(joint_rows.get("Joint station s (m)"), errors="coerce")
@@ -24013,6 +24396,9 @@ def _make_crossbeam_uls_combined_vt_component_figure(
     segment_rows: object,
     *,
     component: str,
+    pt_end_zone_settings: Mapping[str, object] | None = None,
+    construction_method: str = "Precast Segmental",
+    member_length_m: float = 0.0,
 ) -> go.Figure:
     """Return one standardized Combined V+T chart with one engineering meaning."""
 
@@ -24078,6 +24464,9 @@ def _make_crossbeam_uls_combined_vt_component_figure(
         result_df=result_df,
         support_footprints=support_footprints,
         segment_rows=segment_rows,
+        pt_end_zone_settings=pt_end_zone_settings,
+        construction_method=construction_method,
+        member_length_m=member_length_m,
     )
 
     if component == "longitudinal":
@@ -24200,9 +24589,10 @@ def _make_crossbeam_uls_combined_vt_component_figure(
     component_values = pd.to_numeric(result_df.get(column), errors="coerce").dropna()
     finite_values = [float(value) for value in component_values if math.isfinite(float(value))]
     y_peak = max([1.0, *finite_values])
+    owner_label = trace_owner_label(normalize_construction_method(construction_method))
     fig.update_layout(
         title={
-            "text": f"{spec['chart_title']}<br><sup>{spec['subtitle']} · Segment-owned traces</sup>",
+            "text": f"{spec['chart_title']}<br><sup>{spec['subtitle']} · {owner_label} traces · support/PT end zones omitted</sup>",
             "x": 0.5,
             "xanchor": "center",
         },
@@ -24220,6 +24610,10 @@ def _make_crossbeam_uls_combined_vt_joint_review_figure(
     result_df: pd.DataFrame,
     support_footprints: list[Mapping[str, object]],
     segment_rows: object,
+    *,
+    pt_end_zone_settings: Mapping[str, object] | None = None,
+    construction_method: str = "Precast Segmental",
+    member_length_m: float = 0.0,
 ) -> go.Figure:
     """Return a clean member map for physical-joint review without artificial D/C."""
 
@@ -24243,8 +24637,15 @@ def _make_crossbeam_uls_combined_vt_joint_review_figure(
         support_footprints=support_footprints,
         segment_rows=segment_rows,
         show_joint_review_wording=True,
+        pt_end_zone_settings=pt_end_zone_settings,
+        construction_method=construction_method,
+        member_length_m=member_length_m,
     )
-    joint_stations = _crossbeam_joint_stations_from_segments(segment_rows)
+    joint_stations = (
+        _crossbeam_joint_stations_from_segments(segment_rows)
+        if normalize_construction_method(construction_method) == "Precast Segmental"
+        else []
+    )
     if joint_stations:
         fig.add_trace(
             go.Scatter(
@@ -24453,6 +24854,17 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
             "Physical-joint transfer and torsion continuation/anchorage reviews remain separate from this numerical failure."
         )
 
+    excluded_end_zone_df = pd.DataFrame(list(result.get("excluded_pt_end_zone_rows") or []))
+    if not excluded_end_zone_df.empty:
+        with st.expander(
+            f"PT end-zone exclusions — {len(excluded_end_zone_df.index):,} row(s) outside ordinary B-region governing",
+            expanded=False,
+        ):
+            st.dataframe(excluded_end_zone_df, use_container_width=True, hide_index=True)
+            st.caption(
+                "The excluded rows remain demand evidence only. PT anchorage/end-zone V+T design is a separate D-region review."
+            )
+
     if not result_df.empty:
         st.markdown("#### Combined check review")
         st.caption(
@@ -24476,6 +24888,16 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
             "Longitudinal reinforcement": "longitudinal",
         }
         support_footprints = list(preparation.support_footprints)
+        construction_method = normalize_construction_method(
+            st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
+        )
+        owner = trace_owner_label(construction_method)
+        end_zone_settings = (
+            result.get("pt_end_zone_settings")
+            if isinstance(result.get("pt_end_zone_settings"), Mapping)
+            else None
+        )
+        member_length_m = _beam_uls_float(result.get("member_length_m"))
         segment_rows = st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY, [])
         guidance_key = component_by_view.get(view_label, "joint")
         guidance = _crossbeam_combined_vt_view_guidance(guidance_key)
@@ -24545,16 +24967,16 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
 
             captions = {
                 "stress": (
-                    "Section-size interaction only. The blue trace connects evaluated imported, Column Face, and ACI h/2 results within each valid Segment region; it is not a continuous FEA solution. "
-                    "The trace never crosses a physical joint or an excluded support footprint. The red dashed line is D/C = 1.0."
+                    f"Section-size interaction only. The blue trace uses {owner} routing across evaluated imported, Column Face, and ACI h/2 results; it is not a continuous FEA solution. "
+                    "The trace never crosses a support footprint or an adopted PT end zone. The red dashed line is D/C = 1.0."
                 ),
                 "transverse": (
-                    "Combined transverse reinforcement only. The green trace connects evaluated station and support results within each valid Segment region and compares required Av/s + 2At/s with the unique physical vertical-leg pool. "
-                    "Below the torsion threshold, At demand is zero while the shear contribution remains eligible. Shared legs are never counted twice; physical joints and excluded support interiors remain trace breaks."
+                    f"Combined transverse reinforcement only. The green trace uses {owner} routing and compares required Av/s + 2At/s with the unique physical vertical-leg pool. "
+                    "Below the torsion threshold, At demand is zero while the shear contribution remains eligible. Shared legs are never counted twice; support footprints and PT end zones remain excluded."
                 ),
                 "longitudinal": (
-                    "Longitudinal torsion reinforcement only. The amber Segment-owned step trace covers minimum Aℓ, perimeter detailing, and direct flexure-plus-torsional-tension utilization where torsion design applies. "
-                    "Pale Aℓ N/A bands identify Segments below the torsion threshold; they are not D/C = 0. Aℓ is a cage-associated subset of physical As, not additional duplicate steel."
+                    f"Longitudinal torsion reinforcement only. The amber {owner} step trace covers minimum Aℓ, perimeter detailing, and direct flexure-plus-torsional-tension utilization where torsion design applies. "
+                    "Pale Aℓ N/A bands identify layout regions below the torsion threshold; they are not D/C = 0. Aℓ is a cage-associated subset of physical As, not additional duplicate steel."
                 ),
             }
             _render_beam_uls_static_plotly_figure(
@@ -24563,6 +24985,9 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
                     support_footprints,
                     segment_rows,
                     component=component,
+                    pt_end_zone_settings=end_zone_settings,
+                    construction_method=construction_method,
+                    member_length_m=member_length_m,
                 ),
                 caption=captions[component],
             )
@@ -24613,6 +25038,9 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
                     result_df,
                     support_footprints,
                     segment_rows,
+                    pt_end_zone_settings=end_zone_settings,
+                    construction_method=construction_method,
+                    member_length_m=member_length_m,
                 ),
                 caption=(
                     "Member map only. J1–Jn are physical Precast Segment joints requiring separate transfer verification. "
@@ -25533,6 +25961,100 @@ def _render_crossbeam_service_stress_workspace() -> None:
         st.info(str(result.get("scope") or ""))
 
 
+def _render_crossbeam_uls_station_geometry_controls() -> None:
+    """Render the shared ULS station-eligibility and PT end-zone source."""
+
+    length_m = _beam_uls_float(st.session_state.get(CROSSBEAM_LENGTH_KEY))
+    segment_rows = list(st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY) or [])
+    definitions = canonical_section_definitions(
+        st.session_state.get(CB_SECLIB_DEFINITIONS_KEY, [])
+    )
+    initial = canonical_pt_end_zone_settings(
+        st.session_state,
+        member_length_m=max(length_m, 0.0),
+        segment_rows=segment_rows,
+        definitions=definitions,
+    )
+    if CB_ULS_PT_END_ZONE_BASIS_KEY not in st.session_state:
+        st.session_state[CB_ULS_PT_END_ZONE_BASIS_KEY] = CB_ULS_PT_END_ZONE_BASIS_LOCAL_DEPTH
+    if CB_ULS_PT_END_ZONE_LEFT_M_KEY not in st.session_state and initial.left_length_m > 0.0:
+        st.session_state[CB_ULS_PT_END_ZONE_LEFT_M_KEY] = float(initial.left_length_m)
+    if CB_ULS_PT_END_ZONE_RIGHT_M_KEY not in st.session_state and initial.right_length_m > 0.0:
+        st.session_state[CB_ULS_PT_END_ZONE_RIGHT_M_KEY] = float(initial.right_length_m)
+
+    with st.expander("ULS station eligibility / PT end zones", expanded=False):
+        st.caption(
+            "One shared geometry source is used by Flexure, Shear, Torsion, and Combined V+T. "
+            "Support-footprint interiors and the adopted PT anchorage/end-zone lengths are excluded from ordinary B-region governing."
+        )
+        basis = st.selectbox(
+            "PT end-zone exclusion basis",
+            list(CB_ULS_PT_END_ZONE_BASIS_OPTIONS),
+            key=CB_ULS_PT_END_ZONE_BASIS_KEY,
+            help=(
+                "Local section depth h is the conservative starter basis. Manual lengths are engineer-adopted project inputs; "
+                "PT anchorage/end-zone design remains a separate D-region check."
+            ),
+        )
+        if basis == CB_ULS_PT_END_ZONE_BASIS_MANUAL:
+            cols = st.columns(2)
+            with cols[0]:
+                st.number_input(
+                    "Left PT end-zone length (m)",
+                    min_value=0.001,
+                    max_value=max(0.001, 0.49 * max(length_m, 0.002)),
+                    step=0.05,
+                    format="%.3f",
+                    key=CB_ULS_PT_END_ZONE_LEFT_M_KEY,
+                )
+            with cols[1]:
+                st.number_input(
+                    "Right PT end-zone length (m)",
+                    min_value=0.001,
+                    max_value=max(0.001, 0.49 * max(length_m, 0.002)),
+                    step=0.05,
+                    format="%.3f",
+                    key=CB_ULS_PT_END_ZONE_RIGHT_M_KEY,
+                )
+        settings = canonical_pt_end_zone_settings(
+            st.session_state,
+            member_length_m=max(length_m, 0.0),
+            segment_rows=segment_rows,
+            definitions=definitions,
+        )
+        construction_method = normalize_construction_method(
+            st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
+        )
+        _render_analysis_summary_strip(
+            [
+                {
+                    "title": "Trace ownership",
+                    "value": trace_owner_label(construction_method).upper(),
+                    "detail": "CIP Zone boundaries remain continuous; Precast physical joints remain trace breaks",
+                    "status": "info",
+                },
+                {
+                    "title": "Left PT end zone",
+                    "value": f"0.000–{settings.left_boundary_m:.3f} m" if settings.ready else "SOURCE BLOCKED",
+                    "detail": settings.basis,
+                    "status": "warning" if settings.ready else "danger",
+                },
+                {
+                    "title": "Right PT end zone",
+                    "value": f"{settings.right_boundary_m:.3f}–{length_m:.3f} m" if settings.ready else "SOURCE BLOCKED",
+                    "detail": settings.basis,
+                    "status": "warning" if settings.ready else "danger",
+                },
+            ],
+            columns=3,
+        )
+        for message in settings.errors:
+            st.error(message)
+        st.info(
+            "PT end-zone rows remain visible as excluded REVIEW evidence; they cannot govern ordinary Flexure/Shear/Torsion/V+T B-region PASS/FAIL."
+        )
+
+
 def render_analysis_uls_pmm() -> None:
     st.subheader("ULS Strength")
     mode_settings = _analysis_mode_from_session()
@@ -25552,6 +26074,7 @@ def render_analysis_uls_pmm() -> None:
             if selected_check_raw in {"Flexure", "Shear", "Torsion", "Shear + Torsion"}
             else "Flexure"
         )
+        _render_crossbeam_uls_station_geometry_controls()
         if selected_check == "Shear + Torsion":
             _render_crossbeam_uls_combined_vt_workspace()
         elif selected_check == "Torsion":
