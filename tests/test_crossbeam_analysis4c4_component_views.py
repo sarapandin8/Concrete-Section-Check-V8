@@ -12,6 +12,7 @@ from concrete_pmm_pro.analysis.crossbeam_uls_combined_vt import (
 from concrete_pmm_pro.ui.analysis_page import (
     _crossbeam_combined_vt_component_governing,
     _crossbeam_combined_vt_component_summary,
+    _crossbeam_combined_vt_decision_rows,
     _make_crossbeam_uls_combined_vt_component_figure,
     _make_crossbeam_uls_combined_vt_joint_review_figure,
     _render_crossbeam_uls_combined_vt_workspace,
@@ -81,6 +82,61 @@ def test_longitudinal_view_reports_exact_minimum_al_reason(combined_result) -> N
     assert summary["required"] == "22,741 mm²"
     assert summary["provided"] == "10,053 mm²"
     assert summary["shortfall"] == "12,688 mm²"
+
+
+def test_overview_decision_rows_use_each_components_own_governing_source() -> None:
+    result_df = pd.DataFrame(
+        [
+            {
+                "Station type": "IMPORTED",
+                "Case": "ULS-01",
+                "Segment": "S2",
+                "Station s (m)": 6.0,
+                "Stress D/C value": 0.427,
+                "Stress status": "PASS",
+                "Transverse D/C value": 0.272,
+                "Transverse status": "PASS",
+                "(Av+2At)/s adopted required mm2/mm": 0.921,
+                "Unique transverse provided/s mm2/mm": 3.393,
+                "Al minimum D/C value": 2.262,
+                "Al minimum required mm2": 22741.0,
+                "Al provided mm2": 10053.0,
+                "Flexure+torsion D/C value": 0.094,
+                "Flexure+torsion status": "PASS",
+                "M3 kN-m": 2000.0,
+                "Flexure+torsion phiMn kN-m": 21302.3,
+            },
+            {
+                "Station type": "IMPORTED",
+                "Case": "ULS-01",
+                "Segment": "S2",
+                "Station s (m)": 8.0,
+                "Stress D/C value": 0.454,
+                "Stress status": "PASS",
+                "Transverse D/C value": 0.180,
+                "Transverse status": "PASS",
+                "(Av+2At)/s adopted required mm2/mm": 0.611,
+                "Unique transverse provided/s mm2/mm": 3.393,
+                "Al minimum D/C value": 1.800,
+                "Al minimum required mm2": 18095.0,
+                "Al provided mm2": 10053.0,
+                "Flexure+torsion D/C value": 0.125,
+                "Flexure+torsion status": "PASS",
+                "M3 kN-m": 2500.0,
+                "Flexure+torsion phiMn kN-m": 20000.0,
+            },
+        ]
+    )
+
+    rows = _crossbeam_combined_vt_decision_rows(result_df, joint_review_count=5)
+    by_check = {str(row["Check"]): row for row in rows}
+
+    assert by_check["Section-size interaction"]["D/C"] == "0.454"
+    assert by_check["Combined transverse reinforcement Av/s + 2At/s"]["D/C"] == "0.272"
+    assert by_check["Minimum longitudinal torsion reinforcement Aℓ"]["D/C"] == "2.262"
+    assert by_check["Direct flexure + torsional longitudinal tension"]["D/C"] == "0.125"
+    assert by_check["Direct flexure + torsional longitudinal tension"]["Required"] == "Mu = 2,500.0 kN·m"
+    assert by_check["Physical-joint V+T transfer"]["Status"] == "REVIEW REQUIRED"
 
 
 def test_joint_review_map_has_no_artificial_utilization_trace(combined_result) -> None:

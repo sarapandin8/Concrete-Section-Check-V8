@@ -1846,3 +1846,7 @@ Recovers missing Column-Face and ACI h/2 station forces from exact rows, row-cou
 ## CROSSBEAM.UI.ROWDELETE2 — In-table checkbox row deletion
 
 Replaces the separate multiselect deletion controls with a direct `Delete` checkbox in the Column/support and Segment/Zone tables plus one delete button immediately below each table. Delete-all remains blocked, Precast/CIP layout isolation is preserved, and Column deletion retains the accepted downstream stale-state safeguards. See `README_CROSSBEAM_UI_ROW_DELETE2.md`.
+
+## CROSSBEAM.ANALYSIS4C5B — ULS Governing Evidence and Count Consistency
+
+Aligns the Combined V+T overview table with each component's actual governing row and clarifies the Shear section-capacity count breakdown to include one-sided physical-joint audit rows, without changing engineering equations or developing the deferred Joint review workspace. See `README_CROSSBEAM_ANALYSIS4C5B.md`.

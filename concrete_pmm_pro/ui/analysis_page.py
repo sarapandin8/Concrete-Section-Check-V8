@@ -21863,7 +21863,11 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         for row in preparation.rows
     )
     eligible_support_count = generated_support_count - generated_support_joint_review_count
-    eligible_sectional_count = len(preparation.rows) - physical_joint_guard_count
+    # Joint-side rows remain valid one-sided ACI section-capacity audits even
+    # though physical-joint force transfer is deliberately reported as REVIEW.
+    eligible_sectional_count = (
+        eligible_retained_count + eligible_support_count + generated_joint_side_count
+    )
     cached = st.session_state.get(CROSSBEAM_ULS_SHEAR_RESULT_KEY)
     cached_hash = str(st.session_state.get(CROSSBEAM_ULS_SHEAR_RESULT_HASH_KEY) or "")
     cache_current = isinstance(cached, Mapping) and cached_hash == preparation.fingerprint
@@ -21875,7 +21879,7 @@ def _render_crossbeam_uls_shear_workspace() -> None:
                 f"ULS Shear source ready — {len(preparation.demand_rows):,} active station-force row(s) produce "
                 f"{retained_source_count:,} retained source row(s) + {generated_support_count:,} generated support row(s) "
                 f"+ {generated_joint_side_count:,} one-sided joint row(s) = {len(preparation.rows):,} total calculation row(s); "
-                f"{eligible_sectional_count:,} eligible sectional check(s) "
+                f"{eligible_sectional_count:,} ACI section-capacity check(s) "
                 f"and {physical_joint_review_count:,} physical-joint review location(s)."
             )
         else:
@@ -21934,9 +21938,12 @@ def _render_crossbeam_uls_shear_workspace() -> None:
             "status": "info",
         },
         {
-            "title": "Eligible sectional checks",
+            "title": "ACI section-capacity checks",
             "value": f"{eligible_sectional_count:,}",
-            "detail": f"{eligible_retained_count:,} retained + {eligible_support_count:,} support",
+            "detail": (
+                f"{eligible_retained_count:,} retained + {eligible_support_count:,} support + "
+                f"{generated_joint_side_count:,} one-sided joint audits"
+            ),
             "status": "ready" if preparation.ready else "neutral",
         },
         {
@@ -23667,16 +23674,14 @@ def _crossbeam_combined_vt_view_guidance(component: str) -> dict[str, str]:
     return dict(guidance.get(str(component), guidance["stress"]))
 
 
-def _crossbeam_combined_vt_component_governing(
+def _crossbeam_combined_vt_governing_by_column(
     result_df: pd.DataFrame,
-    component: str,
+    column: str,
 ) -> Mapping[str, object] | None:
-    """Return the governing non-joint row for one Combined V+T component."""
+    """Return the governing non-joint row for one stored Combined V+T D/C column."""
 
     if result_df is None or result_df.empty:
         return None
-    spec = _crossbeam_combined_vt_component_spec(component)
-    column = str(spec["column"])
     frame = result_df[
         result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str)
         != "PHYSICAL JOINT SIDE"
@@ -23686,6 +23691,16 @@ def _crossbeam_combined_vt_component_governing(
     if frame.empty:
         return None
     return frame.loc[frame["__component_dc"].idxmax()]
+
+
+def _crossbeam_combined_vt_component_governing(
+    result_df: pd.DataFrame,
+    component: str,
+) -> Mapping[str, object] | None:
+    """Return the governing non-joint row for one Combined V+T component."""
+
+    spec = _crossbeam_combined_vt_component_spec(component)
+    return _crossbeam_combined_vt_governing_by_column(result_df, str(spec["column"]))
 
 
 def _crossbeam_combined_vt_longitudinal_summary(
@@ -23809,6 +23824,127 @@ def _crossbeam_combined_vt_component_summary(
         "action": "Increase section/web dimensions or revise concurrent V and T demand only if this gate fails.",
         "status": status,
     }
+
+
+def _crossbeam_combined_vt_decision_rows(
+    result_df: pd.DataFrame,
+    *,
+    joint_review_count: int,
+) -> list[dict[str, object]]:
+    """Build the overview evidence table from each check's own governing row.
+
+    The overall Combined V+T governing row can be controlled by a different
+    engineering mode than the row that governs section size, transverse steel,
+    minimum Aℓ, or direct flexure-plus-torsion interaction.  Each overview row
+    therefore reads the same component-specific governing source used by its
+    dedicated review view instead of reusing one overall row for every mode.
+    """
+
+    def _mapping_or_empty(
+        row: Mapping[str, object] | pd.Series | None,
+    ) -> Mapping[str, object]:
+        if isinstance(row, pd.Series):
+            return row.to_dict()
+        return row if isinstance(row, Mapping) else {}
+
+    stress_row = _mapping_or_empty(
+        _crossbeam_combined_vt_governing_by_column(result_df, "Stress D/C value")
+    )
+    transverse_row = _mapping_or_empty(
+        _crossbeam_combined_vt_governing_by_column(result_df, "Transverse D/C value")
+    )
+    al_min_row = _mapping_or_empty(
+        _crossbeam_combined_vt_governing_by_column(result_df, "Al minimum D/C value")
+    )
+    flexure_row = _mapping_or_empty(
+        _crossbeam_combined_vt_governing_by_column(result_df, "Flexure+torsion D/C value")
+    )
+
+    stress_dc = _beam_uls_float(stress_row.get("Stress D/C value"))
+    transverse_dc = _beam_uls_float(transverse_row.get("Transverse D/C value"))
+    al_min_dc = _beam_uls_float(al_min_row.get("Al minimum D/C value"))
+    flexure_torsion_dc = _beam_uls_float(flexure_row.get("Flexure+torsion D/C value"))
+
+    stress_status = str(
+        stress_row.get("Stress status")
+        or (
+            "FAIL"
+            if math.isfinite(stress_dc) and stress_dc > 1.0 + 1.0e-9
+            else ("PASS" if math.isfinite(stress_dc) else "REVIEW")
+        )
+    )
+    transverse_status = str(
+        transverse_row.get("Transverse status")
+        or (
+            "FAIL"
+            if math.isfinite(transverse_dc) and transverse_dc > 1.0 + 1.0e-9
+            else ("PASS" if math.isfinite(transverse_dc) else "REVIEW")
+        )
+    )
+    al_min_status = (
+        "FAIL" if math.isfinite(al_min_dc) and al_min_dc > 1.0 + 1.0e-9
+        else ("PASS" if math.isfinite(al_min_dc) else "REVIEW")
+    )
+    flexure_status = str(
+        flexure_row.get("Flexure+torsion status")
+        or (
+            "FAIL"
+            if math.isfinite(flexure_torsion_dc) and flexure_torsion_dc > 1.0 + 1.0e-9
+            else ("PASS" if math.isfinite(flexure_torsion_dc) else "REVIEW")
+        )
+    )
+
+    mu = _beam_uls_float(flexure_row.get("M3 kN-m"))
+    phi_mn = _beam_uls_float(flexure_row.get("Flexure+torsion phiMn kN-m"))
+    mu_text = "-" if not math.isfinite(mu) else f"Mu = {mu:,.1f} kN·m"
+    phi_mn_text = "-" if not math.isfinite(phi_mn) else f"φMn = {phi_mn:,.1f} kN·m"
+
+    return [
+        {
+            "Check": "Section-size interaction",
+            "Status": stress_status,
+            "Required": "Concurrent V/T stress",
+            "Provided": "ACI 22.7.7 limit",
+            "D/C": "-" if not math.isfinite(stress_dc) else f"{stress_dc:.3f}",
+            "Required action": "Increase section/web dimensions only if this gate fails.",
+        },
+        {
+            "Check": "Combined transverse reinforcement Av/s + 2At/s",
+            "Status": transverse_status,
+            "Required": _crossbeam_format_ratio_area(
+                transverse_row.get("(Av+2At)/s adopted required mm2/mm")
+            ),
+            "Provided": _crossbeam_format_ratio_area(
+                transverse_row.get("Unique transverse provided/s mm2/mm")
+            ),
+            "D/C": "-" if not math.isfinite(transverse_dc) else f"{transverse_dc:.3f}",
+            "Required action": "Increase the unique physical vertical-leg pool only if this gate fails.",
+        },
+        {
+            "Check": "Minimum longitudinal torsion reinforcement Aℓ",
+            "Status": al_min_status,
+            "Required": _crossbeam_format_area(al_min_row.get("Al minimum required mm2")),
+            "Provided": _crossbeam_format_area(al_min_row.get("Al provided mm2")),
+            "D/C": "-" if not math.isfinite(al_min_dc) else f"{al_min_dc:.3f}",
+            "Required action": "Increase developed outer-cage-associated bars; Aℓ is not additional duplicate As.",
+        },
+        {
+            "Check": "Direct flexure + torsional longitudinal tension",
+            "Status": flexure_status,
+            "Required": mu_text,
+            "Provided": phi_mn_text,
+            "D/C": "-" if not math.isfinite(flexure_torsion_dc) else f"{flexure_torsion_dc:.3f}",
+            "Required action": "Revise developed As/tendons or section only if this interaction fails.",
+        },
+        {
+            "Check": "Physical-joint V+T transfer",
+            "Status": "REVIEW REQUIRED" if int(joint_review_count or 0) else "NONE",
+            "Required": "Keys/interface/anchorage verification",
+            "Provided": "Not certified by sectional route",
+            "D/C": "-",
+            "Required action": "Verify one-sided V/T transfer and joint detailing separately.",
+        },
+    ]
 
 
 def _crossbeam_combined_vt_add_context_to_figure(
@@ -24324,54 +24460,11 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
         columns=4,
     )
 
-    if governing is not None:
-        stress_dc = _beam_uls_float(governing.get("Stress D/C value"))
-        transverse_dc = _beam_uls_float(governing.get("Transverse D/C value"))
-        longitudinal_dc = _beam_uls_float(governing.get("Longitudinal D/C value"))
-        al_min_dc = _beam_uls_float(governing.get("Al minimum D/C value"))
-        flexure_torsion_dc = _beam_uls_float(governing.get("Flexure+torsion D/C value"))
-        decision_rows = [
-            {
-                "Check": "Section-size interaction",
-                "Status": str(governing.get("Stress status") or "REVIEW"),
-                "Required": "Concurrent V/T stress",
-                "Provided": "ACI 22.7.7 limit",
-                "D/C": "-" if not math.isfinite(stress_dc) else f"{stress_dc:.3f}",
-                "Required action": "Increase section/web dimensions only if this gate fails.",
-            },
-            {
-                "Check": "Combined transverse reinforcement Av/s + 2At/s",
-                "Status": str(governing.get("Transverse status") or "REVIEW"),
-                "Required": _crossbeam_format_ratio_area(governing.get("(Av+2At)/s adopted required mm2/mm")),
-                "Provided": _crossbeam_format_ratio_area(governing.get("Unique transverse provided/s mm2/mm")),
-                "D/C": "-" if not math.isfinite(transverse_dc) else f"{transverse_dc:.3f}",
-                "Required action": "Increase the unique physical vertical-leg pool only if this gate fails.",
-            },
-            {
-                "Check": "Minimum longitudinal torsion reinforcement Aℓ",
-                "Status": "FAIL" if math.isfinite(al_min_dc) and al_min_dc > 1.0 + 1.0e-9 else ("PASS" if math.isfinite(al_min_dc) else "REVIEW"),
-                "Required": _crossbeam_format_area(governing.get("Al minimum required mm2")),
-                "Provided": _crossbeam_format_area(governing.get("Al provided mm2")),
-                "D/C": "-" if not math.isfinite(al_min_dc) else f"{al_min_dc:.3f}",
-                "Required action": "Increase developed outer-cage-associated bars; Aℓ is not additional duplicate As.",
-            },
-            {
-                "Check": "Direct flexure + torsional longitudinal tension",
-                "Status": str(governing.get("Flexure+torsion status") or "REVIEW"),
-                "Required": f"Mu = {_beam_uls_float(governing.get('M3 kN-m')):,.1f} kN·m",
-                "Provided": f"φMn = {_beam_uls_float(governing.get('Flexure+torsion phiMn kN-m')):,.1f} kN·m",
-                "D/C": "-" if not math.isfinite(flexure_torsion_dc) else f"{flexure_torsion_dc:.3f}",
-                "Required action": "Revise developed As/tendons or section only if this interaction fails.",
-            },
-            {
-                "Check": "Physical-joint V+T transfer",
-                "Status": "REVIEW REQUIRED" if int(result.get("joint_review_count") or 0) else "NONE",
-                "Required": "Keys/interface/anchorage verification",
-                "Provided": "Not certified by sectional route",
-                "D/C": "-",
-                "Required action": "Verify one-sided V/T transfer and joint detailing separately.",
-            },
-        ]
+    if not result_df.empty:
+        decision_rows = _crossbeam_combined_vt_decision_rows(
+            result_df,
+            joint_review_count=int(result.get("joint_review_count") or 0),
+        )
         st.markdown("#### Why this result")
         st.table(pd.DataFrame(decision_rows))
 

@@ -617,8 +617,10 @@ def test_analysis2e_ui_copy_separates_counts_and_compacts_support_review() -> No
     assert '"title": "Governing sectional D/C"' in workspace
     assert '"title": "Physical joint review"' in workspace
     assert '"title": "Total check rows"' in workspace
-    assert '"title": "Eligible sectional checks"' in workspace
+    assert '"title": "ACI section-capacity checks"' in workspace
     assert '"title": "Generated support checks"' in workspace
+    assert "one-sided joint audits" in workspace
+    assert "eligible_retained_count + eligible_support_count + generated_joint_side_count" in workspace
     assert '"title": "Completed support checks"' in workspace
     assert "physical-joint review row(s) =" not in workspace
     assert "physical-joint review location(s)" in workspace
