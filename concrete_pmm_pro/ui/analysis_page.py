@@ -22908,32 +22908,11 @@ def _make_crossbeam_uls_torsion_figure(
             )
         )
 
-    decision["__overall_dc"] = pd.to_numeric(decision.get("Governing D/C value"), errors="coerce")
-    if decision["__overall_dc"].notna().any():
-        gov_overall = decision.loc[decision["__overall_dc"].idxmax()]
-        summary = _crossbeam_governing_component_summary(gov_overall, combined=False)
-        overall_dc = _beam_uls_float(summary.get("dc"))
-        status_word = "FAIL" if math.isfinite(overall_dc) and overall_dc > 1.0 + 1.0e-9 else "PASS"
-        fig.add_annotation(
-            x=0.01,
-            y=0.98,
-            xref="paper",
-            yref="paper",
-            xanchor="left",
-            yanchor="top",
-            align="left",
-            text=(
-                f"<b>{status_word} — {summary.get('label')}</b><br>"
-                f"D/C = {overall_dc:.3f} · Required {summary.get('required')} · Provided {summary.get('provided')}"
-                if math.isfinite(overall_dc)
-                else f"<b>REVIEW — {summary.get('label')}</b>"
-            ),
-            showarrow=False,
-            bgcolor="rgba(254,226,226,0.90)" if status_word == "FAIL" else "rgba(220,252,231,0.90)",
-            bordercolor="#ef4444" if status_word == "FAIL" else "#16a34a",
-            borderwidth=1,
-            font={"size": 9, "color": "#7f1d1d" if status_word == "FAIL" else "#166534"},
-        )
+    # Keep decision/status wording out of the plotting field. The cards and
+    # Why-this-result table immediately above the figure already own the
+    # engineering decision, while in-plot callouts can obscure demand and
+    # capacity traces near the left end. The chart retains only point-level
+    # governing markers that are tied to actual station values.
 
     y_range = _crossbeam_torsion_symmetric_y_range(result_df)
     fig.update_layout(

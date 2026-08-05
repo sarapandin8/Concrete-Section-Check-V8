@@ -63,9 +63,7 @@ def test_torsion_figure_separates_strength_marker_from_overall_failure_reason() 
         for annotation in figure.layout.annotations
         if "Minimum longitudinal torsion reinforcement" in str(annotation.text)
     ]
-    assert decision_annotations
-    assert "Required 22,741 mm²" in decision_annotations[0]
-    assert "Provided 10,053 mm²" in decision_annotations[0]
+    assert not decision_annotations  # decision evidence remains in cards/table, not over the plot
     segment_labels = {str(annotation.text) for annotation in figure.layout.annotations}
     assert {"S1", "S2", "S3", "S4", "S5", "S6"}.issubset(segment_labels)
 

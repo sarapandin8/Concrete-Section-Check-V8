@@ -88,6 +88,7 @@ from concrete_pmm_pro.crossbeam.tendon_persistence import (
     CB_PROFILE_ROWS_KEY,
     CB_TENDON_SYSTEM_ROWS_KEY,
 )
+from concrete_pmm_pro.crossbeam.uls_rebar_source import build_crossbeam_uls_rebar_source_contract
 from concrete_pmm_pro.crossbeam.transverse import (
     build_transverse_cage_geometry,
     canonical_transverse_templates,
@@ -1021,15 +1022,18 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
             if bool(issue.get("Blocks rebar solver")) and str(issue.get("Detail") or "").strip()
         )
 
-    longitudinal_templates, zones, transverse_templates = _load_source_for_method(state, construction_method)
+    rebar_source = build_crossbeam_uls_rebar_source_contract(state)
+    longitudinal_templates = [dict(row) for row in rebar_source.longitudinal_templates]
+    zones = [dict(row) for row in rebar_source.zone_assignments]
+    transverse_templates = [dict(row) for row in rebar_source.transverse_templates]
     longitudinal_by_id = template_map(longitudinal_templates)
     transverse_by_id = transverse_template_map(transverse_templates)
-    if not longitudinal_templates:
-        errors.append("Crossbeam longitudinal reinforcement templates are missing.")
-    if not zones:
-        errors.append("Crossbeam reinforcement Zone assignments are missing.")
-    if not transverse_templates:
-        errors.append("Crossbeam transverse reinforcement templates are missing.")
+    errors.extend(
+        f"ULS reinforcement source blocked: {message}"
+        for message in rebar_source.errors
+    )
+    warnings.extend(rebar_source.warnings)
+    info.extend(rebar_source.info)
 
     materials_by_name = _material_library(state)
     if not materials_by_name:
@@ -1065,6 +1069,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
             "schema": "crossbeam-analysis2c-shear-blocked-v1",
             "contract": contract,
             "demands": demand_rows,
+            "rebar_source_fingerprint": rebar_source.fingerprint,
             "errors": _dedupe(errors),
         }
         return CrossbeamShearPreparation(
@@ -1108,6 +1113,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
             "derived_joint_side_rows": derived_joint_side_rows,
             "joint_stations_m": all_joint_stations,
             "support_footprints": support_footprints,
+            "rebar_source_fingerprint": rebar_source.fingerprint,
             "errors": _dedupe(errors),
         }
         return CrossbeamShearPreparation(
@@ -1351,6 +1357,7 @@ def build_crossbeam_uls_shear_preparation(state: Any) -> CrossbeamShearPreparati
             "demands": demand_rows,
             "derived_support_rows": derived_support_rows,
             "support_footprints": support_footprints,
+            "rebar_source_fingerprint": rebar_source.fingerprint,
             "row_signatures": [row.source_signature for row in prepared],
         }
     )

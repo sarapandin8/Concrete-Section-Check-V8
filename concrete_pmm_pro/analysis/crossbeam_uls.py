@@ -94,6 +94,7 @@ from concrete_pmm_pro.crossbeam.tendon_persistence import (
     CB_PROFILE_ROWS_KEY,
     CB_TENDON_SYSTEM_ROWS_KEY,
 )
+from concrete_pmm_pro.crossbeam.uls_rebar_source import build_crossbeam_uls_rebar_source_contract
 from concrete_pmm_pro.crossbeam.transverse import (
     build_transverse_cage_geometry,
     canonical_transverse_templates,
@@ -1011,13 +1012,18 @@ def build_crossbeam_uls_flexure_preparation(state: Any) -> CrossbeamUlsPreparati
             if bool(issue.get("Blocks rebar solver"))
             and str(issue.get("Detail") or "").strip()
         )
-    templates, zones, transverse_templates = _load_source_for_method(state, construction_method)
+    rebar_source = build_crossbeam_uls_rebar_source_contract(state)
+    templates = [dict(row) for row in rebar_source.longitudinal_templates]
+    zones = [dict(row) for row in rebar_source.zone_assignments]
+    transverse_templates = [dict(row) for row in rebar_source.transverse_templates]
     templates_by_id = template_map(templates)
     transverse_by_id = transverse_template_map(transverse_templates)
-    if not templates:
-        errors.append("Crossbeam longitudinal reinforcement templates are missing.")
-    if not zones:
-        errors.append("Crossbeam reinforcement Zone assignments are missing.")
+    errors.extend(
+        f"ULS reinforcement source blocked: {message}"
+        for message in rebar_source.errors
+    )
+    warnings.extend(rebar_source.warnings)
+    info.extend(rebar_source.info)
 
     material_by_name = _material_library(state)
     if not material_by_name:
@@ -1035,7 +1041,7 @@ def build_crossbeam_uls_flexure_preparation(state: Any) -> CrossbeamUlsPreparati
         errors.append("Average effective prestress fpe must be positive before bonded tendons can receive ULS flexure credit.")
 
     if errors:
-        payload = {"contract": contract, "demands": demand_rows, "errors": _dedupe(errors)}
+        payload = {"contract": contract, "demands": demand_rows, "rebar_source_fingerprint": rebar_source.fingerprint, "errors": _dedupe(errors)}
         return CrossbeamUlsPreparation(
             ready=False,
             rows=(),
@@ -1266,6 +1272,7 @@ def build_crossbeam_uls_flexure_preparation(state: Any) -> CrossbeamUlsPreparati
         "construction_method": construction_method,
         "contract": contract,
         "demands": demand_rows,
+        "rebar_source_fingerprint": rebar_source.fingerprint,
         "capacity_signatures": [row.capacity_signature for row in prepared],
         "source_faces": [
             [row.station_m, row.case_name, row.section_face, row.section_id, row.rebar_zone_id]

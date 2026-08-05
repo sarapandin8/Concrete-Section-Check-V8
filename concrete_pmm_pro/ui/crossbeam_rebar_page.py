@@ -19,9 +19,11 @@ cell edit is committed across Template and Segment/Zone tables without a second
 entry, while Template ID changes still update Zone references atomically.
 PTQA3 reads the Tendon Profile geometry-continuity audit back into this Rebar
 workspace so joint guard labels no longer claim PT is unverified after the
-profile audit has passed. All solver ownership remains unchanged. It never
-routes template, zone, tendon, or preview state into existing PMM, Beam/Girder,
-SLS, shear, torsion, or report solvers.
+profile audit has passed. RB-CIP3B previously provided "no CIP rebar solver credit from RB-CIP3B".
+The legacy UI label was "Adopted provided reinforcement — optional / future solver handoff".
+CROSSBEAM.ANALYSIS4C6A supersedes that restriction for the active Crossbeam ULS
+Flexure/Shear/Torsion/Combined routes only; all other solver ownership remains
+unchanged.
 """
 
 from __future__ import annotations
@@ -123,6 +125,7 @@ from concrete_pmm_pro.crossbeam.rebar_persistence import (
     reset_crossbeam_rebar_zones_from_segment_layout,
     validate_loaded_crossbeam_rebar_state,
 )
+from concrete_pmm_pro.crossbeam.uls_rebar_source import build_crossbeam_uls_rebar_source_contract
 from concrete_pmm_pro.crossbeam.tendon import (
     tendon_continuity_audit_rows,
     tendon_continuity_summary,
@@ -1539,7 +1542,7 @@ def _render_template_library(
         rows = _template_face_layout_from_editor(rows, _records(inner_edited), face="Inner")
         _store_template_rows(rows)
 
-    with st.expander("Adopted provided reinforcement — optional / future solver handoff", expanded=False):
+    with st.expander("Adopted provided reinforcement — optional override / QA", expanded=False):
         adopted_rows = [
             {
                 "Template ID": row["Template ID"],
@@ -3278,6 +3281,7 @@ def _render_cip_template_aligned_workspace(*, length_m: float, segment_rows: lis
         1 for row in continuity_rows if str(row.get("Transition") or "") != "MATCHED LAYOUT"
     )
     legacy_runs = canonical_cip_longitudinal_bar_runs(_records(st.session_state.get(CB_RB_CIP_RUN_ROWS_KEY)))
+    uls_rebar_source = build_crossbeam_uls_rebar_source_contract(st.session_state)
 
     if errors:
         continuity_value = "REVIEW"
@@ -3300,11 +3304,16 @@ def _render_cip_template_aligned_workspace(*, length_m: float, segment_rows: lis
         {"title":"Rebar model","value":"SOLID TEMPLATE / ZONE","detail":"Same interaction pattern as Precast Segmental; separate CIP canonical state","status":"ready"},
         {"title":"Zone boundary","value":"NOT A JOINT","detail":"Ordinary longitudinal bars may remain continuous across Section/Zone boundaries","status":"ready"},
         {"title":"Continuity","value":continuity_value,"detail":continuity_detail,"status":continuity_status},
-        {"title":"Solver handoff","value":"LOCKED","detail":"Input/preview only; no CIP rebar solver credit","status":"neutral"},
+        {
+            "title":"ULS solver handoff",
+            "value":"READY" if uls_rebar_source.ready else "SOURCE BLOCKED",
+            "detail":"Flexure, Shear, Torsion, and Combined V+T only; other solver handoffs remain locked",
+            "status":"ready" if uls_rebar_source.ready else "danger",
+        },
     ])
     st.info("Cast-in-Place uses the accepted Rebar Template Library pattern from Precast Segmental, limited to Solid sections. The key engineering difference is continuity: Section/Zone boundaries do not force ordinary longitudinal reinforcement to zero.")
     if legacy_runs:
-        st.warning("Legacy RB-CIP2 bar-run rows are preserved in Project JSON but are no longer the user-facing input model and are not converted automatically. Re-enter adopted reinforcement through the aligned template/Section-Zone workflow before future solver handoff.")
+        st.warning("Legacy RB-CIP2 bar-run rows are preserved in Project JSON but are no longer the user-facing input model and are not converted automatically. Re-enter adopted reinforcement through the aligned template/Section-Zone workflow before ULS handoff.")
     for issue in segment_errors + errors:
         st.error(issue)
     if incomplete_quantity_rows:
@@ -3320,7 +3329,8 @@ def _render_cip_template_aligned_workspace(*, length_m: float, segment_rows: lis
         noun = "template has" if count == 1 else "templates have"
         st.success(
             f"Input completeness: {count} assigned longitudinal reinforcement {noun} a valid quantity definition. "
-            "Exact-count As is derived directly; target-spacing count/As remains Section-geometry-derived. Solver handoff is still locked."
+            "Exact-count As is derived directly; target-spacing count/As remains Section-geometry-derived. "
+            "The ULS handoff is authorized only when the active-mode source contract is READY."
         )
     for warning in warnings:
         if "longitudinal quantity definition is incomplete" not in warning:
@@ -3359,7 +3369,7 @@ def _render_cip_template_aligned_workspace(*, length_m: float, segment_rows: lis
             )
             st.caption(
                 "Quantity source is derived from the assigned Template. Adopted As remains an optional override/QA value, not a duplicate confirmation. "
-                "No solver credit is enabled in RB-CIP3B."
+                "CROSSBEAM.ANALYSIS4C6A authorizes this active source for ULS only when the source contract is READY."
             )
     elif active == "Transverse / Shear":
         trans_rows = _render_cip_transverse_template_library(trans_rows, zone_rows)
@@ -3433,7 +3443,17 @@ def _render_cip_template_aligned_workspace(*, length_m: float, segment_rows: lis
                 {"title":"Transverse template","value":str(assign.get("Transverse template") or "—"),"detail":"Local tie/shear arrangement source","status":"info"},
                 {"title":"Continuity certification","value":"NOT CERTIFIED","detail":"Development/splice/termination QA remains future scope","status":"warning"},
             ])
-    st.warning("SOLVER HANDOFF LOCKED — CIP transition QA is input/review only. ULS/SLS/PMM, shear/torsion, prestress-loss, Result Summary, and Report/QA receive no CIP rebar solver credit from RB-CIP3B.")
+    if uls_rebar_source.ready:
+        st.success(
+            "ULS REINFORCEMENT HANDOFF READY — the active Cast-in-Place Section/Zone assignments are the adopted source for Crossbeam Flexure, Shear, Torsion, and Combined V+T. "
+            "SLS/PMM, prestress-loss, Result Summary, and Report/QA handoffs remain unchanged and locked to their existing scopes."
+        )
+    else:
+        st.error(
+            "ULS REINFORCEMENT SOURCE BLOCKED — resolve the active Cast-in-Place template/Zone assignments and quantity definitions before any Crossbeam ULS solver receives reinforcement credit."
+        )
+        for message in uls_rebar_source.errors:
+            st.caption(f"• {message}")
 
 def render_crossbeam_rebar_page() -> None:
     length_m, segment_rows, segment_errors = crossbeam_segment_layout_from_state()
@@ -3490,6 +3510,7 @@ def render_crossbeam_rebar_page() -> None:
         section_definitions=section_definitions,
         tendon_enabled=tendon_enabled,
     )
+    uls_rebar_source = build_crossbeam_uls_rebar_source_contract(st.session_state)
 
     render_metric_cards(
         [
@@ -3512,10 +3533,10 @@ def render_crossbeam_rebar_page() -> None:
                 "status": pt_review["status"],
             },
             {
-                "title": "Solver handoff",
-                "value": "NOT CONNECTED",
-                "detail": "Input/review foundation only; existing solvers are unchanged",
-                "status": "neutral",
+                "title": "ULS solver handoff",
+                "value": "READY" if uls_rebar_source.ready else "SOURCE BLOCKED",
+                "detail": "Active Segment/Zone source only; physical-joint ordinary-rebar credit remains zero",
+                "status": "ready" if uls_rebar_source.ready else "danger",
             },
         ]
     )
@@ -3527,7 +3548,11 @@ def render_crossbeam_rebar_page() -> None:
     if not tendon_enabled:
         st.error("Prestressing steel is disabled. Joint continuity is BLOCKED because ordinary rebar crossing is locked to zero and PT continuity cannot be verified.")
     if not ordinary_enabled:
-        st.warning("Ordinary rebar is disabled in Section Builder. Stored RB1 templates/zones are excluded from future analysis until re-enabled.")
+        st.warning("Ordinary rebar is disabled in Section Builder. Stored RB1 templates/zones are excluded from ULS analysis until re-enabled.")
+    if not uls_rebar_source.ready:
+        st.error("ULS reinforcement source is blocked for the active Precast Segmental model.")
+        for message in uls_rebar_source.errors:
+            st.caption(f"• {message}")
 
     _render_locked_joint_rule(pt_review)
 
