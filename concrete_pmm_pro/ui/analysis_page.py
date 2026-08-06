@@ -44,15 +44,15 @@ from concrete_pmm_pro.analysis.crossbeam_uls_combined_vt import (
     build_crossbeam_uls_combined_vt_preparation,
     run_crossbeam_uls_combined_vt,
 )
-from concrete_pmm_pro.crossbeam.uls_station_geometry import (
-    trace_owner_label,
-)
 from concrete_pmm_pro.crossbeam.section_library import (
     CB_SECLIB_DEFINITIONS_KEY,
     canonical_section_definitions,
 )
 from concrete_pmm_pro.crossbeam.prestress_loss import CB_LOSS_ES_CONSTRUCTION_METHOD_KEY
-from concrete_pmm_pro.crossbeam.construction_stage import normalize_construction_method
+from concrete_pmm_pro.crossbeam.construction_stage import (
+    CONSTRUCTION_METHOD_CIP,
+    normalize_construction_method,
+)
 
 from concrete_pmm_pro.analysis.crossbeam_sls_transfer import (
     CROSSBEAM_SERVICE_RESULT_HASH_KEY,
@@ -351,6 +351,15 @@ _COLUMN_PIER_ACI_SEISMIC_ADVISOR_LABEL = "ACI 318 special seismic confinement ad
 _COLUMN_PIER_AASHTO_SEISMIC_ADVISOR_LABEL = "AASHTO LRFD seismic bridge-column advisor"
 _COLUMN_PIER_AASHTO_SEISMIC_ADVISOR_LEGACY_LABEL = "AASHTO LRFD seismic bridge column - manual review"
 _COLUMN_PIER_SEISMIC_SPACING_INCREMENT_MM = 25.0
+
+
+def _trace_owner_label(construction_method: str) -> str:
+    """Return the mode-aware chart trace owner label without a late-bound UI global."""
+    return (
+        "Zone-owned"
+        if normalize_construction_method(construction_method) == CONSTRUCTION_METHOD_CIP
+        else "Segment-owned"
+    )
 
 
 def _column_pier_normalize_seismic_detailing_label(value: object) -> str:
@@ -20857,7 +20866,7 @@ def _make_crossbeam_uls_flexure_figure(
     segments = _crossbeam_segment_records(segment_rows)
     support_footprints = list(support_footprints or [])
     construction_method = normalize_construction_method(construction_method)
-    owner_label = trace_owner_label(construction_method)
+    owner_label = _trace_owner_label(construction_method)
     is_precast = construction_method == "Precast Segmental"
     if member_length_m <= 0.0:
         member_length_m = max([float(item["end"]) for item in segments], default=0.0)
@@ -21412,7 +21421,7 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
                 member_length_m=_beam_uls_float(result.get("member_length_m")),
             )
         )
-        owner = trace_owner_label(construction_method)
+        owner = _trace_owner_label(construction_method)
         st.caption(
             f"The red dashed line is the adopted direct-solver φMn envelope. {owner} traces stop through shaded support footprints while valid PT end stations remain in the full-member sectional envelope. "
             "Pale amber development bands identify tendon-only/no-ordinary-rebar-credit regions; vertical capacity steps occur only at binary credit boundaries. "
@@ -21796,7 +21805,7 @@ def _make_crossbeam_uls_shear_figure(
     segments = _crossbeam_segment_records(segment_rows)
     construction_method = normalize_construction_method(construction_method)
     is_precast = construction_method == "Precast Segmental"
-    owner_label = trace_owner_label(construction_method)
+    owner_label = _trace_owner_label(construction_method)
     retained: list[go.BaseTraceType] = []
     fallback_positive_vc: list[go.Scatter] = []
     shown_vn_fallback = False
@@ -22306,7 +22315,7 @@ def _render_crossbeam_uls_shear_workspace() -> None:
         construction_method = normalize_construction_method(
             st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
         )
-        owner = trace_owner_label(construction_method)
+        owner = _trace_owner_label(construction_method)
         st.caption(
             f"Signed Vu and the ±φVn / ±φVc traces use {owner} routing and break across every shaded support footprint; valid PT end stations remain in the full-member sectional envelope. "
             + (
@@ -22935,7 +22944,7 @@ def _make_crossbeam_uls_torsion_figure(
 ) -> go.Figure:
     construction_method = normalize_construction_method(construction_method)
     is_precast = construction_method == "Precast Segmental"
-    owner_label = trace_owner_label(construction_method)
+    owner_label = _trace_owner_label(construction_method)
     standard_df = result_df.copy()
     if "Generated joint side check" in standard_df:
         standard_df = standard_df[~standard_df["Generated joint side check"].fillna(False).astype(bool)].copy()
@@ -23439,7 +23448,7 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
         )
 
     if not result_df.empty:
-        owner = trace_owner_label(construction_method)
+        owner = _trace_owner_label(construction_method)
         _render_beam_uls_static_plotly_figure(
             _make_crossbeam_uls_torsion_figure(
                 result_df,
@@ -24798,7 +24807,7 @@ def _make_crossbeam_uls_combined_vt_component_figure(
     plotted_values = pd.to_numeric(result_df.get(column), errors="coerce").dropna()
     finite_values = [float(value) for value in plotted_values if math.isfinite(float(value))]
     y_peak = max([1.0, *finite_values])
-    owner_label = trace_owner_label(normalize_construction_method(construction_method))
+    owner_label = _trace_owner_label(normalize_construction_method(construction_method))
     if component == "stress" and all_below:
         title_text = "Section-Size Check — Shear Only"
         subtitle = "Torsion below φTth at all eligible stations · torsion interaction term omitted"
@@ -25135,7 +25144,7 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
         construction_method = normalize_construction_method(
             st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
         )
-        owner = trace_owner_label(construction_method)
+        owner = _trace_owner_label(construction_method)
         end_zone_settings = (
             result.get("pt_end_zone_settings")
             if isinstance(result.get("pt_end_zone_settings"), Mapping)
@@ -26302,7 +26311,7 @@ def _render_crossbeam_uls_station_geometry_controls() -> None:
             [
                 {
                     "title": "Trace ownership",
-                    "value": trace_owner_label(construction_method).upper(),
+                    "value": _trace_owner_label(construction_method).upper(),
                     "detail": "CIP Zone boundaries remain continuous; Precast physical joints remain trace breaks",
                     "status": "info",
                 },

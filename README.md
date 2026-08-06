@@ -1,3 +1,7 @@
+### CROSSBEAM.ANALYSIS4C7C1 — Flexure Trace-Owner NameError Hotfix
+
+Fixes the deployed ULS Flexure caption `NameError` by removing the late-bound bare `trace_owner_label` dependency while preserving all ANALYSIS4C7C engineering and chart behavior. See `README_CROSSBEAM_ANALYSIS4C7C1.md`.
+
 ### CROSSBEAM.ANALYSIS4C7C — Torsion and Combined V+T Semantic / Chart Closeout
 
 Repairs the Combined V+T Section-size, Transverse, and Longitudinal figures with real full-span `D/C = 1.0` limit traces; replaces misleading zero-demand and below-threshold charts with explicit `NOT REQUIRED` evidence; aligns standalone Torsion threshold semantics and CIP/Precast joint wording; and preserves all accepted engineering equations and station routing. See `README_CROSSBEAM_ANALYSIS4C7C.md`.
