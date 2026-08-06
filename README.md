@@ -1,3 +1,7 @@
+### CROSSBEAM.ANALYSIS4C7C — Torsion and Combined V+T Semantic / Chart Closeout
+
+Repairs the Combined V+T Section-size, Transverse, and Longitudinal figures with real full-span `D/C = 1.0` limit traces; replaces misleading zero-demand and below-threshold charts with explicit `NOT REQUIRED` evidence; aligns standalone Torsion threshold semantics and CIP/Precast joint wording; and preserves all accepted engineering equations and station routing. See `README_CROSSBEAM_ANALYSIS4C7C.md`.
+
 ### CROSSBEAM.ANALYSIS4C1A — As / Aℓ Role Summary
 
 Adds a dedicated `Longitudinal flexure — As` source-audit card beside `Av`, `At`, and `Aℓ` in the Crossbeam Combined Reinforcement Preview, and states explicitly that outer-cage `Aℓ` is a subset of physical ordinary `As`, not additional duplicate steel. No solver equation, result, or Project JSON behavior changes. See `README_CROSSBEAM_ANALYSIS4C1A.md`.
