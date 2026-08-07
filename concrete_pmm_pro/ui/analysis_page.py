@@ -21116,9 +21116,17 @@ def _make_crossbeam_uls_flexure_figure(
                 joint_y.append(sign * float(row["__capacity_kNm"]))
                 check_point = str(row.get("Check Point") or "").strip().upper()
                 joint_symbols.append("triangle-left-open" if check_point.endswith("-L") else "triangle-right-open")
+            joint_plot_x = [
+                _crossbeam_plot_station_with_side_offset(float(x), "L" if symbol == "triangle-left-open" else "R", member_length_m)
+                if math.isfinite(float(x)) else float("nan")
+                for x, symbol in zip(joint_rows["__x_m"].fillna(float("nan")), joint_symbols)
+            ]
+            joint_custom = joint_rows[["Check Point", "Segment", "Section ID", "Ordinary rebar credit"]].astype(str).values.tolist()
+            for row_custom, exact_x in zip(joint_custom, joint_rows["__x_m"].astype(float).tolist()):
+                row_custom.append(float(exact_x))
             fig.add_trace(
                 go.Scatter(
-                    x=joint_rows["__x_m"].astype(float).tolist(),
+                    x=joint_plot_x,
                     y=joint_y,
                     mode="markers",
                     name="Joint one-sided φMn",
@@ -21130,11 +21138,12 @@ def _make_crossbeam_uls_flexure_figure(
                         "color": "#d97706",
                         "line": {"width": 1.5, "color": "#d97706"},
                     },
-                    customdata=joint_rows[["Check Point", "Segment", "Section ID", "Ordinary rebar credit"]].astype(str).values,
+                    customdata=joint_custom,
                     hovertemplate=(
                         "%{customdata[0]} · Segment=%{customdata[1]}"
                         "<br>Section=%{customdata[2]} · Rebar credit=%{customdata[3]}"
-                        "<br>x=%{x:.3f} m<br>One-sided φMn=%{y:.3f} kN-m<extra></extra>"
+                        "<br>Joint station=%{customdata[4]:.3f} m · plotted near joint"
+                        "<br>One-sided φMn=%{y:.3f} kN-m<extra></extra>"
                     ),
                 )
             )
@@ -21704,8 +21713,27 @@ def _crossbeam_plot_station_with_side_offset(
     side: str,
     member_length_m: float,
 ) -> float:
-    offset = max(0.003, 0.0008 * max(float(member_length_m), 1.0))
-    return float(station) - offset if str(side).upper() == "L" else float(station) + offset
+    """Return a near-joint plotting station for one-sided Segmental checks.
+
+    Precast Segmental charts should visually approach each physical joint
+    without implying continuity through it.  The accepted plotting rule keeps a
+    visible gap at the exact joint while moving the one-sided left/right values
+    to stations about 100 mm away from the joint centerline.  Hover text still
+    reports the exact joint station and the governing one-sided source.
+    """
+
+    station = float(station)
+    member_length_m = max(float(member_length_m), 0.0)
+    offset = 0.10
+    if member_length_m > 0.0:
+        max_left = max(station - 1.0e-6, 0.0)
+        max_right = max(member_length_m - station - 1.0e-6, 0.0)
+        offset = min(offset, max_left if str(side).upper() == "L" else max_right)
+    offset = max(offset, 0.003)
+    plotted = station - offset if str(side).upper() == "L" else station + offset
+    if member_length_m > 0.0:
+        plotted = min(max(plotted, 1.0e-6), member_length_m - 1.0e-6)
+    return float(plotted)
 
 def _add_crossbeam_joint_side_capacity_markers(
     fig: go.Figure,
@@ -23528,30 +23556,45 @@ def _crossbeam_combined_vt_plot_groups(
     support_footprints: list[Mapping[str, object]],
     *,
     include_support_checks: bool = False,
+    construction_method: str = "Precast Segmental",
+    member_length_m: float = 0.0,
 ) -> list[pd.DataFrame]:
     """Split V+T utilization traces by Segment and excluded support interior.
 
-    Physical-joint rows remain a separate one-sided audit source.  The legacy
-    combined chart keeps generated Column Face / h/2 rows as markers only,
-    while the standardized one-check Section-size and Transverse views may
-    include those evaluated rows in the connected trace.  No line is drawn
-    through a support footprint or across a Segment boundary.
+    For Precast Segmental charts, one-sided physical-joint rows are retained as
+    segment-owned trace endpoints but plotted at near-joint stations roughly
+    100 mm away from the exact joint.  This keeps the line visually close to
+    the joint without implying continuity through the physical gap.  Generated
+    Column Face / h/2 rows remain optional, and no line is drawn through a
+    support footprint or across a Segment boundary.
     """
 
     if result_df is None or result_df.empty:
         return []
     frame = result_df.copy()
-    frame = frame[
-        frame.get("Station type", pd.Series(index=frame.index, dtype=object)).astype(str)
-        != "PHYSICAL JOINT SIDE"
-    ]
+    is_precast = normalize_construction_method(construction_method) == "Precast Segmental"
     if not include_support_checks and "Generated support check" in frame:
         frame = frame[
             ~frame["Generated support check"].map(
                 lambda value: bool(value) if pd.notna(value) else False
             )
         ].copy()
+    frame["__joint_side_row"] = frame.get(
+        "Station type", pd.Series(index=frame.index, dtype=object)
+    ).astype(str).eq("PHYSICAL JOINT SIDE")
     frame["__x"] = pd.to_numeric(frame.get("Station s (m)"), errors="coerce")
+    if is_precast:
+        if member_length_m <= 0.0:
+            finite_stations = pd.to_numeric(frame.get("Station s (m)"), errors="coerce").dropna()
+            member_length_m = float(finite_stations.max()) if not finite_stations.empty else 0.0
+        exact_joint_station = pd.to_numeric(frame.get("Joint station s (m)"), errors="coerce")
+        joint_side = frame.get("Joint side", pd.Series("", index=frame.index)).astype(str)
+        near_joint_x = [
+            _crossbeam_plot_station_with_side_offset(float(station), side, member_length_m)
+            if math.isfinite(float(station)) else float("nan")
+            for station, side in zip(exact_joint_station.fillna(float("nan")), joint_side)
+        ]
+        frame.loc[frame["__joint_side_row"], "__x"] = near_joint_x
     frame = frame[frame["__x"].notna()].copy()
     if frame.empty:
         return []
@@ -23590,7 +23633,11 @@ def _make_crossbeam_uls_combined_vt_figure(
 
     fig = go.Figure()
     segments = _crossbeam_segment_records(segment_rows)
-    groups = _crossbeam_combined_vt_plot_groups(result_df, support_footprints)
+    groups = _crossbeam_combined_vt_plot_groups(
+        result_df,
+        support_footprints,
+        construction_method="Precast Segmental",
+    )
     trace_specs = [
         ("Stress D/C", "Stress D/C value"),
         ("Transverse D/C", "Transverse D/C value"),
@@ -24563,6 +24610,8 @@ def _make_crossbeam_uls_combined_vt_component_figure(
         result_df,
         support_footprints,
         include_support_checks=component in {"stress", "transverse"} or activation_view,
+        construction_method=construction_method,
+        member_length_m=member_length_m,
     )
     legend_shown = False
     for group in groups:
