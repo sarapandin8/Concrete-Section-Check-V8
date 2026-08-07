@@ -643,8 +643,15 @@ def _derived_crossbeam_flexure_demands(
                 source, error, note = _recover_demand_within_segment(
                     case_rows=case_rows,
                     target_m=target,
-                    segment_start_m=segment_start,
-                    segment_end_m=segment_end,
+                    # Near-joint sectional checks must use the same continuous
+                    # full-member global force diagram as the plotted Demand
+                    # Mux trace.  The local one-sided Segment is retained only
+                    # as the section/tendon ownership override for the capacity
+                    # solve; otherwise sparse Segment-local source rows can
+                    # extrapolate through zero and falsely flip the bending
+                    # direction immediately next to a physical joint.
+                    segment_start_m=0.0,
+                    segment_end_m=member_length_m,
                     tolerance=tolerance,
                 )
                 if error or source is None:

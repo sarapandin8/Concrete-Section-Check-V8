@@ -115,6 +115,29 @@ def test_precast_flexure_is_tendon_only_at_interior_near_joint_and_joint_rows() 
     assert set(j3["Section ID"]) == {"CB-S01"}
 
 
+def test_near_joint_rows_follow_continuous_member_m3_sign() -> None:
+    result = _result(_benchmark_state())
+    rows = pd.DataFrame(result["rows"])
+
+    checks = {
+        "J1-R near 100 mm": (4.6, 4.0, 6.0),
+        "J5-L near 100 mm": (25.4, 24.0, 26.0),
+    }
+    for check_point, (station, source_1, source_2) in checks.items():
+        selected = rows[
+            (rows["Check Point"].astype(str) == check_point)
+            & ((pd.to_numeric(rows["Station s (m)"], errors="coerce") - station).abs() <= 1.0e-9)
+        ]
+        assert len(selected.index) == 1, check_point
+        row = selected.iloc[0]
+        assert float(row["M3 kN-m"]) == pytest.approx(950.0, abs=1.0e-6)
+        assert float(row["Capacity plot sign"]) > 0.0
+        assert "Sagging" in str(row["Bending direction"])
+        assert str(row["Demand source"]) == "INTERPOLATED"
+        assert float(row["Source station 1 m"]) == pytest.approx(source_1, abs=1.0e-9)
+        assert float(row["Source station 2 m"]) == pytest.approx(source_2, abs=1.0e-9)
+
+
 def test_crossbeam_direct_route_does_not_call_generic_pmm_solver(monkeypatch: pytest.MonkeyPatch) -> None:
     import concrete_pmm_pro.analysis.pmm_solver as generic_pmm
 
