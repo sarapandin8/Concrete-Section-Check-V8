@@ -151,7 +151,8 @@ def test_analysis_ui_uses_full_member_policy_and_mode_aware_chart_context() -> N
     assert "ULS station routing / scope" in source
     assert "FULL MEMBER" in source
     assert "s = 0 to s = L stays eligible for governing" in source
-    assert "trace_owner_label(construction_method)" in source
+    assert '"Zone-owned" if normalize_construction_method(construction_method)' in source
+    assert 'else "Segment-owned"' in source
     assert "full-span PT end stations retained" in source
     assert "Cast-in-Place Zone boundaries" in source
     assert "PT end-zone exclusions" not in source
