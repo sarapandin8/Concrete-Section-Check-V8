@@ -20842,12 +20842,13 @@ def _make_crossbeam_uls_flexure_figure(
     construction_method: str = "Precast Segmental",
     member_length_m: float = 0.0,
 ) -> go.Figure:
-    """Plot the adopted direct P-M3 capacity as an engineering step envelope.
+    """Plot the adopted direct P-M3 capacity for Crossbeam flexure.
 
-    One dashed capacity trace is assembled per Segment and Load Case. Binary
-    ordinary-rebar credit changes are drawn as vertical steps inside a Segment;
-    physical joints remain true trace breaks with independently solved one-sided
-    capacity markers. Pale amber bands identify tendon-only/no-credit zones.
+    In Precast Segmental tendon-only mode, the demand trace remains a full-member
+    moment diagram and the red capacity line uses one canonical display point per
+    station so the plotted envelope stays continuous and readable. Exact
+    one-sided physical-joint capacities are still retained as separate markers
+    and audit rows.
     """
 
     fig = _make_beam_uls_flexure_preview_figure(
@@ -20929,10 +20930,39 @@ def _make_crossbeam_uls_flexure_figure(
             )
             rows = rows.sort_values(["__x_m", "__joint_side_order", "Check Point"], kind="stable")
 
+            joint_rows = rows[
+                rows.get("Location type", pd.Series("", index=rows.index)).astype(str)
+                == "PHYSICAL SEGMENT JOINT"
+            ].copy()
+            line_rows = rows[
+                rows.get("Location type", pd.Series("", index=rows.index)).astype(str)
+                != "PHYSICAL SEGMENT JOINT"
+            ].copy()
+
+            # Use a canonical display row per x-station for the continuous
+            # tendon-only envelope. Exact one-sided joint rows remain visible as
+            # markers/audit evidence but are excluded from the line itself so
+            # they do not create narrow zigzags when adjacent near-joint and
+            # exact-joint stations cluster together.
+            if not line_rows.empty:
+                line_rows["__station_key"] = line_rows["__x_m"].map(lambda value: round(float(value), 6))
+                line_rows["__location_priority"] = line_rows.get(
+                    "Location type", pd.Series("", index=line_rows.index)
+                ).astype(str).map(
+                    lambda value: 0 if value == "COLUMN FACE" else (1 if "JOINT" in value.upper() else 2)
+                )
+                line_rows = line_rows.sort_values(
+                    ["__station_key", "__location_priority", "__utilization", "Check Point"],
+                    ascending=[True, True, False, True],
+                    kind="stable",
+                )
+                line_rows = line_rows.drop_duplicates(subset=["__station_key"], keep="first")
+                line_rows = line_rows.sort_values(["__x_m", "Check Point"], kind="stable")
+
             x_values: list[float] = []
             y_values: list[float] = []
             custom: list[list[object]] = []
-            for _, row in rows.iterrows():
+            for _, row in line_rows.iterrows():
                 station = _beam_uls_float(row.get("__x_m"))
                 capacity = _beam_uls_float(row.get("__capacity_kNm"))
                 if not math.isfinite(station) or not math.isfinite(capacity):
@@ -20974,10 +21004,6 @@ def _make_crossbeam_uls_flexure_figure(
                     )
                 )
 
-            joint_rows = rows[
-                rows.get("Location type", pd.Series("", index=rows.index)).astype(str)
-                == "PHYSICAL SEGMENT JOINT"
-            ].copy()
             if not joint_rows.empty:
                 joint_y: list[float] = []
                 joint_symbols: list[str] = []
@@ -21676,7 +21702,7 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
         if construction_method == CONSTRUCTION_METHOD_PRECAST:
             st.caption(
                 "The blue Demand Mux trace is the full-member global-analysis moment diagram. The red dashed trace is the adopted tendon-only φMn envelope using concrete compression + bonded Tendons only; ordinary longitudinal rebar is excluded from Mn at every Segmental station. Both traces remain continuous over the full Crossbeam length. "
-                "At a physical Segment joint, independently solved s−/s+ tendon-only capacities are retained at the exact joint station; unequal adjacent sections therefore appear as a truthful vertical capacity step rather than a gap or averaged capacity. "
+                "Exact one-sided s−/s+ tendon-only capacities at physical Segment joints are retained as separate joint markers and audit rows. The continuous red line uses canonical display points only, so joint evidence remains available without introducing narrow plotting zigzags. "
                 "Shaded support footprints and amber joint lines remain geometry/review context only and do not clip these two full-member diagrams. Physical-joint transfer, PT anchorage local/general-zone design, and beam-column-joint D-regions remain separate project checks. "
                 "At zero-M3 rows, the nearest nonzero M3 sign in the same Load Case sets the checked bending direction; Flexural D/C remains 0.000 and Axial D/C is reported separately."
             )
