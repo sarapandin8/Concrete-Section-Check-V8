@@ -40,7 +40,7 @@ def test_flexure_workspace_defines_construction_method_before_runtime_use() -> N
     assert min(stores) < min(loads)
 
 
-def test_segmental_station_dependent_phi_mn_envelope_solves_both_development_limits() -> None:
+def test_segmental_station_dependent_phi_mn_uses_one_tendon_only_full_member_trace() -> None:
     state, segments = _mixed_30m_state()
     link = state[CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY]
     for row in link["tendon_station_profiles"]:
@@ -55,13 +55,10 @@ def test_segmental_station_dependent_phi_mn_envelope_solves_both_development_lim
     result = run_crossbeam_uls_flexure(preparation)
     rows = pd.DataFrame(result["rows"])
 
-    boundary_rows = rows[rows["Location type"].astype(str) == "DEVELOPMENT BOUNDARY"]
-    assert not boundary_rows.empty
-    for (segment_id, station), group in boundary_rows.groupby(["Segment", "Station s (m)"], sort=False):
-        assert set(group["Ordinary rebar credit"].astype(str)) == {"NO CREDIT", "FULL CREDIT"}
-        assert set(group["Development region"].astype(str)) >= {
-            "FULLY DEVELOPED INTERIOR"
-        }
+    assert result["flexure_credit_basis"] == "TENDON-ONLY"
+    assert result["development_zone_checks"] == 0
+    assert set(rows["Ordinary rebar credit"].astype(str)) == {"TENDON-ONLY"}
+    assert set(pd.to_numeric(rows["Ordinary bars credited"], errors="coerce").fillna(0).astype(int)) == {0}
 
     figure = _make_crossbeam_uls_flexure_figure(
         _crossbeam_uls_demand_dataframe(preparation),
@@ -72,24 +69,23 @@ def test_segmental_station_dependent_phi_mn_envelope_solves_both_development_lim
         construction_method=str(state[CB_LOSS_ES_CONSTRUCTION_METHOD_KEY]),
         member_length_m=preparation.member_length_m,
     )
-    capacity_traces = [trace for trace in figure.data if str(trace.name) == "Adopted φMn"]
-    assert len(capacity_traces) == len(segments)
+    capacity_traces = [
+        trace for trace in figure.data
+        if str(getattr(trace, "name", "") or "").startswith("Adopted tendon-only φMn")
+    ]
+    assert len(capacity_traces) == 1
+    trace = capacity_traces[0]
+    xs = [float(value) for value in list(trace.x) if value is not None and math.isfinite(float(value))]
+    ys = [float(value) for value in list(trace.y) if value is not None and math.isfinite(float(value))]
+    assert xs and len(xs) == len(ys)
+    assert xs == sorted(xs)
+    assert min(xs) <= 1.0e-9
+    assert max(xs) >= preparation.member_length_m - 1.0e-9
+    assert all(value is not None for value in list(trace.x))
 
-    trace_by_segment: dict[str, object] = {}
-    for trace in capacity_traces:
-        custom = [item for item in list(trace.customdata or []) if item is not None]
-        assert custom
-        trace_by_segment[str(custom[0][0])] = trace
-
-    for (segment_id, station), _group in boundary_rows.groupby(["Segment", "Station s (m)"], sort=False):
-        trace = trace_by_segment[str(segment_id)]
-        xs = [
-            float(value)
-            for value in list(trace.x)
-            if value is not None and math.isfinite(float(value))
-        ]
-        hits = sum(abs(value - float(station)) <= 1.0e-8 for value in xs)
-        assert hits >= 2, (
-            f"{segment_id} development boundary at s={station} must plot both binary phiMn limits "
-            "at the same station so the Segment envelope has no artificial gap"
-        )
+    # Every exact physical joint keeps both one-sided capacities at the same x,
+    # allowing a vertical step when adjacent Segment sections differ without a gap.
+    joint_rows = rows[rows["Location type"].astype(str) == "PHYSICAL SEGMENT JOINT"]
+    for station, group in joint_rows.groupby("Station s (m)", sort=False):
+        assert len(group.index) == 2
+        assert sum(abs(value - float(station)) <= 1.0e-8 for value in xs) >= 2

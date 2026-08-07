@@ -190,7 +190,8 @@ def test_crossbeam_adapter_runs_without_generic_load_cases_and_preserves_row_cou
     assert interior.analysis_input.load_cases[0].Mux_Nmm == pytest.approx(2_200_000_000.0)
     assert interior.source_v2_kn == pytest.approx(320.0)
     assert interior.source_t_knm == pytest.approx(45.0)
-    assert interior.ordinary_rebar_count > 0
+    assert interior.ordinary_rebar_count == 0
+    assert interior.rebar_credit_status == "TENDON-ONLY"
     assert interior.bonded_tendon_count == 3
 
     assert joint.location_type == "PHYSICAL SEGMENT JOINT"
@@ -267,7 +268,7 @@ def test_crossbeam_run_uses_direct_uniaxial_route_and_keeps_joint_audit(monkeypa
     assert result["solver_route"] == "DIRECT UNIAXIAL P-M3"
     assert result["accuracy_preset_dependency"].startswith("NONE")
     assert calls["direct"] == result["structural_solves"]
-    assert result["structural_solves"] >= 2
+    assert result["structural_solves"] >= 1
     joints = [
         row for row in result["rows"]
         if row["Case"] == "ULS-JOINT" and row["Location type"] == "PHYSICAL SEGMENT JOINT"
@@ -422,7 +423,7 @@ def test_zero_m3_without_nonzero_same_case_is_review_and_not_guessed(
     assert row["Status"] == "REVIEW"
     assert row["Capacity"] == "-"
     assert row["Flexural D/C"] == "-"
-    assert float(row["Axial D/C"]) == pytest.approx(0.060, abs=0.001)
+    assert float(row["Axial D/C"]) == pytest.approx(0.062, abs=0.001)
     assert "no nonzero M3 row" in row["Direction reference"]
 
 

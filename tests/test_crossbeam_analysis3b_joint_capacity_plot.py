@@ -306,7 +306,7 @@ def test_torsion_demand_is_segment_owned_and_omitted_only_inside_supports() -> N
         assert not any(left + 1.0e-8 < value < right - 1.0e-8 for value in all_x)
 
 
-def test_flexure_capacity_is_one_clean_step_envelope_per_segment() -> None:
+def test_flexure_capacity_is_one_full_member_tendon_only_envelope() -> None:
     state, segments = _mixed_30m_state()
     preparation = build_crossbeam_uls_flexure_preparation(state)
     assert preparation.ready, preparation.errors
@@ -322,63 +322,33 @@ def test_flexure_capacity_is_one_clean_step_envelope_per_segment() -> None:
         member_length_m=preparation.member_length_m,
     )
 
-    capacity_traces = [trace for trace in figure.data if str(trace.name) == "Adopted φMn"]
-    assert len(capacity_traces) == len(segments)
-    traced_by_segment: dict[str, object] = {}
-    for trace in capacity_traces:
-        finite_x = [float(value) for value in list(trace.x) if value is not None and math.isfinite(float(value))]
-        finite_y = [float(value) for value in list(trace.y) if value is not None and math.isfinite(float(value))]
-        assert finite_x and finite_y
-        assert not any(min(finite_x) < joint < max(finite_x) for joint in JOINTS)
-        custom = [item for item in list(trace.customdata or []) if item is not None]
-        segment_id = str(custom[0][0])
-        traced_by_segment[segment_id] = trace
+    capacity_traces = [
+        trace for trace in figure.data
+        if str(getattr(trace, "name", "") or "").startswith("Adopted tendon-only φMn")
+    ]
+    assert len(capacity_traces) == 1
+    trace = capacity_traces[0]
+    raw_x = list(trace.x)
+    raw_y = list(trace.y)
+    assert raw_x and len(raw_x) == len(raw_y)
+    assert all(value is not None for value in raw_x)
+    assert all(value is not None for value in raw_y)
+    finite_x = [float(value) for value in raw_x]
+    assert finite_x == sorted(finite_x)
+    assert min(finite_x) <= 1.0e-9
+    assert max(finite_x) >= preparation.member_length_m - 1.0e-9
 
-        # In this symmetric benchmark each capacity region is constant. Any
-        # positive horizontal run must therefore remain level; capacity changes
-        # occur only at duplicate-x vertical steps.
-        raw_x = list(trace.x)
-        raw_y = list(trace.y)
-        for x0, x1, y0, y1 in zip(raw_x[:-1], raw_x[1:], raw_y[:-1], raw_y[1:]):
-            if None in (x0, x1, y0, y1):
-                continue
-            if float(x1) > float(x0) + 1.0e-9:
-                assert float(y1) == pytest.approx(float(y0), rel=1.0e-8, abs=1.0e-6)
+    # Each physical joint retains both exact one-sided capacities at the same x,
+    # so unequal adjacent Segment sections create a vertical step without a gap.
+    joint_rows = result_df[result_df["Location type"].astype(str) == "PHYSICAL SEGMENT JOINT"]
+    for station, group in joint_rows.groupby("Station s (m)", sort=False):
+        assert len(group.index) == 2
+        assert sum(abs(value - float(station)) <= 1.0e-8 for value in finite_x) >= 2
 
-    for segment in segments:
-        segment_id = str(segment["Segment"])
-        trace = traced_by_segment[segment_id]
-        finite_x = [float(value) for value in list(trace.x) if value is not None]
-        assert finite_x
-        assert min(finite_x) >= float(segment["x_start_m"]) - 1.0e-9
-        assert max(finite_x) <= float(segment["x_end_m"]) + 1.0e-9
-        for footprint in preparation.support_footprints:
-            left = float(footprint["s_left (m)"])
-            right = float(footprint["s_right (m)"])
-            assert not any(left + 1.0e-8 < value < right - 1.0e-8 for value in finite_x)
-        left_end = float(preparation.pt_end_zone_settings.get("left_length_m", 0.0))
-        right_start = preparation.member_length_m - float(
-            preparation.pt_end_zone_settings.get("right_length_m", 0.0)
-        )
-        assert not any(value < left_end - 1.0e-8 for value in finite_x)
-        assert not any(value > right_start + 1.0e-8 for value in finite_x)
+    assert set(result_df["Ordinary rebar credit"].astype(str)) == {"TENDON-ONLY"}
+    assert set(pd.to_numeric(result_df["Ordinary bars credited"], errors="coerce").fillna(0).astype(int)) == {0}
+    assert not any(str(getattr(item, "name", "") or "") == "No rebar credit zone" for item in figure.data)
 
-    joint_markers = [trace for trace in figure.data if str(trace.name) == "Joint one-sided φMn"]
-    assert len(joint_markers) == 1
-    assert len(list(joint_markers[0].x)) == 10
-    symbols = list(joint_markers[0].marker.symbol)
-    assert symbols.count("triangle-left-open") == 5
-    assert symbols.count("triangle-right-open") == 5
-
-    no_credit_legend = [trace for trace in figure.data if str(trace.name) == "No rebar credit zone"]
-    assert len(no_credit_legend) == 1
-    amber_bands = [shape for shape in figure.layout.shapes if str(shape.type) == "rect"]
-    assert len(amber_bands) >= 12
-
-    title = str(figure.layout.title.text)
-    assert "direct Crossbeam P–M3" in title
-    assert "Segment-owned capacity envelope" in title
-    assert "full-span PT end stations retained" in title
 
 def test_flexure_credit_region_trace_does_not_invent_boundary_values_when_capacity_varies() -> None:
     rows = pd.DataFrame(

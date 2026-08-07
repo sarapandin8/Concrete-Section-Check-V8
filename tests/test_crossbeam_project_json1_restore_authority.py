@@ -115,12 +115,17 @@ def test_45m_rebar_is_reported_not_silently_scaled_and_explicit_reset_repairs_it
         for message in validation["errors"]
     )
     preparation = build_crossbeam_uls_flexure_preparation(restored)
-    assert preparation.ready is False
-    assert any(
+    # Segmental Flexure now adopts concrete compression + bonded Tendons only,
+    # so stale ordinary-rebar geometry remains a project/rebar REVIEW but does
+    # not block the flexural Mn calculation itself.
+    assert not any(
         "Rebar Zone extent = 0.000–45.000 m, but Crossbeam length = 30.000 m."
         in message
         for message in preparation.errors
     )
+    # This legacy fixture may still be blocked by its old Prestress source, but
+    # the stale 45 m ordinary-rebar geometry is no longer a Segmental Flexure
+    # blocker because Mn uses the adopted tendon-only basis.
 
     reset_crossbeam_rebar_zones_from_segment_layout(restored, expected_segments)
 

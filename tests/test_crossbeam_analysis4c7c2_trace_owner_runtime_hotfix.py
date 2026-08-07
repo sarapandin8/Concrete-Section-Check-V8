@@ -33,13 +33,13 @@ def test_analysis_page_has_no_late_bound_trace_owner_symbol() -> None:
 
     assert "_trace_owner_label" not in source
     assert "trace_owner_label(" not in source
-    assert source.count('"Zone-owned" if normalize_construction_method(') >= 9
-    assert source.count('else "Segment-owned"') >= 9
+    assert source.count('"Zone-owned" if normalize_construction_method(') >= 8
+    assert source.count('else "Segment-owned"') >= 8
 
 
 def test_inline_trace_owner_expression_executes_for_both_modes() -> None:
     nodes = _owner_expression_nodes()
-    assert len(nodes) >= 9
+    assert len(nodes) >= 8
 
     expression = nodes[0]
     code = compile(ast.Expression(body=expression), str(ANALYSIS_PAGE), "eval")

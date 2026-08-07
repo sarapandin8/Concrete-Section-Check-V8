@@ -7,11 +7,10 @@ solved directly on the exact P-M3 axis using ACI 318-19 strain compatibility
 and an adaptive ``phi*Pn(c) = Pu`` root; the generic biaxial PMM surface used
 by other member workflows is not called or modified.
 
-For Precast Segmental construction, ordinary longitudinal reinforcement
-receives strength credit only in fully developed Segment interiors.  Physical
-joints and conservative straight-bar development zones use bonded-tendon
-continuity without ordinary-rebar flexural credit.  Cast-in-Place zones retain
-monolithic reinforcement behavior.
+For Precast Segmental construction, the adopted flexural strength basis is
+concrete compression plus bonded Tendons only at every station; ordinary
+longitudinal rebar is intentionally excluded from Mn.  Cast-in-Place zones
+retain their monolithic ordinary-rebar + tendon behavior.
 
 Internal units remain mm, MPa, N, and N-mm. Imported Crossbeam ``M3`` is the
 sagging-positive moment in the member s-vertical plane and maps to section
@@ -543,7 +542,7 @@ def _derived_crossbeam_flexure_demands(
     member_length_m: float,
     construction_method: str,
 ) -> tuple[list[dict[str, Any]], list[str], list[str]]:
-    """Generate physical-joint sides and development-boundary demand checks."""
+    """Generate physical-joint sides and near-joint Segmental flexure checks."""
 
     if construction_method != CONSTRUCTION_METHOD_PRECAST:
         return [], [], []
@@ -671,73 +670,16 @@ def _derived_crossbeam_flexure_demands(
                 })
                 output.append(near_source)
 
-    # ACI conservative binary development gate transition checks.
-    for segment in ordered:
-        segment_id = str(segment.get("Segment") or "")
-        start = _finite_float(segment.get("s_start (m)", segment.get("x_start_m")), float("nan"))
-        end = _finite_float(segment.get("s_end (m)", segment.get("x_end_m")), float("nan"))
-        section_id = str(segment.get("Section ID") or "")
-        definition = definitions_by_id.get(section_id)
-        if definition is None or not math.isfinite(start) or not math.isfinite(end) or end <= start + tolerance:
-            continue
-        material = material_by_name.get(str(definition.get("Material") or ""))
-        if material is None:
-            continue
-        zone_candidates = [
-            zone for zone in zones
-            if str(zone.get("Segment") or "") == segment_id
-        ]
-        if not zone_candidates:
-            continue
-        zone = zone_candidates[0]
-        template_id = str(zone.get("Longitudinal template") or zone.get("Rebar template") or "")
-        ld_m = _aci_conservative_development_length_mm(
-            templates_by_id.get(template_id),
-            fc_mpa=material.fc_MPa,
-        ) / 1000.0
-        if ld_m <= tolerance:
-            continue
-        targets: list[tuple[str, float]] = []
-        if start + ld_m < end - tolerance:
-            targets.append(("L", start + ld_m))
-        if end - ld_m > start + tolerance and abs((end - ld_m) - (start + ld_m)) > tolerance:
-            targets.append(("R", end - ld_m))
-        for side_label, target in targets:
-            for case_name, case_rows in cases.items():
-                source, error, note = _recover_demand_within_segment(
-                    case_rows=case_rows,
-                    target_m=target,
-                    segment_start_m=start,
-                    segment_end_m=end,
-                    tolerance=tolerance,
-                )
-                if error or source is None:
-                    errors.append(f"{case_name} · {segment_id}-{side_label} development boundary: {error}")
-                    continue
-                boundary_region = "LEFT DEVELOPMENT ZONE" if side_label == "L" else "RIGHT DEVELOPMENT ZONE"
-                for limit_label, credit_override, region_override in (
-                    ("NO-CREDIT LIMIT", "NO CREDIT", boundary_region),
-                    ("FULL-CREDIT LIMIT", "FULL CREDIT", "FULLY DEVELOPED INTERIOR"),
-                ):
-                    boundary_source = dict(source)
-                    boundary_source.update({
-                        "Active": True,
-                        "Station s (m)": target,
-                        "Check Point": f"{segment_id}-{side_label} ld-" if credit_override == "NO CREDIT" else f"{segment_id}-{side_label} ld+",
-                        "Case Name": case_name,
-                        "Note": f"{note} Binary development-boundary {limit_label.lower()} solved at the same station for the capacity-envelope step.",
-                        "__Derived flexure check": True,
-                        "__Flexure check type": "DEVELOPMENT BOUNDARY",
-                        "__Flexure rebar credit override": credit_override,
-                        "__Development region override": region_override,
-                        "__Development boundary limit": limit_label,
-                        "__Segment override": segment_id,
-                    })
-                    output.append(boundary_source)
+    # Segmental flexure now uses one adopted tendon-only strength basis across
+    # every Segment.  Ordinary longitudinal rebar is deliberately excluded from
+    # Mn, so ACI 25.4 development-boundary capacity rows are not generated for
+    # this flexural strength route.  Exact one-sided joint rows and the real
+    # approximately ±100 mm near-joint sectional rows above remain for geometry
+    # ownership and audit.
     output.sort(key=lambda row: (str(row.get("Case Name") or ""), _finite_float(row.get("Station s (m)")), str(row.get("Check Point") or "")))
     info.append(f"Generated {sum(str(row.get('__Flexure check type')) == 'PHYSICAL JOINT SIDE' for row in output)} physical-joint side check(s).")
     info.append(f"Generated {sum(str(row.get('__Flexure check type')) == 'NEAR JOINT SECTION' for row in output)} near-joint sectional check(s) at approximately ±100 mm from physical joints.")
-    info.append(f"Generated {sum(str(row.get('__Flexure check type')) == 'DEVELOPMENT BOUNDARY' for row in output)} development-boundary check(s).")
+    info.append("Segmental Flexure uses the adopted tendon-only basis; no ordinary-rebar development-boundary capacity rows are generated.")
     return output, _dedupe(errors), _dedupe(info)
 
 
@@ -1148,25 +1090,34 @@ def build_crossbeam_uls_flexure_preparation(
     errors.extend(pt_end_zone.errors)
     info.extend(pt_end_zone.notes)
     if construction_method == CONSTRUCTION_METHOD_PRECAST:
-        geometry_audit = crossbeam_project_geometry_audit(state)
-        errors.extend(
-            str(issue.get("Detail") or "")
-            for issue in geometry_audit.get("issues", [])
-            if bool(issue.get("Blocks rebar solver"))
-            and str(issue.get("Detail") or "").strip()
+        # Adopted Segmental flexure basis: ordinary longitudinal rebar is not
+        # credited in Mn anywhere along the Crossbeam.  Flexure readiness and
+        # capacity fingerprints therefore do not depend on the rebar source.
+        # We still read any available templates/zones as non-gating metadata so
+        # Combined V+T can retain its separate ACI development/anchorage audit.
+        rebar_source = build_crossbeam_uls_rebar_source_contract(state)
+        templates = [dict(row) for row in rebar_source.longitudinal_templates]
+        zones = [dict(row) for row in rebar_source.zone_assignments]
+        transverse_templates = [dict(row) for row in rebar_source.transverse_templates]
+        rebar_source_fingerprint = "SEGMENTAL_TENDON_ONLY_FLEXURE_V1"
+        info.append(
+            "Precast Segmental ULS Flexure adopts concrete compression + bonded Tendons only; "
+            "ordinary longitudinal rebar receives no Mn credit and does not gate this Flexure run."
         )
-    rebar_source = build_crossbeam_uls_rebar_source_contract(state)
-    templates = [dict(row) for row in rebar_source.longitudinal_templates]
-    zones = [dict(row) for row in rebar_source.zone_assignments]
-    transverse_templates = [dict(row) for row in rebar_source.transverse_templates]
+    else:
+        rebar_source = build_crossbeam_uls_rebar_source_contract(state)
+        templates = [dict(row) for row in rebar_source.longitudinal_templates]
+        zones = [dict(row) for row in rebar_source.zone_assignments]
+        transverse_templates = [dict(row) for row in rebar_source.transverse_templates]
+        rebar_source_fingerprint = rebar_source.fingerprint
+        errors.extend(
+            f"ULS reinforcement source blocked: {message}"
+            for message in rebar_source.errors
+        )
+        warnings.extend(rebar_source.warnings)
+        info.extend(rebar_source.info)
     templates_by_id = template_map(templates)
     transverse_by_id = transverse_template_map(transverse_templates)
-    errors.extend(
-        f"ULS reinforcement source blocked: {message}"
-        for message in rebar_source.errors
-    )
-    warnings.extend(rebar_source.warnings)
-    info.extend(rebar_source.info)
 
     material_by_name = _material_library(state)
     if not material_by_name:
@@ -1174,6 +1125,10 @@ def build_crossbeam_uls_flexure_preparation(
 
     tendon_system = canonical_tendon_system_rows(_get(state, CB_TENDON_SYSTEM_ROWS_KEY, []))
     active_tendons = [row for row in tendon_system if bool(row.get("Active", True))]
+    if construction_method == CONSTRUCTION_METHOD_PRECAST and not active_tendons:
+        errors.append(
+            "Precast Segmental ULS Flexure uses the adopted tendon-only strength basis and requires at least one active Tendon."
+        )
     effective_link = canonical_effective_prestress_link(
         _get(state, CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY, {})
     )
@@ -1209,7 +1164,7 @@ def build_crossbeam_uls_flexure_preparation(
         payload = {
             "contract": contract,
             "demands": demand_rows,
-            "rebar_source_fingerprint": rebar_source.fingerprint,
+            "rebar_source_fingerprint": rebar_source_fingerprint,
             "effective_prestress_profile_fingerprint": profile_validation.fingerprint,
             "errors": _dedupe(errors),
         }
@@ -1236,7 +1191,7 @@ def build_crossbeam_uls_flexure_preparation(
         derived_demands: list[dict[str, Any]] = []
         info.append(
             "Flexure section inputs use the pre-routed combined V+T station set; "
-            "no additional support, physical-joint, or development-boundary rows were generated."
+            "no additional support, physical-joint, near-joint, or development-boundary rows were generated."
         )
     else:
         support_demands, support_errors, support_info = generate_support_check_demands(
@@ -1373,59 +1328,91 @@ def build_crossbeam_uls_flexure_preparation(
                 errors.append(f"{case} at s = {station:.6f} m: unable to build {section_id}: {exc}")
                 continue
 
-            zone_candidates = [] if at_joint else _zones_for_context(
-                zones,
-                station_m=context_station,
-                segment_id=segment_id,
-                check_point=check_point,
-                length_m=length_m,
-            )
-            if not at_joint and not zone_candidates:
-                errors.append(f"{case} at s = {station:.6f} m: no reinforcement Zone covers {segment_id}.")
-                continue
-            if at_joint:
-                zone_candidates = [{}]
+            if construction_method == CONSTRUCTION_METHOD_PRECAST:
+                # Segmental Flexure intentionally ignores ordinary longitudinal
+                # rebar for Mn, so a Rebar Zone is not required to define the
+                # flexural strength section.  If an active Segmental zone exists,
+                # retain it only as metadata for separate Combined V+T
+                # development/anchorage checks.
+                metadata_zones = _zones_for_context(
+                    zones,
+                    station_m=context_station,
+                    segment_id=segment_id,
+                    check_point=check_point,
+                    length_m=length_m,
+                )
+                zone_candidates = [metadata_zones[0] if metadata_zones else {}]
+            else:
+                zone_candidates = [] if at_joint else _zones_for_context(
+                    zones,
+                    station_m=context_station,
+                    segment_id=segment_id,
+                    check_point=check_point,
+                    length_m=length_m,
+                )
+                if not at_joint and not zone_candidates:
+                    errors.append(f"{case} at s = {station:.6f} m: no reinforcement Zone covers {segment_id}.")
+                    continue
+                if at_joint:
+                    zone_candidates = [{}]
 
             for zone in zone_candidates:
-                template_id = str(zone.get("Longitudinal template") or zone.get("Rebar template") or "")
-                transverse_id = str(zone.get("Transverse template") or "")
-                longitudinal_source = templates_by_id.get(template_id)
-                allow_rebar_credit, development_length_m, distance_to_end_m, rebar_credit_status, development_region = _development_credit_context(
-                    construction_method=construction_method,
-                    station_m=station,
-                    context=context,
-                    longitudinal=longitudinal_source,
-                    concrete=concrete,
-                    at_joint=at_joint,
-                )
-                # A Precast development gate is modeled as a binary capacity step.
-                # At each generated development boundary we solve both mathematical
-                # limits at the same physical station: the no-credit side and the
-                # fully-developed side.  This keeps the plotted phiMn envelope
-                # complete even when station-dependent fpe makes capacity vary
-                # continuously inside each credit region; no capacity value is
-                # invented by the chart layer.
-                credit_override = str(demand.get("__Flexure rebar credit override") or "").strip().upper()
-                region_override = str(demand.get("__Development region override") or "").strip()
-                if credit_override in {"FULL CREDIT", "NO CREDIT"}:
-                    allow_rebar_credit = credit_override == "FULL CREDIT"
-                    rebar_credit_status = credit_override
-                    if region_override:
-                        development_region = region_override
-                rebar_rows, rebar_materials, rebar_errors, rebar_warnings = _generate_rebars(
-                    geometry,
-                    definition,
-                    longitudinal_source,
-                    transverse_by_id.get(transverse_id),
-                    allow_credit=allow_rebar_credit,
-                )
-                errors.extend(f"{case} at s = {station:.6f} m: {message}" for message in rebar_errors)
-                row_notes = list(rebar_warnings)
                 if construction_method == CONSTRUCTION_METHOD_PRECAST:
-                    row_notes.append(
-                        f"Ordinary rebar flexural credit: {rebar_credit_status}; {development_region}; "
-                        f"ACI conservative ld = {development_length_m:.3f} m; nearest Segment end = {distance_to_end_m:.3f} m."
+                    template_id = str(zone.get("Longitudinal template") or zone.get("Rebar template") or "")
+                    transverse_id = str(zone.get("Transverse template") or "")
+                    longitudinal_source = templates_by_id.get(template_id)
+                    _credit_unused, development_length_m, distance_to_end_m, _status_unused, _region_unused = _development_credit_context(
+                        construction_method=construction_method,
+                        station_m=station,
+                        context=context,
+                        longitudinal=longitudinal_source,
+                        concrete=concrete,
+                        at_joint=at_joint,
                     )
+                    allow_rebar_credit = False
+                    rebar_credit_status = "TENDON-ONLY"
+                    development_region = "NOT APPLICABLE — TENDON-ONLY FLEXURE"
+                    rebar_rows: list[Rebar] = []
+                    rebar_materials: list[RebarMaterial] = []
+                    rebar_errors: list[str] = []
+                    rebar_warnings: list[str] = []
+                    row_notes = [
+                        "Adopted Segmental flexure basis: concrete compression + bonded Tendons only; "
+                        "ordinary longitudinal rebar is excluded from Mn at every station."
+                    ]
+                    if development_length_m > 0.0:
+                        row_notes.append(
+                            f"Segmental rebar ld metadata retained only for separate Combined V+T/detailing audit: "
+                            f"ACI conservative ld = {development_length_m:.3f} m; nearest Segment end = {distance_to_end_m:.3f} m."
+                        )
+                else:
+                    template_id = str(zone.get("Longitudinal template") or zone.get("Rebar template") or "")
+                    transverse_id = str(zone.get("Transverse template") or "")
+                    longitudinal_source = templates_by_id.get(template_id)
+                    allow_rebar_credit, development_length_m, distance_to_end_m, rebar_credit_status, development_region = _development_credit_context(
+                        construction_method=construction_method,
+                        station_m=station,
+                        context=context,
+                        longitudinal=longitudinal_source,
+                        concrete=concrete,
+                        at_joint=at_joint,
+                    )
+                    credit_override = str(demand.get("__Flexure rebar credit override") or "").strip().upper()
+                    region_override = str(demand.get("__Development region override") or "").strip()
+                    if credit_override in {"FULL CREDIT", "NO CREDIT"}:
+                        allow_rebar_credit = credit_override == "FULL CREDIT"
+                        rebar_credit_status = credit_override
+                        if region_override:
+                            development_region = region_override
+                    rebar_rows, rebar_materials, rebar_errors, rebar_warnings = _generate_rebars(
+                        geometry,
+                        definition,
+                        longitudinal_source,
+                        transverse_by_id.get(transverse_id),
+                        allow_credit=allow_rebar_credit,
+                    )
+                    errors.extend(f"{case} at s = {station:.6f} m: {message}" for message in rebar_errors)
+                    row_notes = list(rebar_warnings)
 
                 (
                     prestress_rows,
@@ -1458,7 +1445,12 @@ def build_crossbeam_uls_flexure_preparation(
                 else:
                     local_fpe = []
                     source_mode = "SOURCE_BLOCKED"
-                if not rebar_rows and not prestress_rows:
+                if construction_method == CONSTRUCTION_METHOD_PRECAST and not prestress_rows:
+                    errors.append(
+                        f"{case} at s = {station:.6f} m: adopted Segmental tendon-only flexure has no bonded Tendon available at this station."
+                    )
+                    continue
+                if construction_method != CONSTRUCTION_METHOD_PRECAST and not rebar_rows and not prestress_rows:
                     errors.append(
                         f"{case} at s = {station:.6f} m: no ordinary rebar or bonded tendon is available for ULS flexure capacity."
                     )
@@ -1506,6 +1498,8 @@ def build_crossbeam_uls_flexure_preparation(
                             if location_override
                             else "PHYSICAL SEGMENT JOINT"
                             if at_joint
+                            else "NEAR JOINT SECTION"
+                            if str(demand.get("__Flexure check type") or "") == "NEAR JOINT SECTION"
                             else "DEVELOPMENT BOUNDARY"
                             if str(demand.get("__Flexure check type") or "") == "DEVELOPMENT BOUNDARY"
                             else "DEVELOPMENT ZONE"
@@ -1514,8 +1508,12 @@ def build_crossbeam_uls_flexure_preparation(
                         ),
                         segment_id=segment_id,
                         section_id=section_id,
-                        rebar_zone_id=str(zone.get("Zone ID") or ""),
-                        rebar_template_id=template_id,
+                        rebar_zone_id=(
+                            "TENDON-ONLY" if construction_method == CONSTRUCTION_METHOD_PRECAST else str(zone.get("Zone ID") or "")
+                        ),
+                        rebar_template_id=(
+                            "NOT USED" if construction_method == CONSTRUCTION_METHOD_PRECAST else template_id
+                        ),
                         source_p_kn=float(demand.get("P") or 0.0),
                         source_v2_kn=float(demand.get("V2") or 0.0),
                         source_t_knm=float(demand.get("T") or 0.0),
@@ -1566,7 +1564,7 @@ def build_crossbeam_uls_flexure_preparation(
             ]
         )
     fingerprint_payload = {
-        "schema": "crossbeam-analysis4-direct-uniaxial-development-gate-v1",
+        "schema": "crossbeam-analysis4c7d3-segmental-tendon-only-flexure-v1",
         "construction_method": construction_method,
         "contract": contract,
         "demands": demand_rows,
@@ -1574,7 +1572,7 @@ def build_crossbeam_uls_flexure_preparation(
         "support_footprints": support_footprints,
         "pt_end_zone": pt_end_zone.as_dict(),
         "excluded_end_zone_rows": excluded_end_zone_rows,
-        "rebar_source_fingerprint": rebar_source.fingerprint,
+        "rebar_source_fingerprint": rebar_source_fingerprint,
         "effective_prestress_profile_fingerprint": profile_validation.fingerprint,
         "capacity_signatures": [row.capacity_signature for row in prepared],
         "source_faces": [
@@ -1604,6 +1602,10 @@ def run_crossbeam_uls_flexure(preparation: CrossbeamUlsPreparation) -> dict[str,
     if not preparation.ready:
         raise ValueError("Crossbeam ULS flexure preparation is not ready.")
 
+    segmental_tendon_only = bool(preparation.rows) and all(
+        str(row.rebar_credit_status or "") == "TENDON-ONLY"
+        for row in preparation.rows
+    )
     result_rows: list[dict[str, Any]] = []
     warnings: list[str] = list(preparation.warnings)
     solver_errors: list[str] = []
@@ -1780,8 +1782,13 @@ def run_crossbeam_uls_flexure(preparation: CrossbeamUlsPreparation) -> dict[str,
                 "Strain compatibility basis": "Direct exact-axis ACI section strain compatibility",
                 "φ policy": "ACI strain-based φ solved concurrently with phiPn = Pu",
                 "Solver basis": "Crossbeam-scoped direct uniaxial P-M3 adaptive root solver",
-                "Material model scope": "Concrete + eligible ordinary rebar + bonded tendon groups",
+                "Material model scope": (
+                    "Concrete + bonded tendon groups; ordinary rebar excluded by adopted Segmental flexure basis"
+                    if segmental_tendon_only
+                    else "Concrete + eligible ordinary rebar + bonded tendon groups"
+                ),
                 "Route": "Crossbeam P + M3 → exact Mx axis",
+                "Flexure credit basis": "TENDON-ONLY" if segmental_tendon_only else "SECTION REBAR + TENDONS",
                 "Ordinary rebar credit": row.rebar_credit_status,
                 "Development region": row.development_region,
                 "ACI conservative ld m": row.development_length_m,
@@ -1800,7 +1807,11 @@ def run_crossbeam_uls_flexure(preparation: CrossbeamUlsPreparation) -> dict[str,
                 "Source station 2 m": row.source_station_2_m,
                 "Source ratio": row.source_ratio,
                 "Extrapolation ratio": row.extrapolation_ratio,
-                "Method": "Direct ACI 318-19 uniaxial strain compatibility / adaptive phiPn root / 25.4 development gate",
+                "Method": (
+                    "Direct ACI 318-19 uniaxial strain compatibility / adaptive phiPn root / adopted Segmental tendon-only Mn basis"
+                    if segmental_tendon_only
+                    else "Direct ACI 318-19 uniaxial strain compatibility / adaptive phiPn root / CIP ordinary-rebar credit"
+                ),
                 "Notes": " | ".join(row.notes + ((result_message,) if result_message else ())),
             }
         )
@@ -1818,9 +1829,10 @@ def run_crossbeam_uls_flexure(preparation: CrossbeamUlsPreparation) -> dict[str,
     else:
         overall = "REVIEW"
     joint_rows = [row for row in result_rows if str(row.get("Location type")) == "PHYSICAL SEGMENT JOINT"]
+    near_joint_rows = [row for row in result_rows if str(row.get("Location type")) == "NEAR JOINT SECTION"]
     development_rows = [row for row in result_rows if str(row.get("Location type")) in {"DEVELOPMENT ZONE", "DEVELOPMENT BOUNDARY"}]
     return {
-        "schema": "crossbeam-analysis4-direct-uniaxial-development-gate-v1",
+        "schema": "crossbeam-analysis4c7d3-segmental-tendon-only-flexure-v1",
         "input_fingerprint": preparation.fingerprint,
         "status": overall,
         "rows": result_rows,
@@ -1835,15 +1847,20 @@ def run_crossbeam_uls_flexure(preparation: CrossbeamUlsPreparation) -> dict[str,
         "pt_end_zone_settings": dict(preparation.pt_end_zone_settings),
         "member_length_m": float(preparation.member_length_m),
         "physical_joint_side_checks": len(joint_rows),
+        "near_joint_section_checks": len(near_joint_rows),
         "development_zone_checks": len(development_rows),
         "solver_route": "DIRECT UNIAXIAL P-M3",
         "accuracy_preset_dependency": "NONE — production result is independent of PMM angle/depth presets",
+        "flexure_credit_basis": "TENDON-ONLY" if segmental_tendon_only else "SECTION REBAR + TENDONS",
         "scope": (
-            "ULS Crossbeam P-M3 flexure using direct ACI 318-19 strain compatibility. For Precast Segmental, ordinary "
-            "longitudinal reinforcement receives strength credit only in fully developed Segment interiors; physical joints "
-            "and conservative ACI 25.4 straight-bar development zones use bonded-tendon continuity without ordinary-rebar credit. "
-            "Shear, Torsion, combined V+T, joint shear/torsion transfer, PT anchorage/end-zone D-regions, fatigue, and seismic detailing remain separate. "
-            "Valid PT end stations remain in the full-member sectional envelope; support-footprint interiors remain omitted from ordinary beam traces."
+            "ULS Crossbeam P-M3 flexure using direct ACI 318-19 strain compatibility. "
+            + (
+                "For Precast Segmental, Mn is an adopted conservative concrete-compression + bonded-Tendon capacity at every station; ordinary longitudinal rebar is excluded from Mn throughout the member. "
+                if segmental_tendon_only
+                else "For Cast-in-Place, eligible ordinary longitudinal rebar and bonded Tendons remain part of the monolithic section strength model. "
+            )
+            + "Shear, Torsion, combined V+T, physical-joint transfer, PT anchorage/end-zone D-regions, fatigue, and seismic detailing remain separate. "
+            "Valid PT end stations remain in the full-member sectional envelope."
         ),
     }
 

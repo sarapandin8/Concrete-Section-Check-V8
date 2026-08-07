@@ -42,15 +42,16 @@ def test_direct_solver_matches_independent_crossbeam_benchmark_values() -> None:
     rows = pd.DataFrame(result["rows"])
 
     assert result["status"] == "PASS"
-    assert result["schema"] == "crossbeam-analysis4-direct-uniaxial-development-gate-v1"
+    assert result["schema"] == "crossbeam-analysis4c7d3-segmental-tendon-only-flexure-v1"
+    assert result["flexure_credit_basis"] == "TENDON-ONLY"
     assert result["solver_route"] == "DIRECT UNIAXIAL P-M3"
     assert result["accuracy_preset_dependency"].startswith("NONE")
     assert result["physical_joint_side_checks"] == 10
 
     # Independently checked ACI 318-19 strain-compatibility benchmarks for the
     # uploaded 30 m Crossbeam project (Pu = 5,000 kN, positive M3).
-    assert _unique_capacity(rows, section_id="CB-S01", credit="FULL CREDIT") == pytest.approx([25241.399460], abs=0.02)
-    assert _unique_capacity(rows, section_id="CB-H01", credit="FULL CREDIT") == pytest.approx([19811.693221], abs=0.02)
+    assert _unique_capacity(rows, section_id="CB-S01", credit="TENDON-ONLY") == pytest.approx([16422.326175], abs=0.02)
+    assert _unique_capacity(rows, section_id="CB-H01", credit="TENDON-ONLY") == pytest.approx([15112.431773], abs=0.02)
 
     solid_joint = rows[
         (rows["Section ID"] == "CB-S01")
@@ -60,8 +61,8 @@ def test_direct_solver_matches_independent_crossbeam_benchmark_values() -> None:
         (rows["Section ID"] == "CB-H01")
         & (rows["Location type"] == "PHYSICAL SEGMENT JOINT")
     ]
-    assert set(solid_joint["Ordinary rebar credit"]) == {"NO CREDIT"}
-    assert set(hollow_joint["Ordinary rebar credit"]) == {"NO CREDIT"}
+    assert set(solid_joint["Ordinary rebar credit"]) == {"TENDON-ONLY"}
+    assert set(hollow_joint["Ordinary rebar credit"]) == {"TENDON-ONLY"}
     assert sorted({round(float(value), 6) for value in solid_joint["Capacity kN-m"]}) == pytest.approx([16422.326190], abs=0.02)
     assert sorted({round(float(value), 6) for value in hollow_joint["Capacity kN-m"]}) == pytest.approx([15112.431770], abs=0.02)
 
@@ -91,30 +92,27 @@ def test_direct_crossbeam_result_is_independent_of_accuracy_preset() -> None:
     assert capacities["Fast"] == capacities["Standard"] == capacities["High Accuracy"]
 
 
-def test_precast_joint_and_development_credit_are_binary_and_segment_owned() -> None:
+def test_precast_flexure_is_tendon_only_at_interior_near_joint_and_joint_rows() -> None:
     result = _result(_benchmark_state())
     rows = pd.DataFrame(result["rows"])
+
+    assert set(rows["Ordinary rebar credit"].astype(str)) == {"TENDON-ONLY"}
+    assert set(pd.to_numeric(rows["Ordinary bars credited"], errors="coerce").fillna(0).astype(int)) == {0}
+    assert result["development_zone_checks"] == 0
 
     joint_rows = rows[rows["Location type"] == "PHYSICAL SEGMENT JOINT"]
     assert len(joint_rows.index) == 10
     assert set(joint_rows["Check Point"]) == {
         "J1-L", "J1-R", "J2-L", "J2-R", "J3-L", "J3-R", "J4-L", "J4-R", "J5-L", "J5-R"
     }
-    assert set(joint_rows["Ordinary rebar credit"]) == {"NO CREDIT"}
-    assert set(joint_rows["Ordinary bars credited"]) == {0}
 
-    # The same-section S3/S4 joint remains two independently owned faces.
-    # Resolve the exact same-section physical joint explicitly.
+    near_joint_rows = rows[rows["Location type"] == "NEAR JOINT SECTION"]
+    assert not near_joint_rows.empty
+    assert set(near_joint_rows["Ordinary rebar credit"].astype(str)) == {"TENDON-ONLY"}
+
     j3 = joint_rows[(pd.to_numeric(joint_rows["Station s (m)"]) - 15.0).abs() <= 1.0e-9]
     assert set(j3["Segment"]) == {"S3", "S4"}
     assert set(j3["Section ID"]) == {"CB-S01"}
-
-    development_rows = rows[rows["Development region"].astype(str).str.contains("DEVELOPMENT ZONE")]
-    assert not development_rows.empty
-    assert set(development_rows["Ordinary rebar credit"]) == {"NO CREDIT"}
-    interior_rows = rows[rows["Development region"] == "FULLY DEVELOPED INTERIOR"]
-    assert not interior_rows.empty
-    assert set(interior_rows["Ordinary rebar credit"]) == {"FULL CREDIT"}
 
 
 def test_crossbeam_direct_route_does_not_call_generic_pmm_solver(monkeypatch: pytest.MonkeyPatch) -> None:

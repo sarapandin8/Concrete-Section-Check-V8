@@ -20891,6 +20891,188 @@ def _make_crossbeam_uls_flexure_figure(
     case_names = list(dict.fromkeys(case_series.tolist()))
     tolerance = 1.0e-8
 
+    if is_precast:
+        # Adopted Segmental basis: Mn is concrete compression + bonded Tendons
+        # only at every station.  Because the same strength-credit rule applies
+        # through Segment interiors, near-joint sections, and exact joint sides,
+        # the capacity display is one full-member trace.  Two exact one-sided
+        # capacities at a geometry transition share the same joint x-coordinate,
+        # producing a truthful vertical step rather than an artificial gap.
+        joint_stations = _crossbeam_joint_stations_from_segments(segment_rows)
+        for joint_station in joint_stations:
+            fig.add_vline(
+                x=float(joint_station),
+                line_width=1.1,
+                line_dash="dot",
+                line_color="#f59e0b",
+                opacity=0.72,
+                layer="below",
+            )
+
+        for segment in segments:
+            fig.add_annotation(
+                x=0.5 * (float(segment["start"]) + float(segment["end"])),
+                y=1.015,
+                xref="x",
+                yref="paper",
+                text=str(segment["Segment"]),
+                showarrow=False,
+                font={"size": 9, "color": "#64748b"},
+            )
+
+        for case_name, case_df in source.groupby(case_series, sort=False):
+            rows = case_df.copy()
+            rows["__joint_side_order"] = rows.get(
+                "Check Point", pd.Series("", index=rows.index)
+            ).astype(str).map(
+                lambda value: 0 if str(value).strip().upper().endswith("-L") else 2 if str(value).strip().upper().endswith("-R") else 1
+            )
+            rows = rows.sort_values(["__x_m", "__joint_side_order", "Check Point"], kind="stable")
+
+            x_values: list[float] = []
+            y_values: list[float] = []
+            custom: list[list[object]] = []
+            for _, row in rows.iterrows():
+                station = _beam_uls_float(row.get("__x_m"))
+                capacity = _beam_uls_float(row.get("__capacity_kNm"))
+                if not math.isfinite(station) or not math.isfinite(capacity):
+                    continue
+                sign = _beam_uls_float(row.get("__plot_sign"))
+                if not math.isfinite(sign) or abs(sign) <= 0.0:
+                    sign = -1.0 if _beam_uls_float(row.get("__demand_kNm")) < 0.0 else 1.0
+                x_values.append(float(station))
+                y_values.append(float(sign) * float(capacity))
+                custom.append([
+                    str(row.get("Segment") or ""),
+                    str(row.get("Section ID") or ""),
+                    str(row.get("Location type") or ""),
+                    str(row.get("Check Point") or ""),
+                    str(row.get("Ordinary rebar credit") or "TENDON-ONLY"),
+                ])
+            if x_values:
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_values,
+                        y=y_values,
+                        mode="lines",
+                        name=(
+                            "Adopted tendon-only φMn"
+                            if len(case_names) == 1
+                            else f"Adopted tendon-only φMn — {case_name}"
+                        ),
+                        legendgroup=f"crossbeam_tendon_only_phi_mn_{case_name}",
+                        showlegend=True,
+                        line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
+                        connectgaps=True,
+                        customdata=custom,
+                        hovertemplate=(
+                            "Segment=%{customdata[0]} · Section=%{customdata[1]}"
+                            "<br>Location=%{customdata[2]} · Check=%{customdata[3]}"
+                            "<br>Flexure basis=%{customdata[4]}"
+                            "<br>x=%{x:.3f} m<br>Adopted tendon-only φMn=%{y:.3f} kN-m<extra></extra>"
+                        ),
+                    )
+                )
+
+            joint_rows = rows[
+                rows.get("Location type", pd.Series("", index=rows.index)).astype(str)
+                == "PHYSICAL SEGMENT JOINT"
+            ].copy()
+            if not joint_rows.empty:
+                joint_y: list[float] = []
+                joint_symbols: list[str] = []
+                for _, row in joint_rows.iterrows():
+                    sign = _beam_uls_float(row.get("__plot_sign"))
+                    if not math.isfinite(sign) or abs(sign) <= 0.0:
+                        sign = -1.0 if _beam_uls_float(row.get("__demand_kNm")) < 0.0 else 1.0
+                    joint_y.append(sign * float(row["__capacity_kNm"]))
+                    check_point = str(row.get("Check Point") or "").strip().upper()
+                    joint_symbols.append("triangle-left-open" if check_point.endswith("-L") else "triangle-right-open")
+                fig.add_trace(
+                    go.Scatter(
+                        x=joint_rows["__x_m"].astype(float).tolist(),
+                        y=joint_y,
+                        mode="markers",
+                        name="Joint one-sided tendon-only φMn",
+                        legendgroup=f"crossbeam_joint_tendon_only_phi_mn_{case_name}",
+                        showlegend=True,
+                        marker={
+                            "symbol": joint_symbols,
+                            "size": 8,
+                            "color": "#d97706",
+                            "line": {"width": 1.5, "color": "#d97706"},
+                        },
+                        customdata=joint_rows[["Check Point", "Segment", "Section ID"]].astype(str).values,
+                        hovertemplate=(
+                            "%{customdata[0]} · Segment=%{customdata[1]}"
+                            "<br>Section=%{customdata[2]}"
+                            "<br>x=%{x:.3f} m<br>One-sided tendon-only φMn=%{y:.3f} kN-m<extra></extra>"
+                        ),
+                    )
+                )
+
+        # Member context is shown but does not clip the full-member demand or
+        # tendon-only capacity diagrams.  Beam-column joint and physical-joint
+        # transfer remain separate engineering checks rather than plot gaps.
+        _crossbeam_add_support_context(fig, support_footprints)
+        _crossbeam_add_pt_end_zone_context(
+            fig,
+            pt_end_zone_settings,
+            member_length_m=member_length_m,
+        )
+
+        face_rows = source[
+            source.get("Location type", pd.Series("", index=source.index)).astype(str) == "COLUMN FACE"
+        ].copy()
+        if not face_rows.empty:
+            fig.add_trace(
+                go.Scatter(
+                    x=face_rows["__x_m"].astype(float).tolist(),
+                    y=face_rows["__demand_kNm"].astype(float).tolist(),
+                    mode="markers",
+                    name="Column Face check",
+                    marker={"size": 8, "symbol": "circle-open", "line": {"width": 1.5}},
+                    hovertemplate="Column Face<br>x=%{x:.3f} m<br>Mu=%{y:.3f} kN-m<extra></extra>",
+                )
+            )
+
+        governing = source[source["__utilization"].notna()].copy()
+        if not governing.empty:
+            row = governing.loc[governing["__utilization"].astype(float).idxmax()]
+            capacity = float(row["__capacity_kNm"])
+            sign = _beam_uls_float(row.get("__plot_sign"))
+            if not math.isfinite(sign) or abs(sign) <= 0.0:
+                sign = -1.0 if _beam_uls_float(row.get("__demand_kNm")) < 0.0 else 1.0
+            utilization = float(row["__utilization"])
+            fig.add_trace(
+                go.Scatter(
+                    x=[float(row["__x_m"])],
+                    y=[sign * capacity],
+                    mode="markers+text",
+                    text=[f"D/C {utilization:.3f}"],
+                    textposition="bottom center" if sign > 0.0 else "top center",
+                    textfont={"size": 10},
+                    marker={"size": 9, "color": "#111827"},
+                    cliponaxis=False,
+                    name="Governing flexure check",
+                    hovertemplate=(
+                        "x=%{x:.3f} m<br>Governing tendon-only φMn=%{y:.3f} kN-m"
+                        f"<br>D/C={utilization:.3f}<extra></extra>"
+                    ),
+                )
+            )
+
+        fig.update_layout(
+            title={
+                "text": (
+                    "Flexure Check — Strength ULS"
+                    "<br><sup>ACI 318-19 · direct Crossbeam P–M3 · adopted Segmental tendon-only φMn · full-member demand/capacity traces</sup>"
+                )
+            },
+            margin={"l": 82, "r": 42, "t": 96, "b": 116},
+        )
+        return fig
+
     # Identify and shade each unique tendon-only/no-credit interval once. These
     # bands explain capacity changes without adding another engineering curve.
     no_credit_intervals: set[tuple[str, float, float]] = set()
@@ -21305,14 +21487,22 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
         "P maps to Pu and sagging-positive M3 maps to the exact section Mx axis; Pe and secondary prestress are not added to demand again."
     )
     with st.expander("Crossbeam ULS scope / engineering assumptions", expanded=False):
-        st.markdown(
-            "- Production flexural capacity uses a Crossbeam-scoped direct uniaxial ACI 318-19 strain-compatibility solver on the exact P–M3 axis; no PMM angle/depth interpolation controls φMn.\n"
-            "- Section ID, concrete material, ordinary reinforcement, bonded tendon position, and effective prestress are rebuilt at every imported or generated check station.\n"
-            "- For Precast Segmental construction, ordinary longitudinal reinforcement receives full strength credit only in verified fully developed Segment interiors. Physical joints and conservative ACI 25.4 straight-bar development zones receive no ordinary-rebar flexural credit; bonded Tendons remain the global continuity source.\n"
-            "- Development credit is binary. The graph does not interpolate capacity between tendon-only and full-rebar regions.\n"
-            "- Cast-in-Place boundaries are monolithic Section/Rebar Zones; the Precast development/joint exclusion rule does not apply.\n"
-            "- Unbonded/external Tendons are not silently credited. V2 and T remain row-coupled audit demands; Shear, Torsion, combined V+T, D-regions, anchorage, fatigue, and seismic detailing remain separate."
-        )
+        if construction_method == CONSTRUCTION_METHOD_PRECAST:
+            st.markdown(
+                "- Production flexural capacity uses a Crossbeam-scoped direct uniaxial ACI 318-19 strain-compatibility solver on the exact P–M3 axis; no PMM angle/depth interpolation controls φMn.\n"
+                "- **Adopted Precast Segmental flexure basis:** concrete compression + bonded Tendons only at every station. Ordinary longitudinal rebar is deliberately excluded from Mn throughout the Crossbeam.\n"
+                "- Section ID, concrete material, bonded tendon position, and local effective prestress fpe(s) are rebuilt at every imported/generated check station. No flexural rebar-development gate is used.\n"
+                "- Demand Mux and adopted tendon-only φMn are plotted as full-member traces. If adjacent Segment sections give different one-sided joint capacities, the exact joint values form a vertical capacity step rather than an artificial gap.\n"
+                "- Physical-joint transfer, keys/interface behavior, PT anchorage/end-zone D-regions, and beam-column-joint D-regions remain separate engineering checks even though the sectional flexure trace is continuous.\n"
+                "- Unbonded/external Tendons are not silently credited. V2 and T remain row-coupled audit demands; Shear, Torsion, combined V+T, fatigue, and seismic detailing remain separate."
+            )
+        else:
+            st.markdown(
+                "- Production flexural capacity uses a Crossbeam-scoped direct uniaxial ACI 318-19 strain-compatibility solver on the exact P–M3 axis; no PMM angle/depth interpolation controls φMn.\n"
+                "- Cast-in-Place Section/Rebar Zones are monolithic; eligible ordinary longitudinal rebar and bonded Tendons are included in the local section strength model.\n"
+                "- Section ID, concrete material, ordinary reinforcement, bonded tendon position, and effective prestress are rebuilt at every imported or generated check station.\n"
+                "- Unbonded/external Tendons are not silently credited. V2 and T remain row-coupled audit demands; Shear, Torsion, combined V+T, D-regions, anchorage, fatigue, and seismic detailing remain separate."
+            )
 
     # Preserve the accepted High Accuracy default for any legacy/reference PMM
     # comparison without exposing an irrelevant production control. The direct
@@ -21334,7 +21524,11 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
                 f"{len(preparation.rows):,} station/face check(s)."
             )
         else:
-            st.error("ULS source blocked — resolve the station-force, Section/Rebar, Tendon, or Effective Prestress items below.")
+            st.error(
+                "ULS source blocked — resolve the station-force, Section, Tendon, or Effective Prestress items below."
+                if construction_method == CONSTRUCTION_METHOD_PRECAST
+                else "ULS source blocked — resolve the station-force, Section/Rebar, Tendon, or Effective Prestress items below."
+            )
     with control_cols[1]:
         run_clicked = st.button(
             "Calculate Flexure",
@@ -21378,7 +21572,7 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
                 st.warning(message)
 
     generated_support_count = len(preparation.derived_support_rows)
-    generated_joint_development_count = max(
+    generated_joint_aux_count = max(
         0,
         len(preparation.rows) - len(preparation.demand_rows) - generated_support_count,
     )
@@ -21390,7 +21584,11 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
             "value": f"{len(preparation.rows):,}",
             "detail": (
                 f"{len(preparation.demand_rows):,} imported sources + {generated_support_count:,} Column Faces + "
-                f"{generated_joint_development_count:,} joint/development rows after station eligibility"
+                + (
+                    f"{generated_joint_aux_count:,} joint/near-joint rows after station eligibility"
+                    if construction_method == CONSTRUCTION_METHOD_PRECAST
+                    else f"{generated_joint_aux_count:,} generated auxiliary rows after station eligibility"
+                )
             ),
             "status": "info",
         },
@@ -21435,8 +21633,30 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
     result_cards = [
         {"title": "Flexure status", "value": status, "detail": "ACI 318-19 direct P–M3 strength", "status": status_style, "strong": True},
         {"title": "Governing Flexural D/C", "value": "-" if governing is None else str(governing.get("Flexural D/C") or "-"), "detail": "-" if governing is None else f"{governing.get('Case')} @ s={_format_beam_uls_x(governing.get('Station s (m)'))}", "status": "info"},
-        {"title": "Governing credit basis", "value": "-" if governing is None else str(governing.get("Ordinary rebar credit") or "-"), "detail": "-" if governing is None else f"{governing.get('Check Point') or governing.get('Location type')} · {governing.get('Segment') or '-'}", "status": "warning" if governing is not None and str(governing.get("Ordinary rebar credit")) == "NO CREDIT" else "info"},
-        {"title": "Generated safety checks", "value": f"{int(result.get('physical_joint_side_checks') or 0):,} joint sides", "detail": f"{int(result.get('development_zone_checks') or 0):,} development-zone/boundary rows · {int(result.get('structural_solves') or 0):,} unique solves", "status": "neutral"},
+        {
+            "title": "Flexure credit basis" if construction_method == CONSTRUCTION_METHOD_PRECAST else "Governing credit basis",
+            "value": (
+                "TENDON-ONLY"
+                if construction_method == CONSTRUCTION_METHOD_PRECAST
+                else "-" if governing is None else str(governing.get("Ordinary rebar credit") or "-")
+            ),
+            "detail": (
+                "Concrete compression + bonded Tendons · ordinary rebar excluded from Mn"
+                if construction_method == CONSTRUCTION_METHOD_PRECAST
+                else "-" if governing is None else f"{governing.get('Check Point') or governing.get('Location type')} · {governing.get('Segment') or '-'}"
+            ),
+            "status": "info",
+        },
+        {
+            "title": "Generated safety checks",
+            "value": f"{int(result.get('physical_joint_side_checks') or 0):,} joint sides",
+            "detail": (
+                f"{int(result.get('near_joint_section_checks') or 0):,} near-joint sections · {int(result.get('structural_solves') or 0):,} unique solves"
+                if construction_method == CONSTRUCTION_METHOD_PRECAST
+                else f"{int(result.get('development_zone_checks') or 0):,} development-zone/boundary rows · {int(result.get('structural_solves') or 0):,} unique solves"
+            ),
+            "status": "neutral",
+        },
     ]
     _render_analysis_summary_strip(result_cards, columns=4)
 
@@ -21453,26 +21673,38 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
                 member_length_m=_beam_uls_float(result.get("member_length_m")),
             )
         )
-        owner = ("Zone-owned" if normalize_construction_method(construction_method) == CONSTRUCTION_METHOD_CIP else "Segment-owned")
-        st.caption(
-            f"The blue Demand Mux trace is the full-member global-analysis moment diagram and remains continuous through supports and physical Segment joints. The red dashed line is the adopted direct-solver φMn envelope; {owner} capacity traces stop through shaded support footprints while valid PT end stations remain in the full-member sectional envelope. "
-            "Pale amber development bands identify tendon-only/no-ordinary-rebar-credit regions; vertical capacity steps occur only at binary credit boundaries. "
-            + (
-                "Amber dotted lines mark physical Segment joints, where independently solved s−/s+ capacities remain separate and no capacity is interpolated across the joint. "
-                if construction_method == CONSTRUCTION_METHOD_PRECAST
-                else "Cast-in-Place Zone boundaries are property boundaries only and do not create artificial physical-joint breaks. "
+        if construction_method == CONSTRUCTION_METHOD_PRECAST:
+            st.caption(
+                "The blue Demand Mux trace is the full-member global-analysis moment diagram. The red dashed trace is the adopted tendon-only φMn envelope using concrete compression + bonded Tendons only; ordinary longitudinal rebar is excluded from Mn at every Segmental station. Both traces remain continuous over the full Crossbeam length. "
+                "At a physical Segment joint, independently solved s−/s+ tendon-only capacities are retained at the exact joint station; unequal adjacent sections therefore appear as a truthful vertical capacity step rather than a gap or averaged capacity. "
+                "Shaded support footprints and amber joint lines remain geometry/review context only and do not clip these two full-member diagrams. Physical-joint transfer, PT anchorage local/general-zone design, and beam-column-joint D-regions remain separate project checks. "
+                "At zero-M3 rows, the nearest nonzero M3 sign in the same Load Case sets the checked bending direction; Flexural D/C remains 0.000 and Axial D/C is reported separately."
             )
-            + "At zero-M3 rows, the nearest nonzero M3 sign in the same Load Case sets the checked bending direction; Flexural D/C remains 0.000 and Axial D/C is reported separately. PT anchorage local/general-zone design and beam-column-joint D-regions remain separate project checks."
-        )
-        display_columns = [
-            "Status", "Station s (m)", "Check Point", "Case", "Segment", "Section face", "Location type",
-            "Section ID", "Ordinary rebar credit", "Development region", "ACI conservative ld m",
-            "P kN", "M3 kN-m", "φMn at Pu", "Flexural D/C", "Axial D/C",
-            "Neutral axis c mm", "φ value", "Force residual ratio",
-            "Effective prestress mode", "Local fpe min MPa", "Local fpe max MPa", "Local fpe source",
-            "Bending direction", "Direction reference",
-            "Ordinary bars credited", "Bonded tendons credited", "Unbonded tendons omitted", "Demand source",
-        ]
+        else:
+            st.caption(
+                "The blue Demand Mux trace is the full-member global-analysis moment diagram. The red dashed line is the adopted direct-solver φMn envelope for the active Cast-in-Place monolithic Section/Rebar Zones. "
+                "At zero-M3 rows, the nearest nonzero M3 sign in the same Load Case sets the checked bending direction; Flexural D/C remains 0.000 and Axial D/C is reported separately. PT anchorage local/general-zone design and beam-column-joint D-regions remain separate project checks."
+            )
+        if construction_method == CONSTRUCTION_METHOD_PRECAST:
+            display_columns = [
+                "Status", "Station s (m)", "Check Point", "Case", "Segment", "Section face", "Location type",
+                "Section ID", "Flexure credit basis",
+                "P kN", "M3 kN-m", "φMn at Pu", "Flexural D/C", "Axial D/C",
+                "Neutral axis c mm", "φ value", "Force residual ratio",
+                "Effective prestress mode", "Local fpe min MPa", "Local fpe max MPa", "Local fpe source",
+                "Bending direction", "Direction reference",
+                "Bonded tendons credited", "Unbonded tendons omitted", "Demand source",
+            ]
+        else:
+            display_columns = [
+                "Status", "Station s (m)", "Check Point", "Case", "Segment", "Section face", "Location type",
+                "Section ID", "Flexure credit basis", "Ordinary rebar credit", "Development region", "ACI conservative ld m",
+                "P kN", "M3 kN-m", "φMn at Pu", "Flexural D/C", "Axial D/C",
+                "Neutral axis c mm", "φ value", "Force residual ratio",
+                "Effective prestress mode", "Local fpe min MPa", "Local fpe max MPa", "Local fpe source",
+                "Bending direction", "Direction reference",
+                "Ordinary bars credited", "Bonded tendons credited", "Unbonded tendons omitted", "Demand source",
+            ]
         st.dataframe(result_df[[column for column in display_columns if column in result_df]], use_container_width=True, hide_index=True)
 
     messages = list(result.get("errors") or [])
