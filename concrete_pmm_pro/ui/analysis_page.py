@@ -21162,8 +21162,12 @@ def _make_crossbeam_uls_flexure_figure(
                 )
             )
 
-    # Demand/capacity lines must not imply an ordinary B-region solution through
-    # the beam-column joint/support footprint or across a physical Segment gap.
+    # Flexural demand is a member-force diagram and remains continuous over the
+    # full Crossbeam length, including support footprints and physical Segment
+    # joints.  Only sectional-capacity traces are clipped/broken by local
+    # capacity semantics.  This prevents the Mux diagram from looking as if the
+    # global analysis force disappears where the sectional resistance model is
+    # intentionally discontinuous.
     trace_break_footprints = list(support_footprints)
     if is_precast:
         trace_break_footprints.extend(
@@ -21174,12 +21178,15 @@ def _make_crossbeam_uls_flexure_figure(
             for joint in joint_stations
         )
     for trace in fig.data:
-        _crossbeam_break_trace_over_supports(trace, trace_break_footprints)
-        _crossbeam_clip_trace_to_pt_b_region(
-            trace,
-            pt_end_zone_settings,
-            member_length_m=member_length_m,
-        )
+        trace_name = str(getattr(trace, "name", "") or "")
+        is_demand_trace = trace_name.startswith("Demand Mux")
+        if not is_demand_trace:
+            _crossbeam_break_trace_over_supports(trace, trace_break_footprints)
+            _crossbeam_clip_trace_to_pt_b_region(
+                trace,
+                pt_end_zone_settings,
+                member_length_m=member_length_m,
+            )
 
     _crossbeam_add_support_context(fig, support_footprints)
     _crossbeam_add_pt_end_zone_context(
@@ -21448,7 +21455,7 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
         )
         owner = ("Zone-owned" if normalize_construction_method(construction_method) == CONSTRUCTION_METHOD_CIP else "Segment-owned")
         st.caption(
-            f"The red dashed line is the adopted direct-solver φMn envelope. {owner} traces stop through shaded support footprints while valid PT end stations remain in the full-member sectional envelope. "
+            f"The blue Demand Mux trace is the full-member global-analysis moment diagram and remains continuous through supports and physical Segment joints. The red dashed line is the adopted direct-solver φMn envelope; {owner} capacity traces stop through shaded support footprints while valid PT end stations remain in the full-member sectional envelope. "
             "Pale amber development bands identify tendon-only/no-ordinary-rebar-credit regions; vertical capacity steps occur only at binary credit boundaries. "
             + (
                 "Amber dotted lines mark physical Segment joints, where independently solved s−/s+ capacities remain separate and no capacity is interpolated across the joint. "
