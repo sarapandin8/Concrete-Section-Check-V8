@@ -670,17 +670,26 @@ def _derived_crossbeam_flexure_demands(
                 if error or source is None:
                     errors.append(f"{case_name} · {segment_id}-{side_label} development boundary: {error}")
                     continue
-                source.update({
-                    "Active": True,
-                    "Station s (m)": target,
-                    "Check Point": f"{segment_id}-{side_label} ld",
-                    "Case Name": case_name,
-                    "Note": note,
-                    "__Derived flexure check": True,
-                    "__Flexure check type": "DEVELOPMENT BOUNDARY",
-                    "__Segment override": segment_id,
-                })
-                output.append(source)
+                boundary_region = "LEFT DEVELOPMENT ZONE" if side_label == "L" else "RIGHT DEVELOPMENT ZONE"
+                for limit_label, credit_override, region_override in (
+                    ("NO-CREDIT LIMIT", "NO CREDIT", boundary_region),
+                    ("FULL-CREDIT LIMIT", "FULL CREDIT", "FULLY DEVELOPED INTERIOR"),
+                ):
+                    boundary_source = dict(source)
+                    boundary_source.update({
+                        "Active": True,
+                        "Station s (m)": target,
+                        "Check Point": f"{segment_id}-{side_label} ld-" if credit_override == "NO CREDIT" else f"{segment_id}-{side_label} ld+",
+                        "Case Name": case_name,
+                        "Note": f"{note} Binary development-boundary {limit_label.lower()} solved at the same station for the capacity-envelope step.",
+                        "__Derived flexure check": True,
+                        "__Flexure check type": "DEVELOPMENT BOUNDARY",
+                        "__Flexure rebar credit override": credit_override,
+                        "__Development region override": region_override,
+                        "__Development boundary limit": limit_label,
+                        "__Segment override": segment_id,
+                    })
+                    output.append(boundary_source)
     output.sort(key=lambda row: (str(row.get("Case Name") or ""), _finite_float(row.get("Station s (m)")), str(row.get("Check Point") or "")))
     info.append(f"Generated {sum(str(row.get('__Flexure check type')) == 'PHYSICAL JOINT SIDE' for row in output)} physical-joint side check(s).")
     info.append(f"Generated {sum(str(row.get('__Flexure check type')) == 'DEVELOPMENT BOUNDARY' for row in output)} development-boundary check(s).")
@@ -1344,6 +1353,20 @@ def build_crossbeam_uls_flexure_preparation(
                     concrete=concrete,
                     at_joint=at_joint,
                 )
+                # A Precast development gate is modeled as a binary capacity step.
+                # At each generated development boundary we solve both mathematical
+                # limits at the same physical station: the no-credit side and the
+                # fully-developed side.  This keeps the plotted phiMn envelope
+                # complete even when station-dependent fpe makes capacity vary
+                # continuously inside each credit region; no capacity value is
+                # invented by the chart layer.
+                credit_override = str(demand.get("__Flexure rebar credit override") or "").strip().upper()
+                region_override = str(demand.get("__Development region override") or "").strip()
+                if credit_override in {"FULL CREDIT", "NO CREDIT"}:
+                    allow_rebar_credit = credit_override == "FULL CREDIT"
+                    rebar_credit_status = credit_override
+                    if region_override:
+                        development_region = region_override
                 rebar_rows, rebar_materials, rebar_errors, rebar_warnings = _generate_rebars(
                     geometry,
                     definition,
@@ -1775,7 +1798,7 @@ def run_crossbeam_uls_flexure(preparation: CrossbeamUlsPreparation) -> dict[str,
             "longitudinal reinforcement receives strength credit only in fully developed Segment interiors; physical joints "
             "and conservative ACI 25.4 straight-bar development zones use bonded-tendon continuity without ordinary-rebar credit. "
             "Shear, Torsion, combined V+T, joint shear/torsion transfer, PT anchorage/end-zone D-regions, fatigue, and seismic detailing remain separate. "
-            "Ordinary B-region governing excludes the adopted PT end-zone lengths and support-footprint interiors."
+            "Valid PT end stations remain in the full-member sectional envelope; support-footprint interiors remain omitted from ordinary beam traces."
         ),
     }
 

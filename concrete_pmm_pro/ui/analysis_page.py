@@ -51,6 +51,7 @@ from concrete_pmm_pro.crossbeam.section_library import (
 from concrete_pmm_pro.crossbeam.prestress_loss import CB_LOSS_ES_CONSTRUCTION_METHOD_KEY
 from concrete_pmm_pro.crossbeam.construction_stage import (
     CONSTRUCTION_METHOD_CIP,
+    CONSTRUCTION_METHOD_PRECAST,
     normalize_construction_method,
 )
 
@@ -21256,6 +21257,9 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
     """Render the Crossbeam-only ULS station adapter and on-demand flexure run."""
 
     st.markdown(_ANALYSIS_DASHBOARD_CSS, unsafe_allow_html=True)
+    construction_method = normalize_construction_method(
+        st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
+    )
     st.markdown("### Crossbeam ULS Flexure — station checks")
     st.caption(
         "Reads active row-coupled P/V2/T/M3 demands from Crossbeam Loads. "
@@ -21406,9 +21410,7 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
                 segment_rows=st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY, []),
                 support_footprints=list(result.get("support_footprints") or []),
                 pt_end_zone_settings=result.get("pt_end_zone_settings") if isinstance(result.get("pt_end_zone_settings"), Mapping) else None,
-                construction_method=normalize_construction_method(
-                    st.session_state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY)
-                ),
+                construction_method=construction_method,
                 member_length_m=_beam_uls_float(result.get("member_length_m")),
             )
         )
@@ -21418,7 +21420,7 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
             "Pale amber development bands identify tendon-only/no-ordinary-rebar-credit regions; vertical capacity steps occur only at binary credit boundaries. "
             + (
                 "Amber dotted lines mark physical Segment joints, where independently solved s−/s+ capacities remain separate and no capacity is interpolated across the joint. "
-                if construction_method == "Precast Segmental"
+                if construction_method == CONSTRUCTION_METHOD_PRECAST
                 else "Cast-in-Place Zone boundaries are property boundaries only and do not create artificial physical-joint breaks. "
             )
             + "At zero-M3 rows, the nearest nonzero M3 sign in the same Load Case sets the checked bending direction; Flexural D/C remains 0.000 and Axial D/C is reported separately. PT anchorage local/general-zone design and beam-column-joint D-regions remain separate project checks."
