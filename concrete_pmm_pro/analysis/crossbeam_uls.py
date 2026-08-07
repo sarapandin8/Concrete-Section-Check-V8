@@ -627,6 +627,50 @@ def _derived_crossbeam_flexure_demands(
                 })
                 output.append(source)
 
+        # Real near-joint sectional checks used by all Segmental ULS charts.
+        # These are evaluated about 100 mm inside each adjacent Segment and
+        # remain distinct from the exact physical-joint one-sided audit rows.
+        for side_label, segment, direction in (("L", left, -1.0), ("R", right, 1.0)):
+            segment_start = _finite_float(segment.get("s_start (m)", segment.get("x_start_m")), float("nan"))
+            segment_end = _finite_float(segment.get("s_end (m)", segment.get("x_end_m")), float("nan"))
+            segment_span = max(segment_end - segment_start, 0.0)
+            if segment_span <= 4.0 * tolerance:
+                continue
+            offset = min(0.10, 0.5 * segment_span)
+            offset = max(offset, 2.0 * tolerance)
+            target = joint + direction * offset
+            target = min(max(target, segment_start + tolerance), segment_end - tolerance)
+            for case_name, case_rows in cases.items():
+                source, error, note = _recover_demand_within_segment(
+                    case_rows=case_rows,
+                    target_m=target,
+                    segment_start_m=segment_start,
+                    segment_end_m=segment_end,
+                    tolerance=tolerance,
+                )
+                if error or source is None:
+                    errors.append(f"{case_name} · {joint_id}-{side_label} near-joint section: {error}")
+                    continue
+                # If an imported row already exists at this station it will be
+                # retained directly; do not create a duplicate generated row.
+                if str(source.get("__Demand source") or "").upper() == "EXACT":
+                    continue
+                near_source = dict(source)
+                near_source.update({
+                    "Active": True,
+                    "Station s (m)": target,
+                    "Check Point": f"{joint_id}-{side_label} near 100 mm",
+                    "Case Name": case_name,
+                    "Note": f"{note} Generated sectional point {offset * 1000.0:.0f} mm from physical joint {joint_id}.",
+                    "__Derived flexure check": True,
+                    "__Flexure check type": "NEAR JOINT SECTION",
+                    "__Joint side": side_label,
+                    "__Joint station s (m)": joint,
+                    "__Near joint offset m": offset,
+                    "__Segment override": str(segment.get("Segment") or ""),
+                })
+                output.append(near_source)
+
     # ACI conservative binary development gate transition checks.
     for segment in ordered:
         segment_id = str(segment.get("Segment") or "")
@@ -692,6 +736,7 @@ def _derived_crossbeam_flexure_demands(
                     output.append(boundary_source)
     output.sort(key=lambda row: (str(row.get("Case Name") or ""), _finite_float(row.get("Station s (m)")), str(row.get("Check Point") or "")))
     info.append(f"Generated {sum(str(row.get('__Flexure check type')) == 'PHYSICAL JOINT SIDE' for row in output)} physical-joint side check(s).")
+    info.append(f"Generated {sum(str(row.get('__Flexure check type')) == 'NEAR JOINT SECTION' for row in output)} near-joint sectional check(s) at approximately ±100 mm from physical joints.")
     info.append(f"Generated {sum(str(row.get('__Flexure check type')) == 'DEVELOPMENT BOUNDARY' for row in output)} development-boundary check(s).")
     return output, _dedupe(errors), _dedupe(info)
 

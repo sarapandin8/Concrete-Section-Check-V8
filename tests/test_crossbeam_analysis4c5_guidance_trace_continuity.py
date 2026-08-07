@@ -51,11 +51,11 @@ def test_connected_groups_include_support_checks_but_never_cross_support_interio
     # Full-span routing retains the end and h/2 rows while support interiors
     # remain true trace breaks.
     assert any(group == (0.0, 1.0, 1.75) for group in x_groups)
-    assert any(group == (3.75, 4.0) for group in x_groups)
+    assert any(group == (3.75, 4.0, 4.4) for group in x_groups)
     assert not any(1.75 in group and 3.75 in group for group in x_groups)
 
     # C3 behaves the same way while retaining the right end station.
-    assert any(group == (26.0, 26.25) for group in x_groups)
+    assert any(group == (25.6, 26.0, 26.25) for group in x_groups)
     assert any(group == (28.25, 29.0, 30.0) for group in x_groups)
     assert not any(26.25 in group and 28.25 in group for group in x_groups)
 
@@ -76,7 +76,7 @@ def test_stress_and_transverse_traces_use_evaluated_support_points_for_visual_co
         assert traces
         x_groups = [tuple(float(value) for value in trace.x) for trace in traces]
         assert any(group == (0.0, 1.0, 1.75) for group in x_groups)
-        assert any(group == (3.75, 4.0) for group in x_groups)
+        assert any(group == (3.75, 4.0, 4.4) for group in x_groups)
         assert any(group == (28.25, 29.0, 30.0) for group in x_groups)
         assert not any(1.75 in group and 3.75 in group for group in x_groups)
 
@@ -100,4 +100,20 @@ def test_longitudinal_view_marks_below_threshold_segments_as_not_applicable() ->
     longitudinal_traces = [trace for trace in figure.data if str(trace.name) == "Longitudinal D/C"]
     assert longitudinal_traces
     trace_x = {float(value) for trace in longitudinal_traces for value in trace.x}
-    assert trace_x == {6.0, 8.0, 10.0, 20.0, 22.0, 24.0}
+    assert trace_x == {4.6, 6.0, 8.0, 10.0, 10.4, 19.6, 20.0, 22.0, 24.0, 25.4}
+
+
+def test_segmental_near_joint_section_rows_close_each_trace_without_crossing_joint() -> None:
+    _, preparation, result_df = _result_context()
+    groups = _crossbeam_combined_vt_plot_groups(
+        result_df,
+        list(preparation.support_footprints),
+        include_support_checks=True,
+        construction_method=preparation.construction_method,
+        member_length_m=preparation.member_length_m,
+    )
+    x_groups = [tuple(float(value) for value in pd.to_numeric(group["__x"])) for group in groups]
+    assert any(4.4 in group for group in x_groups)
+    assert any(4.6 in group for group in x_groups)
+    assert not any(4.4 in group and 4.6 in group for group in x_groups)
+

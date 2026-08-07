@@ -84,7 +84,7 @@ def test_torsion_preparation_reuses_accepted_station_and_support_contract() -> N
 
     assert preparation.ready, preparation.errors
     assert len(preparation.derived_support_rows) == 6
-    assert len(preparation.rows) == 15
+    assert len(preparation.rows) == 17
     assert len(preparation.excluded_end_zone_rows) == 0
     assert sum(row.generated_support_check for row in preparation.rows) == 6
     assert any(row.location_type == "PHYSICAL SEGMENT JOINT" for row in preparation.rows)

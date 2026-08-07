@@ -292,10 +292,12 @@ def test_torsion_demand_is_segment_owned_and_omitted_only_inside_supports() -> N
         for value in list(trace.x)
         if value is not None and math.isfinite(float(value))
     ]
-    # Both adjacent Segment traces reach every physical joint except J3, which
-    # lies inside the C2 support footprint and is intentionally omitted.
-    for joint in [4.5, 10.5, 19.5, 25.5]:
-        assert all_x.count(round(joint, 6)) >= 2
+    # Segment-owned traces terminate at real near-joint sectional points about
+    # 100 mm before/after each physical joint. J3 lies inside the C2 support
+    # footprint, so its near-joint points are intentionally omitted.
+    for left, right in [(4.4, 4.6), (10.4, 10.6), (19.4, 19.6), (25.4, 25.6)]:
+        assert round(left, 6) in all_x
+        assert round(right, 6) in all_x
     assert round(15.0, 6) not in all_x
 
     for footprint in preparation.support_footprints:

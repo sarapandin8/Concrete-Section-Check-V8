@@ -169,7 +169,7 @@ def test_preparation_generates_conservative_column_face_and_h2_rows() -> None:
 
     assert preparation.ready, preparation.errors
     assert len(preparation.derived_support_rows) == 6
-    assert len(preparation.rows) == 15
+    assert len(preparation.rows) == 17
     assert len(preparation.excluded_end_zone_rows) == 0
 
     interior = next(row for row in preparation.rows if row.station_m == pytest.approx(5.0))
@@ -211,7 +211,7 @@ def test_run_checks_support_faces_and_h2_without_d_region_status_penalty() -> No
 
     assert result["status"] == "REVIEW"  # physical segment joint remains a separate scope guard
     assert result["support_checks"] == 6
-    assert result["station_checks"] == 15
+    assert result["station_checks"] == 17
 
     interior = next(row for row in result["rows"] if row["Station s (m)"] == pytest.approx(5.0))
     assert interior["Strength status"] == "PASS"
@@ -589,7 +589,7 @@ def test_sectional_result_is_reported_independently_from_physical_joint_review()
     assert result["status"] == "REVIEW"
     assert result["sectional_status"] == "PASS"
     assert result["joint_review_count"] == 2
-    assert result["sectional_checks"] == 14
+    assert result["sectional_checks"] == 16
     assert result["generated_support_checks"] == 6
     assert result["support_checks"] == 6
     assert result["support_joint_reviews"] == 0
