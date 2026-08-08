@@ -23728,7 +23728,7 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
                 "status": "danger" if sectional_status == "FAIL" else ("warning" if sectional_status == "REVIEW" else "ready"),
             },
             {"title": "Required", "value": str(decision_summary.get("required") or "-"), "detail": str(decision_summary.get("label") or ""), "status": "info"},
-            {"title": "Provided", "value": str(decision_summary.get("provided") or "-"), "detail": "Adopted verified reinforcement / capacity source", "status": "info"},
+            {"title": "Provided", "value": str(decision_summary.get("provided") or "-"), "detail": "Adopted calculation source · see station audit", "status": "info"},
             {"title": "Shortfall", "value": str(decision_summary.get("shortfall") or "-"), "detail": "Zero or dash means no numeric area shortfall", "status": "danger" if sectional_status == "FAIL" else "neutral"},
             {
                 "title": "Physical joint transfer",

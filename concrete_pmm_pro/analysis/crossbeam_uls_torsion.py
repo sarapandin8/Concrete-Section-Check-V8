@@ -1008,7 +1008,27 @@ def run_crossbeam_uls_torsion(preparation: CrossbeamTorsionPreparation) -> dict[
         raise ValueError("Crossbeam ULS Torsion preparation is not ready.")
     rows: list[dict[str, Any]] = []
     errors: list[str] = []
-    warnings = list(preparation.warnings)
+    # Some legacy Rebar Template summary fields can be intentionally blank
+    # even though the adopted detailed longitudinal bar layout is available
+    # and is the actual source used by the torsion solver.  Preserve the
+    # warning, but word it so the UI does not contradict a valid calculated
+    # Aℓ-provided value reported from the detailed station source.
+    detailed_longitudinal_templates = {
+        str(row.rebar_template_id or "").strip()
+        for row in preparation.rows
+        if str(row.rebar_template_id or "").strip() and bool(row.rebars)
+    }
+    warnings: list[str] = []
+    quantity_warning_suffix = "actual provided reinforcement quantities are not defined yet."
+    for raw_warning in preparation.warnings:
+        message = str(raw_warning)
+        template_id = message.split(":", 1)[0].strip() if ":" in message else ""
+        if message.endswith(quantity_warning_suffix) and template_id in detailed_longitudinal_templates:
+            warnings.append(
+                f"{template_id}: summary Rebar Template quantity fields are unset; standalone torsion uses the adopted detailed longitudinal bar layout for provided Aℓ, as reported in the station audit."
+            )
+        else:
+            warnings.append(message)
     for row in preparation.rows:
         if row.location_type == "PHYSICAL SEGMENT JOINT":
             rows.append(_physical_joint_result(row))
@@ -1107,7 +1127,8 @@ def run_crossbeam_uls_torsion(preparation: CrossbeamTorsionPreparation) -> dict[
             "ACI 318-19 standalone sectional torsion: threshold, transverse and longitudinal torsion strength, minimum reinforcement, "
             "closed-cage/perimeter detailing, and the 22.7.7 section-size stress limit. Column Face and prestressed h/2 checks are both evaluated conservatively. "
             "Physical segment-joint torsion transfer, compatibility-torsion redistribution, additive shear-plus-torsion reinforcement adoption, "
-            "and ACI 9.5.4.4 flexure-plus-Al interaction remain separate and keep a design-required standalone result at overall REVIEW until Combined V+T closes. "
+            "and ACI 9.5.4.4 flexure-plus-Al interaction remain separate completion gates. They do not downgrade a standalone sectional FAIL; "
+            "when standalone sectional torsion otherwise passes but torsion design is required, overall Crossbeam ULS adoption remains REVIEW/INCOMPLETE until Combined V+T and physical-joint transfer reviews close. "
             "Anchorage/development, PT end zones, fatigue, seismic detailing, and warping torsion remain separate."
         ),
     }
