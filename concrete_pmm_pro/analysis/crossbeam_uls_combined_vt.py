@@ -648,10 +648,77 @@ def _section_combined_row(
         "Notes": " | ".join(_dedupe(notes)),
     }
 
-def _rank(row: Mapping[str, Any]) -> tuple[int, float, float]:
-    priority = {"FAIL": 4, "REVIEW": 3, "PASS": 2}.get(str(row.get("Status") or "REVIEW"), 3)
-    dc = _finite(row.get("Overall D/C value"), -1.0)
-    return priority, dc if math.isfinite(dc) else -1.0, abs(_finite(row.get("V2 kN"), 0.0)) + abs(_finite(row.get("T kN-m"), 0.0))
+def _governing_source_priority(row: Mapping[str, Any]) -> int:
+    """Prefer traceable actual/imported stations when utilization ties.
+
+    Generated rows remain valid engineering checks and are allowed to govern
+    whenever their D/C is genuinely larger.  The priority applies only after
+    status and D/C have tied within the governing tolerance so summary cards,
+    component views, and audit tables resolve the same plateau consistently.
+    """
+
+    demand_source = str(row.get("Demand source") or "").strip().upper()
+    station_type = str(row.get("Station type") or "").strip().upper()
+    if demand_source == "IMPORTED" and not bool(row.get("Generated support check")):
+        return 3
+    if bool(row.get("Generated support check")):
+        return 2
+    if station_type == "NEAR PHYSICAL JOINT":
+        return 1
+    return 0
+
+
+def _select_governing_row(rows: list[Mapping[str, Any]]) -> Mapping[str, Any] | None:
+    """Return one deterministic governing sectional row.
+
+    Decision order:
+    1. engineering status severity;
+    2. maximum Overall D/C;
+    3. for D/C ties within tolerance, imported/actual > generated support >
+       generated near-joint/audit-adjacent station;
+    4. deterministic smallest station, then check-point text.
+
+    This prevents a generated ±100 mm near-joint row from replacing an actual
+    imported station on a flat D/C plateau while preserving a genuinely larger
+    generated-station utilization.
+    """
+
+    if not rows:
+        return None
+    status_priority = {"FAIL": 4, "REVIEW": 3, "PASS": 2}
+    highest_status = max(
+        status_priority.get(str(row.get("Status") or "REVIEW"), 3)
+        for row in rows
+    )
+    status_rows = [
+        row for row in rows
+        if status_priority.get(str(row.get("Status") or "REVIEW"), 3) == highest_status
+    ]
+    finite_dc = [
+        _finite(row.get("Overall D/C value"), float("nan"))
+        for row in status_rows
+    ]
+    finite_dc = [value for value in finite_dc if math.isfinite(value)]
+    if finite_dc:
+        max_dc = max(finite_dc)
+        dc_tolerance = max(1.0e-9, abs(max_dc) * 1.0e-9)
+        candidates = [
+            row for row in status_rows
+            if math.isfinite(_finite(row.get("Overall D/C value"), float("nan")))
+            and abs(_finite(row.get("Overall D/C value"), float("nan")) - max_dc) <= dc_tolerance
+        ]
+    else:
+        candidates = status_rows
+    highest_source = max(_governing_source_priority(row) for row in candidates)
+    candidates = [row for row in candidates if _governing_source_priority(row) == highest_source]
+    return min(
+        candidates,
+        key=lambda row: (
+            _finite(row.get("Station s (m)"), float("inf")),
+            str(row.get("Check Point") or ""),
+            str(row.get("Case") or ""),
+        ),
+    )
 
 
 def run_crossbeam_uls_combined_vt(preparation: CrossbeamCombinedVtPreparation) -> dict[str, Any]:
@@ -702,7 +769,7 @@ def run_crossbeam_uls_combined_vt(preparation: CrossbeamCombinedVtPreparation) -
     sectional = [row for row in rows if row.get("Station type") != "PHYSICAL JOINT SIDE"]
     joint_sides = [row for row in rows if row.get("Station type") == "PHYSICAL JOINT SIDE"]
     joint_locations = sorted({round(_finite(row.get("Joint station s (m)"), row.get("Station s (m)")), 9) for row in joint_sides})
-    governing = max(sectional, key=_rank) if sectional else None
+    governing = _select_governing_row(sectional)
     if errors:
         sectional_status = "REVIEW"
     elif any(row.get("Status") == "FAIL" for row in sectional):

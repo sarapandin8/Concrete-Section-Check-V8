@@ -25305,33 +25305,39 @@ def _crossbeam_combined_vt_component_table(
         axis=1,
     )
     if component == "transverse":
+        frame["Component status"] = frame.get("Transverse status")
         columns = [
-            "Source", "Status", "Station s (m)", "Check Point", "Case", "Segment", "Section ID",
+            "Source", "Component status", "Station s (m)", "Check Point", "Case", "Segment", "Section ID",
             "(Av+2At)/s adopted required mm2/mm", "Unique transverse provided/s mm2/mm",
             "Transverse D/C value", "Torsion station development status", "Torsion support anchorage status",
         ]
     elif component == "longitudinal":
+        frame["Component status"] = frame.get("Longitudinal status")
         applicability = _crossbeam_combined_vt_applicability_state(frame)
         if bool(applicability.get("all_torsion_below_threshold")):
             columns = [
-                "Source", "Longitudinal status", "Station s (m)", "Check Point", "Case", "Segment", "Section ID",
+                "Source", "Component status", "Station s (m)", "Check Point", "Case", "Segment", "Section ID",
                 "T kN-m", "phiTth kN-m", "Torsion threshold D/C value",
                 "Effective prestress mode", "Local fse min MPa", "Local fse max MPa",
             ]
         else:
             columns = [
-                "Source", "Status", "Station s (m)", "Check Point", "Case", "Segment", "Section ID",
+                "Source", "Component status", "Station s (m)", "Check Point", "Case", "Segment", "Section ID",
                 "Al minimum required mm2", "Al provided mm2", "Al minimum D/C value",
                 "Flexure+torsion D/C value", "Longitudinal D/C value",
                 "Ordinary rebar credit", "Development region", "Torsion station development status",
                 "Torsion support anchorage status",
             ]
     else:
+        frame["Component status"] = frame.get("Stress status")
         columns = [
-            "Source", "Status", "Station s (m)", "Check Point", "Case", "Segment", "Section ID",
+            "Source", "Component status", "Station s (m)", "Check Point", "Case", "Segment", "Section ID",
             "V2 kN", "T kN-m", "Stress D/C value",
         ]
-    return frame[[column for column in columns if column in frame.columns]].copy()
+    output = frame[[column for column in columns if column in frame.columns]].copy()
+    if "Component status" in output.columns:
+        output = output.rename(columns={"Component status": "Status"})
+    return output
 
 def _render_crossbeam_uls_combined_vt_workspace() -> None:
     """Render the on-demand ACI Crossbeam combined V+T adoption gate."""
