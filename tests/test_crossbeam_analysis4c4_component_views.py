@@ -164,3 +164,31 @@ def test_workspace_uses_selective_component_views_instead_of_legacy_combined_cha
     assert "_make_crossbeam_uls_combined_vt_component_figure" in source
     assert "_make_crossbeam_uls_combined_vt_joint_review_figure" in source
     assert "_make_crossbeam_uls_combined_vt_figure(" not in source
+
+
+def test_segmental_combined_vt_separates_prepared_support_overlap_from_decision_rows(combined_result) -> None:
+    _, preparation, result_df, result = combined_result
+
+    prepared_rows = list(preparation.shear.rows)
+    prepared_support = [row for row in prepared_rows if bool(getattr(row, "generated_support_check", False))]
+    overlap_review = [
+        row for row in prepared_support
+        if str(getattr(row, "location_type", "")) == "PHYSICAL SEGMENT JOINT"
+    ]
+
+    assert len(prepared_rows) == 42
+    assert len(prepared_support) == 12
+    assert len(overlap_review) == 2
+    assert int(result["total_checks"]) == 40
+    assert int(result["sectional_checks"]) == 30
+    assert int(result["generated_support_checks"]) == 10
+    assert int(result["joint_side_checks"]) == 10
+    assert int(result["joint_review_count"]) == 5
+    assert len(result_df[result_df["Station type"].astype(str) == "PHYSICAL JOINT SIDE"]) == 10
+
+
+def test_combined_vt_ui_uses_calculation_source_wording_not_verified_overclaim() -> None:
+    source = inspect.getsource(_render_crossbeam_uls_combined_vt_workspace)
+    assert "Adopted calculation source · see station audit" in source
+    assert "Adopted verified source" not in source
+    assert "support/joint overlap row(s) remain physical-joint review only" in source

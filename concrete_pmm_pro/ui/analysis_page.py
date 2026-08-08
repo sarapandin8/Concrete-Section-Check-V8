@@ -25369,6 +25369,13 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
         and str(getattr(row, "location_type", "")) != "PHYSICAL SEGMENT JOINT"
         for row in preparation.shear.rows
     )
+    generated_support_total_count = sum(
+        bool(getattr(row, "generated_support_check", False))
+        for row in preparation.shear.rows
+    )
+    support_joint_overlap_count = max(generated_support_total_count - generated_support_count, 0)
+    retained_section_count = max(sectional_source_count - generated_support_count, 0)
+    prepared_total_count = len(preparation.shear.rows)
     cached = st.session_state.get(CROSSBEAM_ULS_COMBINED_VT_RESULT_KEY)
     cached_hash = str(st.session_state.get(CROSSBEAM_ULS_COMBINED_VT_RESULT_HASH_KEY) or "")
     cache_current = isinstance(cached, Mapping) and cached_hash == preparation.fingerprint
@@ -25377,8 +25384,11 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
     with command_cols[0]:
         if preparation.ready:
             st.success(
-                f"Combined V+T source ready — {source_rows:,} imported row(s) expand to {sectional_source_count:,} eligible sectional check(s) "
-                f"+ {joint_side_count:,} one-sided joint audit row(s); {generated_support_count:,} conservative Column Face / h/2 checks are included."
+                f"Combined V+T source ready — {source_rows:,} active station-force row(s) produce "
+                f"{retained_section_count:,} retained sectional row(s) + {generated_support_total_count:,} generated support row(s) "
+                f"+ {joint_side_count:,} one-sided joint audit row(s) = {prepared_total_count:,} prepared row(s). "
+                f"{support_joint_overlap_count:,} support/joint overlap row(s) remain physical-joint review only, leaving "
+                f"{sectional_source_count:,} sectional decision check(s) + {joint_side_count:,} joint-side audit row(s) in the combined result."
             )
         else:
             st.error("Combined V+T source blocked — resolve the Shear, Torsion, Flexure, Loads, Section/Rebar, Tendon, or Effective Prestress source below.")
@@ -25419,7 +25429,15 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
     _render_analysis_summary_strip(
         [
             {"title": "ULS source", "value": "READY" if preparation.ready else "SOURCE BLOCKED", "detail": f"{source_rows:,} active station-force row(s)", "status": "ready" if preparation.ready else "danger", "strong": True},
-            {"title": "Section checks", "value": f"{sectional_source_count:,}", "detail": f"{generated_support_count:,} generated support checks", "status": "info"},
+            {
+                "title": "Section checks",
+                "value": f"{sectional_source_count:,}",
+                "detail": (
+                    f"{retained_section_count:,} retained + {generated_support_count:,} eligible support; "
+                    f"{support_joint_overlap_count:,} support/joint overlap review"
+                ),
+                "status": "info",
+            },
             {
                 "title": "Physical joints",
                 "value": ("REVIEW REQUIRED" if joint_review_count else "NONE") if source_is_precast else "NOT APPLICABLE",
@@ -25459,7 +25477,7 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
             {"title": "Governing D/C", "value": f"{decision_dc:.3f}" if math.isfinite(decision_dc) else "-", "detail": "-" if governing is None else f"{governing.get('Case')} · {governing.get('Segment')} @ s={_format_beam_uls_x(governing.get('Station s (m)'))}", "status": "danger" if math.isfinite(decision_dc) and decision_dc > 1.0 + 1.0e-9 else "info"},
             {"title": "Required action", "value": "REVISE" if sectional_status == "FAIL" else ("REVIEW" if sectional_status == "REVIEW" else "NONE"), "detail": str(decision_summary.get("action") or "Review the controlling check."), "status": "danger" if sectional_status == "FAIL" else ("warning" if sectional_status == "REVIEW" else "ready")},
             {"title": "Required", "value": str(decision_summary.get("required") or "-"), "detail": str(decision_summary.get("label") or ""), "status": "info"},
-            {"title": "Provided", "value": str(decision_summary.get("provided") or "-"), "detail": "Adopted verified source", "status": "info"},
+            {"title": "Provided", "value": str(decision_summary.get("provided") or "-"), "detail": "Adopted calculation source · see station audit", "status": "info"},
             {"title": "Shortfall", "value": str(decision_summary.get("shortfall") or "-"), "detail": "Zero or dash means no numeric area shortfall", "status": "danger" if sectional_status == "FAIL" else "neutral"},
             {
                 "title": "Joint transfer",
@@ -25584,7 +25602,7 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
                     {
                         "title": "Provided / limit",
                         "value": str(component_summary.get("provided") or "-"),
-                        "detail": "Adopted verified source",
+                        "detail": "Adopted calculation source · see station audit",
                         "status": "ready" if component_status in {"PASS", "NOT REQUIRED"} else "neutral",
                     },
                 ],
