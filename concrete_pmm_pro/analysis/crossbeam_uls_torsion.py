@@ -1028,9 +1028,19 @@ def run_crossbeam_uls_torsion(preparation: CrossbeamTorsionPreparation) -> dict[
         except Exception as exc:
             errors.append(f"{row.case_name} at s = {row.station_m:.6f} m: {exc}")
 
-    sectional_rows = [row for row in rows if str(row.get("Location type")) != "PHYSICAL SEGMENT JOINT"]
-    joint_rows = [row for row in rows if str(row.get("Location type")) == "PHYSICAL SEGMENT JOINT"]
     joint_side_rows = [row for row in rows if bool(row.get("Generated joint side check"))]
+    # One-sided physical-joint rows are useful capacity audit evidence, but
+    # they are not standalone sectional decision stations.  Keep them out of
+    # PASS/FAIL counts and governing ranking so a joint-side Aℓ shortfall can
+    # never masquerade as the governing member-sectional torsion result.  The
+    # physical-joint transfer gate remains REVIEW and is closed separately.
+    sectional_rows = [
+        row
+        for row in rows
+        if str(row.get("Location type")) != "PHYSICAL SEGMENT JOINT"
+        and not bool(row.get("Generated joint side check"))
+    ]
+    joint_rows = [row for row in rows if str(row.get("Location type")) == "PHYSICAL SEGMENT JOINT"]
     joint_review_stations = sorted(
         {
             round(_finite(row.get("Joint station s (m)"), float("nan")), 9)
@@ -1045,7 +1055,11 @@ def run_crossbeam_uls_torsion(preparation: CrossbeamTorsionPreparation) -> dict[
     support_sectional = [row for row in generated_support if str(row.get("Location type")) != "PHYSICAL SEGMENT JOINT"]
 
     sectional_governing = max(sectional_rows, key=_rank) if sectional_rows else None
-    overall_governing = max(rows, key=_rank) if rows else None
+    # Overall decision ownership is the sectional route plus explicit
+    # physical-joint REVIEW guards.  Computed one-sided joint capacities are
+    # audit-only and therefore excluded from governing ranking.
+    overall_decision_rows = [row for row in rows if not bool(row.get("Generated joint side check"))]
+    overall_governing = max(overall_decision_rows, key=_rank) if overall_decision_rows else None
     if errors:
         sectional_status = "REVIEW"
     elif any(str(row.get("Status")) == "FAIL" for row in sectional_rows):

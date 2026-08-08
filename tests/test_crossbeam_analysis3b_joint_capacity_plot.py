@@ -214,6 +214,42 @@ def test_all_five_physical_joints_have_two_one_sided_calculation_rows() -> None:
     assert len({round(float(row["phiTth kN-m"]), 6) for row in torsion_j1}) == 2
 
 
+def test_torsion_joint_side_rows_are_audit_only_not_sectional_decisions() -> None:
+    state, _segments = _mixed_30m_state()
+    preparation = build_crossbeam_uls_shear_preparation(state)
+    result = run_crossbeam_uls_torsion(preparation)
+
+    generated_support_total = [
+        row
+        for row in preparation.rows
+        if row.generated_support_check and not row.generated_joint_side_check
+    ]
+    support_joint_overlap = [
+        row for row in generated_support_total if row.location_type == "PHYSICAL SEGMENT JOINT"
+    ]
+    joint_side_rows = [row for row in preparation.rows if row.generated_joint_side_check]
+
+    assert len(preparation.rows) == 42
+    assert len(generated_support_total) == 12
+    assert len(support_joint_overlap) == 2
+    assert len(joint_side_rows) == 10
+
+    # Standalone torsion decisions own only the retained sectional stations
+    # plus eligible support Face/h/2 checks. One-sided physical-joint capacity
+    # rows remain computed audit evidence but cannot govern PASS/FAIL.
+    assert result["sectional_checks"] == 30
+    assert result["design_required_checks"] == 10
+    assert result["below_threshold_checks"] == 20
+    assert result["design_required_checks"] + result["below_threshold_checks"] == result["sectional_checks"]
+    assert not bool(result["sectional_governing_row"].get("Generated joint side check"))
+    assert str(result["sectional_governing_row"].get("Location type")) != "PHYSICAL SEGMENT JOINT"
+
+    audit_rows = list(result["joint_side_rows"])
+    assert len(audit_rows) == 10
+    assert any(math.isfinite(float(row["phiTn kN-m"])) for row in audit_rows)
+    assert any(math.isfinite(float(row["Longitudinal D/C value"])) for row in audit_rows)
+
+
 def test_shear_chart_splits_capacity_by_segment_and_plots_joint_side_values() -> None:
     state, segments = _mixed_30m_state()
     preparation = build_crossbeam_uls_shear_preparation(state)

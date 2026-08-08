@@ -23586,6 +23586,17 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
         and str(getattr(row, "location_type", "") or "") != "PHYSICAL SEGMENT JOINT"
         for row in preparation.rows
     )
+    generated_support_total_count = sum(
+        bool(getattr(row, "generated_support_check", False))
+        and not bool(getattr(row, "generated_joint_side_check", False))
+        for row in preparation.rows
+    )
+    generated_support_joint_review_count = sum(
+        bool(getattr(row, "generated_support_check", False))
+        and not bool(getattr(row, "generated_joint_side_check", False))
+        and str(getattr(row, "location_type", "") or "") == "PHYSICAL SEGMENT JOINT"
+        for row in preparation.rows
+    )
     generated_support_count = sum(
         bool(getattr(row, "generated_support_check", False))
         and not bool(getattr(row, "generated_joint_side_check", False))
@@ -23608,9 +23619,10 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
         if preparation.ready:
             st.success(
                 f"ULS Torsion source ready — {len(preparation.demand_rows):,} active station-force row(s) produce "
-                f"{retained_source_count:,} retained section row(s) + {generated_support_count:,} generated support row(s) "
+                f"{retained_source_count:,} retained section row(s) + {generated_support_total_count:,} generated support row(s) "
                 f"+ {generated_joint_side_count:,} one-sided joint audit row(s) = {len(preparation.rows):,} total calculation row(s); "
-                f"{sectional_check_count:,} sectional decision check(s) and {joint_review_count:,} physical-joint review location(s)."
+                f"{sectional_check_count:,} sectional decision check(s), including {generated_support_count:,} eligible support row(s), "
+                f"and {joint_review_count:,} physical-joint review location(s)."
             )
         else:
             st.error("ULS Torsion source blocked — resolve the Loads, Section/Rebar, Tendon, Effective Prestress, or Column/Support source below.")
@@ -23642,9 +23654,27 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
     _render_analysis_summary_strip(
         [
             {"title": "ULS source", "value": "READY" if preparation.ready else "SOURCE BLOCKED", "detail": f"{len(preparation.demand_rows):,} active station-force row(s)", "status": "ready" if preparation.ready else "danger", "strong": True},
-            {"title": "Sectional decision checks", "value": f"{sectional_check_count:,}", "detail": f"{retained_source_count:,} retained + {generated_support_count:,} generated support", "status": "ready" if preparation.ready else "neutral"},
-            {"title": "Joint-side audit rows", "value": f"{generated_joint_side_count:,}", "detail": f"{joint_review_count:,} physical-joint review location(s)", "status": "warning" if generated_joint_side_count else "neutral"},
-            {"title": "Total calculation rows", "value": f"{len(preparation.rows):,}", "detail": "Section checks + one-sided joint audit", "status": "info"},
+            {
+                "title": "Sectional decision checks",
+                "value": f"{sectional_check_count:,}",
+                "detail": (
+                    f"{retained_source_count:,} retained + {generated_support_count:,} eligible support; "
+                    f"{generated_support_joint_review_count:,} support/joint overlap review"
+                ),
+                "status": "ready" if preparation.ready else "neutral",
+            },
+            {
+                "title": "Joint-side audit rows",
+                "value": f"{generated_joint_side_count:,}",
+                "detail": f"{joint_review_count:,} physical-joint location(s) · excluded from sectional decision",
+                "status": "warning" if generated_joint_side_count else "neutral",
+            },
+            {
+                "title": "Total calculation rows",
+                "value": f"{len(preparation.rows):,}",
+                "detail": f"{retained_source_count:,} retained + {generated_support_total_count:,} support + {generated_joint_side_count:,} joint-side audit",
+                "status": "info",
+            },
         ],
         columns=4,
     )
