@@ -136,7 +136,7 @@ def test_overview_decision_rows_use_each_components_own_governing_source() -> No
     assert by_check["Minimum longitudinal torsion reinforcement Aℓ"]["D/C"] == "2.262"
     assert by_check["Direct flexure + torsional longitudinal tension"]["D/C"] == "0.125"
     assert by_check["Direct flexure + torsional longitudinal tension"]["Required"] == "Mu = 2,500.0 kN·m"
-    assert by_check["Physical-joint V+T transfer"]["Status"] == "REVIEW REQUIRED"
+    assert by_check["Physical-joint V+T transfer"]["Status"] == "NOT EVALUATED"
 
 
 def test_joint_review_map_has_no_artificial_utilization_trace(combined_result) -> None:
@@ -160,9 +160,10 @@ def test_workspace_uses_selective_component_views_instead_of_legacy_combined_cha
     assert "Section-size interaction" in source
     assert "Transverse reinforcement" in source
     assert "Longitudinal reinforcement" in source
-    assert "Joint review" in source
+    assert '"Joint review",' not in source
+    assert "Physical-joint one-sided evidence — NOT EVALUATED" in source
     assert "_make_crossbeam_uls_combined_vt_component_figure" in source
-    assert "_make_crossbeam_uls_combined_vt_joint_review_figure" in source
+    assert "_make_crossbeam_uls_combined_vt_joint_review_figure" not in source
     assert "_make_crossbeam_uls_combined_vt_figure(" not in source
 
 
@@ -191,4 +192,4 @@ def test_combined_vt_ui_uses_calculation_source_wording_not_verified_overclaim()
     source = inspect.getsource(_render_crossbeam_uls_combined_vt_workspace)
     assert "Adopted calculation source · see station audit" in source
     assert "Adopted verified source" not in source
-    assert "support/joint overlap row(s) remain physical-joint review only" in source
+    assert "support/joint overlap row(s) are excluded from sectional decision and retained as audit-only physical-joint evidence" in source

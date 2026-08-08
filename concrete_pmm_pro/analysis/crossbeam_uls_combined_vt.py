@@ -11,9 +11,10 @@ accepted Crossbeam Shear and standalone Torsion station contracts and performs:
 * the existing shear, torsion-strength, minimum-reinforcement, and detailing
   source gates without silently overriding a component failure.
 
-Physical Precast Segment joints remain one-sided REVIEW locations.  This module
-checks adjacent section capacities; it does not design interface shear/torsion
-transfer, shear keys, anchorage zones, or D-regions.
+Physical Precast Segment joints remain one-sided audit locations only.  Joint
+V+T transfer is NOT EVALUATED by this milestone: the module retains adjacent
+section demand/capacity evidence but does not design or certify interface
+shear/torsion transfer, shear keys, anchorage zones, or D-regions.
 """
 
 from __future__ import annotations
@@ -74,6 +75,39 @@ class CrossbeamCombinedVtPreparation:
 
 def _dedupe(items: list[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(str(item).strip() for item in items if str(item).strip()))
+
+
+def _combined_traceability_warnings(
+    torsion: CrossbeamTorsionPreparation,
+    warnings: list[str],
+) -> list[str]:
+    """Keep legacy template warnings truthful for the Combined V+T source.
+
+    Some project files intentionally leave summary Rebar Template quantity
+    fields blank even though the detailed longitudinal layout is available and
+    is the source actually used for Aℓ.  The generic preparation warning is
+    therefore too broad for this combined workspace and would contradict a
+    valid calculated provided area.  Rewrite only that known legacy warning;
+    every other warning is preserved unchanged.
+    """
+
+    detailed_longitudinal_templates = {
+        str(row.rebar_template_id or "").strip()
+        for row in torsion.rows
+        if str(row.rebar_template_id or "").strip() and bool(row.rebars)
+    }
+    quantity_warning_suffix = "actual provided reinforcement quantities are not defined yet."
+    rewritten: list[str] = []
+    for raw_warning in warnings:
+        message = str(raw_warning)
+        template_id = message.split(":", 1)[0].strip() if ":" in message else ""
+        if message.endswith(quantity_warning_suffix) and template_id in detailed_longitudinal_templates:
+            rewritten.append(
+                f"{template_id}: summary Rebar Template quantity fields are unset; Combined V+T uses the adopted detailed longitudinal bar layout for provided Aℓ, while transverse provided capacity comes from the adopted transverse template; see station audit."
+            )
+        else:
+            rewritten.append(message)
+    return rewritten
 
 
 def _finite(value: Any, default: float = float("nan")) -> float:
@@ -159,6 +193,8 @@ def build_crossbeam_uls_combined_vt_preparation(state: Any) -> CrossbeamCombined
     warnings.extend(flexure.warnings)
     info.extend(flexure.info)
 
+    warnings = _combined_traceability_warnings(torsion, warnings)
+
     expected_keys = {_shear_row_key(row) for row in _sectional_source_rows(shear)}
     flexure_by_key: dict[tuple[str, float, str], list[PreparedCrossbeamUlsRow]] = {}
     for row in flexure.rows:
@@ -239,7 +275,7 @@ def _joint_review_row(
 ) -> dict[str, Any]:
     return {
         "Check": "Shear + Torsion",
-        "Status": "REVIEW",
+        "Status": "NOT EVALUATED",
         "Station type": "PHYSICAL JOINT SIDE",
         "Station s (m)": source.station_m,
         "Check Point": source.check_point,
@@ -265,8 +301,8 @@ def _joint_review_row(
         "phiVn kN": float("nan") if shear_row is None else _finite(shear_row.get("φVn kN")),
         "phiTn kN-m": float("nan") if torsion_row is None else _finite(torsion_row.get("phiTn kN-m")),
         "Notes": (
-            "One-sided adjacent section values are retained for audit. Physical-joint V+T transfer, shear keys/interface friction, "
-            "compression, local reinforcement, and D-region behavior require a separate project design and cannot receive PASS here."
+            "One-sided adjacent section values are retained as audit evidence only. Physical-joint V+T transfer is not evaluated by this milestone; "
+            "shear keys/interface friction, compression, local reinforcement, anchorage, and D-region behavior require a separate project design."
         ),
     }
 
@@ -675,12 +711,17 @@ def run_crossbeam_uls_combined_vt(preparation: CrossbeamCombinedVtPreparation) -
         sectional_status = "REVIEW"
     else:
         sectional_status = "PASS"
-    if sectional_status == "FAIL":
-        overall_status = "FAIL"
-    elif sectional_status == "REVIEW" or joint_locations or errors:
-        overall_status = "REVIEW"
-    else:
-        overall_status = "PASS"
+    # Physical-joint transfer is outside the adopted sectional Combined V+T
+    # scope.  One-sided joint rows remain available for audit, but an
+    # undeveloped joint-transfer workflow must not downgrade or over-certify
+    # the sectional result.  Errors inside the sectional route are already
+    # reflected in sectional_status above.
+    overall_status = sectional_status
+    joint_transfer_status = (
+        "NOT EVALUATED"
+        if preparation.construction_method == CONSTRUCTION_METHOD_PRECAST and joint_locations
+        else ("NONE" if preparation.construction_method == CONSTRUCTION_METHOD_PRECAST else "NOT APPLICABLE")
+    )
 
     return {
         "status": overall_status,
@@ -692,6 +733,7 @@ def run_crossbeam_uls_combined_vt(preparation: CrossbeamCombinedVtPreparation) -
         "joint_side_checks": len(joint_sides),
         "joint_review_count": len(joint_locations),
         "joint_review_stations_m": joint_locations,
+        "joint_transfer_status": joint_transfer_status,
         "generated_support_checks": sum(bool(row.get("Generated support check")) for row in sectional),
         "errors": list(_dedupe(errors)),
         "warnings": list(preparation.warnings),
@@ -703,7 +745,7 @@ def run_crossbeam_uls_combined_vt(preparation: CrossbeamCombinedVtPreparation) -
         "pt_end_zone_settings": dict(preparation.pt_end_zone_settings or {}),
         "scope": (
             "ACI 318-19 Crossbeam combined V+T: 9.5.4.3 additive required Av/s + 2At/s checked against the unique physical transverse-leg pool without double counting, 9.5.4.4 prestressed flexure plus concurrent torsional longitudinal tension, "
-            "and 22.7.7 solid/hollow section-size stress limits. Physical-joint transfer, compatibility-torsion redistribution, hollow cage lap/anchorage, "
+            "and 22.7.7 solid/hollow section-size stress limits. Physical-joint transfer is NOT EVALUATED by this milestone; one-sided joint rows are retained as audit evidence only. Compatibility-torsion redistribution, hollow cage lap/anchorage, "
             "PT anchorage/end zones, D-regions, fatigue, and seismic detailing remain separate project checks."
         ),
     }

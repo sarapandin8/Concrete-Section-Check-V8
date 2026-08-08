@@ -24760,10 +24760,13 @@ def _crossbeam_combined_vt_decision_rows(
     phi_mn_text = "-" if not math.isfinite(phi_mn) else f"φMn = {phi_mn:,.1f} kN·m"
 
     is_precast = normalize_construction_method(construction_method) == "Precast Segmental"
-    joint_status = "REVIEW REQUIRED" if is_precast and int(joint_review_count or 0) else ("NONE" if is_precast else "NOT APPLICABLE")
-    joint_required = "Keys/interface/anchorage verification" if is_precast else "No physical segment joints"
-    joint_provided = "Not certified by sectional route" if is_precast else "Cast-in-Place monolithic Zone"
-    joint_action = "Verify one-sided V/T transfer and joint detailing separately." if is_precast else "No physical-joint action is required for Cast-in-Place construction."
+    joint_status = "NOT EVALUATED" if is_precast and int(joint_review_count or 0) else ("NONE" if is_precast else "NOT APPLICABLE")
+    joint_required = "Separate future joint-transfer design" if is_precast else "No physical segment joints"
+    joint_provided = "One-sided audit evidence only" if is_precast else "Cast-in-Place monolithic Zone"
+    joint_action = (
+        "Keep as a separate project check; this milestone does not calculate a joint D/C."
+        if is_precast else "No physical-joint action is required for Cast-in-Place construction."
+    )
 
     return [
         {
@@ -25345,7 +25348,7 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
             "- ACI 318-19 9.5.4.4: the direct exact-axis P-M3 solver checks Mu with an additional concentric tensile force Al,strength·fy.\n"
             "- ACI 318-19 22.7.7: solid sections use root-sum-square shear/torsion stress; hollow walls use direct addition and the local-thickness substitution where applicable.\n"
             "- Precast ordinary-rebar development credit follows the accepted binary Crossbeam rule. Minimum torsion-bar development remains REVIEW where credit is not verified.\n"
-            "- Physical Segment-joint transfer, keys/interface friction, anchorage/end zones, D-regions, fatigue, and seismic detailing remain separate."
+            "- Physical Segment-joint V+T transfer is NOT EVALUATED by this milestone. One-sided joint rows are retained as audit evidence only; keys/interface friction, anchorage/end zones, D-regions, fatigue, and seismic detailing remain separate."
         )
 
     preparation = build_crossbeam_uls_combined_vt_preparation(st.session_state)
@@ -25387,7 +25390,7 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
                 f"Combined V+T source ready — {source_rows:,} active station-force row(s) produce "
                 f"{retained_section_count:,} retained sectional row(s) + {generated_support_total_count:,} generated support row(s) "
                 f"+ {joint_side_count:,} one-sided joint audit row(s) = {prepared_total_count:,} prepared row(s). "
-                f"{support_joint_overlap_count:,} support/joint overlap row(s) remain physical-joint review only, leaving "
+                f"{support_joint_overlap_count:,} support/joint overlap row(s) are excluded from sectional decision and retained as audit-only physical-joint evidence, leaving "
                 f"{sectional_source_count:,} sectional decision check(s) + {joint_side_count:,} joint-side audit row(s) in the combined result."
             )
         else:
@@ -25434,15 +25437,15 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
                 "value": f"{sectional_source_count:,}",
                 "detail": (
                     f"{retained_section_count:,} retained + {generated_support_count:,} eligible support; "
-                    f"{support_joint_overlap_count:,} support/joint overlap review"
+                    f"{support_joint_overlap_count:,} support/joint overlap audit-only"
                 ),
                 "status": "info",
             },
             {
                 "title": "Physical joints",
-                "value": ("REVIEW REQUIRED" if joint_review_count else "NONE") if source_is_precast else "NOT APPLICABLE",
-                "detail": (f"{joint_review_count:,} joint location(s) · {joint_side_count:,} one-sided rows" if source_is_precast else "Cast-in-Place monolithic Zone"),
-                "status": "warning" if source_is_precast and joint_review_count else ("ready" if source_is_precast else "info"),
+                "value": ("NOT EVALUATED" if joint_review_count else "NONE") if source_is_precast else "NOT APPLICABLE",
+                "detail": (f"{joint_review_count:,} joint location(s) · {joint_side_count:,} audit-only one-sided rows" if source_is_precast else "Cast-in-Place monolithic Zone"),
+                "status": "info" if source_is_precast and joint_review_count else ("ready" if source_is_precast else "info"),
             },
             {"title": "Code route", "value": "ACI 9.5.4 / 9.6.4 / 22.7.7", "detail": "Combined transverse · minimum Aℓ · direct longitudinal interaction", "status": "neutral"},
         ],
@@ -25481,9 +25484,12 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
             {"title": "Shortfall", "value": str(decision_summary.get("shortfall") or "-"), "detail": "Zero or dash means no numeric area shortfall", "status": "danger" if sectional_status == "FAIL" else "neutral"},
             {
                 "title": "Joint transfer",
-                "value": ("REVIEW REQUIRED" if int(result.get('joint_review_count') or 0) else "NONE") if construction_method == "Precast Segmental" else "NOT APPLICABLE",
-                "detail": (f"{int(result.get('joint_review_count') or 0):,} physical joint location(s)" if construction_method == "Precast Segmental" else "Cast-in-Place monolithic Zone"),
-                "status": "warning" if construction_method == "Precast Segmental" and int(result.get('joint_review_count') or 0) else ("ready" if construction_method == "Precast Segmental" else "info"),
+                "value": str(result.get("joint_transfer_status") or ("NOT EVALUATED" if construction_method == "Precast Segmental" and int(result.get('joint_review_count') or 0) else "NONE")),
+                "detail": (
+                    f"{int(result.get('joint_review_count') or 0):,} physical joint location(s) · separate future check"
+                    if construction_method == "Precast Segmental" else "Cast-in-Place monolithic Zone"
+                ),
+                "status": "info" if construction_method == "Precast Segmental" and int(result.get('joint_review_count') or 0) else ("ready" if construction_method == "Precast Segmental" else "info"),
             },
         ],
         columns=4,
@@ -25501,25 +25507,34 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
     if sectional_status == "FAIL":
         st.caption(
             f"Combined sectional result is FAIL because {decision_summary.get('label')}. "
-            "Physical-joint transfer and torsion continuation/anchorage reviews remain separate from this numerical failure."
+            "Physical-joint transfer is not evaluated by this milestone and does not alter this sectional numerical failure. "
+            "Torsion continuation/anchorage remains a separate project check."
         )
 
 
     if not result_df.empty:
         st.markdown("#### Combined check review")
         st.caption(
-            "One view shows one engineering meaning. Select the section-size, transverse, longitudinal, or physical-joint review without combining unrelated utilization modes on one chart."
+            "One view shows one engineering meaning. Select the section-size, transverse, or longitudinal sectional check without combining unrelated utilization modes on one chart. "
+            "Physical-joint transfer is outside the current milestone and is retained only as collapsed one-sided audit evidence below."
         )
+        combined_view_options = (
+            "Section-size interaction",
+            "Transverse reinforcement",
+            "Longitudinal reinforcement",
+        )
+        combined_view_key = "crossbeam_analysis4c4_combined_check_view"
+        stored_combined_view = st.session_state.get(combined_view_key)
+        if stored_combined_view is not None and stored_combined_view not in combined_view_options:
+            # ANALYSIS4C7D9 retires the undeveloped Joint review tab.  Migrate
+            # an older persisted selection to the first active sectional view
+            # instead of letting stale widget state break the rerun.
+            st.session_state[combined_view_key] = combined_view_options[0]
         view_label = st.radio(
             "Combined check view",
-            options=[
-                "Section-size interaction",
-                "Transverse reinforcement",
-                "Longitudinal reinforcement",
-                "Joint review",
-            ],
+            options=combined_view_options,
             horizontal=True,
-            key="crossbeam_analysis4c4_combined_check_view",
+            key=combined_view_key,
             label_visibility="collapsed",
         )
         component_by_view = {
@@ -25539,7 +25554,7 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
         )
         member_length_m = _beam_uls_float(result.get("member_length_m"))
         segment_rows = st.session_state.get(CROSSBEAM_SEGMENT_ROWS_KEY, [])
-        guidance_key = component_by_view.get(view_label, "joint")
+        guidance_key = component_by_view[view_label]
         guidance = _crossbeam_combined_vt_view_guidance(
             guidance_key,
             all_torsion_below_threshold=all_torsion_below,
@@ -25670,106 +25685,21 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
                     result_df, component, construction_method=construction_method
                 )
                 st.dataframe(component_table, use_container_width=True, hide_index=True)
-        else:
-            joint_df = result_df[
-                result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str)
-                == "PHYSICAL JOINT SIDE"
-            ].copy()
-            joint_locations = int(result.get("joint_review_count") or 0)
-            is_precast = construction_method == "Precast Segmental"
-            if not is_precast:
-                _render_analysis_summary_strip(
-                    [
-                        {
-                            "title": "Physical-joint V+T transfer",
-                            "value": "NOT APPLICABLE",
-                            "detail": "Cast-in-Place monolithic Zone",
-                            "status": "info",
-                            "strong": True,
-                        },
-                        {
-                            "title": "Joint locations",
-                            "value": "0",
-                            "detail": "No physical segment joints",
-                            "status": "neutral",
-                        },
-                        {
-                            "title": "One-sided audit rows",
-                            "value": "0",
-                            "detail": "No s− / s+ joint evidence required",
-                            "status": "neutral",
-                        },
-                        {
-                            "title": "Required action",
-                            "value": "NONE",
-                            "detail": "Beam-column and PT D-regions remain separate",
-                            "status": "ready",
-                        },
-                    ],
-                    columns=4,
-                )
+        joint_df = result_df[
+            result_df.get("Station type", pd.Series(index=result_df.index, dtype=object)).astype(str)
+            == "PHYSICAL JOINT SIDE"
+        ].copy()
+        if construction_method == "Precast Segmental" and not joint_df.empty:
+            with st.expander("Physical-joint one-sided evidence — NOT EVALUATED", expanded=False):
                 st.info(
-                    "Cast-in-Place construction has no physical segment joints. This review is not applicable; "
-                    "beam-column-joint and PT anchorage D-regions remain separate project checks."
+                    "Physical-joint V+T transfer is outside the current milestone. The rows below retain adjacent-section s− / s+ demand/capacity evidence only; "
+                    "they do not calculate a joint D/C and do not change the sectional Combined V+T PASS/FAIL result."
                 )
-            else:
-                _render_analysis_summary_strip(
-                    [
-                        {
-                            "title": "Physical-joint V+T transfer",
-                            "value": "REVIEW REQUIRED" if joint_locations else "NONE",
-                            "detail": "Not certified by sectional route",
-                            "status": "warning" if joint_locations else "ready",
-                            "strong": True,
-                        },
-                        {
-                            "title": "Joint locations",
-                            "value": f"{joint_locations:,}",
-                            "detail": "Physical Precast Segment joints",
-                            "status": "warning" if joint_locations else "neutral",
-                        },
-                        {
-                            "title": "One-sided audit rows",
-                            "value": f"{len(joint_df):,}",
-                            "detail": "Adjacent-section s− / s+ evidence",
-                            "status": "info",
-                        },
-                        {
-                            "title": "Required action",
-                            "value": "VERIFY" if joint_locations else "NONE",
-                            "detail": "Keys · interface · anchorage · transfer",
-                            "status": "warning" if joint_locations else "ready",
-                        },
-                    ],
-                    columns=4,
-                )
-                if joint_locations:
-                    st.warning(
-                        "No joint D/C is created by this workspace. Verify one-sided V/T transfer, joint keys/interface friction, anchorage, and local D-region detailing separately."
-                    )
-                else:
-                    st.info("No physical-joint review locations are active in the current Precast layout.")
-                _render_beam_uls_static_plotly_figure(
-                    _make_crossbeam_uls_combined_vt_joint_review_figure(
-                        result_df,
-                        support_footprints,
-                        segment_rows,
-                        pt_end_zone_settings=end_zone_settings,
-                        construction_method=construction_method,
-                        member_length_m=member_length_m,
-                    ),
-                    caption=(
-                        "Member map only. J1–Jn are physical Precast Segment joints requiring separate transfer verification. "
-                        "The one-sided table below reports adjacent section demand/capacity evidence and does not certify the joint interface."
-                    ),
-                )
-                if not joint_df.empty:
-                    st.markdown("#### Physical joint one-sided audit")
-                    joint_columns = [
-                        "Check Point", "Joint station s (m)", "Joint side", "Segment", "Section ID",
-                        "V2 kN", "T kN-m", "phiVn kN", "phiTn kN-m", "Status",
-                    ]
-                    st.table(joint_df[[column for column in joint_columns if column in joint_df]])
+                joint_columns = [
+                    "Check Point", "Joint station s (m)", "Joint side", "Segment", "Section ID",
+                    "V2 kN", "T kN-m", "phiVn kN", "phiTn kN-m", "Status",
+                ]
+                st.table(joint_df[[column for column in joint_columns if column in joint_df]])
 
         with st.expander("All combined station results — audit", expanded=False):
             compact_columns = [
