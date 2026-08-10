@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from html import escape
+import math
 import re
 
 import pandas as pd
@@ -13,7 +14,29 @@ import streamlit as st
 from concrete_pmm_pro.core.analysis import AnalysisModeSettings
 from concrete_pmm_pro.core.analysis_modes import analysis_mode_label, is_portal_frame_crossbeam_workflow
 from concrete_pmm_pro.core.design_code import workflow_project_code_label_from_session
-from concrete_pmm_pro.crossbeam.construction_stage import crossbeam_layout_navigation_label
+from concrete_pmm_pro.crossbeam.construction_stage import (
+    CONSTRUCTION_METHOD_CIP,
+    CONSTRUCTION_METHOD_PRECAST,
+    crossbeam_layout_navigation_label,
+    normalize_construction_method,
+)
+from concrete_pmm_pro.crossbeam.prestress_loss import CB_LOSS_ES_CONSTRUCTION_METHOD_KEY
+from concrete_pmm_pro.analysis.crossbeam_uls import (
+    CROSSBEAM_ULS_RESULT_HASH_KEY,
+    CROSSBEAM_ULS_RESULT_KEY,
+)
+from concrete_pmm_pro.analysis.crossbeam_uls_shear import (
+    CROSSBEAM_ULS_SHEAR_RESULT_HASH_KEY,
+    CROSSBEAM_ULS_SHEAR_RESULT_KEY,
+)
+from concrete_pmm_pro.analysis.crossbeam_uls_torsion import (
+    CROSSBEAM_ULS_TORSION_RESULT_HASH_KEY,
+    CROSSBEAM_ULS_TORSION_RESULT_KEY,
+)
+from concrete_pmm_pro.analysis.crossbeam_uls_combined_vt import (
+    CROSSBEAM_ULS_COMBINED_VT_RESULT_HASH_KEY,
+    CROSSBEAM_ULS_COMBINED_VT_RESULT_KEY,
+)
 from concrete_pmm_pro.crossbeam.section_library import (
     CB_SECLIB_ACTIVE_ID_KEY,
     CB_SECLIB_DEFINITIONS_KEY,
@@ -34,6 +57,7 @@ from concrete_pmm_pro.io.project_io import (
 from concrete_pmm_pro.ui.analysis_page import (
     _beam_uls_shear_decision_summary,
     _beam_uls_shear_utilization_display,
+    _crossbeam_governing_component_summary,
     _render_runtime_diagnostics_expander,
     render_analysis_page,
     render_analysis_report_qa,
@@ -2284,6 +2308,23 @@ def _results_beam_uls_completion(state: object) -> tuple[int, int, list[str]]:
     return calculated, len(rows), missing
 
 
+def _results_active_uls_summary_rows(state: object) -> list[dict[str, object]]:
+    if _results_is_crossbeam_workflow(state):
+        return _results_crossbeam_uls_summary_rows(state)
+    return _results_beam_uls_summary_rows(state)
+
+
+def _results_active_uls_completion(state: object) -> tuple[int, int, list[str]]:
+    rows = _results_active_uls_summary_rows(state)
+    calculated = sum(1 for row in rows if bool(row.get("__calculated")))
+    missing = [str(row.get("Check")) for row in rows if not bool(row.get("__calculated"))]
+    return calculated, len(rows), missing
+
+
+def _results_active_uls_module_label(state: object) -> str:
+    return "Crossbeam ULS" if _results_is_crossbeam_workflow(state) else "Beam/Girder ULS"
+
+
 def _results_has_stored_uls_rows(rows: list[dict[str, object]]) -> bool:
     return any(str(row.get("Module", "")).strip().upper().startswith("ULS") for row in rows)
 
@@ -2301,6 +2342,12 @@ def _results_report_handoff_state(state: object, rows: list[dict[str, object]] |
             "status": "warning",
             "value": "Not ready",
             "detail": "No stored Analysis result set is available for Report / QA.",
+        }
+    if any(str(row.get("Status") or "").strip().upper() == "STALE" for row in result_rows):
+        return {
+            "status": "warning",
+            "value": "Not ready",
+            "detail": "At least one stored ULS result belongs to a stale/inactive result context. Recalculate the affected Analysis checks before Report / QA.",
         }
     styles = [_results_style_for_status(row.get("Status")) for row in result_rows]
     if "danger" in styles:
@@ -2347,12 +2394,14 @@ def _results_next_engineering_action(state: object, rows: list[dict[str, object]
             "detail": "At least one stored ULS/SLS result is FAIL, BLOCKED, or exceeds its limit.",
         }
 
-    calculated, total, missing = _results_beam_uls_completion(state)
-    if 0 < calculated < total:
+    calculated, total, missing = _results_active_uls_completion(state)
+    active_summary = _results_active_uls_summary_rows(state)
+    has_stale = any(str(row.get("Status") or "").strip().upper() == "STALE" for row in active_summary)
+    if calculated < total and (calculated > 0 or has_stale):
         return {
             "status": "warning",
             "value": "Complete ULS checks",
-            "detail": "Run missing Beam/Girder ULS checks in Analysis: " + ", ".join(missing),
+            "detail": f"Run missing {_results_active_uls_module_label(state)} checks in Analysis: " + ", ".join(missing),
         }
     if not _results_has_stored_uls_rows(result_rows):
         return {
@@ -2401,12 +2450,12 @@ def _results_required_action_rows(state: object, rows: list[dict[str, object]]) 
                 "Required Action": "Run ULS Strength checks in Analysis before accepting this section or issuing Report / QA.",
             }
         )
-    calculated, total, missing = _results_beam_uls_completion(state)
+    calculated, total, missing = _results_active_uls_completion(state)
     if 0 < calculated < total:
         actions.append(
             {
                 "Priority": "Medium",
-                "Module": "ULS Beam/Girder",
+                "Module": _results_active_uls_module_label(state),
                 "Issue": "Partial ULS result set",
                 "Required Action": "Run missing checks in Analysis: " + ", ".join(missing),
             }
@@ -2656,7 +2705,7 @@ def _results_critical_label(row: Mapping[str, object] | None) -> str:
         return "-"
     module = str(row.get("Module") or "-").strip()
     check = str(row.get("Check") or "").strip()
-    if module == "ULS Beam/Girder" and check:
+    if module in {"ULS Beam/Girder", "ULS Crossbeam"} and check:
         return f"ULS {check}"
     if module == "SLS Stress":
         return "SLS Stress"
@@ -2708,7 +2757,8 @@ def _results_availability_cards(state: object) -> list[dict[str, object]]:
     code_label = _results_design_code_label(state)
     rows = _results_governing_rows(state)
     uls_rows = [row for row in rows if str(row.get("Module", "")).upper().startswith("ULS")]
-    uls_count = sum(1 for entry in beam_cache.values() if isinstance(entry, dict))
+    active_uls_calculated, active_uls_total, _active_uls_missing = _results_active_uls_completion(state)
+    uls_count = active_uls_calculated if _results_is_crossbeam_workflow(state) else sum(1 for entry in beam_cache.values() if isinstance(entry, dict))
     column_vt_available = _results_column_pier_vt_dataframe(state) is not None
     sls_available = _results_sls_stress_available(state)
     sls_complete = _results_sls_complete_for_report(state)
@@ -2717,9 +2767,12 @@ def _results_availability_cards(state: object) -> list[dict[str, object]]:
     handoff = _results_report_handoff_state(state, rows)
     has_blocking_result = any(_results_style_for_status(row.get("Status")) == "danger" for row in rows)
     has_review_result = any(_results_style_for_status(row.get("Status")) == "warning" for row in rows)
-    completeness_detail = ("Column/Pier V+T stored; " if column_vt_available else "") + (
-        f"Beam/Girder ULS checks: {uls_count}" if uls_count else ("PMM stored" if pmm_available else "Run ULS analysis")
-    )
+    if _results_is_crossbeam_workflow(state):
+        completeness_detail = f"Crossbeam ULS checks: {active_uls_calculated}/{active_uls_total}"
+    else:
+        completeness_detail = ("Column/Pier V+T stored; " if column_vt_available else "") + (
+            f"Beam/Girder ULS checks: {uls_count}" if uls_count else ("PMM stored" if pmm_available else "Run ULS analysis")
+        )
     if sls_complete and has_blocking_result:
         completeness_detail += "; SLS complete, but failing check exists"
         completeness_status = "info"
@@ -2735,6 +2788,15 @@ def _results_availability_cards(state: object) -> list[dict[str, object]]:
     else:
         completeness_detail += "; SLS pending"
         completeness_status = "warning"
+
+    if _results_is_crossbeam_workflow(state) and active_uls_calculated < active_uls_total:
+        completeness_status = "warning"
+
+    uls_completeness_value = (
+        f"{active_uls_calculated}/{active_uls_total}"
+        if _results_is_crossbeam_workflow(state)
+        else str(len(uls_rows))
+    )
 
     return [
         {
@@ -2757,7 +2819,7 @@ def _results_availability_cards(state: object) -> list[dict[str, object]]:
         },
         {
             "title": "ULS/SLS completeness",
-            "value": f"ULS {len(uls_rows)} · SLS {'complete' if sls_complete else ('partial' if sls_available else 'no')}",
+            "value": f"ULS {uls_completeness_value} · SLS {'complete' if sls_complete else ('partial' if sls_available else 'no')}",
             "detail": completeness_detail,
             "status": completeness_status,
         },
@@ -2813,6 +2875,321 @@ _RESULTS_BEAM_ULS_DF_KEYS = {
     "Torsion": "torsion_check_df",
     "Shear + Torsion": "combined_vt_df",
 }
+
+_RESULTS_CROSSBEAM_ULS_CHECKS = ["Flexure", "Shear", "Torsion", "Shear + Torsion"]
+_RESULTS_CROSSBEAM_ULS_RESULT_KEYS = {
+    "Flexure": CROSSBEAM_ULS_RESULT_KEY,
+    "Shear": CROSSBEAM_ULS_SHEAR_RESULT_KEY,
+    "Torsion": CROSSBEAM_ULS_TORSION_RESULT_KEY,
+    "Shear + Torsion": CROSSBEAM_ULS_COMBINED_VT_RESULT_KEY,
+}
+_RESULTS_CROSSBEAM_ULS_HASH_KEYS = {
+    "Flexure": CROSSBEAM_ULS_RESULT_HASH_KEY,
+    "Shear": CROSSBEAM_ULS_SHEAR_RESULT_HASH_KEY,
+    "Torsion": CROSSBEAM_ULS_TORSION_RESULT_HASH_KEY,
+    "Shear + Torsion": CROSSBEAM_ULS_COMBINED_VT_RESULT_HASH_KEY,
+}
+
+
+def _results_is_crossbeam_workflow(state: object) -> bool:
+    """Return whether Result Summary should use the Crossbeam stored-result route."""
+
+    if not isinstance(state, Mapping):
+        return False
+    try:
+        return is_portal_frame_crossbeam_workflow(resolve_analysis_mode_settings(state))
+    except Exception:
+        return False
+
+
+def _results_crossbeam_current_construction_method(state: object) -> str:
+    if not isinstance(state, Mapping):
+        return CONSTRUCTION_METHOD_PRECAST
+    return normalize_construction_method(state.get(CB_LOSS_ES_CONSTRUCTION_METHOD_KEY))
+
+
+def _results_crossbeam_result_construction_method(result: Mapping[str, object] | None) -> str | None:
+    """Infer the construction method owned by one stored Crossbeam result.
+
+    D13 must not show a dormant CIP result as if it belonged to Segmental (or
+    vice versa) after a construction-type switch.  Combined V+T stores an
+    explicit construction method; the older component packages are inferred
+    from their stored location semantics without rebuilding/rerunning Analysis.
+    """
+
+    if not isinstance(result, Mapping):
+        return None
+    explicit = str(result.get("construction_method") or "").strip()
+    if explicit:
+        return normalize_construction_method(explicit)
+    credit_basis = str(result.get("flexure_credit_basis") or "").upper()
+    if "TENDON-ONLY" in credit_basis:
+        return CONSTRUCTION_METHOD_PRECAST
+    if "SECTION REBAR" in credit_basis:
+        return CONSTRUCTION_METHOD_CIP
+    rows = result.get("rows")
+    if isinstance(rows, list):
+        location_text = " ".join(
+            str(row.get("Location type") or "")
+            for row in rows[:80]
+            if isinstance(row, Mapping)
+        ).upper()
+        if "PHYSICAL SEGMENT JOINT" in location_text or "SEGMENT INTERIOR" in location_text or "NEAR JOINT" in location_text:
+            return CONSTRUCTION_METHOD_PRECAST
+        if "ZONE INTERIOR" in location_text:
+            return CONSTRUCTION_METHOD_CIP
+    return None
+
+
+def _results_crossbeam_stored_result(state: object, check_name: str) -> Mapping[str, object] | None:
+    if not isinstance(state, Mapping):
+        return None
+    value = state.get(_RESULTS_CROSSBEAM_ULS_RESULT_KEYS[check_name])
+    return value if isinstance(value, Mapping) else None
+
+
+def _results_crossbeam_result_is_active_mode(
+    state: object,
+    result: Mapping[str, object] | None,
+) -> bool:
+    if not isinstance(result, Mapping):
+        return False
+    stored_method = _results_crossbeam_result_construction_method(result)
+    if stored_method is None:
+        return True
+    return stored_method == _results_crossbeam_current_construction_method(state)
+
+
+def _results_crossbeam_governing_row(
+    result: Mapping[str, object] | None,
+    check_name: str,
+) -> dict[str, object]:
+    if not isinstance(result, Mapping):
+        return {}
+    candidate = (
+        result.get("sectional_governing_row")
+        if check_name in {"Shear", "Torsion"}
+        else result.get("governing_row")
+    )
+    if not isinstance(candidate, Mapping):
+        candidate = result.get("governing_row")
+    return dict(candidate) if isinstance(candidate, Mapping) else {}
+
+
+def _results_crossbeam_station_label(row: Mapping[str, object], construction_method: str) -> str:
+    station = row.get("Station s (m)", row.get("Governing x"))
+    try:
+        station_text = f"s={float(station):.3f} m"
+    except (TypeError, ValueError):
+        station_text = "s=-"
+    owner_key = "Rebar Zone" if construction_method == CONSTRUCTION_METHOD_CIP else "Segment"
+    owner = str(row.get(owner_key) or row.get("Segment") or "").strip()
+    point = str(row.get("Check Point") or "").strip()
+    location = str(row.get("Location type") or "").strip()
+    prefix_parts = [value for value in (owner, point or location) if value and value != "-"]
+    return " · ".join([*prefix_parts, station_text]) if prefix_parts else station_text
+
+
+def _results_crossbeam_numeric(row: Mapping[str, object], candidates: list[str]) -> float | None:
+    for candidate in candidates:
+        if candidate not in row:
+            continue
+        try:
+            value = float(row.get(candidate))
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            return value
+    return None
+
+
+def _results_crossbeam_shear_component(row: Mapping[str, object]) -> tuple[str, float | None]:
+    candidates = [
+        ("Shear strength", "Strength D/C value"),
+        ("Shear detailing", "Detailing D/C value"),
+        ("Section-size limit", "Section limit D/C"),
+    ]
+    finite: list[tuple[str, float]] = []
+    for label, column in candidates:
+        value = _results_crossbeam_numeric(row, [column])
+        if value is not None:
+            finite.append((label, value))
+    if not finite:
+        value = _results_crossbeam_numeric(row, ["Governing D/C value", "D/C value"])
+        return ("Sectional shear", value)
+    return max(finite, key=lambda item: item[1])
+
+
+def _results_crossbeam_scope_note(
+    check_name: str,
+    result: Mapping[str, object],
+    construction_method: str,
+) -> str:
+    if check_name == "Flexure":
+        if construction_method == CONSTRUCTION_METHOD_PRECAST:
+            return "Segmental tendon-only sectional Mn; physical-joint transfer and anchorage/D-regions remain separate."
+        return "Cast-in-Place monolithic Zone; ordinary longitudinal rebar + bonded Tendons credited in sectional Mn."
+    if check_name == "Shear":
+        joint_count = int(result.get("joint_review_count") or 0)
+        if construction_method == CONSTRUCTION_METHOD_PRECAST and joint_count:
+            return f"Sectional shear result plus {joint_count} physical-joint location(s) requiring separate transfer review."
+        return "Cast-in-Place monolithic Zone; physical Segment-joint shear transfer is not applicable."
+    if check_name == "Torsion":
+        joint_count = int(result.get("joint_review_count") or 0)
+        if construction_method == CONSTRUCTION_METHOD_PRECAST:
+            suffix = f"; {joint_count} physical-joint location(s) remain separate" if joint_count else ""
+            return "Standalone sectional torsion; Combined V+T and physical-joint transfer are separate checks" + suffix + "."
+        return "Cast-in-Place monolithic Zone; physical Segment-joint torsion transfer is not applicable."
+    joint_status = str(result.get("joint_transfer_status") or "-")
+    if construction_method == CONSTRUCTION_METHOD_PRECAST:
+        return f"Combined sectional V+T; physical-joint V+T transfer = {joint_status} and remains outside this sectional result."
+    return "Cast-in-Place monolithic Zone; physical Segment-joint V+T transfer is NOT APPLICABLE."
+
+
+def _results_crossbeam_summary_row(state: object, check_name: str) -> dict[str, object]:
+    result = _results_crossbeam_stored_result(state, check_name)
+    active_method = _results_crossbeam_current_construction_method(state)
+    if result is None:
+        return {
+            "Module": "ULS Crossbeam",
+            "Check": check_name,
+            "Status": "NOT CALCULATED",
+            "Governing Check": "-",
+            "Governing Case": "-",
+            "Station / Point": "-",
+            "Demand": "-",
+            "Capacity / Limit": "-",
+            "D/C / Util.": "-",
+            "Required Action": f"Run {check_name} in Analysis → ULS Strength.",
+            "Scope": f"{active_method} stored-result route.",
+            "Source": f"Analysis → ULS Strength → {check_name}",
+            "Code Basis": _results_design_code_label(state),
+            "__calculated": False,
+            "__stored": False,
+        }
+
+    stored_method = _results_crossbeam_result_construction_method(result) or active_method
+    if not _results_crossbeam_result_is_active_mode(state, result):
+        return {
+            "Module": "ULS Crossbeam",
+            "Check": check_name,
+            "Status": "STALE",
+            "Governing Check": "Stored result belongs to another construction type",
+            "Governing Case": "-",
+            "Station / Point": "-",
+            "Demand": "-",
+            "Capacity / Limit": "-",
+            "D/C / Util.": "-",
+            "Required Action": f"Recalculate {check_name} after the construction-type switch.",
+            "Scope": f"Stored: {stored_method}; active: {active_method}. Dormant result is not accepted as current.",
+            "Source": f"Analysis → ULS Strength → {check_name}",
+            "Code Basis": _results_design_code_label(state),
+            "__calculated": False,
+            "__stored": True,
+        }
+
+    row = _results_crossbeam_governing_row(result, check_name)
+    status = str(result.get("status") or result.get("sectional_status") or row.get("Status") or "REVIEW")
+    case = _results_scalar(row.get("Case") or row.get("Case Name"))
+    station = _results_crossbeam_station_label(row, active_method)
+    code_basis = _results_design_code_label(state)
+    scope = _results_crossbeam_scope_note(check_name, result, active_method)
+
+    governing_check = check_name
+    dc: float | None = None
+    demand = "-"
+    capacity = "-"
+    action = "Review stored Analysis audit output before final issue."
+
+    if check_name == "Flexure":
+        governing_check = "Direct P–M3 flexure"
+        row_code = _results_scalar(row.get("Code basis"))
+        code_basis = row_code if row_code != "-" else f"{_results_design_code_label(state)} · direct P–M3"
+        dc = _results_crossbeam_numeric(row, ["D/C value", "Utilization value", "Flexural D/C"])
+        mu = _results_crossbeam_numeric(row, ["M3 kN-m", "Demand kN-m"])
+        phi_mn = _results_crossbeam_numeric(row, ["Capacity kN-m", "φMn kN-m"])
+        demand = "-" if mu is None else f"Mu = {mu:,.1f} kN·m"
+        capacity = "-" if phi_mn is None else f"φMn = {phi_mn:,.1f} kN·m"
+        if "FAIL" in status.upper():
+            action = "Revise sectional flexural capacity, tendon/rebar layout, or demand in the source Flexure check."
+        elif active_method == CONSTRUCTION_METHOD_PRECAST:
+            action = "Review tendon-only sectional result; physical-joint transfer and anchorage/D-regions remain separate."
+        else:
+            action = "Review monolithic rebar+tendon sectional result and audit evidence before final issue."
+    elif check_name == "Shear":
+        governing_check, dc = _results_crossbeam_shear_component(row)
+        row_code = _results_scalar(row.get("Code basis"))
+        code_basis = row_code if row_code != "-" else f"{_results_design_code_label(state)} · sectional shear"
+        vu = _results_crossbeam_numeric(row, ["Abs demand kN", "Demand kN", "V2 kN"])
+        phi_vn = _results_crossbeam_numeric(row, ["φVn kN", "Capacity"])
+        demand = "-" if vu is None else f"Vu = {abs(vu):,.1f} kN"
+        capacity = "-" if phi_vn is None else f"φVn = {phi_vn:,.1f} kN"
+        sectional_status = str(result.get("sectional_status") or row.get("Status") or status)
+        joint_count = int(result.get("joint_review_count") or 0)
+        if "FAIL" in sectional_status.upper():
+            action = "Revise the governing sectional shear strength/detailing gate in Analysis."
+        elif active_method == CONSTRUCTION_METHOD_PRECAST and joint_count:
+            action = f"Sectional shear is {sectional_status}; verify physical-joint shear transfer separately at {joint_count} joint location(s)."
+        else:
+            action = "Review Column Face / ACI h/2 sectional shear evidence before final issue."
+    elif check_name == "Torsion":
+        decision = _crossbeam_governing_component_summary(row, combined=False)
+        governing_check = str(decision.get("label") or "Standalone torsion")
+        decision_code = str(decision.get("code") or "-")
+        code_basis = decision_code if decision_code != "-" else _results_design_code_label(state)
+        dc_value = decision.get("dc")
+        try:
+            dc = float(dc_value)
+            if not math.isfinite(dc):
+                dc = None
+        except (TypeError, ValueError):
+            dc = None
+        demand = str(decision.get("required") or "-")
+        capacity = str(decision.get("provided") or "-")
+        action = str(decision.get("action") or action)
+        if active_method == CONSTRUCTION_METHOD_PRECAST and int(result.get("joint_review_count") or 0) and "FAIL" not in status.upper():
+            action += " Physical-joint torsion transfer remains a separate review."
+    else:
+        decision = _crossbeam_governing_component_summary(row, combined=True)
+        governing_check = str(decision.get("label") or "Combined V+T")
+        decision_code = str(decision.get("code") or "-")
+        code_basis = decision_code if decision_code != "-" else _results_design_code_label(state)
+        dc_value = decision.get("dc")
+        try:
+            dc = float(dc_value)
+            if not math.isfinite(dc):
+                dc = None
+        except (TypeError, ValueError):
+            dc = None
+        demand = str(decision.get("required") or "-")
+        capacity = str(decision.get("provided") or "-")
+        action = str(decision.get("action") or action)
+        if active_method == CONSTRUCTION_METHOD_PRECAST:
+            action += " Physical-joint V+T transfer is not evaluated by this sectional milestone."
+
+    return {
+        "Module": "ULS Crossbeam",
+        "Check": check_name,
+        "Status": status,
+        "Governing Check": governing_check,
+        "Governing Case": case,
+        "Station / Point": station,
+        "Demand": demand,
+        "Capacity / Limit": capacity,
+        "D/C / Util.": "-" if dc is None else f"{dc:.3f}",
+        "Required Action": action,
+        "Scope": scope,
+        "Source": f"Analysis → ULS Strength → {check_name}",
+        "Code Basis": code_basis,
+        "__calculated": bool(row),
+        "__stored": True,
+    }
+
+
+def _results_crossbeam_uls_summary_rows(state: object) -> list[dict[str, object]]:
+    """Normalize stored Crossbeam ULS results without invoking any solver/preparation builder."""
+
+    return [_results_crossbeam_summary_row(state, check_name) for check_name in _RESULTS_CROSSBEAM_ULS_CHECKS]
 
 
 def _results_scalar(value: object) -> str:
@@ -3048,6 +3425,111 @@ def _render_results_beam_uls_dashboard(state: object) -> None:
     )
 
 
+def _render_results_crossbeam_uls_dashboard(state: object) -> None:
+    rows = _results_crossbeam_uls_summary_rows(state)
+    current_rows = [row for row in rows if bool(row.get("__calculated"))]
+    stored_or_stale = [row for row in rows if bool(row.get("__stored"))]
+    if not current_rows and not stored_or_stale:
+        st.markdown(
+            _RESULTS_DASHBOARD_CSS
+            + '<div class="cpmm-results-empty">No stored Crossbeam ULS results are available yet. Run Flexure, Shear, Torsion, and Shear + Torsion in Analysis first.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    method = _results_crossbeam_current_construction_method(state)
+    calculated = len(current_rows)
+    cards = [
+        {
+            "title": "Construction type",
+            "value": method,
+            "detail": "active Crossbeam result ownership",
+            "status": "info",
+        },
+        {
+            "title": "ULS completeness",
+            "value": f"{calculated}/4 current",
+            "detail": "Flexure · Shear · Torsion · Shear + Torsion",
+            "status": "ready" if calculated == 4 else "warning",
+        },
+        {
+            "title": "Runtime mode",
+            "value": "READ-ONLY",
+            "detail": "Result Summary reads stored Analysis packages and does not rerun Crossbeam solvers",
+            "status": "neutral",
+        },
+        {
+            "title": "Joint semantics",
+            "value": "SEPARATE" if method == CONSTRUCTION_METHOD_PRECAST else "NOT APPLICABLE",
+            "detail": (
+                "physical-joint transfer remains outside sectional ULS results"
+                if method == CONSTRUCTION_METHOD_PRECAST
+                else "Cast-in-Place Zones are monolithic property regions"
+            ),
+            "status": "info",
+        },
+    ]
+    render_metric_cards(cards)
+
+    card_html: list[str] = []
+    for row in rows:
+        status = str(row.get("Status") or "-")
+        style = _results_style_for_status(status)
+        card_html.append(
+            f'<div class="cpmm-results-beam-card {style}">'
+            f'<div class="cpmm-results-beam-kicker">{escape(str(row.get("Check", "-")))}</div>'
+            f'<div class="cpmm-results-beam-title">{_results_status_pill(status)}</div>'
+            f'<div class="cpmm-results-beam-metric"><strong>Controls</strong>: {escape(str(row.get("Governing Check", "-")))}</div>'
+            f'<div class="cpmm-results-beam-metric"><strong>Case</strong>: {escape(str(row.get("Governing Case", "-")))}</div>'
+            f'<div class="cpmm-results-beam-metric"><strong>Station</strong>: {escape(str(row.get("Station / Point", "-")))}</div>'
+            f'<div class="cpmm-results-beam-metric"><strong>D/C</strong>: {escape(str(row.get("D/C / Util.", "-")))}</div>'
+            f'<div class="cpmm-results-beam-action">{escape(str(row.get("Required Action", "-")))}</div>'
+            '</div>'
+        )
+    st.markdown(
+        _RESULTS_DASHBOARD_CSS + '<div class="cpmm-results-beam-grid">' + "".join(card_html) + "</div>",
+        unsafe_allow_html=True,
+    )
+
+    display_rows = [
+        {
+            "Check": row["Check"],
+            "Status": row["Status"],
+            "Governing Check": row.get("Governing Check", "-"),
+            "Code Basis": row.get("Code Basis", _results_design_code_label(state)),
+            "Governing Case": row["Governing Case"],
+            "Station / Point": row["Station / Point"],
+            "Demand": row["Demand"],
+            "Capacity / Limit": row["Capacity / Limit"],
+            "D/C / Util.": row["D/C / Util."],
+            "Scope": row.get("Scope", "-"),
+            "Required Action": row["Required Action"],
+        }
+        for row in rows
+        if bool(row.get("__stored"))
+    ]
+    st.markdown(
+        _RESULTS_DASHBOARD_CSS
+        + _results_html_table(
+            display_rows,
+            [
+                "Check",
+                "Status",
+                "Governing Check",
+                "Code Basis",
+                "Governing Case",
+                "Station / Point",
+                "Demand",
+                "Capacity / Limit",
+                "D/C / Util.",
+                "Scope",
+                "Required Action",
+            ],
+        ),
+        unsafe_allow_html=True,
+    )
+
+
 def _results_add_beam_uls_rows(state: object, rows: list[dict[str, object]]) -> None:
     for row in _results_beam_uls_summary_rows(state):
         if bool(row.get("__calculated")):
@@ -3062,6 +3544,25 @@ def _results_add_beam_uls_rows(state: object, rows: list[dict[str, object]]) -> 
                     "Capacity / Limit": row["Capacity / Limit"],
                     "D/C / Util.": row["D/C / Util."],
                     "Source": row["Source"],
+                    "Code Basis": row.get("Code Basis", _results_design_code_label(state)),
+                }
+            )
+
+
+def _results_add_crossbeam_uls_rows(state: object, rows: list[dict[str, object]]) -> None:
+    for row in _results_crossbeam_uls_summary_rows(state):
+        if bool(row.get("__calculated")) or str(row.get("Status") or "").upper() == "STALE":
+            rows.append(
+                {
+                    "Module": row["Module"],
+                    "Check": row["Check"],
+                    "Status": row["Status"],
+                    "Governing Case": row["Governing Case"],
+                    "Station / Point": row["Station / Point"],
+                    "Demand": row["Demand"],
+                    "Capacity / Limit": row["Capacity / Limit"],
+                    "D/C / Util.": row["D/C / Util."],
+                    "Source": row["Source"] + " · " + row.get("Scope", ""),
                     "Code Basis": row.get("Code Basis", _results_design_code_label(state)),
                 }
             )
@@ -3302,9 +3803,12 @@ def _results_add_sls_rows(state: object, rows: list[dict[str, object]]) -> None:
 
 def _results_governing_rows(state: object) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
-    _results_add_pmm_rows(state, rows)
-    _results_add_column_pier_vt_rows(state, rows)
-    _results_add_beam_uls_rows(state, rows)
+    if _results_is_crossbeam_workflow(state):
+        _results_add_crossbeam_uls_rows(state, rows)
+    else:
+        _results_add_pmm_rows(state, rows)
+        _results_add_column_pier_vt_rows(state, rows)
+        _results_add_beam_uls_rows(state, rows)
     _results_add_sls_rows(state, rows)
     return rows
 
@@ -3328,15 +3832,16 @@ def _results_executive_status(rows: list[dict[str, object]], state: object | Non
             "detail": detail,
         }
 
-    beam_rows = _results_beam_uls_summary_rows(state) if state is not None else []
-    beam_calculated = sum(1 for row in beam_rows if bool(row.get("__calculated")))
-    beam_total = len(beam_rows)
-    if 0 < beam_calculated < beam_total:
-        missing = ", ".join(str(row.get("Check")) for row in beam_rows if not bool(row.get("__calculated")))
+    uls_summary_rows = _results_active_uls_summary_rows(state) if state is not None else []
+    uls_calculated = sum(1 for row in uls_summary_rows if bool(row.get("__calculated")))
+    uls_total = len(uls_summary_rows)
+    has_stale_uls = any(str(row.get("Status") or "").strip().upper() == "STALE" for row in uls_summary_rows)
+    if uls_calculated < uls_total and (uls_calculated > 0 or has_stale_uls):
+        missing = ", ".join(str(row.get("Check")) for row in uls_summary_rows if not bool(row.get("__calculated")))
         return {
             "status": "warning",
             "title": "Overall Status: INCOMPLETE",
-            "detail": f"{beam_calculated}/{beam_total} Beam/Girder ULS checks have stored results. Missing checks: {missing}.",
+            "detail": f"{uls_calculated}/{uls_total} {_results_active_uls_module_label(state)} checks have current stored results. Missing/stale checks: {missing}.",
         }
 
     if "warning" in styles:
@@ -3345,11 +3850,11 @@ def _results_executive_status(rows: list[dict[str, object]], state: object | Non
             "title": "Overall Status: REVIEW",
             "detail": "Some checks are calculated but still require engineering review, detailing confirmation, or missing companion checks.",
         }
-    if beam_total > 0 and beam_calculated == beam_total and state is not None and not _results_sls_stress_available(state):
+    if uls_total > 0 and uls_calculated == uls_total and state is not None and not _results_sls_stress_available(state):
         return {
             "status": "warning",
             "title": "Overall Status: INCOMPLETE",
-            "detail": "All Beam/Girder ULS checks have stored results. SLS serviceability is not calculated yet.",
+            "detail": f"All {_results_active_uls_module_label(state)} checks have current stored results. SLS serviceability is not calculated yet.",
         }
     if state is not None and not _results_sls_stress_available(state):
         return {
@@ -3394,6 +3899,29 @@ def _render_results_executive_summary(rows: list[dict[str, object]], state: obje
 
 
 def _render_results_module_tables(state: object) -> None:
+    if _results_is_crossbeam_workflow(state):
+        stored = [
+            (check_name, _results_crossbeam_stored_result(state, check_name))
+            for check_name in _RESULTS_CROSSBEAM_ULS_CHECKS
+        ]
+        if any(isinstance(result, Mapping) for _check, result in stored):
+            with st.expander("ULS Crossbeam stored result tables", expanded=False):
+                for check_name, result in stored:
+                    if not isinstance(result, Mapping):
+                        continue
+                    st.markdown(f"**{check_name}**")
+                    summary = {
+                        "status": result.get("status", "-"),
+                        "sectional_status": result.get("sectional_status", "-"),
+                        "construction_method": _results_crossbeam_result_construction_method(result) or "-",
+                        "joint_review_count": result.get("joint_review_count", result.get("physical_joint_side_checks", 0)),
+                        "joint_transfer_status": result.get("joint_transfer_status", "-"),
+                    }
+                    st.write(summary)
+                    raw_rows = result.get("rows")
+                    if isinstance(raw_rows, list) and raw_rows:
+                        st.dataframe(pd.DataFrame(raw_rows), use_container_width=True, hide_index=True)
+
     cache = state.get("_beam_girder_uls_manual_calculation_cache")
     if isinstance(cache, dict) and cache:
         with st.expander("ULS Beam/Girder stored result tables", expanded=False):
@@ -3578,9 +4106,9 @@ def _render_results_diagram_review(state: object) -> None:
 
 
 def _render_results_traceability(state: object) -> None:
-    beam_calculated, beam_total, _missing = _results_beam_uls_completion(state)
+    uls_calculated, uls_total, _missing = _results_active_uls_completion(state)
     railway_sls_available = _results_railway_u_girder_sls_decision_dataframe(state) is not None
-    stored_available = bool(beam_calculated) or railway_sls_available or _results_column_pier_vt_dataframe(state) is not None or state.get("serviceability_summary") is not None
+    stored_available = bool(uls_calculated) or railway_sls_available or _results_column_pier_vt_dataframe(state) is not None or state.get("serviceability_summary") is not None
     runtime_status = str(state.get("analysis_runtime_last_status") or "").strip()
     if not runtime_status:
         runtime_status = "Read-only summary; stored analysis results available" if stored_available else "Read-only summary; no stored solver result"
@@ -3589,13 +4117,29 @@ def _render_results_traceability(state: object) -> None:
         {"Item": "Design code", "Value": _results_design_code_label(state)},
         {"Item": "Project input hash", "Value": str(state.get("project_input_hash") or state.get("analysis_input_hash") or "-")},
         {"Item": "PMM cache hash", "Value": str(state.get("pmm_last_analysis_hash") or "-")},
-        {"Item": "Beam/Girder ULS stored checks", "Value": f"{beam_calculated}/{beam_total}"},
+        {"Item": f"{_results_active_uls_module_label(state)} current stored checks", "Value": f"{uls_calculated}/{uls_total}"},
         {"Item": "Column/Pier V+T stored", "Value": "Yes" if _results_column_pier_vt_dataframe(state) is not None else "No"},
         {"Item": "Elastic SLS cache hash", "Value": str(state.get("serviceability_summary_hash") or "-")},
         {"Item": "Railway U-Girder staged SLS stored", "Value": "Yes" if railway_sls_available else "No"},
         {"Item": "Result Summary runtime", "Value": runtime_status},
         {"Item": "Runtime last run", "Value": str(state.get("analysis_runtime_last_run_at") or "-")},
     ]
+    if _results_is_crossbeam_workflow(state):
+        trace_rows.insert(2, {"Item": "Crossbeam construction type", "Value": _results_crossbeam_current_construction_method(state)})
+        for check_name in _RESULTS_CROSSBEAM_ULS_CHECKS:
+            result = _results_crossbeam_stored_result(state, check_name)
+            hash_value = str(state.get(_RESULTS_CROSSBEAM_ULS_HASH_KEYS[check_name]) or "-")
+            stored_method = _results_crossbeam_result_construction_method(result) if isinstance(result, Mapping) else None
+            trace_rows.append(
+                {
+                    "Item": f"Crossbeam {check_name} stored package",
+                    "Value": (
+                        f"{stored_method or 'Unknown'} · hash {hash_value}"
+                        if isinstance(result, Mapping)
+                        else "Not calculated"
+                    ),
+                }
+            )
     st.dataframe(pd.DataFrame(trace_rows), use_container_width=True, hide_index=True)
 
 
@@ -3633,18 +4177,21 @@ def render_results_workspace() -> None:
             "Read-only strength result summary from cached Analysis outputs.",
             mark="U",
         )
-        has_column_vt = _render_results_column_pier_vt_dashboard(st.session_state)
-        has_beam_uls = any(bool(row.get("__calculated")) for row in _results_beam_uls_summary_rows(st.session_state))
-        if has_beam_uls:
-            if has_column_vt:
-                st.markdown("##### Beam/Girder stored ULS summaries")
-            _render_results_beam_uls_dashboard(st.session_state)
-        elif not has_column_vt:
-            st.markdown(
-                _RESULTS_DASHBOARD_CSS
-                + '<div class="cpmm-results-empty">No stored ULS result rows are available yet. Run ULS Strength checks in Analysis, then return here for the read-only summary.</div>',
-                unsafe_allow_html=True,
-            )
+        if _results_is_crossbeam_workflow(st.session_state):
+            _render_results_crossbeam_uls_dashboard(st.session_state)
+        else:
+            has_column_vt = _render_results_column_pier_vt_dashboard(st.session_state)
+            has_beam_uls = any(bool(row.get("__calculated")) for row in _results_beam_uls_summary_rows(st.session_state))
+            if has_beam_uls:
+                if has_column_vt:
+                    st.markdown("##### Beam/Girder stored ULS summaries")
+                _render_results_beam_uls_dashboard(st.session_state)
+            elif not has_column_vt:
+                st.markdown(
+                    _RESULTS_DASHBOARD_CSS
+                    + '<div class="cpmm-results-empty">No stored ULS result rows are available yet. Run ULS Strength checks in Analysis, then return here for the read-only summary.</div>',
+                    unsafe_allow_html=True,
+                )
     elif active_subpage == "SLS Summary":
         render_section_bar(
             "SLS Summary Dashboard",
