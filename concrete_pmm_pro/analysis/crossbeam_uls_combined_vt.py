@@ -812,7 +812,12 @@ def run_crossbeam_uls_combined_vt(preparation: CrossbeamCombinedVtPreparation) -
         "pt_end_zone_settings": dict(preparation.pt_end_zone_settings or {}),
         "scope": (
             "ACI 318-19 Crossbeam combined V+T: 9.5.4.3 additive required Av/s + 2At/s checked against the unique physical transverse-leg pool without double counting, 9.5.4.4 prestressed flexure plus concurrent torsional longitudinal tension, "
-            "and 22.7.7 solid/hollow section-size stress limits. Physical-joint transfer is NOT EVALUATED by this milestone; one-sided joint rows are retained as audit evidence only. Compatibility-torsion redistribution, hollow cage lap/anchorage, "
-            "PT anchorage/end zones, D-regions, fatigue, and seismic detailing remain separate project checks."
+            "and 22.7.7 solid/hollow section-size stress limits. "
+            + (
+                "Physical-joint transfer is NOT EVALUATED by this milestone; one-sided joint rows are retained as audit evidence only. "
+                if preparation.construction_method == CONSTRUCTION_METHOD_PRECAST
+                else "Cast-in-Place Zone boundaries are monolithic property boundaries; physical Segment-joint transfer is NOT APPLICABLE and no one-sided joint rows are generated. "
+            )
+            + "Compatibility-torsion redistribution, hollow cage lap/anchorage, PT anchorage/end zones, D-regions, fatigue, and seismic detailing remain separate project checks."
         ),
     }

@@ -2051,6 +2051,10 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
 
     if not preparation.ready:
         raise ValueError("Crossbeam ULS Shear preparation is not ready.")
+    is_precast = any(
+        "SEGMENT" in str(getattr(row, "location_type", "") or "").upper()
+        for row in preparation.rows
+    )
     result_rows: list[dict[str, Any]] = []
     errors: list[str] = []
     warnings: list[str] = list(preparation.warnings)
@@ -2290,9 +2294,13 @@ def run_crossbeam_uls_shear(preparation: CrossbeamShearPreparation) -> dict[str,
             "ULS sectional one-way shear only. ACI 318-19 9.4.3 is applied conservatively by checking both each available beam-side "
             "Column Face and the h/2 critical section measured outward from that face; the more severe result governs. "
             "Support-footprint interiors are omitted from ordinary beam-shear traces, while every valid end station from s = 0 to s = L remains eligible for sectional governing. The beam-column joint/support-footprint D-region itself remains "
-            "outside this sectional check and does not reduce a completed sectional PASS to REVIEW. Exact Precast physical-joint shear transfer "
-            "is reported as a separate REVIEW item and does not hide the governing sectional D/C. Post-tensioning anchorage/end zones, hanger "
-            "reinforcement, anchorage/development, torsion, combined V+T, fatigue, and seismic detailing remain separate. The ACI 22.5.6.2 "
+            "outside this sectional check and does not reduce a completed sectional PASS to REVIEW. "
+            + (
+                "Exact Precast physical-joint shear transfer is reported as a separate REVIEW item and does not hide the governing sectional D/C. "
+                if is_precast
+                else "Cast-in-Place Zone boundaries are monolithic property boundaries; physical segment-joint shear transfer is NOT APPLICABLE. "
+            )
+            + "Post-tensioning anchorage/end zones, hanger reinforcement, anchorage/development, torsion, combined V+T, fatigue, and seismic detailing remain separate. The ACI 22.5.6.2 "
             "PASS route requires fully transferred effective prestress and the prestress-dominance applicability gate; refined Vci/Vcw is not "
             "synthesized from incomplete load-stage sources."
         ),

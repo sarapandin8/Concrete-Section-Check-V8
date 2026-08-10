@@ -21602,6 +21602,10 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
         0,
         len(preparation.rows) - len(preparation.demand_rows) - generated_support_count,
     )
+    retained_source_count = max(
+        0,
+        len(preparation.rows) - generated_support_count - generated_joint_aux_count,
+    )
 
     source_cards = [
         {"title": "ULS source", "value": "READY" if preparation.ready else "SOURCE BLOCKED", "detail": "Crossbeam Loads · canonical kN/kN-m", "status": "ready" if preparation.ready else "danger", "strong": True},
@@ -21609,7 +21613,8 @@ def _render_crossbeam_uls_flexure_workspace() -> None:
             "title": "Total check rows",
             "value": f"{len(preparation.rows):,}",
             "detail": (
-                f"{len(preparation.demand_rows):,} imported sources + {generated_support_count:,} Column Faces + "
+                f"{len(preparation.demand_rows):,} imported source rows → {retained_source_count:,} retained + "
+                f"{generated_support_count:,} Column Face checks + "
                 + (
                     f"{generated_joint_aux_count:,} joint/near-joint rows after station eligibility"
                     if construction_method == CONSTRUCTION_METHOD_PRECAST
@@ -22382,7 +22387,7 @@ def _render_crossbeam_uls_shear_workspace() -> None:
             "- ACI 318-19 22.5.6.2 approximate prestressed Vc is used only when its Aps fse applicability gate is satisfied and the effective prestress is fully transferred to the concrete.\n"
             "- Provided transverse reinforcement is checked for Vs, Av,min, spacing along the member, spacing across the width, and the 22.5.1.2 section limit.\n"
             "- Support-footprint interiors are omitted from sectional beam-shear checks. Each available beam-side Column Face and the ACI h/2 section measured outward from that face are generated and checked automatically.\n"
-            "- Exact Precast physical-joint shear transfer is reported separately as REVIEW REQUIRED; it does not hide or replace the governing sectional D/C.\n"
+            "- For Precast Segmental construction, exact physical-joint shear transfer is reported separately as REVIEW REQUIRED; for Cast-in-Place monolithic Zones, physical segment-joint transfer is NOT APPLICABLE.\n"
             "- Torsion and combined V+T are not calculated by ANALYSIS2. D-region, interface shear, anchorage, development, fatigue, and seismic detailing remain separate."
         )
 
@@ -23568,7 +23573,7 @@ def _render_crossbeam_uls_torsion_workspace() -> None:
             "- ACI 22.7.6 checks both transverse At/s and Outer longitudinal Al; theta is 37.5 degrees only when the Aps fse dominance gate is satisfied, otherwise 45 degrees.\n"
             "- ACI 22.7.7 section-size stress limit, 9.6.4 minimum torsion reinforcement, 9.7.5 longitudinal perimeter spacing/diameter/corner coverage, and 9.7.6.3 closed-cage spacing are included.\n"
             "- Support interiors are omitted. Prestressed h/2 sections are the ACI critical-section route; beam-side Column Faces are retained as conservative support-face screens.\n"
-            "- Physical segment-joint torsion transfer is REVIEW REQUIRED. Additive shear-plus-torsion reinforcement and flexure-plus-Al interaction remain in the next Combined V+T milestone."
+            "- For Precast Segmental construction, physical segment-joint torsion transfer remains a separate review; for Cast-in-Place monolithic Zones it is NOT APPLICABLE. Additive shear-plus-torsion reinforcement and flexure-plus-Al interaction remain in the Combined V+T workspace."
         )
 
     preparation = build_crossbeam_uls_torsion_preparation(st.session_state)
@@ -25354,7 +25359,7 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
             "- ACI 318-19 9.5.4.4: the direct exact-axis P-M3 solver checks Mu with an additional concentric tensile force Al,strength·fy.\n"
             "- ACI 318-19 22.7.7: solid sections use root-sum-square shear/torsion stress; hollow walls use direct addition and the local-thickness substitution where applicable.\n"
             "- Precast ordinary-rebar development credit follows the accepted binary Crossbeam rule. Minimum torsion-bar development remains REVIEW where credit is not verified.\n"
-            "- Physical Segment-joint V+T transfer is NOT EVALUATED by this milestone. One-sided joint rows are retained as audit evidence only; keys/interface friction, anchorage/end zones, D-regions, fatigue, and seismic detailing remain separate."
+            "- For Precast Segmental construction, physical Segment-joint V+T transfer is NOT EVALUATED by this milestone and one-sided joint rows are retained as audit evidence only. For Cast-in-Place monolithic Zones, physical Segment-joint transfer is NOT APPLICABLE. Keys/interface friction, anchorage/end zones, D-regions, fatigue, and seismic detailing remain separate."
         )
 
     preparation = build_crossbeam_uls_combined_vt_preparation(st.session_state)
@@ -25392,13 +25397,21 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
     command_cols = st.columns([3.6, 1.25])
     with command_cols[0]:
         if preparation.ready:
-            st.success(
-                f"Combined V+T source ready — {source_rows:,} active station-force row(s) produce "
-                f"{retained_section_count:,} retained sectional row(s) + {generated_support_total_count:,} generated support row(s) "
-                f"+ {joint_side_count:,} one-sided joint audit row(s) = {prepared_total_count:,} prepared row(s). "
-                f"{support_joint_overlap_count:,} support/joint overlap row(s) are excluded from sectional decision and retained as audit-only physical-joint evidence, leaving "
-                f"{sectional_source_count:,} sectional decision check(s) + {joint_side_count:,} joint-side audit row(s) in the combined result."
-            )
+            if source_is_precast:
+                st.success(
+                    f"Combined V+T source ready — {source_rows:,} active station-force row(s) produce "
+                    f"{retained_section_count:,} retained sectional row(s) + {generated_support_total_count:,} generated support row(s) "
+                    f"+ {joint_side_count:,} one-sided joint audit row(s) = {prepared_total_count:,} prepared row(s). "
+                    f"{support_joint_overlap_count:,} support/joint overlap row(s) are excluded from sectional decision and retained as audit-only physical-joint evidence, leaving "
+                    f"{sectional_source_count:,} sectional decision check(s) + {joint_side_count:,} joint-side audit row(s) in the combined result."
+                )
+            else:
+                st.success(
+                    f"Combined V+T source ready — {source_rows:,} active station-force row(s) produce "
+                    f"{retained_section_count:,} retained sectional row(s) + {generated_support_total_count:,} generated support row(s) "
+                    f"= {prepared_total_count:,} prepared row(s), all owned by Cast-in-Place monolithic Zones. "
+                    f"Physical Segment-joint rows are not generated; {sectional_source_count:,} sectional decision check(s) remain."
+                )
         else:
             st.error("Combined V+T source blocked — resolve the Shear, Torsion, Flexure, Loads, Section/Rebar, Tendon, or Effective Prestress source below.")
     with command_cols[1]:
@@ -25511,18 +25524,29 @@ def _render_crossbeam_uls_combined_vt_workspace() -> None:
         st.table(pd.DataFrame(decision_rows))
 
     if sectional_status == "FAIL":
-        st.caption(
-            f"Combined sectional result is FAIL because {decision_summary.get('label')}. "
-            "Physical-joint transfer is not evaluated by this milestone and does not alter this sectional numerical failure. "
-            "Torsion continuation/anchorage remains a separate project check."
-        )
+        if construction_method == "Precast Segmental":
+            st.caption(
+                f"Combined sectional result is FAIL because {decision_summary.get('label')}. "
+                "Physical-joint transfer is not evaluated by this milestone and does not alter this sectional numerical failure. "
+                "Torsion continuation/anchorage remains a separate project check."
+            )
+        else:
+            st.caption(
+                f"Combined sectional result is FAIL because {decision_summary.get('label')}. "
+                "Physical Segment-joint transfer is not applicable to the Cast-in-Place monolithic Zone workflow. "
+                "Anchorage/development and other non-sectional checks remain separate project checks."
+            )
 
 
     if not result_df.empty:
         st.markdown("#### Combined check review")
         st.caption(
             "One view shows one engineering meaning. Select the section-size, transverse, or longitudinal sectional check without combining unrelated utilization modes on one chart. "
-            "Physical-joint transfer is outside the current milestone and is retained only as collapsed one-sided audit evidence below."
+            + (
+                "Physical-joint transfer is outside the current milestone and is retained only as collapsed one-sided audit evidence below."
+                if construction_method == "Precast Segmental"
+                else "Cast-in-Place Zones are monolithic property regions, so no physical Segment-joint transfer review or one-sided joint audit rows apply."
+            )
         )
         combined_view_options = (
             "Section-size interaction",

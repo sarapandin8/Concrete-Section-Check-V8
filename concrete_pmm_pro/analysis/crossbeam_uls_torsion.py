@@ -1006,6 +1006,10 @@ def run_crossbeam_uls_torsion(preparation: CrossbeamTorsionPreparation) -> dict[
 
     if not preparation.ready:
         raise ValueError("Crossbeam ULS Torsion preparation is not ready.")
+    is_precast = any(
+        "SEGMENT" in str(getattr(row, "location_type", "") or "").upper()
+        for row in preparation.rows
+    )
     rows: list[dict[str, Any]] = []
     errors: list[str] = []
     # Some legacy Rebar Template summary fields can be intentionally blank
@@ -1126,9 +1130,14 @@ def run_crossbeam_uls_torsion(preparation: CrossbeamTorsionPreparation) -> dict[
         "scope": (
             "ACI 318-19 standalone sectional torsion: threshold, transverse and longitudinal torsion strength, minimum reinforcement, "
             "closed-cage/perimeter detailing, and the 22.7.7 section-size stress limit. Column Face and prestressed h/2 checks are both evaluated conservatively. "
-            "Physical segment-joint torsion transfer, compatibility-torsion redistribution, additive shear-plus-torsion reinforcement adoption, "
-            "and ACI 9.5.4.4 flexure-plus-Al interaction remain separate completion gates. They do not downgrade a standalone sectional FAIL; "
-            "when standalone sectional torsion otherwise passes but torsion design is required, overall Crossbeam ULS adoption remains REVIEW/INCOMPLETE until Combined V+T and physical-joint transfer reviews close. "
-            "Anchorage/development, PT end zones, fatigue, seismic detailing, and warping torsion remain separate."
+            + (
+                "Physical segment-joint torsion transfer, compatibility-torsion redistribution, additive shear-plus-torsion reinforcement adoption, "
+                "and ACI 9.5.4.4 flexure-plus-Al interaction remain separate completion gates. They do not downgrade a standalone sectional FAIL; "
+                "when standalone sectional torsion otherwise passes but torsion design is required, overall Crossbeam ULS adoption remains REVIEW/INCOMPLETE until Combined V+T and physical-joint transfer reviews close. "
+                if is_precast
+                else "Cast-in-Place Zone boundaries are monolithic property boundaries, so physical segment-joint torsion transfer is NOT APPLICABLE. "
+                "Compatibility-torsion redistribution, additive shear-plus-torsion reinforcement adoption, and ACI 9.5.4.4 flexure-plus-Al interaction remain separate sectional/design checks where applicable. "
+            )
+            + "Anchorage/development, PT end zones, fatigue, seismic detailing, and warping torsion remain separate."
         ),
     }
