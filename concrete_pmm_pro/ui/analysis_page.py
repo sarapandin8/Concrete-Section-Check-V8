@@ -61,6 +61,7 @@ from concrete_pmm_pro.analysis.crossbeam_sls_transfer import (
     CROSSBEAM_TRANSFER_RESULT_HASH_KEY,
     CROSSBEAM_TRANSFER_RESULT_KEY,
     PHYSICAL_JOINT_MIN_COMPRESSION_MPA,
+    PHYSICAL_JOINT_TRANSFER_MAX_TENSION_MPA,
     build_crossbeam_service_stress_preparation,
     build_crossbeam_transfer_stress_preparation,
     run_crossbeam_service_stress,
@@ -25896,6 +25897,7 @@ def _make_crossbeam_transfer_stress_figure(
     member_length_m: float,
     column_rows: list[Mapping[str, object]],
     stage_title: str = "Concrete Stress At Transfer",
+    joint_transfer_no_tension: bool = True,
     code_subtitle: str = (
         "ACI 318-19 Tables 24.5.3.1/.2 · P compression positive · M3 sagging positive · "
         "stress compression negative / tension positive"
@@ -25956,12 +25958,18 @@ def _make_crossbeam_transfer_stress_figure(
     joints = selected[selected["Location type"].astype(str) == "PHYSICAL SEGMENT JOINT"]
     if not joints.empty:
         joint_x = sorted({float(value) for value in pd.to_numeric(joints["Station s (m)"], errors="coerce").dropna()})
+        joint_limit = (
+            PHYSICAL_JOINT_TRANSFER_MAX_TENSION_MPA
+            if joint_transfer_no_tension
+            else -PHYSICAL_JOINT_MIN_COMPRESSION_MPA
+        )
+        joint_name = "Joint no tension" if joint_transfer_no_tension else "Joint min comp."
         fig.add_trace(
             go.Scatter(
                 x=joint_x,
-                y=[-PHYSICAL_JOINT_MIN_COMPRESSION_MPA] * len(joint_x),
+                y=[joint_limit] * len(joint_x),
                 mode="markers",
-                name="Joint min comp.",
+                name=joint_name,
                 marker={"size": 12, "symbol": "diamond-open", "color": "#f59e0b", "line": {"width": 2}},
                 hovertemplate="Physical joint s=%{x:.3f} m<br>required stress <= %{y:.3f} MPa<extra></extra>",
             )
@@ -25970,7 +25978,12 @@ def _make_crossbeam_transfer_stress_figure(
     governing_specs = (
         ("Compression utilization", "Gov. compression", _ENGINEERING_STRESS_PLOT_COLORS["governing_compression"], "circle-open"),
         ("Tension utilization", "Gov. tension", _ENGINEERING_STRESS_PLOT_COLORS["governing_tension"], "circle-open"),
-        ("Joint utilization", "Gov. joint", "#f59e0b", "diamond-open"),
+        (
+            "Joint no-tension exceedance MPa" if joint_transfer_no_tension else "Joint utilization",
+            "Gov. joint",
+            "#f59e0b",
+            "diamond-open",
+        ),
     )
     governing_markers: list[dict[str, object]] = []
     for column, label, color, symbol in governing_specs:
@@ -26070,6 +26083,8 @@ def _crossbeam_governing_requirement(governing: Mapping[str, object] | None) -> 
         return "-"
     criterion = str(governing.get("Criterion") or "")
     limit = _analysis_float_or_zero(governing.get("Limit MPa"))
+    if criterion == "Physical-joint no tension at Transfer":
+        return f"required signed stress <= {limit:+,.3f} MPa"
     if criterion == "Physical-joint minimum compression":
         return f"required stress <= {-abs(limit):,.3f} MPa"
     if "compression" in criterion.casefold():
@@ -26153,9 +26168,9 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
             "- The simply-supported-member end limits are not used for this Portal Frame Crossbeam.\n"
             "- ACI 318-19 24.5.3.2.1 bonded-reinforcement relief is not credited automatically.\n"
             + (
-                "- Every Precast physical joint must keep both s-/s+ top and bottom fibers at least 0.70 MPa in compression.\n"
+                "- Every Precast physical joint must remain non-tensile at Transfer: both s-/s+ top and bottom fibers require signed stress <= 0.0 MPa.\n"
                 if is_precast
-                else "- Cast-in-Place Section/Zone boundaries do not activate the Precast physical-joint coverage or minimum-compression gate.\n"
+                else "- Cast-in-Place Section/Zone boundaries do not activate the Precast physical-joint no-tension gate.\n"
             )
             + (
                 "- When a Precast joint has no exact imported row, P/V2/T/M3 are linearly interpolated from the nearest unambiguous active Transfer rows that bracket the joint; one derived resultant checks both Section faces. Exact or explicitly side-labelled joint rows remain authoritative, and extrapolation is not allowed.\n"
@@ -26283,7 +26298,7 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
             {
                 "title": "Transfer stress status",
                 "value": status,
-                "detail": "ACI 318-19 + project physical-joint criterion",
+                "detail": "ACI 318-19 + project Precast joint no-tension criterion",
                 "status": status_style,
                 "strong": True,
             },
@@ -26301,7 +26316,11 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
             },
             {
                 "title": "Governing utilization",
-                "value": "-" if governing is None else _format_crossbeam_transfer_utilization(governing.get("Utilization value")),
+                "value": (
+                    "N/A — zero-tension gate"
+                    if criterion == "Physical-joint no tension at Transfer"
+                    else "-" if governing is None else _format_crossbeam_transfer_utilization(governing.get("Utilization value"))
+                ),
                 "detail": f"{int(result.get('fiber_checks') or 0):,} fiber checks",
                 "status": status_style,
             },
@@ -26314,7 +26333,7 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
         st.markdown("#### Required actions")
         _render_crossbeam_print_safe_table(pd.DataFrame(actions), label="Transfer required actions")
     elif status == "PASS":
-        st.success("All imported Transfer station/fiber checks pass the applicable ACI stress limits and every imported physical-joint s-/s+ compression check passes 0.70 MPa.")
+        st.success("All imported Transfer station/fiber checks pass the applicable ACI stress limits and every Precast physical-joint s-/s+ Top/Bottom fiber remains non-tensile (stress <= 0.0 MPa).")
 
     if not result_df.empty:
         case_options = list(dict.fromkeys(result_df["Case"].astype(str).tolist()))
@@ -26336,7 +26355,7 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
             ),
             caption=(
                 "Lines connect imported station checks for visualization only; no compliance is inferred between unverified stations. "
-                "Column bands show actual Blong footprints and dotted lines show centerlines. Physical-joint diamonds mark the required -0.70 MPa maximum stress; both s-/s+ top and bottom fibers are checked."
+                "Column bands show actual Blong footprints and dotted lines show centerlines. Physical-joint diamonds mark the Transfer no-tension limit at 0.00 MPa; both s-/s+ top and bottom fibers are checked."
             ),
         )
         compact_columns = [
@@ -26608,6 +26627,7 @@ def _render_crossbeam_service_stress_workspace() -> None:
                 member_length_m=float(preparation.member_length_m),
                 column_rows=list(preparation.column_rows),
                 stage_title="Concrete Stress At Final Service",
+                joint_transfer_no_tension=False,
                 code_subtitle=(
                     "ACI 318-19 24.5.2 - gross classification; 0.60f'c applies Class U/T only - "
                     "stress compression negative / tension positive"

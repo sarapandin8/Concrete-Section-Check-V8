@@ -3123,6 +3123,8 @@ def _results_crossbeam_sls_capacity_label(check_name: str, governing: Mapping[st
         limit = float(governing.get("Limit MPa"))
     except (TypeError, ValueError):
         limit = float("nan")
+    if "Physical-joint no tension at Transfer" in criterion:
+        return "Joint stress ≤ +0.000 MPa"
     if "Physical-joint minimum compression" in criterion:
         return "Joint stress ≤ -0.700 MPa"
     if math.isfinite(limit):
@@ -4661,9 +4663,9 @@ def _report_qa_crossbeam_design_basis_rows(state: object) -> list[dict[str, obje
         {
             "Item": "SLS stress criteria",
             "Value": (
-                "ACI 318-19 Transfer and Final Service concrete-stress limits plus the project 0.70 MPa minimum compression gate at Precast physical Segment joints."
+                "ACI 318-19 concrete-stress limits plus project Precast physical-joint gates: At Transfer, no tension is permitted (signed stress <= 0.0 MPa); At Final Service, both Top/Bottom fibers must remain at least 0.70 MPa in compression (signed stress <= -0.70 MPa)."
                 if is_segmental
-                else "ACI 318-19 Transfer and Final Service concrete-stress limits; Cast-in-Place Zone boundaries do not activate the Precast physical-joint compression gate."
+                else "ACI 318-19 Transfer and Final Service concrete-stress limits; Cast-in-Place Zone boundaries do not activate Precast physical-joint stress gates."
             ),
         },
         {

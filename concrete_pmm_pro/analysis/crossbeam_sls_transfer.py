@@ -65,7 +65,11 @@ ACI_TRANSFER_TENSION_FACTOR_MPA = 0.25
 ACI_SERVICE_TOTAL_COMPRESSION_FACTOR = 0.60
 ACI_SERVICE_CLASS_U_TENSION_FACTOR_MPA = 0.62
 ACI_SERVICE_CLASS_T_TENSION_FACTOR_MPA = 1.00
-PHYSICAL_JOINT_MIN_COMPRESSION_MPA = 0.70
+PHYSICAL_JOINT_TRANSFER_MAX_TENSION_MPA = 0.0
+PHYSICAL_JOINT_SERVICE_MIN_COMPRESSION_MPA = 0.70
+# Backward-compatible alias retained for Final Service callers/tests that
+# imported the earlier generic name.  The 0.70 MPa gate is service-only.
+PHYSICAL_JOINT_MIN_COMPRESSION_MPA = PHYSICAL_JOINT_SERVICE_MIN_COMPRESSION_MPA
 _STATION_TOLERANCE_MIN_M = 1.0e-7
 
 
@@ -646,7 +650,10 @@ def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransfer
         state,
         stage="Transfer stage",
         stage_label="At Transfer",
-        schema="crossbeam-sls1a-transfer-preparation-v3",
+        # v4 invalidates stored SLS1A results created before the adopted
+        # Precast Segmental Transfer joint rule was corrected from the
+        # Final-Service 0.70 MPa compression gate to a zero-tension gate.
+        schema="crossbeam-sls1a-transfer-preparation-v4",
         transfer_stage=True,
     )
 
@@ -683,29 +690,41 @@ def _fiber_check(
         limit = tension_limit_mpa
     joint_pass = True
     joint_util: float | None = None
+    joint_exceedance: float | None = None
+    joint_margin: float | None = None
     if physical_joint:
-        compression_available = max(-float(stress_mpa), 0.0)
-        joint_pass = float(stress_mpa) <= -PHYSICAL_JOINT_MIN_COMPRESSION_MPA + 1.0e-12
-        if compression_available > 0.0:
-            joint_util = PHYSICAL_JOINT_MIN_COMPRESSION_MPA / compression_available
-        else:
-            joint_util = 1.001 + max(float(stress_mpa), 0.0) / PHYSICAL_JOINT_MIN_COMPRESSION_MPA
-        if joint_util >= general_util:
-            criterion = "Physical-joint minimum compression"
-            actual = compression_available
-            limit = PHYSICAL_JOINT_MIN_COMPRESSION_MPA
-    utilization = max(general_util, joint_util or 0.0)
+        # Adopted Precast Segmental Transfer rule: physical joints may not
+        # carry concrete tension.  With the app stress convention
+        # compression < 0 and tension > 0, every s-/s+ Top/Bottom fiber must
+        # satisfy signed stress <= 0.0 MPa.  This is a binary zero-limit gate,
+        # so a demand/capacity ratio is intentionally not fabricated.
+        signed = float(stress_mpa)
+        joint_margin = PHYSICAL_JOINT_TRANSFER_MAX_TENSION_MPA - signed
+        joint_exceedance = max(signed - PHYSICAL_JOINT_TRANSFER_MAX_TENSION_MPA, 0.0)
+        joint_pass = signed <= PHYSICAL_JOINT_TRANSFER_MAX_TENSION_MPA + 1.0e-12
+        if not joint_pass:
+            criterion = "Physical-joint no tension at Transfer"
+            actual = signed
+            limit = PHYSICAL_JOINT_TRANSFER_MAX_TENSION_MPA
+    # Keep the ACI ratio available for audit, but do not present it as the
+    # utilization of a zero-tension joint gate.  A zero allowable tension has
+    # no finite D/C; downstream summaries therefore show N/A when this gate
+    # controls while the separate ACI compression/tension ratios remain fully
+    # traceable.
+    utilization = float("nan") if physical_joint and not joint_pass else general_util
     general_pass = general_util <= 1.0 + 1.0e-12
     return {
         "status": "PASS" if general_pass and joint_pass else "FAIL",
         "utilization": utilization,
         "compression_utilization": compression_util,
         "tension_utilization": tension_util,
+        "aci_utilization": general_util,
         "joint_utilization": joint_util,
+        "joint_no_tension_exceedance_mpa": joint_exceedance,
         "criterion": criterion,
         "actual_mpa": actual,
         "limit_mpa": limit,
-        "joint_margin_mpa": (-float(stress_mpa) - PHYSICAL_JOINT_MIN_COMPRESSION_MPA) if physical_joint else None,
+        "joint_margin_mpa": joint_margin,
     }
 
 
@@ -715,24 +734,24 @@ def _required_actions(fiber_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     joint = [
         row
         for row in failed
-        if math.isfinite(float(row.get("Joint compression margin MPa") or float("nan")))
-        and float(row.get("Joint compression margin MPa")) < -1.0e-12
+        if math.isfinite(float(row.get("Joint no-tension margin MPa") or float("nan")))
+        and float(row.get("Joint no-tension margin MPa")) < -1.0e-12
     ]
     if joint:
-        governing = max(joint, key=lambda row: float(row.get("Utilization value") or 0.0))
+        governing = max(joint, key=lambda row: float(row.get("Stress MPa") or 0.0))
         actions.append(
             {
                 "Priority": "High",
                 "Module": "Physical joint",
                 "Issue": (
-                    f"Minimum compression fails at s={governing['Station s (m)']:.3f} m / "
+                    f"No-tension Transfer joint gate fails at s={governing['Station s (m)']:.3f} m / "
                     f"{governing['Section face']} / {governing['Fiber']} / {governing['Case']}: "
                     f"signed stress {float(governing['Stress MPa']):+.3f} MPa "
                     f"({'tension' if float(governing['Stress MPa']) > 0.0 else 'compression'}), "
-                    f"required <= {-PHYSICAL_JOINT_MIN_COMPRESSION_MPA:.3f} MPa."
+                    f"required <= {PHYSICAL_JOINT_TRANSFER_MAX_TENSION_MPA:+.3f} MPa."
                 ),
                 "Required Action": (
-                    "Revise Transfer tendon force/profile, stressing sequence, support/contact stage, or joint/section geometry until both s-/s+ top and bottom fibers remain at least 0.70 MPa in compression."
+                    "Revise Transfer tendon force/profile, stressing sequence, support/contact stage, or joint/section geometry until both s-/s+ top and bottom fibers are non-tensile (signed stress <= 0.0 MPa)."
                 ),
             }
         )
@@ -803,7 +822,7 @@ def run_crossbeam_transfer_stress(preparation: CrossbeamTransferPreparation) -> 
             physical_joint=source.is_physical_joint,
         )
         status = "PASS" if top_check["status"] == bottom_check["status"] == "PASS" else "FAIL"
-        row_utilization = max(float(top_check["utilization"]), float(bottom_check["utilization"]))
+        row_utilization = max(float(top_check["aci_utilization"]), float(bottom_check["aci_utilization"]))
         rows.append(
             {
                 "Check": "Concrete Stress At Transfer",
@@ -833,13 +852,13 @@ def run_crossbeam_transfer_stress(preparation: CrossbeamTransferPreparation) -> 
                 "Bottom stress MPa": bottom_stress,
                 "Compression limit MPa": -compression_limit,
                 "Tension limit MPa": tension_limit,
-                "Top utilization": float(top_check["utilization"]),
-                "Bottom utilization": float(bottom_check["utilization"]),
+                "Top utilization": float(top_check["aci_utilization"]),
+                "Bottom utilization": float(bottom_check["aci_utilization"]),
                 "Governing utilization": row_utilization,
                 "Top criterion": str(top_check["criterion"]),
                 "Bottom criterion": str(bottom_check["criterion"]),
-                "Joint minimum compression MPa": (
-                    -PHYSICAL_JOINT_MIN_COMPRESSION_MPA if source.is_physical_joint else float("nan")
+                "Joint Transfer tension limit MPa": (
+                    PHYSICAL_JOINT_TRANSFER_MAX_TENSION_MPA if source.is_physical_joint else float("nan")
                 ),
                 "Top joint margin MPa": (
                     float(top_check["joint_margin_mpa"])
@@ -879,9 +898,14 @@ def run_crossbeam_transfer_stress(preparation: CrossbeamTransferPreparation) -> 
                         if check["joint_utilization"] is not None
                         else float("nan")
                     ),
-                    "Joint compression margin MPa": (
+                    "Joint no-tension margin MPa": (
                         float(check["joint_margin_mpa"])
                         if check["joint_margin_mpa"] is not None
+                        else float("nan")
+                    ),
+                    "Joint no-tension exceedance MPa": (
+                        float(check["joint_no_tension_exceedance_mpa"])
+                        if check["joint_no_tension_exceedance_mpa"] is not None
                         else float("nan")
                     ),
                     "Utilization value": float(check["utilization"]),
@@ -891,11 +915,26 @@ def run_crossbeam_transfer_stress(preparation: CrossbeamTransferPreparation) -> 
                 }
             )
 
-    governing = max(fiber_rows, key=lambda row: float(row["Utilization value"]), default=None)
+    failed_joint_candidates = [
+        row
+        for row in fiber_rows
+        if math.isfinite(float(row.get("Joint no-tension margin MPa") or float("nan")))
+        and float(row.get("Joint no-tension margin MPa")) < -1.0e-12
+    ]
+    # A failed zero-tension joint gate controls the engineering result even
+    # though no finite D/C exists for a zero allowable tension.  Within tied
+    # joint failures, report the most tensile fiber deterministically.
+    governing = (
+        max(failed_joint_candidates, key=lambda row: float(row.get("Stress MPa") or 0.0))
+        if failed_joint_candidates
+        else max(fiber_rows, key=lambda row: float(row["Utilization value"]), default=None)
+    )
     compression_candidates = [row for row in fiber_rows if float(row["Compression utilization"]) > 0.0]
     tension_candidates = [row for row in fiber_rows if float(row["Tension utilization"]) > 0.0]
     joint_candidates = [
-        row for row in fiber_rows if math.isfinite(float(row.get("Joint utilization") or float("nan")))
+        row
+        for row in fiber_rows
+        if math.isfinite(float(row.get("Joint no-tension exceedance MPa") or float("nan")))
     ]
     governing_compression = max(
         compression_candidates,
@@ -909,12 +948,12 @@ def run_crossbeam_transfer_stress(preparation: CrossbeamTransferPreparation) -> 
     )
     governing_joint = max(
         joint_candidates,
-        key=lambda row: float(row["Joint utilization"]),
+        key=lambda row: float(row["Joint no-tension exceedance MPa"]),
         default=None,
     )
     status = "FAIL" if any(row["Status"] == "FAIL" for row in rows) else "PASS"
     return {
-        "schema": "crossbeam-sls1a-transfer-stress-result-v1",
+        "schema": "crossbeam-sls1a-transfer-stress-result-v2",
         "input_fingerprint": preparation.fingerprint,
         "construction_method": preparation.construction_method,
         "status": status,
@@ -929,7 +968,11 @@ def run_crossbeam_transfer_stress(preparation: CrossbeamTransferPreparation) -> 
         "errors": [],
         "station_face_checks": len(rows),
         "fiber_checks": len(fiber_rows),
-        "code_basis": "ACI 318-19 Tables 24.5.3.1 and 24.5.3.2",
+        "code_basis": (
+            "ACI 318-19 Tables 24.5.3.1 and 24.5.3.2 + project Precast physical-joint no-tension rule at Transfer"
+            if preparation.construction_method == CONSTRUCTION_METHOD_PRECAST
+            else "ACI 318-19 Tables 24.5.3.1 and 24.5.3.2"
+        ),
         "scope": (
             "Transfer-stage gross-section extreme-fiber concrete stress only. Imported P/M3 are used once. "
             "V2/T, principal stress, shear/torsion, anchorage-zone, local D-region, transfer/development length, "

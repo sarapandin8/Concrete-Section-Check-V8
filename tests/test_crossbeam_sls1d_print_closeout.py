@@ -67,7 +67,8 @@ def test_coincident_governing_tension_and_joint_labels_are_separated() -> None:
                 "Stress MPa": 8.958,
                 "Compression utilization": 0.0,
                 "Tension utilization": 2.15,
-                "Joint utilization": 9.658,
+                "Joint utilization": float("nan"),
+                "Joint no-tension exceedance MPa": 8.958,
             }
         ]
     )

@@ -415,7 +415,7 @@ def test_cast_in_place_route_has_no_physical_joint_minimum_compression_gate() ->
     assert all(math.isnan(float(row["Joint utilization"])) for row in result["fiber_rows"])
 
 
-def test_joint_minimum_compression_is_checked_for_both_fibers_and_creates_action() -> None:
+def test_transfer_joint_allows_compression_less_than_point_seven_mpa_when_non_tensile() -> None:
     source = PreparedCrossbeamTransferRow(
         station_m=10.0,
         check_point="Joint",
@@ -439,11 +439,47 @@ def test_joint_minimum_compression_is_checked_for_both_fibers_and_creates_action
     )
     result = run_crossbeam_transfer_stress(_manual_preparation(source))
 
-    assert result["status"] == "FAIL"
+    # -0.50 MPa compression is acceptable at Transfer because the adopted
+    # Precast joint rule is zero tension, not the Final-Service 0.70 MPa
+    # minimum-compression gate.
+    assert result["status"] == "PASS"
     assert {row["Fiber"] for row in result["fiber_rows"]} == {"Top", "Bottom"}
-    assert all(row["Criterion"] == "Physical-joint minimum compression" for row in result["fiber_rows"])
-    assert all(row["Joint compression margin MPa"] == pytest.approx(-0.20) for row in result["fiber_rows"])
-    assert result["required_actions"][0]["Module"] == "Physical joint"
+    assert all(row["Joint no-tension margin MPa"] == pytest.approx(0.50) for row in result["fiber_rows"])
+    assert result["required_actions"] == []
+
+
+def test_transfer_joint_small_tension_fails_zero_tension_gate_even_below_aci_tension_limit() -> None:
+    source = PreparedCrossbeamTransferRow(
+        station_m=10.0,
+        check_point="Joint",
+        case_name="TR-JOINT-SMALL-TENSION",
+        section_face="LEFT LIMIT (s-)",
+        location_type="PHYSICAL SEGMENT JOINT",
+        segment_id="SEG-1",
+        section_id="RECT",
+        material_name="Concrete",
+        source_p_kn=0.0,
+        source_v2_kn=0.0,
+        source_t_knm=0.0,
+        source_m3_knm=10.0,
+        fc_mpa=50.0,
+        fci_mpa=40.0,
+        area_mm2=1_000_000.0,
+        ix_mm4=83_333_333_333.33333,
+        z_top_mm3=166_666_666.66666666,
+        z_bottom_mm3=166_666_666.66666666,
+        is_physical_joint=True,
+    )
+    result = run_crossbeam_transfer_stress(_manual_preparation(source))
+
+    assert result["status"] == "FAIL"
+    governing = result["governing_row"]
+    assert governing["Criterion"] == "Physical-joint no tension at Transfer"
+    assert governing["Stress MPa"] == pytest.approx(0.06)
+    assert governing["Limit MPa"] == pytest.approx(0.0)
+    assert governing["Joint no-tension margin MPa"] == pytest.approx(-0.06)
+    modules = {action["Module"] for action in result["required_actions"]}
+    assert modules == {"Physical joint"}
 
 
 def test_joint_tension_failure_reports_both_joint_and_aci_tension_actions() -> None:
@@ -559,8 +595,8 @@ def test_transfer_figure_contains_stress_limits_joint_marker_and_column_geometry
     )
     fiber_rows = pd.DataFrame(
         [
-            {"Case": "TR-1", "Station s (m)": 10.0, "Fiber": "Top", "Stress MPa": -3.0, "Compression utilization": 0.14, "Tension utilization": 0.0, "Joint utilization": 0.23},
-            {"Case": "TR-1", "Station s (m)": 10.0, "Fiber": "Bottom", "Stress MPa": -1.0, "Compression utilization": 0.05, "Tension utilization": 0.0, "Joint utilization": 0.70},
+            {"Case": "TR-1", "Station s (m)": 10.0, "Fiber": "Top", "Stress MPa": -3.0, "Compression utilization": 0.14, "Tension utilization": 0.0, "Joint utilization": float("nan"), "Joint no-tension exceedance MPa": 0.0},
+            {"Case": "TR-1", "Station s (m)": 10.0, "Fiber": "Bottom", "Stress MPa": 0.10, "Compression utilization": 0.0, "Tension utilization": 0.067, "Joint utilization": float("nan"), "Joint no-tension exceedance MPa": 0.10},
         ]
     )
     figure = _make_crossbeam_transfer_stress_figure(
@@ -571,7 +607,7 @@ def test_transfer_figure_contains_stress_limits_joint_marker_and_column_geometry
         column_rows=[{"Column ID": "C1", "Station s (m)": 1.5, "Blong (mm)": 1500.0}],
     )
     trace_names = {str(trace.name) for trace in figure.data}
-    assert {"Top total stress", "Bottom total stress", "Compression limit", "Tension limit", "Joint min comp."}.issubset(trace_names)
+    assert {"Top total stress", "Bottom total stress", "Compression limit", "Tension limit", "Joint no tension"}.issubset(trace_names)
     assert "Gov. compression" in trace_names
     assert "Gov. joint" in trace_names
     assert figure.layout.xaxis.range == (0.0, 20.0)
