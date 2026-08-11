@@ -64,6 +64,7 @@ from concrete_pmm_pro.ui.analysis_page import (
     render_report_qa_page,
 )
 from concrete_pmm_pro.reporting.railway_u_girder_report import build_railway_u_girder_sls_report_package
+from concrete_pmm_pro.reporting.crossbeam_report_qa import build_crossbeam_draft_design_report
 from concrete_pmm_pro.ui.loads_page import render_loads_page
 from concrete_pmm_pro.ui.materials_page import render_materials_page
 from concrete_pmm_pro.ui.prestress_page import render_prestress_page
@@ -4315,15 +4316,360 @@ def render_report_qa_workspace() -> None:
         accent="blue",
     )
     render_metric_cards(_report_qa_dashboard_cards(st.session_state))
-    _render_report_qa_result_summary_alignment(st.session_state)
-    render_section_bar(
-        "Traceability / report tools",
-        "Report and QA tools summarize stored results only; PMM, SLS, ULS, and verification solvers are not rerun here.",
-        mark="Q",
-    )
-    render_analysis_report_qa()
+    if _results_is_crossbeam_workflow(st.session_state):
+        _render_report_qa_crossbeam_workspace(st.session_state)
+    else:
+        _render_report_qa_result_summary_alignment(st.session_state)
+        render_section_bar(
+            "Traceability / report tools",
+            "Report and QA tools summarize stored results only; PMM, SLS, ULS, and verification solvers are not rerun here.",
+            mark="Q",
+        )
+        render_analysis_report_qa()
     _render_runtime_diagnostics_expander()
 
+
+
+def _report_qa_crossbeam_design_basis_rows(state: object) -> list[dict[str, object]]:
+    method = _results_crossbeam_current_construction_method(state)
+    is_segmental = method == CONSTRUCTION_METHOD_PRECAST
+    return [
+        {"Item": "Workflow", "Value": "Portal Frame Crossbeam — Prestressed Concrete"},
+        {"Item": "Construction type", "Value": method},
+        {"Item": "Design code", "Value": _results_design_code_label(state)},
+        {"Item": "Units", "Value": "mm, MPa, N, N-mm"},
+        {
+            "Item": "ULS demand basis",
+            "Value": "Row-coupled P/V2/T/M3 from Crossbeam Loads; imported FEA demand is not reconstructed on Report / QA.",
+        },
+        {
+            "Item": "Prestress handling",
+            "Value": "Local station-dependent fpe(s); Pe / secondary prestress is not added again to imported FEA demand.",
+        },
+        {
+            "Item": "Flexure credit basis",
+            "Value": (
+                "Precast Segmental: concrete compression + bonded Tendons only; ordinary longitudinal rebar excluded from Mn."
+                if is_segmental
+                else "Cast-in-Place: adopted Section rebar + bonded Tendons contribute to sectional Mn."
+            ),
+        },
+        {
+            "Item": "Joint semantics",
+            "Value": (
+                "Physical Segment-joint transfer remains a separate project check; one-sided evidence is not promoted to a sectional PASS."
+                if is_segmental
+                else "Cast-in-Place Zones are monolithic property regions; physical Segment-joint transfer is NOT APPLICABLE."
+            ),
+        },
+        {
+            "Item": "Runtime mode",
+            "Value": "READ-ONLY — Report / QA reads stored Analysis packages only and does not rerun solvers.",
+        },
+    ]
+
+
+def _report_qa_crossbeam_limitation_rows(state: object) -> list[dict[str, object]]:
+    method = _results_crossbeam_current_construction_method(state)
+    if method == CONSTRUCTION_METHOD_PRECAST:
+        rows = [
+            {
+                "Status": "SEPARATE CHECK",
+                "Item": "Physical-joint shear transfer",
+                "Engineering meaning": "Sectional Shear does not certify interface/key/anchorage transfer at the 5 physical Segment joints.",
+            },
+            {
+                "Status": "NOT EVALUATED",
+                "Item": "Physical-joint V+T transfer",
+                "Engineering meaning": "Combined sectional V+T retains one-sided evidence only; no joint D/C is calculated by the current milestone.",
+            },
+        ]
+    else:
+        rows = [
+            {
+                "Status": "NOT APPLICABLE",
+                "Item": "Physical Segment-joint transfer",
+                "Engineering meaning": "Cast-in-Place Zones are monolithic and do not create Precast physical Segment-joint transfer checks.",
+            }
+        ]
+    rows.extend(
+        [
+            {
+                "Status": "SEPARATE CHECK",
+                "Item": "PT anchorage / end zones",
+                "Engineering meaning": "Local/general-zone bearing, bursting, spalling/edge tension, confinement, and anchorage-zone D-region design remain separate.",
+            },
+            {
+                "Status": "SEPARATE CHECK",
+                "Item": "Beam-column/support D-regions",
+                "Engineering meaning": "Sectional ULS checks omit certification of the beam-column/support-footprint D-region itself.",
+            },
+            {
+                "Status": "SEPARATE CHECK",
+                "Item": "Development, fatigue, and seismic detailing",
+                "Engineering meaning": "Development/anchorage, fatigue, seismic detailing, and other project-specific detailing checks remain outside this stored sectional ULS package.",
+            },
+        ]
+    )
+    if not _results_sls_complete_for_report(state):
+        rows.append(
+            {
+                "Status": "PENDING",
+                "Item": "SLS report package",
+                "Engineering meaning": "SLS Stress & Cracking / formal SLS report handoff is not complete; final Design Report issue remains unavailable.",
+            }
+        )
+    return rows
+
+
+def _report_qa_crossbeam_traceability_rows(state: object) -> list[dict[str, object]]:
+    active_method = _results_crossbeam_current_construction_method(state)
+    summary_rows = {row["Check"]: row for row in _results_crossbeam_uls_summary_rows(state)}
+    trace_rows: list[dict[str, object]] = []
+    for check_name in _RESULTS_CROSSBEAM_ULS_CHECKS:
+        summary = summary_rows[check_name]
+        result = _results_crossbeam_stored_result(state, check_name)
+        stored_method = _results_crossbeam_result_construction_method(result) or active_method
+        result_hash = "-"
+        if isinstance(state, Mapping):
+            raw_hash = str(state.get(_RESULTS_CROSSBEAM_ULS_HASH_KEYS[check_name]) or "").strip()
+            if raw_hash:
+                result_hash = raw_hash[:16]
+        trace_rows.append(
+            {
+                "Check": check_name,
+                "Status": summary.get("Status", "-"),
+                "Construction type": stored_method,
+                "Case": summary.get("Governing Case", "-"),
+                "Station / Point": summary.get("Station / Point", "-"),
+                "Result hash": result_hash,
+                "Source": summary.get("Source", f"Analysis → ULS Strength → {check_name}"),
+            }
+        )
+    return trace_rows
+
+
+def _report_qa_crossbeam_context(state: object) -> dict[str, object]:
+    rows = _results_governing_rows(state)
+    uls_rows = _results_crossbeam_uls_summary_rows(state)
+    executive = _results_executive_status(rows, state)
+    handoff = _results_report_handoff_state(state, rows)
+    critical = _results_critical_row(rows)
+    calculated, total, _missing = _results_active_uls_completion(state)
+    sls_status = "COMPLETE" if _results_sls_complete_for_report(state) else ("PARTIAL" if _results_sls_stress_available(state) else "PENDING")
+    return {
+        "Report title": (
+            str(state.get("report_title") or "Concrete Section Pro — Crossbeam Design Report")
+            if isinstance(state, Mapping)
+            else "Concrete Section Pro — Crossbeam Design Report"
+        ),
+        "Project": str(state.get("project_name") or "-") if isinstance(state, Mapping) else "-",
+        "Prepared by": str(state.get("report_prepared_by") or state.get("designer") or "-") if isinstance(state, Mapping) else "-",
+        "Checked by": str(state.get("report_checked_by") or "-") if isinstance(state, Mapping) else "-",
+        "Revision": str(state.get("report_revision") or "Draft") if isinstance(state, Mapping) else "Draft",
+        "Construction type": _results_crossbeam_current_construction_method(state),
+        "Design code": _results_design_code_label(state),
+        "Units": "mm, MPa, N, N-mm",
+        "Overall status": executive["title"].replace("Overall Status: ", ""),
+        "Critical check": "-" if critical is None else _results_critical_label(critical),
+        "Report readiness": handoff["value"],
+        "Readiness note": handoff["detail"],
+        "ULS completeness": f"{calculated}/{total} current stored sectional ULS packages",
+        "SLS status": sls_status,
+        "Design basis rows": _report_qa_crossbeam_design_basis_rows(state),
+        "ULS rows": [
+            {
+                "Check": row.get("Check", "-"),
+                "Status": row.get("Status", "-"),
+                "Governing Check": row.get("Governing Check", "-"),
+                "Code Basis": row.get("Code Basis", _results_design_code_label(state)),
+                "Governing Case": row.get("Governing Case", "-"),
+                "Station / Point": row.get("Station / Point", "-"),
+                "Demand": row.get("Demand", "-"),
+                "Capacity / Limit": row.get("Capacity / Limit", "-"),
+                "D/C / Util.": row.get("D/C / Util.", "-"),
+                "Scope": row.get("Scope", "-"),
+                "Required Action": row.get("Required Action", "-"),
+            }
+            for row in uls_rows
+            if bool(row.get("__stored"))
+        ],
+        "Action rows": _results_required_action_rows(state, rows),
+        "Limitation rows": _report_qa_crossbeam_limitation_rows(state),
+        "Traceability rows": _report_qa_crossbeam_traceability_rows(state),
+    }
+
+
+def _render_report_qa_crossbeam_readiness(state: object, context: Mapping[str, object]) -> None:
+    rows = _results_governing_rows(state)
+    render_section_bar(
+        "Report Readiness / Executive QA",
+        "Decision status and actions are read from the same stored-result source used by Result Summary. No calculation is triggered here.",
+        mark="R",
+    )
+    _render_results_executive_summary(rows, state)
+    render_section_bar(
+        "Required Actions",
+        "Resolve or document these stored-result actions before final report issue.",
+        mark="A",
+    )
+    _render_results_required_actions(state, rows)
+    if str(context.get("Report readiness") or "").upper() != "READY":
+        st.warning("Final Design Report issue is not available. Draft export remains available for engineering review.")
+
+
+def _render_report_qa_crossbeam_design_basis(context: Mapping[str, object]) -> None:
+    render_section_bar(
+        "Design Basis & Analysis Scope",
+        "Stored-result basis, construction semantics, prestress handling, and explicit scope guards for this report package.",
+        mark="B",
+    )
+    st.dataframe(pd.DataFrame(list(context.get("Design basis rows") or [])), use_container_width=True, hide_index=True)
+    render_section_bar(
+        "QA Scope Guards / Limitations",
+        "Items below remain separate, pending, not evaluated, or not applicable exactly as stated; none is silently promoted to PASS.",
+        mark="Q",
+    )
+    st.dataframe(pd.DataFrame(list(context.get("Limitation rows") or [])), use_container_width=True, hide_index=True)
+
+
+def _render_report_qa_crossbeam_uls_evidence(context: Mapping[str, object]) -> None:
+    render_section_bar(
+        "Stored ULS Result Evidence",
+        "Read-only governing evidence from Flexure, Shear, Torsion, and Shear + Torsion stored Analysis packages.",
+        mark="U",
+    )
+    evidence = list(context.get("ULS rows") or [])
+    if not evidence:
+        st.warning("No stored Crossbeam ULS result evidence is available.")
+        return
+    st.dataframe(pd.DataFrame(evidence), use_container_width=True, hide_index=True)
+
+
+def _render_report_qa_crossbeam_traceability(state: object, context: Mapping[str, object]) -> None:
+    render_section_bar(
+        "Stored Result Traceability",
+        "Construction ownership, stored package fingerprints, source paths, and project dirty-state diagnostics. No solver rerun from this page.",
+        mark="T",
+    )
+    st.dataframe(pd.DataFrame(list(context.get("Traceability rows") or [])), use_container_width=True, hide_index=True)
+    dirty = current_project_dirty_status(state) if isinstance(state, Mapping) else None
+    if dirty is not None:
+        dirty_rows = [
+            {"Item": "Model status", "Value": dirty.model_status},
+            {"Item": "Analysis status", "Value": dirty.analysis_status},
+            {"Item": "Report status", "Value": dirty.report_status},
+            {"Item": "Current input hash", "Value": dirty.current_hash[:16]},
+            {"Item": "Last analysis hash", "Value": (dirty.last_analysis_hash or "-")[:16]},
+            {"Item": "Changed input groups", "Value": ", ".join(dirty.changed_groups) if dirty.changed_groups else "None"},
+            {"Item": "Affected checks", "Value": ", ".join(dirty.affected_checks) if dirty.affected_checks else "None"},
+        ]
+        st.markdown("**Project input / analysis state**")
+        st.dataframe(pd.DataFrame(dirty_rows), use_container_width=True, hide_index=True)
+
+
+def _render_report_qa_crossbeam_export(state: object, context: dict[str, object]) -> None:
+    render_section_bar(
+        "Report Export",
+        "Draft report export is available for engineering review. Final Design Report issue remains gated by Report Readiness and later SLS/final-template closeout.",
+        mark="E",
+    )
+    st.warning("DRAFT — NOT FOR ISSUE. The current export is a stored-result review document, not a final design certification.")
+    meta_cols = st.columns(2)
+    report_title = meta_cols[0].text_input(
+        "Report title",
+        value=str(context.get("Report title") or "Concrete Section Pro — Crossbeam Design Report"),
+        key="crossbeam_report_qa_title",
+    )
+    project_name = meta_cols[1].text_input(
+        "Project name",
+        value=str(context.get("Project") or ""),
+        key="crossbeam_report_qa_project",
+    )
+    author_cols = st.columns(3)
+    prepared_by = author_cols[0].text_input(
+        "Prepared by",
+        value="" if str(context.get("Prepared by") or "-") == "-" else str(context.get("Prepared by")),
+        key="crossbeam_report_qa_prepared",
+    )
+    checked_by = author_cols[1].text_input(
+        "Checked by",
+        value="" if str(context.get("Checked by") or "-") == "-" else str(context.get("Checked by")),
+        key="crossbeam_report_qa_checked",
+    )
+    revision = author_cols[2].text_input(
+        "Revision",
+        value=str(context.get("Revision") or "Draft"),
+        key="crossbeam_report_qa_revision",
+    )
+    preview_context = dict(context)
+    preview_context.update(
+        {
+            "Report title": report_title,
+            "Project": project_name,
+            "Prepared by": prepared_by or "-",
+            "Checked by": checked_by or "-",
+            "Revision": revision or "Draft",
+        }
+    )
+    if st.button("Preview Draft Design Report", use_container_width=True, key="crossbeam_report_qa_preview"):
+        st.session_state["crossbeam_report_qa_preview_open"] = True
+    if st.session_state.get("crossbeam_report_qa_preview_open"):
+        with st.expander("Draft Design Report Preview", expanded=True):
+            st.markdown(f"### {escape(str(preview_context['Report title']))}")
+            st.error("DRAFT — NOT FOR ISSUE")
+            st.markdown(
+                f"**Report readiness:** {escape(str(preview_context.get('Report readiness', '-')))}  \n"
+                f"**Overall status:** {escape(str(preview_context.get('Overall status', '-')))}  \n"
+                f"**Critical check:** {escape(str(preview_context.get('Critical check', '-')))}  \n"
+                f"**ULS results:** {escape(str(preview_context.get('ULS completeness', '-')))}  \n"
+                f"**SLS:** {escape(str(preview_context.get('SLS status', '-')))}"
+            )
+            st.markdown("**Stored ULS evidence**")
+            st.dataframe(pd.DataFrame(list(preview_context.get("ULS rows") or [])), use_container_width=True, hide_index=True)
+            st.markdown("**QA scope guards / limitations**")
+            st.dataframe(pd.DataFrame(list(preview_context.get("Limitation rows") or [])), use_container_width=True, hide_index=True)
+
+    if st.button("Build Draft Design Report (.docx)", use_container_width=True, key="crossbeam_report_qa_build_docx"):
+        st.session_state["crossbeam_report_qa_draft_docx"] = build_crossbeam_draft_design_report(preview_context)
+    report_bytes = st.session_state.get("crossbeam_report_qa_draft_docx")
+    if report_bytes:
+        st.download_button(
+            "Export Draft Design Report (.docx)",
+            data=report_bytes,
+            file_name="concrete_section_pro_crossbeam_draft_design_report.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True,
+            key="crossbeam_report_qa_download_docx",
+        )
+    st.button(
+        "Export Final Design Report",
+        disabled=True,
+        use_container_width=True,
+        key="crossbeam_report_qa_final_disabled",
+        help="Final issue export will be enabled only after SLS/report readiness and the final certified report template are closed.",
+    )
+    st.caption("No PDF or final certified template is issued in D15. Draft export uses stored Analysis results only.")
+
+
+def _render_report_qa_crossbeam_workspace(state: object) -> None:
+    context = _report_qa_crossbeam_context(state)
+    active = render_active_choice(
+        "Report / QA review",
+        ["Readiness", "Design Basis", "ULS Evidence", "Traceability", "Export"],
+        key="crossbeam_report_qa_review_tab",
+        horizontal=True,
+    )
+    if active == "Design Basis":
+        _render_report_qa_crossbeam_design_basis(context)
+    elif active == "ULS Evidence":
+        _render_report_qa_crossbeam_uls_evidence(context)
+    elif active == "Traceability":
+        _render_report_qa_crossbeam_traceability(state, context)
+    elif active == "Export":
+        _render_report_qa_crossbeam_export(state, context)
+    else:
+        _render_report_qa_crossbeam_readiness(state, context)
 
 def main() -> None:
     st.set_page_config(page_title="Concrete Section Pro", layout="wide", initial_sidebar_state="expanded")
