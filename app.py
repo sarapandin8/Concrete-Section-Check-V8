@@ -2744,11 +2744,24 @@ def _results_critical_row(rows: list[dict[str, object]]) -> dict[str, object] | 
     danger_rows = [row for row in rows if _results_style_for_status(row.get("Status")) == "danger"]
     warning_rows = [row for row in rows if _results_style_for_status(row.get("Status")) == "warning"]
     candidates = danger_rows or warning_rows or rows
-    ranked: list[tuple[float, int, dict[str, object]]] = []
+    ranked: list[tuple[float, int, int, dict[str, object]]] = []
     for index, row in enumerate(candidates):
         util = _results_parse_utilization(row.get("D/C / Util."))
-        ranked.append(((util if util is not None else -1.0), -index, row))
-    return sorted(ranked, key=lambda item: (item[0], item[1]), reverse=True)[0][2]
+        # CROSSBEAM.ANALYSIS4C7D14: when a standalone Torsion result and the
+        # final Combined V+T result are tied on severity/utilization, prefer the
+        # combined sectional gate for executive reporting.  This keeps the
+        # dashboard deterministic and avoids presenting the same Aℓ deficiency
+        # as though the standalone component were more critical than the final
+        # combined check.  Other workflows retain their existing stable order.
+        tie_priority = 0
+        if str(row.get("Module") or "").strip() == "ULS Crossbeam":
+            check = str(row.get("Check") or "").strip()
+            if check == "Shear + Torsion":
+                tie_priority = 2
+            elif check == "Torsion":
+                tie_priority = 1
+        ranked.append(((util if util is not None else -1.0), tie_priority, -index, row))
+    return sorted(ranked, key=lambda item: (item[0], item[1], item[2]), reverse=True)[0][3]
 
 
 def _results_availability_cards(state: object) -> list[dict[str, object]]:
@@ -2768,7 +2781,7 @@ def _results_availability_cards(state: object) -> list[dict[str, object]]:
     has_blocking_result = any(_results_style_for_status(row.get("Status")) == "danger" for row in rows)
     has_review_result = any(_results_style_for_status(row.get("Status")) == "warning" for row in rows)
     if _results_is_crossbeam_workflow(state):
-        completeness_detail = f"Crossbeam ULS checks: {active_uls_calculated}/{active_uls_total}"
+        completeness_detail = f"Crossbeam sectional ULS result packages: {active_uls_calculated}/{active_uls_total}"
     else:
         completeness_detail = ("Column/Pier V+T stored; " if column_vt_available else "") + (
             f"Beam/Girder ULS checks: {uls_count}" if uls_count else ("PMM stored" if pmm_available else "Run ULS analysis")
@@ -2818,8 +2831,12 @@ def _results_availability_cards(state: object) -> list[dict[str, object]]:
             "status": "warning" if critical is None else _results_style_for_status(critical.get("Status")),
         },
         {
-            "title": "ULS/SLS completeness",
-            "value": f"ULS {uls_completeness_value} · SLS {'complete' if sls_complete else ('partial' if sls_available else 'no')}",
+            "title": "Result completeness" if _results_is_crossbeam_workflow(state) else "ULS/SLS completeness",
+            "value": (
+                f"ULS results {uls_completeness_value} · SLS {'complete' if sls_complete else ('partial' if sls_available else 'no')}"
+                if _results_is_crossbeam_workflow(state)
+                else f"ULS {uls_completeness_value} · SLS {'complete' if sls_complete else ('partial' if sls_available else 'no')}"
+            ),
             "detail": completeness_detail,
             "status": completeness_status,
         },
@@ -3113,9 +3130,9 @@ def _results_crossbeam_summary_row(state: object, check_name: str) -> dict[str, 
         if "FAIL" in status.upper():
             action = "Revise sectional flexural capacity, tendon/rebar layout, or demand in the source Flexure check."
         elif active_method == CONSTRUCTION_METHOD_PRECAST:
-            action = "Review tendon-only sectional result; physical-joint transfer and anchorage/D-regions remain separate."
+            action = "No sectional flexure action required. Physical-joint transfer and anchorage/D-regions remain separate project checks."
         else:
-            action = "Review monolithic rebar+tendon sectional result and audit evidence before final issue."
+            action = "No sectional flexure action required. PT anchorage/end zones and beam-column-joint D-regions remain separate project checks."
     elif check_name == "Shear":
         governing_check, dc = _results_crossbeam_shear_component(row)
         row_code = _results_scalar(row.get("Code basis"))
@@ -3447,9 +3464,9 @@ def _render_results_crossbeam_uls_dashboard(state: object) -> None:
             "status": "info",
         },
         {
-            "title": "ULS completeness",
+            "title": "ULS analysis results",
             "value": f"{calculated}/4 current",
-            "detail": "Flexure · Shear · Torsion · Shear + Torsion",
+            "detail": "Stored sectional modules: Flexure · Shear · Torsion · Shear + Torsion",
             "status": "ready" if calculated == 4 else "warning",
         },
         {
@@ -3562,6 +3579,7 @@ def _results_add_crossbeam_uls_rows(state: object, rows: list[dict[str, object]]
                     "Demand": row["Demand"],
                     "Capacity / Limit": row["Capacity / Limit"],
                     "D/C / Util.": row["D/C / Util."],
+                    "Required Action": row.get("Required Action", "Review source Analysis check."),
                     "Source": row["Source"] + " · " + row.get("Scope", ""),
                     "Code Basis": row.get("Code Basis", _results_design_code_label(state)),
                 }
