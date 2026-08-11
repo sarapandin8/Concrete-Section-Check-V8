@@ -170,7 +170,7 @@ def build_crossbeam_draft_design_report(context: Mapping[str, object]) -> bytes:
     _add_table(
         document,
         trace_rows,
-        ("Check", "Status", "Construction type", "Case", "Station / Point", "Result hash", "Source"),
+        ("Check", "Status", "Construction type", "Case", "Station / Point", "Result fingerprint", "Source"),
     )
 
     document.add_paragraph(

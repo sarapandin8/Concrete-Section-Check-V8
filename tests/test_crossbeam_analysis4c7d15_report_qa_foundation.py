@@ -54,7 +54,7 @@ def test_crossbeam_report_qa_traceability_uses_stored_package_hashes() -> None:
     trace = app._report_qa_crossbeam_traceability_rows(state)
     assert len(trace) == 4
     assert {row["Check"] for row in trace} == {"Flexure", "Shear", "Torsion", "Shear + Torsion"}
-    assert all(row["Result hash"] != "-" for row in trace)
+    assert all(row["Result fingerprint"] != "-" for row in trace)
     assert all("Analysis → ULS Strength" in row["Source"] for row in trace)
 
 

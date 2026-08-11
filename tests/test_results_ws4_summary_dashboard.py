@@ -37,7 +37,7 @@ def test_results_summary_cards_include_next_engineering_action() -> None:
     assert "def _results_next_engineering_action" in SOURCE
     assert "Next engineering action" in SOURCE
     assert "Run SLS Stress & Cracking" in SOURCE
-    assert "Run SLS Stress & Cracking before Report / QA." in SOURCE
+    assert "Run SLS Stress & Cracking before final report issue." in SOURCE
 
 
 def test_results_has_dedicated_sls_dashboard_without_solver_rerun() -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from html import escape
+import hashlib
 import math
 import re
 
@@ -2467,7 +2468,7 @@ def _results_required_action_rows(state: object, rows: list[dict[str, object]]) 
                 "Priority": "High" if actions == [] else "Medium",
                 "Module": "SLS",
                 "Issue": "SLS not calculated",
-                "Required Action": "Run SLS Stress & Cracking before Report / QA.",
+                "Required Action": "Run SLS Stress & Cracking before final report issue.",
             }
         )
     elif not _results_sls_complete_for_report(state):
@@ -2476,7 +2477,7 @@ def _results_required_action_rows(state: object, rows: list[dict[str, object]]) 
                 "Priority": "Medium",
                 "Module": "SLS",
                 "Issue": "SLS stress stored; report summary partial",
-                "Required Action": "Review stored SLS stage stress results and complete SLS report/cracking handoff before Report / QA.",
+                "Required Action": "Review stored SLS stage stress results and complete the SLS report package before final report issue.",
             }
         )
     if not actions:
@@ -2907,6 +2908,9 @@ _RESULTS_CROSSBEAM_ULS_HASH_KEYS = {
     "Torsion": CROSSBEAM_ULS_TORSION_RESULT_HASH_KEY,
     "Shear + Torsion": CROSSBEAM_ULS_COMBINED_VT_RESULT_HASH_KEY,
 }
+
+_CROSSBEAM_REPORT_QA_DRAFT_DOCX_KEY = "crossbeam_report_qa_draft_docx"
+_CROSSBEAM_REPORT_QA_DRAFT_SOURCE_FINGERPRINT_KEY = "crossbeam_report_qa_draft_source_fingerprint"
 
 
 def _results_is_crossbeam_workflow(state: object) -> bool:
@@ -4416,7 +4420,7 @@ def _report_qa_crossbeam_limitation_rows(state: object) -> list[dict[str, object
             {
                 "Status": "PENDING",
                 "Item": "SLS report package",
-                "Engineering meaning": "SLS Stress & Cracking / formal SLS report handoff is not complete; final Design Report issue remains unavailable.",
+                "Engineering meaning": "SLS Stress & Cracking and SLS Deflection / Camber report integration are not yet complete; final Design Report issue remains unavailable.",
             }
         )
     return rows
@@ -4442,11 +4446,55 @@ def _report_qa_crossbeam_traceability_rows(state: object) -> list[dict[str, obje
                 "Construction type": stored_method,
                 "Case": summary.get("Governing Case", "-"),
                 "Station / Point": summary.get("Station / Point", "-"),
-                "Result hash": result_hash,
+                "Result fingerprint": result_hash,
                 "Source": summary.get("Source", f"Analysis → ULS Strength → {check_name}"),
             }
         )
     return trace_rows
+
+
+def _report_qa_crossbeam_source_fingerprint(state: object) -> str:
+    """Return a deterministic fingerprint of the stored Crossbeam report source.
+
+    The report package is read-only, so its freshness is tied to the active
+    construction type, the current Analysis input fingerprint, and the stored
+    ULS package fingerprints.  This is intentionally separate from the generic
+    project ``report_status`` flag, which historically means "report needs
+    refreshing after Analysis" and cannot distinguish an artifact that has
+    never been generated from one that is genuinely stale.
+    """
+
+    if not isinstance(state, Mapping):
+        return ""
+    dirty = current_project_dirty_status(state)
+    parts = [
+        _results_crossbeam_current_construction_method(state),
+        dirty.last_analysis_hash or "",
+    ]
+    for check_name in _RESULTS_CROSSBEAM_ULS_CHECKS:
+        parts.append(str(state.get(_RESULTS_CROSSBEAM_ULS_HASH_KEYS[check_name]) or ""))
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def _report_qa_crossbeam_artifact_state(state: object) -> dict[str, str]:
+    """Describe Draft Design Report artifact freshness without rerunning solvers."""
+
+    if not isinstance(state, Mapping):
+        return {"state": "NOT GENERATED", "current_source": "-", "artifact_source": "-"}
+    current_source = _report_qa_crossbeam_source_fingerprint(state)
+    artifact_source = str(state.get(_CROSSBEAM_REPORT_QA_DRAFT_SOURCE_FINGERPRINT_KEY) or "").strip()
+    artifact_bytes = state.get(_CROSSBEAM_REPORT_QA_DRAFT_DOCX_KEY)
+    if not artifact_bytes:
+        status = "NOT GENERATED"
+    elif not artifact_source or artifact_source != current_source:
+        status = "OUT OF DATE"
+    else:
+        status = "CURRENT"
+    return {
+        "state": status,
+        "current_source": current_source or "-",
+        "artifact_source": artifact_source or "-",
+    }
 
 
 def _report_qa_crossbeam_context(state: object) -> dict[str, object]:
@@ -4555,12 +4603,15 @@ def _render_report_qa_crossbeam_traceability(state: object, context: Mapping[str
     st.dataframe(pd.DataFrame(list(context.get("Traceability rows") or [])), use_container_width=True, hide_index=True)
     dirty = current_project_dirty_status(state) if isinstance(state, Mapping) else None
     if dirty is not None:
+        artifact = _report_qa_crossbeam_artifact_state(state)
         dirty_rows = [
             {"Item": "Model status", "Value": dirty.model_status},
             {"Item": "Analysis status", "Value": dirty.analysis_status},
-            {"Item": "Report status", "Value": dirty.report_status},
-            {"Item": "Current input hash", "Value": dirty.current_hash[:16]},
-            {"Item": "Last analysis hash", "Value": (dirty.last_analysis_hash or "-")[:16]},
+            {"Item": "Report artifact state", "Value": artifact["state"]},
+            {"Item": "Current input fingerprint", "Value": dirty.current_hash[:16]},
+            {"Item": "Last analysis input fingerprint", "Value": (dirty.last_analysis_hash or "-")[:16]},
+            {"Item": "Current report-source fingerprint", "Value": artifact["current_source"][:16]},
+            {"Item": "Last built report-source fingerprint", "Value": artifact["artifact_source"][:16]},
             {"Item": "Changed input groups", "Value": ", ".join(dirty.changed_groups) if dirty.changed_groups else "None"},
             {"Item": "Affected checks", "Value": ", ".join(dirty.affected_checks) if dirty.affected_checks else "None"},
         ]
@@ -4630,10 +4681,16 @@ def _render_report_qa_crossbeam_export(state: object, context: dict[str, object]
             st.markdown("**QA scope guards / limitations**")
             st.dataframe(pd.DataFrame(list(preview_context.get("Limitation rows") or [])), use_container_width=True, hide_index=True)
 
+    current_source_fingerprint = _report_qa_crossbeam_source_fingerprint(state)
     if st.button("Build Draft Design Report (.docx)", use_container_width=True, key="crossbeam_report_qa_build_docx"):
-        st.session_state["crossbeam_report_qa_draft_docx"] = build_crossbeam_draft_design_report(preview_context)
-    report_bytes = st.session_state.get("crossbeam_report_qa_draft_docx")
-    if report_bytes:
+        st.session_state[_CROSSBEAM_REPORT_QA_DRAFT_DOCX_KEY] = build_crossbeam_draft_design_report(preview_context)
+        st.session_state[_CROSSBEAM_REPORT_QA_DRAFT_SOURCE_FINGERPRINT_KEY] = current_source_fingerprint
+
+    artifact = _report_qa_crossbeam_artifact_state(st.session_state)
+    report_bytes = st.session_state.get(_CROSSBEAM_REPORT_QA_DRAFT_DOCX_KEY)
+    if artifact["state"] == "OUT OF DATE":
+        st.warning("The previously built Draft Design Report is OUT OF DATE for the current stored Analysis source. Rebuild it before export.")
+    elif artifact["state"] == "CURRENT" and report_bytes:
         st.download_button(
             "Export Draft Design Report (.docx)",
             data=report_bytes,
