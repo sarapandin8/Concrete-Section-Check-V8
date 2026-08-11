@@ -916,6 +916,7 @@ def run_crossbeam_transfer_stress(preparation: CrossbeamTransferPreparation) -> 
     return {
         "schema": "crossbeam-sls1a-transfer-stress-result-v1",
         "input_fingerprint": preparation.fingerprint,
+        "construction_method": preparation.construction_method,
         "status": status,
         "rows": rows,
         "fiber_rows": fiber_rows,
@@ -1272,6 +1273,7 @@ def run_crossbeam_service_stress(preparation: CrossbeamTransferPreparation) -> d
     return {
         "schema": "crossbeam-sls1b-service-stress-result-v1",
         "input_fingerprint": preparation.fingerprint,
+        "construction_method": preparation.construction_method,
         "status": status,
         "rows": rows,
         "fiber_rows": fiber_rows,

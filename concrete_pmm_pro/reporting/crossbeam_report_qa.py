@@ -157,6 +157,38 @@ def build_crossbeam_draft_design_report(context: Mapping[str, object]) -> bytes:
         ),
     )
 
+    sls_rows = list(context.get("SLS rows") or [])
+    document.add_heading("Stored SLS Stress & Cracking Evidence", level=1)
+    if sls_rows:
+        document.add_paragraph("Governing Transfer / Final Service stress evidence")
+        _add_table(
+            document,
+            sls_rows,
+            (
+                "Check",
+                "Status",
+                "Governing Check",
+                "Station / Point",
+                "D/C / Util.",
+            ),
+        )
+        document.add_paragraph("Demand / limit evidence and required action")
+        _add_table(
+            document,
+            sls_rows,
+            (
+                "Check",
+                "Demand",
+                "Capacity / Limit",
+                "Required Action",
+            ),
+        )
+    else:
+        document.add_paragraph("No stored Crossbeam SLS Stress & Cracking evidence is available in this draft.")
+    document.add_paragraph(
+        "Crossbeam SLS Deflection / Camber remains a separate pending serviceability route and is not certified by the stored stress evidence above."
+    )
+
     document.add_heading("Required Actions", level=1)
     action_rows = list(context.get("Action rows") or [])
     _add_table(document, action_rows, ("Priority", "Module", "Issue", "Required Action"))

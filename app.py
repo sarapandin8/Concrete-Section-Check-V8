@@ -38,6 +38,12 @@ from concrete_pmm_pro.analysis.crossbeam_uls_combined_vt import (
     CROSSBEAM_ULS_COMBINED_VT_RESULT_HASH_KEY,
     CROSSBEAM_ULS_COMBINED_VT_RESULT_KEY,
 )
+from concrete_pmm_pro.analysis.crossbeam_sls_transfer import (
+    CROSSBEAM_TRANSFER_RESULT_HASH_KEY,
+    CROSSBEAM_TRANSFER_RESULT_KEY,
+    CROSSBEAM_SERVICE_RESULT_HASH_KEY,
+    CROSSBEAM_SERVICE_RESULT_KEY,
+)
 from concrete_pmm_pro.crossbeam.section_library import (
     CB_SECLIB_ACTIVE_ID_KEY,
     CB_SECLIB_DEFINITIONS_KEY,
@@ -2142,6 +2148,9 @@ def _results_beam_sls_stage_summary_df(state: object) -> pd.DataFrame | None:
 
 
 def _results_sls_stress_available(state: object) -> bool:
+    if _results_is_crossbeam_workflow(state):
+        current, _total, _missing = _results_crossbeam_sls_completion(state)
+        return current > 0
     serviceability = state.get("serviceability_summary") if hasattr(state, "get") else None
     if serviceability is not None and bool(getattr(serviceability, "stress_results", [object()])):
         return True
@@ -2164,6 +2173,13 @@ def _results_sls_complete_for_report(state: object) -> bool:
     """
 
     if not hasattr(state, "get"):
+        return False
+    if _results_is_crossbeam_workflow(state):
+        # CROSSBEAM.SLS closeout is intentionally staged.  Transfer and Final
+        # Service gross-section stress can be complete/current while the
+        # dedicated Crossbeam Deflection / Camber package is still pending.
+        # Do not promote the complete stress package into final report
+        # readiness until that companion serviceability route is integrated.
         return False
     serviceability = state.get("serviceability_summary")
     if serviceability is not None and bool(getattr(serviceability, "stress_results", [object()])):
@@ -2366,7 +2382,13 @@ def _results_report_handoff_state(state: object, rows: list[dict[str, object]] |
         }
     if not _results_sls_complete_for_report(state):
         detail = "Complete stored SLS summaries before Report / QA handoff."
-        if _results_sls_stress_available(state):
+        if _results_is_crossbeam_workflow(state):
+            current, total, missing = _results_crossbeam_sls_completion(state)
+            if current == total:
+                detail = "Crossbeam SLS Stress & Cracking is 2/2 current; dedicated SLS Deflection / Camber remains pending."
+            elif current:
+                detail = f"Crossbeam SLS Stress & Cracking is {current}/{total} current; missing/stale: " + ", ".join(missing)
+        elif _results_sls_stress_available(state):
             detail = "SLS stage stress results are stored, but formal SLS/report handoff summary is still partial."
         return {
             "status": "warning",
@@ -2418,6 +2440,19 @@ def _results_next_engineering_action(state: object, rows: list[dict[str, object]
             "detail": "ULS results may be available, but SLS serviceability is still not calculated.",
         }
     if not _results_sls_complete_for_report(state):
+        if _results_is_crossbeam_workflow(state):
+            current, total, missing = _results_crossbeam_sls_completion(state)
+            if current < total:
+                return {
+                    "status": "warning",
+                    "value": "Complete SLS stress stages",
+                    "detail": "Run missing/stale Crossbeam SLS stage(s): " + ", ".join(missing),
+                }
+            return {
+                "status": "warning",
+                "value": "Develop Deflection / Camber",
+                "detail": "Crossbeam SLS Stress & Cracking is 2/2 current; dedicated Deflection / Camber remains the SLS closeout gate.",
+            }
         return {
             "status": "warning",
             "value": "Complete SLS handoff",
@@ -2472,14 +2507,35 @@ def _results_required_action_rows(state: object, rows: list[dict[str, object]]) 
             }
         )
     elif not _results_sls_complete_for_report(state):
-        actions.append(
-            {
-                "Priority": "Medium",
-                "Module": "SLS",
-                "Issue": "SLS stress stored; report summary partial",
-                "Required Action": "Review stored SLS stage stress results and complete the SLS report package before final report issue.",
-            }
-        )
+        if _results_is_crossbeam_workflow(state):
+            current, total, missing = _results_crossbeam_sls_completion(state)
+            if current < total:
+                actions.append(
+                    {
+                        "Priority": "Medium",
+                        "Module": "SLS Crossbeam",
+                        "Issue": f"SLS Stress & Cracking {current}/{total} current",
+                        "Required Action": "Run missing/stale stage(s): " + ", ".join(missing),
+                    }
+                )
+            else:
+                actions.append(
+                    {
+                        "Priority": "Medium",
+                        "Module": "SLS Crossbeam",
+                        "Issue": "SLS Deflection / Camber pending",
+                        "Required Action": "Complete the dedicated Crossbeam SLS Deflection / Camber workflow before final report issue.",
+                    }
+                )
+        else:
+            actions.append(
+                {
+                    "Priority": "Medium",
+                    "Module": "SLS",
+                    "Issue": "SLS stress stored; report summary partial",
+                    "Required Action": "Review stored SLS stage stress results and complete the SLS report package before final report issue.",
+                }
+            )
     if not actions:
         actions.append(
             {
@@ -2519,6 +2575,46 @@ def _render_results_required_actions(state: object, rows: list[dict[str, object]
 
 
 def _results_sls_summary_cards(state: object) -> list[dict[str, object]]:
+    if _results_is_crossbeam_workflow(state):
+        rows = _results_crossbeam_sls_summary_rows(state)
+        current_rows = [row for row in rows if bool(row.get("__calculated"))]
+        stored_rows = [row for row in rows if bool(row.get("__stored"))]
+        current, total, missing = _results_crossbeam_sls_completion(state)
+        governing = _results_critical_row(current_rows) if current_rows else None
+        if governing is None and stored_rows:
+            governing = stored_rows[0]
+        governing_status = str(governing.get("Status") if governing else "NOT CALCULATED")
+        governing_util = str(governing.get("D/C / Util.") if governing else "-")
+        completion_status = "ready" if current == total else "warning"
+        detail = "At Transfer + At Final Service current" if current == total else (
+            "Missing/stale: " + ", ".join(missing) if missing else "No stored Crossbeam SLS stress result"
+        )
+        return [
+            {
+                "title": "Construction type",
+                "value": _results_crossbeam_current_construction_method(state),
+                "detail": "active Crossbeam SLS result ownership",
+                "status": "info",
+            },
+            {
+                "title": "SLS Stress & Cracking",
+                "value": f"{current}/{total} current",
+                "detail": detail,
+                "status": completion_status,
+            },
+            {
+                "title": "Governing stress result",
+                "value": str(governing.get("Check") if governing else "-") ,
+                "detail": f"{governing_status} · utilization {governing_util}" if governing else "Run Crossbeam SLS stress stages",
+                "status": _results_style_for_status(governing_status),
+            },
+            {
+                "title": "Deflection / Camber",
+                "value": "PENDING",
+                "detail": "Crossbeam dedicated SLS Deflection / Camber route is not yet integrated",
+                "status": "warning",
+            },
+        ]
     serviceability = state.get("serviceability_summary")
     stage_df = _results_beam_sls_stage_summary_df(state)
     stage_governing = _results_sls_stage_governing_row(state)
@@ -2798,7 +2894,11 @@ def _results_availability_cards(state: object) -> list[dict[str, object]]:
         completeness_detail += "; SLS complete"
         completeness_status = "ready" if uls_rows else "warning"
     elif sls_available:
-        completeness_detail += "; SLS stage stress stored"
+        if _results_is_crossbeam_workflow(state):
+            sls_current, sls_total, _sls_missing = _results_crossbeam_sls_completion(state)
+            completeness_detail += f"; SLS Stress & Cracking {sls_current}/{sls_total} current; Deflection/Camber pending"
+        else:
+            completeness_detail += "; SLS stage stress stored"
         completeness_status = "warning"
     else:
         completeness_detail += "; SLS pending"
@@ -2909,6 +3009,16 @@ _RESULTS_CROSSBEAM_ULS_HASH_KEYS = {
     "Shear + Torsion": CROSSBEAM_ULS_COMBINED_VT_RESULT_HASH_KEY,
 }
 
+_RESULTS_CROSSBEAM_SLS_CHECKS = ["At Transfer", "At Final Service"]
+_RESULTS_CROSSBEAM_SLS_RESULT_KEYS = {
+    "At Transfer": CROSSBEAM_TRANSFER_RESULT_KEY,
+    "At Final Service": CROSSBEAM_SERVICE_RESULT_KEY,
+}
+_RESULTS_CROSSBEAM_SLS_HASH_KEYS = {
+    "At Transfer": CROSSBEAM_TRANSFER_RESULT_HASH_KEY,
+    "At Final Service": CROSSBEAM_SERVICE_RESULT_HASH_KEY,
+}
+
 _CROSSBEAM_REPORT_QA_DRAFT_DOCX_KEY = "crossbeam_report_qa_draft_docx"
 _CROSSBEAM_REPORT_QA_DRAFT_SOURCE_FINGERPRINT_KEY = "crossbeam_report_qa_draft_source_fingerprint"
 
@@ -2968,6 +3078,162 @@ def _results_crossbeam_stored_result(state: object, check_name: str) -> Mapping[
         return None
     value = state.get(_RESULTS_CROSSBEAM_ULS_RESULT_KEYS[check_name])
     return value if isinstance(value, Mapping) else None
+
+
+def _results_crossbeam_sls_stored_result(state: object, check_name: str) -> Mapping[str, object] | None:
+    """Return one stored Crossbeam SLS stress package without preparing/running Analysis."""
+
+    if not isinstance(state, Mapping):
+        return None
+    value = state.get(_RESULTS_CROSSBEAM_SLS_RESULT_KEYS[check_name])
+    return value if isinstance(value, Mapping) else None
+
+
+def _results_crossbeam_sls_result_is_active_mode(
+    state: object,
+    result: Mapping[str, object] | None,
+) -> bool:
+    if not isinstance(result, Mapping):
+        return False
+    stored_method = _results_crossbeam_result_construction_method(result)
+    if stored_method is None:
+        return True
+    return stored_method == _results_crossbeam_current_construction_method(state)
+
+
+def _results_crossbeam_sls_required_action(check_name: str, result: Mapping[str, object]) -> str:
+    actions = result.get("required_actions")
+    if isinstance(actions, list) and actions:
+        first = actions[0] if isinstance(actions[0], Mapping) else None
+        if isinstance(first, Mapping):
+            action = str(first.get("Required Action") or "").strip()
+            if action:
+                return action
+    status = str(result.get("status") or "REVIEW").upper()
+    if status == "PASS":
+        if check_name == "At Transfer":
+            return "No gross-section Transfer stress action required; PT anchorage/end zones, development, and local D-regions remain separate checks."
+        return "No gross-section Final Service stress action required for the stored Class U/T route; deflection/camber and other separate serviceability checks remain pending."
+    return f"Review the stored {check_name} stress result and source Analysis audit before final report issue."
+
+
+def _results_crossbeam_sls_capacity_label(check_name: str, governing: Mapping[str, object]) -> str:
+    criterion = str(governing.get("Criterion") or "").strip()
+    try:
+        limit = float(governing.get("Limit MPa"))
+    except (TypeError, ValueError):
+        limit = float("nan")
+    if "Physical-joint minimum compression" in criterion:
+        return "Joint stress ≤ -0.700 MPa"
+    if math.isfinite(limit):
+        if "compression" in criterion.lower():
+            return f"Compression limit = {-abs(limit):+.3f} MPa"
+        if "tension" in criterion.lower() or "Class U" in criterion:
+            return f"Tension limit = +{abs(limit):.3f} MPa"
+        return f"Limit = {limit:.3f} MPa"
+    if check_name == "At Final Service" and "Class C" in criterion:
+        return "Cracked transformed-section verification required"
+    return "Stored ACI/project stress criterion"
+
+
+def _results_crossbeam_sls_summary_row(state: object, check_name: str) -> dict[str, object]:
+    """Normalize one stored Crossbeam Transfer/Final-Service package for downstream read-only use."""
+
+    result = _results_crossbeam_sls_stored_result(state, check_name)
+    active_method = _results_crossbeam_current_construction_method(state)
+    source = f"Analysis → SLS / Stress & Cracking → {check_name}"
+    if result is None:
+        return {
+            "Module": "SLS Crossbeam",
+            "Check": check_name,
+            "Status": "NOT CALCULATED",
+            "Governing Check": "-",
+            "Governing Case": "-",
+            "Station / Point": "-",
+            "Demand": "-",
+            "Capacity / Limit": "-",
+            "D/C / Util.": "-",
+            "Required Action": f"Run {check_name} in Analysis → SLS / Stress & Cracking.",
+            "Scope": f"{active_method} stored-result route.",
+            "Source": source,
+            "Code Basis": _results_design_code_label(state),
+            "__calculated": False,
+            "__stored": False,
+        }
+
+    stored_method = _results_crossbeam_result_construction_method(result) or active_method
+    if not _results_crossbeam_sls_result_is_active_mode(state, result):
+        return {
+            "Module": "SLS Crossbeam",
+            "Check": check_name,
+            "Status": "STALE",
+            "Governing Check": "Stored result belongs to another construction type",
+            "Governing Case": "-",
+            "Station / Point": "-",
+            "Demand": "-",
+            "Capacity / Limit": "-",
+            "D/C / Util.": "-",
+            "Required Action": f"Recalculate {check_name} after the construction-type switch.",
+            "Scope": f"Stored: {stored_method}; active: {active_method}. Dormant SLS result is not accepted as current.",
+            "Source": source,
+            "Code Basis": _results_design_code_label(state),
+            "__calculated": False,
+            "__stored": True,
+        }
+
+    governing = result.get("governing_row") if isinstance(result.get("governing_row"), Mapping) else {}
+    governing = dict(governing) if isinstance(governing, Mapping) else {}
+    status = str(result.get("status") or governing.get("Status") or "REVIEW")
+    criterion = str(governing.get("Criterion") or ("Transfer gross-section stress" if check_name == "At Transfer" else "Final Service gross-section stress"))
+    case = _results_scalar(governing.get("Case"))
+    station = _results_crossbeam_station_label(governing, active_method) if governing else "-"
+    fiber = str(governing.get("Fiber") or "").strip()
+    face = str(governing.get("Section face") or "").strip()
+    if governing and (fiber or face):
+        detail = " / ".join(value for value in (fiber, face) if value)
+        station = f"{station} · {detail}" if station != "-" else detail
+    try:
+        stress = float(governing.get("Stress MPa"))
+    except (TypeError, ValueError):
+        stress = float("nan")
+    try:
+        utilization = float(governing.get("Utilization value"))
+    except (TypeError, ValueError):
+        utilization = float("nan")
+    scope = str(result.get("scope") or "Stored Crossbeam SLS gross-section stress result.")
+    if check_name == "At Final Service":
+        overall_class = str(result.get("overall_aci_class") or "-")
+        scope += f" Gross ACI class: {overall_class}."
+    return {
+        "Module": "SLS Crossbeam",
+        "Check": check_name,
+        "Status": status,
+        "Governing Check": criterion,
+        "Governing Case": case,
+        "Station / Point": station,
+        "Demand": "-" if not math.isfinite(stress) else f"Stress = {stress:+.3f} MPa",
+        "Capacity / Limit": _results_crossbeam_sls_capacity_label(check_name, governing),
+        "D/C / Util.": "-" if not math.isfinite(utilization) else f"{utilization:.3f}",
+        "Required Action": _results_crossbeam_sls_required_action(check_name, result),
+        "Scope": scope,
+        "Source": source,
+        "Code Basis": str(result.get("code_basis") or _results_design_code_label(state)),
+        "__calculated": bool(governing),
+        "__stored": True,
+    }
+
+
+def _results_crossbeam_sls_summary_rows(state: object) -> list[dict[str, object]]:
+    """Return read-only Crossbeam Transfer and Final Service SLS summaries."""
+
+    return [_results_crossbeam_sls_summary_row(state, check_name) for check_name in _RESULTS_CROSSBEAM_SLS_CHECKS]
+
+
+def _results_crossbeam_sls_completion(state: object) -> tuple[int, int, list[str]]:
+    rows = _results_crossbeam_sls_summary_rows(state)
+    current = sum(1 for row in rows if bool(row.get("__calculated")))
+    missing = [str(row.get("Check")) for row in rows if not bool(row.get("__calculated"))]
+    return current, len(rows), missing
 
 
 def _results_crossbeam_result_is_active_mode(
@@ -3735,6 +4001,11 @@ def _render_results_column_pier_vt_dashboard(state: object) -> bool:
 
 
 def _results_add_sls_rows(state: object, rows: list[dict[str, object]]) -> None:
+    if _results_is_crossbeam_workflow(state):
+        for row in _results_crossbeam_sls_summary_rows(state):
+            if bool(row.get("__stored")):
+                rows.append({key: value for key, value in row.items() if not str(key).startswith("__")})
+        return
     serviceability = state.get("serviceability_summary")
     if serviceability is not None:
         rows.append(
@@ -3941,6 +4212,27 @@ def _render_results_module_tables(state: object) -> None:
                         "joint_transfer_status": result.get("joint_transfer_status", "-"),
                     }
                     st.write(summary)
+                    raw_rows = result.get("rows")
+                    if isinstance(raw_rows, list) and raw_rows:
+                        st.dataframe(pd.DataFrame(raw_rows), use_container_width=True, hide_index=True)
+        sls_stored = [
+            (check_name, _results_crossbeam_sls_stored_result(state, check_name))
+            for check_name in _RESULTS_CROSSBEAM_SLS_CHECKS
+        ]
+        if any(isinstance(result, Mapping) for _check, result in sls_stored):
+            with st.expander("SLS Crossbeam stored stress result tables", expanded=False):
+                for check_name, result in sls_stored:
+                    if not isinstance(result, Mapping):
+                        continue
+                    st.markdown(f"**{check_name}**")
+                    st.write(
+                        {
+                            "status": result.get("status", "-"),
+                            "construction_method": _results_crossbeam_result_construction_method(result) or "-",
+                            "code_basis": result.get("code_basis", "-"),
+                            "input_fingerprint": str(result.get("input_fingerprint") or "-")[:16],
+                        }
+                    )
                     raw_rows = result.get("rows")
                     if isinstance(raw_rows, list) and raw_rows:
                         st.dataframe(pd.DataFrame(raw_rows), use_container_width=True, hide_index=True)
@@ -4163,6 +4455,22 @@ def _render_results_traceability(state: object) -> None:
                     ),
                 }
             )
+        sls_current, sls_total, _sls_missing = _results_crossbeam_sls_completion(state)
+        trace_rows.append({"Item": "Crossbeam SLS Stress & Cracking current stages", "Value": f"{sls_current}/{sls_total}"})
+        for check_name in _RESULTS_CROSSBEAM_SLS_CHECKS:
+            result = _results_crossbeam_sls_stored_result(state, check_name)
+            hash_value = str(state.get(_RESULTS_CROSSBEAM_SLS_HASH_KEYS[check_name]) or "-")
+            stored_method = _results_crossbeam_result_construction_method(result) if isinstance(result, Mapping) else None
+            trace_rows.append(
+                {
+                    "Item": f"Crossbeam SLS {check_name} stored package",
+                    "Value": (
+                        f"{stored_method or 'Unknown'} · hash {hash_value}"
+                        if isinstance(result, Mapping)
+                        else "Not calculated"
+                    ),
+                }
+            )
     st.dataframe(pd.DataFrame(trace_rows), use_container_width=True, hide_index=True)
 
 
@@ -4347,6 +4655,18 @@ def _report_qa_crossbeam_design_basis_rows(state: object) -> list[dict[str, obje
             "Value": "Row-coupled P/V2/T/M3 from Crossbeam Loads; imported FEA demand is not reconstructed on Report / QA.",
         },
         {
+            "Item": "SLS stress demand basis",
+            "Value": "Stored At Transfer and At Final Service P/M3 from Crossbeam Loads are used exactly once for gross-section stress; Report / QA does not reconstruct or re-add prestress demand.",
+        },
+        {
+            "Item": "SLS stress criteria",
+            "Value": (
+                "ACI 318-19 Transfer and Final Service concrete-stress limits plus the project 0.70 MPa minimum compression gate at Precast physical Segment joints."
+                if is_segmental
+                else "ACI 318-19 Transfer and Final Service concrete-stress limits; Cast-in-Place Zone boundaries do not activate the Precast physical-joint compression gate."
+            ),
+        },
+        {
             "Item": "Prestress handling",
             "Value": "Local station-dependent fpe(s); Pe / secondary prestress is not added again to imported FEA demand.",
         },
@@ -4415,7 +4735,39 @@ def _report_qa_crossbeam_limitation_rows(state: object) -> list[dict[str, object
             },
         ]
     )
-    if not _results_sls_complete_for_report(state):
+    if _results_is_crossbeam_workflow(state):
+        current, total, missing = _results_crossbeam_sls_completion(state)
+        if current == 0:
+            # Preserve the pre-SLS foundation wording until the first stored
+            # Crossbeam SLS package exists.  Once Analysis produces stress
+            # evidence, split the two serviceability gates explicitly below.
+            rows.append(
+                {
+                    "Status": "PENDING",
+                    "Item": "SLS report package",
+                    "Engineering meaning": "SLS Stress & Cracking and SLS Deflection / Camber report integration are not yet complete; final Design Report issue remains unavailable.",
+                }
+            )
+        else:
+            rows.append(
+                {
+                    "Status": "CURRENT" if current == total else "PENDING",
+                    "Item": "SLS Stress & Cracking",
+                    "Engineering meaning": (
+                        "At Transfer and At Final Service stored stress packages are current and available for downstream read-only evidence."
+                        if current == total
+                        else "Crossbeam SLS stress package is incomplete; missing/stale stage(s): " + ", ".join(missing)
+                    ),
+                }
+            )
+            rows.append(
+                {
+                    "Status": "PENDING",
+                    "Item": "SLS Deflection / Camber",
+                    "Engineering meaning": "The dedicated Crossbeam deflection/camber route is not yet integrated; final Design Report issue remains unavailable.",
+                }
+            )
+    elif not _results_sls_complete_for_report(state):
         rows.append(
             {
                 "Status": "PENDING",
@@ -4450,6 +4802,29 @@ def _report_qa_crossbeam_traceability_rows(state: object) -> list[dict[str, obje
                 "Source": summary.get("Source", f"Analysis → ULS Strength → {check_name}"),
             }
         )
+    sls_summary_rows = {row["Check"]: row for row in _results_crossbeam_sls_summary_rows(state)}
+    for check_name in _RESULTS_CROSSBEAM_SLS_CHECKS:
+        summary = sls_summary_rows[check_name]
+        result = _results_crossbeam_sls_stored_result(state, check_name)
+        if not isinstance(result, Mapping):
+            continue
+        stored_method = _results_crossbeam_result_construction_method(result) or active_method
+        result_hash = "-"
+        if isinstance(state, Mapping):
+            raw_hash = str(state.get(_RESULTS_CROSSBEAM_SLS_HASH_KEYS[check_name]) or "").strip()
+            if raw_hash:
+                result_hash = raw_hash[:16]
+        trace_rows.append(
+            {
+                "Check": f"SLS {check_name}",
+                "Status": summary.get("Status", "-"),
+                "Construction type": stored_method,
+                "Case": summary.get("Governing Case", "-"),
+                "Station / Point": summary.get("Station / Point", "-"),
+                "Result fingerprint": result_hash,
+                "Source": summary.get("Source", f"Analysis → SLS / Stress & Cracking → {check_name}"),
+            }
+        )
     return trace_rows
 
 
@@ -4473,6 +4848,8 @@ def _report_qa_crossbeam_source_fingerprint(state: object) -> str:
     ]
     for check_name in _RESULTS_CROSSBEAM_ULS_CHECKS:
         parts.append(str(state.get(_RESULTS_CROSSBEAM_ULS_HASH_KEYS[check_name]) or ""))
+    for check_name in _RESULTS_CROSSBEAM_SLS_CHECKS:
+        parts.append(str(state.get(_RESULTS_CROSSBEAM_SLS_HASH_KEYS[check_name]) or ""))
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
 
@@ -4504,7 +4881,14 @@ def _report_qa_crossbeam_context(state: object) -> dict[str, object]:
     handoff = _results_report_handoff_state(state, rows)
     critical = _results_critical_row(rows)
     calculated, total, _missing = _results_active_uls_completion(state)
-    sls_status = "COMPLETE" if _results_sls_complete_for_report(state) else ("PARTIAL" if _results_sls_stress_available(state) else "PENDING")
+    sls_current, sls_total, sls_missing = _results_crossbeam_sls_completion(state)
+    if sls_current == sls_total:
+        sls_status = f"Stress & Cracking {sls_current}/{sls_total} current · Deflection/Camber PENDING"
+    elif sls_current:
+        sls_status = f"Stress & Cracking {sls_current}/{sls_total} current · missing/stale: {', '.join(sls_missing)}"
+    else:
+        sls_status = "PENDING"
+    sls_rows = _results_crossbeam_sls_summary_rows(state)
     return {
         "Report title": (
             str(state.get("report_title") or "Concrete Section Pro — Crossbeam Design Report")
@@ -4540,6 +4924,23 @@ def _report_qa_crossbeam_context(state: object) -> dict[str, object]:
                 "Required Action": row.get("Required Action", "-"),
             }
             for row in uls_rows
+            if bool(row.get("__stored"))
+        ],
+        "SLS rows": [
+            {
+                "Check": row.get("Check", "-"),
+                "Status": row.get("Status", "-"),
+                "Governing Check": row.get("Governing Check", "-"),
+                "Code Basis": row.get("Code Basis", _results_design_code_label(state)),
+                "Governing Case": row.get("Governing Case", "-"),
+                "Station / Point": row.get("Station / Point", "-"),
+                "Demand": row.get("Demand", "-"),
+                "Capacity / Limit": row.get("Capacity / Limit", "-"),
+                "D/C / Util.": row.get("D/C / Util.", "-"),
+                "Scope": row.get("Scope", "-"),
+                "Required Action": row.get("Required Action", "-"),
+            }
+            for row in sls_rows
             if bool(row.get("__stored"))
         ],
         "Action rows": _results_required_action_rows(state, rows),
@@ -4592,6 +4993,20 @@ def _render_report_qa_crossbeam_uls_evidence(context: Mapping[str, object]) -> N
         st.warning("No stored Crossbeam ULS result evidence is available.")
         return
     st.dataframe(pd.DataFrame(evidence), use_container_width=True, hide_index=True)
+
+
+def _render_report_qa_crossbeam_sls_evidence(context: Mapping[str, object]) -> None:
+    render_section_bar(
+        "Stored SLS Stress Evidence",
+        "Read-only governing evidence from Crossbeam At Transfer and At Final Service stored Analysis packages. Deflection / Camber remains a separate pending SLS route.",
+        mark="S",
+    )
+    evidence = list(context.get("SLS rows") or [])
+    if not evidence:
+        st.warning("No stored Crossbeam SLS Stress & Cracking result evidence is available.")
+        return
+    st.dataframe(pd.DataFrame(evidence), use_container_width=True, hide_index=True)
+    st.info("Crossbeam SLS Deflection / Camber is not yet integrated and is not silently promoted to PASS by these stress results.")
 
 
 def _render_report_qa_crossbeam_traceability(state: object, context: Mapping[str, object]) -> None:
@@ -4678,6 +5093,10 @@ def _render_report_qa_crossbeam_export(state: object, context: dict[str, object]
             )
             st.markdown("**Stored ULS evidence**")
             st.dataframe(pd.DataFrame(list(preview_context.get("ULS rows") or [])), use_container_width=True, hide_index=True)
+            sls_rows = list(preview_context.get("SLS rows") or [])
+            if sls_rows:
+                st.markdown("**Stored SLS Stress & Cracking evidence**")
+                st.dataframe(pd.DataFrame(sls_rows), use_container_width=True, hide_index=True)
             st.markdown("**QA scope guards / limitations**")
             st.dataframe(pd.DataFrame(list(preview_context.get("Limitation rows") or [])), use_container_width=True, hide_index=True)
 
@@ -4706,14 +5125,14 @@ def _render_report_qa_crossbeam_export(state: object, context: dict[str, object]
         key="crossbeam_report_qa_final_disabled",
         help="Final issue export will be enabled only after SLS/report readiness and the final certified report template are closed.",
     )
-    st.caption("No PDF or final certified template is issued in D15. Draft export uses stored Analysis results only.")
+    st.caption("No PDF or final certified template is issued yet. Draft export uses stored Analysis results only.")
 
 
 def _render_report_qa_crossbeam_workspace(state: object) -> None:
     context = _report_qa_crossbeam_context(state)
     active = render_active_choice(
         "Report / QA review",
-        ["Readiness", "Design Basis", "ULS Evidence", "Traceability", "Export"],
+        ["Readiness", "Design Basis", "ULS Evidence", "SLS Evidence", "Traceability", "Export"],
         key="crossbeam_report_qa_review_tab",
         horizontal=True,
     )
@@ -4721,6 +5140,8 @@ def _render_report_qa_crossbeam_workspace(state: object) -> None:
         _render_report_qa_crossbeam_design_basis(context)
     elif active == "ULS Evidence":
         _render_report_qa_crossbeam_uls_evidence(context)
+    elif active == "SLS Evidence":
+        _render_report_qa_crossbeam_sls_evidence(context)
     elif active == "Traceability":
         _render_report_qa_crossbeam_traceability(state, context)
     elif active == "Export":
