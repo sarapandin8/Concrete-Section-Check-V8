@@ -26647,19 +26647,21 @@ def _render_crossbeam_service_stress_workspace() -> None:
                 column_rows=list(preparation.column_rows),
                 stage_title="Concrete Stress At Final Service",
                 joint_transfer_no_tension=False,
-                compression_column="Class U/T compression limit MPa",
-                compression_trace_name="Class U/T compression limit",
+                compression_column="0.60f'c reference MPa",
+                compression_trace_name="0.60f'c compression reference",
                 tension_column="Class U threshold MPa",
                 tension_trace_name="Class U threshold",
                 upper_class_threshold_column="Class C threshold MPa",
                 upper_class_threshold_trace_name="Class C threshold",
                 code_subtitle=(
                     "ACI 318-19 24.5.2 · Class U ≤0.62√f'c · Class T ≤1.00√f'c · Class C >1.00√f'c · "
-                    "0.60f'c compression applies Class U/T only · stress compression negative / tension positive"
+                    "0.60f'c shown continuously as reference; active acceptance applies Class U/T only · "
+                    "stress compression negative / tension positive"
                 ),
             ),
             caption=(
-                "Lines connect imported station checks for visualization only. The dashed Class U threshold and dotted Class C threshold are classification boundaries, not generic allowable-tension limits. "
+                "Lines connect imported station checks for visualization only. The continuous 0.60f'c compression-reference trace is shown across the full member for readability; it is an active gross-section acceptance limit only for Class U/T. "
+                "The dashed Class U threshold and dotted Class C threshold are classification boundaries, not generic allowable-tension limits. "
                 "Class C requires separate cracked transformed-section verification; the sustained-load 0.45f'c condition also requires its own response bucket. "
                 "Imported Case labels are preserved verbatim; SLS routing is controlled by the Final service stage field."
             ),

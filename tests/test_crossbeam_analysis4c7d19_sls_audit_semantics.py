@@ -108,8 +108,8 @@ def test_final_service_figure_uses_classification_threshold_names_not_generic_te
         column_rows=[],
         stage_title="Concrete Stress At Final Service",
         joint_transfer_no_tension=False,
-        compression_column="Class U/T compression limit MPa",
-        compression_trace_name="Class U/T compression limit",
+        compression_column="0.60f'c reference MPa",
+        compression_trace_name="0.60f'c compression reference",
         tension_column="Class U threshold MPa",
         tension_trace_name="Class U threshold",
         upper_class_threshold_column="Class C threshold MPa",
@@ -118,7 +118,7 @@ def test_final_service_figure_uses_classification_threshold_names_not_generic_te
     names = {str(trace.name) for trace in figure.data}
     assert "Class U threshold" in names
     assert "Class C threshold" in names
-    assert "Class U/T compression limit" in names
+    assert "0.60f'c compression reference" in names
     assert "Tension limit" not in names
 
 
