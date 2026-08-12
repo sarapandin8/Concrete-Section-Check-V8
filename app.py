@@ -3127,14 +3127,18 @@ def _results_crossbeam_sls_capacity_label(check_name: str, governing: Mapping[st
         return "Joint stress ≤ +0.000 MPa"
     if "Physical-joint minimum compression" in criterion:
         return "Joint stress ≤ -0.700 MPa"
-    if math.isfinite(limit):
-        if "compression" in criterion.lower():
-            return f"Compression limit = {-abs(limit):+.3f} MPa"
-        if "tension" in criterion.lower() or "Class U" in criterion:
-            return f"Tension limit = +{abs(limit):.3f} MPa"
-        return f"Limit = {limit:.3f} MPa"
     if check_name == "At Final Service" and "Class C" in criterion:
         return "Cracked transformed-section verification required"
+    if math.isfinite(limit):
+        if "compression" in criterion.lower():
+            return f"Class U/T compression limit = {-abs(limit):+.3f} MPa" if check_name == "At Final Service" else f"Compression limit = {-abs(limit):+.3f} MPa"
+        if check_name == "At Final Service" and "Class T" in criterion:
+            return f"Class C threshold = +{abs(limit):.3f} MPa"
+        if check_name == "At Final Service" and "Class U" in criterion:
+            return f"Class U threshold = +{abs(limit):.3f} MPa"
+        if "tension" in criterion.lower():
+            return f"Tension limit = +{abs(limit):.3f} MPa"
+        return f"Limit = {limit:.3f} MPa"
     return "Stored ACI/project stress criterion"
 
 
@@ -3215,7 +3219,11 @@ def _results_crossbeam_sls_summary_row(state: object, check_name: str) -> dict[s
         "Station / Point": station,
         "Demand": "-" if not math.isfinite(stress) else f"Stress = {stress:+.3f} MPa",
         "Capacity / Limit": _results_crossbeam_sls_capacity_label(check_name, governing),
-        "D/C / Util.": "-" if not math.isfinite(utilization) else f"{utilization:.3f}",
+        "D/C / Util.": (
+            "N/A"
+            if criterion == "Physical-joint no tension at Transfer"
+            else "-" if not math.isfinite(utilization) else f"{utilization:.3f}"
+        ),
         "Required Action": _results_crossbeam_sls_required_action(check_name, result),
         "Scope": scope,
         "Source": source,

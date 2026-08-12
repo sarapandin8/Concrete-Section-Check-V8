@@ -79,7 +79,7 @@ def test_transfer_preparation_schema_bump_invalidates_pre_d18_cached_results() -
     # Fingerprint is schema-sensitive; this assertion guards the D18 contract
     # by ensuring the current source contains the v4 preparation schema.
     source = inspect.getsource(build_crossbeam_transfer_stress_preparation)
-    assert "crossbeam-sls1a-transfer-preparation-v4" in source
+    assert "crossbeam-sls1a-transfer-preparation-v5" in source
     assert prep.ready
 
 

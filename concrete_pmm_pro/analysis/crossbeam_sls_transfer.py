@@ -653,7 +653,7 @@ def build_crossbeam_transfer_stress_preparation(state: Any) -> CrossbeamTransfer
         # v4 invalidates stored SLS1A results created before the adopted
         # Precast Segmental Transfer joint rule was corrected from the
         # Final-Service 0.70 MPa compression gate to a zero-tension gate.
-        schema="crossbeam-sls1a-transfer-preparation-v4",
+        schema="crossbeam-sls1a-transfer-preparation-v5",
         transfer_stage=True,
     )
 
@@ -665,7 +665,7 @@ def build_crossbeam_service_stress_preparation(state: Any) -> CrossbeamTransferP
         state,
         stage="Final service stage",
         stage_label="At Final Service",
-        schema="crossbeam-sls1b-service-preparation-v1",
+        schema="crossbeam-sls1b-service-preparation-v2",
         transfer_stage=False,
     )
 
@@ -822,7 +822,16 @@ def run_crossbeam_transfer_stress(preparation: CrossbeamTransferPreparation) -> 
             physical_joint=source.is_physical_joint,
         )
         status = "PASS" if top_check["status"] == bottom_check["status"] == "PASS" else "FAIL"
-        row_utilization = max(float(top_check["aci_utilization"]), float(bottom_check["aci_utilization"]))
+        aci_row_utilization = max(float(top_check["aci_utilization"]), float(bottom_check["aci_utilization"]))
+        zero_tension_gate_controls = any(
+            str(check.get("criterion")) == "Physical-joint no tension at Transfer"
+            and str(check.get("status")) == "FAIL"
+            for check in (top_check, bottom_check)
+        )
+        # A zero-tension physical-joint gate has no finite demand/capacity ratio.
+        # Keep the ordinary ACI utilization as a separate audit value instead of
+        # presenting it as the governing utilization of the stricter zero gate.
+        row_utilization = float("nan") if zero_tension_gate_controls else aci_row_utilization
         rows.append(
             {
                 "Check": "Concrete Stress At Transfer",
@@ -855,6 +864,7 @@ def run_crossbeam_transfer_stress(preparation: CrossbeamTransferPreparation) -> 
                 "Top utilization": float(top_check["aci_utilization"]),
                 "Bottom utilization": float(bottom_check["aci_utilization"]),
                 "Governing utilization": row_utilization,
+                "ACI governing utilization": aci_row_utilization,
                 "Top criterion": str(top_check["criterion"]),
                 "Bottom criterion": str(bottom_check["criterion"]),
                 "Joint Transfer tension limit MPa": (
@@ -953,7 +963,7 @@ def run_crossbeam_transfer_stress(preparation: CrossbeamTransferPreparation) -> 
     )
     status = "FAIL" if any(row["Status"] == "FAIL" for row in rows) else "PASS"
     return {
-        "schema": "crossbeam-sls1a-transfer-stress-result-v2",
+        "schema": "crossbeam-sls1a-transfer-stress-result-v3",
         "input_fingerprint": preparation.fingerprint,
         "construction_method": preparation.construction_method,
         "status": status,
@@ -968,6 +978,8 @@ def run_crossbeam_transfer_stress(preparation: CrossbeamTransferPreparation) -> 
         "errors": [],
         "station_face_checks": len(rows),
         "fiber_checks": len(fiber_rows),
+        "source_stage": "Transfer stage",
+        "source_case_labels": sorted({str(row.get("Case") or "") for row in rows}),
         "code_basis": (
             "ACI 318-19 Tables 24.5.3.1 and 24.5.3.2 + project Precast physical-joint no-tension rule at Transfer"
             if preparation.construction_method == CONSTRUCTION_METHOD_PRECAST
@@ -1234,7 +1246,24 @@ def run_crossbeam_service_stress(preparation: CrossbeamTransferPreparation) -> d
                 "Bottom bending stress MPa": bottom_bending_mpa,
                 "Top stress MPa": top_stress,
                 "Bottom stress MPa": bottom_stress,
-                "Compression limit MPa": -float(top_check["compression_limit_mpa"]),
+                # Table 24.5.4.1 total-load compression is an active limit only
+                # for Class U/T.  For Class C, show N/A in the active-limit field
+                # and retain 0.60f'c separately as a reference value.
+                "Class U/T compression limit MPa": (
+                    -float(top_check["compression_limit_mpa"])
+                    if section_class in {"Class U", "Class T"}
+                    else float("nan")
+                ),
+                "0.60f'c reference MPa": -float(top_check["compression_limit_mpa"]),
+                "Class U threshold MPa": float(top_check["class_u_limit_mpa"]),
+                "Class C threshold MPa": float(top_check["class_t_limit_mpa"]),
+                # Legacy field names remain in the stored package for backward
+                # compatibility; production UI/reporting uses the explicit labels above.
+                "Compression limit MPa": (
+                    -float(top_check["compression_limit_mpa"])
+                    if section_class in {"Class U", "Class T"}
+                    else float("nan")
+                ),
                 "Tension limit MPa": float(top_check["class_u_limit_mpa"]),
                 "Class T upper MPa": float(top_check["class_t_limit_mpa"]),
                 "Section ACI class": section_class,
@@ -1297,7 +1326,19 @@ def run_crossbeam_service_stress(preparation: CrossbeamTransferPreparation) -> d
                     ),
                     "Utilization value": float(check["utilization"]),
                     "f'c MPa": source.fc_mpa,
-                    "Compression limit MPa": -float(check["compression_limit_mpa"]),
+                    "Class U/T compression limit MPa": (
+                        -float(check["compression_limit_mpa"])
+                        if section_class in {"Class U", "Class T"}
+                        else float("nan")
+                    ),
+                    "0.60f'c reference MPa": -float(check["compression_limit_mpa"]),
+                    "Class U threshold MPa": float(check["class_u_limit_mpa"]),
+                    "Class C threshold MPa": float(check["class_t_limit_mpa"]),
+                    "Compression limit MPa": (
+                        -float(check["compression_limit_mpa"])
+                        if section_class in {"Class U", "Class T"}
+                        else float("nan")
+                    ),
                     "Tension limit MPa": float(check["class_u_limit_mpa"]),
                     "Class T upper MPa": float(check["class_t_limit_mpa"]),
                 }
@@ -1314,7 +1355,7 @@ def run_crossbeam_service_stress(preparation: CrossbeamTransferPreparation) -> d
     )
     cracked_status = "REVIEW REQUIRED" if overall_class == "Class C" else "NOT REQUIRED FOR STRESS"
     return {
-        "schema": "crossbeam-sls1b-service-stress-result-v1",
+        "schema": "crossbeam-sls1b-service-stress-result-v2",
         "input_fingerprint": preparation.fingerprint,
         "construction_method": preparation.construction_method,
         "status": status,
@@ -1333,11 +1374,14 @@ def run_crossbeam_service_stress(preparation: CrossbeamTransferPreparation) -> d
         "errors": [],
         "station_face_checks": len(rows),
         "fiber_checks": len(fiber_rows),
+        "source_stage": "Final service stage",
+        "source_case_labels": sorted({str(row.get("Case") or "") for row in rows}),
         "code_basis": "ACI 318-19 Sections 24.5.2.1 through 24.5.2.3 and Table 24.5.4.1 (Class U/T only)",
         "scope": (
             "Final-service gross-section extreme-fiber concrete stress using verified external-FEA total resultants. "
             "Imported P/M3 are used once; effective prestress and secondary response are not added again. "
             "Gross stress is used only to classify Class C; Table 24.5.4.1 compression limits are not applied to Class C. "
-            "Class C remains REVIEW REQUIRED until a separate cracked transformed-section result is available, and the sustained-load 0.45f'c condition remains a separate source check."
+            "Class C remains REVIEW REQUIRED until a separate cracked transformed-section result is available, and the sustained-load 0.45f'c condition remains a separate source check. "
+            "Imported Case labels are preserved verbatim; SLS routing is controlled by the canonical Final service stage field, not by Case-name text."
         ),
     }

@@ -16280,7 +16280,7 @@ def _make_girder_full_length_sls_figure(df: pd.DataFrame, *, stage_label: str) -
             x=[x_min, x_max],
             y=[-compression_limit, -compression_limit],
             mode="lines",
-            name="Compression limit",  # legacy string: Compression preview limit
+            name=compression_trace_name,  # legacy string: Compression preview limit
             line={"dash": "dash", "width": 3.0, "color": _ENGINEERING_STRESS_PLOT_COLORS["compression_limit"]},  # legacy: line={"dash": "dash", "width": 2.6, "color": _ENGINEERING_STRESS_PLOT_COLORS["compression_limit"]}
             hovertemplate=f"Compression limit = -{compression_limit:.3f} MPa<br>{escape(profile_label)}<extra></extra>",
         )
@@ -16292,7 +16292,7 @@ def _make_girder_full_length_sls_figure(df: pd.DataFrame, *, stage_label: str) -
                 x=tension_x,
                 y=tension_y,
                 mode="lines",
-                name="Tension limit",  # legacy string: Tension preview limit
+                name=tension_trace_name,  # legacy string: Tension preview limit
                 line={"dash": "dash", "width": 3.0, "color": _ENGINEERING_STRESS_PLOT_COLORS["tension_limit"]},  # legacy: line={"dash": "dash", "width": 2.6, "color": _ENGINEERING_STRESS_PLOT_COLORS["tension_limit"]}
                 hovertemplate=(
                     "x=%{x:.3f} m<br>"
@@ -25898,6 +25898,12 @@ def _make_crossbeam_transfer_stress_figure(
     column_rows: list[Mapping[str, object]],
     stage_title: str = "Concrete Stress At Transfer",
     joint_transfer_no_tension: bool = True,
+    compression_column: str = "Compression limit MPa",
+    compression_trace_name: str = "Compression limit",
+    tension_column: str = "Tension limit MPa",
+    tension_trace_name: str = "Tension limit",
+    upper_class_threshold_column: str | None = None,
+    upper_class_threshold_trace_name: str = "Class C threshold",
     code_subtitle: str = (
         "ACI 318-19 Tables 24.5.3.1/.2 · P compression positive · M3 sagging positive · "
         "stress compression negative / tension positive"
@@ -25912,8 +25918,8 @@ def _make_crossbeam_transfer_stress_figure(
     x = pd.to_numeric(selected["Station s (m)"], errors="coerce")
     top = pd.to_numeric(selected["Top stress MPa"], errors="coerce")
     bottom = pd.to_numeric(selected["Bottom stress MPa"], errors="coerce")
-    comp_limit = pd.to_numeric(selected["Compression limit MPa"], errors="coerce")
-    tension_limit = pd.to_numeric(selected["Tension limit MPa"], errors="coerce")
+    comp_limit = pd.to_numeric(selected[compression_column], errors="coerce")
+    tension_limit = pd.to_numeric(selected[tension_column], errors="coerce")
 
     for values, name, color, symbol in (
         (top, "Top total stress", _ENGINEERING_STRESS_PLOT_COLORS["top"], "cross"),
@@ -25939,7 +25945,7 @@ def _make_crossbeam_transfer_stress_figure(
             x=x,
             y=comp_limit,
             mode="lines",
-            name="Compression limit",
+            name=compression_trace_name,
             line={"dash": "dash", "width": 2.8, "color": _ENGINEERING_STRESS_PLOT_COLORS["compression_limit"]},
             hovertemplate="s=%{x:.3f} m<br>limit=%{y:.3f} MPa<extra></extra>",
         )
@@ -25949,11 +25955,24 @@ def _make_crossbeam_transfer_stress_figure(
             x=x,
             y=tension_limit,
             mode="lines",
-            name="Tension limit",
+            name=tension_trace_name,
             line={"dash": "dash", "width": 2.8, "color": _ENGINEERING_STRESS_PLOT_COLORS["tension_limit"]},
             hovertemplate="s=%{x:.3f} m<br>limit=%{y:.3f} MPa<extra></extra>",
         )
     )
+
+    if upper_class_threshold_column and upper_class_threshold_column in selected.columns:
+        upper_threshold = pd.to_numeric(selected[upper_class_threshold_column], errors="coerce")
+        fig.add_trace(
+            go.Scatter(
+                x=x,
+                y=upper_threshold,
+                mode="lines",
+                name=upper_class_threshold_trace_name,
+                line={"dash": "dot", "width": 2.6, "color": "#a855f7"},
+                hovertemplate="s=%{x:.3f} m<br>threshold=%{y:.3f} MPa<extra></extra>",
+            )
+        )
 
     joints = selected[selected["Location type"].astype(str) == "PHYSICAL SEGMENT JOINT"]
     if not joints.empty:
@@ -26361,7 +26380,7 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
         compact_columns = [
             "Status", "Station s (m)", "Case", "Section face", "Location type", "Section ID",
             "P kN", "M3 kN-m", "f'ci MPa", "Top stress MPa", "Bottom stress MPa",
-            "Compression limit MPa", "Tension limit MPa", "Governing utilization",
+            "Compression limit MPa", "Tension limit MPa", "Governing utilization", "ACI governing utilization",
             "Top criterion", "Bottom criterion",
         ]
         st.dataframe(
@@ -26519,7 +26538,7 @@ def _render_crossbeam_service_stress_workspace() -> None:
             {
                 "title": "Final Service source",
                 "value": "READY" if preparation.ready else "SOURCE BLOCKED",
-                "detail": "Crossbeam Loads - SLS At Service - canonical kN/kN-m",
+                "detail": "Crossbeam Loads - SLS At Service - Stage=Final service; imported Case labels preserved",
                 "status": "ready" if preparation.ready else "danger",
                 "strong": True,
             },
@@ -26628,21 +26647,27 @@ def _render_crossbeam_service_stress_workspace() -> None:
                 column_rows=list(preparation.column_rows),
                 stage_title="Concrete Stress At Final Service",
                 joint_transfer_no_tension=False,
+                compression_column="Class U/T compression limit MPa",
+                compression_trace_name="Class U/T compression limit",
+                tension_column="Class U threshold MPa",
+                tension_trace_name="Class U threshold",
+                upper_class_threshold_column="Class C threshold MPa",
+                upper_class_threshold_trace_name="Class C threshold",
                 code_subtitle=(
-                    "ACI 318-19 24.5.2 - gross classification; 0.60f'c applies Class U/T only - "
-                    "stress compression negative / tension positive"
+                    "ACI 318-19 24.5.2 · Class U ≤0.62√f'c · Class T ≤1.00√f'c · Class C >1.00√f'c · "
+                    "0.60f'c compression applies Class U/T only · stress compression negative / tension positive"
                 ),
             ),
             caption=(
-                "Lines connect imported station checks for visualization only. The upper dashed line is the Class U tension threshold. "
-                "A Class C result is gross classification only and requires separate cracked transformed-section verification; "
-                "the sustained-load 0.45f'c condition also requires its own response bucket."
+                "Lines connect imported station checks for visualization only. The dashed Class U threshold and dotted Class C threshold are classification boundaries, not generic allowable-tension limits. "
+                "Class C requires separate cracked transformed-section verification; the sustained-load 0.45f'c condition also requires its own response bucket. "
+                "Imported Case labels are preserved verbatim; SLS routing is controlled by the Final service stage field."
             ),
         )
         compact_columns = [
             "Status", "Station s (m)", "Case", "Section face", "Location type", "Section ID",
             "P kN", "M3 kN-m", "f'c MPa", "Top stress MPa", "Bottom stress MPa",
-            "Compression limit MPa", "Tension limit MPa", "Class T upper MPa",
+            "Class U/T compression limit MPa", "Class U threshold MPa", "Class C threshold MPa",
             "Section ACI class", "Governing utilization",
         ]
         st.dataframe(
