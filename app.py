@@ -2369,10 +2369,14 @@ def _results_report_handoff_state(state: object, rows: list[dict[str, object]] |
         }
     styles = [_results_style_for_status(row.get("Status")) for row in result_rows]
     if "danger" in styles:
+        detail = "Resolve failed checks or document engineering acceptance before report issue."
+        notes = _results_crossbeam_executive_completeness_notes(state)
+        if notes:
+            detail += " " + " ".join(notes)
         return {
             "status": "danger",
             "value": "Review required",
-            "detail": "Resolve failed checks or document engineering acceptance before report issue.",
+            "detail": detail,
         }
     if not _results_has_stored_uls_rows(result_rows):
         return {
@@ -2812,21 +2816,45 @@ def _results_critical_label(row: Mapping[str, object] | None) -> str:
     return module or "-"
 
 
+def _results_crossbeam_domain(row: Mapping[str, object]) -> str:
+    module = str(row.get("Module") or "").strip()
+    if module == "ULS Crossbeam":
+        return "ULS"
+    if module == "SLS Crossbeam":
+        return "SLS"
+    return "OTHER"
+
+
 def _results_failing_check_summary(rows: list[dict[str, object]], *, limit: int = 3) -> str:
     failing = [row for row in rows if _results_style_for_status(row.get("Status")) == "danger"]
     if not failing:
         return ""
-    ranked = sorted(
-        failing,
-        key=lambda row: (_results_parse_utilization(row.get("D/C / Util.")) or -1.0),
-        reverse=True,
-    )
+    crossbeam_scope = any(_results_crossbeam_domain(row) != "OTHER" for row in failing)
+
+    def rank(row: Mapping[str, object]) -> tuple[float, float]:
+        util = _results_parse_utilization(row.get("D/C / Util."))
+        if crossbeam_scope:
+            # CROSSBEAM.ANALYSIS4C7D20: executive reporting must not compare a
+            # ULS strength D/C numerically against an SLS stress/joint
+            # utilization.  Strength failures are listed before serviceability
+            # failures; utilization only ranks rows within the same domain.
+            domain = _results_crossbeam_domain(row)
+            domain_priority = 2.0 if domain == "ULS" else 1.0 if domain == "SLS" else 0.0
+            return domain_priority, util if util is not None else -1.0
+        return 0.0, util if util is not None else -1.0
+
+    ranked = sorted(failing, key=rank, reverse=True)
     parts: list[str] = []
     for row in ranked[:limit]:
         util = str(row.get("D/C / Util.") or "-").strip()
         status = str(row.get("Status") or "-").strip()
         label = _results_critical_label(row)
-        if util and util != "-":
+        if crossbeam_scope and _results_crossbeam_domain(row) == "SLS":
+            demand = str(row.get("Demand") or "-").strip()
+            capacity = str(row.get("Capacity / Limit") or "-").strip()
+            evidence = demand if capacity == "-" else f"{demand} vs {capacity}"
+            parts.append(f"{label} ({status}; {evidence})")
+        elif util and util != "-":
             parts.append(f"{label} ({status}; {util})")
         else:
             parts.append(f"{label} ({status})")
@@ -2842,15 +2870,13 @@ def _results_critical_row(rows: list[dict[str, object]]) -> dict[str, object] | 
     danger_rows = [row for row in rows if _results_style_for_status(row.get("Status")) == "danger"]
     warning_rows = [row for row in rows if _results_style_for_status(row.get("Status")) == "warning"]
     candidates = danger_rows or warning_rows or rows
-    ranked: list[tuple[float, int, int, dict[str, object]]] = []
+    crossbeam_scope = any(_results_crossbeam_domain(row) != "OTHER" for row in candidates)
+    ranked: list[tuple[int, float, int, int, dict[str, object]]] = []
     for index, row in enumerate(candidates):
         util = _results_parse_utilization(row.get("D/C / Util."))
         # CROSSBEAM.ANALYSIS4C7D14: when a standalone Torsion result and the
         # final Combined V+T result are tied on severity/utilization, prefer the
-        # combined sectional gate for executive reporting.  This keeps the
-        # dashboard deterministic and avoids presenting the same Aℓ deficiency
-        # as though the standalone component were more critical than the final
-        # combined check.  Other workflows retain their existing stable order.
+        # combined sectional gate for executive reporting.
         tie_priority = 0
         if str(row.get("Module") or "").strip() == "ULS Crossbeam":
             check = str(row.get("Check") or "").strip()
@@ -2858,8 +2884,54 @@ def _results_critical_row(rows: list[dict[str, object]]) -> dict[str, object] | 
                 tie_priority = 2
             elif check == "Torsion":
                 tie_priority = 1
-        ranked.append(((util if util is not None else -1.0), tie_priority, -index, row))
-    return sorted(ranked, key=lambda item: (item[0], item[1], item[2]), reverse=True)[0][3]
+
+        # CROSSBEAM.ANALYSIS4C7D20: across Crossbeam domains, do not select a
+        # global critical check by comparing incompatible ULS and SLS ratios.
+        # Within the same severity class, a ULS strength failure/review is the
+        # executive critical domain before SLS; utilization then ranks only
+        # within that domain.  Non-Crossbeam workflows keep the legacy order.
+        domain_priority = 0
+        if crossbeam_scope:
+            domain = _results_crossbeam_domain(row)
+            domain_priority = 2 if domain == "ULS" else 1 if domain == "SLS" else 0
+        ranked.append((domain_priority, (util if util is not None else -1.0), tie_priority, -index, row))
+    return sorted(ranked, key=lambda item: (item[0], item[1], item[2], item[3]), reverse=True)[0][4]
+
+
+def _results_crossbeam_critical_cards(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    cards: list[dict[str, object]] = []
+    for domain in ("ULS", "SLS"):
+        domain_rows = [row for row in rows if _results_crossbeam_domain(row) == domain]
+        critical = _results_critical_row(domain_rows)
+        if critical is None:
+            cards.append(
+                {
+                    "title": f"Critical {domain}",
+                    "value": "NOT CURRENT",
+                    "detail": f"No current stored Crossbeam {domain} governing result is available.",
+                    "status": "warning",
+                }
+            )
+            continue
+        status = str(critical.get("Status") or "-").strip()
+        check = str(critical.get("Check") or "-").strip()
+        case = str(critical.get("Governing Case") or "-").strip()
+        if domain == "ULS":
+            util = str(critical.get("D/C / Util.") or "-").strip()
+            detail = f"{status} · D/C {util} · {case}" if util != "-" else f"{status} · {case}"
+        else:
+            demand = str(critical.get("Demand") or "-").strip()
+            capacity = str(critical.get("Capacity / Limit") or "-").strip()
+            detail = f"{status} · {demand} · {capacity} · {case}"
+        cards.append(
+            {
+                "title": f"Critical {domain}",
+                "value": check,
+                "detail": detail,
+                "status": _results_style_for_status(status),
+            }
+        )
+    return cards
 
 
 def _results_availability_cards(state: object) -> list[dict[str, object]]:
@@ -2875,6 +2947,7 @@ def _results_availability_cards(state: object) -> list[dict[str, object]]:
     sls_complete = _results_sls_complete_for_report(state)
     executive = _results_executive_status(rows, state)
     critical = _results_critical_row(rows)
+    crossbeam_critical_cards = _results_crossbeam_critical_cards(rows) if _results_is_crossbeam_workflow(state) else []
     handoff = _results_report_handoff_state(state, rows)
     has_blocking_result = any(_results_style_for_status(row.get("Status")) == "danger" for row in rows)
     has_review_result = any(_results_style_for_status(row.get("Status")) == "warning" for row in rows)
@@ -2913,7 +2986,7 @@ def _results_availability_cards(state: object) -> list[dict[str, object]]:
         else str(len(uls_rows))
     )
 
-    return [
+    cards = [
         {
             "title": "Overall status",
             "value": executive["title"].replace("Overall Status: ", ""),
@@ -2926,29 +2999,39 @@ def _results_availability_cards(state: object) -> list[dict[str, object]]:
             "detail": "workflow-compatible project code basis used by stored Analysis results",
             "status": "info",
         },
-        {
-            "title": "Critical check",
-            "value": "-" if critical is None else _results_critical_label(critical),
-            "detail": "No stored governing row" if critical is None else f"{critical.get('Status', '-')} · {critical.get('D/C / Util.', '-')} · {critical.get('Governing Case', '-')}",
-            "status": "warning" if critical is None else _results_style_for_status(critical.get("Status")),
-        },
-        {
-            "title": "Result completeness" if _results_is_crossbeam_workflow(state) else "ULS/SLS completeness",
-            "value": (
-                f"ULS results {uls_completeness_value} · SLS {'complete' if sls_complete else ('partial' if sls_available else 'no')}"
-                if _results_is_crossbeam_workflow(state)
-                else f"ULS {uls_completeness_value} · SLS {'complete' if sls_complete else ('partial' if sls_available else 'no')}"
-            ),
-            "detail": completeness_detail,
-            "status": completeness_status,
-        },
-        {
-            "title": "Report handoff",
-            "value": handoff["value"],
-            "detail": handoff["detail"],
-            "status": handoff["status"],
-        },
     ]
+    if _results_is_crossbeam_workflow(state):
+        cards.extend(crossbeam_critical_cards)
+    else:
+        cards.append(
+            {
+                "title": "Critical check",
+                "value": "-" if critical is None else _results_critical_label(critical),
+                "detail": "No stored governing row" if critical is None else f"{critical.get('Status', '-')} · {critical.get('D/C / Util.', '-')} · {critical.get('Governing Case', '-')}",
+                "status": "warning" if critical is None else _results_style_for_status(critical.get("Status")),
+            }
+        )
+    cards.extend(
+        [
+            {
+                "title": "Result completeness" if _results_is_crossbeam_workflow(state) else "ULS/SLS completeness",
+                "value": (
+                    f"ULS results {uls_completeness_value} · SLS {'complete' if sls_complete else ('partial' if sls_available else 'no')}"
+                    if _results_is_crossbeam_workflow(state)
+                    else f"ULS {uls_completeness_value} · SLS {'complete' if sls_complete else ('partial' if sls_available else 'no')}"
+                ),
+                "detail": completeness_detail,
+                "status": completeness_status,
+            },
+            {
+                "title": "Report handoff",
+                "value": handoff["value"],
+                "detail": handoff["detail"],
+                "status": handoff["status"],
+            },
+        ]
+    )
+    return cards
 
 
 def _results_add_pmm_rows(state: object, rows: list[dict[str, object]]) -> None:
@@ -4117,6 +4200,23 @@ def _results_governing_rows(state: object) -> list[dict[str, object]]:
     return rows
 
 
+def _results_crossbeam_executive_completeness_notes(state: object | None) -> list[str]:
+    if state is None or not _results_is_crossbeam_workflow(state):
+        return []
+    notes: list[str] = []
+    uls_calculated, uls_total, uls_missing = _results_active_uls_completion(state)
+    if uls_calculated < uls_total:
+        missing = ", ".join(uls_missing) if uls_missing else "unknown"
+        notes.append(f"ULS results {uls_calculated}/{uls_total} current; missing/stale: {missing}.")
+    sls_current, sls_total, sls_missing = _results_crossbeam_sls_completion(state)
+    if sls_current < sls_total:
+        missing = ", ".join(sls_missing) if sls_missing else "unknown"
+        notes.append(f"SLS Stress & Cracking {sls_current}/{sls_total} current; missing/stale: {missing}.")
+    elif not _results_sls_complete_for_report(state):
+        notes.append("SLS Stress & Cracking 2/2 current; Deflection / Camber remains pending.")
+    return notes
+
+
 def _results_executive_status(rows: list[dict[str, object]], state: object | None = None) -> dict[str, str]:
     if not rows:
         return {
@@ -4126,10 +4226,14 @@ def _results_executive_status(rows: list[dict[str, object]], state: object | Non
         }
     styles = [_results_style_for_status(row.get("Status")) for row in rows]
     if "danger" in styles:
-        failing_summary = _results_failing_check_summary(rows)
+        crossbeam_scope = state is not None and _results_is_crossbeam_workflow(state)
+        failing_summary = _results_failing_check_summary(rows, limit=6 if crossbeam_scope else 3)
         detail = "At least one stored result indicates FAIL, BLOCKED, or exceedance. Open the source Analysis check before report issue."
         if failing_summary:
             detail = f"Failing checks: {failing_summary}. Open the source Analysis check before report issue."
+        notes = _results_crossbeam_executive_completeness_notes(state)
+        if notes:
+            detail += " " + " ".join(notes)
         return {
             "status": "danger",
             "title": "Overall Status: FAIL",
@@ -4569,38 +4673,48 @@ def _report_qa_dashboard_cards(state: object) -> list[dict[str, object]]:
         if critical is None
         else f"{critical.get('Status', '-')} · {critical.get('D/C / Util.', '-')} · {critical.get('Governing Case', '-')}"
     )
-    return [
+    cards = [
         {
             "title": "Overall status",
             "value": executive["title"].replace("Overall Status: ", ""),
             "detail": executive["detail"],
             "status": executive["status"],
-        },
-        {
-            "title": "Critical check",
-            "value": critical_label,
-            "detail": critical_detail,
-            "status": "warning" if critical is None else _results_style_for_status(critical.get("Status")),
-        },
-        {
-            "title": "Report readiness",
-            "value": handoff["value"],
-            "detail": handoff["detail"],
-            "status": handoff["status"],
-        },
-        {
-            "title": "Design code",
-            "value": _results_design_code_label(state),
-            "detail": "Workflow-compatible project code basis used by stored Analysis results",
-            "status": "info",
-        },
-        {
-            "title": "Runtime mode",
-            "value": "Read-only",
-            "detail": "Report / QA does not rerun PMM, ULS, SLS, or verification solvers.",
-            "status": "neutral",
-        },
+        }
     ]
+    if _results_is_crossbeam_workflow(state):
+        cards.extend(_results_crossbeam_critical_cards(rows))
+    else:
+        cards.append(
+            {
+                "title": "Critical check",
+                "value": critical_label,
+                "detail": critical_detail,
+                "status": "warning" if critical is None else _results_style_for_status(critical.get("Status")),
+            }
+        )
+    cards.extend(
+        [
+            {
+                "title": "Report readiness",
+                "value": handoff["value"],
+                "detail": handoff["detail"],
+                "status": handoff["status"],
+            },
+            {
+                "title": "Design code",
+                "value": _results_design_code_label(state),
+                "detail": "Workflow-compatible project code basis used by stored Analysis results",
+                "status": "info",
+            },
+            {
+                "title": "Runtime mode",
+                "value": "Read-only",
+                "detail": "Report / QA does not rerun PMM, ULS, SLS, or verification solvers.",
+                "status": "neutral",
+            },
+        ]
+    )
+    return cards
 
 
 def _render_report_qa_result_summary_alignment(state: object) -> None:
