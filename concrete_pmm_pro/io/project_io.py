@@ -230,6 +230,7 @@ ANALYSIS_RESULTS_SCHEMA_VERSION = 1
 
 CROSSBEAM_ULS_LOAD_TABLE_KEY = "crossbeam_uls_loads_table"
 CROSSBEAM_SLS_LOAD_TABLE_KEY = "crossbeam_sls_loads_table"
+CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY = "crossbeam_sls_displacement_table"
 
 WORKFLOW_LOAD_TABLE_METADATA_KEYS = (
     "column_uls_loads_table",
@@ -238,6 +239,7 @@ WORKFLOW_LOAD_TABLE_METADATA_KEYS = (
     "beam_sls_loads_table",
     CROSSBEAM_ULS_LOAD_TABLE_KEY,
     CROSSBEAM_SLS_LOAD_TABLE_KEY,
+    CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY,
 )
 
 CROSSBEAM_LENGTH_STATE_KEY = "crossbeam_ui1_length_m"

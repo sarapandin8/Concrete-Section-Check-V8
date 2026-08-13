@@ -55,6 +55,14 @@ from concrete_pmm_pro.crossbeam.construction_stage import (
     normalize_construction_method,
 )
 
+from concrete_pmm_pro.analysis.crossbeam_sls_deflection import (
+    CROSSBEAM_SLS_DEFLECTION_RESULT_HASH_KEY,
+    CROSSBEAM_SLS_DEFLECTION_RESULT_KEY,
+    DEFAULT_LIMIT_BASIS as CROSSBEAM_DEFLECTION_DEFAULT_LIMIT_BASIS,
+    LIMIT_BASIS_OPTIONS as CROSSBEAM_DEFLECTION_LIMIT_BASIS_OPTIONS,
+    build_crossbeam_deflection_preparation,
+    run_crossbeam_deflection_camber,
+)
 from concrete_pmm_pro.analysis.crossbeam_sls_transfer import (
     CROSSBEAM_SERVICE_RESULT_HASH_KEY,
     CROSSBEAM_SERVICE_RESULT_KEY,
@@ -26808,11 +26816,267 @@ def render_analysis_sls_stress() -> None:
     _render_sls_verification_expander()
 
 
+
+def _crossbeam_sls_deflection_stage_case_options(result: Mapping[str, object], stage: str) -> list[str]:
+    rows = [row for row in list(result.get("source_rows") or []) if isinstance(row, Mapping) and str(row.get("Stage") or "") == stage]
+    return list(dict.fromkeys(str(row.get("Case Name") or "") for row in rows if str(row.get("Case Name") or "").strip()))
+
+
+def _make_crossbeam_sls_deflection_figure(
+    result: Mapping[str, object],
+    *,
+    stage: str,
+    case_name: str,
+    member_length_m: float,
+    column_rows: list[dict[str, object]],
+) -> go.Figure:
+    source = pd.DataFrame([
+        row for row in list(result.get("response_rows") or [])
+        if isinstance(row, Mapping)
+        and str(row.get("Stage") or "") == stage
+        and str(row.get("Case") or "") == case_name
+        and str(row.get("Source") or "") == "IMPORTED"
+    ])
+    relative = pd.DataFrame([
+        row for row in list(result.get("response_rows") or [])
+        if isinstance(row, Mapping)
+        and str(row.get("Stage") or "") == stage
+        and str(row.get("Case") or "") == case_name
+        and "Relative displacement mm" in row
+    ])
+    fig = go.Figure()
+    if not source.empty:
+        source = source.sort_values("Station s (m)")
+        fig.add_trace(
+            go.Scatter(
+                x=source["Station s (m)"],
+                y=source["Vertical displacement mm"],
+                mode="lines+markers",
+                name="Absolute FEA displacement",
+                hovertemplate="s=%{x:.3f} m<br>Absolute=%{y:.3f} mm<extra></extra>",
+            )
+        )
+    if not relative.empty:
+        for span, group in relative.groupby("Span", sort=False):
+            group = group.sort_values("Station s (m)")
+            fig.add_trace(
+                go.Scatter(
+                    x=group["Station s (m)"],
+                    y=group["Relative displacement mm"],
+                    mode="lines+markers",
+                    name=f"Relative to support chord · {span}",
+                    hovertemplate="s=%{x:.3f} m<br>Relative=%{y:.3f} mm<extra></extra>",
+                )
+            )
+    fig.add_hline(y=0.0, line_width=1.2, line_dash="dot", annotation_text="0 mm")
+    for row in column_rows:
+        x = _analysis_float_or_zero(row.get("Station s (m)"))
+        width_m = max(_analysis_float_or_zero(row.get("Blong (mm)")) / 1000.0, 0.0)
+        if width_m > 0.0:
+            fig.add_vrect(x0=max(0.0, x-width_m/2.0), x1=min(member_length_m, x+width_m/2.0), opacity=0.10, line_width=0)
+        fig.add_vline(x=x, line_width=1.0, line_dash="dot")
+        fig.add_annotation(x=x, y=1.02, yref="paper", text=str(row.get("Column ID") or "Column"), showarrow=False)
+    fig.update_layout(
+        title=(
+            f"Crossbeam SLS Deflection / Camber — {stage}<br>"
+            "<sup>verified external-FEA vertical movement · positive upward / negative downward · span response relative to adjacent column-centre chord</sup>"
+        ),
+        xaxis_title="Distance from left end of member (m)",
+        yaxis_title="Vertical displacement (mm)",
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="center", x=0.5),
+        margin=dict(l=70, r=30, t=90, b=120),
+    )
+    fig.update_xaxes(range=[0.0, float(member_length_m)], showgrid=True)
+    fig.update_yaxes(showgrid=True, zeroline=True)
+    return fig
+
+
+def _render_crossbeam_sls_deflection_workspace() -> None:
+    st.markdown("### Crossbeam SLS Deflection / Camber")
+    st.caption(
+        "Uses verified external-FEA vertical displacement for the full Portal Frame response. "
+        "The app does not reconstruct absolute Crossbeam displacement from beam M3/EI because column/frame deformation is part of the response. "
+        "Canonical sign: positive = upward camber; negative = downward deflection."
+    )
+    with st.expander("Deflection / camber engineering assumptions", expanded=False):
+        st.markdown(
+            "- Source: Loads → SLS Loads → SLS Deflection / Camber displacement source.\n"
+            "- Absolute vertical movement is read directly from the verified external-FEA displacement source; P/V2/T/M3 are not integrated to fabricate displacement.\n"
+            "- Final-service span deflection is measured relative to the straight chord joining adjacent column-centre displacement values, so column/support translation is not silently treated as beam deflection.\n"
+            "- Transfer-stage rows report camber/deflection response only. Final Service may be checked against a user-adopted project L/n criterion.\n"
+            "- Overhang movement remains visible but is not assigned an L/n span limit by this milestone.\n"
+            "- Creep, shrinkage, cracked stiffness, staged stiffness change, construction tolerance, and foundation settlement are included only if they are already represented by the imported external-FEA displacement result."
+        )
+
+    setting_cols = st.columns([1.3, 1.0, 2.0])
+    limit_options = list(CROSSBEAM_DEFLECTION_LIMIT_BASIS_OPTIONS)
+    if st.session_state.get("crossbeam_sls_deflection_limit_basis") not in limit_options:
+        st.session_state["crossbeam_sls_deflection_limit_basis"] = CROSSBEAM_DEFLECTION_DEFAULT_LIMIT_BASIS
+    with setting_cols[0]:
+        st.selectbox(
+            "Final-service downward-deflection criterion",
+            limit_options,
+            key="crossbeam_sls_deflection_limit_basis",
+            help="Project criterion only. Review only is the safe default because ACI service-deflection applicability depends on the supported system and project requirements.",
+        )
+    with setting_cols[1]:
+        if st.session_state.get("crossbeam_sls_deflection_limit_basis") == "Custom":
+            st.number_input(
+                "Custom L / n",
+                min_value=1.0,
+                value=float(st.session_state.get("crossbeam_sls_deflection_custom_ratio", 360.0) or 360.0),
+                step=10.0,
+                key="crossbeam_sls_deflection_custom_ratio",
+            )
+        else:
+            st.metric("Criterion mode", str(st.session_state.get("crossbeam_sls_deflection_limit_basis")))
+    with setting_cols[2]:
+        st.caption("No project limit is assumed automatically. Select an adopted project criterion only when it is applicable to this Crossbeam and supported system.")
+
+    preparation = build_crossbeam_deflection_preparation(st.session_state)
+    source_df = pd.DataFrame(list(preparation.rows))
+    cached = st.session_state.get(CROSSBEAM_SLS_DEFLECTION_RESULT_KEY)
+    cached_hash = str(st.session_state.get(CROSSBEAM_SLS_DEFLECTION_RESULT_HASH_KEY) or "")
+    cache_current = isinstance(cached, Mapping) and cached_hash == preparation.fingerprint
+    transfer_count = int((source_df.get("Stage", pd.Series(dtype=str)).astype(str) == "Transfer stage").sum()) if not source_df.empty else 0
+    service_count = int((source_df.get("Stage", pd.Series(dtype=str)).astype(str) == "Final service stage").sum()) if not source_df.empty else 0
+
+    controls = st.columns([2.2, 1.0])
+    with controls[0]:
+        if preparation.ready:
+            st.success(
+                f"DISPLACEMENT SOURCE READY — {len(preparation.rows):,} active row(s): "
+                f"Transfer {transfer_count:,} · Final Service {service_count:,}."
+            )
+        else:
+            st.error(f"DISPLACEMENT SOURCE BLOCKED — {len(preparation.errors):,} required action(s).")
+    with controls[1]:
+        run_clicked = st.button(
+            "Run Deflection / Camber Check",
+            key="crossbeam_sls2_run_deflection",
+            type="primary" if preparation.ready else "secondary",
+            disabled=not preparation.ready,
+            use_container_width=True,
+            help="Evaluates only the imported Crossbeam vertical displacement source; it does not rerun the external FEA model.",
+        )
+    if run_clicked and preparation.ready:
+        result = run_crossbeam_deflection_camber(preparation)
+        st.session_state[CROSSBEAM_SLS_DEFLECTION_RESULT_KEY] = result
+        st.session_state[CROSSBEAM_SLS_DEFLECTION_RESULT_HASH_KEY] = preparation.fingerprint
+        st.session_state["analysis_status"] = str(result.get("status") or "REVIEW")
+        cached = result
+        cache_current = True
+
+    _render_analysis_summary_strip(
+        [
+            {"title": "Displacement source", "value": "READY" if preparation.ready else "BLOCKED", "detail": "External FEA · canonical mm · upward +", "status": "ready" if preparation.ready else "danger", "strong": True},
+            {"title": "Transfer rows", "value": str(transfer_count), "detail": "camber / deflection response", "status": "info" if transfer_count else "warning"},
+            {"title": "Final Service rows", "value": str(service_count), "detail": "span-relative service response", "status": "info" if service_count else "warning"},
+            {"title": "Acceptance basis", "value": preparation.limit_basis, "detail": "project criterion; no hidden code default", "status": "warning" if preparation.limit_basis == "Review only" else "info"},
+        ],
+        columns=4,
+    )
+    if preparation.errors:
+        with st.expander("Run blocking actions", expanded=True):
+            st.dataframe(
+                pd.DataFrame([
+                    {"Priority": i, "Where to Fix": "Loads → SLS Loads → SLS Deflection / Camber displacement source", "Issue": msg, "Required Action": "Correct/import verified displacement rows and rerun this check."}
+                    for i, msg in enumerate(preparation.errors, start=1)
+                ]),
+                use_container_width=True,
+                hide_index=True,
+            )
+    if preparation.warnings and not cache_current:
+        with st.expander("Source warnings", expanded=False):
+            for message in preparation.warnings:
+                st.warning(message)
+    if not cache_current:
+        if isinstance(cached, Mapping):
+            st.warning("Stored Crossbeam Deflection / Camber result is STALE because the displacement source, columns, construction type, or project criterion changed.")
+        else:
+            st.markdown(_beam_uls_not_calculated_notice_html("SLS Deflection / Camber"), unsafe_allow_html=True)
+        if not source_df.empty:
+            with st.expander("Displacement source table — audit", expanded=False):
+                st.dataframe(source_df, use_container_width=True, hide_index=True)
+        return
+
+    result = dict(cached)
+    status = str(result.get("status") or "REVIEW")
+    style = "danger" if status == "FAIL" else ("ready" if status == "PASS" else "warning")
+    governing = result.get("governing_row") if isinstance(result.get("governing_row"), Mapping) else {}
+    transfer_gov = result.get("transfer_governing_row") if isinstance(result.get("transfer_governing_row"), Mapping) else {}
+    if governing:
+        final_value = f"{float(governing.get('Max downward deflection mm') or 0.0):.3f} mm down"
+        final_detail = f"{governing.get('Span')} · {governing.get('Case')} · x={float(governing.get('x down m') or 0.0):.3f} m"
+        util = governing.get("Utilization")
+        final_util = "REVIEW" if util is None else f"D/C {float(util):.3f}"
+    else:
+        final_value = "-"
+        final_detail = "No Final Service span response"
+        final_util = "-"
+    transfer_value = "-" if not transfer_gov else f"{float(transfer_gov.get('Max upward camber mm') or 0.0):.3f} mm up"
+    transfer_detail = "No Transfer response" if not transfer_gov else f"{transfer_gov.get('Span')} · {transfer_gov.get('Case')} · x={float(transfer_gov.get('x up m') or 0.0):.3f} m"
+    _render_analysis_summary_strip(
+        [
+            {"title": "Deflection / Camber status", "value": status, "detail": "stored external-FEA displacement review", "status": style, "strong": True},
+            {"title": "Transfer camber response", "value": transfer_value, "detail": transfer_detail, "status": "info"},
+            {"title": "Final Service governing", "value": final_value, "detail": final_detail, "status": style},
+            {"title": "Final Service utilization", "value": final_util, "detail": f"criterion {result.get('limit_basis', '-')}", "status": style},
+        ],
+        columns=4,
+    )
+    actions = list(result.get("required_actions") or [])
+    if actions:
+        st.markdown("#### Required actions")
+        st.dataframe(pd.DataFrame(actions), use_container_width=True, hide_index=True)
+
+    stage_tabs = st.tabs(["At Transfer", "At Final Service"])
+    for tab, stage in zip(stage_tabs, ["Transfer stage", "Final service stage"], strict=False):
+        with tab:
+            cases = _crossbeam_sls_deflection_stage_case_options(result, stage)
+            if not cases:
+                st.info(f"No stored {stage} displacement response is available.")
+                continue
+            selected = st.selectbox(
+                "Diagram Load Case",
+                cases,
+                key=f"crossbeam_sls2_case_{stage.replace(' ', '_').lower()}",
+            )
+            _render_beam_uls_static_plotly_figure(
+                _make_crossbeam_sls_deflection_figure(
+                    result,
+                    stage=stage,
+                    case_name=selected,
+                    member_length_m=float(preparation.member_length_m),
+                    column_rows=list(preparation.column_rows),
+                ),
+                caption=(
+                    "Absolute movement is the imported external-FEA displacement. Relative span response subtracts the straight chord joining adjacent column-centre movements. "
+                    "Connected lines are for visualization only; no unverified extremum is inferred between imported stations."
+                ),
+            )
+    span_df = pd.DataFrame(list(result.get("span_rows") or []))
+    support_df = pd.DataFrame(list(result.get("support_rows") or []))
+    with st.expander("Span deflection / camber audit", expanded=False):
+        if not span_df.empty:
+            st.dataframe(span_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No span response rows are available.")
+    with st.expander("Column-centre displacement audit", expanded=False):
+        if not support_df.empty:
+            st.dataframe(support_df, use_container_width=True, hide_index=True)
+    with st.expander("Calculation warnings / limitations", expanded=False):
+        for message in list(result.get("warnings") or []):
+            st.warning(message)
+        st.info(str(result.get("scope") or ""))
+
+
 def render_analysis_sls_deflection_camber() -> None:
     st.subheader("SLS Deflection / Camber")
     mode_settings = _analysis_mode_from_session()
     if is_portal_frame_crossbeam_workflow(mode_settings):
-        st.info("Crossbeam SLS Deflection / Camber is not implemented in ANALYSIS1A; no generic girder solver is run for this workflow.")
+        _render_crossbeam_sls_deflection_workspace()
         return
     _render_project_design_code_guard(workflow="girder_sls")
     st.info("Deflection convention: positive = upward camber, negative = downward deflection.")
