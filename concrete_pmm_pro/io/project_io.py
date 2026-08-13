@@ -14,6 +14,10 @@ from concrete_pmm_pro.analysis.capacity_check import DemandCapacityResult, Deman
 from concrete_pmm_pro.analysis.preflight import build_analysis_input_from_session_state
 from concrete_pmm_pro.analysis.result_models import PMMSolverResult
 from concrete_pmm_pro.analysis.runtime import analysis_input_hash
+from concrete_pmm_pro.analysis.crossbeam_sls_deflection import (
+    CROSSBEAM_SLS_DISPLACEMENT_SOURCE_METADATA_KEY,
+    CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY,
+)
 from concrete_pmm_pro.core.analysis import AnalysisModeSettings, AnalysisSettings
 from concrete_pmm_pro.core.concrete_materials import c45_precast_material, ensure_concrete_material_library
 from concrete_pmm_pro.core.design_code import (
@@ -227,10 +231,11 @@ PRESTRESS_TABLE_METADATA_COLUMNS = [
 
 ANALYSIS_RESULTS_METADATA_KEY = "analysis_results"
 ANALYSIS_RESULTS_SCHEMA_VERSION = 1
+ANALYSIS_SOURCES_METADATA_KEY = "analysis_sources"
+ANALYSIS_SOURCES_SCHEMA_VERSION = 1
 
 CROSSBEAM_ULS_LOAD_TABLE_KEY = "crossbeam_uls_loads_table"
 CROSSBEAM_SLS_LOAD_TABLE_KEY = "crossbeam_sls_loads_table"
-CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY = "crossbeam_sls_displacement_table"
 
 WORKFLOW_LOAD_TABLE_METADATA_KEYS = (
     "column_uls_loads_table",
@@ -239,7 +244,6 @@ WORKFLOW_LOAD_TABLE_METADATA_KEYS = (
     "beam_sls_loads_table",
     CROSSBEAM_ULS_LOAD_TABLE_KEY,
     CROSSBEAM_SLS_LOAD_TABLE_KEY,
-    CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY,
 )
 
 CROSSBEAM_LENGTH_STATE_KEY = "crossbeam_ui1_length_m"
@@ -386,6 +390,22 @@ def _workflow_load_table_metadata_from_session(session_state: Any) -> dict[str, 
         df = pd.DataFrame(table)
         tables[key] = df.to_dict(orient="records")
     return tables
+
+
+def _analysis_source_metadata_from_session(session_state: Any) -> dict[str, Any]:
+    """Serialize Analysis-owned external source tables separately from Loads."""
+
+    sources: dict[str, Any] = {}
+    raw = _get_session_value(session_state, CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY, None)
+    if raw is not None:
+        rows = pd.DataFrame(raw).to_dict(orient="records")
+        if rows:
+            sources[CROSSBEAM_SLS_DISPLACEMENT_SOURCE_METADATA_KEY] = {
+                "schema_version": ANALYSIS_SOURCES_SCHEMA_VERSION,
+                "rows": rows,
+                "owner": "Analysis → SLS Deflection / Camber",
+            }
+    return sources
 
 
 def _demand_capacity_summary_to_metadata(summary: DemandCapacitySummary) -> dict[str, Any]:
@@ -904,10 +924,16 @@ def project_from_session_state(session_state: Any) -> ProjectModel:
     else:
         legacy_workflow_tables = dict(metadata.get("workflow_load_tables") or {})
         legacy_workflow_tables.pop(CB_LATER_FEA_RESPONSE_TABLE_KEY, None)
+        legacy_workflow_tables.pop(CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY, None)
         if legacy_workflow_tables:
             metadata["workflow_load_tables"] = legacy_workflow_tables
         else:
             metadata.pop("workflow_load_tables", None)
+    analysis_sources = _analysis_source_metadata_from_session(session_state)
+    if analysis_sources:
+        metadata[ANALYSIS_SOURCES_METADATA_KEY] = analysis_sources
+    else:
+        metadata.pop(ANALYSIS_SOURCES_METADATA_KEY, None)
     td_fea_response = _crossbeam_td_fea_response_metadata_from_session(session_state)
     if td_fea_response:
         metadata[CB_TD_FEA_RESPONSE_METADATA_KEY] = td_fea_response
@@ -1499,6 +1525,17 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
         for key in WORKFLOW_LOAD_TABLE_METADATA_KEYS:
             if key in workflow_load_tables:
                 session_state[key] = pd.DataFrame(workflow_load_tables.get(key) or [])
+
+    analysis_sources = project.metadata.get(ANALYSIS_SOURCES_METADATA_KEY)
+    displacement_source = analysis_sources.get(CROSSBEAM_SLS_DISPLACEMENT_SOURCE_METADATA_KEY) if isinstance(analysis_sources, dict) else None
+    if isinstance(displacement_source, dict):
+        session_state[CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY] = pd.DataFrame(displacement_source.get("rows") or [])
+    elif isinstance(workflow_load_tables, dict) and CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY in workflow_load_tables:
+        # D22 forward migration: displacement rows were incorrectly owned by Loads.
+        # Preserve the source while moving its durable ownership to Analysis.
+        session_state[CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY] = pd.DataFrame(
+            workflow_load_tables.get(CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY) or []
+        )
 
     td_fea_response = project.metadata.get(CB_TD_FEA_RESPONSE_METADATA_KEY)
     if isinstance(td_fea_response, dict):

@@ -100,12 +100,11 @@ def test_d22_result_keys_and_ui_keep_generic_simple_span_solver_out_of_crossbeam
     assert CROSSBEAM_SLS_DEFLECTION_RESULT_HASH_KEY == "crossbeam_sls2_deflection_camber_input_hash"
 
 
-def test_d22_loads_and_project_json_persist_displacement_source_key() -> None:
+def test_d22_project_source_contract_survives_d23_analysis_ownership_cleanup() -> None:
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
-    loads_source = (root / "concrete_pmm_pro" / "ui" / "loads_page.py").read_text(encoding="utf-8")
+    analysis_source = (root / "concrete_pmm_pro" / "ui" / "analysis_page.py").read_text(encoding="utf-8")
     io_source = (root / "concrete_pmm_pro" / "io" / "project_io.py").read_text(encoding="utf-8")
-    assert "SLS Deflection / Camber displacement source" in loads_source
-    assert "Vertical displacement (mm; upward +)" in loads_source
-    assert 'CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY,' in loads_source
-    assert 'CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY,' in io_source
+    assert "Deflection / Camber source" in analysis_source
+    assert "Vertical displacement (mm; upward +)" in analysis_source
+    assert 'CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY' in io_source

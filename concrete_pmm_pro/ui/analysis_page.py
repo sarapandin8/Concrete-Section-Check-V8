@@ -9,6 +9,7 @@ import re
 from collections.abc import Mapping
 from datetime import datetime
 from html import escape
+from io import BytesIO
 from typing import Any
 
 import plotly.graph_objects as go
@@ -58,6 +59,8 @@ from concrete_pmm_pro.crossbeam.construction_stage import (
 from concrete_pmm_pro.analysis.crossbeam_sls_deflection import (
     CROSSBEAM_SLS_DEFLECTION_RESULT_HASH_KEY,
     CROSSBEAM_SLS_DEFLECTION_RESULT_KEY,
+    CROSSBEAM_SLS_DISPLACEMENT_COLUMNS,
+    CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY,
     DEFAULT_LIMIT_BASIS as CROSSBEAM_DEFLECTION_DEFAULT_LIMIT_BASIS,
     LIMIT_BASIS_OPTIONS as CROSSBEAM_DEFLECTION_LIMIT_BASIS_OPTIONS,
     build_crossbeam_deflection_preparation,
@@ -75,6 +78,7 @@ from concrete_pmm_pro.analysis.crossbeam_sls_transfer import (
     run_crossbeam_service_stress,
     run_crossbeam_transfer_stress,
 )
+from concrete_pmm_pro.crossbeam.station_force_contract import canonical_sls_stage
 from concrete_pmm_pro.analysis.preflight import build_analysis_input_from_session_state, check_analysis_readiness
 from concrete_pmm_pro.analysis.pmm_solver import run_pmm_solver, run_rc_pmm_solver
 from concrete_pmm_pro.analysis.prestress_checks import (
@@ -26892,6 +26896,161 @@ def _make_crossbeam_sls_deflection_figure(
     return fig
 
 
+def _normalize_crossbeam_sls_displacement_source_table(value: Any) -> pd.DataFrame:
+    """Normalize the Analysis-owned external-FEA displacement source table."""
+
+    columns = list(CROSSBEAM_SLS_DISPLACEMENT_COLUMNS)
+    df = pd.DataFrame(value) if value is not None else pd.DataFrame()
+    if df.empty:
+        return pd.DataFrame(columns=columns)
+    out = pd.DataFrame(index=df.index)
+    for column in columns:
+        out[column] = df[column] if column in df.columns else (False if column == "Active" else "")
+    out["Active"] = out["Active"].map(lambda value: _analysis_to_bool(value, default=False))
+    out["Stage"] = out["Stage"].map(lambda value: canonical_sls_stage(value) or str(value or "").strip())
+    return out[columns].reset_index(drop=True)
+
+
+def _crossbeam_sls_displacement_template(member_length_m: float) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Active": False,
+                "Station s (m)": 0.0,
+                "Case Name": "SLS-TR-DISP-01",
+                "Stage": "Transfer stage",
+                "Vertical displacement (mm)": 0.0,
+                "Source point": "",
+                "Note": "Transfer-stage external-FEA vertical movement.",
+            },
+            {
+                "Active": False,
+                "Station s (m)": float(member_length_m),
+                "Case Name": "SLS-SERV-DISP-01",
+                "Stage": "Final service stage",
+                "Vertical displacement (mm)": 0.0,
+                "Source point": "",
+                "Note": "Final-service external-FEA vertical movement.",
+            },
+        ],
+        columns=list(CROSSBEAM_SLS_DISPLACEMENT_COLUMNS),
+    )
+
+
+def _crossbeam_sls_displacement_template_xlsx(template: pd.DataFrame) -> bytes:
+    output = BytesIO()
+    instructions = pd.DataFrame(
+        [
+            {"Field": "Station s (m)", "Instruction": "Crossbeam longitudinal station in metres."},
+            {"Field": "Stage", "Instruction": "Transfer stage or Final service stage."},
+            {"Field": "Vertical displacement (mm)", "Instruction": "Canonical sign: upward/camber positive; downward/deflection negative."},
+            {"Field": "Case Name", "Instruction": "Preserve the external-FEA case/combination label."},
+            {"Field": "Source point", "Instruction": "Optional external-FEA node/joint/source identifier for traceability."},
+        ]
+    )
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        template.to_excel(writer, sheet_name="Crossbeam SLS displacement", index=False)
+        instructions.to_excel(writer, sheet_name="Instructions", index=False)
+    return output.getvalue()
+
+
+def _read_crossbeam_sls_displacement_upload(uploaded: Any) -> pd.DataFrame:
+    filename = str(getattr(uploaded, "name", "")).lower()
+    if filename.endswith(".csv"):
+        raw = pd.read_csv(uploaded)
+    elif filename.endswith(".xlsx"):
+        raw = pd.read_excel(uploaded, sheet_name=0)
+    else:
+        raise ValueError("Unsupported displacement import file type. Please upload .xlsx or .csv.")
+    return _normalize_crossbeam_sls_displacement_source_table(raw)
+
+
+def _store_crossbeam_sls_displacement_source(table: pd.DataFrame) -> None:
+    """Persist only the dedicated Deflection/Camber source; other analysis packages stay current."""
+
+    st.session_state[CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY] = _normalize_crossbeam_sls_displacement_source_table(table)
+
+
+def _render_crossbeam_sls_displacement_source_panel(member_length_m: float) -> None:
+    st.markdown("#### Deflection / Camber source")
+    st.caption(
+        "Analysis-owned verified external-FEA vertical displacement source. This is response data for the Deflection / Camber check, not a Loads-workspace force input. "
+        "Canonical sign: positive = upward camber; negative = downward deflection. One source table may contain both Transfer and Final Service rows."
+    )
+    template = _crossbeam_sls_displacement_template(member_length_m)
+    with st.expander("Import verified SLS vertical displacement from Excel / CSV", expanded=False):
+        st.dataframe(template, use_container_width=True, hide_index=True)
+        downloads = st.columns(2)
+        with downloads[0]:
+            st.download_button(
+                "Download Excel template",
+                data=_crossbeam_sls_displacement_template_xlsx(template),
+                file_name="crossbeam_sls_displacement_template.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key="crossbeam_sls2_displacement_xlsx_template",
+            )
+        with downloads[1]:
+            st.download_button(
+                "Download CSV template",
+                data=template.to_csv(index=False).encode("utf-8-sig"),
+                file_name="crossbeam_sls_displacement_template.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key="crossbeam_sls2_displacement_csv_template",
+            )
+        uploaded = st.file_uploader(
+            "Upload Crossbeam SLS displacement source",
+            type=["xlsx", "csv"],
+            key="crossbeam_sls2_displacement_import",
+        )
+        if uploaded is not None:
+            try:
+                imported = _read_crossbeam_sls_displacement_upload(uploaded)
+            except Exception as exc:
+                st.error(f"Could not read displacement import file: {exc}")
+            else:
+                st.dataframe(imported, use_container_width=True, hide_index=True)
+                if st.button(
+                    "Replace displacement source",
+                    type="primary",
+                    use_container_width=True,
+                    key="crossbeam_sls2_displacement_replace",
+                ):
+                    _store_crossbeam_sls_displacement_source(imported)
+                    st.session_state.pop("crossbeam_sls2_displacement_editor", None)
+                    st.rerun()
+
+    current = _normalize_crossbeam_sls_displacement_source_table(
+        st.session_state.get(CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY)
+    )
+    edited = st.data_editor(
+        current,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Active": st.column_config.CheckboxColumn("Active", width="small"),
+            "Station s (m)": st.column_config.NumberColumn(
+                "Station s (m)", min_value=0.0, max_value=float(member_length_m), format="%.3f", width="small"
+            ),
+            "Case Name": st.column_config.TextColumn("Case / Combination", width="medium"),
+            "Stage": st.column_config.SelectboxColumn(
+                "Stage", options=["Transfer stage", "Final service stage"], width="medium"
+            ),
+            "Vertical displacement (mm)": st.column_config.NumberColumn(
+                "Vertical displacement (mm; upward +)", format="%.4f", width="medium"
+            ),
+            "Source point": st.column_config.TextColumn("Source point", width="medium"),
+            "Note": st.column_config.TextColumn("Note", width="large"),
+        },
+        key="crossbeam_sls2_displacement_editor",
+    )
+    normalized = _normalize_crossbeam_sls_displacement_source_table(edited)
+    if not current.equals(normalized):
+        _store_crossbeam_sls_displacement_source(normalized)
+
+
 def _render_crossbeam_sls_deflection_workspace() -> None:
     st.markdown("### Crossbeam SLS Deflection / Camber")
     st.caption(
@@ -26901,13 +27060,16 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
     )
     with st.expander("Deflection / camber engineering assumptions", expanded=False):
         st.markdown(
-            "- Source: Loads → SLS Loads → SLS Deflection / Camber displacement source.\n"
+            "- Source: Analysis → SLS Deflection / Camber → Deflection / Camber source.\n"
             "- Absolute vertical movement is read directly from the verified external-FEA displacement source; P/V2/T/M3 are not integrated to fabricate displacement.\n"
             "- Final-service span deflection is measured relative to the straight chord joining adjacent column-centre displacement values, so column/support translation is not silently treated as beam deflection.\n"
             "- Transfer-stage rows report camber/deflection response only. Final Service may be checked against a user-adopted project L/n criterion.\n"
             "- Overhang movement remains visible but is not assigned an L/n span limit by this milestone.\n"
             "- Creep, shrinkage, cracked stiffness, staged stiffness change, construction tolerance, and foundation settlement are included only if they are already represented by the imported external-FEA displacement result."
         )
+
+    member_length_for_source = float(st.session_state.get(CROSSBEAM_LENGTH_KEY, 0.0) or 0.0)
+    _render_crossbeam_sls_displacement_source_panel(max(member_length_for_source, 0.0))
 
     setting_cols = st.columns([1.3, 1.0, 2.0])
     limit_options = list(CROSSBEAM_DEFLECTION_LIMIT_BASIS_OPTIONS)
@@ -26981,7 +27143,7 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
         with st.expander("Run blocking actions", expanded=True):
             st.dataframe(
                 pd.DataFrame([
-                    {"Priority": i, "Where to Fix": "Loads → SLS Loads → SLS Deflection / Camber displacement source", "Issue": msg, "Required Action": "Correct/import verified displacement rows and rerun this check."}
+                    {"Priority": i, "Where to Fix": "Analysis → SLS Deflection / Camber → Deflection / Camber source", "Issue": msg, "Required Action": "Correct/import verified displacement rows and rerun this check."}
                     for i, msg in enumerate(preparation.errors, start=1)
                 ]),
                 use_container_width=True,

@@ -35,6 +35,8 @@ from concrete_pmm_pro.crossbeam.station_force_contract import canonical_sls_stag
 
 
 CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY = "crossbeam_sls_displacement_table"
+CROSSBEAM_SLS_DISPLACEMENT_SOURCE_METADATA_KEY = "crossbeam_sls_deflection_displacement"
+CROSSBEAM_SLS_DISPLACEMENT_COLUMNS = ("Active", "Station s (m)", "Case Name", "Stage", "Vertical displacement (mm)", "Source point", "Note")
 CROSSBEAM_SLS_DEFLECTION_RESULT_KEY = "crossbeam_sls2_deflection_camber_result"
 CROSSBEAM_SLS_DEFLECTION_RESULT_HASH_KEY = "crossbeam_sls2_deflection_camber_input_hash"
 CROSSBEAM_LENGTH_KEY = "crossbeam_ui1_length_m"
@@ -210,7 +212,7 @@ def build_crossbeam_deflection_preparation(state: Any) -> CrossbeamDeflectionPre
     for row in rows:
         by_group.setdefault((str(row["Stage"]), str(row["Case Name"])), []).append(row)
     if not rows:
-        errors.append("No active Crossbeam SLS displacement rows are available. Import verified external-FEA vertical displacements on Loads → SLS Loads.")
+        errors.append("No active Crossbeam SLS displacement rows are available. Import verified external-FEA vertical displacements on Analysis → SLS Deflection / Camber.")
     for (stage, case), group in by_group.items():
         if len(group) < 2:
             errors.append(f"{stage} / {case}: at least two displacement stations are required.")
