@@ -63,7 +63,8 @@ def test_d23_ui_owns_displacement_import_in_analysis_not_loads() -> None:
     analysis_source = (root / "concrete_pmm_pro" / "ui" / "analysis_page.py").read_text(encoding="utf-8")
     assert "Upload Crossbeam SLS displacement source" not in loads_source
     assert "_render_crossbeam_sls_displacement_source" not in loads_source
-    assert "Upload Crossbeam SLS displacement source" in analysis_source
+    assert "Upload Crossbeam SLS displacement source" not in analysis_source
+    assert "Upload {stage_title} displacement source" in analysis_source
     assert "Analysis → SLS Deflection / Camber → Deflection / Camber source" in analysis_source
     assert "response data for the Deflection / Camber check, not a Loads-workspace force input" in analysis_source
 

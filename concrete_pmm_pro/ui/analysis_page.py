@@ -26848,7 +26848,16 @@ def _make_crossbeam_sls_deflection_figure(
         and str(row.get("Case") or "") == case_name
         and "Relative displacement mm" in row
     ])
+    span_rows = [
+        dict(row) for row in list(result.get("span_rows") or [])
+        if isinstance(row, Mapping)
+        and str(row.get("Stage") or "") == stage
+        and str(row.get("Case") or "") == case_name
+    ]
     fig = go.Figure()
+
+    # Absolute frame response is context; keep it visually subordinate to the
+    # relative span response that controls the final-service deflection check.
     if not source.empty:
         source = source.sort_values("Station s (m)")
         fig.add_trace(
@@ -26857,44 +26866,149 @@ def _make_crossbeam_sls_deflection_figure(
                 y=source["Vertical displacement mm"],
                 mode="lines+markers",
                 name="Absolute FEA displacement",
+                line={"color": "#1f77b4", "width": 2},
+                marker={"color": "#1f77b4", "size": 5, "symbol": "circle"},
                 hovertemplate="s=%{x:.3f} m<br>Absolute=%{y:.3f} mm<extra></extra>",
             )
         )
+
     if not relative.empty:
-        for span, group in relative.groupby("Span", sort=False):
+        first_relative = True
+        for _span, group in relative.groupby("Span", sort=False):
             group = group.sort_values("Station s (m)")
             fig.add_trace(
                 go.Scatter(
                     x=group["Station s (m)"],
                     y=group["Relative displacement mm"],
                     mode="lines+markers",
-                    name=f"Relative to support chord · {span}",
+                    name="Relative span deflection",
+                    legendgroup="relative-span",
+                    showlegend=first_relative,
+                    line={"color": "#0f766e", "width": 3},
+                    marker={"color": "#0f766e", "size": 7, "symbol": "square"},
                     hovertemplate="s=%{x:.3f} m<br>Relative=%{y:.3f} mm<extra></extra>",
                 )
             )
-    fig.add_hline(y=0.0, line_width=1.2, line_dash="dot", annotation_text="0 mm")
+            first_relative = False
+
+    # Final-service L/n limit is span-specific.  Plot it only when an adopted
+    # project criterion exists; Review only intentionally has no hidden limit.
+    if stage == "Final service stage":
+        first_limit = True
+        for row in span_rows:
+            limit = row.get("Limit mm")
+            x1 = row.get("Span start m")
+            x2 = row.get("Span end m")
+            try:
+                limit_f = float(limit)
+                x1_f = float(x1)
+                x2_f = float(x2)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(limit_f) or limit_f <= 0.0 or not math.isfinite(x1_f) or not math.isfinite(x2_f):
+                continue
+            fig.add_trace(
+                go.Scatter(
+                    x=[x1_f, x2_f],
+                    y=[-limit_f, -limit_f],
+                    mode="lines",
+                    name="Deflection limit",
+                    legendgroup="deflection-limit",
+                    showlegend=first_limit,
+                    line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
+                    hovertemplate=(
+                        f"{row.get('Span', 'Span')}<br>"
+                        f"{row.get('Limit basis', '')} limit = {limit_f:.3f} mm down<extra></extra>"
+                    ),
+                )
+            )
+            fig.add_annotation(
+                x=(x1_f + x2_f) / 2.0,
+                y=-limit_f,
+                text=f"{row.get('Limit basis', '')} = {limit_f:.2f} mm",
+                showarrow=False,
+                yshift=-12,
+                font={"size": 10, "color": "#b91c1c"},
+            )
+            first_limit = False
+
+    # Governing response marker.  Keep a single concise legend entry rather
+    # than one marker/legend item per span.
+    governing = None
+    if span_rows:
+        if stage == "Final service stage":
+            with_util = [row for row in span_rows if row.get("Utilization") is not None]
+            pool = with_util or span_rows
+            governing = max(
+                pool,
+                key=lambda row: float(row.get("Utilization") or row.get("Max downward deflection mm") or 0.0),
+            )
+            gx = float(governing.get("x down m") or 0.0)
+            gy = -float(governing.get("Max downward deflection mm") or 0.0)
+            glabel = f"Gov. deflection {abs(gy):.3f} mm"
+            gname = "Gov. deflection"
+        else:
+            governing = max(span_rows, key=lambda row: float(row.get("Max upward camber mm") or 0.0))
+            gx = float(governing.get("x up m") or 0.0)
+            gy = float(governing.get("Max upward camber mm") or 0.0)
+            glabel = f"Gov. camber {gy:.3f} mm"
+            gname = "Gov. camber"
+        fig.add_trace(
+            go.Scatter(
+                x=[gx],
+                y=[gy],
+                mode="markers+text",
+                text=[glabel],
+                textposition="top center" if gy >= 0.0 else "bottom center",
+                name=gname,
+                marker={"color": "#111827", "size": 11, "symbol": "diamond"},
+                hovertemplate="s=%{x:.3f} m<br>%{text}<extra></extra>",
+            )
+        )
+
+    fig.add_hline(
+        y=0.0,
+        line_width=1.2,
+        line_dash="dot",
+        line_color="#6b7280",
+        annotation_text="0 mm",
+    )
     for row in column_rows:
         x = _analysis_float_or_zero(row.get("Station s (m)"))
         width_m = max(_analysis_float_or_zero(row.get("Blong (mm)")) / 1000.0, 0.0)
         if width_m > 0.0:
-            fig.add_vrect(x0=max(0.0, x-width_m/2.0), x1=min(member_length_m, x+width_m/2.0), opacity=0.10, line_width=0)
-        fig.add_vline(x=x, line_width=1.0, line_dash="dot")
-        fig.add_annotation(x=x, y=1.02, yref="paper", text=str(row.get("Column ID") or "Column"), showarrow=False)
+            fig.add_vrect(
+                x0=max(0.0, x-width_m/2.0),
+                x1=min(member_length_m, x+width_m/2.0),
+                fillcolor="#94a3b8",
+                opacity=0.10,
+                line_width=0,
+                layer="below",
+            )
+        fig.add_vline(x=x, line_width=1.0, line_dash="dot", line_color="#64748b")
+        fig.add_annotation(
+            x=x,
+            y=1.02,
+            yref="paper",
+            text=str(row.get("Column ID") or "Column"),
+            showarrow=False,
+            font={"color": "#475569"},
+        )
     fig.update_layout(
         title=(
             f"Crossbeam SLS Deflection / Camber — {stage}<br>"
-            "<sup>verified external-FEA vertical movement · positive upward / negative downward · span response relative to adjacent column-centre chord</sup>"
+            "<sup>verified external-FEA movement · positive upward / negative downward · relative response measured from adjacent column-centre chord</sup>"
         ),
         xaxis_title="Distance from left end of member (m)",
         yaxis_title="Vertical displacement (mm)",
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="center", x=0.5),
         margin=dict(l=70, r=30, t=90, b=120),
+        height=_BEAM_ULS_STATIC_FIG_HEIGHT,
     )
     fig.update_xaxes(range=[0.0, float(member_length_m)], showgrid=True)
-    fig.update_yaxes(showgrid=True, zeroline=True)
+    fig.update_yaxes(showgrid=True, zeroline=False)
     return fig
-
 
 def _normalize_crossbeam_sls_displacement_source_table(value: Any) -> pd.DataFrame:
     """Normalize the Analysis-owned external-FEA displacement source table.
@@ -26952,38 +27066,40 @@ def _normalize_crossbeam_sls_displacement_source_table(value: Any) -> pd.DataFra
     return out[columns].reset_index(drop=True)
 
 
-def _crossbeam_sls_displacement_template(member_length_m: float) -> pd.DataFrame:
+def _crossbeam_sls_displacement_stage_template(member_length_m: float, stage: str) -> pd.DataFrame:
+    case_name = "SLS-TR-DISP-01" if stage == "Transfer stage" else "SLS-SERV-DISP-01"
+    stage_label = "Transfer-stage" if stage == "Transfer stage" else "Final-service"
     return pd.DataFrame(
         [
             {
                 "Active": False,
                 "Station s (m)": 0.0,
-                "Case Name": "SLS-TR-DISP-01",
-                "Stage": "Transfer stage",
+                "Case Name": case_name,
+                "Stage": stage,
                 "Vertical displacement (mm)": 0.0,
                 "Source point": "",
-                "Note": "Transfer-stage external-FEA vertical movement.",
+                "Note": f"{stage_label} external-FEA vertical movement.",
             },
             {
                 "Active": False,
                 "Station s (m)": float(member_length_m),
-                "Case Name": "SLS-SERV-DISP-01",
-                "Stage": "Final service stage",
+                "Case Name": case_name,
+                "Stage": stage,
                 "Vertical displacement (mm)": 0.0,
                 "Source point": "",
-                "Note": "Final-service external-FEA vertical movement.",
+                "Note": f"{stage_label} external-FEA vertical movement.",
             },
         ],
         columns=list(CROSSBEAM_SLS_DISPLACEMENT_COLUMNS),
     )
 
 
-def _crossbeam_sls_displacement_template_xlsx(template: pd.DataFrame) -> bytes:
+def _crossbeam_sls_displacement_template_xlsx(template: pd.DataFrame, *, stage: str) -> bytes:
     output = BytesIO()
     instructions = pd.DataFrame(
         [
             {"Field": "Station s (m)", "Instruction": "Crossbeam longitudinal station in metres."},
-            {"Field": "Stage", "Instruction": "Transfer stage or Final service stage."},
+            {"Field": "Stage", "Instruction": f"This file is owned by {stage}; the app pins all imported rows to this stage."},
             {"Field": "Vertical displacement (mm)", "Instruction": "Canonical sign: upward/camber positive; downward/deflection negative."},
             {"Field": "Case Name", "Instruction": "Preserve the external-FEA case/combination label."},
             {"Field": "Source point", "Instruction": "Optional external-FEA node/joint/source identifier for traceability."},
@@ -26995,7 +27111,7 @@ def _crossbeam_sls_displacement_template_xlsx(template: pd.DataFrame) -> bytes:
     return output.getvalue()
 
 
-def _read_crossbeam_sls_displacement_upload(uploaded: Any) -> pd.DataFrame:
+def _read_crossbeam_sls_displacement_upload(uploaded: Any, *, stage: str) -> pd.DataFrame:
     filename = str(getattr(uploaded, "name", "")).lower()
     if filename.endswith(".csv"):
         raw = pd.read_csv(uploaded)
@@ -27003,7 +27119,25 @@ def _read_crossbeam_sls_displacement_upload(uploaded: Any) -> pd.DataFrame:
         raw = pd.read_excel(uploaded, sheet_name=0)
     else:
         raise ValueError("Unsupported displacement import file type. Please upload .xlsx or .csv.")
-    return _normalize_crossbeam_sls_displacement_source_table(raw)
+    normalized = _normalize_crossbeam_sls_displacement_source_table(raw)
+    normalized["Stage"] = stage
+    return normalized
+
+
+def _merge_crossbeam_sls_displacement_stage_source(
+    current: Any,
+    replacement: Any,
+    *,
+    stage: str,
+) -> pd.DataFrame:
+    """Replace one SLS displacement stage without touching the other stage."""
+
+    existing = _normalize_crossbeam_sls_displacement_source_table(current)
+    incoming = _normalize_crossbeam_sls_displacement_source_table(replacement)
+    incoming["Stage"] = stage
+    other = existing[existing["Stage"].astype(str) != stage].copy()
+    merged = pd.concat([other, incoming], ignore_index=True)
+    return _normalize_crossbeam_sls_displacement_source_table(merged)
 
 
 def _store_crossbeam_sls_displacement_source(table: pd.DataFrame) -> None:
@@ -27012,85 +27146,120 @@ def _store_crossbeam_sls_displacement_source(table: pd.DataFrame) -> None:
     st.session_state[CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY] = _normalize_crossbeam_sls_displacement_source_table(table)
 
 
-def _render_crossbeam_sls_displacement_source_panel(member_length_m: float) -> None:
-    st.markdown("#### Deflection / Camber source")
+def _render_crossbeam_sls_displacement_stage_panel(
+    member_length_m: float,
+    *,
+    stage: str,
+    stage_title: str,
+    key_suffix: str,
+) -> None:
+    template = _crossbeam_sls_displacement_stage_template(member_length_m, stage)
     st.caption(
-        "Analysis-owned verified external-FEA vertical displacement source. This is response data for the Deflection / Camber check, not a Loads-workspace force input. "
-        "Canonical sign: positive = upward camber; negative = downward deflection. One source table may contain both Transfer and Final Service rows."
+        f"{stage_title} source is independent. Replacing this source preserves the other stage. "
+        "Canonical sign: positive = upward camber; negative = downward deflection."
     )
-    template = _crossbeam_sls_displacement_template(member_length_m)
-    with st.expander("Import verified SLS vertical displacement from Excel / CSV", expanded=False):
+    with st.expander(f"Import verified {stage_title} vertical displacement", expanded=False):
         st.dataframe(template, use_container_width=True, hide_index=True)
         downloads = st.columns(2)
         with downloads[0]:
             st.download_button(
-                "Download Excel template",
-                data=_crossbeam_sls_displacement_template_xlsx(template),
-                file_name="crossbeam_sls_displacement_template.xlsx",
+                f"Download {stage_title} Excel template",
+                data=_crossbeam_sls_displacement_template_xlsx(template, stage=stage),
+                file_name=f"crossbeam_sls_{key_suffix}_displacement_template.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
-                key="crossbeam_sls2_displacement_xlsx_template",
+                key=f"crossbeam_sls2_{key_suffix}_displacement_xlsx_template",
             )
         with downloads[1]:
             st.download_button(
-                "Download CSV template",
+                f"Download {stage_title} CSV template",
                 data=template.to_csv(index=False).encode("utf-8-sig"),
-                file_name="crossbeam_sls_displacement_template.csv",
+                file_name=f"crossbeam_sls_{key_suffix}_displacement_template.csv",
                 mime="text/csv",
                 use_container_width=True,
-                key="crossbeam_sls2_displacement_csv_template",
+                key=f"crossbeam_sls2_{key_suffix}_displacement_csv_template",
             )
         uploaded = st.file_uploader(
-            "Upload Crossbeam SLS displacement source",
+            f"Upload {stage_title} displacement source",
             type=["xlsx", "csv"],
-            key="crossbeam_sls2_displacement_import",
+            key=f"crossbeam_sls2_{key_suffix}_displacement_import",
         )
         if uploaded is not None:
             try:
-                imported = _read_crossbeam_sls_displacement_upload(uploaded)
+                imported = _read_crossbeam_sls_displacement_upload(uploaded, stage=stage)
             except Exception as exc:
-                st.error(f"Could not read displacement import file: {exc}")
+                st.error(f"Could not read {stage_title} displacement import file: {exc}")
             else:
                 st.dataframe(imported, use_container_width=True, hide_index=True)
                 if st.button(
-                    "Replace displacement source",
+                    f"Replace {stage_title} source",
                     type="primary",
                     use_container_width=True,
-                    key="crossbeam_sls2_displacement_replace",
+                    key=f"crossbeam_sls2_{key_suffix}_displacement_replace",
                 ):
-                    _store_crossbeam_sls_displacement_source(imported)
-                    st.session_state.pop("crossbeam_sls2_displacement_editor", None)
+                    merged = _merge_crossbeam_sls_displacement_stage_source(
+                        st.session_state.get(CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY),
+                        imported,
+                        stage=stage,
+                    )
+                    _store_crossbeam_sls_displacement_source(merged)
+                    st.session_state.pop(f"crossbeam_sls2_{key_suffix}_displacement_editor", None)
                     st.rerun()
 
-    current = _normalize_crossbeam_sls_displacement_source_table(
+    full_current = _normalize_crossbeam_sls_displacement_source_table(
         st.session_state.get(CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY)
     )
+    current = full_current[full_current["Stage"].astype(str) == stage].copy().reset_index(drop=True)
     edited = st.data_editor(
         current,
         num_rows="dynamic",
         use_container_width=True,
         hide_index=True,
+        disabled=["Stage"],
         column_config={
             "Active": st.column_config.CheckboxColumn("Active", width="small"),
             "Station s (m)": st.column_config.NumberColumn(
                 "Station s (m)", min_value=0.0, max_value=float(member_length_m), format="%.3f", width="small"
             ),
             "Case Name": st.column_config.TextColumn("Case / Combination", width="medium"),
-            "Stage": st.column_config.SelectboxColumn(
-                "Stage", options=["Transfer stage", "Final service stage"], width="medium"
-            ),
+            "Stage": st.column_config.TextColumn("Stage", width="medium"),
             "Vertical displacement (mm)": st.column_config.NumberColumn(
                 "Vertical displacement (mm; upward +)", format="%.4f", width="medium"
             ),
             "Source point": st.column_config.TextColumn("Source point", width="medium"),
             "Note": st.column_config.TextColumn("Note", width="large"),
         },
-        key="crossbeam_sls2_displacement_editor",
+        key=f"crossbeam_sls2_{key_suffix}_displacement_editor",
     )
     normalized = _normalize_crossbeam_sls_displacement_source_table(edited)
+    normalized["Stage"] = stage
     if not current.equals(normalized):
-        _store_crossbeam_sls_displacement_source(normalized)
+        merged = _merge_crossbeam_sls_displacement_stage_source(full_current, normalized, stage=stage)
+        _store_crossbeam_sls_displacement_source(merged)
 
+
+def _render_crossbeam_sls_displacement_source_panel(member_length_m: float) -> None:
+    st.markdown("#### Deflection / Camber source")
+    st.caption(
+        "Analysis-owned verified external-FEA vertical displacement response data for the Deflection / Camber check, not a Loads-workspace force input. "
+        "Transfer and Final Service are imported/replaced independently; either stage may be reviewed without the other. "
+        "The Project JSON keeps both under one dedicated Analysis source owner."
+    )
+    tabs = st.tabs(["At Transfer source", "At Final Service source"])
+    with tabs[0]:
+        _render_crossbeam_sls_displacement_stage_panel(
+            member_length_m,
+            stage="Transfer stage",
+            stage_title="At Transfer",
+            key_suffix="transfer",
+        )
+    with tabs[1]:
+        _render_crossbeam_sls_displacement_stage_panel(
+            member_length_m,
+            stage="Final service stage",
+            stage_title="At Final Service",
+            key_suffix="final_service",
+        )
 
 def _render_crossbeam_sls_deflection_workspace() -> None:
     st.markdown("### Crossbeam SLS Deflection / Camber")
@@ -27136,6 +27305,20 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
             st.metric("Criterion mode", str(st.session_state.get("crossbeam_sls_deflection_limit_basis")))
     with setting_cols[2]:
         st.caption("No project limit is assumed automatically. Select an adopted project criterion only when it is applicable to this Crossbeam and supported system.")
+
+    selected_limit_basis = str(st.session_state.get("crossbeam_sls_deflection_limit_basis") or CROSSBEAM_DEFLECTION_DEFAULT_LIMIT_BASIS)
+    if selected_limit_basis == "Review only":
+        st.info(
+            "NO DEFLECTION LIMIT SELECTED — Final Service response is shown for engineering review only. "
+            "Select an adopted L/n or Custom criterion to display span-specific red dashed limits and PASS/FAIL utilization."
+        )
+    else:
+        ratio_text = selected_limit_basis
+        if selected_limit_basis == "Custom":
+            ratio_text = f"L/{float(st.session_state.get('crossbeam_sls_deflection_custom_ratio', 360.0) or 360.0):g}"
+        st.success(
+            f"DEFLECTION LIMIT ACTIVE — {ratio_text}. Each support-to-support span will show its own downward limit and utilization; overhangs remain review-only."
+        )
 
     preparation = build_crossbeam_deflection_preparation(st.session_state)
     source_df = pd.DataFrame(list(preparation.rows))
@@ -27255,8 +27438,9 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
                     column_rows=list(preparation.column_rows),
                 ),
                 caption=(
-                    "Absolute movement is the imported external-FEA displacement. Relative span response subtracts the straight chord joining adjacent column-centre movements. "
-                    "Connected lines are for visualization only; no unverified extremum is inferred between imported stations."
+                    "Absolute FEA displacement is shown as context; the teal Relative span deflection trace is measured from the straight chord joining adjacent column-centre movements. "
+                    "When an adopted Final Service L/n criterion is active, the red dashed span-specific Deflection limit is plotted and the governing relative response is marked. "
+                    "Review only intentionally shows no fabricated limit. Connected lines are visualization between imported stations only; no unverified extremum is inferred between stations."
                 ),
             )
     span_df = pd.DataFrame(list(result.get("span_rows") or []))

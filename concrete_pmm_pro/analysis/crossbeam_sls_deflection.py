@@ -250,7 +250,7 @@ def build_crossbeam_deflection_preparation(state: Any) -> CrossbeamDeflectionPre
         ]
     )
     payload = {
-        "schema": "crossbeam-sls2-displacement-source-v1",
+        "schema": "crossbeam-sls2-displacement-source-v2",
         "length": length,
         "construction": construction,
         "columns": columns,
@@ -412,6 +412,8 @@ def run_crossbeam_deflection_camber(preparation: CrossbeamDeflectionPreparation)
                     "Span": local[0]["Span"],
                     "Span index": span_index,
                     "Span length m": span_length,
+                    "Span start m": x1,
+                    "Span end m": x2,
                     "Status": status,
                     "Max upward camber mm": max_up,
                     "x up m": float(upward["Station s (m)"]),
@@ -487,7 +489,7 @@ def run_crossbeam_deflection_camber(preparation: CrossbeamDeflectionPreparation)
         ]
     )
     return {
-        "schema": "crossbeam-sls2-deflection-result-v1",
+        "schema": "crossbeam-sls2-deflection-result-v2",
         "status": status,
         "construction_method": preparation.construction_method,
         "code_basis": "Project serviceability criterion applied to verified external-FEA Crossbeam vertical displacement",
