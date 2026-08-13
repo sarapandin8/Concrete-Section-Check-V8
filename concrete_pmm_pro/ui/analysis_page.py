@@ -26897,17 +26897,58 @@ def _make_crossbeam_sls_deflection_figure(
 
 
 def _normalize_crossbeam_sls_displacement_source_table(value: Any) -> pd.DataFrame:
-    """Normalize the Analysis-owned external-FEA displacement source table."""
+    """Normalize the Analysis-owned external-FEA displacement source table.
+
+    ``st.data_editor`` validates configured editor column types against the
+    underlying pandas dtypes.  CSV/XLSX imports can infer an entirely blank
+    text column (for example ``Source point`` or ``Note``) as ``float64`` and
+    integer-looking numeric columns as ``int64``.  Pin the editor-facing
+    schema here so replacing an imported source cannot leave dtype inference
+    to the upload contents.
+    """
 
     columns = list(CROSSBEAM_SLS_DISPLACEMENT_COLUMNS)
     df = pd.DataFrame(value) if value is not None else pd.DataFrame()
     if df.empty:
-        return pd.DataFrame(columns=columns)
+        return pd.DataFrame(
+            {
+                "Active": pd.Series(dtype=bool),
+                "Station s (m)": pd.Series(dtype=float),
+                "Case Name": pd.Series(dtype=str),
+                "Stage": pd.Series(dtype=str),
+                "Vertical displacement (mm)": pd.Series(dtype=float),
+                "Source point": pd.Series(dtype=str),
+                "Note": pd.Series(dtype=str),
+            },
+            columns=columns,
+        )
+
     out = pd.DataFrame(index=df.index)
     for column in columns:
         out[column] = df[column] if column in df.columns else (False if column == "Active" else "")
-    out["Active"] = out["Active"].map(lambda value: _analysis_to_bool(value, default=False))
-    out["Stage"] = out["Stage"].map(lambda value: canonical_sls_stage(value) or str(value or "").strip())
+
+    out["Active"] = out["Active"].map(lambda item: _analysis_to_bool(item, default=False)).astype(bool)
+
+    # NumberColumn widgets must always receive numeric dtypes, even when a CSV
+    # contains blank cells or integer-looking values only.  Invalid/blank
+    # values stay NaN so the normal validation route can report them later.
+    out["Station s (m)"] = pd.to_numeric(out["Station s (m)"], errors="coerce").astype(float)
+    out["Vertical displacement (mm)"] = pd.to_numeric(
+        out["Vertical displacement (mm)"], errors="coerce"
+    ).astype(float)
+
+    def _editor_text(item: object) -> str:
+        if _analysis_value_is_blank(item):
+            return ""
+        return str(item).strip()
+
+    out["Case Name"] = out["Case Name"].map(_editor_text).astype(str)
+    out["Stage"] = out["Stage"].map(
+        lambda item: canonical_sls_stage(item) or _editor_text(item)
+    ).astype(str)
+    out["Source point"] = out["Source point"].map(_editor_text).astype(str)
+    out["Note"] = out["Note"].map(_editor_text).astype(str)
+
     return out[columns].reset_index(drop=True)
 
 
