@@ -15,8 +15,10 @@ Canonical displacement convention used by Concrete Section Pro:
 For each adjacent column pair the service check is based on displacement
 relative to the straight chord joining the two column-centre displacement
 values.  This removes support translation from the span-deflection measure
-without fabricating zero support movement.  Overhang response remains visible
-but is not certified by the span L/n acceptance check.
+without fabricating zero support movement.  End overhangs, when present, are
+evaluated relative to the vertical movement of their adjacent column centre;
+this preserves the measured Portal-Frame support rotation in the cantilever
+response while removing rigid support translation.
 """
 
 from __future__ import annotations
@@ -45,8 +47,10 @@ TRANSFER_STAGE = "Transfer stage"
 FINAL_SERVICE_STAGE = "Final service stage"
 _STAGE_ORDER = {TRANSFER_STAGE: 0, FINAL_SERVICE_STAGE: 1}
 
-DEFAULT_LIMIT_BASIS = "Review only"
+DEFAULT_LIMIT_BASIS = "L/360"
 LIMIT_BASIS_OPTIONS = ("Review only", "L/240", "L/360", "L/480", "L/1000", "Custom")
+DEFAULT_OVERHANG_LIMIT_BASIS = "Lo/180"
+OVERHANG_LIMIT_BASIS_OPTIONS = ("Review only", "Lo/120", "Lo/180", "Lo/240", "Custom")
 
 
 @dataclass(frozen=True)
@@ -62,6 +66,10 @@ class CrossbeamDeflectionPreparation:
     column_rows: tuple[dict[str, Any], ...]
     limit_basis: str
     custom_limit_ratio: float | None
+    overhang_limit_basis: str
+    overhang_custom_limit_ratio: float | None
+    left_overhang_m: float
+    right_overhang_m: float
 
 
 def _get(state: Any, key: str, default: Any = None) -> Any:
@@ -124,6 +132,11 @@ def _dedupe(messages: list[str]) -> list[str]:
 def _canonical_limit_basis(value: Any) -> str:
     text = str(value or "").strip()
     return text if text in LIMIT_BASIS_OPTIONS else DEFAULT_LIMIT_BASIS
+
+
+def _canonical_overhang_limit_basis(value: Any) -> str:
+    text = str(value or "").strip()
+    return text if text in OVERHANG_LIMIT_BASIS_OPTIONS else DEFAULT_OVERHANG_LIMIT_BASIS
 
 
 def _limit_ratio(basis: str, custom_ratio: float | None) -> float | None:
@@ -232,13 +245,40 @@ def build_crossbeam_deflection_preparation(state: Any) -> CrossbeamDeflectionPre
     if FINAL_SERVICE_STAGE not in stages:
         warnings.append("No active Final-service displacement source is present; service deflection acceptance will remain unavailable.")
 
+    first_column_x = float(columns[0]["Station s (m)"]) if columns else 0.0
+    last_column_x = float(columns[-1]["Station s (m)"]) if columns else max(length, 0.0)
+    left_overhang_m = max(first_column_x, 0.0) if columns else 0.0
+    right_overhang_m = max(length - last_column_x, 0.0) if columns else 0.0
+    has_overhang = left_overhang_m > 1.0e-9 or right_overhang_m > 1.0e-9
+
+    # Overhang response requires imported displacement coverage to the actual
+    # member ends.  Do not extrapolate a cantilever/free-end movement.
+    if has_overhang:
+        for (stage, case), group in by_group.items():
+            stations = [float(row["Station s (m)"]) for row in group]
+            if left_overhang_m > 1.0e-9 and min(stations) > 1.0e-9:
+                errors.append(f"{stage} / {case}: left-overhang check requires displacement coverage to member start s=0.000 m.")
+            if right_overhang_m > 1.0e-9 and max(stations) < length - 1.0e-9:
+                errors.append(f"{stage} / {case}: right-overhang check requires displacement coverage to member end s={length:.3f} m.")
+
     limit_basis = _canonical_limit_basis(_get(state, "crossbeam_sls_deflection_limit_basis", DEFAULT_LIMIT_BASIS))
     custom_ratio = _finite(_get(state, "crossbeam_sls_deflection_custom_ratio"))
     if limit_basis == "Custom" and (custom_ratio is None or custom_ratio <= 0.0):
-        errors.append("Custom deflection limit requires a positive L/n denominator.")
+        errors.append("Custom support-span deflection limit requires a positive L/n denominator.")
+
+    overhang_limit_basis = _canonical_overhang_limit_basis(
+        _get(state, "crossbeam_sls_deflection_overhang_limit_basis", DEFAULT_OVERHANG_LIMIT_BASIS)
+    )
+    overhang_custom_ratio = _finite(_get(state, "crossbeam_sls_deflection_overhang_custom_ratio"))
+    if has_overhang and overhang_limit_basis == "Custom" and (overhang_custom_ratio is None or overhang_custom_ratio <= 0.0):
+        errors.append("Custom overhang deflection limit requires a positive Lo/n denominator.")
     if limit_basis == "Review only":
         warnings.append(
-            "No project-specific downward-deflection acceptance ratio is selected. Final Service will report RESPONSE / REVIEW rather than fabricate a code PASS."
+            "No support-to-support downward-deflection acceptance ratio is selected. Final Service span response will report REVIEW rather than fabricate a code PASS."
+        )
+    if has_overhang and overhang_limit_basis == "Review only":
+        warnings.append(
+            "End overhang response is present but no overhang Lo/n criterion is selected; overhangs will remain REVIEW."
         )
 
     construction = normalize_construction_method(_get(state, CB_LOSS_ES_CONSTRUCTION_METHOD_KEY))
@@ -246,17 +286,22 @@ def build_crossbeam_deflection_preparation(state: Any) -> CrossbeamDeflectionPre
         [
             "Source route: verified external-FEA vertical displacement; beam-force M/EI is not used to fabricate Portal-Frame displacement.",
             "Canonical sign: positive = upward camber; negative = downward deflection.",
-            "Span deflection is evaluated relative to the straight chord joining adjacent column-centre displacement values.",
+            "Support-to-support deflection is evaluated relative to the straight chord joining adjacent column-centre displacement values.",
+            "End-overhang deflection, when present, is evaluated relative to the vertical movement of the adjacent column centre.",
         ]
     )
     payload = {
-        "schema": "crossbeam-sls2-displacement-source-v2",
+        "schema": "crossbeam-sls2-displacement-source-v3",
         "length": length,
         "construction": construction,
         "columns": columns,
         "rows": rows,
         "limit_basis": limit_basis,
         "custom_ratio": custom_ratio,
+        "overhang_limit_basis": overhang_limit_basis if has_overhang else None,
+        "overhang_custom_ratio": overhang_custom_ratio if has_overhang else None,
+        "left_overhang_m": left_overhang_m,
+        "right_overhang_m": right_overhang_m,
     }
     return CrossbeamDeflectionPreparation(
         ready=bool(rows) and not errors,
@@ -270,6 +315,10 @@ def build_crossbeam_deflection_preparation(state: Any) -> CrossbeamDeflectionPre
         column_rows=tuple(columns),
         limit_basis=limit_basis,
         custom_limit_ratio=custom_ratio,
+        overhang_limit_basis=overhang_limit_basis,
+        overhang_custom_limit_ratio=overhang_custom_ratio,
+        left_overhang_m=float(left_overhang_m),
+        right_overhang_m=float(right_overhang_m),
     )
 
 
@@ -305,15 +354,17 @@ def _stage_case_rows(preparation: CrossbeamDeflectionPreparation) -> dict[tuple[
 
 
 def run_crossbeam_deflection_camber(preparation: CrossbeamDeflectionPreparation) -> dict[str, Any]:
-    """Evaluate imported displacement response and span-relative service deflection."""
+    """Evaluate imported displacement response for spans and end overhangs."""
 
     if not preparation.ready:
         raise ValueError("Crossbeam SLS Deflection / Camber source is not ready.")
     groups = _stage_case_rows(preparation)
     columns = list(preparation.column_rows)
-    ratio = _limit_ratio(preparation.limit_basis, preparation.custom_limit_ratio)
+    span_ratio = _limit_ratio(preparation.limit_basis, preparation.custom_limit_ratio)
+    overhang_ratio = _limit_ratio(preparation.overhang_limit_basis, preparation.overhang_custom_limit_ratio)
     response_rows: list[dict[str, Any]] = []
     span_rows: list[dict[str, Any]] = []
+    overhang_rows: list[dict[str, Any]] = []
     support_rows: list[dict[str, Any]] = []
     required_actions: list[dict[str, Any]] = []
 
@@ -350,6 +401,8 @@ def run_crossbeam_deflection_camber(preparation: CrossbeamDeflectionPreparation)
                 }
             )
 
+        # Support-to-support regions: subtract the straight chord joining
+        # adjacent column-centre movements.
         for span_index, (left, right) in enumerate(zip(columns, columns[1:]), start=1):
             x1 = float(left["Station s (m)"])
             x2 = float(right["Station s (m)"])
@@ -380,11 +433,14 @@ def run_crossbeam_deflection_camber(preparation: CrossbeamDeflectionPreparation)
                     {
                         "Stage": stage,
                         "Case": case,
+                        "Region": f"{left.get('Column ID', '')}–{right.get('Column ID', '')}",
+                        "Region type": "SUPPORT SPAN",
                         "Span": f"{left.get('Column ID', '')}–{right.get('Column ID', '')}",
                         "Span index": span_index,
                         "Span length m": span_length,
                         "Station s (m)": x,
                         "Absolute displacement mm": float(disp),
+                        "Reference displacement mm": float(chord),
                         "Support chord mm": float(chord),
                         "Relative displacement mm": relative,
                         "Demand source": source,
@@ -396,19 +452,18 @@ def run_crossbeam_deflection_camber(preparation: CrossbeamDeflectionPreparation)
             downward = min(local, key=lambda row: float(row["Relative displacement mm"]))
             max_up = max(float(upward["Relative displacement mm"]), 0.0)
             max_down = max(-float(downward["Relative displacement mm"]), 0.0)
-            limit_mm = span_length * 1000.0 / ratio if ratio else None
+            limit_mm = span_length * 1000.0 / span_ratio if span_ratio else None
             utilization = max_down / limit_mm if limit_mm and limit_mm > 0.0 else None
             if stage == FINAL_SERVICE_STAGE:
-                if limit_mm is None:
-                    status = "REVIEW"
-                else:
-                    status = "PASS" if max_down <= limit_mm + 1.0e-9 else "FAIL"
+                status = "REVIEW" if limit_mm is None else ("PASS" if max_down <= limit_mm + 1.0e-9 else "FAIL")
             else:
                 status = "RESPONSE"
             span_rows.append(
                 {
                     "Stage": stage,
                     "Case": case,
+                    "Region": local[0]["Region"],
+                    "Region type": "SUPPORT SPAN",
                     "Span": local[0]["Span"],
                     "Span index": span_index,
                     "Span length m": span_length,
@@ -426,32 +481,123 @@ def run_crossbeam_deflection_camber(preparation: CrossbeamDeflectionPreparation)
             )
             response_rows.extend(local)
 
-    final_spans = [row for row in span_rows if row["Stage"] == FINAL_SERVICE_STAGE]
-    transfer_spans = [row for row in span_rows if row["Stage"] == TRANSFER_STAGE]
-    if any(row["Status"] == "FAIL" for row in final_spans):
+        # End overhangs: subtract only the adjacent column-centre vertical
+        # movement.  This removes rigid support translation but deliberately
+        # keeps support rotation in the physical cantilever/free-end response.
+        overhang_definitions: list[tuple[str, float, float, dict[str, Any]]] = []
+        if columns and preparation.left_overhang_m > 1.0e-9:
+            overhang_definitions.append(("Left overhang", 0.0, float(columns[0]["Station s (m)"]), columns[0]))
+        if columns and preparation.right_overhang_m > 1.0e-9:
+            overhang_definitions.append(("Right overhang", float(columns[-1]["Station s (m)"]), preparation.member_length_m, columns[-1]))
+
+        for side_label, x1, x2, support_column in overhang_definitions:
+            support_x = float(support_column["Station s (m)"])
+            if support_x not in support_values or x2 <= x1:
+                continue
+            support_disp = support_values[support_x]
+            overhang_length = x2 - x1
+            stations = sorted(
+                {
+                    x1,
+                    x2,
+                    support_x,
+                    *[
+                        float(row["Station s (m)"])
+                        for row in rows
+                        if x1 - 1.0e-9 <= float(row["Station s (m)"]) <= x2 + 1.0e-9
+                    ],
+                }
+            )
+            local: list[dict[str, Any]] = []
+            for x in stations:
+                disp, source = _interp_no_extrapolation(rows, x)
+                if disp is None:
+                    continue
+                relative = float(disp) - support_disp
+                local.append(
+                    {
+                        "Stage": stage,
+                        "Case": case,
+                        "Region": side_label,
+                        "Region type": "OVERHANG",
+                        "Span": side_label,
+                        "Overhang side": "Left" if side_label.startswith("Left") else "Right",
+                        "Overhang length m": overhang_length,
+                        "Station s (m)": x,
+                        "Absolute displacement mm": float(disp),
+                        "Reference displacement mm": float(support_disp),
+                        "Relative displacement mm": relative,
+                        "Demand source": source,
+                    }
+                )
+            if not local:
+                continue
+            upward = max(local, key=lambda row: float(row["Relative displacement mm"]))
+            downward = min(local, key=lambda row: float(row["Relative displacement mm"]))
+            max_up = max(float(upward["Relative displacement mm"]), 0.0)
+            max_down = max(-float(downward["Relative displacement mm"]), 0.0)
+            limit_mm = overhang_length * 1000.0 / overhang_ratio if overhang_ratio else None
+            utilization = max_down / limit_mm if limit_mm and limit_mm > 0.0 else None
+            if stage == FINAL_SERVICE_STAGE:
+                status = "REVIEW" if limit_mm is None else ("PASS" if max_down <= limit_mm + 1.0e-9 else "FAIL")
+            else:
+                status = "RESPONSE"
+            overhang_rows.append(
+                {
+                    "Stage": stage,
+                    "Case": case,
+                    "Region": side_label,
+                    "Region type": "OVERHANG",
+                    "Span": side_label,
+                    "Overhang side": "Left" if side_label.startswith("Left") else "Right",
+                    "Overhang length m": overhang_length,
+                    "Overhang start m": x1,
+                    "Overhang end m": x2,
+                    "Status": status,
+                    "Max upward camber mm": max_up,
+                    "x up m": float(upward["Station s (m)"]),
+                    "Max downward deflection mm": max_down,
+                    "x down m": float(downward["Station s (m)"]),
+                    "Limit basis": preparation.overhang_limit_basis,
+                    "Limit mm": limit_mm,
+                    "Utilization": utilization,
+                }
+            )
+            response_rows.extend(local)
+
+    final_regions = [row for row in (span_rows + overhang_rows) if row["Stage"] == FINAL_SERVICE_STAGE]
+    transfer_regions = [row for row in (span_rows + overhang_rows) if row["Stage"] == TRANSFER_STAGE]
+    if any(row["Status"] == "FAIL" for row in final_regions):
         status = "FAIL"
-    elif final_spans and all(row["Status"] == "PASS" for row in final_spans):
+    elif final_regions and all(row["Status"] == "PASS" for row in final_regions):
         status = "PASS"
-    elif final_spans:
+    elif final_regions:
         status = "REVIEW"
     else:
         status = "REVIEW"
 
     governing = None
-    if final_spans:
-        if ratio:
+    if final_regions:
+        if status == "FAIL":
+            fail_rows = [row for row in final_regions if row.get("Status") == "FAIL"]
             governing = max(
-                final_spans,
-                key=lambda row: float(row.get("Utilization") or 0.0),
+                fail_rows,
+                key=lambda row: float(row.get("Utilization") or row.get("Max downward deflection mm") or 0.0),
+            )
+        elif status == "REVIEW":
+            review_rows = [row for row in final_regions if row.get("Status") == "REVIEW"]
+            governing = max(
+                review_rows or final_regions,
+                key=lambda row: float(row.get("Max downward deflection mm") or 0.0),
             )
         else:
             governing = max(
-                final_spans,
-                key=lambda row: float(row.get("Max downward deflection mm") or 0.0),
+                final_regions,
+                key=lambda row: float(row.get("Utilization") or 0.0),
             )
     transfer_governing = (
-        max(transfer_spans, key=lambda row: float(row.get("Max upward camber mm") or 0.0))
-        if transfer_spans
+        max(transfer_regions, key=lambda row: float(row.get("Max upward camber mm") or 0.0))
+        if transfer_regions
         else None
     )
 
@@ -461,52 +607,60 @@ def run_crossbeam_deflection_camber(preparation: CrossbeamDeflectionPreparation)
                 "Priority": "High",
                 "Module": "SLS Deflection / Camber",
                 "Issue": (
-                    f"Final-service downward deflection exceeds {governing['Limit basis']} in span {governing['Span']}: "
+                    f"Final-service downward deflection exceeds {governing['Limit basis']} in {governing['Region']}: "
                     f"{float(governing['Max downward deflection mm']):.3f} mm > {float(governing['Limit mm']):.3f} mm."
                 ),
                 "Required Action": (
-                    "Review the external-FEA displacement case, span stiffness/support assumptions, prestress state, section stiffness, and project deflection criterion before report issue."
+                    "Review the external-FEA displacement case, member/support stiffness assumptions, prestress state, section stiffness, and project deflection criterion before report issue."
                 ),
             }
         )
     elif status == "REVIEW":
-        required_actions.append(
-            {
-                "Priority": "Medium",
-                "Module": "SLS Deflection / Camber",
-                "Issue": "External-FEA displacement response is available but no adopted project downward-deflection limit is active.",
-                "Required Action": "Select the project-specific L/n or custom deflection criterion before final report issue.",
-            }
-        )
+        review_regions = [row for row in final_regions if row.get("Status") == "REVIEW"]
+        if review_regions:
+            labels = ", ".join(dict.fromkeys(str(row.get("Region") or "region") for row in review_regions))
+            required_actions.append(
+                {
+                    "Priority": "Medium",
+                    "Module": "SLS Deflection / Camber",
+                    "Issue": f"Final-service displacement response is available but no active acceptance limit exists for: {labels}.",
+                    "Required Action": "Select the applicable support-span and/or overhang L/n criterion before final report issue.",
+                }
+            )
 
     warnings = list(preparation.warnings)
     warnings.extend(
         [
             "Connected displacement traces are visual interpolation between imported source stations; no unverified local extremum is inferred between stations.",
-            "Span checks use movement relative to the chord joining adjacent column-centre displacements. Column/support translation is retained in the absolute-response audit and removed only from the relative span check.",
-            "Overhang displacement is shown in the full-member response but is not assigned an L/n span acceptance limit by this milestone.",
+            "Support-to-support checks use movement relative to the chord joining adjacent column-centre displacements.",
+            "End-overhang checks, when present, use movement relative to the adjacent column-centre vertical movement; support rotation is intentionally retained in the cantilever response.",
             "Creep, shrinkage, staged stiffness change, cracked-section stiffness, construction tolerance, and differential foundation settlement are not generated by this route unless already present in the imported external-FEA displacement result.",
         ]
     )
     return {
-        "schema": "crossbeam-sls2-deflection-result-v2",
+        "schema": "crossbeam-sls2-deflection-result-v3",
         "status": status,
         "construction_method": preparation.construction_method,
-        "code_basis": "Project serviceability criterion applied to verified external-FEA Crossbeam vertical displacement",
+        "code_basis": "Project serviceability criteria applied to verified external-FEA Crossbeam vertical displacement",
         "limit_basis": preparation.limit_basis,
         "custom_limit_ratio": preparation.custom_limit_ratio,
+        "overhang_limit_basis": preparation.overhang_limit_basis,
+        "overhang_custom_limit_ratio": preparation.overhang_custom_limit_ratio,
+        "left_overhang_m": preparation.left_overhang_m,
+        "right_overhang_m": preparation.right_overhang_m,
         "member_length_m": preparation.member_length_m,
         "source_rows": [dict(row) for row in preparation.rows],
         "response_rows": response_rows,
         "support_rows": support_rows,
         "span_rows": span_rows,
+        "overhang_rows": overhang_rows,
         "governing_row": governing,
         "transfer_governing_row": transfer_governing,
         "required_actions": required_actions,
         "warnings": _dedupe(warnings),
         "scope": (
             "Crossbeam SLS Deflection / Camber uses verified external-FEA vertical displacements only. "
-            "Positive is upward camber and negative is downward deflection. Final-service span deflection is measured relative to adjacent column-centre displacement chords; this route does not reconstruct Portal-Frame displacement from beam forces."
+            "Positive is upward camber and negative is downward deflection. Support-to-support response is measured relative to adjacent column-centre chords; end overhang response, when present, is measured relative to the adjacent column-centre vertical movement. This route does not reconstruct Portal-Frame displacement from beam forces."
         ),
         "fingerprint": preparation.fingerprint,
     }

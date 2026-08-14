@@ -50,9 +50,11 @@ from concrete_pmm_pro.crossbeam.section_library import (
     canonical_section_definitions,
 )
 from concrete_pmm_pro.crossbeam.prestress_loss import CB_LOSS_ES_CONSTRUCTION_METHOD_KEY
+from concrete_pmm_pro.crossbeam.project_geometry import CROSSBEAM_COLUMN_ROWS_KEY
 from concrete_pmm_pro.crossbeam.construction_stage import (
     CONSTRUCTION_METHOD_CIP,
     CONSTRUCTION_METHOD_PRECAST,
+    canonical_column_stage_rows,
     normalize_construction_method,
 )
 
@@ -63,6 +65,8 @@ from concrete_pmm_pro.analysis.crossbeam_sls_deflection import (
     CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY,
     DEFAULT_LIMIT_BASIS as CROSSBEAM_DEFLECTION_DEFAULT_LIMIT_BASIS,
     LIMIT_BASIS_OPTIONS as CROSSBEAM_DEFLECTION_LIMIT_BASIS_OPTIONS,
+    DEFAULT_OVERHANG_LIMIT_BASIS as CROSSBEAM_DEFLECTION_DEFAULT_OVERHANG_LIMIT_BASIS,
+    OVERHANG_LIMIT_BASIS_OPTIONS as CROSSBEAM_DEFLECTION_OVERHANG_LIMIT_BASIS_OPTIONS,
     build_crossbeam_deflection_preparation,
     run_crossbeam_deflection_camber,
 )
@@ -26361,6 +26365,7 @@ def _render_crossbeam_transfer_stress_workspace() -> None:
 
     actions = list(result.get("required_actions") or [])
     if actions:
+        st.markdown("<div style='height:0.65rem'></div>", unsafe_allow_html=True)
         st.markdown("#### Required actions")
         _render_crossbeam_print_safe_table(pd.DataFrame(actions), label="Transfer required actions")
     elif status == "PASS":
@@ -26637,6 +26642,7 @@ def _render_crossbeam_service_stress_workspace() -> None:
 
     actions = list(result.get("required_actions") or [])
     if actions:
+        st.markdown("<div style='height:0.65rem'></div>", unsafe_allow_html=True)
         st.markdown("#### Required actions")
         _render_crossbeam_print_safe_table(pd.DataFrame(actions), label="Final Service required actions")
     elif status == "PASS":
@@ -26854,10 +26860,17 @@ def _make_crossbeam_sls_deflection_figure(
         and str(row.get("Stage") or "") == stage
         and str(row.get("Case") or "") == case_name
     ]
+    overhang_rows = [
+        dict(row) for row in list(result.get("overhang_rows") or [])
+        if isinstance(row, Mapping)
+        and str(row.get("Stage") or "") == stage
+        and str(row.get("Case") or "") == case_name
+    ]
+    region_rows = span_rows + overhang_rows
     fig = go.Figure()
 
-    # Absolute frame response is context; keep it visually subordinate to the
-    # relative span response that controls the final-service deflection check.
+    # Absolute frame response remains visible as context.  The relative member
+    # response is the primary serviceability demand trace.
     if not source.empty:
         source = source.sort_values("Station s (m)")
         fig.add_trace(
@@ -26874,15 +26887,16 @@ def _make_crossbeam_sls_deflection_figure(
 
     if not relative.empty:
         first_relative = True
-        for _span, group in relative.groupby("Span", sort=False):
+        group_key = "Region" if "Region" in relative.columns else "Span"
+        for _region, group in relative.groupby(group_key, sort=False):
             group = group.sort_values("Station s (m)")
             fig.add_trace(
                 go.Scatter(
                     x=group["Station s (m)"],
                     y=group["Relative displacement mm"],
                     mode="lines+markers",
-                    name="Relative span deflection",
-                    legendgroup="relative-span",
+                    name="Relative member deflection",
+                    legendgroup="relative-member",
                     showlegend=first_relative,
                     line={"color": "#0f766e", "width": 3},
                     marker={"color": "#0f766e", "size": 7, "symbol": "square"},
@@ -26891,14 +26905,19 @@ def _make_crossbeam_sls_deflection_figure(
             )
             first_relative = False
 
-    # Final-service L/n limit is span-specific.  Plot it only when an adopted
-    # project criterion exists; Review only intentionally has no hidden limit.
+    # Final-service limits are region-specific.  Main spans use L/n; overhangs
+    # use Lo/n based on their actual projection length.  When a region has
+    # Review only, no hidden line is drawn for that region.
     if stage == "Final service stage":
         first_limit = True
-        for row in span_rows:
+        for row in region_rows:
             limit = row.get("Limit mm")
-            x1 = row.get("Span start m")
-            x2 = row.get("Span end m")
+            if str(row.get("Region type") or "") == "OVERHANG":
+                x1 = row.get("Overhang start m")
+                x2 = row.get("Overhang end m")
+            else:
+                x1 = row.get("Span start m")
+                x2 = row.get("Span end m")
             try:
                 limit_f = float(limit)
                 x1_f = float(x1)
@@ -26917,7 +26936,7 @@ def _make_crossbeam_sls_deflection_figure(
                     showlegend=first_limit,
                     line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
                     hovertemplate=(
-                        f"{row.get('Span', 'Span')}<br>"
+                        f"{row.get('Region', row.get('Span', 'Region'))}<br>"
                         f"{row.get('Limit basis', '')} limit = {limit_f:.3f} mm down<extra></extra>"
                     ),
                 )
@@ -26932,13 +26951,12 @@ def _make_crossbeam_sls_deflection_figure(
             )
             first_limit = False
 
-    # Governing response marker.  Keep a single concise legend entry rather
-    # than one marker/legend item per span.
+    # Governing marker across both support spans and actual overhang regions.
     governing = None
-    if span_rows:
+    if region_rows:
         if stage == "Final service stage":
-            with_util = [row for row in span_rows if row.get("Utilization") is not None]
-            pool = with_util or span_rows
+            with_util = [row for row in region_rows if row.get("Utilization") is not None]
+            pool = with_util or region_rows
             governing = max(
                 pool,
                 key=lambda row: float(row.get("Utilization") or row.get("Max downward deflection mm") or 0.0),
@@ -26948,7 +26966,7 @@ def _make_crossbeam_sls_deflection_figure(
             glabel = f"Gov. deflection {abs(gy):.3f} mm"
             gname = "Gov. deflection"
         else:
-            governing = max(span_rows, key=lambda row: float(row.get("Max upward camber mm") or 0.0))
+            governing = max(region_rows, key=lambda row: float(row.get("Max upward camber mm") or 0.0))
             gx = float(governing.get("x up m") or 0.0)
             gy = float(governing.get("Max upward camber mm") or 0.0)
             glabel = f"Gov. camber {gy:.3f} mm"
@@ -26997,7 +27015,7 @@ def _make_crossbeam_sls_deflection_figure(
     fig.update_layout(
         title=(
             f"Crossbeam SLS Deflection / Camber — {stage}<br>"
-            "<sup>verified external-FEA movement · positive upward / negative downward · relative response measured from adjacent column-centre chord</sup>"
+            "<sup>verified external-FEA movement · positive upward / negative downward · relative response: column-centre chords for spans / adjacent-column movement for overhangs</sup>"
         ),
         xaxis_title="Distance from left end of member (m)",
         yaxis_title="Vertical displacement (mm)",
@@ -27009,6 +27027,7 @@ def _make_crossbeam_sls_deflection_figure(
     fig.update_xaxes(range=[0.0, float(member_length_m)], showgrid=True)
     fig.update_yaxes(showgrid=True, zeroline=False)
     return fig
+
 
 def _normalize_crossbeam_sls_displacement_source_table(value: Any) -> pd.DataFrame:
     """Normalize the Analysis-owned external-FEA displacement source table.
@@ -27272,52 +27291,109 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
         st.markdown(
             "- Source: Analysis → SLS Deflection / Camber → Deflection / Camber source.\n"
             "- Absolute vertical movement is read directly from the verified external-FEA displacement source; P/V2/T/M3 are not integrated to fabricate displacement.\n"
-            "- Final-service span deflection is measured relative to the straight chord joining adjacent column-centre displacement values, so column/support translation is not silently treated as beam deflection.\n"
-            "- Transfer-stage rows report camber/deflection response only. Final Service may be checked against a user-adopted project L/n criterion.\n"
-            "- Overhang movement remains visible but is not assigned an L/n span limit by this milestone.\n"
+            "- Final-service support-span deflection is measured relative to the straight chord joining adjacent column-centre displacement values, so column/support translation is not silently treated as beam deflection.\n"
+            "- End-overhang response, when present, is measured relative to the vertical movement of the adjacent column centre; support rotation remains part of the physical cantilever response.\n"
+            "- Transfer-stage rows report camber/deflection response only. Final Service uses separate project criteria for support spans and actual overhangs.\n"
+            "- General-practice defaults are L/360 for support-to-support spans and Lo/180 for overhangs; verify project-specific serviceability requirements.\n"
             "- Creep, shrinkage, cracked stiffness, staged stiffness change, construction tolerance, and foundation settlement are included only if they are already represented by the imported external-FEA displacement result."
         )
 
     member_length_for_source = float(st.session_state.get(CROSSBEAM_LENGTH_KEY, 0.0) or 0.0)
     _render_crossbeam_sls_displacement_source_panel(max(member_length_for_source, 0.0))
 
-    setting_cols = st.columns([1.3, 1.0, 2.0])
+    # Geometry-aware Final Service criteria.  The defaults are application
+    # defaults for general engineering review, not universal code mandates.
+    geometry_columns = canonical_column_stage_rows(
+        st.session_state.get(CROSSBEAM_COLUMN_ROWS_KEY),
+        length_m=max(member_length_for_source, 0.0),
+    )
+    first_column_x = float(geometry_columns[0]["Station s (m)"]) if geometry_columns else 0.0
+    last_column_x = float(geometry_columns[-1]["Station s (m)"]) if geometry_columns else member_length_for_source
+    left_overhang_m = max(first_column_x, 0.0) if geometry_columns else 0.0
+    right_overhang_m = max(member_length_for_source - last_column_x, 0.0) if geometry_columns else 0.0
+    has_overhang = left_overhang_m > 1.0e-9 or right_overhang_m > 1.0e-9
+
     limit_options = list(CROSSBEAM_DEFLECTION_LIMIT_BASIS_OPTIONS)
     if st.session_state.get("crossbeam_sls_deflection_limit_basis") not in limit_options:
         st.session_state["crossbeam_sls_deflection_limit_basis"] = CROSSBEAM_DEFLECTION_DEFAULT_LIMIT_BASIS
-    with setting_cols[0]:
+    overhang_limit_options = list(CROSSBEAM_DEFLECTION_OVERHANG_LIMIT_BASIS_OPTIONS)
+    if st.session_state.get("crossbeam_sls_deflection_overhang_limit_basis") not in overhang_limit_options:
+        st.session_state["crossbeam_sls_deflection_overhang_limit_basis"] = CROSSBEAM_DEFLECTION_DEFAULT_OVERHANG_LIMIT_BASIS
+
+    criteria_cols = st.columns(2 if has_overhang else 1)
+    with criteria_cols[0]:
+        st.markdown("**Support-to-support spans**")
         st.selectbox(
-            "Final-service downward-deflection criterion",
+            "Final-service span deflection criterion",
             limit_options,
             key="crossbeam_sls_deflection_limit_basis",
-            help="Project criterion only. Review only is the safe default because ACI service-deflection applicability depends on the supported system and project requirements.",
+            help="General-practice app default: L/360. Select the project-adopted criterion where different.",
         )
-    with setting_cols[1]:
         if st.session_state.get("crossbeam_sls_deflection_limit_basis") == "Custom":
             st.number_input(
-                "Custom L / n",
+                "Custom span L / n",
                 min_value=1.0,
                 value=float(st.session_state.get("crossbeam_sls_deflection_custom_ratio", 360.0) or 360.0),
                 step=10.0,
                 key="crossbeam_sls_deflection_custom_ratio",
             )
-        else:
-            st.metric("Criterion mode", str(st.session_state.get("crossbeam_sls_deflection_limit_basis")))
-    with setting_cols[2]:
-        st.caption("No project limit is assumed automatically. Select an adopted project criterion only when it is applicable to this Crossbeam and supported system.")
+        st.caption("General-practice default: L/360 · verify project/serviceability requirements.")
+
+    if has_overhang:
+        with criteria_cols[1]:
+            st.markdown("**Overhangs**")
+            st.selectbox(
+                "Final-service overhang deflection criterion",
+                overhang_limit_options,
+                key="crossbeam_sls_deflection_overhang_limit_basis",
+                help="General-practice app default: Lo/180, where Lo is the actual overhang projection from the adjacent column centre to the member end.",
+            )
+            if st.session_state.get("crossbeam_sls_deflection_overhang_limit_basis") == "Custom":
+                st.number_input(
+                    "Custom overhang Lo / n",
+                    min_value=1.0,
+                    value=float(st.session_state.get("crossbeam_sls_deflection_overhang_custom_ratio", 180.0) or 180.0),
+                    step=10.0,
+                    key="crossbeam_sls_deflection_overhang_custom_ratio",
+                )
+            lengths = []
+            if left_overhang_m > 1.0e-9:
+                lengths.append(f"Left Lo={left_overhang_m:.3f} m")
+            if right_overhang_m > 1.0e-9:
+                lengths.append(f"Right Lo={right_overhang_m:.3f} m")
+            st.caption("General-practice default: Lo/180 · " + " · ".join(lengths) + ".")
+    else:
+        st.caption("No end overhang is present in the active Crossbeam geometry; overhang controls, limits, and audit rows are omitted.")
 
     selected_limit_basis = str(st.session_state.get("crossbeam_sls_deflection_limit_basis") or CROSSBEAM_DEFLECTION_DEFAULT_LIMIT_BASIS)
+    selected_overhang_basis = str(
+        st.session_state.get("crossbeam_sls_deflection_overhang_limit_basis")
+        or CROSSBEAM_DEFLECTION_DEFAULT_OVERHANG_LIMIT_BASIS
+    )
+    active_parts = []
     if selected_limit_basis == "Review only":
+        active_parts.append("support spans: REVIEW ONLY")
+    elif selected_limit_basis == "Custom":
+        active_parts.append(f"support spans: L/{float(st.session_state.get('crossbeam_sls_deflection_custom_ratio', 360.0) or 360.0):g}")
+    else:
+        active_parts.append(f"support spans: {selected_limit_basis}")
+    if has_overhang:
+        if selected_overhang_basis == "Review only":
+            active_parts.append("overhangs: REVIEW ONLY")
+        elif selected_overhang_basis == "Custom":
+            active_parts.append(f"overhangs: Lo/{float(st.session_state.get('crossbeam_sls_deflection_overhang_custom_ratio', 180.0) or 180.0):g}")
+        else:
+            active_parts.append(f"overhangs: {selected_overhang_basis}")
+
+    if selected_limit_basis == "Review only" or (has_overhang and selected_overhang_basis == "Review only"):
         st.info(
-            "NO DEFLECTION LIMIT SELECTED — Final Service response is shown for engineering review only. "
-            "Select an adopted L/n or Custom criterion to display span-specific red dashed limits and PASS/FAIL utilization."
+            "DEFLECTION CRITERIA PARTIAL — " + " · ".join(active_parts) + ". "
+            "Regions set to Review only show response without fabricated PASS/FAIL limits."
         )
     else:
-        ratio_text = selected_limit_basis
-        if selected_limit_basis == "Custom":
-            ratio_text = f"L/{float(st.session_state.get('crossbeam_sls_deflection_custom_ratio', 360.0) or 360.0):g}"
         st.success(
-            f"DEFLECTION LIMIT ACTIVE — {ratio_text}. Each support-to-support span will show its own downward limit and utilization; overhangs remain review-only."
+            "DEFLECTION LIMITS ACTIVE — " + " · ".join(active_parts) + ". "
+            "Each actual region uses its own length and downward limit."
         )
 
     preparation = build_crossbeam_deflection_preparation(st.session_state)
@@ -27358,8 +27434,17 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
         [
             {"title": "Displacement source", "value": "READY" if preparation.ready else "BLOCKED", "detail": "External FEA · canonical mm · upward +", "status": "ready" if preparation.ready else "danger", "strong": True},
             {"title": "Transfer rows", "value": str(transfer_count), "detail": "camber / deflection response", "status": "info" if transfer_count else "warning"},
-            {"title": "Final Service rows", "value": str(service_count), "detail": "span-relative service response", "status": "info" if service_count else "warning"},
-            {"title": "Acceptance basis", "value": preparation.limit_basis, "detail": "project criterion; no hidden code default", "status": "warning" if preparation.limit_basis == "Review only" else "info"},
+            {"title": "Final Service rows", "value": str(service_count), "detail": "member-relative service response", "status": "info" if service_count else "warning"},
+            {
+                "title": "Acceptance basis",
+                "value": (
+                    f"Spans {preparation.limit_basis} · Overhang {preparation.overhang_limit_basis}"
+                    if preparation.left_overhang_m > 1.0e-9 or preparation.right_overhang_m > 1.0e-9
+                    else f"Spans {preparation.limit_basis}"
+                ),
+                "detail": "general-practice defaults; verify project criteria",
+                "status": "warning" if preparation.limit_basis == "Review only" or ((preparation.left_overhang_m > 1.0e-9 or preparation.right_overhang_m > 1.0e-9) and preparation.overhang_limit_basis == "Review only") else "info",
+            },
         ],
         columns=4,
     )
@@ -27397,10 +27482,12 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
         final_detail = f"{governing.get('Span')} · {governing.get('Case')} · x={float(governing.get('x down m') or 0.0):.3f} m"
         util = governing.get("Utilization")
         final_util = "REVIEW" if util is None else f"D/C {float(util):.3f}"
+        final_util_basis = str(governing.get("Limit basis") or result.get("limit_basis") or "-")
     else:
         final_value = "-"
-        final_detail = "No Final Service span response"
+        final_detail = "No Final Service region response"
         final_util = "-"
+        final_util_basis = "-"
     transfer_value = "-" if not transfer_gov else f"{float(transfer_gov.get('Max upward camber mm') or 0.0):.3f} mm up"
     transfer_detail = "No Transfer response" if not transfer_gov else f"{transfer_gov.get('Span')} · {transfer_gov.get('Case')} · x={float(transfer_gov.get('x up m') or 0.0):.3f} m"
     _render_analysis_summary_strip(
@@ -27408,12 +27495,13 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
             {"title": "Deflection / Camber status", "value": status, "detail": "stored external-FEA displacement review", "status": style, "strong": True},
             {"title": "Transfer camber response", "value": transfer_value, "detail": transfer_detail, "status": "info"},
             {"title": "Final Service governing", "value": final_value, "detail": final_detail, "status": style},
-            {"title": "Final Service utilization", "value": final_util, "detail": f"criterion {result.get('limit_basis', '-')}", "status": style},
+            {"title": "Final Service utilization", "value": final_util, "detail": f"criterion {final_util_basis}", "status": style},
         ],
         columns=4,
     )
     actions = list(result.get("required_actions") or [])
     if actions:
+        st.markdown("<div style='height:0.65rem'></div>", unsafe_allow_html=True)
         st.markdown("#### Required actions")
         st.dataframe(pd.DataFrame(actions), use_container_width=True, hide_index=True)
 
@@ -27438,18 +27526,26 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
                     column_rows=list(preparation.column_rows),
                 ),
                 caption=(
-                    "Absolute FEA displacement is shown as context; the teal Relative span deflection trace is measured from the straight chord joining adjacent column-centre movements. "
-                    "When an adopted Final Service L/n criterion is active, the red dashed span-specific Deflection limit is plotted and the governing relative response is marked. "
-                    "Review only intentionally shows no fabricated limit. Connected lines are visualization between imported stations only; no unverified extremum is inferred between stations."
+                    "Absolute FEA displacement is context; the teal Relative member deflection is the primary serviceability demand. "
+                    "Between columns it is measured from the adjacent column-centre chord; on an end overhang it is measured from the adjacent column-centre vertical movement. "
+                    "Final Service red dashed limits are region-specific: L/n for support spans and Lo/n for actual overhangs. Review only intentionally shows no fabricated limit. "
+                    "Connected lines are visualization between imported stations only; no unverified extremum is inferred between stations."
                 ),
             )
     span_df = pd.DataFrame(list(result.get("span_rows") or []))
+    overhang_df = pd.DataFrame(list(result.get("overhang_rows") or []))
     support_df = pd.DataFrame(list(result.get("support_rows") or []))
     with st.expander("Span deflection / camber audit", expanded=False):
         if not span_df.empty:
             st.dataframe(span_df, use_container_width=True, hide_index=True)
         else:
             st.info("No span response rows are available.")
+    if preparation.left_overhang_m > 1.0e-9 or preparation.right_overhang_m > 1.0e-9:
+        with st.expander("Overhang deflection / camber audit", expanded=False):
+            if not overhang_df.empty:
+                st.dataframe(overhang_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("No overhang response rows are available.")
     with st.expander("Column-centre displacement audit", expanded=False):
         if not support_df.empty:
             st.dataframe(support_df, use_container_width=True, hide_index=True)

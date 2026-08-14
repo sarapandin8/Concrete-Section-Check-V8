@@ -83,13 +83,13 @@ def test_d25_ui_has_independent_stage_import_and_csp_chart_language() -> None:
     assert 'f"Replace {stage_title} source"' in source
     assert "Replacing this source preserves the other stage" in source
     assert 'name="Absolute FEA displacement"' in source
-    assert 'name="Relative span deflection"' in source
+    assert 'name="Relative member deflection"' in source
     assert 'name="Deflection limit"' in source
     assert '"color": "#1f77b4"' in source
     assert '"color": "#0f766e"' in source
     assert 'line=dict(_BEAM_ULS_CHECK_LINE_STYLE)' in source
-    assert "NO DEFLECTION LIMIT SELECTED" in source
-    assert "span-specific red dashed limits" in source
+    assert "DEFLECTION CRITERIA PARTIAL" in source
+    assert "region-specific" in source or "Each actual region uses its own length" in source
 
 
 def test_d25_solver_exposes_span_extents_for_span_specific_limit_plotting() -> None:
@@ -111,7 +111,7 @@ def test_d25_solver_exposes_span_extents_for_span_specific_limit_plotting() -> N
     prep = build_crossbeam_deflection_preparation(state)
     assert prep.ready
     result = run_crossbeam_deflection_camber(prep)
-    assert result["schema"] == "crossbeam-sls2-deflection-result-v2"
+    assert result["schema"] == "crossbeam-sls2-deflection-result-v3"
     spans = result["span_rows"]
     assert [(row["Span start m"], row["Span end m"]) for row in spans] == [(2.0, 10.0), (10.0, 18.0)]
     assert all(float(row["Limit mm"]) > 0.0 for row in spans)

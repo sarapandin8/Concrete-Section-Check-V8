@@ -232,7 +232,7 @@ PRESTRESS_TABLE_METADATA_COLUMNS = [
 ANALYSIS_RESULTS_METADATA_KEY = "analysis_results"
 ANALYSIS_RESULTS_SCHEMA_VERSION = 1
 ANALYSIS_SOURCES_METADATA_KEY = "analysis_sources"
-ANALYSIS_SOURCES_SCHEMA_VERSION = 1
+ANALYSIS_SOURCES_SCHEMA_VERSION = 2
 
 CROSSBEAM_ULS_LOAD_TABLE_KEY = "crossbeam_uls_loads_table"
 CROSSBEAM_SLS_LOAD_TABLE_KEY = "crossbeam_sls_loads_table"
@@ -404,6 +404,12 @@ def _analysis_source_metadata_from_session(session_state: Any) -> dict[str, Any]
                 "schema_version": ANALYSIS_SOURCES_SCHEMA_VERSION,
                 "rows": rows,
                 "owner": "Analysis → SLS Deflection / Camber",
+                "settings": {
+                    "span_limit_basis": _get_session_value(session_state, "crossbeam_sls_deflection_limit_basis", "L/360"),
+                    "span_custom_ratio": _get_session_value(session_state, "crossbeam_sls_deflection_custom_ratio", None),
+                    "overhang_limit_basis": _get_session_value(session_state, "crossbeam_sls_deflection_overhang_limit_basis", "Lo/180"),
+                    "overhang_custom_ratio": _get_session_value(session_state, "crossbeam_sls_deflection_overhang_custom_ratio", None),
+                },
             }
     return sources
 
@@ -1530,6 +1536,16 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
     displacement_source = analysis_sources.get(CROSSBEAM_SLS_DISPLACEMENT_SOURCE_METADATA_KEY) if isinstance(analysis_sources, dict) else None
     if isinstance(displacement_source, dict):
         session_state[CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY] = pd.DataFrame(displacement_source.get("rows") or [])
+        settings = displacement_source.get("settings")
+        if isinstance(settings, dict):
+            if settings.get("span_limit_basis") is not None:
+                session_state["crossbeam_sls_deflection_limit_basis"] = settings.get("span_limit_basis")
+            if settings.get("span_custom_ratio") is not None:
+                session_state["crossbeam_sls_deflection_custom_ratio"] = settings.get("span_custom_ratio")
+            if settings.get("overhang_limit_basis") is not None:
+                session_state["crossbeam_sls_deflection_overhang_limit_basis"] = settings.get("overhang_limit_basis")
+            if settings.get("overhang_custom_ratio") is not None:
+                session_state["crossbeam_sls_deflection_overhang_custom_ratio"] = settings.get("overhang_custom_ratio")
     elif isinstance(workflow_load_tables, dict) and CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY in workflow_load_tables:
         # D22 forward migration: displacement rows were incorrectly owned by Loads.
         # Preserve the source while moving its durable ownership to Analysis.
