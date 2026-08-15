@@ -79,7 +79,7 @@ def test_d25_replacing_final_service_source_preserves_transfer_source() -> None:
 def test_d25_ui_has_independent_stage_import_and_csp_chart_language() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "concrete_pmm_pro" / "ui" / "analysis_page.py").read_text(encoding="utf-8")
-    assert 'st.tabs(["At Transfer source", "At Final Service source"])' in source
+    assert 'render_active_choice(\n        "Deflection / Camber stage"' in source
     assert 'f"Replace {stage_title} source"' in source
     assert "Replacing this source preserves the other stage" in source
     assert 'name="Absolute FEA displacement"' in source

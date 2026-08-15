@@ -24,7 +24,7 @@ response while removing rigid support translation.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import math
@@ -41,6 +41,10 @@ CROSSBEAM_SLS_DISPLACEMENT_SOURCE_METADATA_KEY = "crossbeam_sls_deflection_displ
 CROSSBEAM_SLS_DISPLACEMENT_COLUMNS = ("Active", "Station s (m)", "Case Name", "Stage", "Vertical displacement (mm)", "Source point", "Note")
 CROSSBEAM_SLS_DEFLECTION_RESULT_KEY = "crossbeam_sls2_deflection_camber_result"
 CROSSBEAM_SLS_DEFLECTION_RESULT_HASH_KEY = "crossbeam_sls2_deflection_camber_input_hash"
+CROSSBEAM_SLS_DEFLECTION_TRANSFER_RESULT_KEY = "crossbeam_sls2_transfer_camber_result"
+CROSSBEAM_SLS_DEFLECTION_TRANSFER_RESULT_HASH_KEY = "crossbeam_sls2_transfer_camber_input_hash"
+CROSSBEAM_SLS_DEFLECTION_FINAL_RESULT_KEY = "crossbeam_sls2_final_service_deflection_result"
+CROSSBEAM_SLS_DEFLECTION_FINAL_RESULT_HASH_KEY = "crossbeam_sls2_final_service_deflection_input_hash"
 CROSSBEAM_LENGTH_KEY = "crossbeam_ui1_length_m"
 
 TRANSFER_STAGE = "Transfer stage"
@@ -321,6 +325,79 @@ def build_crossbeam_deflection_preparation(state: Any) -> CrossbeamDeflectionPre
         right_overhang_m=float(right_overhang_m),
     )
 
+
+
+def build_crossbeam_deflection_stage_preparation(state: Any, stage: str) -> CrossbeamDeflectionPreparation:
+    """Build an isolated Transfer or Final-Service preparation package.
+
+    The inactive stage is deliberately excluded from validation and from the
+    input fingerprint.  Transfer also excludes Final-Service L/n criteria so a
+    criterion edit cannot make a stored Transfer camber review stale.
+    """
+
+    if stage not in {TRANSFER_STAGE, FINAL_SERVICE_STAGE}:
+        raise ValueError("Crossbeam Deflection / Camber stage must be Transfer stage or Final service stage.")
+
+    stage_rows = [
+        dict(row)
+        for row in _records(_get(state, CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY))
+        if canonical_sls_stage(row.get("Stage")) == stage
+    ]
+    proxy = {
+        CROSSBEAM_LENGTH_KEY: _get(state, CROSSBEAM_LENGTH_KEY),
+        CROSSBEAM_COLUMN_ROWS_KEY: _get(state, CROSSBEAM_COLUMN_ROWS_KEY),
+        CB_LOSS_ES_CONSTRUCTION_METHOD_KEY: _get(state, CB_LOSS_ES_CONSTRUCTION_METHOD_KEY),
+        CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY: stage_rows,
+    }
+    if stage == FINAL_SERVICE_STAGE:
+        proxy["crossbeam_sls_deflection_limit_basis"] = _get(
+            state, "crossbeam_sls_deflection_limit_basis", DEFAULT_LIMIT_BASIS
+        )
+        proxy["crossbeam_sls_deflection_custom_ratio"] = _get(state, "crossbeam_sls_deflection_custom_ratio")
+        proxy["crossbeam_sls_deflection_overhang_limit_basis"] = _get(
+            state, "crossbeam_sls_deflection_overhang_limit_basis", DEFAULT_OVERHANG_LIMIT_BASIS
+        )
+        proxy["crossbeam_sls_deflection_overhang_custom_ratio"] = _get(
+            state, "crossbeam_sls_deflection_overhang_custom_ratio"
+        )
+    else:
+        proxy["crossbeam_sls_deflection_limit_basis"] = "Review only"
+        proxy["crossbeam_sls_deflection_overhang_limit_basis"] = "Review only"
+
+    prep = build_crossbeam_deflection_preparation(proxy)
+    warnings = list(prep.warnings)
+    errors = list(prep.errors)
+    if stage == TRANSFER_STAGE:
+        warnings = [
+            item
+            for item in warnings
+            if "downward-deflection acceptance ratio" not in item
+            and "overhang Lo/n criterion" not in item
+            and "No active Final-service" not in item
+        ]
+    else:
+        warnings = [item for item in warnings if "No active Transfer-stage" not in item]
+
+    if not stage_rows:
+        generic = "No active Crossbeam SLS displacement rows are available. Import verified external-FEA vertical displacements on Analysis → SLS Deflection / Camber."
+        errors = [item for item in errors if item != generic]
+        stage_label = "At Transfer" if stage == TRANSFER_STAGE else "At Final Service"
+        errors.append(f"No active {stage_label} displacement rows are available for this stage.")
+
+    stage_fingerprint = _fingerprint(
+        {
+            "schema": "crossbeam-sls2-stage-isolated-input-v1",
+            "stage": stage,
+            "base": prep.fingerprint,
+        }
+    )
+    return replace(
+        prep,
+        errors=tuple(_dedupe(errors)),
+        warnings=tuple(_dedupe(warnings)),
+        ready=bool(stage_rows) and not errors,
+        fingerprint=stage_fingerprint,
+    )
 
 def _interp_no_extrapolation(rows: list[dict[str, Any]], station_m: float) -> tuple[float | None, str]:
     rows = sorted(rows, key=lambda row: float(row["Station s (m)"]))
