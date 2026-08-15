@@ -26837,6 +26837,34 @@ def _crossbeam_sls_deflection_stage_case_options(result: Mapping[str, object], s
     return list(dict.fromkeys(str(row.get("Case Name") or "") for row in rows if str(row.get("Case Name") or "").strip()))
 
 
+def _crossbeam_transfer_response_extrema(
+    result: Mapping[str, object],
+    *,
+    case_name: str | None = None,
+) -> tuple[dict[str, object] | None, dict[str, object] | None]:
+    """Return the Transfer max-up and max-down response rows.
+
+    Transfer is a response-review stage rather than an acceptance check, so a
+    single "governing camber" label is misleading when the same response also
+    contains a larger downward excursion.  Keep both extrema explicit.  The
+    optional case filter is used by the chart; the stage summary intentionally
+    reviews all stored Transfer cases.
+    """
+
+    regions = [
+        dict(row)
+        for row in list(result.get("span_rows") or []) + list(result.get("overhang_rows") or [])
+        if isinstance(row, Mapping)
+        and str(row.get("Stage") or "") == "Transfer stage"
+        and (case_name is None or str(row.get("Case") or "") == case_name)
+    ]
+    if not regions:
+        return None, None
+    max_up = max(regions, key=lambda row: float(row.get("Max upward camber mm") or 0.0))
+    max_down = max(regions, key=lambda row: float(row.get("Max downward deflection mm") or 0.0))
+    return max_up, max_down
+
+
 def _make_crossbeam_sls_deflection_figure(
     result: Mapping[str, object],
     *,
@@ -26893,6 +26921,10 @@ def _make_crossbeam_sls_deflection_figure(
     if not relative.empty:
         first_relative = True
         group_key = "Region" if "Region" in relative.columns else "Span"
+        # Final-Service regression contract retains name="Relative member deflection";
+        # Transfer deliberately uses response language because no acceptance
+        # direction is governing at that stage.
+        relative_trace_name = "Relative member response" if stage == "Transfer stage" else "Relative member deflection"
         for _region, group in relative.groupby(group_key, sort=False):
             group = group.sort_values("Station s (m)")
             fig.add_trace(
@@ -26900,7 +26932,7 @@ def _make_crossbeam_sls_deflection_figure(
                     x=group["Station s (m)"],
                     y=group["Relative displacement mm"],
                     mode="lines+markers",
-                    name="Relative member deflection",
+                    name=relative_trace_name,
                     legendgroup="relative-member",
                     showlegend=first_relative,
                     line={"color": "#0f766e", "width": 3},
@@ -26956,26 +26988,19 @@ def _make_crossbeam_sls_deflection_figure(
             )
             first_limit = False
 
-    # Governing marker across both support spans and actual overhang regions.
-    governing = None
-    if region_rows:
-        if stage == "Final service stage":
-            with_util = [row for row in region_rows if row.get("Utilization") is not None]
-            pool = with_util or region_rows
-            governing = max(
-                pool,
-                key=lambda row: float(row.get("Utilization") or row.get("Max downward deflection mm") or 0.0),
-            )
-            gx = float(governing.get("x down m") or 0.0)
-            gy = -float(governing.get("Max downward deflection mm") or 0.0)
-            glabel = f"Gov. deflection {abs(gy):.3f} mm"
-            gname = "Gov. deflection"
-        else:
-            governing = max(region_rows, key=lambda row: float(row.get("Max upward camber mm") or 0.0))
-            gx = float(governing.get("x up m") or 0.0)
-            gy = float(governing.get("Max upward camber mm") or 0.0)
-            glabel = f"Gov. camber {gy:.3f} mm"
-            gname = "Gov. camber"
+    # Final Service has one acceptance-governing demand.  Transfer is response
+    # review only, so show both the maximum upward camber and maximum downward
+    # deflection instead of incorrectly declaring the upward point "governing".
+    if region_rows and stage == "Final service stage":
+        with_util = [row for row in region_rows if row.get("Utilization") is not None]
+        pool = with_util or region_rows
+        governing = max(
+            pool,
+            key=lambda row: float(row.get("Utilization") or row.get("Max downward deflection mm") or 0.0),
+        )
+        gx = float(governing.get("x down m") or 0.0)
+        gy = -float(governing.get("Max downward deflection mm") or 0.0)
+        glabel = f"Gov. deflection {abs(gy):.3f} mm"
         fig.add_trace(
             go.Scatter(
                 x=[gx],
@@ -26983,11 +27008,44 @@ def _make_crossbeam_sls_deflection_figure(
                 mode="markers+text",
                 text=[glabel],
                 textposition="top center" if gy >= 0.0 else "bottom center",
-                name=gname,
+                name="Gov. deflection",
                 marker={"color": "#111827", "size": 11, "symbol": "diamond"},
                 hovertemplate="s=%{x:.3f} m<br>%{text}<extra></extra>",
             )
         )
+    elif region_rows:
+        max_up, max_down = _crossbeam_transfer_response_extrema(result, case_name=case_name)
+        if max_up is not None:
+            gx = float(max_up.get("x up m") or 0.0)
+            gy = float(max_up.get("Max upward camber mm") or 0.0)
+            fig.add_trace(
+                go.Scatter(
+                    x=[gx],
+                    y=[gy],
+                    mode="markers+text",
+                    text=[f"Max camber {gy:.3f} mm"],
+                    textposition="top center",
+                    name="Max camber",
+                    marker={"color": "#111827", "size": 11, "symbol": "diamond"},
+                    hovertemplate="s=%{x:.3f} m<br>%{text}<extra></extra>",
+                )
+            )
+        if max_down is not None:
+            gx = float(max_down.get("x down m") or 0.0)
+            down = float(max_down.get("Max downward deflection mm") or 0.0)
+            gy = -down
+            fig.add_trace(
+                go.Scatter(
+                    x=[gx],
+                    y=[gy],
+                    mode="markers+text",
+                    text=[f"Max deflection {down:.3f} mm"],
+                    textposition="bottom center",
+                    name="Max deflection",
+                    marker={"color": "#111827", "size": 11, "symbol": "diamond-open"},
+                    hovertemplate="s=%{x:.3f} m<br>%{text}<extra></extra>",
+                )
+            )
 
     fig.add_hline(
         y=0.0,
@@ -27448,7 +27506,7 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
         _render_analysis_summary_strip(
             [
                 {"title": "Displacement source", "value": "READY" if preparation.ready else "BLOCKED", "detail": f"At Transfer · {stage_count} row(s)", "status": "ready" if preparation.ready else "danger", "strong": True},
-                {"title": "Transfer camber status", "value": "CURRENT" if cache_current else ("STALE" if isinstance(cached, Mapping) else "NOT CALCULATED"), "detail": "response review; no Final-Service limit", "status": "ready" if cache_current else "warning"},
+                {"title": "Stage result", "value": "CURRENT" if cache_current else ("STALE" if isinstance(cached, Mapping) else "NOT CALCULATED"), "detail": "independent Transfer response fingerprint", "status": "ready" if cache_current else "warning"},
                 {"title": "Stage ownership", "value": "AT TRANSFER", "detail": "source + result isolated from Final Service", "status": "info"},
                 {"title": "Acceptance basis", "value": "RESPONSE ONLY", "detail": "camber / deflection review", "status": "info"},
             ],
@@ -27494,15 +27552,17 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
 
     result = dict(cached)
     if is_transfer:
-        governing = result.get("transfer_governing_row") if isinstance(result.get("transfer_governing_row"), Mapping) else {}
-        gov_value = "-" if not governing else f"{float(governing.get('Max upward camber mm') or 0.0):.3f} mm up"
-        gov_detail = "No Transfer response" if not governing else f"{governing.get('Region') or governing.get('Span')} · {governing.get('Case')} · x={float(governing.get('x up m') or 0.0):.3f} m"
+        max_up, max_down = _crossbeam_transfer_response_extrema(result)
+        up_value = "-" if max_up is None else f"{float(max_up.get('Max upward camber mm') or 0.0):.3f} mm up"
+        up_detail = "No upward Transfer response" if max_up is None else f"{max_up.get('Region') or max_up.get('Span')} · {max_up.get('Case')} · x={float(max_up.get('x up m') or 0.0):.3f} m"
+        down_value = "-" if max_down is None else f"{float(max_down.get('Max downward deflection mm') or 0.0):.3f} mm down"
+        down_detail = "No downward Transfer response" if max_down is None else f"{max_down.get('Region') or max_down.get('Span')} · {max_down.get('Case')} · x={float(max_down.get('x down m') or 0.0):.3f} m"
         _render_analysis_summary_strip(
             [
-                {"title": "Transfer camber status", "value": "RESPONSE", "detail": "stored external-FEA movement review", "status": "info", "strong": True},
-                {"title": "Governing camber", "value": gov_value, "detail": gov_detail, "status": "info"},
+                {"title": "Transfer response", "value": "RESPONSE", "detail": "stored external-FEA movement review", "status": "info", "strong": True},
+                {"title": "Max upward camber", "value": up_value, "detail": up_detail, "status": "info"},
+                {"title": "Max downward deflection", "value": down_value, "detail": down_detail, "status": "info"},
                 {"title": "Acceptance", "value": "NOT APPLIED", "detail": "Final-Service L/n and Lo/n excluded", "status": "neutral"},
-                {"title": "Stage result", "value": "CURRENT", "detail": "independent Transfer fingerprint", "status": "ready"},
             ],
             columns=4,
         )
@@ -27544,9 +27604,9 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
         key=f"crossbeam_sls2_case_{'transfer' if is_transfer else 'final_service'}",
     )
     caption = (
-        "Absolute FEA displacement is context; the teal Relative member camber/deflection is the active Transfer response. "
+        "Absolute FEA displacement is context; the teal Relative member response is the active Transfer response. "
         "Between columns it is measured from the adjacent column-centre chord; on an end overhang it is measured from the adjacent column-centre vertical movement. "
-        "No Final-Service L/n or Lo/n acceptance limit is applied on this stage."
+        "Maximum upward camber and maximum downward deflection are both identified because Transfer is response review only; no Final-Service L/n or Lo/n acceptance limit is applied on this stage."
         if is_transfer
         else
         "Absolute FEA displacement is context; the teal Relative member deflection is the primary Final-Service demand. "
@@ -27567,6 +27627,20 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
     span_df = pd.DataFrame([row for row in list(result.get("span_rows") or []) if str(row.get("Stage")) == stage])
     overhang_df = pd.DataFrame([row for row in list(result.get("overhang_rows") or []) if str(row.get("Stage")) == stage])
     support_df = pd.DataFrame([row for row in list(result.get("support_rows") or []) if str(row.get("Stage")) == stage])
+    if is_transfer and not span_df.empty:
+        transfer_span_columns = [
+            "Stage", "Case", "Region", "Region type", "Span", "Span index", "Span length m",
+            "Span start m", "Span end m", "Status", "Max upward camber mm", "x up m",
+            "Max downward deflection mm", "x down m",
+        ]
+        span_df = span_df[[column for column in transfer_span_columns if column in span_df.columns]]
+    if is_transfer and not overhang_df.empty:
+        transfer_overhang_columns = [
+            "Stage", "Case", "Region", "Region type", "Span", "Overhang side", "Overhang length m",
+            "Overhang start m", "Overhang end m", "Status", "Max upward camber mm", "x up m",
+            "Max downward deflection mm", "x down m",
+        ]
+        overhang_df = overhang_df[[column for column in transfer_overhang_columns if column in overhang_df.columns]]
     span_title = "Support-span camber / deflection response audit" if is_transfer else "Support-span deflection audit"
     with st.expander(span_title, expanded=False):
         if not span_df.empty:
