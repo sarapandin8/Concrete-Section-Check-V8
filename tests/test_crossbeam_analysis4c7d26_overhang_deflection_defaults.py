@@ -132,8 +132,8 @@ def test_d26_ui_is_geometry_aware_and_plots_overhang_limits_in_same_graph() -> N
     assert 'name="Relative member deflection"' in source
     assert 'row.get("Overhang start m")' in source
     assert 'row.get("Overhang end m")' in source
-    assert "General-practice default: L/360" in source
-    assert "General-practice default: Lo/180" in source
+    assert "General-practice app default: L/360" in source
+    assert "General-practice app default: Lo/180" in source
 
 
 def test_d26_project_json_persists_span_and_overhang_criteria() -> None:

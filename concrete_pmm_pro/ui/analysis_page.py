@@ -27342,6 +27342,61 @@ def _crossbeam_sls_deflection_stage_cache_keys(stage: str) -> tuple[str, str]:
     return CROSSBEAM_SLS_DEFLECTION_FINAL_RESULT_KEY, CROSSBEAM_SLS_DEFLECTION_FINAL_RESULT_HASH_KEY
 
 
+def _crossbeam_final_service_criterion_caption(
+    current: str,
+    default: str,
+    *,
+    verify_text: str,
+    geometry_text: str = "",
+) -> str:
+    current_text = str(current or default)
+    if current_text == default:
+        text = f"Current project selection: {current_text} · new-project general-practice default"
+    else:
+        text = f"Current project selection: {current_text} · new-project general-practice default: {default}"
+    if geometry_text:
+        text += f" · {geometry_text}"
+    return f"{text} · {verify_text}."
+
+
+def _crossbeam_final_service_acceptance_detail(preparation: Any) -> str:
+    has_overhang = float(getattr(preparation, "left_overhang_m", 0.0) or 0.0) > 1.0e-9 or float(
+        getattr(preparation, "right_overhang_m", 0.0) or 0.0
+    ) > 1.0e-9
+    span_basis = str(getattr(preparation, "limit_basis", "") or CROSSBEAM_DEFLECTION_DEFAULT_LIMIT_BASIS)
+    overhang_basis = str(
+        getattr(preparation, "overhang_limit_basis", "") or CROSSBEAM_DEFLECTION_DEFAULT_OVERHANG_LIMIT_BASIS
+    )
+    is_default = span_basis == CROSSBEAM_DEFLECTION_DEFAULT_LIMIT_BASIS and (
+        not has_overhang or overhang_basis == CROSSBEAM_DEFLECTION_DEFAULT_OVERHANG_LIMIT_BASIS
+    )
+    if is_default:
+        return "general-practice new-project defaults; verify project criteria"
+    defaults = f"{CROSSBEAM_DEFLECTION_DEFAULT_LIMIT_BASIS}"
+    if has_overhang:
+        defaults += f" · {CROSSBEAM_DEFLECTION_DEFAULT_OVERHANG_LIMIT_BASIS}"
+    return f"current project selections preserved; new-project defaults: {defaults}"
+
+
+def _crossbeam_final_service_review_reason(result: Mapping[str, Any]) -> str:
+    if str(result.get("status") or "").upper() != "REVIEW":
+        return "stored stage-owned deflection check"
+    regions = [
+        row
+        for row in list(result.get("span_rows") or []) + list(result.get("overhang_rows") or [])
+        if str(row.get("Stage") or "") == "Final service stage" and str(row.get("Status") or "") == "REVIEW"
+    ]
+    has_span = any(str(row.get("Region type") or "") == "SUPPORT SPAN" for row in regions)
+    has_overhang = any(str(row.get("Region type") or "") == "OVERHANG" for row in regions)
+    if has_span and has_overhang:
+        return "No active support-span L/n or overhang Lo/n acceptance criterion"
+    if has_span:
+        return "No active support-span L/n acceptance criterion"
+    if has_overhang:
+        return "No active overhang Lo/n acceptance criterion"
+    return "Engineering acceptance criterion requires review"
+
+
 def _render_crossbeam_sls_deflection_workspace() -> None:
     st.markdown("### Crossbeam SLS Deflection / Camber")
     st.caption(
@@ -27412,7 +27467,14 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
                     step=10.0,
                     key="crossbeam_sls_deflection_custom_ratio",
                 )
-            st.caption("General-practice default: L/360 · verify project/serviceability requirements.")
+            span_selection = str(st.session_state.get("crossbeam_sls_deflection_limit_basis") or CROSSBEAM_DEFLECTION_DEFAULT_LIMIT_BASIS)
+            st.caption(
+                _crossbeam_final_service_criterion_caption(
+                    span_selection,
+                    CROSSBEAM_DEFLECTION_DEFAULT_LIMIT_BASIS,
+                    verify_text="verify project/serviceability requirements",
+                )
+            )
 
         if has_overhang:
             with criteria_cols[1]:
@@ -27436,7 +27498,18 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
                     lengths.append(f"Left Lo={left_overhang_m:.3f} m")
                 if right_overhang_m > 1.0e-9:
                     lengths.append(f"Right Lo={right_overhang_m:.3f} m")
-                st.caption("General-practice default: Lo/180 · " + " · ".join(lengths) + ".")
+                overhang_selection = str(
+                    st.session_state.get("crossbeam_sls_deflection_overhang_limit_basis")
+                    or CROSSBEAM_DEFLECTION_DEFAULT_OVERHANG_LIMIT_BASIS
+                )
+                st.caption(
+                    _crossbeam_final_service_criterion_caption(
+                        overhang_selection,
+                        CROSSBEAM_DEFLECTION_DEFAULT_OVERHANG_LIMIT_BASIS,
+                        verify_text="verify project/serviceability requirements",
+                        geometry_text=" · ".join(lengths),
+                    )
+                )
         else:
             st.caption("No end overhang is present in the active Crossbeam geometry; overhang controls, limits, and audit rows are omitted.")
 
@@ -27520,7 +27593,7 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
             [
                 {"title": "Displacement source", "value": "READY" if preparation.ready else "BLOCKED", "detail": f"At Final Service · {stage_count} row(s)", "status": "ready" if preparation.ready else "danger", "strong": True},
                 {"title": "Final Service result", "value": "CURRENT" if cache_current else ("STALE" if isinstance(cached, Mapping) else "NOT CALCULATED"), "detail": "stage-owned serviceability result", "status": "ready" if cache_current else "warning"},
-                {"title": "Acceptance basis", "value": acceptance, "detail": "general-practice defaults; verify project criteria", "status": "info"},
+                {"title": "Acceptance basis", "value": acceptance, "detail": _crossbeam_final_service_acceptance_detail(preparation), "status": "info"},
                 {"title": "Stage ownership", "value": "AT FINAL SERVICE", "detail": "source + result isolated from Transfer", "status": "info"},
             ],
             columns=4,
@@ -27580,7 +27653,7 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
             final_value, final_detail, final_util, final_util_basis = "-", "No Final Service region response", "-", "-"
         _render_analysis_summary_strip(
             [
-                {"title": "Final Service status", "value": status, "detail": "stored stage-owned deflection check", "status": style, "strong": True},
+                {"title": "Final Service status", "value": status, "detail": _crossbeam_final_service_review_reason(result), "status": style, "strong": True},
                 {"title": "Governing deflection", "value": final_value, "detail": final_detail, "status": style},
                 {"title": "D/C / utilization", "value": final_util, "detail": f"criterion {final_util_basis}", "status": style},
                 {"title": "Stage result", "value": "CURRENT", "detail": "independent Final Service fingerprint", "status": "ready"},
