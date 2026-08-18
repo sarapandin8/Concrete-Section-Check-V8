@@ -18,7 +18,7 @@ import streamlit as st
 
 from concrete_pmm_pro.core.analysis import AnalysisModeSettings
 from concrete_pmm_pro.core.analysis_modes import analysis_mode_label
-from concrete_pmm_pro.core.models import LoadCase
+from concrete_pmm_pro.core.models import LoadCase, SectionGeometry
 from concrete_pmm_pro.core.units import kN_to_N, kNm_to_Nmm, tonf_to_N, tonfm_to_Nmm
 from concrete_pmm_pro.ui.commercial import render_metric_cards, render_page_header, render_section_bar
 from concrete_pmm_pro.crossbeam.station_force_contract import (
@@ -38,6 +38,11 @@ from concrete_pmm_pro.crossbeam.station_force_contract import (
     default_station_force_contract,
     normalize_station_force_rows,
     validate_station_force_rows,
+)
+from concrete_pmm_pro.analysis.girder_construction_uls import (
+    BEAM_GIRDER_CONSTRUCTION_ULS_SETTINGS_KEY,
+    build_construction_uls_demand,
+    construction_uls_settings_from_mapping,
 )
 from concrete_pmm_pro.serviceability.girder_sls_load_components import (
     BEAM_GIRDER_SYSTEM_SETTINGS_KEY,
@@ -645,6 +650,22 @@ def _active_girder_section_family_label() -> str:
     if _active_girder_section_family() == "precast_composite_girder":
         return "Precast Composite Girder"
     return "General / Non-composite Girder"
+
+
+def _active_is_precast_i_girder() -> bool:
+    """Return whether the active shared bridge preset is the Precast I-Girder.
+
+    Composite-capable U-, box-, and plank-girder presets share the broader
+    ``precast_composite_girder`` family for SLS routing.  The Construction-ULS
+    automation introduced by IGIRDER.ULS1 is intentionally narrower and must
+    not silently change those other member workflows.
+    """
+
+    preset_key = str(st.session_state.get("section_preset_key") or "").strip()
+    if preset_key:
+        return preset_key == "parametric_i_girder"
+    preset_name = str(st.session_state.get("section_preset_name") or "").strip().casefold()
+    return "i-girder" in preset_name or "i girder" in preset_name
 
 
 def _beam_sls_basis_for_stage(stage: object, existing_basis: object = "") -> str:
@@ -2230,6 +2251,143 @@ def _active_topping_thickness_mm_from_session() -> float:
     return 0.0
 
 
+def _active_precast_area_mm2_from_session() -> float:
+    geometry = st.session_state.get("section_geometry")
+    if isinstance(geometry, dict):
+        try:
+            geometry = SectionGeometry.model_validate(geometry)
+        except Exception:
+            geometry = None
+    if not isinstance(geometry, SectionGeometry):
+        return 0.0
+    try:
+        return max(float(summarize_geometry(geometry).area_mm2), 0.0)
+    except Exception:
+        return 0.0
+
+
+def _ensure_beam_girder_construction_uls_settings() -> dict[str, Any]:
+    existing = st.session_state.get(BEAM_GIRDER_CONSTRUCTION_ULS_SETTINGS_KEY)
+    if not isinstance(existing, dict):
+        existing = {}
+    normalized = construction_uls_settings_from_mapping(existing).as_metadata()
+    st.session_state[BEAM_GIRDER_CONSTRUCTION_ULS_SETTINGS_KEY] = normalized
+    return normalized
+
+
+def _render_bridge_precast_construction_uls_inputs() -> None:
+    """Render source-of-truth construction-stage ULS settings for composite girders."""
+
+    if not _active_is_precast_i_girder():
+        return
+    system = system_settings_from_mapping(st.session_state.get(BEAM_GIRDER_SYSTEM_SETTINGS_KEY))
+    raw = _ensure_beam_girder_construction_uls_settings()
+    settings = construction_uls_settings_from_mapping(raw)
+    area_mm2 = _active_precast_area_mm2_from_session()
+    deck_t_mm = _active_topping_thickness_mm_from_session()
+
+    with st.container(border=True):
+        st.markdown("#### Construction ULS — Auto Demand · Noncomposite")
+        st.caption(
+            "For Precast Composite Girder only. The app generates the construction-stage simple-span demand from the precast girder self-weight, wet CIP deck, and engineer-entered temporary loads. "
+            "The resisting section at this stage is the precast girder only. Final Composite ULS demand remains the imported FEA strength-resultant table below."
+        )
+        cols = st.columns(4)
+        with cols[0]:
+            raw["construction_support"] = st.selectbox(
+                "Construction support",
+                ["Unshored", "Shored"],
+                index=0 if settings.is_unshored else 1,
+                key="beam_girder_construction_uls_support",
+                help="Automatic noncomposite girder demand is implemented for ordinary unshored construction. Shored construction requires a separate construction model and is blocked from automatic acceptance.",
+            )
+        with cols[1]:
+            raw["include_girder_self_weight"] = st.checkbox(
+                "Include girder self-weight",
+                value=settings.include_girder_self_weight,
+                key="beam_girder_construction_uls_include_sw",
+            )
+        with cols[2]:
+            raw["include_wet_deck"] = st.checkbox(
+                "Include wet CIP deck",
+                value=settings.include_wet_deck,
+                key="beam_girder_construction_uls_include_wet_deck",
+            )
+        with cols[3]:
+            st.metric("Deck thickness", f"{deck_t_mm:.1f} mm")
+
+        load_cols = st.columns(2)
+        with load_cols[0]:
+            raw["include_formwork"] = st.checkbox(
+                "Include formwork / SIP forms",
+                value=settings.include_formwork,
+                key="beam_girder_construction_uls_include_formwork",
+            )
+            raw["formwork_line_load_kN_m"] = st.number_input(
+                "Formwork / SIP forms (kN/m per girder)",
+                min_value=0.0, step=0.25, value=float(settings.formwork_line_load_kN_m), format="%.3f",
+                key="beam_girder_construction_uls_formwork_load",
+            )
+        with load_cols[1]:
+            raw["include_construction_live_load"] = st.checkbox(
+                "Include construction live load",
+                value=settings.include_construction_live_load,
+                key="beam_girder_construction_uls_include_live",
+            )
+            raw["construction_live_load_kN_m"] = st.number_input(
+                "Construction live load (kN/m per girder)",
+                min_value=0.0, step=0.25, value=float(settings.construction_live_load_kN_m), format="%.3f",
+                key="beam_girder_construction_uls_live_load",
+            )
+
+        with st.expander("Construction ULS factors — engineer confirmation required", expanded=True):
+            st.warning(
+                "Concrete Section Pro does not silently select AASHTO construction load factors in this milestone. Enter the project-applicable factors and confirm their basis before Construction ULS can issue PASS/FAIL."
+            )
+            fcols = st.columns(4)
+            with fcols[0]:
+                raw["gamma_girder_self_weight"] = st.number_input("γ · girder self-weight", min_value=0.01, step=0.05, value=float(settings.gamma_girder_self_weight), format="%.3f", key="beam_girder_construction_uls_gamma_sw")
+            with fcols[1]:
+                raw["gamma_wet_deck"] = st.number_input("γ · wet deck", min_value=0.01, step=0.05, value=float(settings.gamma_wet_deck), format="%.3f", key="beam_girder_construction_uls_gamma_wet")
+            with fcols[2]:
+                raw["gamma_formwork"] = st.number_input("γ · formwork", min_value=0.01, step=0.05, value=float(settings.gamma_formwork), format="%.3f", key="beam_girder_construction_uls_gamma_form")
+            with fcols[3]:
+                raw["gamma_construction_live"] = st.number_input("γ · construction live", min_value=0.01, step=0.05, value=float(settings.gamma_construction_live), format="%.3f", key="beam_girder_construction_uls_gamma_live")
+            raw["factor_basis"] = st.text_input(
+                "Factor basis / project note",
+                value=str(settings.factor_basis),
+                key="beam_girder_construction_uls_factor_basis",
+                help="Record the applicable project/AASHTO/contract construction-stage load-factor basis here.",
+            )
+            raw["factors_confirmed"] = st.checkbox(
+                "I have verified these Construction ULS factors for the project",
+                value=settings.factors_confirmed,
+                key="beam_girder_construction_uls_factors_confirmed",
+            )
+
+        normalized = construction_uls_settings_from_mapping(raw)
+        st.session_state[BEAM_GIRDER_CONSTRUCTION_ULS_SETTINGS_KEY] = normalized.as_metadata()
+        demand = build_construction_uls_demand(
+            system=system,
+            settings=normalized,
+            precast_area_mm2=area_mm2,
+            deck_thickness_mm=deck_t_mm,
+        )
+        st.dataframe(pd.DataFrame(demand.component_rows()), use_container_width=True, hide_index=True)
+        status = demand.status
+        _render_load_compact_cards(
+            [
+                {"title": "Construction route", "value": normalized.construction_support.upper(), "detail": "precast girder only", "status": "info" if normalized.is_unshored else "warning"},
+                {"title": "Unfactored total", "value": f"{demand.unfactored_total_kN_m:.3f} kN/m", "detail": "auto + user temporary loads", "status": "info"},
+                {"title": "Factored total", "value": f"{demand.factored_total_kN_m:.3f} kN/m", "detail": "using entered factors", "status": "info"},
+                {"title": "ULS factor gate", "value": status, "detail": "confirmed" if demand.factors_ready else "engineer confirmation required", "status": "ready" if status == "READY" else ("danger" if status == "BLOCKED" else "warning")},
+            ],
+            columns=4,
+        )
+        for warning in demand.warnings:
+            st.warning(warning)
+
+
 def _ensure_beam_girder_sls_auto_load_settings() -> dict[str, Any]:
     existing = st.session_state.get(BEAM_GIRDER_SLS_AUTO_LOAD_SETTINGS_KEY)
     if not isinstance(existing, dict):
@@ -2550,7 +2708,8 @@ def _render_beam_girder_load_tables(force_unit: str, moment_unit: str) -> None:
     st.markdown("### Beam / Girder Loads")
     st.caption(
         "Beam/Girder load tables use explicit section-axis names: Mux is main vertical bending for typical girders and Vuy is vertical shear. "
-        "SLS rows can be selected in Analysis for quick preview checks; ULS rows and full staged summation remain future final-design workflows."
+        "ULS station rows feed the strength workspace; Bridge Precast I-Girder additionally auto-generates the noncomposite Construction Flexure demand. "
+        "SLS rows remain available for staged service review."
     )
     _render_load_compact_cards(
         [
@@ -2577,6 +2736,12 @@ def _render_beam_girder_load_tables(force_unit: str, moment_unit: str) -> None:
             key_prefix="bridge_beam_uls",
             span_length_m=system.span_length_m,
         )
+        _render_bridge_precast_construction_uls_inputs()
+        if _active_is_precast_i_girder():
+            st.markdown("#### Final Composite ULS — Imported FEA Demand")
+            st.caption(
+                "For Precast I-Girder, this station table is the final factored FEA strength demand after composite action. It is not reused as the Construction-stage demand."
+            )
         with st.expander("Import Bridge Beam/Girder ULS station loads from Excel / CSV", expanded=False):
             st.caption("Bridge ULS loads are station-based factored resultants. The same case name may repeat at different Station x values.")
             _render_workflow_import_tools(
@@ -2755,12 +2920,12 @@ def _render_beam_girder_load_tables(force_unit: str, moment_unit: str) -> None:
                 st.info(info)
 
     with st.expander("Beam/Girder load table scope", expanded=False):
-        st.write("- ULS table prepares actions for future flexure, shear, and torsion design.")
+        st.write("- ULS table supplies final/imported station actions to the Flexure, Shear, and Torsion strength workspace.")
         st.write("- SLS table uses three engineer-facing stages instead of a detailed Load Component dropdown.")
         st.write("- Transfer stage: external action is precast girder self-weight; Analysis must include Pe_transfer/initial prestress for a meaningful transfer check.")
         st.write("- Construction stage: external action is precast girder plus wet deck/topping before composite action.")
         st.write("- Service stage: use auto SDL after composite plus user/imported LL+IM. Do not import total service combo unless auto SDL components are disabled.")
-        st.write("- ULS rows and full staged summation are not yet connected to final girder strength checks.")
+        st.write("- Bridge Precast I-Girder Construction Flexure can auto-generate noncomposite demand; Final Composite flexural resistance remains REVIEW until its composite strength route is implemented.")
 
 def _render_building_beam_girder_load_tables(force_unit: str, moment_unit: str) -> None:
     st.markdown("### Building Beam / Girder Loads")

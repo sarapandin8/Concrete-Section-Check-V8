@@ -3607,7 +3607,17 @@ def _results_first_existing(row: Mapping[str, object], candidates: list[str], de
 
 def _results_beam_uls_cache(state: object) -> dict[str, dict[str, object]]:
     cache = state.get("_beam_girder_uls_manual_calculation_cache") if hasattr(state, "get") else None
-    return cache if isinstance(cache, dict) else {}
+    if not isinstance(cache, dict):
+        return {}
+    preset_key = str(state.get("section_preset_key") or "").strip() if hasattr(state, "get") else ""
+    if preset_key == "parametric_i_girder" and "Flexure" in cache:
+        # IGIRDER.ULS1 stage-separates Flexure.  Never surface the pre-ULS1
+        # generic Flexure cache in read-only Result Summary because that legacy
+        # result used final FEA demand against precast-only resistance.
+        filtered = dict(cache)
+        filtered.pop("Flexure", None)
+        return filtered
+    return cache
 
 
 def _results_beam_uls_best_row(entry: dict[str, object] | None, check_name: str) -> dict[str, object]:

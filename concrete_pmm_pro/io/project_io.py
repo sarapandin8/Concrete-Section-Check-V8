@@ -14,6 +14,10 @@ from concrete_pmm_pro.analysis.capacity_check import DemandCapacityResult, Deman
 from concrete_pmm_pro.analysis.preflight import build_analysis_input_from_session_state
 from concrete_pmm_pro.analysis.result_models import PMMSolverResult
 from concrete_pmm_pro.analysis.runtime import analysis_input_hash
+from concrete_pmm_pro.analysis.girder_construction_uls import (
+    BEAM_GIRDER_CONSTRUCTION_ULS_SETTINGS_KEY,
+    construction_uls_settings_from_mapping,
+)
 from concrete_pmm_pro.analysis.crossbeam_sls_deflection import (
     CROSSBEAM_SLS_DISPLACEMENT_SOURCE_METADATA_KEY,
     CROSSBEAM_SLS_DISPLACEMENT_TABLE_KEY,
@@ -500,8 +504,16 @@ def _beam_uls_cache_metadata_from_session(session_state: Any) -> dict[str, Any]:
     cache = _get_session_value(session_state, "_beam_girder_uls_manual_calculation_cache", None)
     if not isinstance(cache, dict):
         return {}
+    preset_key = str(_get_session_value(session_state, "section_preset_key", "") or "").strip()
     result: dict[str, Any] = {}
     for check_name, entry in cache.items():
+        # IGIRDER.ULS1 replaces the legacy generic Flexure result for the
+        # Bridge Precast I-Girder.  That old entry compared final imported FEA
+        # demand with the precast-only capacity and is no longer a valid
+        # certification artifact.  Preserve the new stage-owned construction
+        # cache instead and let Final Composite remain REVIEW.
+        if preset_key == "parametric_i_girder" and str(check_name) == "Flexure":
+            continue
         serialized = _analysis_cache_entry_to_metadata(entry)
         if serialized:
             result[str(check_name)] = serialized
@@ -662,6 +674,8 @@ def _restore_analysis_results_metadata(project: ProjectModel, session_state: Mut
     # cache entries still carry their own per-check input hashes for Analysis
     # pages to validate before reuse.
     beam_cache = _beam_uls_cache_from_metadata(metadata.get("beam_girder_uls_manual_calculation_cache"))
+    if str(session_state.get("section_preset_key") or "").strip() == "parametric_i_girder":
+        beam_cache.pop("Flexure", None)
     if beam_cache:
         session_state["_beam_girder_uls_manual_calculation_cache"] = beam_cache
         session_state["beam_girder_uls_runtime_cache_status"] = "Loaded cached Beam/Girder ULS results"
@@ -878,6 +892,19 @@ def _beam_girder_sls_auto_load_settings_metadata_from_session(session_state: Any
     return {key: _clean_table_value(value) for key, value in auto_load_settings_from_mapping(settings).as_metadata().items() if not _is_blank(value)}
 
 
+def _beam_girder_construction_uls_settings_metadata_from_session(session_state: Any) -> dict[str, Any]:
+    """Serialize Bridge Precast Composite Girder Construction-ULS settings."""
+
+    settings = _get_session_value(session_state, BEAM_GIRDER_CONSTRUCTION_ULS_SETTINGS_KEY, None)
+    if not isinstance(settings, dict):
+        return {}
+    return {
+        key: _clean_table_value(value)
+        for key, value in construction_uls_settings_from_mapping(settings).as_metadata().items()
+        if not _is_blank(value)
+    }
+
+
 def _building_beam_girder_service_load_settings_metadata_from_session(session_state: Any) -> dict[str, Any]:
     """Serialize Building Beam/Girder service SDL/LL settings."""
 
@@ -970,6 +997,9 @@ def project_from_session_state(session_state: Any) -> ProjectModel:
     beam_girder_sls_auto_load_settings = _beam_girder_sls_auto_load_settings_metadata_from_session(session_state)
     if beam_girder_sls_auto_load_settings:
         metadata[BEAM_GIRDER_SLS_AUTO_LOAD_SETTINGS_KEY] = beam_girder_sls_auto_load_settings
+    beam_girder_construction_uls_settings = _beam_girder_construction_uls_settings_metadata_from_session(session_state)
+    if beam_girder_construction_uls_settings:
+        metadata[BEAM_GIRDER_CONSTRUCTION_ULS_SETTINGS_KEY] = beam_girder_construction_uls_settings
     building_service_load_settings = _building_beam_girder_service_load_settings_metadata_from_session(session_state)
     if building_service_load_settings:
         metadata[BUILDING_BEAM_GIRDER_SERVICE_LOAD_SETTINGS_KEY] = building_service_load_settings
@@ -1630,6 +1660,9 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
     beam_girder_sls_auto_load_settings = project.metadata.get(BEAM_GIRDER_SLS_AUTO_LOAD_SETTINGS_KEY)
     if isinstance(beam_girder_sls_auto_load_settings, dict):
         session_state[BEAM_GIRDER_SLS_AUTO_LOAD_SETTINGS_KEY] = auto_load_settings_from_mapping(beam_girder_sls_auto_load_settings).as_metadata()
+    beam_girder_construction_uls_settings = project.metadata.get(BEAM_GIRDER_CONSTRUCTION_ULS_SETTINGS_KEY)
+    if isinstance(beam_girder_construction_uls_settings, dict):
+        session_state[BEAM_GIRDER_CONSTRUCTION_ULS_SETTINGS_KEY] = construction_uls_settings_from_mapping(beam_girder_construction_uls_settings).as_metadata()
     building_service_load_settings = project.metadata.get(BUILDING_BEAM_GIRDER_SERVICE_LOAD_SETTINGS_KEY)
     if isinstance(building_service_load_settings, dict):
         session_state[BUILDING_BEAM_GIRDER_SERVICE_LOAD_SETTINGS_KEY] = building_service_load_settings_from_mapping(building_service_load_settings).as_metadata()

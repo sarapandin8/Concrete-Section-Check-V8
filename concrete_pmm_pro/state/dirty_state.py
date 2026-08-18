@@ -109,6 +109,7 @@ INPUT_GROUP_KEYS: dict[str, tuple[str, ...]] = {
         CB_EFFECTIVE_PRESTRESS_LOADS_LINK_KEY,
         "girder_sls_load_components",
         "beam_girder_sls_auto_load_settings",
+        "beam_girder_construction_uls_settings",
         "building_beam_girder_service_load_settings",
         "building_beam_girder_sls_load_settings",
     ),

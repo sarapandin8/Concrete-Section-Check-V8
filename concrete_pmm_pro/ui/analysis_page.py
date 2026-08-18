@@ -274,6 +274,12 @@ from concrete_pmm_pro.serviceability import (
     validate_stress_check_points_against_geometry,
 )
 
+from concrete_pmm_pro.analysis.girder_construction_uls import (
+    BEAM_GIRDER_CONSTRUCTION_ULS_SETTINGS_KEY,
+    build_construction_uls_demand,
+    construction_uls_settings_from_mapping,
+    construction_uls_station_rows,
+)
 from concrete_pmm_pro.serviceability.girder_prestress_station import (
     active_strand_groups_at_station,
     evaluate_girder_prestress_station,
@@ -5745,6 +5751,7 @@ def _beam_uls_girder_strand_elements_for_station(
     geometry: SectionGeometry,
     x_m: float,
     span_length_m: float,
+    prestress_force_stage: str = "final",
 ) -> list[PrestressElement]:
     """Convert dedicated girder strand-layout metadata to station PS elements.
 
@@ -5767,8 +5774,13 @@ def _beam_uls_girder_strand_elements_for_station(
     for group in groups:
         if group.no_strands <= 0 or group.area_per_strand_mm2 <= 0.0:
             continue
-        pe_final_per_strand_n = max(0.0, float(group.pe_eff_final_per_strand_kN)) * 1000.0
-        initial_stress_mpa = pe_final_per_strand_n / float(group.area_per_strand_mm2) if group.area_per_strand_mm2 > 0.0 else 0.0
+        force_stage = str(prestress_force_stage or "final").strip().casefold()
+        if force_stage == "construction":
+            pe_per_strand_kN = max(0.0, float(group.pe_construction_per_strand_kN))
+        else:
+            pe_per_strand_kN = max(0.0, float(group.pe_eff_final_per_strand_kN))
+        pe_per_strand_n = pe_per_strand_kN * 1000.0
+        initial_stress_mpa = pe_per_strand_n / float(group.area_per_strand_mm2) if group.area_per_strand_mm2 > 0.0 else 0.0
         elements.append(
             PrestressElement(
                 x_mm=0.0,
@@ -5779,12 +5791,12 @@ def _beam_uls_girder_strand_elements_for_station(
                 fpy_mpa=_GIRDER_STRAND_FPY_MPA_DEFAULT,
                 fpu_mpa=_GIRDER_STRAND_FPU_MPA_DEFAULT,
                 ep_mpa=_GIRDER_STRAND_EP_MPA_DEFAULT,
-                pe_eff_n=pe_final_per_strand_n,
+                pe_eff_n=pe_per_strand_n,
                 initial_stress_mpa=initial_stress_mpa,
                 initial_strain=initial_stress_mpa / _GIRDER_STRAND_EP_MPA_DEFAULT if initial_stress_mpa > 0.0 else 0.0,
                 bonded=True,
                 count=int(group.no_strands),
-                label=f"{group.group_id} @ x={float(x_m):.3f} m",
+                label=f"{group.group_id} @ x={float(x_m):.3f} m · {str(prestress_force_stage).title()} force",
             )
         )
     return elements
@@ -5796,6 +5808,7 @@ def _beam_uls_flexure_analysis_input_for_station(
     row: Mapping[str, object],
     strength_route: BeamGirderUlsStrengthRoute,
     capacity_direction: float | None = None,
+    prestress_force_stage: str = "final",
 ) -> tuple[AnalysisInput | None, list[str]]:
     messages: list[str] = []
     geometry = _beam_uls_get_state_value(state, "section_geometry")
@@ -5827,10 +5840,11 @@ def _beam_uls_flexure_analysis_input_for_station(
         geometry=geometry,
         x_m=max(0.0, min(float(station_m), span_m)),
         span_length_m=span_m,
+        prestress_force_stage=prestress_force_stage,
     )
     if strand_elements:
         prestress = [*prestress, *strand_elements]
-        messages.append("Dedicated girder strand layout included in flexure check at the demand station.")
+        messages.append(f"Dedicated girder strand layout included in flexure check at the demand station using {str(prestress_force_stage).lower()} effective prestress force.")
     elif _beam_uls_get_state_value(state, "girder_strand_layout_table") is not None:
         messages.append("No effective girder strand groups were available at this station; debonding/development must be reviewed.")
 
@@ -6179,6 +6193,7 @@ def _beam_uls_flexure_preview_dataframe(
     strength_route: BeamGirderUlsStrengthRoute | None = None,
     code_label: str | None = None,
     is_building: bool | None = None,
+    prestress_force_stage: str = "final",
 ) -> tuple[pd.DataFrame, list[str]]:
     """Return station-by-station flexure check rows using the routed ULS basis.
 
@@ -6328,6 +6343,7 @@ def _beam_uls_flexure_preview_dataframe(
             row=demand_row,
             strength_route=strength_route,
             capacity_direction=capacity_direction,
+            prestress_force_stage=prestress_force_stage,
         )
         messages.extend(input_messages)
         if analysis_input is None:
@@ -9117,6 +9133,7 @@ def _beam_uls_cache_input_hash(
             default_empty_keys={"prestress_table", "girder_strand_layout_table", "girder_prestress_force_states_table"},
         ),
         "loads": active_df,
+        "construction_uls": _beam_uls_state_values(state, [BEAM_GIRDER_CONSTRUCTION_ULS_SETTINGS_KEY]),
         "analysis_settings": _beam_uls_state_values(state, ["analysis_settings"]),
     }
     return _beam_uls_hash_payload(payload)
@@ -10941,6 +10958,140 @@ def _make_beam_uls_torsion_capacity_figure(
     return fig
 
 
+def _beam_uls_is_precast_composite_bridge(state: Mapping[str, object], *, is_bridge: bool) -> bool:
+    """Return whether IGIRDER.ULS1 applies to the active Bridge Precast I-Girder.
+
+    The broader ``precast_composite_girder`` section family also contains
+    U-/box-/plank presets used by other workflows.  Construction-stage ULS
+    automation is intentionally isolated to the shared parametric I-Girder
+    preset until those other member families receive their own reviewed routes.
+    """
+
+    if not is_bridge:
+        return False
+    preset_key = str(_beam_uls_get_state_value(state, "section_preset_key") or "").strip()
+    if preset_key:
+        return preset_key == "parametric_i_girder"
+    preset_name = str(_beam_uls_get_state_value(state, "section_preset_name") or "").strip().casefold()
+    return "i-girder" in preset_name or "i girder" in preset_name
+
+
+def _beam_uls_construction_demand_from_state(
+    state: Mapping[str, object],
+) -> tuple[object, pd.DataFrame, list[str]]:
+    """Return Construction-ULS demand, station rows, and preparation notes."""
+
+    system = system_settings_from_mapping(_beam_uls_get_state_value(state, BEAM_GIRDER_SYSTEM_SETTINGS_KEY))
+    settings = construction_uls_settings_from_mapping(_beam_uls_get_state_value(state, BEAM_GIRDER_CONSTRUCTION_ULS_SETTINGS_KEY))
+    geometry = _beam_uls_get_state_value(state, "section_geometry")
+    if isinstance(geometry, dict):
+        try:
+            geometry = SectionGeometry.model_validate(geometry)
+        except Exception:
+            geometry = None
+    area_mm2 = 0.0
+    notes: list[str] = []
+    if isinstance(geometry, SectionGeometry):
+        try:
+            area_mm2 = max(float(summarize_geometry(geometry).area_mm2), 0.0)
+        except Exception as exc:
+            notes.append(f"Precast gross area could not be summarized: {exc}")
+    else:
+        notes.append("Section geometry is missing; automatic girder self-weight cannot be generated.")
+    params = _beam_uls_get_state_value(state, "section_parameters", {})
+    deck_t_mm = 0.0
+    if isinstance(params, Mapping):
+        deck_t_mm = max(_beam_uls_float(params.get("Tslab_mm")), 0.0)
+    demand = build_construction_uls_demand(
+        system=system,
+        settings=settings,
+        precast_area_mm2=area_mm2,
+        deck_thickness_mm=deck_t_mm,
+    )
+    extra: list[float] = []
+    try:
+        extra = station_candidates_from_debonding(
+            _beam_uls_get_state_value(state, "girder_strand_layout_table"),
+            system.span_length_m,
+        )
+    except Exception:
+        extra = []
+    station_df = pd.DataFrame(
+        construction_uls_station_rows(demand, extra_stations_m=extra, divisions=40),
+        columns=BEAM_ULS_LOAD_COLUMNS_ANALYSIS,
+    )
+    notes.extend(str(item) for item in demand.warnings)
+    return demand, station_df, notes
+
+
+def _beam_uls_construction_flexure_hash(
+    state: Mapping[str, object],
+    construction_df: pd.DataFrame,
+    *,
+    strength_route: BeamGirderUlsStrengthRoute,
+) -> str:
+    return _beam_uls_cache_input_hash(state, construction_df, strength_route=strength_route)
+
+
+def _beam_uls_construction_governing_cards(demand: object, preview_df: pd.DataFrame | None) -> list[dict[str, object]]:
+    gov = _beam_uls_governing_flexure_preview_row(preview_df)
+    demand_status = str(getattr(demand, "status", "REVIEW"))
+    factors_ready = bool(getattr(demand, "factors_ready", False))
+    if gov is None:
+        flex_status = "NOT CALCULATED" if getattr(demand, "acceptance_ready", False) else demand_status
+        mu_value = "-"
+        cap_value = "-"
+        dc_value = "-"
+        detail = "Run Construction Flexure after the factor gate is ready."
+    else:
+        raw_status = str(gov.get("Status") or "REVIEW")
+        flex_status = raw_status if getattr(demand, "acceptance_ready", False) else "REVIEW"
+        mu_value = str(gov.get("Demand") or "-")
+        cap_value = str(gov.get("Capacity") or "-")
+        dc_value = str(gov.get("Utilization") or "-")
+        detail = f"{gov.get('Case', '-')} @ x={gov.get('Governing x', '-')}"
+    status_style = "danger" if flex_status == "FAIL" else ("ready" if flex_status == "PASS" else "warning")
+    factor_detail = str(getattr(getattr(demand, "settings", None), "factor_basis", "Project-defined construction ULS factors"))
+    return [
+        {"title": "Construction flexure", "value": flex_status, "detail": "Noncomposite precast girder", "status": status_style, "strong": True},
+        {"title": "Governing Mu / D/C", "value": f"{mu_value} · {dc_value}" if dc_value != "-" else mu_value, "detail": detail, "status": "info"},
+        {"title": "φMn, precast", "value": cap_value, "detail": "Construction-stage effective prestress force", "status": "info"},
+        {"title": "ULS factor gate", "value": "CONFIRMED" if factors_ready else "REVIEW", "detail": factor_detail, "status": "ready" if factors_ready else "warning", "strong": True},
+    ]
+
+
+def _render_beam_girder_final_composite_flexure_guard(active_df: pd.DataFrame, *, code_label: str) -> None:
+    """Guard the final composite flexure route until a two-concrete-region ULS solver exists."""
+
+    st.markdown("#### Final Composite Flexure — imported FEA demand")
+    st.warning(
+        "FINAL COMPOSITE FLEXURE — REVIEW REQUIRED. The current shared PMM section engine has one concrete material region and must not be used to credit the CIP deck as a composite compression flange when girder and deck concrete strengths differ. "
+        "The imported FEA Strength demand is shown below, but φMn,composite is intentionally not fabricated in this milestone."
+    )
+    if active_df.empty:
+        st.warning("No active Final Composite ULS station rows are available in Loads.")
+        return
+    governing = _beam_uls_governing_action(active_df, "Mux")
+    cards = [
+        {"title": "Final Composite status", "value": "REVIEW REQUIRED", "detail": "Composite φMn solver not yet certified", "status": "warning", "strong": True},
+        {"title": "Governing imported Mu", "value": _format_beam_uls_demand(governing["demand"], "kN-m") if governing else "-", "detail": f"{governing['case']} @ x={_format_beam_uls_x(governing['x_m'])}" if governing else "No finite Mux", "status": "info"},
+        {"title": "Resistance section", "value": "I-Girder + effective CIP deck", "detail": "required final route", "status": "neutral"},
+        {"title": "Composite action gate", "value": "INTERFACE SHEAR PENDING", "detail": "girder–deck interface check remains separate", "status": "warning"},
+    ]
+    _render_analysis_summary_strip(cards, columns=4)
+    _render_beam_uls_static_plotly_figure(
+        _make_beam_uls_demand_figure(
+            active_df,
+            column="Mux",
+            title=f"Final Composite Flexure — Strength ULS<br><sup>{code_label}</sup>",
+            y_label="Moment, Mu (kN-m)",
+        )
+    )
+    st.caption(
+        "Demand = verified final FEA strength resultants. Capacity remains REVIEW until the composite ULS solver uses the effective CIP deck with its own concrete strength and the girder–deck interface shear gate is implemented."
+    )
+
+
 def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> None:
     """Render compact ULS demand/flexure-check workspace for Bridge/Building Beam/Girder.
 
@@ -10956,6 +11107,18 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
     workflow_label = strength_route.workflow_label
     code_label = strength_route.display_code_label
     source_label = strength_route.uls_load_source_label
+    is_precast_composite_bridge = _beam_uls_is_precast_composite_bridge(st.session_state, is_bridge=is_bridge)
+    if is_precast_composite_bridge:
+        legacy_cache = st.session_state.get(_BEAM_ULS_MANUAL_CALC_CACHE_KEY)
+        if isinstance(legacy_cache, dict) and "Flexure" in legacy_cache:
+            legacy_cache = dict(legacy_cache)
+            legacy_cache.pop("Flexure", None)
+            st.session_state[_BEAM_ULS_MANUAL_CALC_CACHE_KEY] = legacy_cache
+    construction_demand = None
+    construction_df = pd.DataFrame(columns=BEAM_ULS_LOAD_COLUMNS_ANALYSIS)
+    construction_notes: list[str] = []
+    if is_precast_composite_bridge:
+        construction_demand, construction_df, construction_notes = _beam_uls_construction_demand_from_state(st.session_state)
 
     st.markdown(_ANALYSIS_DASHBOARD_CSS, unsafe_allow_html=True)
     st.markdown("### ULS Beam/Girder decision summary")
@@ -10969,21 +11132,28 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             "- Torsion uses the CODE2 strength/detailing gate for φTn, longitudinal Al, closed-hoop spacing, and zone coverage.\n"
             "- Combined V+T remains a separate interaction gate; final detailing, anchorage, development length, and project-specific exceptions remain engineering-review items."
         )
+        if is_precast_composite_bridge:
+            st.markdown(
+                "- Precast Composite Girder flexure is stage-separated: Construction = auto-generated noncomposite demand vs precast girder capacity; Final = imported FEA demand vs composite girder capacity. "
+                "This milestone intentionally blocks final composite φMn until a two-concrete-region strength solver and interface-shear gate are implemented."
+            )
 
     active_df = _active_beam_uls_demand_dataframe_from_session(st.session_state)
 
     basis_cards = [
         {"title": "Workflow", "value": workflow_label, "detail": "Selected in Setup", "status": "info"},
         {"title": "Strength route", "value": code_label, "detail": strength_route.flexure_engine_label, "status": "info"},
-        {"title": "ULS source", "value": "Loads page", "detail": source_label, "status": "info"},
+        {"title": "ULS source", "value": "Auto Construction + Loads FEA" if is_precast_composite_bridge else "Loads page", "detail": "stage-separated flexure demand" if is_precast_composite_bridge else source_label, "status": "info"},
         {"title": "Shear route", "value": strength_route.shear_engine_label, "detail": "Strength/detailing gate", "status": "info"},
         {"title": "Torsion route", "value": strength_route.torsion_engine_label, "detail": "Strength/detailing gate", "status": "info"},
     ]
     _render_analysis_summary_strip(basis_cards, columns=5)
 
-    if active_df.empty:
+    if active_df.empty and not is_precast_composite_bridge:
         st.warning("No Active Beam/Girder ULS station demand rows are available. Define or import them in Loads before ULS review.")
         return
+    if active_df.empty and is_precast_composite_bridge:
+        st.info("No active Final Composite ULS FEA rows are available yet. Construction Flexure can still be reviewed from the automatic noncomposite demand route.")
 
     _beam_uls_sync_source_tables_for_analysis(st.session_state)
 
@@ -10995,6 +11165,108 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
         help="The selected ULS check is not calculated until you press Calculate. This prevents Flexure/Shear/Torsion from running on every rerun.",
     )
     selected_check = str(selected_check_raw) if selected_check_raw in BEAM_ULS_CHECK_TAB_LABELS else BEAM_ULS_CHECK_TAB_LABELS[0]
+
+    if is_precast_composite_bridge and selected_check == "Flexure":
+        flexure_stage = st.radio(
+            "Flexure stage",
+            ["Construction — Noncomposite", "Final — Composite"],
+            horizontal=True,
+            key="beam_girder_composite_flexure_stage",
+            help="Construction uses the precast girder only and automatic construction demand. Final uses imported FEA Strength demand and requires composite section resistance.",
+        )
+        if flexure_stage == "Final — Composite":
+            _render_beam_girder_final_composite_flexure_guard(active_df, code_label=code_label)
+            with st.expander("Final Composite ULS demand table — audit / source data", expanded=False):
+                if active_df.empty:
+                    st.info("No active final FEA strength rows are available.")
+                else:
+                    st.dataframe(_beam_uls_audit_dataframe(active_df), use_container_width=True, hide_index=True)
+            return
+
+        assert construction_demand is not None
+        st.markdown("#### Construction Flexure — automatic noncomposite demand")
+        st.caption(
+            "Demand is generated from Loads → Construction ULS settings. Resistance uses the precast I-Girder only; wet deck and temporary loads are load effects and receive no composite strength credit."
+        )
+        component_df = pd.DataFrame(construction_demand.component_rows())
+        st.dataframe(component_df, use_container_width=True, hide_index=True)
+        factor_basis = str(getattr(getattr(construction_demand, "settings", None), "factor_basis", "Project-defined construction ULS factors"))
+        prep_cards = [
+            {"title": "Demand route", "value": "AUTO · NONCOMPOSITE", "detail": f"simple span L={getattr(construction_demand, 'span_length_m', 0.0):.3f} m", "status": "info"},
+            {"title": "Factored line load", "value": f"{getattr(construction_demand, 'factored_total_kN_m', 0.0):.3f} kN/m", "detail": "component factors applied", "status": "info"},
+            {"title": "Factor gate", "value": "CONFIRMED" if getattr(construction_demand, 'factors_ready', False) else "REVIEW", "detail": factor_basis, "status": "ready" if getattr(construction_demand, 'factors_ready', False) else "warning", "strong": True},
+            {"title": "Section resisting", "value": "PRECAST I-GIRDER", "detail": "CIP deck strength excluded", "status": "neutral"},
+        ]
+        _render_analysis_summary_strip(prep_cards, columns=4)
+        for note in construction_notes:
+            st.warning(note)
+        if construction_df.empty:
+            st.error("Construction ULS demand is not available. Resolve the Construction support/load settings in Loads.")
+            return
+
+        construction_hash = _beam_uls_construction_flexure_hash(
+            st.session_state, construction_df, strength_route=strength_route
+        )
+        construction_check_name = "Flexure — Construction"
+        construction_entry = _beam_uls_current_cached_result(st.session_state, construction_check_name, construction_hash)
+        run_cols = st.columns([3.6, 1.25])
+        with run_cols[0]:
+            st.markdown(_beam_uls_command_panel_html(construction_check_name, construction_entry), unsafe_allow_html=True)
+        with run_cols[1]:
+            st.caption("Primary action")
+            run_construction = st.button(
+                "Calculate Construction Flexure",
+                key="beam_girder_uls_calculate_construction_flexure",
+                type="primary",
+                use_container_width=True,
+                disabled=not bool(getattr(construction_demand, "structural_route_ready", False)),
+                help="Runs noncomposite precast-girder flexure using Construction-stage effective prestress force. PASS/FAIL remains REVIEW until the project ULS factors are engineer-confirmed.",
+            )
+        if run_construction:
+            preview_df, preview_messages = _beam_uls_flexure_preview_dataframe(
+                st.session_state,
+                construction_df,
+                strength_route=strength_route,
+                prestress_force_stage="construction",
+            )
+            construction_entry = _beam_uls_store_manual_result(
+                st.session_state,
+                construction_check_name,
+                input_hash=construction_hash,
+                result={
+                    "flexure_preview_df": preview_df,
+                    "flexure_preview_messages": list(preview_messages),
+                    "stage": "Construction — Noncomposite",
+                    "demand_status": getattr(construction_demand, "status", "REVIEW"),
+                    "factors_confirmed": bool(getattr(construction_demand, "factors_ready", False)),
+                },
+            )
+        preview_df = _beam_uls_cached_dataframe(construction_entry, "flexure_preview_df")
+        preview_messages = _beam_uls_cached_messages(construction_entry, "flexure_preview_messages")
+        _render_analysis_summary_strip(_beam_uls_construction_governing_cards(construction_demand, preview_df), columns=4)
+        _render_beam_uls_static_plotly_figure(
+            _make_beam_uls_flexure_preview_figure(construction_df, preview_df, code_label=f"{code_label} · Construction noncomposite")
+        )
+        st.caption(
+            "Construction demand is automatic. φMn is the precast section-strength curve using station-dependent strand participation and Construction-stage effective prestress force. "
+            "If the factor gate is not confirmed, D/C is visible for audit but the engineering status remains REVIEW rather than PASS/FAIL."
+        )
+        with st.expander("Construction flexure strength audit / benchmark output", expanded=False):
+            audit_df = _beam_uls_flexure_audit_dataframe(preview_df)
+            if audit_df.empty:
+                st.info("Run Construction Flexure to populate the noncomposite capacity audit.")
+            else:
+                st.dataframe(audit_df, use_container_width=True, hide_index=True)
+        with st.expander("Construction ULS demand audit", expanded=False):
+            st.dataframe(_beam_uls_audit_dataframe(construction_df), use_container_width=True, hide_index=True)
+            if preview_messages:
+                st.caption("Flexure notes: " + " | ".join(preview_messages[:8]))
+        return
+
+    if active_df.empty:
+        st.warning("This ULS check requires active final/imported station resultants in Loads.")
+        return
+
     uls_input_hash = _beam_uls_cache_input_hash(
         st.session_state,
         active_df,
@@ -27574,6 +27846,13 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
         st.session_state["analysis_status"] = "RESPONSE" if is_transfer else str(result.get("status") or "REVIEW")
         cached = result
         cache_current = True
+        # D30: the commercial dashboard cards are rendered before this active
+        # stage body.  Rerun once after storing the stage-owned result so the
+        # top Runtime state is rebuilt from the new current fingerprint/result
+        # instead of showing the previous interaction for one render cycle.
+        rerun = getattr(st, "rerun", None)
+        if callable(rerun):
+            rerun()
 
     if is_transfer:
         _render_analysis_summary_strip(
@@ -27802,6 +28081,46 @@ def render_report_qa_page() -> None:
     _render_runtime_diagnostics_expander()
 
 
+def _crossbeam_sls_deflection_dashboard_state(session_state: Mapping[str, Any]) -> tuple[str, str, str]:
+    """Return active-stage Deflection/Camber status from its current fingerprint.
+
+    The Analysis dashboard is rendered before the stage workspace.  It must not
+    reuse the global ``analysis_status`` value because that value may still
+    describe the previously rendered criterion/stage during the same Streamlit
+    interaction.  This helper derives the visible status directly from the
+    active stage, its current preparation fingerprint, and its stage-owned
+    cached result.
+    """
+
+    active_label = str(session_state.get("_nav_crossbeam_sls_deflection_stage") or "At Transfer")
+    stage = "Final service stage" if active_label == "At Final Service" else "Transfer stage"
+    is_transfer = stage == "Transfer stage"
+    result_key, hash_key = _crossbeam_sls_deflection_stage_cache_keys(stage)
+
+    try:
+        preparation = build_crossbeam_deflection_stage_preparation(session_state, stage)
+    except Exception:
+        return "REVIEW", f"{active_label} preparation requires review", "warning"
+
+    cached = session_state.get(result_key)
+    cached_hash = str(session_state.get(hash_key) or "")
+    cache_current = isinstance(cached, Mapping) and cached_hash == preparation.fingerprint
+
+    if cache_current:
+        if is_transfer:
+            return "RESPONSE", "At Transfer current stage-owned response", "info"
+        status = str(cached.get("status") or "REVIEW").upper()
+        style = "danger" if status == "FAIL" else ("ready" if status == "PASS" else "warning")
+        return status, "At Final Service current stage-owned result", style
+
+    if isinstance(cached, Mapping):
+        return "STALE", f"{active_label} stored result does not match current inputs", "warning"
+    if preparation.ready:
+        value = "READY TO REVIEW" if is_transfer else "READY TO CHECK"
+        return value, f"{active_label} source ready; no current stored result", "info"
+    return "BLOCKED", f"{active_label} displacement source requires action", "danger"
+
+
 def _commercial_analysis_dashboard_cards(settings: AnalysisModeSettings, active_subpage: str) -> list[dict[str, object]]:
     """Return visual-only dashboard cards for the Analysis workspace."""
 
@@ -27816,6 +28135,7 @@ def _commercial_analysis_dashboard_cards(settings: AnalysisModeSettings, active_
     else:
         route = "Building girder"
     readiness = st.session_state.get("analysis_status", "Ready to review")
+    status_style = "info"
     if is_portal_frame_crossbeam_workflow(settings) and active_subpage == "ULS Strength":
         status_title = "Result mode"
         readiness = "ON-DEMAND"
@@ -27823,6 +28143,9 @@ def _commercial_analysis_dashboard_cards(settings: AnalysisModeSettings, active_
     elif is_portal_frame_crossbeam_workflow(settings) and active_subpage == "SLS / Stress & Cracking":
         status_title = "SLS check status"
         status_detail = "Current stored Transfer/Final engineering result; solver runtime is separate"
+    elif is_portal_frame_crossbeam_workflow(settings) and active_subpage == "SLS Deflection / Camber":
+        status_title = "Runtime state"
+        readiness, status_detail, status_style = _crossbeam_sls_deflection_dashboard_state(st.session_state)
     else:
         status_title = "Runtime state"
         status_detail = "Displayed status only; solver routing is unchanged"
@@ -27830,7 +28153,7 @@ def _commercial_analysis_dashboard_cards(settings: AnalysisModeSettings, active_
         {"title": "Active review", "value": active_subpage, "detail": "Only the selected analysis workspace is rendered", "status": "info"},
         {"title": "Workflow", "value": workflow_label, "detail": route, "status": "ready"},
         {"title": "Design code", "value": str(code), "detail": "Project code basis", "status": "neutral"},
-        {"title": status_title, "value": str(readiness), "detail": status_detail, "status": "info"},
+        {"title": status_title, "value": str(readiness), "detail": status_detail, "status": status_style},
     ]
 
 
