@@ -1590,11 +1590,16 @@ def _render_concrete_material_assignment(preset: dict[str, Any]) -> dict[str, An
         deck_index = _material_select_index(material_names, deck_name, fallback_index=min(1, len(material_names) - 1))
         if deck_name not in material_map:
             st.session_state["deck_topping_material_name"] = material_names[deck_index]
+        is_bridge_i_girder_composite = _is_parametric_i_girder(preset) and is_bridge_beam_girder_workflow(_analysis_mode_from_session_state())
         selected_deck = st.selectbox(
             "Deck / topping concrete material",
             material_names,
             index=deck_index,
-            help="Used for Edeck, modular ratio n, and transformed-width metadata only in this milestone.",
+            help=(
+                "Used for transformed composite properties and Bridge I-Girder Final Composite ULS flexure."
+                if is_bridge_i_girder_composite
+                else "Used for Edeck, modular ratio n, and transformed-width metadata only in this workflow."
+            ),
             key="deck_topping_material_name",
         )
         deck_material = material_map[selected_deck]
@@ -1615,15 +1620,22 @@ def _render_concrete_material_assignment(preset: dict[str, Any]) -> dict[str, An
                     ("Primary material", f"{selected_primary} | f'c {primary_material.fc_MPa:g} MPa | Ec {_format_ec(primary_material.effective_Ec_MPa)}"),
                     ("Deck/topping material", f"{selected_deck} | f'c {deck_material.fc_MPa:g} MPa | Ec {_format_ec(deck_material.effective_Ec_MPa)}"),
                     ("n = Edeck/Ebeam", _format_float(n_ratio, 3)),
-                    ("Composite scope", "Metadata only; slab/topping is not merged into gross properties or PMM"),
+                    (
+                        "Composite scope",
+                        "Analysis-only Final ULS composite strength + transformed properties"
+                        if is_bridge_i_girder_composite
+                        else "Metadata only; slab/topping is not merged into gross properties or PMM",
+                    ),
                 ]
             ),
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<div class="cpmm-section-note">Deck/topping material is used for composite metadata and transformed-width '
-            "calculation only in this milestone. Composite slab/topping is not yet merged into gross section properties "
-            "or PMM solver.</div>",
+            (
+                '<div class="cpmm-section-note">The project gross polygon remains the precast I-Girder. For Bridge Precast I-Girder Final Composite ULS, Analysis builds an analysis-only effective deck compression flange from Tslab, Be, and this deck concrete strength; project geometry is not mutated.</div>'
+                if is_bridge_i_girder_composite
+                else '<div class="cpmm-section-note">Deck/topping material is used for composite metadata and transformed-width calculation only in this workflow. Composite slab/topping is not merged into the project gross section polygon.</div>'
+            ),
             unsafe_allow_html=True,
         )
     else:
@@ -2387,9 +2399,9 @@ def _render_effective_width_candidates(result: EffectiveWidthResult) -> None:
 def _render_effective_width_helper(preset: dict[str, Any], params: dict[str, Any]) -> dict[str, Any]:
     """Render AASHTO.BE1 effective slab-width controls and return metadata.
 
-    The returned Be is used only for composite metadata/transformed-section
-    display in the current milestone.  It does not modify PMM, prestress, rebar,
-    load, or report calculations.
+    The returned Be feeds transformed-section display. For Bridge Precast
+    I-Girders it may also feed the analysis-only Final Composite ULS section,
+    subject to an explicit engineer verification gate when helper-calculated.
     """
 
     if not _is_composite_capable_preset(preset):
@@ -2404,10 +2416,9 @@ def _render_effective_width_helper(preset: dict[str, Any], params: dict[str, Any
 
     st.markdown("##### Effective Slab Width Helper")
     st.markdown(
-        '<div class="cpmm-section-note">AASHTO.BE1 adds a transparent effective slab-width helper for composite metadata. '
-        "Manual Be remains available; calculated Be is not used by PMM or prestress solvers. "
-        "The precast top contact width b<sub>top</sub> is auto-calculated from the selected section geometry, "
-        "with manual override available only under Advanced effective-width override.</div>",
+        '<div class="cpmm-section-note">AASHTO.BE1 provides a transparent preliminary effective slab-width helper. '
+        "Manual Be remains available. For Bridge Precast I-Girder Final Composite ULS, the preliminary helper Be remains REVIEW-only; use Manual for the project-verified strength-design effective width. "
+        "The precast top contact width b<sub>top</sub> is auto-calculated from the selected section geometry, with manual override available only under Advanced effective-width override.</div>",
         unsafe_allow_html=True,
     )
 
@@ -2423,6 +2434,17 @@ def _render_effective_width_helper(preset: dict[str, Any], params: dict[str, Any
     params["Be_mode"] = mode
     params["Be_manual_mm"] = manual_be
     params["Be_top_w_auto_mm"] = auto_top_width
+    if _is_parametric_i_girder(preset) and is_bridge_beam_girder_workflow(_analysis_mode_from_session_state()):
+        # The current AASHTO.BE1 helper is intentionally preliminary rather than
+        # a certified Article 4.6.2.6 implementation. Keep helper-calculated Be
+        # review-only for Final Composite ULS. A Manual Be is treated as the
+        # engineer/project-defined strength input.
+        params["Be_strength_verified"] = mode != "AASHTO helper"
+        if mode == "AASHTO helper":
+            st.caption(
+                "Strength-use gate: preliminary helper Be remains REVIEW for Final Composite ULS. "
+                "Select Manual and enter the project-verified effective width to enable a numerical section PASS."
+            )
     params["Be_top_w_mm"] = auto_top_width
     params["Be_top_w_source"] = "Auto from section geometry"
 
@@ -2551,7 +2573,13 @@ def _render_effective_width_helper(preset: dict[str, Any], params: dict[str, Any
     params["girder_spacing_mm"] = spacing
     params["deck_overhang_mm"] = overhang if position == "exterior" else 0.0
     st.markdown(_property_strip_html([
-        SectionMetric("Calculated Be", f"{_format_float(calculated_be, 1)} mm", "Used for transformed composite metadata only", "ready", True),
+        SectionMetric(
+            "Calculated Be",
+            f"{_format_float(calculated_be, 1)} mm",
+            "Final Composite ULS input when explicitly verified" if _is_parametric_i_girder(preset) and is_bridge_beam_girder_workflow(_analysis_mode_from_session_state()) else "Used for transformed composite metadata",
+            "ready",
+            True,
+        ),
         SectionMetric("Governing limit", result.governing_limit, "Review before design use", "info"),
         SectionMetric("b_top used", f"{_format_float(top_width_used, 1)} mm", top_width_source, "neutral"),
         SectionMetric("Manual Be kept", f"{_format_float(manual_be, 1)} mm", "Available by switching mode to Manual", "neutral"),
@@ -2565,16 +2593,21 @@ def _render_precast_composite_girder_metadata_inputs(preset: dict[str, Any]) -> 
     """Render explicit deck/topping metadata for precast composite girder presets.
 
     These values are not part of the precast girder polygon generator. They are
-    stored in section_parameters only for display-only transformed composite
-    properties and Beam/Girder SLS service-basis routing.
+    stored in section_parameters for transformed composite properties and staged
+    Beam/Girder routing; Bridge Precast I-Girders also use them to build an
+    analysis-only Final Composite ULS section.
     """
 
     preset_key = str(preset.get("key", "precast_girder"))
     display_name = str(preset.get("display_name", "Precast girder"))
     st.markdown("##### Composite Deck / Topping Metadata")
+    is_bridge_i_girder_composite = _is_parametric_i_girder(preset) and is_bridge_beam_girder_workflow(_analysis_mode_from_session_state())
     st.markdown(
-        f'<div class="cpmm-section-note">{display_name} deck/topping metadata is explicit and display-only. '
-        "It is not merged into the precast polygon and is not used by PMM, prestress, or report logic.</div>",
+        (
+            f'<div class="cpmm-section-note">{display_name} keeps the precast polygon as project geometry. Tslab and Be are used for transformed properties and for an analysis-only effective CIP deck flange in Bridge Final Composite ULS flexure.</div>'
+            if is_bridge_i_girder_composite
+            else f'<div class="cpmm-section-note">{display_name} deck/topping metadata remains separate from the precast project polygon and is used by the applicable transformed/staged workflows.</div>'
+        ),
         unsafe_allow_html=True,
     )
     defaults = _precast_composite_girder_metadata_defaults(preset)
@@ -2603,6 +2636,165 @@ def _render_precast_composite_girder_metadata_inputs(preset: dict[str, Any]) -> 
             help_text="Manual effective width. AASHTO.BE1 helper can calculate Be below when selected.",
         )
     return {"Tslab_mm": tslab, "Be_mm": be, "girder_length_mm": girder_length}
+
+
+def _render_i_girder_deck_longitudinal_rebar_inputs(preset: dict[str, Any]) -> dict[str, Any]:
+    """Render optional longitudinal deck-rebar inputs for Final Composite +Mux strength.
+
+    IGIRDER.ULS3 keeps deck rebar excluded from positive Mn by default.  When
+    explicitly enabled, each layer is entered by bar diameter, spacing, and
+    cover; the Analysis workspace converts the layer to equivalent As over Be
+    for uniaxial composite flexure.
+    """
+
+    if not _is_parametric_i_girder(preset) or not is_bridge_beam_girder_workflow(_analysis_mode_from_session_state()):
+        return {}
+
+    preset_key = str(preset.get("key", "parametric_i_girder"))
+    st.markdown("##### Composite Deck Longitudinal Reinforcement")
+    st.markdown(
+        '<div class="cpmm-section-note">Used only by Bridge Precast I-Girder Final Composite longitudinal flexure. '
+        'The conservative default is to exclude deck longitudinal reinforcement from positive Mn. '
+        'Transverse deck bars are not part of the girder longitudinal flexure model.</div>',
+        unsafe_allow_html=True,
+    )
+
+    credit_key = f"{preset_key}_deck_long_rebar_credit_positive_mn"
+    credit_default = _durable_bool_default(
+        "deck_long_rebar_credit_positive_mn",
+        preset_key,
+        bool(st.session_state.get(credit_key, False)),
+    )
+    st.session_state.setdefault(credit_key, credit_default)
+    credit = bool(
+        st.checkbox(
+            "Credit deck longitudinal reinforcement in positive composite Mn",
+            value=bool(st.session_state.get(credit_key, credit_default)),
+            key=credit_key,
+            help=(
+                "Default OFF is conservative for typical simply supported positive flexure. "
+                "Enable only when the project deck longitudinal reinforcement is defined and intended to contribute to longitudinal girder strength."
+            ),
+        )
+    )
+
+    material_cols = st.columns(2)
+    with material_cols[0]:
+        fy = _render_metadata_number_input(
+            name="deck_long_rebar_fy_MPa",
+            label="Deck longitudinal rebar fy (MPa)",
+            preset_key=preset_key,
+            default=400.0,
+            min_value=100.0,
+            max_value=1000.0,
+            step=10.0,
+            help_text="Yield strength used only if deck longitudinal rebar credit is enabled.",
+        )
+    with material_cols[1]:
+        es = _render_metadata_number_input(
+            name="deck_long_rebar_Es_MPa",
+            label="Deck longitudinal rebar Es (MPa)",
+            preset_key=preset_key,
+            default=200000.0,
+            min_value=100000.0,
+            max_value=250000.0,
+            step=5000.0,
+            help_text="Elastic modulus used for strain compatibility.",
+        )
+
+    st.caption("Enter 0 mm bar diameter to leave a layer undefined. Cover is measured to the bar surface.")
+    top_cols = st.columns(3)
+    with top_cols[0]:
+        top_dia = _render_metadata_number_input(
+            name="deck_long_rebar_top_diameter_mm",
+            label="Top longitudinal bar dia. (mm)",
+            preset_key=preset_key,
+            default=0.0,
+            min_value=0.0,
+            max_value=80.0,
+            step=1.0,
+            help_text="0 = top longitudinal layer not defined.",
+        )
+    with top_cols[1]:
+        top_spacing = _render_metadata_number_input(
+            name="deck_long_rebar_top_spacing_mm",
+            label="Top longitudinal spacing (mm)",
+            preset_key=preset_key,
+            default=200.0,
+            min_value=25.0,
+            max_value=1000.0,
+            step=10.0,
+            help_text="Spacing of bars running parallel to the girder, distributed across the effective deck width.",
+        )
+    with top_cols[2]:
+        top_cover = _render_metadata_number_input(
+            name="deck_long_rebar_top_cover_mm",
+            label="Top cover (mm)",
+            preset_key=preset_key,
+            default=50.0,
+            min_value=0.0,
+            max_value=500.0,
+            step=5.0,
+            help_text="Clear cover from deck top surface to bar surface.",
+        )
+
+    bottom_cols = st.columns(3)
+    with bottom_cols[0]:
+        bottom_dia = _render_metadata_number_input(
+            name="deck_long_rebar_bottom_diameter_mm",
+            label="Bottom longitudinal bar dia. (mm)",
+            preset_key=preset_key,
+            default=0.0,
+            min_value=0.0,
+            max_value=80.0,
+            step=1.0,
+            help_text="0 = bottom longitudinal layer not defined.",
+        )
+    with bottom_cols[1]:
+        bottom_spacing = _render_metadata_number_input(
+            name="deck_long_rebar_bottom_spacing_mm",
+            label="Bottom longitudinal spacing (mm)",
+            preset_key=preset_key,
+            default=200.0,
+            min_value=25.0,
+            max_value=1000.0,
+            step=10.0,
+            help_text="Spacing of bars running parallel to the girder, distributed across the effective deck width.",
+        )
+    with bottom_cols[2]:
+        bottom_cover = _render_metadata_number_input(
+            name="deck_long_rebar_bottom_cover_mm",
+            label="Bottom cover (mm)",
+            preset_key=preset_key,
+            default=50.0,
+            min_value=0.0,
+            max_value=500.0,
+            step=5.0,
+            help_text="Clear cover from deck bottom surface to bar surface.",
+        )
+
+    st.markdown(
+        _kv_panel_html(
+            [
+                ("Positive Mn deck-rebar credit", "Included" if credit else "Excluded — conservative default"),
+                ("Top longitudinal layer", f"DB{top_dia:g} @ {top_spacing:g} mm" if top_dia > 0 else "Not defined"),
+                ("Bottom longitudinal layer", f"DB{bottom_dia:g} @ {bottom_spacing:g} mm" if bottom_dia > 0 else "Not defined"),
+                ("Material", f"fy {fy:g} MPa · Es {es:g} MPa"),
+            ]
+        ),
+        unsafe_allow_html=True,
+    )
+    return {
+        "deck_long_rebar_credit_positive_mn": credit,
+        "deck_long_rebar_fy_MPa": fy,
+        "deck_long_rebar_Es_MPa": es,
+        "deck_long_rebar_top_diameter_mm": top_dia,
+        "deck_long_rebar_top_spacing_mm": top_spacing,
+        "deck_long_rebar_top_cover_mm": top_cover,
+        "deck_long_rebar_bottom_diameter_mm": bottom_dia,
+        "deck_long_rebar_bottom_spacing_mm": bottom_spacing,
+        "deck_long_rebar_bottom_cover_mm": bottom_cover,
+    }
 
 
 def _render_composite_metadata_panel(params: dict[str, Any], composite_active: bool) -> None:
@@ -2988,6 +3180,8 @@ def _render_geometry_parameters_workspace(
         if _composite_metadata_enabled_for_workflow(preset):
             params["Ebeam_MPa"] = float(material_assignment["Ebeam_MPa"])
             params["Edeck_MPa"] = float(material_assignment.get("Edeck_MPa", material_assignment["Ebeam_MPa"]))
+            params["girder_fc_MPa"] = float(material_assignment.get("primary_fc_MPa", 0.0) or 0.0)
+            params["deck_fc_MPa"] = float(material_assignment.get("deck_fc_MPa", material_assignment.get("primary_fc_MPa", 0.0)) or 0.0)
             if _is_parametric_i_girder(preset) or _is_precast_u_girder(preset) or _is_precast_box_beam(preset):
                 params.update(_render_precast_composite_girder_metadata_inputs(preset))
 
@@ -3004,6 +3198,9 @@ def _render_geometry_parameters_workspace(
                     unsafe_allow_html=True,
                 )
 
+            if _is_parametric_i_girder(preset) and is_bridge_beam_girder_workflow(_analysis_mode_from_session_state()):
+                params.update(_render_i_girder_deck_longitudinal_rebar_inputs(preset))
+
             composite_key = f"{preset['key']}_composite_enabled"
             composite_default = _durable_bool_default(
                 "composite_enabled",
@@ -3013,12 +3210,12 @@ def _render_geometry_parameters_workspace(
             st.session_state.setdefault(composite_key, composite_default)
             params["composite_enabled"] = bool(
                 st.checkbox(
-                    "Enable composite deck/topping transformed properties",
+                    "Enable composite deck / slab action",
                     value=bool(st.session_state.get(composite_key, composite_default)),
                     help=(
-                        "When enabled, Section Builder calculates transformed composite properties "
-                        "from Tslab, Be, Ebeam, and Edeck. The result remains separate from gross "
-                        "section properties and is not used by PMM in this milestone."
+                        "When enabled, Section Builder calculates transformed composite properties from Tslab, Be, Ebeam, and Edeck. "
+                        "For Bridge Precast I-Girder, the same Tslab/Be/deck material metadata also feeds Final Composite ULS flexure; "
+                        "the project precast gross polygon remains unchanged."
                     ),
                     key=composite_key,
                 )

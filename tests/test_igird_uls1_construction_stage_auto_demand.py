@@ -167,11 +167,12 @@ def test_ui_stage_separates_construction_noncomposite_and_final_composite_flexur
     assert 'prestress_force_stage="construction"' in ANALYSIS_SOURCE
 
 
-def test_final_composite_flexure_is_guarded_instead_of_reusing_precast_single_material_capacity() -> None:
-    assert "FINAL COMPOSITE FLEXURE — REVIEW REQUIRED" in ANALYSIS_SOURCE
-    assert "two-concrete-region strength solver" in ANALYSIS_SOURCE
-    assert "φMn,composite is intentionally not fabricated" in ANALYSIS_SOURCE
+def test_final_composite_flexure_does_not_reuse_precast_only_capacity_and_keeps_interface_gate() -> None:
+    assert "Calculate Final Composite Flexure" in ANALYSIS_SOURCE
+    assert "IGIRDER.ULS3.aashto-composite-flexure-capacity" in ANALYSIS_SOURCE
+    assert "use_aashto_solver=True" in ANALYSIS_SOURCE
     assert "INTERFACE SHEAR PENDING" in ANALYSIS_SOURCE
+    assert "Final effective prestress" in ANALYSIS_SOURCE
 
 
 def test_igird_uls1_scope_is_isolated_to_parametric_i_girder_not_all_composite_capable_presets() -> None:

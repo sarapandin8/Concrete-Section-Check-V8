@@ -89,7 +89,7 @@ from concrete_pmm_pro.analysis.crossbeam_sls_transfer import (
 )
 from concrete_pmm_pro.crossbeam.station_force_contract import canonical_sls_stage
 from concrete_pmm_pro.analysis.preflight import build_analysis_input_from_session_state, check_analysis_readiness
-from concrete_pmm_pro.analysis.pmm_solver import run_pmm_solver, run_rc_pmm_solver
+from concrete_pmm_pro.analysis.pmm_solver import run_aashto_lrfd_column_pmm_solver, run_pmm_solver, run_rc_pmm_solver
 from concrete_pmm_pro.analysis.prestress_checks import (
     PrestressCheckSummary,
     check_prestress_elements_for_analysis,
@@ -102,6 +102,7 @@ from concrete_pmm_pro.analysis.result_models import (
     pmm_result_to_display_dataframe,
     summarize_pmm_result,
 )
+from concrete_pmm_pro.analysis.igird_composite_flexure import prepare_aashto_composite_positive_flexure
 from concrete_pmm_pro.analysis.uls_strength_routing import (
     BeamGirderUlsStrengthRoute,
     beam_girder_uls_strength_route,
@@ -143,7 +144,7 @@ from concrete_pmm_pro.code_checks import (
 )
 from concrete_pmm_pro.core.aashto_units import inch_to_mm
 from concrete_pmm_pro.core.analysis import AnalysisInput, AnalysisModeSettings, AnalysisSettings
-from concrete_pmm_pro.core.models import ConcreteMaterial, LoadCase, PrestressElement, RebarMaterial, SectionGeometry
+from concrete_pmm_pro.core.models import ConcreteMaterial, LoadCase, PrestressElement, Rebar, RebarMaterial, SectionGeometry
 from concrete_pmm_pro.core.design_code import (
     PROJECT_CODE_AASHTO_LRFD,
     PROJECT_CODE_ACI318,
@@ -6165,6 +6166,7 @@ def _beam_uls_flexure_capacity_state_key(
     strength_route: BeamGirderUlsStrengthRoute,
     demand_kNm: float | None,
     capacity_direction: float | None = None,
+    solver_engine: str = "shared_rc",
 ) -> str:
     """Return a cache key for a detailed flexure section-capacity state.
 
@@ -6182,6 +6184,7 @@ def _beam_uls_flexure_capacity_state_key(
             "code": strength_route.display_code_label,
             "solver_code": strength_route.solver_code_label,
             "flexure_engine": strength_route.flexure_engine_label,
+            "solver_engine": str(solver_engine),
         },
         "load_direction": _beam_uls_load_capacity_direction_key(load_case, demand_kNm, capacity_direction),
         "section_geometry": _beam_uls_section_geometry_capacity_fingerprint(analysis_input.section_geometry),
@@ -6199,11 +6202,22 @@ def _beam_uls_solve_flexure_capacity_state(
     analysis_input: AnalysisInput,
     *,
     strength_route: BeamGirderUlsStrengthRoute,
+    use_aashto_solver: bool = False,
 ) -> dict[str, object]:
-    """Run the detailed flexure solver once for one capacity-state key."""
+    """Run the detailed flexure solver once for one capacity-state key.
+
+    ``use_aashto_solver`` is intentionally opt-in so already accepted generic
+    Beam/Girder and IGIRDER Construction results are not numerically changed.
+    IGIRDER.ULS3 uses the explicit AASHTO Section 5 stress-block engine for the
+    Final Composite positive-flexure section.
+    """
 
     try:
-        pmm_result = run_rc_pmm_solver(analysis_input)
+        pmm_result = (
+            run_aashto_lrfd_column_pmm_solver(analysis_input)
+            if use_aashto_solver
+            else run_rc_pmm_solver(analysis_input)
+        )
         summary = check_uls_demands_against_rc_pmm(pmm_result, analysis_input.load_cases)
         result = summary.results[0] if summary.results else None
     except Exception as exc:
@@ -6248,6 +6262,7 @@ def _beam_uls_flexure_preview_dataframe(
     is_building: bool | None = None,
     prestress_force_stage: str = "final",
     full_span_capacity: bool = False,
+    use_aashto_solver: bool = False,
 ) -> tuple[pd.DataFrame, list[str]]:
     """Return station-by-station flexure check rows using the routed ULS basis.
 
@@ -6439,13 +6454,18 @@ def _beam_uls_flexure_preview_dataframe(
             strength_route=strength_route,
             demand_kNm=demand,
             capacity_direction=capacity_direction,
+            solver_engine="aashto_section5" if use_aashto_solver else "shared_rc",
         )
         capacity_state = capacity_state_cache.get(capacity_state_key)
         cache_hit = capacity_state is not None
         if cache_hit:
             capacity_cache_hits += 1
         else:
-            capacity_state = _beam_uls_solve_flexure_capacity_state(analysis_input, strength_route=strength_route)
+            capacity_state = _beam_uls_solve_flexure_capacity_state(
+                analysis_input,
+                strength_route=strength_route,
+                use_aashto_solver=use_aashto_solver,
+            )
             capacity_state_cache[capacity_state_key] = capacity_state
             capacity_cache_misses += 1
 
@@ -11142,6 +11162,96 @@ def _beam_uls_construction_demand_from_state(
 
 # Supersedes IGIRDER.ULS2.full-span-physical-phiMn while preserving its full-span capacity semantics.
 _IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION = "IGIRDER.ULS2P.flexure-performance-optimization"
+_IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION = "IGIRDER.ULS3.aashto-composite-flexure-capacity"
+
+
+def _beam_uls_final_composite_preparation(
+    state: Mapping[str, object],
+) -> tuple[object, dict[str, object] | None, list[str]]:
+    """Build an analysis-only AASHTO composite +M state without mutating project geometry.
+
+    The project Section Builder keeps the precast I-Girder polygon as source of
+    truth.  IGIRDER.ULS3 temporarily unions the effective CIP deck rectangle
+    (Be × Tslab) for Final Composite flexure and uses the conservative AASHTO
+    uniform lower-f'c strength basis.
+    """
+
+    geometry = _beam_uls_get_state_value(state, "section_geometry")
+    concrete = _beam_uls_get_state_value(state, "concrete_material")
+    if isinstance(geometry, dict):
+        try:
+            geometry = SectionGeometry.model_validate(geometry)
+        except Exception:
+            geometry = None
+    if isinstance(concrete, dict):
+        try:
+            concrete = ConcreteMaterial.model_validate(concrete)
+        except Exception:
+            concrete = None
+    params_raw = _beam_uls_get_state_value(state, "section_parameters", {})
+    params = dict(params_raw) if isinstance(params_raw, Mapping) else {}
+    if _beam_uls_float(params.get("deck_fc_MPa")) <= 0.0:
+        deck_name = str(_beam_uls_get_state_value(state, "deck_topping_material_name", "") or "")
+        for material in list(_beam_uls_get_state_value(state, "concrete_materials", []) or []):
+            candidate = material
+            if isinstance(candidate, dict):
+                try:
+                    candidate = ConcreteMaterial.model_validate(candidate)
+                except Exception:
+                    continue
+            if isinstance(candidate, ConcreteMaterial) and str(candidate.name) == deck_name:
+                params["deck_fc_MPa"] = float(candidate.fc_MPa)
+                break
+
+    prep = prepare_aashto_composite_positive_flexure(
+        precast_geometry=geometry if isinstance(geometry, SectionGeometry) else None,
+        girder_concrete=concrete if isinstance(concrete, ConcreteMaterial) else None,
+        section_parameters=params,
+    )
+    messages = [*list(getattr(prep, "info", ()) or ()), *list(getattr(prep, "warnings", ()) or ())]
+    if not bool(params.get("composite_enabled", False)):
+        messages.append("Composite deck / slab action is not enabled in Section Builder.")
+        return prep, None, deduplicate_warnings(messages)
+    if not bool(getattr(prep, "ready", False)) or not isinstance(getattr(prep, "geometry", None), SectionGeometry):
+        return prep, None, deduplicate_warnings(messages)
+    if not isinstance(getattr(prep, "concrete_material", None), ConcreteMaterial):
+        return prep, None, deduplicate_warnings(messages)
+
+    composite_state = dict(state)
+    composite_state["section_geometry"] = prep.geometry
+    composite_state["concrete_material"] = prep.concrete_material
+
+    existing_rebars = list(_beam_uls_get_state_value(state, "rebars", []) or [])
+    if prep.deck_rebars:
+        existing_rebars.extend(list(prep.deck_rebars))
+    composite_state["rebars"] = existing_rebars
+
+    existing_rebar_materials = list(_beam_uls_get_state_value(state, "rebar_materials", []) or [])
+    if prep.deck_rebar_material is not None:
+        existing_rebar_materials = [
+            item
+            for item in existing_rebar_materials
+            if str(getattr(item, "name", "")) != str(prep.deck_rebar_material.name)
+        ]
+        existing_rebar_materials.append(prep.deck_rebar_material)
+    composite_state["rebar_materials"] = existing_rebar_materials
+    return prep, composite_state, deduplicate_warnings(messages)
+
+
+def _beam_uls_final_composite_flexure_hash(
+    state: Mapping[str, object],
+    supported_df: pd.DataFrame,
+    *,
+    strength_route: BeamGirderUlsStrengthRoute,
+) -> str:
+    return _beam_uls_hash_payload(
+        {
+            "result_version": _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION,
+            "engineering_input_hash": _beam_uls_cache_input_hash(
+                state, supported_df, strength_route=strength_route
+            ),
+        }
+    )
 
 
 def _beam_uls_construction_flexure_hash(
@@ -11191,36 +11301,261 @@ def _beam_uls_construction_governing_cards(demand: object, preview_df: pd.DataFr
     ]
 
 
-def _render_beam_girder_final_composite_flexure_guard(active_df: pd.DataFrame, *, code_label: str) -> None:
-    """Guard the final composite flexure route until a two-concrete-region ULS solver exists."""
+def _render_beam_girder_final_composite_flexure_guard(
+    active_df: pd.DataFrame,
+    *,
+    code_label: str,
+    strength_route: BeamGirderUlsStrengthRoute,
+) -> None:
+    """Run Final Composite +Mux section flexure and keep interface shear as a gate.
+
+    IGIRDER.ULS3 uses the AASHTO Section 5 strain-compatibility engine with an
+    analysis-only composite polygon (precast girder + effective CIP deck).  The
+    uniform concrete strength is the lower of girder/deck f'c, consistent with
+    the conservative composite-girder option in C5.6.2.2 / C5.6.3.2.6.
+
+    Current scope is positive longitudinal flexure. Negative-moment rows are not
+    certified here because they require continuity-region/deck longitudinal
+    tension-reinforcement design. Girder-deck interface shear remains a separate
+    acceptance gate: a numerically passing section therefore remains REVIEW
+    until composite action is verified.
+    """
 
     st.markdown("#### Final Composite Flexure — imported FEA demand")
-    st.warning(
-        "FINAL COMPOSITE FLEXURE — REVIEW REQUIRED. The current shared PMM section engine has one concrete material region and must not be used to credit the CIP deck as a composite compression flange when girder and deck concrete strengths differ. "
-        "The imported FEA Strength demand is shown below, but φMn,composite is intentionally not fabricated in this milestone."
+    st.caption(
+        "Demand = verified Final ULS FEA resultants. Resistance = precast I-Girder + effective CIP deck. "
+        "Current solver scope is positive longitudinal flexure; composite-action interface shear remains a separate acceptance gate."
     )
     if active_df.empty:
         st.warning("No active Final Composite ULS station rows are available in Loads.")
         return
-    governing = _beam_uls_governing_action(active_df, "Mux")
-    cards = [
-        {"title": "Final Composite status", "value": "REVIEW REQUIRED", "detail": "Composite φMn solver not yet certified", "status": "warning", "strong": True},
-        {"title": "Governing imported Mu", "value": _format_beam_uls_demand(governing["demand"], "kN-m") if governing else "-", "detail": f"{governing['case']} @ x={_format_beam_uls_x(governing['x_m'])}" if governing else "No finite Mux", "status": "info"},
-        {"title": "Resistance section", "value": "I-Girder + effective CIP deck", "detail": "required final route", "status": "neutral"},
-        {"title": "Composite action gate", "value": "INTERFACE SHEAR PENDING", "detail": "girder–deck interface check remains separate", "status": "warning"},
+
+    prep, composite_state, prep_messages = _beam_uls_final_composite_preparation(st.session_state)
+    mux = pd.to_numeric(active_df.get("Mux"), errors="coerce")
+    finite_mask = mux.notna()
+    positive_mask = finite_mask & (mux > _BEAM_ULS_DEMAND_TOL)
+    zero_mask = finite_mask & (mux.abs() <= _BEAM_ULS_DEMAND_TOL)
+    negative_mask = finite_mask & (mux < -_BEAM_ULS_DEMAND_TOL)
+    supported_df = active_df.loc[positive_mask | zero_mask].copy()
+    positive_count = int(positive_mask.sum())
+    negative_count = int(negative_mask.sum())
+
+    design_fc = _beam_uls_float(getattr(prep, "design_fc_MPa", float("nan")))
+    deck_fc = _beam_uls_float(getattr(prep, "deck_fc_MPa", float("nan")))
+    girder_fc = _beam_uls_float(getattr(prep, "girder_fc_MPa", float("nan")))
+    be_mm = _beam_uls_float(getattr(prep, "effective_width_mm", float("nan")))
+    tslab_mm = _beam_uls_float(getattr(prep, "deck_thickness_mm", float("nan")))
+    deck_rebar_credit = bool(getattr(prep, "deck_rebar_credit_enabled", False))
+    section_params = _beam_uls_get_state_value(st.session_state, "section_parameters", {})
+    if not isinstance(section_params, Mapping):
+        section_params = {}
+    be_mode = str(section_params.get("Be_mode") or "Manual")
+    be_strength_verified = bool(section_params.get("Be_strength_verified", True if be_mode != "AASHTO helper" else False))
+
+    prep_ready = composite_state is not None and positive_count > 0
+    prep_cards = [
+        {
+            "title": "Composite section",
+            "value": "READY" if composite_state is not None else "BLOCKED",
+            "detail": f"Be={be_mm:,.0f} mm · Tslab={tslab_mm:,.0f} mm" if math.isfinite(be_mm) and math.isfinite(tslab_mm) else "Check Section Builder",
+            "status": "ready" if composite_state is not None else "warning",
+            "strong": True,
+        },
+        {
+            "title": "AASHTO strength f'c",
+            "value": f"{design_fc:g} MPa" if math.isfinite(design_fc) and design_fc > 0.0 else "-",
+            "detail": f"lower of deck {deck_fc:g} / girder {girder_fc:g} MPa" if math.isfinite(deck_fc) and math.isfinite(girder_fc) else "conservative uniform-strength basis",
+            "status": "info",
+        },
+        {
+            "title": "Effective width basis",
+            "value": "CONFIRMED" if be_strength_verified else "REVIEW",
+            "detail": f"{be_mode} · Be={be_mm:,.0f} mm" if math.isfinite(be_mm) else be_mode,
+            "status": "ready" if be_strength_verified else "warning",
+            "strong": True,
+        },
+        {
+            "title": "Composite action gate",
+            "value": "INTERFACE SHEAR PENDING",
+            "detail": "section Mn can be calculated; final acceptance remains gated",
+            "status": "warning",
+            "strong": True,
+        },
     ]
-    _render_analysis_summary_strip(cards, columns=4)
-    _render_beam_uls_static_plotly_figure(
-        _make_beam_uls_demand_figure(
-            active_df,
-            column="Mux",
-            title=f"Final Composite Flexure — Strength ULS<br><sup>{code_label}</sup>",
-            y_label="Moment, Mu (kN-m)",
+    _render_analysis_summary_strip(prep_cards, columns=4)
+    for warning in list(getattr(prep, "warnings", ()) or ()):
+        st.warning(str(warning))
+
+    if negative_count:
+        st.warning(
+            f"{negative_count} active Final ULS row(s) have negative Mux. IGIRDER.ULS3 does not certify negative composite flexure; "
+            "continuity-region deck longitudinal tension reinforcement is a separate future check. Positive/zero Mux rows are evaluated below."
         )
+    if positive_count <= 0:
+        st.warning("No positive Final ULS Mux row is available for the current IGIRDER.ULS3 positive composite-flexure route.")
+        return
+    if composite_state is None:
+        st.error("Final Composite flexure is not ready. Resolve the Composite Deck / Slab inputs in Sections → Section Builder.")
+        for message in prep_messages:
+            st.warning(message)
+        return
+
+    final_hash = _beam_uls_final_composite_flexure_hash(
+        st.session_state,
+        supported_df,
+        strength_route=strength_route,
     )
-    st.caption(
-        "Demand = verified final FEA strength resultants. Capacity remains REVIEW until the composite ULS solver uses the effective CIP deck with its own concrete strength and the girder–deck interface shear gate is implemented."
-    )
+    check_name = "Flexure — Final Composite"
+    entry = _beam_uls_current_cached_result(st.session_state, check_name, final_hash)
+    run_cols = st.columns([3.6, 1.25])
+    with run_cols[0]:
+        st.markdown(_beam_uls_command_panel_html(check_name, entry), unsafe_allow_html=True)
+    with run_cols[1]:
+        st.caption("Primary action")
+        run_final = st.button(
+            "Calculate Final Composite Flexure",
+            key="beam_girder_uls_calculate_final_composite_flexure",
+            type="primary",
+            use_container_width=True,
+            disabled=not prep_ready,
+            help=(
+                "Runs AASHTO Section 5 positive composite flexure using the effective CIP deck and Final effective prestress force. "
+                "A passing section remains REVIEW until girder-deck interface shear is verified."
+            ),
+        )
+
+    if run_final:
+        preview_df, preview_messages = _beam_uls_flexure_preview_dataframe(
+            composite_state,
+            supported_df,
+            strength_route=strength_route,
+            prestress_force_stage="final",
+            full_span_capacity=True,
+            use_aashto_solver=True,
+        )
+        preview_messages = deduplicate_warnings(
+            [
+                "IGIRDER.ULS3 Final Composite positive flexure uses the AASHTO Section 5 strain-compatibility engine.",
+                f"Composite concrete strength basis = {design_fc:g} MPa (lower of deck/girder f'c).",
+                *prep_messages,
+                *preview_messages,
+                "Girder-deck interface shear is not included in section Mn and remains a separate acceptance gate.",
+            ]
+        )
+        entry = _beam_uls_store_manual_result(
+            st.session_state,
+            check_name,
+            input_hash=final_hash,
+            result={
+                "flexure_preview_df": preview_df,
+                "flexure_preview_messages": list(preview_messages),
+                "composite_design_fc_MPa": design_fc,
+                "deck_fc_MPa": deck_fc,
+                "girder_fc_MPa": girder_fc,
+                "Be_mm": be_mm,
+                "Tslab_mm": tslab_mm,
+                "deck_rebar_credit": deck_rebar_credit,
+                "Be_mode": be_mode,
+                "Be_strength_verified": be_strength_verified,
+                "interface_shear_status": "PENDING",
+                "negative_mux_rows_excluded": negative_count,
+                "result_version": _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION,
+            },
+        )
+
+    preview_df = _beam_uls_cached_dataframe(entry, "flexure_preview_df")
+    preview_messages = _beam_uls_cached_messages(entry, "flexure_preview_messages")
+    gov = _beam_uls_governing_flexure_preview_row(preview_df)
+    if gov is None:
+        section_status = "NOT CALCULATED"
+        final_status = "REVIEW"
+        mu_value = "-"
+        cap_value = "-"
+        dc_value = "-"
+        detail = "Calculate the current Final Composite flexure inputs."
+    else:
+        numerical_section_status = str(gov.get("Status") or "REVIEW")
+        if numerical_section_status == "FAIL":
+            section_status = "FAIL"
+        elif numerical_section_status == "PASS" and not be_strength_verified:
+            section_status = "REVIEW"
+        else:
+            section_status = numerical_section_status
+        final_status = "FAIL" if numerical_section_status == "FAIL" else "REVIEW"
+        mu_value = str(gov.get("Demand") or "-")
+        cap_value = str(gov.get("Capacity") or "-")
+        dc_value = str(gov.get("Utilization") or "-")
+        detail = f"{gov.get('Case', '-')} @ x={gov.get('Governing x', '-')}"
+        if numerical_section_status == "PASS" and not be_strength_verified:
+            detail += " · numerical PASS; helper-calculated Be not engineer-confirmed"
+
+    final_cards = [
+        {
+            "title": "Final Composite status",
+            "value": final_status,
+            "detail": "FAIL if section fails; otherwise REVIEW until interface shear is verified",
+            "status": "danger" if final_status == "FAIL" else "warning",
+            "strong": True,
+        },
+        {
+            "title": "Section flexure",
+            "value": section_status,
+            "detail": "AASHTO positive composite section strength",
+            "status": "danger" if section_status == "FAIL" else ("ready" if section_status == "PASS" else "warning"),
+            "strong": True,
+        },
+        {
+            "title": "Governing Mu / D/C",
+            "value": f"{mu_value} · {dc_value}" if dc_value != "-" else mu_value,
+            "detail": detail,
+            "status": "info",
+        },
+        {
+            "title": "φMn, composite",
+            "value": cap_value,
+            "detail": f"AASHTO φ=1.00 route · Final effective prestress" if cap_value != "-" else "not calculated",
+            "status": "info",
+        },
+    ]
+    _render_analysis_summary_strip(final_cards, columns=4)
+
+    if preview_df is None or preview_df.empty:
+        _render_beam_uls_browser_plotly_figure(
+            _make_beam_uls_demand_figure(
+                supported_df,
+                column="Mux",
+                title=f"Final Composite Flexure — Strength ULS<br><sup>{code_label}</sup>",
+                y_label="Moment, Mu (kN-m)",
+            ),
+            caption="Final Composite demand is ready; calculate the section to add the composite φMn capacity curve.",
+        )
+    else:
+        _render_beam_uls_browser_plotly_figure(
+            _make_beam_uls_flexure_preview_figure(
+                supported_df,
+                preview_df,
+                code_label=f"{code_label} · Final composite +M",
+            ),
+            caption=(
+                "Section flexure capacity uses the effective CIP deck and Final effective prestress. "
+                "A section PASS does not certify composite action until girder-deck interface shear is verified."
+            ),
+        )
+        with st.expander("Final Composite flexure strength audit / benchmark output", expanded=False):
+            audit_df = _beam_uls_flexure_audit_dataframe(preview_df)
+            st.dataframe(audit_df, use_container_width=True, hide_index=True)
+            if preview_messages:
+                st.caption("Final Composite flexure notes: " + " | ".join(preview_messages[:8]))
+
+    with st.expander("Composite flexure basis / limitations", expanded=False):
+        st.markdown(
+            f"- Effective CIP deck used in section strength: **Be = {be_mm:,.1f} mm**, **Tslab = {tslab_mm:,.1f} mm**.\n"
+            f"- Effective-width basis: **{be_mode}** · engineer-confirmed for strength = **{'Yes' if be_strength_verified else 'No'}**.\n"
+            f"- Concrete strength used for the analysis-only composite compression section: **f'c = {design_fc:g} MPa**, the lower of deck and girder concrete strengths.\n"
+            f"- Deck longitudinal reinforcement contribution to positive Mn: **{'included' if deck_rebar_credit else 'excluded'}**.\n"
+            "- Current milestone certifies positive section flexure only. Negative moment / continuity-region flexure is not certified here.\n"
+            "- Girder-deck interface shear remains a separate composite-action gate; no interface capacity is inferred from Mn."
+        )
 
 
 def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> None:
@@ -11266,7 +11601,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
         if is_precast_composite_bridge:
             st.markdown(
                 "- Precast Composite Girder flexure is stage-separated: Construction = auto-generated noncomposite demand vs precast girder capacity; Final = imported FEA demand vs composite girder capacity. "
-                "This milestone intentionally blocks final composite φMn until a two-concrete-region strength solver and interface-shear gate are implemented."
+                "Final positive composite φMn uses the AASHTO Section 5 conservative lower-f'c composite strength route; girder-deck interface shear remains a separate acceptance gate."
             )
 
     active_df = _active_beam_uls_demand_dataframe_from_session(st.session_state)
@@ -11306,7 +11641,9 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             help="Construction uses the precast girder only and automatic construction demand. Final uses imported FEA Strength demand and requires composite section resistance.",
         )
         if flexure_stage == "Final — Composite":
-            _render_beam_girder_final_composite_flexure_guard(active_df, code_label=code_label)
+            _render_beam_girder_final_composite_flexure_guard(
+                active_df, code_label=code_label, strength_route=strength_route
+            )
             with st.expander("Final Composite ULS demand table — audit / source data", expanded=False):
                 if active_df.empty:
                     st.info("No active final FEA strength rows are available.")

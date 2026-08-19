@@ -224,7 +224,7 @@ def test_uls_flex1_preview_engine_returns_phi_mn_for_simple_rc_section() -> None
 
     preview, messages = _beam_uls_flexure_preview_dataframe(state, active, code_label="ACI 318", is_building=True)
 
-    assert messages == []
+    assert messages == ["Nominal Mn reused the solved PMM point cloud; no duplicate neutral-axis sweep was run."]
     assert len(preview) == 1
     row = preview.iloc[0]
     assert row["Status"] in {"PASS", "FAIL"}
@@ -481,7 +481,7 @@ def test_uls_code_route1_analysis_uses_route_basis_notes_in_flexure_rows() -> No
 
     preview, messages = _beam_uls_flexure_preview_dataframe(state, active, strength_route=route)
 
-    assert messages == []
+    assert messages == ["Nominal Mn reused the solved PMM point cloud; no duplicate neutral-axis sweep was run."]
     assert len(preview) == 1
     notes = str(preview.iloc[0]["Notes"])
     assert "AASHTO LRFD flexure route" in notes
