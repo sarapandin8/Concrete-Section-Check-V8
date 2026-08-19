@@ -11523,6 +11523,13 @@ def _render_beam_girder_final_composite_flexure_guard(
                 "result_version": _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION,
             },
         )
+        # IGIRDER.ULS3B: the top dashboard is rendered before this stage body.
+        # Rerun once after storing the current stage-owned result so Runtime
+        # state is rebuilt from the new cache fingerprint in the same user
+        # interaction rather than lagging one render cycle.
+        rerun = getattr(st, "rerun", None)
+        if callable(rerun):
+            rerun()
 
     final_command_slot.markdown(
         _beam_uls_command_panel_html(check_name, entry),
@@ -11831,6 +11838,11 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                     "factors_confirmed": bool(getattr(construction_demand, "factors_ready", False)),
                 },
             )
+            # IGIRDER.ULS3B: refresh the dashboard card after persisting the
+            # current Construction-stage cache, matching the Final-stage rule.
+            rerun = getattr(st, "rerun", None)
+            if callable(rerun):
+                rerun()
         construction_command_slot.markdown(
             _beam_uls_command_panel_html(construction_check_name, construction_entry),
             unsafe_allow_html=True,
@@ -28716,6 +28728,101 @@ def _crossbeam_sls_deflection_dashboard_state(session_state: Mapping[str, Any]) 
     return "BLOCKED", f"{active_label} displacement source requires action", "danger"
 
 
+def _igird_composite_flexure_dashboard_state(session_state: Mapping[str, Any]) -> tuple[str, str, str]:
+    """Return the current Precast I-Girder ULS Flexure stage status.
+
+    IGIRDER.ULS3B mirrors the Crossbeam D30 status-ownership rule: the
+    commercial Analysis dashboard is rendered before the active ULS body, so
+    it must derive its status from the selected Flexure stage and the current
+    stage-specific cache fingerprint instead of the generic ``analysis_status``
+    value.  This helper performs preparation/hash work only; it never runs a
+    strength solver.
+    """
+
+    selected_check = str(session_state.get("beam_girder_uls_lazy_check") or "Flexure")
+    if selected_check != "Flexure":
+        return "ON-DEMAND", f"{selected_check} reports its engineering status in the active ULS workspace", "info"
+
+    strength_route = _beam_uls_strength_route_from_state(
+        session_state,
+        is_bridge=True,
+        is_building=False,
+    )
+    stage = str(session_state.get("beam_girder_composite_flexure_stage") or "Construction — Noncomposite")
+    cache = _beam_uls_manual_cache(session_state)
+
+    if stage == "Final — Composite":
+        active_df = _active_beam_uls_demand_dataframe_from_session(session_state)
+        if active_df.empty:
+            return "BLOCKED", "Final Composite ULS FEA demand is unavailable", "danger"
+        mux = pd.to_numeric(active_df.get("Mux"), errors="coerce")
+        finite_mask = mux.notna()
+        positive_mask = finite_mask & (mux > _BEAM_ULS_DEMAND_TOL)
+        zero_mask = finite_mask & (mux.abs() <= _BEAM_ULS_DEMAND_TOL)
+        supported_df = active_df.loc[positive_mask | zero_mask].copy()
+        if int(positive_mask.sum()) <= 0:
+            return "REVIEW", "Final Composite positive-flexure route has no positive Mux row", "warning"
+
+        input_hash = _beam_uls_final_composite_flexure_hash(
+            session_state,
+            supported_df,
+            strength_route=strength_route,
+        )
+        check_name = "Flexure — Final Composite"
+        current = _beam_uls_current_cached_result(session_state, check_name, input_hash)
+        if current is not None:
+            preview_df = _beam_uls_cached_dataframe(current, "flexure_preview_df")
+            gov = _beam_uls_governing_flexure_preview_row(preview_df)
+            if gov is None:
+                return "REVIEW", "Final Composite current cache has no governing flexure row", "warning"
+            numerical_status = str(gov.get("Status") or "REVIEW").upper()
+            if numerical_status == "FAIL":
+                return "FAIL", "Final Composite current section-flexure result fails", "danger"
+            be_verified = bool(current.get("Be_strength_verified", True))
+            if numerical_status != "PASS" or not be_verified:
+                return "REVIEW", "Final Composite section result requires engineering review", "warning"
+            interface_status = str(current.get("interface_shear_status") or "PENDING").upper()
+            if interface_status == "PASS":
+                return "PASS", "Final Composite section flexure and interface-shear gate are current", "ready"
+            return "REVIEW", "Final Composite section flexure passes; girder-deck interface shear is pending", "warning"
+
+        if isinstance(cache.get(check_name), Mapping):
+            return "STALE", "Final Composite stored result does not match current inputs", "warning"
+        prep, composite_state, _ = _beam_uls_final_composite_preparation(session_state)
+        if composite_state is not None and bool(getattr(prep, "ready", False)):
+            return "READY TO CHECK", "Final Composite demand and section are ready; no current stored result", "info"
+        return "BLOCKED", "Final Composite section preparation requires action", "danger"
+
+    demand, construction_df, _ = _beam_uls_construction_demand_from_state(session_state)
+    if construction_df.empty or not bool(getattr(demand, "structural_route_ready", False)):
+        return "BLOCKED", "Construction ULS noncomposite demand preparation requires action", "danger"
+
+    input_hash = _beam_uls_construction_flexure_hash(
+        session_state,
+        construction_df,
+        strength_route=strength_route,
+    )
+    check_name = "Flexure — Construction"
+    current = _beam_uls_current_cached_result(session_state, check_name, input_hash)
+    if current is not None:
+        preview_df = _beam_uls_cached_dataframe(current, "flexure_preview_df")
+        gov = _beam_uls_governing_flexure_preview_row(preview_df)
+        if gov is None:
+            return "REVIEW", "Construction current cache has no governing flexure row", "warning"
+        numerical_status = str(gov.get("Status") or "REVIEW").upper()
+        if numerical_status == "FAIL":
+            return "FAIL", "Construction noncomposite flexure fails for current inputs", "danger"
+        if numerical_status == "PASS" and bool(getattr(demand, "acceptance_ready", False)):
+            return "PASS", "Construction noncomposite flexure is current and project ULS factors are confirmed", "ready"
+        return "REVIEW", "Construction flexure is current but the project ULS factor gate is not confirmed", "warning"
+
+    if isinstance(cache.get(check_name), Mapping):
+        return "STALE", "Construction stored result does not match current inputs", "warning"
+    if bool(getattr(demand, "factors_ready", False)):
+        return "READY TO CHECK", "Construction demand is ready; no current stored flexure result", "info"
+    return "READY TO REVIEW", "Construction demand is ready; project ULS factors still require confirmation", "warning"
+
+
 def _commercial_analysis_dashboard_cards(settings: AnalysisModeSettings, active_subpage: str) -> list[dict[str, object]]:
     """Return visual-only dashboard cards for the Analysis workspace."""
 
@@ -28741,6 +28848,13 @@ def _commercial_analysis_dashboard_cards(settings: AnalysisModeSettings, active_
     elif is_portal_frame_crossbeam_workflow(settings) and active_subpage == "SLS Deflection / Camber":
         status_title = "Runtime state"
         readiness, status_detail, status_style = _crossbeam_sls_deflection_dashboard_state(st.session_state)
+    elif (
+        is_beam_girder_future_workflow(settings)
+        and active_subpage == "ULS Strength"
+        and _beam_uls_is_precast_composite_bridge(st.session_state, is_bridge=True)
+    ):
+        status_title = "Runtime state"
+        readiness, status_detail, status_style = _igird_composite_flexure_dashboard_state(st.session_state)
     else:
         status_title = "Runtime state"
         status_detail = "Displayed status only; solver routing is unchanged"
