@@ -6194,6 +6194,7 @@ def _beam_uls_flexure_preview_dataframe(
     code_label: str | None = None,
     is_building: bool | None = None,
     prestress_force_stage: str = "final",
+    full_span_capacity: bool = False,
 ) -> tuple[pd.DataFrame, list[str]]:
     """Return station-by-station flexure check rows using the routed ULS basis.
 
@@ -6250,26 +6251,36 @@ def _beam_uls_flexure_preview_dataframe(
     source_rows["__station_m"] = pd.to_numeric(source_rows["Station x (m)"], errors="coerce")
     source_rows["__mux_kNm"] = pd.to_numeric(source_rows["Mux"], errors="coerce")
     nonzero_rows = source_rows[source_rows["__mux_kNm"].abs() > _BEAM_ULS_DEMAND_TOL].copy()
-    if len(nonzero_rows.index) > _BEAM_ULS_FLEXURE_PREVIEW_MAX_ROWS:
-        messages.append(
-            f"Flexure check limited to the first {_BEAM_ULS_FLEXURE_PREVIEW_MAX_ROWS} nonzero Mux rows for responsiveness. Use envelope input for large imports."
-        )
-        nonzero_rows = nonzero_rows.head(_BEAM_ULS_FLEXURE_PREVIEW_MAX_ROWS)
-
+    finite_station_rows = source_rows[source_rows["__station_m"].notna() & source_rows["__mux_kNm"].notna()].copy()
     endpoint_rows = pd.DataFrame(columns=source_rows.columns)
-    finite_station_rows = source_rows[source_rows["__station_m"].notna()].copy()
-    if not finite_station_rows.empty:
-        end_stations = {float(finite_station_rows["__station_m"].min()), float(finite_station_rows["__station_m"].max())}
-        endpoint_rows = finite_station_rows[
-            finite_station_rows["__station_m"].map(lambda value: float(value) in end_stations)
-            & finite_station_rows["__mux_kNm"].notna()
-            & (finite_station_rows["__mux_kNm"].abs() <= _BEAM_ULS_DEMAND_TOL)
-            & ~finite_station_rows.index.isin(nonzero_rows.index)
-        ].copy()
-        if not endpoint_rows.empty:
+    if full_span_capacity:
+        # IGIRDER.ULS2: Construction-stage section capacity is a property of the
+        # station section/prestress state, not of whether Mu happens to be zero.
+        # Evaluate every finite station in the auto-generated full-span demand
+        # grid. The capacity-state cache keeps this inexpensive when the physical
+        # section state is unchanged along the member.
+        messages.append(
+            f"Full-span φMn capacity evaluated at {len(finite_station_rows.index)} station row(s); zero-demand stations retain physical section capacity with D/C not applicable."
+        )
+    else:
+        if len(nonzero_rows.index) > _BEAM_ULS_FLEXURE_PREVIEW_MAX_ROWS:
             messages.append(
-                "Zero-Mux end station(s) are plotted as φMn = 0 section-boundary points; endpoint D/C is not governing because demand is zero."
+                f"Flexure check limited to the first {_BEAM_ULS_FLEXURE_PREVIEW_MAX_ROWS} nonzero Mux rows for responsiveness. Use envelope input for large imports."
             )
+            nonzero_rows = nonzero_rows.head(_BEAM_ULS_FLEXURE_PREVIEW_MAX_ROWS)
+
+        if not finite_station_rows.empty:
+            end_stations = {float(finite_station_rows["__station_m"].min()), float(finite_station_rows["__station_m"].max())}
+            endpoint_rows = finite_station_rows[
+                finite_station_rows["__station_m"].map(lambda value: float(value) in end_stations)
+                & finite_station_rows["__mux_kNm"].notna()
+                & (finite_station_rows["__mux_kNm"].abs() <= _BEAM_ULS_DEMAND_TOL)
+                & ~finite_station_rows.index.isin(nonzero_rows.index)
+            ].copy()
+            if not endpoint_rows.empty:
+                messages.append(
+                    "Zero-Mux end station(s) are plotted as φMn = 0 section-boundary points; endpoint D/C is not governing because demand is zero."
+                )
 
     def _capacity_direction_for_zero_demand(row: Mapping[str, object]) -> float:
         row_case = str(row.get("Case Name") or "")
@@ -6289,7 +6300,10 @@ def _beam_uls_flexure_preview_dataframe(
                 return -1.0 if candidate_mu < 0.0 else 1.0
         return 1.0
 
-    demand_rows = pd.concat([nonzero_rows, endpoint_rows], axis=0).sort_values(["Case Name", "__station_m"], kind="stable")
+    if full_span_capacity:
+        demand_rows = finite_station_rows.sort_values(["Case Name", "__station_m"], kind="stable")
+    else:
+        demand_rows = pd.concat([nonzero_rows, endpoint_rows], axis=0).sort_values(["Case Name", "__station_m"], kind="stable")
     # PERF.FLEX1: keep the detailed strain-compatibility calculation, but solve
     # each unique capacity state only once.  Different station demand magnitudes
     # can share φMn when geometry/material/rebar/prestress state, bending sign,
@@ -6304,7 +6318,7 @@ def _beam_uls_flexure_preview_dataframe(
         case = str(demand_row.get("Case Name") or "-")
         zero_demand_endpoint = math.isfinite(demand) and abs(demand) <= _BEAM_ULS_DEMAND_TOL
         capacity_direction = _capacity_direction_for_zero_demand(demand_row) if zero_demand_endpoint else None
-        if zero_demand_endpoint:
+        if zero_demand_endpoint and not full_span_capacity:
             rows.append(
                 {
                     "Check": "Flexure",
@@ -6500,9 +6514,9 @@ def _beam_uls_flexure_preview_dataframe(
             display_demand = "0.00 kN-m"
             display_utilization = "-"
             utilization_value = float("nan")
-            method = "section boundary"
+            method = flexure_basis.method_label
             note_parts = [
-                "Zero-Mux endpoint included for full-span section-strength curve",
+                "Zero-demand station retains the physical section φMn for the full-span capacity curve",
                 "D/C is not applicable at zero demand",
                 "Development/detailing checks are separate from this section-strength curve",
             ]
@@ -6529,22 +6543,26 @@ def _beam_uls_flexure_preview_dataframe(
                 "Capacity kN-m": capacity_kNm,
                 "Utilization value": utilization_value,
                 "Capacity plot sign": capacity_direction if zero_demand_endpoint else (-1.0 if demand < 0.0 else 1.0),
-                "Capacity basis": flexure_basis.display_label if not zero_demand_endpoint else "diagram boundary",
-                "Route φ": flexure_basis.resistance_factor_text if not zero_demand_endpoint else "-",
+                "Capacity basis": flexure_basis.display_label,
+                "Route φ": flexure_basis.resistance_factor_text,
                 "Method": method,
-                "Mn nominal kN-m": nominal_capacity_kNm if not zero_demand_endpoint else float("nan"),
-                "φ value": route_phi_value if not zero_demand_endpoint else float("nan"),
+                "Mn nominal kN-m": nominal_capacity_kNm,
+                "φ value": route_phi_value,
                 "φMn kN-m": capacity_kNm,
                 "D/C value": utilization_value,
-                "Bending direction": _beam_uls_flexure_direction_label(demand),
-                "Tension face": _beam_uls_flexure_tension_face_label(demand),
-                "Code basis": flexure_basis.capacity_label if not zero_demand_endpoint else "diagram boundary",
-                "Strain compatibility basis": flexure_basis.strain_compatibility_basis if not zero_demand_endpoint else "diagram boundary",
-                "φ policy": flexure_basis.resistance_factor_policy if not zero_demand_endpoint else "-",
-                "Solver basis": flexure_basis.solver_audit_label if not zero_demand_endpoint else "diagram boundary",
-                "Material model scope": flexure_basis.material_model_scope if not zero_demand_endpoint else "-",
-                "Route": flexure_basis.route_label if not zero_demand_endpoint else "section boundary",
-                "Benchmark readiness": flexure_basis.benchmark_readiness_note if not zero_demand_endpoint else "Boundary point; not used for D/C",
+                "Bending direction": _beam_uls_flexure_direction_label(
+                    demand if not zero_demand_endpoint else (capacity_direction or 1.0)
+                ),
+                "Tension face": _beam_uls_flexure_tension_face_label(
+                    demand if not zero_demand_endpoint else (capacity_direction or 1.0)
+                ),
+                "Code basis": flexure_basis.capacity_label,
+                "Strain compatibility basis": flexure_basis.strain_compatibility_basis,
+                "φ policy": flexure_basis.resistance_factor_policy,
+                "Solver basis": flexure_basis.solver_audit_label,
+                "Material model scope": flexure_basis.material_model_scope,
+                "Route": flexure_basis.route_label,
+                "Benchmark readiness": flexure_basis.benchmark_readiness_note,
                 "Notes": "; ".join(note_parts),
             }
         )
@@ -11024,13 +11042,26 @@ def _beam_uls_construction_demand_from_state(
     return demand, station_df, notes
 
 
+_IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION = "IGIRDER.ULS2.full-span-physical-phiMn"
+
+
 def _beam_uls_construction_flexure_hash(
     state: Mapping[str, object],
     construction_df: pd.DataFrame,
     *,
     strength_route: BeamGirderUlsStrengthRoute,
 ) -> str:
-    return _beam_uls_cache_input_hash(state, construction_df, strength_route=strength_route)
+    # IGIRDER.ULS2 invalidates ULS1 construction-flexure cache entries because
+    # the stored preview previously truncated the capacity curve and fabricated
+    # φMn=0 boundary points at zero-demand supports.
+    return _beam_uls_hash_payload(
+        {
+            "result_version": _IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION,
+            "engineering_input_hash": _beam_uls_cache_input_hash(
+                state, construction_df, strength_route=strength_route
+            ),
+        }
+    )
 
 
 def _beam_uls_construction_governing_cards(demand: object, preview_df: pd.DataFrame | None) -> list[dict[str, object]]:
@@ -11228,6 +11259,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                 construction_df,
                 strength_route=strength_route,
                 prestress_force_stage="construction",
+                full_span_capacity=True,
             )
             construction_entry = _beam_uls_store_manual_result(
                 st.session_state,
@@ -11248,7 +11280,8 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             _make_beam_uls_flexure_preview_figure(construction_df, preview_df, code_label=f"{code_label} · Construction noncomposite")
         )
         st.caption(
-            "Construction demand is automatic. φMn is the precast section-strength curve using station-dependent strand participation and Construction-stage effective prestress force. "
+            "Construction demand is automatic. φMn is the full-span precast section-strength curve using station-dependent strand participation and Construction-stage effective prestress force. "
+            "Zero-demand support stations retain physical section capacity with D/C not applicable; φMn is not forced to zero for diagram boundaries. "
             "If the factor gate is not confirmed, D/C is visible for audit but the engineering status remains REVIEW rather than PASS/FAIL."
         )
         with st.expander("Construction flexure strength audit / benchmark output", expanded=False):
