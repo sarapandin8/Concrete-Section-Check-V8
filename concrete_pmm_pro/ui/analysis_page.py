@@ -10752,6 +10752,57 @@ def _make_beam_uls_demand_figure(active_df: pd.DataFrame, *, column: str, title:
 
 
 
+def _polish_igird_uls_flexure_legend(fig: go.Figure) -> go.Figure:
+    """Apply the accepted compact ULS legend language to I-Girder flexure charts.
+
+    IGIRDER.ULS3C is presentation-only: it shortens legend labels, keeps the
+    governing-demand marker annotated on the plot instead of repeating it in
+    the legend, and reserves a fixed amount of horizontal legend width so
+    labels cannot collide when Streamlit scales the chart. Engineering traces,
+    values, markers, and hover data are unchanged.
+    """
+
+    demand_traces = [
+        trace
+        for trace in list(fig.data)
+        if str(getattr(trace, "name", "") or "").startswith("Demand Mux")
+    ]
+    multiple_demand_cases = len(demand_traces) > 1
+    for trace in list(fig.data):
+        name = str(getattr(trace, "name", "") or "")
+        if name.startswith("Demand Mux"):
+            if multiple_demand_cases and "—" in name:
+                case_name = name.split("—", 1)[1].strip()
+                short_case = case_name if len(case_name) <= 18 else case_name[:17].rstrip() + "…"
+                trace.name = f"Demand Mux · {short_case}"
+            else:
+                trace.name = "Demand Mux"
+        elif name == "Governing demand":
+            # The point already carries an on-chart "Governing demand" label.
+            # Repeating it in a horizontal legend is redundant and was the
+            # main source of overlap beside the long demand-case label.
+            trace.name = "Gov. demand"
+            trace.showlegend = False
+        elif name == "Governing flexure check":
+            trace.name = "Gov. flexure"
+
+    fig.update_layout(
+        legend={
+            "orientation": "h",
+            "yanchor": "top",
+            "y": -0.20,
+            "xanchor": "center",
+            "x": 0.5,
+            "font": {"size": 10},
+            "itemsizing": "constant",
+            "entrywidth": 145,
+            "entrywidthmode": "pixels",
+        },
+        margin={"l": 82, "r": 42, "t": 86, "b": 126},
+    )
+    return fig
+
+
 def _make_beam_uls_flexure_preview_figure(active_df: pd.DataFrame, flexure_preview_df: pd.DataFrame | None, *, code_label: str) -> go.Figure:
     fig = _make_beam_uls_demand_figure(
         active_df,
@@ -11649,20 +11700,24 @@ def _render_beam_girder_final_composite_flexure_guard(
 
     if preview_df is None or preview_df.empty:
         _render_beam_uls_browser_plotly_figure(
-            _make_beam_uls_demand_figure(
-                supported_df,
-                column="Mux",
-                title=f"Final Composite Flexure — Strength ULS<br><sup>{code_label}</sup>",
-                y_label="Moment, Mu (kN-m)",
+            _polish_igird_uls_flexure_legend(
+                _make_beam_uls_demand_figure(
+                    supported_df,
+                    column="Mux",
+                    title=f"Final Composite Flexure — Strength ULS<br><sup>{code_label}</sup>",
+                    y_label="Moment, Mu (kN-m)",
+                )
             ),
             caption="Final Composite demand is ready; calculate the section to add the composite φMn capacity curve.",
         )
     else:
         _render_beam_uls_browser_plotly_figure(
-            _make_beam_uls_flexure_preview_figure(
-                supported_df,
-                preview_df,
-                code_label=f"{code_label} · Final composite +M",
+            _polish_igird_uls_flexure_legend(
+                _make_beam_uls_flexure_preview_figure(
+                    supported_df,
+                    preview_df,
+                    code_label=f"{code_label} · Final composite +M",
+                )
             ),
             caption=(
                 "Section flexure capacity uses the effective CIP deck and Final effective prestress. "
@@ -11851,7 +11906,13 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
         preview_messages = _beam_uls_cached_messages(construction_entry, "flexure_preview_messages")
         _render_analysis_summary_strip(_beam_uls_construction_governing_cards(construction_demand, preview_df), columns=4)
         _render_beam_uls_browser_plotly_figure(
-            _make_beam_uls_flexure_preview_figure(construction_df, preview_df, code_label=f"{code_label} · Construction noncomposite")
+            _polish_igird_uls_flexure_legend(
+                _make_beam_uls_flexure_preview_figure(
+                    construction_df,
+                    preview_df,
+                    code_label=f"{code_label} · Construction noncomposite",
+                )
+            )
         )
         st.caption(
             "Construction demand is automatic. φMn is the full-span precast section-strength curve using station-dependent strand participation and Construction-stage effective prestress force. "
