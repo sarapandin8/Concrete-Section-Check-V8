@@ -5899,12 +5899,62 @@ def _beam_uls_has_bonded_prestress(analysis_input: AnalysisInput | None) -> bool
     return False
 
 
-def _beam_uls_nominal_flexure_capacity_for_input(analysis_input: AnalysisInput) -> tuple[float | None, list[str]]:
-    """Return nominal Mn from the shared strain engine by temporarily removing φ.
+def _beam_uls_nominal_flexure_capacity_from_pmm(
+    pmm_result: PMMSolverResult,
+    load_cases: list[LoadCase],
+) -> tuple[float | None, list[str]]:
+    """Return nominal Mn from an already-solved PMM point cloud.
 
-    This is used only by code-specific layers that need to apply their own
-    workflow resistance factor above the common strain-compatibility section
-    response.
+    IGIRDER.ULS2P performance rule: the underlying section equilibrium is
+    independent of the resistance factor.  ``run_rc_pmm_solver`` already stores
+    both nominal ``Pn/Mn`` and reduced ``phiPn/phiMn`` on every PMM point.  Build
+    a lightweight nominal view of the *same* point cloud and rerun only the
+    directional interpolation; do not perform a second neutral-axis sweep with
+    ``use_phi_factor=False``.
+
+    This keeps the engineering result equivalent to the previous two-sweep
+    route while removing the dominant duplicate section-strain calculation for
+    AASHTO prestressed flexure, where the code layer requires nominal Mn.
+    """
+
+    messages: list[str] = []
+    try:
+        nominal_points = [
+            point.model_copy(
+                update={
+                    "phi": 1.0,
+                    "phiPn_N": float(point.Pn_N),
+                    "phiPn_capped_N": float(point.Pn_N),
+                    "phiMnx_Nmm": float(point.Mnx_Nmm),
+                    "phiMny_Nmm": float(point.Mny_Nmm),
+                    "strain_condition": "phi-not-applied",
+                }
+            )
+            for point in pmm_result.points
+        ]
+        nominal_pmm = PMMSolverResult(
+            points=nominal_points,
+            warnings=list(pmm_result.warnings),
+            info=[*list(pmm_result.info), "IGIRDER.ULS2P nominal-capacity view reused the solved PMM point cloud."],
+        )
+        nominal_summary = check_uls_demands_against_rc_pmm(nominal_pmm, load_cases)
+        nominal_result = nominal_summary.results[0] if nominal_summary.results else None
+    except Exception as exc:
+        return None, [f"Nominal flexure capacity interpolation failed: {exc}"]
+    if nominal_result is None or nominal_result.capacity_phiMn_Nmm is None:
+        return None, ["Nominal flexure capacity could not be interpolated from the solved PMM point cloud."]
+    if nominal_result.warning_count:
+        messages.append(f"Nominal-capacity interpolation carried {nominal_result.warning_count} warning(s).")
+    messages.append("Nominal Mn reused the solved PMM point cloud; no duplicate neutral-axis sweep was run.")
+    return float(nominal_result.capacity_phiMn_Nmm), messages
+
+
+def _beam_uls_nominal_flexure_capacity_for_input(analysis_input: AnalysisInput) -> tuple[float | None, list[str]]:
+    """Legacy two-sweep nominal-capacity helper retained for compatibility tests.
+
+    New Beam/Girder flexure capacity-state solves should use
+    :func:`_beam_uls_nominal_flexure_capacity_from_pmm` so nominal Mn is derived
+    from the already-solved point cloud instead of rerunning the PMM engine.
     """
 
     messages: list[str] = []
@@ -6165,7 +6215,10 @@ def _beam_uls_solve_flexure_capacity_state(
         strength_route,
         has_bonded_prestress=_beam_uls_has_bonded_prestress(analysis_input),
     )
-    nominal_capacity_nmm, nominal_messages = _beam_uls_nominal_flexure_capacity_for_input(analysis_input)
+    nominal_capacity_nmm, nominal_messages = _beam_uls_nominal_flexure_capacity_from_pmm(
+        pmm_result,
+        analysis_input.load_cases,
+    )
     routed_capacity_nmm, routed_basis_note = apply_flexure_code_basis(
         phi_capacity_nmm=float(result.capacity_phiMn_Nmm),
         nominal_capacity_nmm=nominal_capacity_nmm,
@@ -8857,6 +8910,51 @@ _BEAM_ULS_STATIC_FIG_WIDTH = 1440
 _BEAM_ULS_STATIC_FIG_HEIGHT = 560
 
 
+def _render_beam_uls_browser_plotly_figure(fig: go.Figure, *, caption: str | None = None) -> None:
+    """Render a wide Beam/Girder ULS engineering figure in the browser.
+
+    IGIRDER.ULS2P uses this route for the Construction Flexure workspace so a
+    normal Analysis rerun does not launch Kaleido and rasterize a 2880×1120 PNG
+    on the Streamlit server.  The chart remains static-looking (mode bar and
+    interaction are disabled) while Plotly rendering is delegated to the client.
+    Report/export workflows may continue to request raster figures explicitly.
+    """
+
+    apply_global_plot_readability(fig)
+    fig.update_layout(
+        autosize=True,
+        height=_BEAM_ULS_STATIC_FIG_HEIGHT,
+        margin=dict(l=82, r=42, t=86, b=116),
+        font=dict(size=12),
+        title_font=dict(size=18),
+        legend=dict(
+            font=dict(size=11),
+            orientation="h",
+            yanchor="top",
+            y=-0.18,
+            xanchor="center",
+            x=0.5,
+            itemwidth=62,
+            entrywidth=165,
+            entrywidthmode="pixels",
+        ),
+        hoverlabel=dict(font=dict(size=12)),
+    )
+    fig.update_xaxes(tickfont=dict(size=11), title_font=dict(size=13))
+    fig.update_yaxes(tickfont=dict(size=11), title_font=dict(size=13))
+    config = {
+        "displayModeBar": False,
+        "staticPlot": True,
+        "responsive": True,
+    }
+    try:
+        st.plotly_chart(fig, use_container_width=True, config=config)
+    except TypeError:  # compatibility with Streamlit variants that dropped use_container_width
+        st.plotly_chart(fig, width="stretch", config=config)
+    if caption:
+        st.caption(caption)
+
+
 def _render_beam_uls_static_plotly_figure(fig: go.Figure, *, caption: str | None = None) -> None:
     """Render Beam/Girder ULS diagrams as wide static PNG review figures.
 
@@ -11042,7 +11140,8 @@ def _beam_uls_construction_demand_from_state(
     return demand, station_df, notes
 
 
-_IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION = "IGIRDER.ULS2.full-span-physical-phiMn"
+# Supersedes IGIRDER.ULS2.full-span-physical-phiMn while preserving its full-span capacity semantics.
+_IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION = "IGIRDER.ULS2P.flexure-performance-optimization"
 
 
 def _beam_uls_construction_flexure_hash(
@@ -11051,9 +11150,10 @@ def _beam_uls_construction_flexure_hash(
     *,
     strength_route: BeamGirderUlsStrengthRoute,
 ) -> str:
-    # IGIRDER.ULS2 invalidates ULS1 construction-flexure cache entries because
-    # the stored preview previously truncated the capacity curve and fabricated
-    # φMn=0 boundary points at zero-demand supports.
+    # IGIRDER.ULS2P invalidates older Construction-Flexure cache entries so the
+    # stored audit reflects the single-sweep nominal-capacity route and the
+    # browser-rendered chart performance milestone as well as ULS2 full-span
+    # physical φMn semantics.
     return _beam_uls_hash_payload(
         {
             "result_version": _IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION,
@@ -11276,7 +11376,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
         preview_df = _beam_uls_cached_dataframe(construction_entry, "flexure_preview_df")
         preview_messages = _beam_uls_cached_messages(construction_entry, "flexure_preview_messages")
         _render_analysis_summary_strip(_beam_uls_construction_governing_cards(construction_demand, preview_df), columns=4)
-        _render_beam_uls_static_plotly_figure(
+        _render_beam_uls_browser_plotly_figure(
             _make_beam_uls_flexure_preview_figure(construction_df, preview_df, code_label=f"{code_label} · Construction noncomposite")
         )
         st.caption(
