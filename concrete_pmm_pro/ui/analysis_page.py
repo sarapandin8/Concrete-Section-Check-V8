@@ -6198,6 +6198,48 @@ def _beam_uls_flexure_capacity_state_key(
     return _beam_uls_hash_payload(payload)
 
 
+def _beam_uls_positive_mx_neutral_axis_from_pmm(
+    pmm_result: PMMSolverResult,
+    *,
+    Pu_N: float,
+) -> tuple[float, float] | None:
+    """Return (c_mm, theta_deg) for the +Mx uniaxial PMM slice at Pu.
+
+    The PMM solver defines the compression-face normal by ``theta``.  For the
+    app x-axis flexure sign convention, positive Mx has top-fibre compression,
+    so the audit state is the interpolated slice row closest to theta = +90°.
+    This helper is evidence-only; it does not modify capacity interpolation.
+    """
+
+    try:
+        pmm_df = pmm_result_to_display_dataframe(pmm_result)
+        if pmm_df.empty:
+            return None
+        slice_df = pmm_slice_at_pu(pmm_df, N_to_kN(float(Pu_N)))
+        if slice_df.empty or "theta_rad" not in slice_df.columns or "c_mm" not in slice_df.columns:
+            return None
+        working = slice_df.copy()
+        working["__theta"] = pd.to_numeric(working["theta_rad"], errors="coerce")
+        working["__c"] = pd.to_numeric(working["c_mm"], errors="coerce")
+        working["__mx"] = pd.to_numeric(working.get("phiMnx_kNm"), errors="coerce")
+        working = working[working["__theta"].notna() & working["__c"].notna() & (working["__mx"] > 0.0)].copy()
+        if working.empty:
+            return None
+
+        target = 0.5 * math.pi
+        working["__angle_diff"] = working["__theta"].map(
+            lambda theta: abs((float(theta) - target + math.pi) % (2.0 * math.pi) - math.pi)
+        )
+        row = working.sort_values(["__angle_diff", "__mx"], ascending=[True, False], kind="stable").iloc[0]
+        c_mm = float(row["__c"])
+        theta_deg = math.degrees(float(row["__theta"]))
+        if not (math.isfinite(c_mm) and c_mm > 0.0 and math.isfinite(theta_deg)):
+            return None
+        return c_mm, theta_deg
+    except Exception:
+        return None
+
+
 def _beam_uls_solve_flexure_capacity_state(
     analysis_input: AnalysisInput,
     *,
@@ -6240,6 +6282,13 @@ def _beam_uls_solve_flexure_capacity_state(
     )
     nominal_capacity_kNm = float(nominal_capacity_nmm) / 1_000_000.0 if nominal_capacity_nmm is not None and nominal_capacity_nmm > 0.0 else float("nan")
     route_phi_value = _beam_uls_effective_phi_value(routed_capacity_nmm, nominal_capacity_nmm)
+    neutral_axis = None
+    if use_aashto_solver:
+        load_case = analysis_input.load_cases[0] if analysis_input.load_cases else None
+        neutral_axis = _beam_uls_positive_mx_neutral_axis_from_pmm(
+            pmm_result,
+            Pu_N=float(getattr(load_case, "Pu_N", 0.0) or 0.0),
+        )
     return {
         "state": "ok",
         "result_warning_count": int(getattr(result, "warning_count", 0) or 0),
@@ -6250,6 +6299,8 @@ def _beam_uls_solve_flexure_capacity_state(
         "routed_capacity_nmm": routed_capacity_nmm,
         "routed_basis_note": routed_basis_note,
         "route_phi_value": route_phi_value,
+        "neutral_axis_c_mm": float(neutral_axis[0]) if neutral_axis is not None else float("nan"),
+        "neutral_axis_theta_deg": float(neutral_axis[1]) if neutral_axis is not None else float("nan"),
     }
 
 
@@ -6309,6 +6360,8 @@ def _beam_uls_flexure_preview_dataframe(
         "Material model scope",
         "Route",
         "Benchmark readiness",
+        "Neutral axis c mm",
+        "Neutral axis θ deg",
         "Notes",
     ]
     if active_df.empty:
@@ -6542,6 +6595,8 @@ def _beam_uls_flexure_preview_dataframe(
         routed_basis_note = str(capacity_state.get("routed_basis_note") or "")
         nominal_capacity_kNm = _beam_uls_float(capacity_state.get("nominal_capacity_kNm"))
         route_phi_value = _beam_uls_float(capacity_state.get("route_phi_value"))
+        neutral_axis_c_mm = _beam_uls_float(capacity_state.get("neutral_axis_c_mm"))
+        neutral_axis_theta_deg = _beam_uls_float(capacity_state.get("neutral_axis_theta_deg"))
         if routed_capacity_nmm is None or _beam_uls_float(routed_capacity_nmm) <= 0.0:
             rows.append(
                 {
@@ -6636,6 +6691,8 @@ def _beam_uls_flexure_preview_dataframe(
                 "Material model scope": flexure_basis.material_model_scope,
                 "Route": flexure_basis.route_label,
                 "Benchmark readiness": flexure_basis.benchmark_readiness_note,
+                "Neutral axis c mm": neutral_axis_c_mm,
+                "Neutral axis θ deg": neutral_axis_theta_deg,
                 "Notes": "; ".join(note_parts),
             }
         )
@@ -8876,6 +8933,8 @@ def _beam_uls_flexure_audit_dataframe(flexure_preview_df: pd.DataFrame | None) -
         "Solver basis",
         "Method",
         "Benchmark readiness",
+        "NA c",
+        "NA θ",
         "Notes",
     ]
     if flexure_preview_df is None or flexure_preview_df.empty:
@@ -8918,6 +8977,8 @@ def _beam_uls_flexure_audit_dataframe(flexure_preview_df: pd.DataFrame | None) -
                 "Solver basis": str(row.get("Solver basis") or "-"),
                 "Method": str(row.get("Method") or "-"),
                 "Benchmark readiness": str(row.get("Benchmark readiness") or "-"),
+                "NA c": _format_beam_uls_audit_number(row.get("Neutral axis c mm"), unit="mm"),
+                "NA θ": _format_beam_uls_audit_number(row.get("Neutral axis θ deg"), unit="°"),
                 "Notes": str(row.get("Notes") or ""),
             }
         )
@@ -11162,7 +11223,7 @@ def _beam_uls_construction_demand_from_state(
 
 # Supersedes IGIRDER.ULS2.full-span-physical-phiMn while preserving its full-span capacity semantics.
 _IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION = "IGIRDER.ULS2P.flexure-performance-optimization"
-_IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION = "IGIRDER.ULS3.aashto-composite-flexure-capacity"
+_IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION = "IGIRDER.ULS3A.composite-flexure-audit-closeout"
 
 
 def _beam_uls_final_composite_preparation(
@@ -11409,7 +11470,7 @@ def _render_beam_girder_final_composite_flexure_guard(
     entry = _beam_uls_current_cached_result(st.session_state, check_name, final_hash)
     run_cols = st.columns([3.6, 1.25])
     with run_cols[0]:
-        st.markdown(_beam_uls_command_panel_html(check_name, entry), unsafe_allow_html=True)
+        final_command_slot = st.empty()
     with run_cols[1]:
         st.caption("Primary action")
         run_final = st.button(
@@ -11435,7 +11496,7 @@ def _render_beam_girder_final_composite_flexure_guard(
         )
         preview_messages = deduplicate_warnings(
             [
-                "IGIRDER.ULS3 Final Composite positive flexure uses the AASHTO Section 5 strain-compatibility engine.",
+                "IGIRDER.ULS3A Final Composite positive flexure uses the AASHTO Section 5 strain-compatibility engine.",
                 f"Composite concrete strength basis = {design_fc:g} MPa (lower of deck/girder f'c).",
                 *prep_messages,
                 *preview_messages,
@@ -11463,6 +11524,10 @@ def _render_beam_girder_final_composite_flexure_guard(
             },
         )
 
+    final_command_slot.markdown(
+        _beam_uls_command_panel_html(check_name, entry),
+        unsafe_allow_html=True,
+    )
     preview_df = _beam_uls_cached_dataframe(entry, "flexure_preview_df")
     preview_messages = _beam_uls_cached_messages(entry, "flexure_preview_messages")
     gov = _beam_uls_governing_flexure_preview_row(preview_df)
@@ -11518,6 +11583,62 @@ def _render_beam_girder_final_composite_flexure_guard(
         },
     ]
     _render_analysis_summary_strip(final_cards, columns=4)
+
+    na_c_mm = _beam_uls_float(gov.get("Neutral axis c mm")) if isinstance(gov, Mapping) else float("nan")
+    na_theta_deg = _beam_uls_float(gov.get("Neutral axis θ deg")) if isinstance(gov, Mapping) else float("nan")
+    composite_depth_mm = float("nan")
+    if isinstance(getattr(prep, "geometry", None), SectionGeometry):
+        composite_summary = summarize_geometry(prep.geometry)
+        if composite_summary.y_min_mm is not None and composite_summary.y_max_mm is not None:
+            composite_depth_mm = float(composite_summary.y_max_mm) - float(composite_summary.y_min_mm)
+
+    if math.isfinite(na_c_mm) and na_c_mm > 0.0:
+        if na_c_mm <= tslab_mm + 1.0e-6:
+            na_region = "DECK"
+            article_value = "NOT REQUIRED"
+            article_detail = "NA remains within CIP deck; below-deck condition is not invoked"
+            article_style = "info"
+        elif math.isfinite(composite_depth_mm) and na_c_mm <= composite_depth_mm + 1.0e-6:
+            na_region = "PRECAST GIRDER"
+            article_value = "SATISFIED"
+            article_detail = "NA below deck and within prestressed girder"
+            article_style = "ready"
+        else:
+            na_region = "OUTSIDE SECTION"
+            article_value = "REVIEW"
+            article_detail = "NA audit falls below the composite section depth"
+            article_style = "warning"
+        na_value = f"c = {na_c_mm:,.1f} mm"
+        na_detail = f"{na_region} · compression-face θ={na_theta_deg:,.1f}°" if math.isfinite(na_theta_deg) else na_region
+    else:
+        na_value = "NOT CALCULATED"
+        na_detail = "Run current Final Composite flexure to populate NA evidence"
+        article_value = "NOT CALCULATED"
+        article_detail = "AASHTO 5.6.3.2.6 applicability evidence pending"
+        article_style = "warning"
+
+    deck_rebar_as = sum(float(getattr(item, "area_mm2", 0.0) or 0.0) for item in tuple(getattr(prep, "deck_rebars", ()) or ()))
+    if deck_rebar_credit and deck_rebar_as > 0.0:
+        deck_rebar_value = "INCLUDED"
+        deck_rebar_detail = f"Effective longitudinal As = {deck_rebar_as:,.1f} mm² over Be"
+        deck_rebar_style = "info"
+    elif deck_rebar_credit:
+        deck_rebar_value = "REVIEW"
+        deck_rebar_detail = "Credit requested, but no valid deck longitudinal layer is active"
+        deck_rebar_style = "warning"
+    else:
+        deck_rebar_value = "EXCLUDED"
+        deck_rebar_detail = "Conservative default · no deck longitudinal steel credit in +Mn"
+        deck_rebar_style = "ready"
+
+    _render_analysis_summary_strip(
+        [
+            {"title": "Neutral axis at governing section", "value": na_value, "detail": na_detail, "status": "info", "strong": True},
+            {"title": "AASHTO 5.6.3.2.6 applicability", "value": article_value, "detail": article_detail, "status": article_style, "strong": True},
+            {"title": "Deck longitudinal rebar credit", "value": deck_rebar_value, "detail": deck_rebar_detail, "status": deck_rebar_style, "strong": True},
+        ],
+        columns=3,
+    )
 
     if preview_df is None or preview_df.empty:
         _render_beam_uls_browser_plotly_figure(
@@ -11679,7 +11800,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
         construction_entry = _beam_uls_current_cached_result(st.session_state, construction_check_name, construction_hash)
         run_cols = st.columns([3.6, 1.25])
         with run_cols[0]:
-            st.markdown(_beam_uls_command_panel_html(construction_check_name, construction_entry), unsafe_allow_html=True)
+            construction_command_slot = st.empty()
         with run_cols[1]:
             st.caption("Primary action")
             run_construction = st.button(
@@ -11710,6 +11831,10 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                     "factors_confirmed": bool(getattr(construction_demand, "factors_ready", False)),
                 },
             )
+        construction_command_slot.markdown(
+            _beam_uls_command_panel_html(construction_check_name, construction_entry),
+            unsafe_allow_html=True,
+        )
         preview_df = _beam_uls_cached_dataframe(construction_entry, "flexure_preview_df")
         preview_messages = _beam_uls_cached_messages(construction_entry, "flexure_preview_messages")
         _render_analysis_summary_strip(_beam_uls_construction_governing_cards(construction_demand, preview_df), columns=4)

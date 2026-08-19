@@ -120,10 +120,14 @@ def test_uls3_ui_source_contains_final_composite_calculation_and_guards():
     analysis_source = (root / "concrete_pmm_pro" / "ui" / "analysis_page.py").read_text(encoding="utf-8")
     section_source = (root / "concrete_pmm_pro" / "ui" / "section_builder.py").read_text(encoding="utf-8")
 
-    assert "IGIRDER.ULS3.aashto-composite-flexure-capacity" in analysis_source
+    assert "IGIRDER.ULS3A.composite-flexure-audit-closeout" in analysis_source
     assert "Calculate Final Composite Flexure" in analysis_source
     assert "use_aashto_solver=True" in analysis_source
     assert "INTERFACE SHEAR PENDING" in analysis_source
+    assert "AASHTO 5.6.3.2.6 applicability" in analysis_source
+    assert "Deck longitudinal rebar credit" in analysis_source
+    assert "final_command_slot = st.empty()" in analysis_source
+    assert "construction_command_slot = st.empty()" in analysis_source
     assert "negative composite flexure" in analysis_source
     assert "Composite Deck Longitudinal Reinforcement" in section_source
     assert "Credit deck longitudinal reinforcement in positive composite Mn" in section_source
@@ -207,4 +211,7 @@ def test_uls3_final_composite_preview_returns_finite_positive_capacity_with_fina
     assert float(row["Capacity kN-m"]) > 0.0
     assert float(row["Mn nominal kN-m"]) > 0.0
     assert float(row["φ value"]) == pytest.approx(1.0)
+    assert math.isfinite(float(row["Neutral axis c mm"]))
+    assert float(row["Neutral axis c mm"]) > 0.0
+    assert float(row["Neutral axis θ deg"]) == pytest.approx(90.0, abs=1.0e-6)
     assert any("final effective prestress force" in note.casefold() for note in notes)
