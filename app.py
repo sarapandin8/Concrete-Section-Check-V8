@@ -4446,7 +4446,7 @@ def _results_beam_uls_cached_figure(state: object, check_name: str) -> go.Figure
         x_values = pd.Series(range(len(plot_df)), dtype="float64")
     fig = go.Figure()
     if check_name == "Flexure":
-        y_label = "Moment, Mu (kN-m)"
+        y_label = "Moment (kN-m)"
         _results_add_line_if_available(fig, plot_df, x_values, columns=["Demand kN-m", "Demand", "Mu kN-m"], name="Demand Mu")
         _results_add_line_if_available(fig, plot_df, x_values, columns=["Capacity kN-m", "Capacity", "φMn kN-m", "phiMn kN-m"], name="φMn", dash="dash")
     elif check_name == "Shear":

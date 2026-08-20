@@ -10808,7 +10808,7 @@ def _make_beam_uls_flexure_preview_figure(active_df: pd.DataFrame, flexure_previ
         active_df,
         column="Mux",
         title=f"Flexure Check — Strength ULS<br><sup>{code_label}</sup>",
-        y_label="Moment, Mu (kN-m)",
+        y_label="Moment (kN-m)",
     )
     if flexure_preview_df is None or flexure_preview_df.empty:
         fig.update_layout(title={"text": f"Flexure Check — Strength ULS<br><sup>{code_label} · demand only — φMn not ready</sup>"})
@@ -11705,7 +11705,7 @@ def _render_beam_girder_final_composite_flexure_guard(
                     supported_df,
                     column="Mux",
                     title=f"Final Composite Flexure — Strength ULS<br><sup>{code_label}</sup>",
-                    y_label="Moment, Mu (kN-m)",
+                    y_label="Moment (kN-m)",
                 )
             ),
             caption="Final Composite demand is ready; calculate the section to add the composite φMn capacity curve.",
