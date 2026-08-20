@@ -9042,9 +9042,12 @@ def _render_beam_uls_browser_plotly_figure(fig: go.Figure, *, caption: str | Non
         "responsive": True,
     }
     try:
-        st.plotly_chart(fig, use_container_width=True, config=config)
-    except TypeError:  # compatibility with Streamlit variants that dropped use_container_width
+        # Prefer the current Streamlit stretch contract.  In print/PDF review
+        # layouts the legacy use_container_width path can leave Plotly at its
+        # pre-sidebar width and clip the right-hand member stations.
         st.plotly_chart(fig, width="stretch", config=config)
+    except TypeError:  # compatibility with older Streamlit variants
+        st.plotly_chart(fig, use_container_width=True, config=config)
     if caption:
         st.caption(caption)
 
@@ -10717,7 +10720,15 @@ _BEAM_ULS_UTIL_LINE_STYLE = {
     "Transverse D/C value": _BEAM_ULS_UTIL_TRANSVERSE_LINE_STYLE,
     "Longitudinal D/C value": _BEAM_ULS_UTIL_LONGITUDINAL_LINE_STYLE,
 }
-def _make_beam_uls_demand_figure(active_df: pd.DataFrame, *, column: str, title: str, y_label: str) -> go.Figure:
+def _make_beam_uls_demand_figure(
+    active_df: pd.DataFrame,
+    *,
+    column: str,
+    title: str,
+    y_label: str,
+    governing_df: pd.DataFrame | None = None,
+    member_length_m: float | None = None,
+) -> go.Figure:
     plot_df = active_df[["Station x (m)", "Case Name", column]].copy()
     plot_df = plot_df[pd.to_numeric(plot_df["Station x (m)"], errors="coerce").notna()]
     plot_df = plot_df[pd.to_numeric(plot_df[column], errors="coerce").notna()]
@@ -10738,7 +10749,11 @@ def _make_beam_uls_demand_figure(active_df: pd.DataFrame, *, column: str, title:
                     hovertemplate="x=%{x:.3f} m<br>Demand=%{y:.3f}<extra></extra>",
                 )
             )
-        governing = _beam_uls_governing_action(plot_df.rename(columns={column: column}), column)
+        governing_source = governing_df if isinstance(governing_df, pd.DataFrame) and not governing_df.empty else active_df
+        governing_plot_df = governing_source[["Station x (m)", "Case Name", column]].copy()
+        governing_plot_df = governing_plot_df[pd.to_numeric(governing_plot_df["Station x (m)"], errors="coerce").notna()]
+        governing_plot_df = governing_plot_df[pd.to_numeric(governing_plot_df[column], errors="coerce").notna()]
+        governing = _beam_uls_governing_action(governing_plot_df, column)
         if governing is not None and float(governing["abs_demand"]) > _BEAM_ULS_DEMAND_TOL:
             fig.add_trace(
                 go.Scatter(
@@ -10761,6 +10776,10 @@ def _make_beam_uls_demand_figure(active_df: pd.DataFrame, *, column: str, title:
         height=_BEAM_ULS_STATIC_FIG_HEIGHT,
     )
     fig.add_hline(y=0.0, line_width=1)
+    if member_length_m is not None:
+        domain = _beam_uls_full_member_plot_range(active_df, member_length_m)
+        if domain is not None:
+            fig.update_xaxes(range=[domain[0], domain[1]])
     return fig
 
 
@@ -10816,12 +10835,21 @@ def _polish_igird_uls_flexure_legend(fig: go.Figure) -> go.Figure:
     return fig
 
 
-def _make_beam_uls_flexure_preview_figure(active_df: pd.DataFrame, flexure_preview_df: pd.DataFrame | None, *, code_label: str) -> go.Figure:
+def _make_beam_uls_flexure_preview_figure(
+    active_df: pd.DataFrame,
+    flexure_preview_df: pd.DataFrame | None,
+    *,
+    code_label: str,
+    governing_df: pd.DataFrame | None = None,
+    member_length_m: float | None = None,
+) -> go.Figure:
     fig = _make_beam_uls_demand_figure(
         active_df,
         column="Mux",
         title=f"Flexure Check — Strength ULS<br><sup>{code_label}</sup>",
         y_label="Moment (kN-m)",
+        governing_df=governing_df,
+        member_length_m=member_length_m,
     )
     if flexure_preview_df is None or flexure_preview_df.empty:
         fig.update_layout(title={"text": f"Flexure Check — Strength ULS<br><sup>{code_label} · demand only — φMn not ready</sup>"})
@@ -11045,6 +11073,51 @@ def _make_beam_uls_shear_capacity_figure(
     fig.update_yaxes(title_text="Shear, Vu (kN)", zeroline=True, zerolinewidth=1.5, zerolinecolor="rgba(15, 23, 42, 0.55)", showgrid=True, gridcolor="rgba(2, 6, 23, 0.08)")
     return fig
 
+
+
+def _beam_uls_full_member_plot_range(
+    active_df: pd.DataFrame | None,
+    member_length_m: float | None,
+) -> tuple[float, float] | None:
+    """Return a display domain that always exposes the complete physical member.
+
+    IGIRDER.ULS4A uses this on browser-rendered span diagrams so a narrow
+    Analysis column or print/PDF layout cannot make a 20 m member look like it
+    stops at the last visible 14 m station.  Imported stations outside the
+    configured span are still exposed rather than clipped, preserving QA
+    visibility of source-data errors.
+    """
+
+    stations = pd.Series(dtype=float)
+    if isinstance(active_df, pd.DataFrame) and not active_df.empty and "Station x (m)" in active_df.columns:
+        stations = pd.to_numeric(active_df.get("Station x (m)"), errors="coerce").dropna()
+    finite = [float(value) for value in stations.tolist() if math.isfinite(float(value))]
+    span = _beam_uls_float(member_length_m)
+    candidates_min = [0.0, *finite]
+    candidates_max = [0.0, *finite]
+    if math.isfinite(span) and span > 0.0:
+        candidates_max.append(float(span))
+    x_min = min(candidates_min) if candidates_min else 0.0
+    x_max = max(candidates_max) if candidates_max else 0.0
+    if not math.isfinite(x_min) or not math.isfinite(x_max) or x_max <= x_min + 1.0e-9:
+        return None
+    return float(x_min), float(x_max)
+
+
+def _igird_interface_source_dataframe(active_df: pd.DataFrame | None) -> pd.DataFrame:
+    """Return Final ULS rows owned by the interface-shear gate.
+
+    Interface transfer is driven by Vuy and must not be truncated by the +Mux
+    scope guard used by the positive-flexure solver.  Keep every finite station
+    row so the interface gate remains full-span even when a load case contains
+    negative-moment stations.
+    """
+
+    if active_df is None or active_df.empty:
+        return pd.DataFrame(columns=list(active_df.columns) if isinstance(active_df, pd.DataFrame) else [])
+    df = active_df.copy()
+    station = pd.to_numeric(df.get("Station x (m)"), errors="coerce")
+    return df.loc[station.notna()].copy()
 
 
 def _beam_uls_active_station_domain(active_df: pd.DataFrame | None) -> tuple[float, float] | None:
@@ -11292,7 +11365,7 @@ _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION = "IGIRDER.ULS3A.composite-flexu
 
 _IGIRDER_INTERFACE_SHEAR_SETTINGS_KEY = "beam_girder_interface_shear_settings"
 _IGIRDER_INTERFACE_SHEAR_CHECK_NAME = "Interface Shear — Final Composite"
-_IGIRDER_INTERFACE_SHEAR_RESULT_VERSION = "IGIRDER.ULS4.aashto-interface-shear-si"
+_IGIRDER_INTERFACE_SHEAR_RESULT_VERSION = "IGIRDER.ULS4A.full-span-audit-clarity"
 # Legacy ULS3 source-test/status token retained for backward compatibility: INTERFACE SHEAR PENDING
 _IGIRDER_INTERFACE_WIDTH_AUTO = "Auto — I-Girder top flange B1"
 _IGIRDER_INTERFACE_WIDTH_MANUAL = "Manual override"
@@ -11524,6 +11597,16 @@ def _igird_interface_shear_dataframe(
         strength_dc = vui / vri if math.isfinite(vui) and math.isfinite(vri) and vri > 0.0 else float("nan")
         avf_min = _beam_uls_float(minimum.get("Avf_min_required_mm2_per_m"))
         min_dc = avf_min / avf_credit if math.isfinite(avf_min) and avf_min > 0.0 and avf_credit > 0.0 else (0.0 if math.isfinite(avf_min) and avf_min <= 1.0e-9 else float("nan"))
+        avf_min_eq = _beam_uls_float(minimum.get("Avf_min_eq_mm2_per_m"))
+        avf_min_133 = _beam_uls_float(minimum.get("Avf_min_1p33_mm2_per_m"))
+        if math.isfinite(avf_min) and avf_min <= 1.0e-9 and math.isfinite(avf_min_133) and avf_min_133 <= 1.0e-9:
+            minimum_basis = "1.33Vui/phi cap satisfied by cohesion"
+        elif math.isfinite(avf_min) and math.isfinite(avf_min_eq) and abs(avf_min - avf_min_eq) <= 1.0e-6:
+            minimum_basis = "AASHTO 5.7.4.2 minimum equation"
+        elif math.isfinite(avf_min) and math.isfinite(avf_min_133) and abs(avf_min - avf_min_133) <= 1.0e-6:
+            minimum_basis = "1.33Vui/phi minimum-reinforcement cap"
+        else:
+            minimum_basis = "Minimum reinforcement basis unavailable"
         waiver_eligible = (
             surface_key == SURFACE_ROUGHENED_GIRDER_SLAB
             and math.isfinite(vui)
@@ -11583,6 +11666,7 @@ def _igird_interface_shear_dataframe(
                 "Avf min Eq. (mm2/m)": _beam_uls_float(minimum.get("Avf_min_eq_mm2_per_m")),
                 "Avf min 1.33 cap (mm2/m)": _beam_uls_float(minimum.get("Avf_min_1p33_mm2_per_m")),
                 "Avf min required (mm2/m)": avf_min,
+                "Minimum basis": minimum_basis,
                 "Minimum Avf D/C": min_dc,
                 "phi Vni (kN/m)": _beam_uls_float(resistance.get("Vri_kN_per_m")),
                 "phi vni (MPa)": vri,
@@ -11597,7 +11681,7 @@ def _igird_interface_shear_dataframe(
     if not anchored:
         messages.append("Interface stirrup strength credit is withheld until the user confirms the stirrups cross the interface and are fully developed/anchored in the CIP deck.")
     messages.append("Pc = 0 is used conservatively; no permanent normal compression is credited.")
-    messages.append("The special low-stress roughened girder/slab minimum-reinforcement waiver is reported when potentially eligible but is not silently applied by IGIRDER.ULS4.")
+    messages.append("The special low-stress roughened girder/slab minimum-reinforcement waiver is reported when potentially eligible but is not silently applied by IGIRDER.ULS4A.")
     messages.append(density_note)
     return pd.DataFrame(rows), deduplicate_warnings(messages)
 
@@ -11627,7 +11711,22 @@ def _igird_interface_overall_status(result_df: pd.DataFrame | None) -> str:
     return "PASS" if statuses == {"PASS"} else "REVIEW"
 
 
-def _igird_interface_figure(result_df: pd.DataFrame, *, code_label: str) -> go.Figure:
+def _igird_interface_reinforcement_card_detail(governing_row: Mapping[str, object]) -> str:
+    stirrup = str(governing_row.get("Stirrup") or "-")
+    fy_used = _beam_uls_float(governing_row.get("fy used <=60 ksi (MPa)"))
+    parts = [stirrup]
+    if math.isfinite(fy_used):
+        parts.append(f"fy used = {fy_used:.1f} MPa · AASHTO cap = {IGIRD_INTERFACE_FY_CAP_MPA:.1f} MPa")
+    avf_min = _beam_uls_float(governing_row.get("Avf min required (mm2/m)"))
+    minimum_basis = str(governing_row.get("Minimum basis") or "")
+    if math.isfinite(avf_min) and avf_min <= 1.0e-9 and "cohesion" in minimum_basis.lower():
+        parts.append("Min = 0: cohesion satisfies 1.33Vui/φ; special 5.7.4.2 waiver not needed")
+    elif minimum_basis:
+        parts.append(f"Minimum basis: {minimum_basis}")
+    return " · ".join(part for part in parts if part)
+
+
+def _igird_interface_figure(result_df: pd.DataFrame, *, code_label: str, member_length_m: float | None = None) -> go.Figure:
     fig = go.Figure()
     if result_df is None or result_df.empty:
         return fig
@@ -11646,6 +11745,10 @@ def _igird_interface_figure(result_df: pd.DataFrame, *, code_label: str) -> go.F
         legend={"orientation": "h", "yanchor": "top", "y": -0.18, "xanchor": "center", "x": 0.5},
         margin={"l": 72, "r": 30, "t": 68, "b": 100},
     )
+    if member_length_m is not None:
+        domain = _beam_uls_full_member_plot_range(result_df, member_length_m)
+        if domain is not None:
+            fig.update_xaxes(range=[domain[0], domain[1]])
     apply_global_plot_readability(fig)
     return fig
 
@@ -11836,9 +11939,11 @@ def _render_beam_girder_final_composite_flexure_guard(
     be_mode = str(section_params.get("Be_mode") or "Manual")
     be_strength_verified = bool(section_params.get("Be_strength_verified", True if be_mode != "AASHTO helper" else False))
 
+    interface_source_df = _igird_interface_source_dataframe(active_df)
+    member_length_m = _beam_uls_span_length_from_state(st.session_state, is_building=False)
     interface_settings = _igird_render_interface_shear_settings(st.session_state)
     interface_hash = _igird_interface_shear_hash(
-        st.session_state, supported_df, settings=interface_settings, strength_route=strength_route
+        st.session_state, interface_source_df, settings=interface_settings, strength_route=strength_route
     )
     interface_entry = _beam_uls_current_cached_result(
         st.session_state, _IGIRDER_INTERFACE_SHEAR_CHECK_NAME, interface_hash
@@ -12118,13 +12223,13 @@ def _render_beam_girder_final_composite_flexure_guard(
             key="beam_girder_uls_calculate_final_interface_shear",
             type="primary",
             use_container_width=True,
-            disabled=not bool(composite_state is not None and len(supported_df.index) > 0 and math.isfinite(bvi_value) and bvi_value > 0.0),
+            disabled=not bool(composite_state is not None and len(interface_source_df.index) > 0 and math.isfinite(bvi_value) and bvi_value > 0.0),
             help="Runs the AASHTO LRFD 5.7.4 girder/slab interface shear-friction check in native N-mm-MPa units. Pc is conservatively taken as zero.",
         )
     if run_interface:
         calculated_interface_df, calculated_interface_messages = _igird_interface_shear_dataframe(
             st.session_state,
-            supported_df,
+            interface_source_df,
             prep=prep,
             composite_state=composite_state,
             settings=interface_settings,
@@ -12175,7 +12280,7 @@ def _render_beam_girder_final_composite_flexure_guard(
             {"title": "Interface shear", "value": interface_status, "detail": str(interface_gov.get("Reason") or "AASHTO 5.7.4 composite-action gate"), "status": status_style, "strong": True},
             {"title": "Governing vui / D/C", "value": f"{_beam_uls_float(interface_gov.get('vui (MPa)')):.3f} MPa · {gov_dc:.3f}" if math.isfinite(gov_dc) else f"{_beam_uls_float(interface_gov.get('vui (MPa)')):.3f} MPa", "detail": f"{interface_gov.get('Case', '-')} @ x={_beam_uls_float(interface_gov.get('Station x (m)')):.3f} m", "status": "info"},
             {"title": "φvni", "value": f"{_beam_uls_float(interface_gov.get('phi vni (MPa)')):.3f} MPa", "detail": f"{_beam_uls_float(interface_gov.get('phi Vni (kN/m)')):,.1f} kN/m · {interface_gov.get('Resistance control', '-')}", "status": "info"},
-            {"title": "Avf provided / minimum", "value": f"{_beam_uls_float(interface_gov.get('Avf credited (mm2/m)')):,.0f} / {_beam_uls_float(interface_gov.get('Avf min required (mm2/m)')):,.0f} mm²/m", "detail": str(interface_gov.get("Stirrup") or "-") + f" · fy used ≤ {IGIRD_INTERFACE_FY_CAP_MPA:.1f} MPa", "status": "info"},
+            {"title": "Avf provided / minimum", "value": f"{_beam_uls_float(interface_gov.get('Avf credited (mm2/m)')):,.0f} / {_beam_uls_float(interface_gov.get('Avf min required (mm2/m)')):,.0f} mm²/m", "detail": _igird_interface_reinforcement_card_detail(interface_gov), "status": "info"},
         ]
     _render_analysis_summary_strip(interface_cards, columns=4)
 
@@ -12186,7 +12291,7 @@ def _render_beam_girder_final_composite_flexure_guard(
     )
     if interface_df is not None and not interface_df.empty:
         _render_beam_uls_browser_plotly_figure(
-            _igird_interface_figure(interface_df, code_label=code_label),
+            _igird_interface_figure(interface_df, code_label=code_label, member_length_m=member_length_m),
             caption=(
                 "Demand follows AASHTO 5.7.4.5 using Final ULS Vuy and dv from the station tension-steel centroid to slab mid-thickness. "
                 "Resistance follows 5.7.4.3 with Pc = 0, weaker-side f'c, the 60-ksi fy cap, and active stirrup zones only when interface anchorage is confirmed."
@@ -12198,7 +12303,7 @@ def _render_beam_girder_final_composite_flexure_guard(
                 st.caption("Interface shear notes: " + " | ".join(interface_messages[:8]))
             st.caption(
                 f"Potential roughened-interface minimum-reinforcement waiver threshold: 0.210 ksi → {IGIRD_INTERFACE_WAIVER_STRESS_MPA:.3f} MPa. "
-                "IGIRDER.ULS4 reports potential eligibility but does not silently apply this waiver."
+                "IGIRDER.ULS4A reports potential eligibility but does not silently apply this waiver."
             )
     else:
         st.info("Calculate Interface Shear to close the Final Composite composite-action acceptance gate.")
@@ -12207,10 +12312,12 @@ def _render_beam_girder_final_composite_flexure_guard(
         _render_beam_uls_browser_plotly_figure(
             _polish_igird_uls_flexure_legend(
                 _make_beam_uls_demand_figure(
-                    supported_df,
+                    active_df,
                     column="Mux",
                     title=f"Final Composite Flexure — Strength ULS<br><sup>{code_label}</sup>",
                     y_label="Moment (kN-m)",
+                    governing_df=supported_df,
+                    member_length_m=member_length_m,
                 )
             ),
             caption="Final Composite demand is ready; calculate the section to add the composite φMn capacity curve.",
@@ -12219,9 +12326,11 @@ def _render_beam_girder_final_composite_flexure_guard(
         _render_beam_uls_browser_plotly_figure(
             _polish_igird_uls_flexure_legend(
                 _make_beam_uls_flexure_preview_figure(
-                    supported_df,
+                    active_df,
                     preview_df,
                     code_label=f"{code_label} · Final composite +M",
+                    governing_df=supported_df,
+                    member_length_m=member_length_m,
                 )
             ),
             caption=(
@@ -12416,6 +12525,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                     construction_df,
                     preview_df,
                     code_label=f"{code_label} · Construction noncomposite",
+                    member_length_m=float(getattr(construction_demand, "span_length_m", 0.0) or 0.0),
                 )
             )
         )
@@ -29351,8 +29461,9 @@ def _igird_composite_flexure_dashboard_state(session_state: Mapping[str, Any]) -
             if legacy_interface_status == "PENDING" and not isinstance(cache.get(_IGIRDER_INTERFACE_SHEAR_CHECK_NAME), Mapping):
                 return "REVIEW", "Final Composite section flexure passes; girder-deck interface shear is pending", "warning"
             interface_settings = _igird_interface_shear_settings_from_state(session_state)
+            interface_source_df = _igird_interface_source_dataframe(active_df)
             interface_hash = _igird_interface_shear_hash(
-                session_state, supported_df, settings=interface_settings, strength_route=strength_route
+                session_state, interface_source_df, settings=interface_settings, strength_route=strength_route
             )
             interface_current = _beam_uls_current_cached_result(
                 session_state, _IGIRDER_INTERFACE_SHEAR_CHECK_NAME, interface_hash
