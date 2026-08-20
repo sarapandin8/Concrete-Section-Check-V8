@@ -103,6 +103,19 @@ from concrete_pmm_pro.analysis.result_models import (
     summarize_pmm_result,
 )
 from concrete_pmm_pro.analysis.igird_composite_flexure import prepare_aashto_composite_positive_flexure
+from concrete_pmm_pro.analysis.igird_interface_shear import (
+    DEFAULT_PHI_SHEAR as IGIRD_INTERFACE_PHI,
+    INTERFACE_FY_CAP_MPA as IGIRD_INTERFACE_FY_CAP_MPA,
+    ROUGHENED_WAIVER_STRESS_MPA as IGIRD_INTERFACE_WAIVER_STRESS_MPA,
+    SURFACE_CLEAN_NOT_ROUGHENED,
+    SURFACE_PRESETS as IGIRD_INTERFACE_SURFACE_PRESETS,
+    SURFACE_ROUGHENED_GIRDER_SLAB,
+    interface_shear_demand_si,
+    interface_shear_resistance_si,
+    minimum_interface_reinforcement_si,
+    provided_interface_reinforcement_mm2_per_m,
+    source_unit_trace as igird_interface_unit_trace,
+)
 from concrete_pmm_pro.analysis.uls_strength_routing import (
     BeamGirderUlsStrengthRoute,
     beam_girder_uls_strength_route,
@@ -11277,6 +11290,365 @@ _IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION = "IGIRDER.ULS2P.flexure-performanc
 _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION = "IGIRDER.ULS3A.composite-flexure-audit-closeout"
 
 
+_IGIRDER_INTERFACE_SHEAR_SETTINGS_KEY = "beam_girder_interface_shear_settings"
+_IGIRDER_INTERFACE_SHEAR_CHECK_NAME = "Interface Shear — Final Composite"
+_IGIRDER_INTERFACE_SHEAR_RESULT_VERSION = "IGIRDER.ULS4.aashto-interface-shear-si"
+# Legacy ULS3 source-test/status token retained for backward compatibility: INTERFACE SHEAR PENDING
+_IGIRDER_INTERFACE_WIDTH_AUTO = "Auto — I-Girder top flange B1"
+_IGIRDER_INTERFACE_WIDTH_MANUAL = "Manual override"
+
+
+def _igird_interface_shear_settings_from_state(state: Mapping[str, object]) -> dict[str, object]:
+    raw = _beam_uls_get_state_value(state, _IGIRDER_INTERFACE_SHEAR_SETTINGS_KEY, None)
+    if raw is None:
+        raw = (_beam_uls_get_state_value(state, "project_metadata", {}) or {}).get(_IGIRDER_INTERFACE_SHEAR_SETTINGS_KEY)
+    raw = dict(raw or {}) if isinstance(raw, Mapping) else {}
+    surface_key = str(raw.get("surface_key") or SURFACE_ROUGHENED_GIRDER_SLAB)
+    if surface_key not in IGIRD_INTERFACE_SURFACE_PRESETS:
+        surface_key = SURFACE_ROUGHENED_GIRDER_SLAB
+    width_mode = str(raw.get("width_mode") or _IGIRDER_INTERFACE_WIDTH_AUTO)
+    if width_mode not in {_IGIRDER_INTERFACE_WIDTH_AUTO, _IGIRDER_INTERFACE_WIDTH_MANUAL}:
+        width_mode = _IGIRDER_INTERFACE_WIDTH_AUTO
+    override = _beam_uls_float(raw.get("bvi_override_mm"))
+    return {
+        "surface_key": surface_key,
+        "width_mode": width_mode,
+        "bvi_override_mm": float(override) if math.isfinite(override) and override > 0.0 else None,
+        "stirrups_cross_and_anchored": bool(raw.get("stirrups_cross_and_anchored", False)),
+    }
+
+
+def _igird_store_interface_shear_settings(settings: Mapping[str, object]) -> None:
+    normalized = dict(settings)
+    st.session_state[_IGIRDER_INTERFACE_SHEAR_SETTINGS_KEY] = normalized
+    metadata = dict(st.session_state.get("project_metadata", {}) or {})
+    metadata[_IGIRDER_INTERFACE_SHEAR_SETTINGS_KEY] = normalized
+    st.session_state["project_metadata"] = metadata
+
+
+def _igird_interface_density_basis(state: Mapping[str, object]) -> tuple[bool, str]:
+    densities: list[float] = []
+    girder = _beam_uls_get_state_value(state, "concrete_material")
+    if isinstance(girder, Mapping):
+        density = _beam_uls_float(girder.get("density_kg_m3"))
+    else:
+        density = _beam_uls_float(getattr(girder, "density_kg_m3", float("nan")))
+    if math.isfinite(density) and density > 0.0:
+        densities.append(density)
+    deck_name = str(_beam_uls_get_state_value(state, "deck_topping_material_name", "") or "")
+    for material in list(_beam_uls_get_state_value(state, "concrete_materials", []) or []):
+        name = str(material.get("name") if isinstance(material, Mapping) else getattr(material, "name", ""))
+        if deck_name and name != deck_name:
+            continue
+        d = _beam_uls_float(material.get("density_kg_m3") if isinstance(material, Mapping) else getattr(material, "density_kg_m3", float("nan")))
+        if math.isfinite(d) and d > 0.0:
+            densities.append(d)
+        if deck_name and name == deck_name:
+            break
+    lightweight = bool(densities and min(densities) < 2200.0)
+    if lightweight:
+        return True, f"Lightweight basis from concrete density ({min(densities):,.0f} kg/m³ minimum)"
+    if densities:
+        return False, f"Normal-weight basis from concrete density ({min(densities):,.0f} kg/m³ minimum)"
+    return False, "Normal-weight basis assumed; concrete density source unavailable"
+
+
+def _igird_interface_bvi_mm(state: Mapping[str, object], settings: Mapping[str, object]) -> tuple[float, str]:
+    params = _beam_uls_get_state_value(state, "section_parameters", {})
+    params = dict(params) if isinstance(params, Mapping) else {}
+    if str(settings.get("width_mode")) == _IGIRDER_INTERFACE_WIDTH_MANUAL:
+        value = _beam_uls_float(settings.get("bvi_override_mm"))
+        return (float(value), "Manual project override") if math.isfinite(value) and value > 0.0 else (float("nan"), "Manual override is not defined")
+    b1 = _beam_uls_float(params.get("B1_mm"))
+    return (float(b1), "Auto from I-Girder top flange B1") if math.isfinite(b1) and b1 > 0.0 else (float("nan"), "I-Girder top flange B1 is unavailable")
+
+
+def _igird_render_interface_shear_settings(state: Mapping[str, object]) -> dict[str, object]:
+    current = _igird_interface_shear_settings_from_state(state)
+    labels = [preset.label for preset in IGIRD_INTERFACE_SURFACE_PRESETS.values()]
+    keys = list(IGIRD_INTERFACE_SURFACE_PRESETS.keys())
+    current_key = str(current.get("surface_key") or SURFACE_ROUGHENED_GIRDER_SLAB)
+    try:
+        surface_index = keys.index(current_key)
+    except ValueError:
+        surface_index = 0
+    st.markdown("##### Composite action — girder/deck interface inputs")
+    st.caption(
+        "Only interface-specific detailing is entered here. Demand comes from verified Final ULS Vuy; girder geometry, concrete strengths, prestress/tension-steel centroid, and stirrup zones are reused from the existing project inputs."
+    )
+    cols = st.columns([1.7, 1.15, 1.55])
+    with cols[0]:
+        selected_label = st.selectbox(
+            "Interface surface condition",
+            labels,
+            index=surface_index,
+            key="igird_interface_surface_condition",
+            help="AASHTO LRFD 5.7.4.4. The default is the common CIP deck on a clean girder surface intentionally roughened to 0.25 in (6.35 mm).",
+        )
+        surface_key = keys[labels.index(selected_label)]
+    with cols[1]:
+        width_mode = st.radio(
+            "Interface width bvi",
+            [_IGIRDER_INTERFACE_WIDTH_AUTO, _IGIRDER_INTERFACE_WIDTH_MANUAL],
+            index=0 if str(current.get("width_mode")) != _IGIRDER_INTERFACE_WIDTH_MANUAL else 1,
+            key="igird_interface_width_mode",
+        )
+        override_default = float(current.get("bvi_override_mm") or 0.0)
+        bvi_override = st.number_input(
+            "Manual bvi (mm)",
+            min_value=0.0,
+            value=override_default,
+            step=10.0,
+            disabled=width_mode != _IGIRDER_INTERFACE_WIDTH_MANUAL,
+            key="igird_interface_bvi_override_mm",
+        )
+    with cols[2]:
+        anchored = st.checkbox(
+            "Girder stirrups extend across the interface and are fully developed/anchored in the CIP deck",
+            value=bool(current.get("stirrups_cross_and_anchored", False)),
+            key="igird_interface_stirrups_anchored",
+            help="Only confirmed reinforcement crossing and developed on both sides of the interface receives Avf strength credit.",
+        )
+        st.caption("Pc = 0 is used as the conservative default; no clamping-force credit is taken.")
+    settings = {
+        "surface_key": surface_key,
+        "width_mode": width_mode,
+        "bvi_override_mm": float(bvi_override) if width_mode == _IGIRDER_INTERFACE_WIDTH_MANUAL and float(bvi_override) > 0.0 else None,
+        "stirrups_cross_and_anchored": bool(anchored),
+    }
+    _igird_store_interface_shear_settings(settings)
+    return settings
+
+
+def _igird_interface_shear_hash(
+    state: Mapping[str, object],
+    supported_df: pd.DataFrame,
+    *,
+    settings: Mapping[str, object],
+    strength_route: BeamGirderUlsStrengthRoute,
+) -> str:
+    return _beam_uls_hash_payload(
+        {
+            "result_version": _IGIRDER_INTERFACE_SHEAR_RESULT_VERSION,
+            "engineering_input_hash": _beam_uls_cache_input_hash(state, supported_df, strength_route=strength_route),
+            "interface_settings": dict(settings),
+            "shear_reinforcement_table": _beam_uls_get_state_value(state, SHEAR_REINFORCEMENT_TABLE_KEY, []),
+        }
+    )
+
+
+def _igird_interface_shear_dataframe(
+    state: Mapping[str, object],
+    supported_df: pd.DataFrame,
+    *,
+    prep: object,
+    composite_state: Mapping[str, object],
+    settings: Mapping[str, object],
+    strength_route: BeamGirderUlsStrengthRoute,
+) -> tuple[pd.DataFrame, list[str]]:
+    messages: list[str] = []
+    bvi_mm, bvi_basis = _igird_interface_bvi_mm(state, settings)
+    if not math.isfinite(bvi_mm) or bvi_mm <= 0.0:
+        return pd.DataFrame(), [f"Interface width bvi is unavailable: {bvi_basis}."]
+    fc_weaker = _beam_uls_float(getattr(prep, "design_fc_MPa", float("nan")))
+    tslab_mm = _beam_uls_float(getattr(prep, "deck_thickness_mm", float("nan")))
+    if not all(math.isfinite(v) and v > 0.0 for v in (fc_weaker, tslab_mm)):
+        return pd.DataFrame(), ["Composite deck thickness or weaker concrete f'c is unavailable."]
+    geometry = _beam_uls_get_state_value(state, "section_geometry")
+    if isinstance(geometry, Mapping):
+        try:
+            geometry = SectionGeometry.model_validate(geometry)
+        except Exception:
+            geometry = None
+    if not isinstance(geometry, SectionGeometry):
+        return pd.DataFrame(), ["Precast I-Girder geometry is unavailable for the interface dv calculation."]
+    try:
+        _, _, _, precast_ymax = _beam_uls_section_bounds(geometry)
+    except Exception:
+        return pd.DataFrame(), ["Precast I-Girder top elevation is unavailable for the interface dv calculation."]
+    slab_mid_y = float(precast_ymax) + 0.5 * float(tslab_mm)
+    lightweight, density_note = _igird_interface_density_basis(state)
+    surface_key = str(settings.get("surface_key") or SURFACE_ROUGHENED_GIRDER_SLAB)
+    surface_const = IGIRD_INTERFACE_SURFACE_PRESETS[surface_key].constants_si(lightweight=lightweight)
+    anchored = bool(settings.get("stirrups_cross_and_anchored", False))
+    rows: list[dict[str, object]] = []
+    for _, source_row in supported_df.iterrows():
+        row = source_row.to_dict()
+        x_m = _beam_uls_float(row.get("Station x (m)"))
+        vu_kN = abs(_beam_uls_float(row.get("Vuy")))
+        case = str(row.get("Case Name") or "ULS")
+        analysis_input, input_messages = _beam_uls_flexure_analysis_input_for_station(
+            composite_state,
+            row=row,
+            strength_route=strength_route,
+            capacity_direction=1.0,
+            prestress_force_stage="final",
+        )
+        y_tension = _beam_uls_reinforcement_y_centroid_for_face(analysis_input, tension_face="bottom") if analysis_input is not None else None
+        dv_mm = float(slab_mid_y) - float(y_tension) if y_tension is not None else float("nan")
+        demand = interface_shear_demand_si(vu_kN=vu_kN, bvi_mm=bvi_mm, dv_mm=dv_mm)
+        zone = _beam_uls_active_shear_zone_for_station(state, x_m, require_coverage=True) if math.isfinite(x_m) else None
+        bar_area = _beam_uls_stirrup_area_mm2(zone or {})
+        legs = _beam_uls_float((zone or {}).get("Legs"))
+        spacing = _beam_uls_float((zone or {}).get("Spacing_mm"))
+        fy = _beam_uls_float((zone or {}).get("fy_MPa"))
+        zone_valid = zone is not None and all(math.isfinite(value) and value > 0.0 for value in [bar_area, legs, spacing, fy])
+        avf_provided = provided_interface_reinforcement_mm2_per_m(bar_area_mm2=bar_area, legs=legs, spacing_mm=spacing)
+        avf_credit = avf_provided if anchored and zone_valid and math.isfinite(avf_provided) else 0.0
+        fy_for_resistance = fy if zone_valid else 0.0
+        if math.isfinite(dv_mm) and dv_mm > 0.0:
+            resistance = interface_shear_resistance_si(
+                bvi_mm=bvi_mm,
+                fc_weaker_MPa=fc_weaker,
+                avf_provided_mm2_per_m=avf_credit,
+                fy_MPa=fy_for_resistance,
+                surface_key=surface_key,
+                lightweight=lightweight,
+                phi=IGIRD_INTERFACE_PHI,
+                pc_N_per_m=0.0,
+            )
+            minimum = minimum_interface_reinforcement_si(
+                bvi_mm=bvi_mm,
+                fy_MPa=fy_for_resistance if fy_for_resistance > 0.0 else IGIRD_INTERFACE_FY_CAP_MPA,
+                demand_Vui_N_per_m=float(demand.get("Vui_N", 0.0) or 0.0),
+                c_MPa=float(surface_const["c_MPa"]),
+                mu=float(surface_const["mu"]),
+                phi=IGIRD_INTERFACE_PHI,
+                pc_N_per_m=0.0,
+            )
+        else:
+            resistance = {}
+            minimum = {}
+        vri = _beam_uls_float(resistance.get("vri_MPa"))
+        vui = _beam_uls_float(demand.get("vui_MPa"))
+        strength_dc = vui / vri if math.isfinite(vui) and math.isfinite(vri) and vri > 0.0 else float("nan")
+        avf_min = _beam_uls_float(minimum.get("Avf_min_required_mm2_per_m"))
+        min_dc = avf_min / avf_credit if math.isfinite(avf_min) and avf_min > 0.0 and avf_credit > 0.0 else (0.0 if math.isfinite(avf_min) and avf_min <= 1.0e-9 else float("nan"))
+        waiver_eligible = (
+            surface_key == SURFACE_ROUGHENED_GIRDER_SLAB
+            and math.isfinite(vui)
+            and vui < IGIRD_INTERFACE_WAIVER_STRESS_MPA
+            and anchored
+            and zone is not None
+        )
+        if analysis_input is None or not math.isfinite(dv_mm) or dv_mm <= 0.0:
+            status = "REVIEW"
+            reason = "Tension-steel centroid / dv unavailable"
+        elif zone is None:
+            status = "REVIEW"
+            reason = "No active stirrup zone covers this station"
+        elif not zone_valid:
+            status = "REVIEW"
+            reason = "Active stirrup zone has incomplete bar/legs/spacing/fy data"
+        elif not anchored:
+            status = "REVIEW"
+            reason = "Stirrup interface anchorage is not confirmed"
+        elif not math.isfinite(strength_dc):
+            status = "REVIEW"
+            reason = "Interface resistance is unavailable"
+        elif strength_dc > 1.0 + 1.0e-9:
+            status = "FAIL"
+            reason = "Factored interface shear exceeds factored resistance"
+        elif math.isfinite(min_dc) and min_dc > 1.0 + 1.0e-9:
+            status = "FAIL"
+            reason = "Provided Avf is below the AASHTO 5.7.4.2 minimum"
+        else:
+            status = "PASS"
+            reason = "Strength and minimum interface-reinforcement gates pass"
+        rows.append(
+            {
+                "Station x (m)": x_m,
+                "Case": case,
+                "Status": status,
+                "Vu1 (kN)": vu_kN,
+                "bvi (mm)": bvi_mm,
+                "bvi basis": bvi_basis,
+                "Tension steel y (mm)": y_tension,
+                "Slab mid y (mm)": slab_mid_y,
+                "dv interface (mm)": dv_mm,
+                "vui (MPa)": vui,
+                "Vui (kN/m)": _beam_uls_float(demand.get("Vui_kN_per_m")),
+                "Surface": str(resistance.get("surface_label") or IGIRD_INTERFACE_SURFACE_PRESETS[surface_key].label),
+                "c (MPa)": _beam_uls_float(resistance.get("c_MPa")),
+                "mu": _beam_uls_float(resistance.get("mu")),
+                "K1": _beam_uls_float(resistance.get("K1")),
+                "K2 (MPa)": _beam_uls_float(resistance.get("K2_MPa")),
+                "fc weak (MPa)": fc_weaker,
+                "Stirrup zone": str((zone or {}).get("Zone") or "-"),
+                "Stirrup": f"{str((zone or {}).get('Bar Size') or '-')} × {int(legs) if math.isfinite(legs) and legs > 0 else '-'} @ {spacing:.0f} mm" if math.isfinite(spacing) and spacing > 0.0 else "-",
+                "Avf provided (mm2/m)": avf_provided,
+                "Avf credited (mm2/m)": avf_credit,
+                "fy input (MPa)": fy,
+                "fy used <=60 ksi (MPa)": _beam_uls_float(resistance.get("fy_used_MPa")),
+                "Avf min Eq. (mm2/m)": _beam_uls_float(minimum.get("Avf_min_eq_mm2_per_m")),
+                "Avf min 1.33 cap (mm2/m)": _beam_uls_float(minimum.get("Avf_min_1p33_mm2_per_m")),
+                "Avf min required (mm2/m)": avf_min,
+                "Minimum Avf D/C": min_dc,
+                "phi Vni (kN/m)": _beam_uls_float(resistance.get("Vri_kN_per_m")),
+                "phi vni (MPa)": vri,
+                "Strength D/C": strength_dc,
+                "Resistance control": str(resistance.get("governing_resistance") or "-"),
+                "Potential 5.7.4.2 waiver": "POTENTIALLY ELIGIBLE — not applied" if waiver_eligible else "No",
+                "Density basis": density_note,
+                "Reason": reason,
+                "Notes": " | ".join(input_messages[:2]),
+            }
+        )
+    if not anchored:
+        messages.append("Interface stirrup strength credit is withheld until the user confirms the stirrups cross the interface and are fully developed/anchored in the CIP deck.")
+    messages.append("Pc = 0 is used conservatively; no permanent normal compression is credited.")
+    messages.append("The special low-stress roughened girder/slab minimum-reinforcement waiver is reported when potentially eligible but is not silently applied by IGIRDER.ULS4.")
+    messages.append(density_note)
+    return pd.DataFrame(rows), deduplicate_warnings(messages)
+
+
+def _igird_interface_governing_row(result_df: pd.DataFrame | None) -> dict[str, object] | None:
+    if result_df is None or result_df.empty:
+        return None
+    df = result_df.copy()
+    strength = pd.to_numeric(df.get("Strength D/C"), errors="coerce")
+    minimum = pd.to_numeric(df.get("Minimum Avf D/C"), errors="coerce")
+    rank = pd.concat([strength, minimum], axis=1).max(axis=1, skipna=True)
+    fail = df["Status"].astype(str).eq("FAIL") if "Status" in df.columns else pd.Series(False, index=df.index)
+    review = df["Status"].astype(str).eq("REVIEW") if "Status" in df.columns else pd.Series(False, index=df.index)
+    priority = fail.astype(int) * 2 + review.astype(int)
+    order = pd.DataFrame({"priority": priority, "rank": rank.fillna(-1.0)}, index=df.index).sort_values(["priority", "rank"], ascending=[False, False], kind="stable")
+    return df.loc[order.index[0]].to_dict() if len(order.index) else None
+
+
+def _igird_interface_overall_status(result_df: pd.DataFrame | None) -> str:
+    if result_df is None or result_df.empty:
+        return "NOT CALCULATED"
+    statuses = {str(value).upper() for value in result_df.get("Status", [])}
+    if "FAIL" in statuses:
+        return "FAIL"
+    if "REVIEW" in statuses:
+        return "REVIEW"
+    return "PASS" if statuses == {"PASS"} else "REVIEW"
+
+
+def _igird_interface_figure(result_df: pd.DataFrame, *, code_label: str) -> go.Figure:
+    fig = go.Figure()
+    if result_df is None or result_df.empty:
+        return fig
+    for case, group in result_df.groupby("Case", sort=False):
+        group = group.sort_values("Station x (m)")
+        fig.add_trace(go.Scatter(x=group["Station x (m)"], y=group["vui (MPa)"], mode="lines+markers", name=f"Demand vui · {case}", hovertemplate="x=%{x:.3f} m<br>vui=%{y:.3f} MPa<extra></extra>"))
+    cap = result_df.sort_values("Station x (m)")
+    fig.add_trace(go.Scatter(x=cap["Station x (m)"], y=cap["phi vni (MPa)"], mode="lines", name="φvni", line={"dash": "dash", "color": "red"}, hovertemplate="x=%{x:.3f} m<br>φvni=%{y:.3f} MPa<extra></extra>"))
+    gov = _igird_interface_governing_row(result_df)
+    if gov is not None and math.isfinite(_beam_uls_float(gov.get("vui (MPa)"))):
+        fig.add_trace(go.Scatter(x=[_beam_uls_float(gov.get("Station x (m)"))], y=[_beam_uls_float(gov.get("vui (MPa)"))], mode="markers", name="Gov. interface", marker={"size": 9}, hovertemplate="Governing interface check<extra></extra>"))
+    fig.update_layout(
+        title={"text": f"Girder–Deck Interface Shear — Strength ULS<br><sup>{code_label} · AASHTO 5.7.4</sup>"},
+        xaxis_title="Distance from left end of member (m)",
+        yaxis_title="Interface shear stress (MPa)",
+        legend={"orientation": "h", "yanchor": "top", "y": -0.18, "xanchor": "center", "x": 0.5},
+        margin={"l": 72, "r": 30, "t": 68, "b": 100},
+    )
+    apply_global_plot_readability(fig)
+    return fig
+
 def _beam_uls_final_composite_preparation(
     state: Mapping[str, object],
 ) -> tuple[object, dict[str, object] | None, list[str]]:
@@ -11464,6 +11836,20 @@ def _render_beam_girder_final_composite_flexure_guard(
     be_mode = str(section_params.get("Be_mode") or "Manual")
     be_strength_verified = bool(section_params.get("Be_strength_verified", True if be_mode != "AASHTO helper" else False))
 
+    interface_settings = _igird_render_interface_shear_settings(st.session_state)
+    interface_hash = _igird_interface_shear_hash(
+        st.session_state, supported_df, settings=interface_settings, strength_route=strength_route
+    )
+    interface_entry = _beam_uls_current_cached_result(
+        st.session_state, _IGIRDER_INTERFACE_SHEAR_CHECK_NAME, interface_hash
+    )
+    interface_df = _beam_uls_cached_dataframe(interface_entry, "interface_shear_df")
+    interface_gate_status = _igird_interface_overall_status(interface_df)
+    if interface_entry is None and isinstance(_beam_uls_manual_cache(st.session_state).get(_IGIRDER_INTERFACE_SHEAR_CHECK_NAME), Mapping):
+        interface_gate_status = "STALE"
+    elif interface_entry is None:
+        interface_gate_status = "PENDING"
+
     prep_ready = composite_state is not None and positive_count > 0
     prep_cards = [
         {
@@ -11488,9 +11874,9 @@ def _render_beam_girder_final_composite_flexure_guard(
         },
         {
             "title": "Composite action gate",
-            "value": "INTERFACE SHEAR PENDING",
-            "detail": "section Mn can be calculated; final acceptance remains gated",
-            "status": "warning",
+            "value": f"INTERFACE SHEAR {interface_gate_status}",
+            "detail": "AASHTO 5.7.4 · section Mn and interface transfer are separate gates",
+            "status": "danger" if interface_gate_status == "FAIL" else ("ready" if interface_gate_status == "PASS" else "warning"),
             "strong": True,
         },
     ]
@@ -11569,7 +11955,6 @@ def _render_beam_girder_final_composite_flexure_guard(
                 "deck_rebar_credit": deck_rebar_credit,
                 "Be_mode": be_mode,
                 "Be_strength_verified": be_strength_verified,
-                "interface_shear_status": "PENDING",
                 "negative_mux_rows_excluded": negative_count,
                 "result_version": _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION,
             },
@@ -11604,7 +11989,16 @@ def _render_beam_girder_final_composite_flexure_guard(
             section_status = "REVIEW"
         else:
             section_status = numerical_section_status
-        final_status = "FAIL" if numerical_section_status == "FAIL" else "REVIEW"
+        if numerical_section_status == "FAIL":
+            final_status = "FAIL"
+        elif section_status != "PASS":
+            final_status = "REVIEW"
+        elif interface_gate_status == "FAIL":
+            final_status = "FAIL"
+        elif interface_gate_status == "PASS":
+            final_status = "PASS"
+        else:
+            final_status = "REVIEW"
         mu_value = str(gov.get("Demand") or "-")
         cap_value = str(gov.get("Capacity") or "-")
         dc_value = str(gov.get("Utilization") or "-")
@@ -11616,8 +12010,11 @@ def _render_beam_girder_final_composite_flexure_guard(
         {
             "title": "Final Composite status",
             "value": final_status,
-            "detail": "FAIL if section fails; otherwise REVIEW until interface shear is verified",
-            "status": "danger" if final_status == "FAIL" else "warning",
+            "detail": (
+                "Section flexure + AASHTO 5.7.4 interface shear" if final_status == "PASS"
+                else ("Section or interface shear gate fails" if final_status == "FAIL" else "REVIEW until section and interface-shear gates are both current PASS")
+            ),
+            "status": "danger" if final_status == "FAIL" else ("ready" if final_status == "PASS" else "warning"),
             "strong": True,
         },
         {
@@ -11697,6 +12094,114 @@ def _render_beam_girder_final_composite_flexure_guard(
         ],
         columns=3,
     )
+
+    st.markdown("##### Girder–Deck Interface Shear — AASHTO 5.7.4")
+    bvi_value, bvi_basis = _igird_interface_bvi_mm(st.session_state, interface_settings)
+    lightweight_basis, density_basis_note = _igird_interface_density_basis(st.session_state)
+    surface_preset = IGIRD_INTERFACE_SURFACE_PRESETS[str(interface_settings.get("surface_key") or SURFACE_ROUGHENED_GIRDER_SLAB)]
+    unit_trace = igird_interface_unit_trace(surface_preset.key, lightweight=lightweight_basis)
+    input_cards = [
+        {"title": "Demand source", "value": "FINAL ULS Vuy", "detail": "AASHTO 5.7.4.5 · absolute verified FEA shear", "status": "info"},
+        {"title": "Interface width bvi", "value": f"{bvi_value:,.0f} mm" if math.isfinite(bvi_value) else "REVIEW", "detail": bvi_basis, "status": "info" if math.isfinite(bvi_value) else "warning"},
+        {"title": "Surface basis", "value": "ROUGHENED 6.35 mm" if surface_preset.key == SURFACE_ROUGHENED_GIRDER_SLAB else "NOT ROUGHENED", "detail": surface_preset.label, "status": "ready" if surface_preset.key == SURFACE_ROUGHENED_GIRDER_SLAB else "warning"},
+        {"title": "Crossing reinforcement", "value": "CONFIRMED" if interface_settings.get("stirrups_cross_and_anchored") else "REVIEW", "detail": "Active Sections → Rebar stirrup zones are Avf source", "status": "ready" if interface_settings.get("stirrups_cross_and_anchored") else "warning"},
+    ]
+    _render_analysis_summary_strip(input_cards, columns=4)
+
+    interface_run_cols = st.columns([3.6, 1.25])
+    with interface_run_cols[0]:
+        interface_command_slot = st.empty()
+    with interface_run_cols[1]:
+        st.caption("Composite-action gate")
+        run_interface = st.button(
+            "Calculate Interface Shear",
+            key="beam_girder_uls_calculate_final_interface_shear",
+            type="primary",
+            use_container_width=True,
+            disabled=not bool(composite_state is not None and len(supported_df.index) > 0 and math.isfinite(bvi_value) and bvi_value > 0.0),
+            help="Runs the AASHTO LRFD 5.7.4 girder/slab interface shear-friction check in native N-mm-MPa units. Pc is conservatively taken as zero.",
+        )
+    if run_interface:
+        calculated_interface_df, calculated_interface_messages = _igird_interface_shear_dataframe(
+            st.session_state,
+            supported_df,
+            prep=prep,
+            composite_state=composite_state,
+            settings=interface_settings,
+            strength_route=strength_route,
+        )
+        interface_entry = _beam_uls_store_manual_result(
+            st.session_state,
+            _IGIRDER_INTERFACE_SHEAR_CHECK_NAME,
+            input_hash=interface_hash,
+            result={
+                "interface_shear_df": calculated_interface_df,
+                "interface_shear_messages": list(calculated_interface_messages),
+                "interface_status": _igird_interface_overall_status(calculated_interface_df),
+                "surface_key": surface_preset.key,
+                "surface_label": surface_preset.label,
+                "bvi_mm": bvi_value,
+                "bvi_basis": bvi_basis,
+                "lightweight_basis": lightweight_basis,
+                "density_basis_note": density_basis_note,
+                "result_version": _IGIRDER_INTERFACE_SHEAR_RESULT_VERSION,
+            },
+        )
+        rerun = getattr(st, "rerun", None)
+        if callable(rerun):
+            rerun()
+
+    interface_command_slot.markdown(
+        _beam_uls_command_panel_html(_IGIRDER_INTERFACE_SHEAR_CHECK_NAME, interface_entry),
+        unsafe_allow_html=True,
+    )
+    interface_df = _beam_uls_cached_dataframe(interface_entry, "interface_shear_df")
+    interface_messages = _beam_uls_cached_messages(interface_entry, "interface_shear_messages")
+    interface_status = _igird_interface_overall_status(interface_df)
+    interface_gov = _igird_interface_governing_row(interface_df)
+    if interface_gov is None:
+        interface_cards = [
+            {"title": "Interface shear", "value": "NOT CALCULATED", "detail": "Run the current AASHTO 5.7.4 composite-action gate", "status": "warning", "strong": True},
+            {"title": "Governing vui / D/C", "value": "-", "detail": "Final ULS Vuy → interface demand", "status": "info"},
+            {"title": "φvni", "value": "-", "detail": "c + μAvffy with K1f'c and K2 caps", "status": "info"},
+            {"title": "Avf provided / minimum", "value": "-", "detail": "Active stirrup zone crossing the interface", "status": "info"},
+        ]
+    else:
+        strength_dc = _beam_uls_float(interface_gov.get("Strength D/C"))
+        minimum_dc = _beam_uls_float(interface_gov.get("Minimum Avf D/C"))
+        gov_dc = max(value for value in [strength_dc, minimum_dc] if math.isfinite(value)) if any(math.isfinite(value) for value in [strength_dc, minimum_dc]) else float("nan")
+        status_style = "danger" if interface_status == "FAIL" else ("ready" if interface_status == "PASS" else "warning")
+        interface_cards = [
+            {"title": "Interface shear", "value": interface_status, "detail": str(interface_gov.get("Reason") or "AASHTO 5.7.4 composite-action gate"), "status": status_style, "strong": True},
+            {"title": "Governing vui / D/C", "value": f"{_beam_uls_float(interface_gov.get('vui (MPa)')):.3f} MPa · {gov_dc:.3f}" if math.isfinite(gov_dc) else f"{_beam_uls_float(interface_gov.get('vui (MPa)')):.3f} MPa", "detail": f"{interface_gov.get('Case', '-')} @ x={_beam_uls_float(interface_gov.get('Station x (m)')):.3f} m", "status": "info"},
+            {"title": "φvni", "value": f"{_beam_uls_float(interface_gov.get('phi vni (MPa)')):.3f} MPa", "detail": f"{_beam_uls_float(interface_gov.get('phi Vni (kN/m)')):,.1f} kN/m · {interface_gov.get('Resistance control', '-')}", "status": "info"},
+            {"title": "Avf provided / minimum", "value": f"{_beam_uls_float(interface_gov.get('Avf credited (mm2/m)')):,.0f} / {_beam_uls_float(interface_gov.get('Avf min required (mm2/m)')):,.0f} mm²/m", "detail": str(interface_gov.get("Stirrup") or "-") + f" · fy used ≤ {IGIRD_INTERFACE_FY_CAP_MPA:.1f} MPa", "status": "info"},
+        ]
+    _render_analysis_summary_strip(interface_cards, columns=4)
+
+    st.caption(
+        f"Unit-safe AASHTO trace: c = {unit_trace['c_source_ksi']:.3f} ksi → {unit_trace['c_internal_MPa']:.3f} MPa; "
+        f"K2 = {unit_trace['K2_source_ksi']:.3f} ksi → {unit_trace['K2_internal_MPa']:.3f} MPa; "
+        f"fy interface cap = 60 ksi → {unit_trace['fy_cap_internal_MPa']:.3f} MPa. Internal equilibrium uses N, mm, MPa only."
+    )
+    if interface_df is not None and not interface_df.empty:
+        _render_beam_uls_browser_plotly_figure(
+            _igird_interface_figure(interface_df, code_label=code_label),
+            caption=(
+                "Demand follows AASHTO 5.7.4.5 using Final ULS Vuy and dv from the station tension-steel centroid to slab mid-thickness. "
+                "Resistance follows 5.7.4.3 with Pc = 0, weaker-side f'c, the 60-ksi fy cap, and active stirrup zones only when interface anchorage is confirmed."
+            ),
+        )
+        with st.expander("Girder–Deck interface shear audit", expanded=False):
+            st.dataframe(interface_df, use_container_width=True, hide_index=True)
+            if interface_messages:
+                st.caption("Interface shear notes: " + " | ".join(interface_messages[:8]))
+            st.caption(
+                f"Potential roughened-interface minimum-reinforcement waiver threshold: 0.210 ksi → {IGIRD_INTERFACE_WAIVER_STRESS_MPA:.3f} MPa. "
+                "IGIRDER.ULS4 reports potential eligibility but does not silently apply this waiver."
+            )
+    else:
+        st.info("Calculate Interface Shear to close the Final Composite composite-action acceptance gate.")
 
     if preview_df is None or preview_df.empty:
         _render_beam_uls_browser_plotly_figure(
@@ -28842,9 +29347,26 @@ def _igird_composite_flexure_dashboard_state(session_state: Mapping[str, Any]) -
             be_verified = bool(current.get("Be_strength_verified", True))
             if numerical_status != "PASS" or not be_verified:
                 return "REVIEW", "Final Composite section result requires engineering review", "warning"
-            interface_status = str(current.get("interface_shear_status") or "PENDING").upper()
-            if interface_status == "PASS":
-                return "PASS", "Final Composite section flexure and interface-shear gate are current", "ready"
+            legacy_interface_status = str(current.get("interface_shear_status") or "").upper()
+            if legacy_interface_status == "PENDING" and not isinstance(cache.get(_IGIRDER_INTERFACE_SHEAR_CHECK_NAME), Mapping):
+                return "REVIEW", "Final Composite section flexure passes; girder-deck interface shear is pending", "warning"
+            interface_settings = _igird_interface_shear_settings_from_state(session_state)
+            interface_hash = _igird_interface_shear_hash(
+                session_state, supported_df, settings=interface_settings, strength_route=strength_route
+            )
+            interface_current = _beam_uls_current_cached_result(
+                session_state, _IGIRDER_INTERFACE_SHEAR_CHECK_NAME, interface_hash
+            )
+            if interface_current is not None:
+                interface_df = _beam_uls_cached_dataframe(interface_current, "interface_shear_df")
+                interface_status = _igird_interface_overall_status(interface_df)
+                if interface_status == "FAIL":
+                    return "FAIL", "Final Composite interface-shear gate fails for current inputs", "danger"
+                if interface_status == "PASS":
+                    return "PASS", "Final Composite section flexure and interface-shear gate are current", "ready"
+                return "REVIEW", "Final Composite interface-shear gate requires engineering review", "warning"
+            if isinstance(cache.get(_IGIRDER_INTERFACE_SHEAR_CHECK_NAME), Mapping):
+                return "STALE", "Final Composite interface-shear result does not match current inputs", "warning"
             return "REVIEW", "Final Composite section flexure passes; girder-deck interface shear is pending", "warning"
 
         if isinstance(cache.get(check_name), Mapping):
