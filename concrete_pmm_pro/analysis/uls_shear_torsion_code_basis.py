@@ -122,10 +122,10 @@ FORMULA_AUDIT_ITEMS: tuple[ShearTorsionFormulaAuditItem, ...] = (
         check_item="Prestressed bridge torsion and Combined V+T",
         code_edition="AASHTO LRFD 9th Edition, 2020",
         code_location="Concrete torsion / combined shear-torsion articles for prestressed girders",
-        implementation_status="MISSING",
+        implementation_status="PARTIAL",
         risk_level="CRITICAL",
-        current_app_status="IGIRDER.ULS5A deliberately forces Combined V+T to REVIEW because standalone shear uses station-dependent theta while the current torsion/combined formulation remains fixed-theta.",
-        required_action="Calibrate AASHTO prestressed torsion/combined theta consistently before permitting a final Combined V+T PASS.",
+        current_app_status="IGIRDER.ULS6 evaluates the prestressed solid I-Girder torsion threshold, torsion-modified Veff, station-dependent General Procedure theta, and transverse 5.7.3.6.2 resistance. Standalone Torsion remains REVIEW above threshold because the concurrent longitudinal 5.7.3.6.3-1 equation is not yet certified.",
+        required_action="Complete the concurrent 5.7.3.6.1 transverse reinforcement sum and 5.7.3.6.3-1 longitudinal resistance in Combined V+T before permitting final PASS.",
     ),
 )
 

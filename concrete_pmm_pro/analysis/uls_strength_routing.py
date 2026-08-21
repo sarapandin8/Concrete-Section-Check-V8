@@ -85,13 +85,13 @@ def bridge_beam_girder_uls_strength_route(code_edition: object | None = None) ->
         ),
         torsion_engine_label="AASHTO LRFD torsion route",
         torsion_basis_note=(
-            "Bridge torsion uses TORSION.CODE2: closed-hoop φTn, torsion threshold screen, longitudinal Al from ordinary rebar, "
-            "At/s, closed-hoop spacing, and active-zone coverage gates. Anchorage, hook geometry, bearing/end-zone detailing, "
-            "and shop-drawing checks remain project review items."
+            "Bridge torsion is workflow/preset aware. Precast I-Girder uses IGIRDER.ULS6 with AASHTO 5.7.2.1 prestressed threshold, "
+            "torsion-modified Veff, station-dependent General Procedure theta, and transverse 5.7.3.6.2 resistance; final longitudinal "
+            "5.7.3.6.3-1 acceptance remains owned by Combined V+T. Other Bridge presets retain TORSION.CODE2 until separately calibrated."
         ),
         overall_guard_note=(
-            "Bridge ULS check-specific gates report their own status. For Precast I-Girder, Combined V+T remains REVIEW until the torsion theta route is made consistent "
-            "with the station-dependent General Procedure shear theta. Cross-check aggregation belongs in Result Summary. Anchorage, bearing/end-zone, shop-drawing detailing, "
+            "Bridge ULS check-specific gates report their own status. For Precast I-Girder, Shear and Torsion now share the station-dependent General Procedure family, "
+            "but Combined V+T remains REVIEW until the concurrent transverse-sum and longitudinal 5.7.3.6.3-1 equations are certified. Cross-check aggregation belongs in Result Summary. Anchorage, bearing/end-zone, shop-drawing detailing, "
             "and independent benchmark packages remain project review items."
         ),
         is_code_specific_shear_ready=True,

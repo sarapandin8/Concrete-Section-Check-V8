@@ -152,6 +152,9 @@ from concrete_pmm_pro.code_checks import (
     aashto_general_shear_parameters,
     aashto_min_transverse_avs_mm2_per_mm,
     aashto_prestressed_shear_phi,
+    aashto_prestressed_torsion_general_result,
+    aashto_torsion_transverse_design_fy_mpa,
+    aashto_torsional_cracking_moment_nmm,
     aashto_pretensioned_strand_development_length_mm,
     aashto_pretensioned_transfer_fpo_factor,
     aashto_shear_smax_mm,
@@ -249,6 +252,8 @@ from concrete_pmm_pro.serviceability import (
     ServiceabilitySettings,
     build_girder_service_stress_basis_options,
     build_serviceability_summary_from_analysis_input,
+    compute_gross_section_properties,
+    elastic_concrete_stress_section_basis_with_prestress,
     classify_service_stress_results_for_cracking,
     crack_classification_to_dataframe,
     custom_stress_check_points_from_dataframe,
@@ -278,6 +283,7 @@ from concrete_pmm_pro.serviceability import (
     girder_service_stage_result_rows,
     girder_service_stress_result_rows,
     prestress_service_contribution_to_dataframe,
+    summarize_effective_prestress_for_sls,
     run_girder_service_stage_stress,
     run_girder_service_stress_limit_check,
     run_basic_girder_service_stress,
@@ -7340,6 +7346,228 @@ def _beam_uls_igird_prestress_general_shear_terms(
     }
 
 
+def _beam_uls_igird_effective_prestress_compression(
+    state: Mapping[str, object],
+    *,
+    analysis_input: AnalysisInput,
+    x_m: float,
+    span_length_m: float,
+    acp_mm2: float,
+) -> dict[str, object]:
+    """Return station effective-prestress stress/resultants for torsion K.
+
+    AASHTO 5.7.2.1 defines ``fpc`` after prestress losses.  ``Pe_eff_final`` is
+    ramped through the 60db transfer length from each strand's actual bond
+    commencement.  The returned prestress bending resultant is referenced to
+    the gross-section centroid so the 0.19*lambda*sqrt(fc) extreme-tension
+    gate can use factored load plus the same transferred effective prestress.
+    """
+
+    rows = active_girder_strand_rows(_beam_uls_get_state_value(state, "girder_strand_layout_table"))
+    if not rows or not math.isfinite(float(acp_mm2)) or float(acp_mm2) <= 0.0:
+        return {"ready": False, "note": "Active strand rows and positive Acp are required for prestressed torsion fpc."}
+    try:
+        props = compute_gross_section_properties(analysis_input.section_geometry)
+        _, y_min, _, _ = _beam_uls_section_bounds(analysis_input.section_geometry)
+    except Exception as exc:
+        return {"ready": False, "note": f"Gross section properties are required for torsion fpc/K ({type(exc).__name__})."}
+
+    x = min(max(float(x_m), 0.0), float(span_length_m))
+    pe_n = 0.0
+    mpe_x_nmm = 0.0
+    mpe_y_nmm = 0.0
+    min_transfer = 1.0
+    counted = 0
+    for row in rows:
+        count = int(max(0, round(_beam_uls_float(row.get("No. Strands")))))
+        area = _beam_uls_float(row.get("Area/Strand_mm2"))
+        y_from_bottom = _beam_uls_float(row.get("y_mm_from_bottom"))
+        db_mm = _beam_uls_parse_strand_diameter_mm(row)
+        pe_final_kN = _beam_uls_float(row.get("Pe_eff_final/strand_kN"))
+        if count <= 0 or not all(math.isfinite(v) and v > 0.0 for v in [area, db_mm or float("nan"), pe_final_kN]):
+            continue
+        if not math.isfinite(y_from_bottom):
+            return {"ready": False, "note": "Each active strand row requires y_mm_from_bottom for the torsion K tension-fiber gate."}
+        y_abs = float(y_min) + float(y_from_bottom)
+        # The dedicated girder strand table owns vertical groups only; the
+        # active I-Girder workflow places those groups on the section centerline.
+        x_abs = 0.0
+        selected = set(debonded_strand_numbers_for_row(row))
+        left_debond = min(max(_beam_uls_float(row.get("Left debond m")), 0.0), float(span_length_m))
+        right_debond = min(max(_beam_uls_float(row.get("Right debond m")), 0.0), float(span_length_m))
+        for strand_no in range(1, count + 1):
+            is_debonded = strand_no in selected
+            left_bond_start = left_debond if is_debonded else 0.0
+            right_bond_end = float(span_length_m) - right_debond if is_debonded else float(span_length_m)
+            if x < left_bond_start - 1.0e-9 or x > right_bond_end + 1.0e-9:
+                min_transfer = 0.0
+                continue
+            bonded_distance_mm = 1000.0 * max(0.0, min(x - left_bond_start, right_bond_end - x))
+            try:
+                transfer = aashto_pretensioned_transfer_fpo_factor(
+                    bonded_distance_mm=bonded_distance_mm,
+                    db_mm=float(db_mm),
+                )
+            except ValueError:
+                return {"ready": False, "note": "Strand transfer evaluation failed for torsion fpc."}
+            pe_i = float(pe_final_kN) * 1000.0 * transfer
+            pe_n += pe_i
+            mpe_x_nmm += -pe_i * (y_abs - float(props.centroid_y_mm))
+            mpe_y_nmm += -pe_i * (x_abs - float(props.centroid_x_mm))
+            min_transfer = min(min_transfer, transfer)
+            counted += 1
+    if counted <= 0:
+        return {"ready": False, "note": "No transferred effective prestress is available at this station for torsion fpc."}
+
+    ag = float(props.area_mm2)
+    fpc = pe_n / ag
+    return {
+        "ready": True,
+        "Pe effective N": pe_n,
+        "Mpe x N-mm": mpe_x_nmm,
+        "Mpe y N-mm": mpe_y_nmm,
+        "Ag mm2": ag,
+        "fpc_MPa": fpc,
+        "min_transfer_factor": min_transfer,
+        "gross_props": props,
+        "note": (
+            f"fpc = Pe,eff(x)/Ag = {fpc:.4f} MPa from {counted} active strand(s), "
+            "with Pe_eff_final ramped through transfer length from actual bond commencement."
+        ),
+    }
+
+
+def _beam_uls_igird_torsion_k_trace(
+    state: Mapping[str, object],
+    *,
+    analysis_input: AnalysisInput,
+    row: Mapping[str, object],
+    fpc_trace: Mapping[str, object],
+    fc_MPa: float,
+) -> dict[str, object]:
+    """Return AASHTO 5.7.2.1 K inputs, axial adjustment, and tension gate.
+
+    The app Loads convention takes compression-positive Nu; AASHTO 5.7.2.1
+    takes Nu positive in tension.  K is capped at 1.0 when the gross-section
+    extreme tensile stress from factored load plus effective prestress exceeds
+    0.19*lambda*sqrt(fc).  For a non-negligible Ixy, or when the section
+    centroid appears to lie in a flange and the required web/flange-junction
+    fpc is not source-owned, the app conservatively applies Kmax=1.0 rather
+    than claiming prestress enhancement.
+    """
+
+    props = fpc_trace.get("gross_props")
+    if props is None:
+        try:
+            props = compute_gross_section_properties(analysis_input.section_geometry)
+        except Exception as exc:
+            return {"ready": False, "note": f"Gross section properties unavailable for torsion K ({type(exc).__name__})."}
+    ag = float(getattr(props, "area_mm2", float("nan")))
+    if not math.isfinite(ag) or ag <= 0.0:
+        return {"ready": False, "note": "Positive gross section area Ag is required for torsion K."}
+
+    fpc_base = _beam_uls_float(fpc_trace.get("fpc_MPa"))
+    nu_app_kN = _beam_uls_float(row.get("Nu"))
+    nu_app_kN = nu_app_kN if math.isfinite(nu_app_kN) else 0.0
+    nu_aashto_n = -float(nu_app_kN) * 1000.0
+    fpc_for_k = float(fpc_base) - nu_aashto_n / ag
+
+    mux_kNm = _beam_uls_float(row.get("Mux"))
+    muy_kNm = _beam_uls_float(row.get("Muy"))
+    mux_nmm = (mux_kNm if math.isfinite(mux_kNm) else 0.0) * 1.0e6
+    muy_nmm = (muy_kNm if math.isfinite(muy_kNm) else 0.0) * 1.0e6
+    pu_n = float(nu_app_kN) * 1000.0
+    pe_n = _beam_uls_float(fpc_trace.get("Pe effective N"))
+    mpe_x = _beam_uls_float(fpc_trace.get("Mpe x N-mm"))
+    mpe_y = _beam_uls_float(fpc_trace.get("Mpe y N-mm"))
+    if not all(math.isfinite(v) for v in [pe_n, mpe_x, mpe_y]):
+        return {"ready": False, "note": "Effective prestress resultants are required for the torsion K tension-fiber gate."}
+
+    ix = float(getattr(props, "Ix_mm4", float("nan")))
+    iy = float(getattr(props, "Iy_mm4", float("nan")))
+    ixy = float(getattr(props, "Ixy_mm4", 0.0))
+    ref_i = math.sqrt(ix * iy) if ix > 0.0 and iy > 0.0 else 0.0
+    nonprincipal = ref_i <= 0.0 or abs(ixy) > 1.0e-6 * ref_i
+
+    max_tension = 0.0
+    stress_points: list[float] = []
+    if not nonprincipal:
+        for pt in analysis_input.section_geometry.outer_polygon:
+            dx = float(pt.x) - float(props.centroid_x_mm)
+            dy = float(pt.y) - float(props.centroid_y_mm)
+            stress = (
+                -pu_n / ag
+                + mux_nmm * dy / ix
+                + muy_nmm * dx / iy
+                - pe_n / ag
+                + mpe_x * dy / ix
+                + mpe_y * dx / iy
+            )
+            stress_points.append(float(stress))
+        max_tension = max([0.0, *stress_points])
+
+    tension_limit = aashto_sqrt_fc_stress_mpa(0.19, float(fc_MPa))
+    k_max = 1.0 if nonprincipal or max_tension > tension_limit + 1.0e-12 else 2.0
+    gate_reasons: list[str] = []
+    if nonprincipal:
+        gate_reasons.append("gross Ixy is non-negligible; K enhancement conservatively capped at 1.0")
+    elif max_tension > tension_limit + 1.0e-12:
+        gate_reasons.append(
+            f"extreme tensile stress {max_tension:.3f} MPa exceeds 0.19λ√f'c = {tension_limit:.3f} MPa; Kmax=1.0"
+        )
+
+    # If the centroid lies in a flange, 5.7.2.1 calls for fpc at the web-flange
+    # junction.  The dedicated I-Girder section source currently owns centroid
+    # prestress stress but not a named web-flange-junction station.  Detect a
+    # clearly flange-wide centroid and conservatively suppress K>1 enhancement.
+    centroid_flange_guard = False
+    try:
+        polygon = to_shapely_polygon(analysis_input.section_geometry)
+        minx, _, maxx, _ = polygon.bounds
+        width_line = LineString([(float(minx) - (maxx-minx), float(props.centroid_y_mm)), (float(maxx) + (maxx-minx), float(props.centroid_y_mm))])
+        centroid_width = _beam_uls_linework_length_mm(polygon.intersection(width_line))
+        bw, _ = _beam_uls_web_width_mm(analysis_input.section_geometry)
+        if bw is not None and centroid_width > 1.25 * float(bw):
+            centroid_flange_guard = True
+            k_max = 1.0
+            gate_reasons.append("section centroid appears to lie in a flange; web-flange-junction fpc is not source-owned, so K enhancement is conservatively capped at 1.0")
+    except Exception:
+        pass
+
+    base_stress = aashto_sqrt_fc_stress_mpa(0.126, float(fc_MPa))
+    radicand = 1.0 + fpc_for_k / base_stress if base_stress > 0.0 else float("nan")
+    if not math.isfinite(radicand) or radicand < 0.0:
+        return {
+            "ready": False,
+            "fpc base MPa": fpc_base,
+            "fpc for K MPa": fpc_for_k,
+            "Nu AASHTO kN": nu_aashto_n / 1000.0,
+            "K max": k_max,
+            "Extreme tension MPa": max_tension,
+            "K tension limit MPa": tension_limit,
+            "note": "AASHTO torsion K radicand is negative after the axial-force adjustment; capacity is not fabricated.",
+        }
+    k_factor = min(k_max, math.sqrt(radicand))
+    gate_status = "K ENHANCEMENT PERMITTED" if k_max > 1.0 else "K <= 1.0 GUARD"
+    return {
+        "ready": True,
+        "fpc base MPa": fpc_base,
+        "fpc for K MPa": fpc_for_k,
+        "Nu AASHTO kN": nu_aashto_n / 1000.0,
+        "K": k_factor,
+        "K max": k_max,
+        "K radicand": radicand,
+        "Extreme tension MPa": max_tension,
+        "K tension limit MPa": tension_limit,
+        "K gate status": gate_status,
+        "centroid flange guard": centroid_flange_guard,
+        "note": (
+            "AASHTO 5.7.2.1 K uses fpc - Nu/Ag with Nu positive in tension; "
+            + ("; ".join(gate_reasons) if gate_reasons else "gross-section extreme tension is within the 0.19λ√f'c K-enhancement gate")
+            + "."
+        ),
+    }
+
 def _beam_uls_igird_general_shear_epsilon(
     state: Mapping[str, object],
     *,
@@ -7351,8 +7579,14 @@ def _beam_uls_igird_general_shear_epsilon(
     vu_kN: float,
     nu_compression_positive_kN: float,
     dv_mm: float,
+    effective_shear_kN: float | None = None,
 ) -> dict[str, object]:
-    """Evaluate station longitudinal strain for I-Girder shear General Procedure."""
+    """Evaluate station longitudinal strain for I-Girder General Procedure.
+
+    ``effective_shear_kN`` is used by the torsion route to implement AASHTO
+    5.7.3.4.2, which replaces Vu in the strain equation with Veff when torsion
+    must be considered.  The accepted standalone Shear route leaves it unset.
+    """
 
     rebar_terms = _beam_uls_igird_rebar_strain_terms(analysis_input, tension_face=tension_face)
     ps_terms = _beam_uls_igird_prestress_general_shear_terms(
@@ -7367,7 +7601,8 @@ def _beam_uls_igird_general_shear_epsilon(
     denominator_n = _beam_uls_float(rebar_terms.get("EsAs_N")) + _beam_uls_float(ps_terms.get("EpAps_N"))
     if not math.isfinite(denominator_n) or denominator_n <= 0.0:
         return {"ready": False, "note": "AASHTO epsilon_s denominator EsAs + EpAps is zero; longitudinal tension-side reinforcement source is required."}
-    vu_n = abs(float(vu_kN)) * 1000.0
+    vu_for_epsilon_kN = float(effective_shear_kN) if effective_shear_kN is not None and math.isfinite(float(effective_shear_kN)) else float(vu_kN)
+    vu_n = abs(vu_for_epsilon_kN) * 1000.0
     mu_nmm = abs(float(mux_kNm)) * 1.0e6 if math.isfinite(float(mux_kNm)) else 0.0
     # Vp is zero until a vertical prestress component is explicitly source-owned.
     vp_n = 0.0
@@ -7394,6 +7629,9 @@ def _beam_uls_igird_general_shear_epsilon(
         "Nu_AASHTO_N": nu_aashto_n,
         "Mu_used_Nmm": mu_used_nmm,
         "Vp_N": vp_n,
+        "Vu input kN": float(vu_kN),
+        "Veff used kN": abs(vu_for_epsilon_kN) if effective_shear_kN is not None else float("nan"),
+        "uses Veff": bool(effective_shear_kN is not None),
         "As_mm2": rebar_terms.get("As_mm2", 0.0),
         **ps_terms,
         "note": " ".join(part for part in note_parts if part),
@@ -8845,6 +9083,196 @@ def _beam_uls_shear_variable_definitions_dataframe() -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["Symbol", "Meaning", "Unit", "Used in", "Code basis"])
 
 
+def _beam_uls_torsion_calculation_trace_dataframe(row: Mapping[str, object] | None) -> pd.DataFrame:
+    """Return the read-only governing-station equation trace for Torsion.
+
+    IGIRDER.ULS6 intentionally reads values already produced by the Torsion
+    calculation.  Opening this table must never become a second solver path.
+    Legacy/non-I-Girder rows simply yield the subset of trace steps supported by
+    their stored fields.
+    """
+
+    columns = ["Step", "Equation / substitution", "Result", "Code basis"]
+    if row is None:
+        return pd.DataFrame(columns=columns)
+
+    def f(key: str) -> float:
+        return _beam_uls_float(row.get(key))
+
+    def n(value: float, digits: int = 3) -> str:
+        return f"{value:,.{digits}f}" if math.isfinite(value) else "-"
+
+    tu = abs(f("Demand kN-m"))
+    tcr = f("Tcr kN-m")
+    phi_tcr = f("φTcr kN-m")
+    threshold = f("Threshold kN-m")
+    fc = f("f'c MPa")
+    fpc_base = f("fpc base MPa")
+    fpc = f("fpc MPa")
+    nu_aashto = f("Nu AASHTO kN")
+    k_factor = f("K")
+    k_max = f("K max")
+    extreme_tension = f("Extreme tension MPa")
+    k_tension_limit = f("K tension limit MPa")
+    acp = f("Acp mm2")
+    pcp = f("Pcp mm")
+    be = f("be mm")
+    ao = f("Ao mm2")
+    ph = f("ph mm")
+    vu = abs(f("Vuy kN"))
+    veff = f("Veff kN")
+    torsion_equiv_n = f("Torsion equivalent shear N")
+    eps_raw = f("εs raw")
+    eps_used = f("εs used")
+    eps_num = f("εs numerator N")
+    eps_den = f("εs denominator N")
+    beta = f("β")
+    theta = f("θ deg")
+    cot_theta = f("cotθ")
+    at_per_s = f("At/s mm2/mm")
+    at_req = f("Torsion At/s req mm2/mm")
+    fy_input = f("fy input MPa")
+    fy = f("fy MPa")
+    if not math.isfinite(fy):
+        # Current torsion row does not expose fy in every route; derive it only
+        # when the stored Tn equation has enough independent terms.
+        tn_nmm = f("Tn kN-m") * 1.0e6
+        denom = 2.0 * ao * at_per_s * cot_theta
+        fy = tn_nmm / denom if math.isfinite(tn_nmm) and math.isfinite(denom) and denom > 0.0 else float("nan")
+    tn = f("Tn kN-m")
+    phi = f("φ")
+    phi_tn = f("φTn kN-m")
+    dc = f("D/C value")
+
+    rows: list[dict[str, str]] = []
+    if all(math.isfinite(v) for v in [fc, fpc, k_factor, k_max, acp, pcp, tcr]):
+        rows.append({
+            "Step": "1 · Prestress / axial adjustment and K gate",
+            "Equation / substitution": (
+                f"fpc,K = fpc − Nu/Ag = {n(fpc_base,3)} MPa with Nu(AASHTO)={n(nu_aashto,2)} kN → {n(fpc,3)} MPa; "
+                f"K = min[√(1 + fpc,K/(0.126λ√f'c)), Kmax] = {n(k_factor,3)}, Kmax={n(k_max,1)}"
+            ),
+            "Result": (
+                f"K = {n(k_factor,3)}; extreme tension {n(extreme_tension,3)} MPa vs "
+                f"0.19λ√f'c limit {n(k_tension_limit,3)} MPa · {str(row.get('K gate status') or '-')}"
+            ),
+            "Code basis": "AASHTO LRFD 5.7.2.1-6 and following K provisions: Nu tension-positive; K≤1 when gross-section extreme tension exceeds 0.19λ√f'c",
+        })
+        rows.append({
+            "Step": "3 · Prestressed torsional cracking moment Tcr",
+            "Equation / substitution": (
+                f"Tcr = [SI-converted 0.126Kλ√f'c] Acp²/Pcp with f'c={n(fc,2)} MPa, "
+                f"Acp={n(acp,1)} mm², Pcp={n(pcp,1)} mm"
+            ),
+            "Result": f"Tcr = {n(tcr,2)} kN-m",
+            "Code basis": "AASHTO LRFD 5.7.2.1-4; specification coefficient evaluated through SI-safe conversion",
+        })
+    if math.isfinite(threshold):
+        rows.append({
+            "Step": "3 · Torsion investigation threshold",
+            "Equation / substitution": f"Threshold = 0.25 φTcr = 0.25 × {n(phi_tcr,2)} kN-m; |Tu| = {n(tu,2)} kN-m",
+            "Result": str(row.get("Threshold status") or "-"),
+            "Code basis": "AASHTO LRFD 5.7.2.1-3",
+        })
+    if all(math.isfinite(v) for v in [acp, pcp, be, ao]):
+        rows.append({
+            "Step": "4 · Solid-section shear-flow geometry",
+            "Equation / substitution": f"be = Acp/Pcp = {n(acp,1)} / {n(pcp,1)} = {n(be,2)} mm; Ao = area enclosed by the be centerline path",
+            "Result": f"Ao = {n(ao,1)} mm²; ph = {n(ph,1)} mm",
+            "Code basis": "AASHTO C5.7.3.6.2; ph from actual closed transverse torsion reinforcement centerline",
+        })
+    if all(math.isfinite(v) for v in [vu, ph, tu, ao, veff]):
+        torsion_equiv_kn = torsion_equiv_n / 1000.0 if math.isfinite(torsion_equiv_n) else float("nan")
+        rows.append({
+            "Step": "5 · Effective shear Veff for torsion",
+            "Equation / substitution": (
+                f"Veff = √[Vu² + (0.9 ph Tu / 2Ao)²] = √[{n(vu,2)}² + {n(torsion_equiv_kn,2)}²] kN"
+            ),
+            "Result": f"Veff = {n(veff,2)} kN",
+            "Code basis": "AASHTO LRFD 5.7.3.4.2-5 for solid sections",
+        })
+    if all(math.isfinite(v) for v in [eps_raw, eps_used]):
+        rows.append({
+            "Step": "6 · Longitudinal strain εs",
+            "Equation / substitution": f"εs = numerator/(EsAs + EpAps) = {n(eps_num,1)} / {n(eps_den,1)}; Vu term replaced by Veff",
+            "Result": f"raw {n(eps_raw*1000.0,3)}‰ → adopted {n(eps_used*1000.0,3)}‰",
+            "Code basis": "AASHTO LRFD 5.7.3.4.2-4 with 5.7.3.4.2-5 torsion modification",
+        })
+    if math.isfinite(beta):
+        rows.append({
+            "Step": "7 · General Procedure β",
+            "Equation / substitution": f"β = 4.8/(1 + 750εs) with adopted εs = {n(eps_used,6)}",
+            "Result": n(beta,3),
+            "Code basis": "AASHTO LRFD 5.7.3.4.2-1 for section with at least minimum transverse reinforcement",
+        })
+    if math.isfinite(theta):
+        rows.append({
+            "Step": "8 · Compression-field angle θ",
+            "Equation / substitution": f"θ = 29 + 3500εs = 29 + 3500×{n(eps_used,6)}",
+            "Result": f"θ = {n(theta,2)}°; cotθ = {n(cot_theta,3)}",
+            "Code basis": "AASHTO LRFD 5.7.3.4.2-3; torsion uses θ from Article 5.7.3.4",
+        })
+    if all(math.isfinite(v) for v in [ao, at_per_s, fy, cot_theta, tn]):
+        rows.append({
+            "Step": "9 · Nominal torsional resistance Tn",
+            "Equation / substitution": f"Tn = 2Ao(At/s)fy cotθ λduct = 2×{n(ao,1)}×{n(at_per_s,5)}×{n(fy,1)}×{n(cot_theta,3)}×1.0",
+            "Result": f"Tn = {n(tn,2)} kN-m; At/s required = {n(at_req,5)} mm²/mm; fy input/design = {n(fy_input,1)}/{n(fy,1)} MPa",
+            "Code basis": "AASHTO LRFD 5.7.2.7 design fy + 5.7.3.6.2-1 torsional resistance",
+        })
+    if math.isfinite(phi_tn):
+        rows.append({
+            "Step": "10 · Factored torsional resistance φTn",
+            "Equation / substitution": f"φTn = φ × Tn = {n(phi,3)} × {n(tn,2)}",
+            "Result": f"φTn = {n(phi_tn,2)} kN-m",
+            "Code basis": "AASHTO LRFD 5.5.4.2 + 5.7.3.6.2",
+        })
+    if math.isfinite(dc):
+        rows.append({
+            "Step": "11 · Transverse torsion strength utilization",
+            "Equation / substitution": f"D/C = |Tu|/φTn = {n(tu,2)} / {n(phi_tn,2)}",
+            "Result": f"D/C = {n(dc,3)}",
+            "Code basis": "Concrete Section Pro transverse Torsion decision ratio; limit = 1.0",
+        })
+    if str(row.get("Longitudinal status") or "").upper() == "COMBINED CHECK REQUIRED":
+        rows.append({
+            "Step": "12 · Longitudinal acceptance gate",
+            "Equation / substitution": "Standalone Torsion does not replace the concurrent Mu/Nu/Vu/Tu/prestress longitudinal equilibrium with a torsion-only Al shortcut.",
+            "Result": "REVIEW — Combined V+T required",
+            "Code basis": "AASHTO LRFD 5.7.3.6.3-1",
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def _beam_uls_torsion_variable_definitions_dataframe() -> pd.DataFrame:
+    """Return concise engineering definitions for the I-Girder Torsion workspace."""
+
+    rows = [
+        ("Tu", "Applied factored torsional moment at the station.", "kN-m", "Threshold and torsion D/C", "AASHTO 5.7.2.1"),
+        ("Tcr", "Pure torsional cracking moment of the concrete section, including the prestress compression factor K for the prestressed I-Girder route.", "kN-m", "0.25φTcr threshold", "AASHTO 5.7.2.1"),
+        ("fpc", "Unfactored concrete compressive stress after prestress losses. For K under axial force, AASHTO replaces it by fpc − Nu/Ag with Nu positive in tension.", "MPa", "K, Tcr", "AASHTO 5.7.2.1"),
+        ("K", "Prestress factor for torsional cracking. The usual upper bound is 2.0, but K must not exceed 1.0 when gross-section extreme tensile stress from factored load plus effective prestress exceeds 0.19λ√f'c.", "-", "Tcr", "AASHTO 5.7.2.1-6 and K provisions"),
+        ("Nu", "Factored axial force used in the K adjustment. The app Loads convention is compression-positive; the AASHTO K equation is tension-positive and the trace shows the converted sign.", "kN", "fpc − Nu/Ag", "AASHTO 5.7.2.1"),
+        ("Acp", "Area enclosed by the outside perimeter of the concrete cross section.", "mm²", "Tcr, be", "AASHTO 5.7.2.1"),
+        ("Pcp", "Outside perimeter of the concrete cross section.", "mm", "Tcr, be", "AASHTO 5.7.2.1"),
+        ("be", "Effective width of the solid-section torsional shear-flow path, taken as Acp/Pcp in this route.", "mm", "Ao", "AASHTO C5.7.3.6.2"),
+        ("Ao", "Area enclosed by the torsional shear-flow path used by the space-truss model.", "mm²", "Veff, Tn", "AASHTO 5.7.3.4.2 / C5.7.3.6.2"),
+        ("ph", "Perimeter of the centerline of the actual closed transverse torsion reinforcement.", "mm", "Veff and longitudinal torsion", "AASHTO 5.7.3.4.2 / 5.7.3.6.3"),
+        ("Vu", "Concurrent factored shear force at the station.", "kN", "Veff", "ULS load resultant"),
+        ("Veff", "Effective shear used in the General Procedure when torsion must be considered; combines Vu and the solid-section torsion term by root-sum-square.", "kN", "εs", "AASHTO 5.7.3.4.2-5"),
+        ("εs", "Longitudinal strain used to determine the General Procedure compression-field parameters after replacing Vu with Veff.", "strain / ‰", "β and θ", "AASHTO 5.7.3.4.2"),
+        ("β", "General Procedure concrete shear factor stored for traceability; θ is the parameter that enters the torsional truss resistance directly.", "-", "General Procedure trace", "AASHTO 5.7.3.4.2"),
+        ("θ", "Angle of inclination of diagonal compressive stresses, obtained from Article 5.7.3.4 with the torsion-modified Veff strain.", "deg", "Tn", "AASHTO 5.7.3.6.2"),
+        ("At", "Area of one leg of the closed transverse torsion reinforcement.", "mm²", "At/s, Tn", "AASHTO 5.7.3.6.2"),
+        ("s", "Longitudinal spacing of the transverse torsion reinforcement.", "mm", "At/s, detailing", "AASHTO 5.7.3.6.2"),
+        ("At/s", "Provided one-leg closed-hoop torsion reinforcement area per unit spacing.", "mm²/mm", "Tn", "AASHTO 5.7.3.6.2"),
+        ("fy", "Design yield strength of the nonprestressed transverse torsion reinforcement. Because torsion is present, the flexural-shear-only 100 ksi exception does not apply; steel above 60 ksi is limited to the stress at 0.0035 strain and not more than 75 ksi. The current elastic-perfectly-plastic steel model enforces the explicit 75 ksi cap.", "MPa", "minimum Av/s and Tn", "AASHTO 5.7.2.7"),
+        ("Tn", "Nominal transverse-reinforcement torsional resistance.", "kN-m", "φTn", "AASHTO 5.7.3.6.2"),
+        ("φTn", "Factored transverse torsional resistance used by the standalone torsion strength component.", "kN-m", "Torsion D/C", "AASHTO 5.5.4.2 + 5.7.3.6.2"),
+        ("Aℓ / longitudinal resistance", "Longitudinal torsion resistance for a solid prestressed section is not certified by a torsion-only area shortcut; the concurrent force equation is checked with V+T.", "force / area system", "Final longitudinal acceptance", "AASHTO 5.7.3.6.3-1"),
+    ]
+    return pd.DataFrame(rows, columns=["Symbol", "Meaning", "Unit", "Used in", "Code basis"])
+
+
 def _beam_uls_shear_audit_dataframe(shear_df: pd.DataFrame | None) -> pd.DataFrame:
     columns = [
         "Governing", "Design role", "Station type", "Station x", "Support side", "Critical offset", "Case", "Status", "Strength", "Detailing", "Vn limit", "Vu demand", "φVn", "D/C", "Strength D/C", "Detailing D/C",
@@ -8960,6 +9388,76 @@ def _beam_uls_outer_polygon_metrics(section_geometry: SectionGeometry) -> dict[s
         "Acp mm2": float(outer_polygon.area),
         "Pcp mm": pcp,
         "Note": "Acp/Pcp from outside concrete perimeter; void perimeters are not included in Pcp.",
+    }
+
+
+_IGIRDER_TORSION_SETTINGS_KEY = "beam_girder_torsion_settings"
+
+
+def _beam_uls_igird_torsion_settings(state: Mapping[str, object]) -> dict[str, object]:
+    raw = _beam_uls_get_state_value(state, _IGIRDER_TORSION_SETTINGS_KEY)
+    if not isinstance(raw, Mapping):
+        metadata = _beam_uls_get_state_value(state, "project_metadata", {})
+        raw = metadata.get(_IGIRDER_TORSION_SETTINGS_KEY) if isinstance(metadata, Mapping) else None
+    raw = dict(raw or {}) if isinstance(raw, Mapping) else {}
+    ph_manual = _beam_uls_float(raw.get("ph_mm"))
+    offset = _beam_uls_float(raw.get("hoop_centerline_offset_mm"))
+    return {
+        "closed_loop_confirmed": bool(raw.get("closed_loop_confirmed", False)),
+        "ph_mm": float(ph_manual) if math.isfinite(ph_manual) and ph_manual > 0.0 else None,
+        "hoop_centerline_offset_mm": float(offset) if math.isfinite(offset) and offset > 0.0 else 50.0,
+        "longitudinal_perimeter_distribution_confirmed": bool(raw.get("longitudinal_perimeter_distribution_confirmed", False)),
+        "corner_longitudinal_reinforcement_confirmed": bool(raw.get("corner_longitudinal_reinforcement_confirmed", False)),
+        "note": str(raw.get("note") or ""),
+    }
+
+
+def _beam_uls_igird_aashto_solid_torsion_geometry(
+    section_geometry: SectionGeometry,
+    *,
+    settings: Mapping[str, object],
+) -> dict[str, object]:
+    """Return AASHTO solid-section torsion geometry for Precast I-Girder.
+
+    Article C5.7.3.6.2 permits Ao for solid sections to be taken as the area
+    enclosed by the centerline of effective width be=Acp/pc.  This is not the
+    ACI-style Ao=0.85Aoh shortcut.  ph remains the actual centerline perimeter
+    of the closed transverse torsion reinforcement and is user-confirmed.
+    """
+
+    metrics = _beam_uls_outer_polygon_metrics(section_geometry)
+    acp = _beam_uls_float(metrics.get("Acp mm2"))
+    pcp = _beam_uls_float(metrics.get("Pcp mm"))
+    if not all(math.isfinite(v) and v > 0.0 for v in [acp, pcp]):
+        return {"ready": False, "Acp mm2": acp, "Pcp mm": pcp, "Note": "Outside concrete torsion geometry is unavailable."}
+    be = acp / pcp
+    try:
+        outer = to_shapely_polygon(SectionGeometry(name=section_geometry.name, outer_polygon=section_geometry.outer_polygon, holes=[]))
+        flow = outer.buffer(-0.5 * be, join_style=2)
+        if flow.is_empty or flow.area <= 0.0:
+            raise ValueError("empty AASHTO shear-flow path")
+        if getattr(flow, "geoms", None):
+            # A split effective-width path cannot be silently converted into a
+            # single St. Venant torsion tube for an I-Girder.
+            return {
+                "ready": False, "Acp mm2": acp, "Pcp mm": pcp, "be mm": be,
+                "Note": "AASHTO be=Acp/pc shear-flow centerline splits into multiple regions; define/verify torsion geometry before capacity is certified.",
+            }
+        ao = float(flow.area)
+    except Exception as exc:
+        return {"ready": False, "Acp mm2": acp, "Pcp mm": pcp, "be mm": be, "Note": f"AASHTO solid-section Ao path failed: {type(exc).__name__}."}
+
+    ph_manual = _beam_uls_float(settings.get("ph_mm"))
+    closed = bool(settings.get("closed_loop_confirmed", False))
+    if not closed or not math.isfinite(ph_manual) or ph_manual <= 0.0:
+        return {
+            "ready": False, "Acp mm2": acp, "Pcp mm": pcp, "be mm": be, "Ao mm2": ao,
+            "ph mm": ph_manual,
+            "Note": "AASHTO solid-section Ao is available, but final torsion capacity requires a user-confirmed closed transverse torsion loop and its centerline perimeter ph in Sections → Rebar.",
+        }
+    return {
+        "ready": True, "Acp mm2": acp, "Pcp mm": pcp, "be mm": be, "Ao mm2": ao, "ph mm": ph_manual,
+        "Note": "Ao from AASHTO C5.7.3.6.2 solid-section shear-flow centerline using be=Acp/pc; ph from the user-confirmed closed torsion hoop centerline.",
     }
 
 
@@ -9175,6 +9673,266 @@ def _beam_uls_torsion_detailing_gate(
         "notes": "; ".join(notes),
     }
 
+def _beam_uls_igird_torsion_result_for_row(
+    state: Mapping[str, object],
+    row: Mapping[str, object],
+    *,
+    strength_route: BeamGirderUlsStrengthRoute,
+) -> dict[str, object]:
+    """AASHTO LRFD 9th Ed prestressed solid I-Girder torsion row.
+
+    The transverse torsion component is evaluated with the same station-dependent
+    General Procedure family as Shear.  Final longitudinal acceptance is not
+    fabricated here: Article 5.7.3.6.3-1 is a concurrent Mu/Nu/Vu/Tu/prestress
+    equation and remains owned by the Combined V+T milestone.
+    """
+
+    x_m = _beam_uls_float(row.get("Station x (m)"))
+    tu_kNm = _beam_uls_float(row.get("Tu"))
+    vu_kN = _beam_uls_float(row.get("Vuy"))
+    mux_kNm = _beam_uls_float(row.get("Mux"))
+    nu_kN = _beam_uls_float(row.get("Nu"))
+    case = str(row.get("Case Name") or "-")
+    span_m = _beam_uls_span_length_from_state(state, is_building=False)
+    support_side = _beam_uls_member_end_side(x_m, span_m)
+    explicit_boundary = bool(row.get("__Diagram boundary"))
+    station_type = "DIAGRAM BOUNDARY" if explicit_boundary or support_side else "LOAD STATION"
+    notes: list[str] = []
+    if station_type == "DIAGRAM BOUNDARY":
+        notes.append("Member-end torsion row is a diagram boundary only and is excluded from governing torsion decisions.")
+    if not math.isfinite(tu_kNm) or abs(tu_kNm) <= _BEAM_ULS_DEMAND_TOL:
+        return {
+            "Check": "Torsion", "Status": "NO DEMAND", "Station type": station_type, "Support side": support_side or "-",
+            "Transverse status": "NO DEMAND", "Longitudinal status": "NOT CHECKED", "Detailing status": "NO DEMAND",
+            "Governing x": _format_beam_uls_x(x_m), "Case": case, "Demand": "-", "Capacity": "-", "Utilization": "-",
+            "Demand kN-m": 0.0, "Abs demand kN-m": 0.0, "φTn kN-m": float("nan"), "D/C value": float("nan"),
+            "Method": "AASHTO LRFD 5.7 prestressed torsion — no demand", "Notes": "No finite Tu demand.",
+        }
+
+    analysis_input, input_messages = _beam_uls_flexure_analysis_input_for_station(state, row=row, strength_route=strength_route)
+    notes.extend(input_messages or [])
+    if analysis_input is None:
+        return {
+            "Check": "Torsion", "Status": "REVIEW", "Station type": station_type, "Support side": support_side or "-",
+            "Transverse status": "NOT READY", "Longitudinal status": "NOT CHECKED", "Detailing status": "NOT READY",
+            "Governing x": _format_beam_uls_x(x_m), "Case": case, "Demand": _format_beam_uls_demand(tu_kNm, "kN-m"),
+            "Capacity": "-", "Utilization": "-", "Demand kN-m": tu_kNm, "Abs demand kN-m": abs(tu_kNm),
+            "φTn kN-m": float("nan"), "D/C value": float("nan"), "Method": "AASHTO LRFD 5.7 prestressed torsion",
+            "Notes": "; ".join(notes) or "Section/material input not ready for prestressed torsion.",
+        }
+
+    fc = float(analysis_input.concrete_material.fc_MPa)
+    metrics = _beam_uls_outer_polygon_metrics(analysis_input.section_geometry)
+    acp = _beam_uls_float(metrics.get("Acp mm2"))
+    pcp = _beam_uls_float(metrics.get("Pcp mm"))
+    phi, phi_policy = aashto_prestressed_shear_phi(
+        has_unbonded_or_debonded_strands=_beam_uls_igird_has_debonded_strands(state)
+    )
+    fpc_trace = _beam_uls_igird_effective_prestress_compression(
+        state, analysis_input=analysis_input, x_m=float(x_m), span_length_m=float(span_m), acp_mm2=acp
+    )
+    if not bool(fpc_trace.get("ready")):
+        return {
+            "Check": "Torsion", "Status": "REVIEW", "Station type": station_type, "Support side": support_side or "-",
+            "Transverse status": "NOT READY", "Longitudinal status": "NOT CHECKED", "Detailing status": "NOT READY",
+            "Governing x": _format_beam_uls_x(x_m), "Case": case, "Demand": _format_beam_uls_demand(tu_kNm, "kN-m"),
+            "Capacity": "Tcr source not ready", "Utilization": "-", "Demand kN-m": tu_kNm, "Abs demand kN-m": abs(tu_kNm),
+            "φTn kN-m": float("nan"), "D/C value": float("nan"), "Acp mm2": acp, "Pcp mm": pcp, "φ": phi,
+            "φ policy": phi_policy, "Method": "AASHTO LRFD 5.7 prestressed torsion",
+            "Notes": "; ".join(part for part in [*notes, str(fpc_trace.get("note") or "")] if part),
+        }
+    k_trace = _beam_uls_igird_torsion_k_trace(
+        state, analysis_input=analysis_input, row=row, fpc_trace=fpc_trace, fc_MPa=fc
+    )
+    if not bool(k_trace.get("ready")):
+        return {
+            "Check": "Torsion", "Status": "REVIEW", "Station type": station_type, "Support side": support_side or "-",
+            "Transverse status": "NOT READY", "Longitudinal status": "NOT CHECKED", "Detailing status": "NOT READY",
+            "Governing x": _format_beam_uls_x(x_m), "Case": case, "Demand": _format_beam_uls_demand(tu_kNm, "kN-m"),
+            "Capacity": "Tcr K source not ready", "Utilization": "-", "Demand kN-m": tu_kNm, "Abs demand kN-m": abs(tu_kNm),
+            "φTn kN-m": float("nan"), "D/C value": float("nan"), "Acp mm2": acp, "Pcp mm": pcp, "φ": phi,
+            "φ policy": phi_policy, "fpc base MPa": k_trace.get("fpc base MPa", fpc_trace.get("fpc_MPa", float("nan"))),
+            "fpc MPa": k_trace.get("fpc for K MPa", float("nan")), "K max": k_trace.get("K max", float("nan")),
+            "Extreme tension MPa": k_trace.get("Extreme tension MPa", float("nan")), "K tension limit MPa": k_trace.get("K tension limit MPa", float("nan")),
+            "Method": "AASHTO LRFD 5.7.2.1 prestressed torsion K source gate",
+            "Notes": "; ".join(part for part in [*notes, str(fpc_trace.get("note") or ""), str(k_trace.get("note") or "")] if part),
+        }
+    fpc = _beam_uls_float(k_trace.get("fpc for K MPa"))
+    k_max = _beam_uls_float(k_trace.get("K max"))
+    try:
+        tcr_nmm = aashto_torsional_cracking_moment_nmm(
+            fc_MPa=fc, Acp_mm2=acp, Pcp_mm=pcp, shape="solid", lambda_concrete=1.0, fpc_MPa=fpc, k_max=k_max
+        )
+    except ValueError as exc:
+        return {
+            "Check": "Torsion", "Status": "REVIEW", "Station type": station_type, "Support side": support_side or "-",
+            "Transverse status": "NOT READY", "Longitudinal status": "NOT CHECKED", "Detailing status": "NOT READY",
+            "Governing x": _format_beam_uls_x(x_m), "Case": case, "Demand": _format_beam_uls_demand(tu_kNm, "kN-m"),
+            "Capacity": "Tcr source not ready", "Utilization": "-", "Demand kN-m": tu_kNm, "Abs demand kN-m": abs(tu_kNm),
+            "φTn kN-m": float("nan"), "D/C value": float("nan"), "Notes": f"Tcr evaluation failed: {exc}",
+        }
+    phi_tcr_kNm = phi * tcr_nmm / 1.0e6
+    threshold_kNm = 0.25 * phi_tcr_kNm
+    threshold_status = "BELOW THRESHOLD" if abs(tu_kNm) <= threshold_kNm + 1.0e-9 else "DESIGN REQUIRED"
+    k_factor = _beam_uls_float(k_trace.get("K"))
+
+    common = {
+        "Check": "Torsion", "Station type": station_type, "Support side": support_side or "-", "Threshold status": threshold_status,
+        "Governing x": _format_beam_uls_x(x_m), "Case": case, "Demand": _format_beam_uls_demand(tu_kNm, "kN-m"),
+        "Demand kN-m": tu_kNm, "Abs demand kN-m": abs(tu_kNm), "φTcr kN-m": phi_tcr_kNm,
+        "Tcr kN-m": tcr_nmm / 1.0e6, "Threshold kN-m": threshold_kNm,
+        "fpc base MPa": _beam_uls_float(k_trace.get("fpc base MPa")), "fpc MPa": fpc, "K": k_factor, "K max": k_max,
+        "Nu AASHTO kN": _beam_uls_float(k_trace.get("Nu AASHTO kN")),
+        "Extreme tension MPa": _beam_uls_float(k_trace.get("Extreme tension MPa")), "K tension limit MPa": _beam_uls_float(k_trace.get("K tension limit MPa")),
+        "K gate status": str(k_trace.get("K gate status") or "-"),
+        "f'c MPa": fc, "λ concrete": 1.0, "Acp mm2": acp, "Pcp mm": pcp, "φ": phi, "φ policy": phi_policy,
+        "Threshold basis": "AASHTO LRFD 5.7.2.1-3/-4/-6: investigate torsion when |Tu| > 0.25φTcr",
+        "Code basis": "AASHTO LRFD 9th Ed. 5.7.2.1; 5.7.3.4.2; 5.7.3.6.2",
+    }
+    if threshold_status == "BELOW THRESHOLD":
+        return {
+            **common, "Status": "BELOW THRESHOLD", "Transverse status": "NOT REQUIRED", "Longitudinal status": "NOT REQUIRED",
+            "Detailing status": "NOT REQUIRED", "Capacity": f"0.25φTcr = {threshold_kNm:,.2f} kN-m", "Utilization": "-",
+            "φTn kN-m": float("nan"), "D/C value": float("nan"), "θ deg": float("nan"), "β": float("nan"),
+            "Method": "AASHTO LRFD 5.7.2.1 prestressed torsion threshold screen",
+            "Notes": "; ".join(part for part in [*notes, str(fpc_trace.get("note") or ""), str(k_trace.get("note") or ""), "Torsional effects may be neglected by the Article 5.7.2.1 threshold screen."] if part),
+        }
+
+    settings = _beam_uls_igird_torsion_settings(state)
+    geometry = _beam_uls_igird_aashto_solid_torsion_geometry(analysis_input.section_geometry, settings=settings)
+    ao = _beam_uls_float(geometry.get("Ao mm2"))
+    ph = _beam_uls_float(geometry.get("ph mm"))
+    if not bool(geometry.get("ready")):
+        return {
+            **common, "Status": "LAYOUT REQUIRED", "Transverse status": "NOT READY", "Longitudinal status": "COMBINED CHECK REQUIRED",
+            "Detailing status": "LAYOUT REQUIRED", "Capacity": "Closed torsion loop / ph required", "Utilization": "-",
+            "φTn kN-m": float("nan"), "D/C value": float("nan"), "Ao mm2": ao, "ph mm": ph, "be mm": _beam_uls_float(geometry.get("be mm")),
+            "Method": "AASHTO LRFD 5.7 prestressed torsion — geometry source gate",
+            "Notes": "; ".join(part for part in [*notes, str(fpc_trace.get("note") or ""), str(geometry.get("Note") or "")] if part),
+        }
+
+    zone = _beam_uls_active_shear_zone_for_station(state, x_m)
+    if zone is None:
+        return {
+            **common, "Status": "LAYOUT REQUIRED", "Transverse status": "NOT READY", "Longitudinal status": "COMBINED CHECK REQUIRED",
+            "Detailing status": "LAYOUT REQUIRED", "Capacity": "Active closed-hoop zone required", "Utilization": "-",
+            "φTn kN-m": float("nan"), "D/C value": float("nan"), "Ao mm2": ao, "ph mm": ph, "be mm": _beam_uls_float(geometry.get("be mm")),
+            "Method": "AASHTO LRFD 5.7 prestressed torsion — reinforcement source gate",
+            "Notes": "; ".join(part for part in [*notes, str(geometry.get("Note") or ""), "No active transverse reinforcement zone covers this station."] if part),
+        }
+
+    stirrup_area = _beam_uls_stirrup_area_mm2(zone)
+    legs = _beam_uls_float(zone.get("Legs"))
+    spacing = _beam_uls_float(zone.get("Spacing_mm"))
+    fy_input = _beam_uls_float(zone.get("fy_MPa"))
+    if not all(math.isfinite(v) and v > 0.0 for v in [stirrup_area, legs, spacing, fy_input]):
+        return {
+            **common, "Status": "LAYOUT REQUIRED", "Transverse status": "NOT READY", "Longitudinal status": "COMBINED CHECK REQUIRED",
+            "Detailing status": "LAYOUT REQUIRED", "Capacity": "Closed-hoop bar/spacing/fy incomplete", "Utilization": "-",
+            "φTn kN-m": float("nan"), "D/C value": float("nan"), "Ao mm2": ao, "ph mm": ph,
+            "Method": "AASHTO LRFD 5.7 prestressed torsion — reinforcement source gate",
+            "Notes": "Active torsion hoop zone has incomplete bar/leg/spacing/fy input.",
+        }
+    try:
+        fy, fy_policy = aashto_torsion_transverse_design_fy_mpa(fy_input)
+    except ValueError as exc:
+        return {
+            **common, "Status": "REVIEW", "Transverse status": "NOT READY", "Longitudinal status": "COMBINED CHECK REQUIRED",
+            "Detailing status": "NOT READY", "Capacity": "Transverse design fy source not ready", "Utilization": "-",
+            "φTn kN-m": float("nan"), "D/C value": float("nan"), "Ao mm2": ao, "ph mm": ph,
+            "fy input MPa": fy_input, "Notes": f"AASHTO 5.7.2.7 transverse design fy evaluation failed: {exc}",
+        }
+
+    depth_values = _beam_uls_effective_shear_depth_values_mm(
+        state, analysis_input, mux_kNm=mux_kNm, strength_route=strength_route
+    )
+    d_eff = _beam_uls_float(depth_values.get("d_mm"))
+    dv_eff = _beam_uls_float(depth_values.get("dv_mm"))
+    depth_for_gp = dv_eff if math.isfinite(dv_eff) and dv_eff > 0.0 else d_eff
+    tension_face = str(depth_values.get("tension_face") or "-")
+    if not math.isfinite(depth_for_gp) or depth_for_gp <= 0.0:
+        return {**common, "Status": "REVIEW", "Transverse status": "NOT READY", "Longitudinal status": "COMBINED CHECK REQUIRED", "Detailing status": "NOT READY", "Capacity": "d/dv source not ready", "Utilization": "-", "D/C value": float("nan"), "φTn kN-m": float("nan"), "Notes": "Effective shear depth is required for the torsion-modified General Procedure."}
+
+    avs = stirrup_area * legs / spacing
+    avs_min = aashto_min_transverse_avs_mm2_per_mm(fc, _beam_uls_web_width_mm(analysis_input.section_geometry)[0] or 0.0, fy, lambda_concrete=1.0)
+    if avs + 1.0e-12 < avs_min:
+        return {
+            **common, "Status": "FAIL", "Transverse status": "REVIEW", "Longitudinal status": "COMBINED CHECK REQUIRED", "Detailing status": "FAIL",
+            "Capacity": "General Procedure Eq. -2 source blocked", "Utilization": "-", "D/C value": float("nan"), "φTn kN-m": float("nan"),
+            "Ao mm2": ao, "ph mm": ph, "be mm": _beam_uls_float(geometry.get("be mm")), "Av/s mm2/mm": avs, "Av/s min mm2/mm": avs_min,
+            "Notes": "Provided transverse reinforcement is below AASHTO 5.7.2.5 minimum; sx/ag→sxe is not source-owned, so torsion-modified General Procedure theta is not fabricated.",
+        }
+
+    tu_nmm = abs(tu_kNm) * 1.0e6
+    vu_n = abs(vu_kN) * 1000.0 if math.isfinite(vu_kN) else 0.0
+    torsion_equiv_n = 0.9 * ph * tu_nmm / (2.0 * ao)
+    veff_n = math.hypot(vu_n, torsion_equiv_n)
+    eps_trace = _beam_uls_igird_general_shear_epsilon(
+        state, analysis_input=analysis_input, x_m=x_m, span_length_m=span_m, tension_face=tension_face,
+        mux_kNm=mux_kNm if math.isfinite(mux_kNm) else 0.0, vu_kN=vu_kN if math.isfinite(vu_kN) else 0.0,
+        nu_compression_positive_kN=nu_kN if math.isfinite(nu_kN) else 0.0, dv_mm=depth_for_gp,
+        effective_shear_kN=veff_n / 1000.0,
+    )
+    if not bool(eps_trace.get("ready")):
+        return {
+            **common, "Status": "REVIEW", "Transverse status": "NOT READY", "Longitudinal status": "COMBINED CHECK REQUIRED", "Detailing status": "NOT READY",
+            "Capacity": "General Procedure strain source not ready", "Utilization": "-", "D/C value": float("nan"), "φTn kN-m": float("nan"),
+            "Ao mm2": ao, "ph mm": ph, "Veff kN": veff_n / 1000.0, "Notes": str(eps_trace.get("note") or "Torsion-modified epsilon_s is not ready."),
+        }
+    params = aashto_general_shear_parameters(epsilon_s=float(eps_trace.get("epsilon_s_raw")), has_minimum_transverse_reinforcement=True)
+    at_per_s = stirrup_area / spacing
+    result = aashto_prestressed_torsion_general_result(
+        fc_MPa=fc, Acp_mm2=acp, Pcp_mm=pcp, Ao_mm2=ao, ph_mm=ph, tu_Nmm=tu_nmm, vu_N=vu_n,
+        at_mm2_per_mm=at_per_s, fy_MPa=fy, theta_deg=params.theta_deg, phi=phi, fpc_MPa=fpc,
+        lambda_concrete=1.0, lambda_duct=1.0, k_max=k_max,
+    )
+    detailing = _beam_uls_shear_detailing_guard(
+        strength_route=strength_route, fc_MPa=fc, bw_mm=float(_beam_uls_web_width_mm(analysis_input.section_geometry)[0] or 0.0),
+        d_eff_mm=d_eff if math.isfinite(d_eff) and d_eff > 0.0 else depth_for_gp, dv_mm=depth_for_gp,
+        spacing_mm=spacing, avs_mm2_per_mm=avs, fy_MPa=fy, vu_N=result.veff_N,
+    )
+    spacing_dc = _beam_uls_float(detailing.get("Spacing D/C"))
+    at_dc = result.at_required_mm2_per_mm / at_per_s if at_per_s > 0.0 else float("inf")
+    transverse_status = "PASS" if result.strength_dc <= 1.0 + 1.0e-9 and at_dc <= 1.0 + 1.0e-9 else "FAIL"
+    detailing_status = "PASS" if str(detailing.get("Detailing status")) == "PASS" and bool(settings.get("closed_loop_confirmed")) else ("FAIL" if str(detailing.get("Detailing status")) == "FAIL" else "LAYOUT REQUIRED")
+    if transverse_status == "FAIL" or detailing_status == "FAIL":
+        status = "FAIL"
+    elif detailing_status != "PASS":
+        status = "LAYOUT REQUIRED"
+    else:
+        status = "REVIEW"
+    longitudinal_status = "COMBINED CHECK REQUIRED"
+    notes.extend([str(fpc_trace.get("note") or ""), str(k_trace.get("note") or ""), str(fy_policy or ""), str(geometry.get("Note") or ""), str(eps_trace.get("note") or "")])
+    notes.extend(params.notes)
+    notes.append("Standalone Torsion certifies the threshold and transverse component only. Final longitudinal resistance requires concurrent Article 5.7.3.6.3-1 in Shear + Torsion; no torsion-only Al shortcut is used for this solid I-Girder.")
+    if settings.get("note"):
+        notes.append(str(settings.get("note")))
+    return {
+        **common,
+        "Status": status, "Transverse status": transverse_status, "Longitudinal status": longitudinal_status, "Detailing status": detailing_status,
+        "Capacity": f"φTn = {result.phi_tn_Nmm/1.0e6:,.2f} kN-m", "Utilization": _format_beam_uls_ratio(result.strength_dc),
+        "φTn kN-m": result.phi_tn_Nmm / 1.0e6, "Tn kN-m": result.tn_Nmm / 1.0e6, "D/C value": result.strength_dc,
+        "Acp mm2": acp, "Pcp mm": pcp, "be mm": _beam_uls_float(geometry.get("be mm")), "Ao mm2": ao, "Aoh mm2": float("nan"), "ph mm": ph,
+        "Hoop offset mm": _beam_uls_float(settings.get("hoop_centerline_offset_mm")), "At mm2": stirrup_area, "At/s mm2/mm": at_per_s,
+        "Torsion At/s req mm2/mm": result.at_required_mm2_per_mm, "At D/C": at_dc,
+        "fy input MPa": fy_input, "fy MPa": fy, "fy policy": fy_policy, "Zone": str(zone.get("Zone") or "Zone"),
+        "Stirrup": f"{zone.get('Bar Size') or '-'} closed torsion loop @ {spacing:.0f} mm", "Spacing mm": spacing,
+        "s max torsion mm": detailing.get("s max mm", float("nan")), "Spacing D/C": spacing_dc, "Detailing D/C value": max(v for v in [at_dc, spacing_dc] if math.isfinite(v)) if any(math.isfinite(v) for v in [at_dc, spacing_dc]) else float("nan"),
+        "Al req mm2": float("nan"), "Al provided mm2": float("nan"), "Al utilization": float("nan"),
+        "Vuy kN": vu_kN, "Veff kN": result.veff_N / 1000.0, "Torsion equivalent shear N": torsion_equiv_n,
+        "d mm": d_eff, "dv mm": depth_for_gp, "Tension face": tension_face,
+        "εs raw": float(eps_trace.get("epsilon_s_raw")), "εs used": params.epsilon_s_used, "εs numerator N": eps_trace.get("numerator_N", float("nan")), "εs denominator N": eps_trace.get("denominator_N", float("nan")),
+        "β": params.beta, "θ deg": params.theta_deg, "cotθ": result.cot_theta, "General Procedure branch": params.basis,
+        "Aps raw tension mm2": eps_trace.get("Aps_raw_mm2", float("nan")), "Aps developed tension mm2": eps_trace.get("Aps_developed_mm2", float("nan")),
+        "Aps development factor min": eps_trace.get("min_development_factor", float("nan")), "fpo transfer factor min": eps_trace.get("min_transfer_factor", float("nan")),
+        "fpo full MPa": eps_trace.get("fpo_full_MPa", float("nan")), "Pe effective N": fpc_trace.get("Pe effective N", float("nan")),
+        "Closed loop confirmed": bool(settings.get("closed_loop_confirmed")), "Longitudinal perimeter confirmed": bool(settings.get("longitudinal_perimeter_distribution_confirmed")), "Corner longitudinal confirmed": bool(settings.get("corner_longitudinal_reinforcement_confirmed")),
+        "φ": phi, "φ policy": phi_policy,
+        "Method": "AASHTO LRFD 5.7.2.1 + 5.7.3.4.2 + 5.7.3.6.2 prestressed solid I-Girder torsion; station-dependent theta; longitudinal 5.7.3.6.3 deferred to Combined V+T",
+        "Notes": "; ".join(part for part in notes if part),
+    }
+
+
 def _beam_uls_torsion_result_for_row(
     state: Mapping[str, object],
     row: Mapping[str, object],
@@ -9217,6 +9975,9 @@ def _beam_uls_torsion_result_for_row(
             "D/C value": float("nan"),
             "Notes": "No finite Tu demand.",
         }
+
+    if strength_route.is_bridge and _beam_uls_is_precast_composite_bridge(state, is_bridge=True):
+        return _beam_uls_igird_torsion_result_for_row(state, row, strength_route=strength_route)
 
     zone = _beam_uls_active_shear_zone_for_station(state, x_m)
     analysis_input, input_messages = _beam_uls_flexure_analysis_input_for_station(state, row=row, strength_route=strength_route)
@@ -9450,8 +10211,15 @@ def _beam_uls_torsion_check_dataframe(
 ) -> pd.DataFrame:
     columns = [
         "Check", "Status", "Station type", "Support side", "Transverse status", "Longitudinal status", "Threshold status", "Governing x", "Case", "Demand", "Capacity", "Utilization",
-        "Demand kN-m", "Abs demand kN-m", "φTn kN-m", "φTcr kN-m", "Tn kN-m", "D/C value",
-        "Acp mm2", "Pcp mm", "Aoh mm2", "Ao mm2", "ph mm", "Hoop offset mm", "At mm2", "At/s mm2/mm", "Torsion At/s req mm2/mm", "Al req mm2", "Al provided mm2", "Al utilization",
+        "Demand kN-m", "Abs demand kN-m", "φTn kN-m", "φTcr kN-m", "Tcr kN-m", "Threshold kN-m", "Tn kN-m", "D/C value",
+        "f'c MPa", "λ concrete", "fpc base MPa", "fpc MPa", "Nu AASHTO kN", "K", "K max", "Extreme tension MPa", "K tension limit MPa", "K gate status",
+        "Acp mm2", "Pcp mm", "be mm", "Aoh mm2", "Ao mm2", "ph mm", "Hoop offset mm",
+        "At mm2", "At/s mm2/mm", "Torsion At/s req mm2/mm", "At D/C", "fy input MPa", "fy MPa", "fy policy", "Av/s mm2/mm", "Av/s min mm2/mm",
+        "Al req mm2", "Al provided mm2", "Al utilization",
+        "Vuy kN", "Veff kN", "Torsion equivalent shear N", "d mm", "dv mm", "Tension face",
+        "εs raw", "εs used", "εs numerator N", "εs denominator N", "β", "General Procedure branch",
+        "Aps raw tension mm2", "Aps developed tension mm2", "Aps development factor min", "fpo transfer factor min", "fpo full MPa", "Pe effective N",
+        "Closed loop confirmed", "Longitudinal perimeter confirmed", "Corner longitudinal confirmed",
         "Detailing status", "s max torsion mm", "Spacing D/C", "Detailing D/C value", "Detailing notes",
         "Zone", "Stirrup", "θ deg", "cotθ", "φ", "Code basis", "φ policy", "Method", "Threshold basis", "Notes",
     ]
@@ -9468,7 +10236,14 @@ def _beam_uls_torsion_check_dataframe(
                 or column.endswith("mm2")
                 or column.endswith("mm")
                 or column.endswith("mm2/mm")
-                or column in {"D/C value", "Al utilization", "Spacing D/C", "Detailing D/C value", "θ deg", "cotθ", "φ"}
+                or column.endswith("MPa")
+                or column.endswith(" kN")
+                or column.endswith(" N")
+                or column in {
+                    "D/C value", "Al utilization", "Spacing D/C", "Detailing D/C value", "At D/C",
+                    "θ deg", "cotθ", "φ", "K", "K max", "λ concrete", "εs raw", "εs used", "β",
+                    "Aps development factor min", "fpo transfer factor min",
+                }
                 else "-",
             )
         rows.append(result)
@@ -9496,8 +10271,12 @@ def _beam_uls_governing_torsion_row(torsion_df: pd.DataFrame | None) -> dict[str
 
 def _beam_uls_torsion_audit_dataframe(torsion_df: pd.DataFrame | None) -> pd.DataFrame:
     columns = [
-        "Governing", "Station x", "Case", "Status", "Threshold", "Transverse", "Longitudinal", "Detailing", "Tu demand", "φTn", "φTcr", "D/C",
-        "Zone", "Stirrup", "At", "At/s", "At/s req", "Ao", "Aoh", "Acp", "Pcp", "ph", "Hoop offset", "s max", "s D/C", "Al req", "Al provided", "Al D/C", "Detailing D/C", "θ", "φ", "Code basis", "Method", "Notes",
+        "Governing", "Station x", "Case", "Status", "Threshold", "Transverse", "Longitudinal", "Detailing",
+        "Tu demand", "φTn", "Tn", "φTcr", "0.25φTcr", "D/C",
+        "fpc base", "fpc for K", "Nu AASHTO", "K", "K max", "extreme tension", "K tension limit", "K gate", "Vu", "Veff", "εs raw", "εs used", "β", "θ", "φ",
+        "Zone", "Stirrup", "At", "At/s", "At/s req", "At D/C", "fy input", "fy design", "Ao", "be", "Aoh", "Acp", "Pcp", "ph", "Hoop offset", "s max", "s D/C",
+        "Closed loop", "Perimeter longitudinal", "Corner longitudinal",
+        "Al req", "Al provided", "Al D/C", "Detailing D/C", "Code basis", "Method", "Notes",
     ]
     if torsion_df is None or torsion_df.empty:
         return pd.DataFrame(columns=columns)
@@ -9529,14 +10308,43 @@ def _beam_uls_torsion_audit_dataframe(torsion_df: pd.DataFrame | None) -> pd.Dat
                 "Detailing": str(row.get("Detailing status") or "-"),
                 "Tu demand": _format_beam_uls_audit_number(row.get("Demand kN-m"), unit="kN-m"),
                 "φTn": _format_beam_uls_audit_number(row.get("φTn kN-m"), unit="kN-m"),
+                "Tn": _format_beam_uls_audit_number(row.get("Tn kN-m"), unit="kN-m"),
                 "φTcr": _format_beam_uls_audit_number(row.get("φTcr kN-m"), unit="kN-m"),
+                "0.25φTcr": _format_beam_uls_audit_number(row.get("Threshold kN-m"), unit="kN-m"),
                 "D/C": _format_beam_uls_ratio(row.get("D/C value")),
+                "fpc base": _format_beam_uls_audit_number(row.get("fpc base MPa"), unit="MPa"),
+                "fpc for K": _format_beam_uls_audit_number(row.get("fpc MPa"), unit="MPa"),
+                "Nu AASHTO": _format_beam_uls_audit_number(row.get("Nu AASHTO kN"), unit="kN"),
+                "K": _format_beam_uls_ratio(row.get("K")),
+                "K max": _format_beam_uls_ratio(row.get("K max")),
+                "extreme tension": _format_beam_uls_audit_number(row.get("Extreme tension MPa"), unit="MPa"),
+                "K tension limit": _format_beam_uls_audit_number(row.get("K tension limit MPa"), unit="MPa"),
+                "K gate": str(row.get("K gate status") or "-"),
+                "Vu": _format_beam_uls_audit_number(row.get("Vuy kN"), unit="kN"),
+                "Veff": _format_beam_uls_audit_number(row.get("Veff kN"), unit="kN"),
+                "εs raw": _format_beam_uls_audit_number(
+                    1000.0 * _beam_uls_float(row.get("εs raw")) if math.isfinite(_beam_uls_float(row.get("εs raw"))) else float("nan"),
+                    digits=3,
+                    unit="‰",
+                ),
+                "εs used": _format_beam_uls_audit_number(
+                    1000.0 * _beam_uls_float(row.get("εs used")) if math.isfinite(_beam_uls_float(row.get("εs used"))) else float("nan"),
+                    digits=3,
+                    unit="‰",
+                ),
+                "β": _format_beam_uls_ratio(row.get("β")),
+                "θ": _format_beam_uls_audit_number(row.get("θ deg"), unit="°"),
+                "φ": _format_beam_uls_ratio(row.get("φ")),
                 "Zone": str(row.get("Zone") or "-"),
                 "Stirrup": str(row.get("Stirrup") or "-"),
                 "At": _format_beam_uls_audit_number(row.get("At mm2"), unit="mm²"),
                 "At/s": _format_beam_uls_audit_number(row.get("At/s mm2/mm"), unit="mm²/mm"),
                 "At/s req": _format_beam_uls_audit_number(row.get("Torsion At/s req mm2/mm"), unit="mm²/mm"),
+                "At D/C": _format_beam_uls_ratio(row.get("At D/C")),
+                "fy input": _format_beam_uls_audit_number(row.get("fy input MPa"), unit="MPa"),
+                "fy design": _format_beam_uls_audit_number(row.get("fy MPa"), unit="MPa"),
                 "Ao": _format_beam_uls_audit_number(row.get("Ao mm2"), unit="mm²"),
+                "be": _format_beam_uls_audit_number(row.get("be mm"), unit="mm"),
                 "Aoh": _format_beam_uls_audit_number(row.get("Aoh mm2"), unit="mm²"),
                 "Acp": _format_beam_uls_audit_number(row.get("Acp mm2"), unit="mm²"),
                 "Pcp": _format_beam_uls_audit_number(row.get("Pcp mm"), unit="mm"),
@@ -9544,12 +10352,13 @@ def _beam_uls_torsion_audit_dataframe(torsion_df: pd.DataFrame | None) -> pd.Dat
                 "Hoop offset": _format_beam_uls_audit_number(row.get("Hoop offset mm"), unit="mm"),
                 "s max": _format_beam_uls_audit_number(row.get("s max torsion mm"), unit="mm"),
                 "s D/C": _format_beam_uls_ratio(row.get("Spacing D/C")),
+                "Closed loop": "Yes" if row.get("Closed loop confirmed") is True else ("No" if row.get("Closed loop confirmed") is False else "-"),
+                "Perimeter longitudinal": "Yes" if row.get("Longitudinal perimeter confirmed") is True else ("No" if row.get("Longitudinal perimeter confirmed") is False else "-"),
+                "Corner longitudinal": "Yes" if row.get("Corner longitudinal confirmed") is True else ("No" if row.get("Corner longitudinal confirmed") is False else "-"),
                 "Al req": _format_beam_uls_audit_number(row.get("Al req mm2"), unit="mm²"),
                 "Al provided": _format_beam_uls_audit_number(row.get("Al provided mm2"), unit="mm²"),
                 "Al D/C": _format_beam_uls_ratio(row.get("Al utilization")),
                 "Detailing D/C": _format_beam_uls_ratio(row.get("Detailing D/C value")),
-                "θ": _format_beam_uls_audit_number(row.get("θ deg"), unit="°"),
-                "φ": _format_beam_uls_ratio(row.get("φ")),
                 "Code basis": str(row.get("Code basis") or "-"),
                 "Method": str(row.get("Method") or "-"),
                 "Notes": str(row.get("Notes") or ""),
@@ -10003,6 +10812,33 @@ def _beam_uls_cache_input_hash(
     return _beam_uls_hash_payload(payload)
 
 
+def _beam_uls_check_input_hash(
+    state: Mapping[str, object],
+    active_df: pd.DataFrame,
+    *,
+    strength_route: BeamGirderUlsStrengthRoute,
+    check_name: str,
+) -> str:
+    """Return a check-specific Beam/Girder ULS engineering signature.
+
+    IGIRDER.ULS6 adds torsion-only layout inputs (closed-loop confirmation and
+    ph).  They must invalidate Torsion and dependent Shear+Torsion without
+    staling accepted Shear/Flexure/Interface results.
+    """
+
+    base = _beam_uls_cache_input_hash(state, active_df, strength_route=strength_route)
+    is_igird = str(_beam_uls_get_state_value(state, "section_preset_key") or "").strip() == "parametric_i_girder"
+    if not is_igird or check_name not in {"Torsion", "Shear + Torsion"}:
+        return base
+    settings = _beam_uls_igird_torsion_settings(state)
+    return _beam_uls_hash_payload({
+        "kind": _BEAM_ULS_INPUT_HASH_KIND + ".torsion",
+        "base": base,
+        "check": str(check_name),
+        "torsion_settings": settings,
+    })
+
+
 def _beam_uls_manual_cache(state: Mapping[str, object]) -> dict[str, dict[str, object]]:
     cache = state.get(_BEAM_ULS_MANUAL_CALC_CACHE_KEY) if isinstance(state, Mapping) else None
     return cache if isinstance(cache, dict) else {}
@@ -10013,6 +10849,8 @@ def _beam_uls_expected_result_version(state: Mapping[str, object], check_name: s
         return None
     if check_name == "Shear":
         return _IGIRDER_SHEAR_RESULT_VERSION
+    if check_name == "Torsion":
+        return _IGIRDER_TORSION_RESULT_VERSION
     if check_name == "Shear + Torsion":
         return _IGIRDER_COMBINED_VT_RESULT_VERSION
     return None
@@ -10495,11 +11333,11 @@ def _beam_uls_combined_vt_check_dataframe(
         result = _beam_uls_combined_vt_result_for_row(state, demand_row.to_dict(), strength_route=strength_route)
         if igird_theta_guard and str(result.get("Status") or "").upper() not in {"NOT APPLICABLE", "DIAGRAM BOUNDARY", "BOUNDARY SKIPPED"}:
             result["Status"] = "REVIEW"
-            result["Code basis"] = "AASHTO LRFD 5.7.3.6 — NOT CERTIFIED pending torsion theta consistency"
+            result["Code basis"] = "AASHTO LRFD 5.7.3.6 — NOT CERTIFIED pending full concurrent longitudinal Eq. 5.7.3.6.3-1"
             note = str(result.get("Notes") or "").strip()
             guard_note = (
-                "IGIRDER.ULS5A guard: standalone Shear now uses station-dependent theta from AASHTO 5.7.3.4.2, "
-                "while the current torsion/combined route still uses its legacy fixed-theta formulation. "
+                "IGIRDER.ULS6 guard: standalone Shear and the transverse Torsion component now use the AASHTO General Procedure family with torsion-modified Veff/theta. "
+                "Final Combined V+T acceptance still requires implementation and QA of the concurrent solid-section longitudinal resistance Eq. 5.7.3.6.3-1. "
                 "Combined V+T is therefore REVIEW / not certified and cannot produce final PASS."
             )
             result["Notes"] = (note + "; " + guard_note).strip("; ")
@@ -11892,9 +12730,13 @@ def _make_beam_uls_torsion_capacity_figure(
     plot_df["__x_m"] = pd.to_numeric(plot_df["__x_m"], errors="coerce")
     plot_df["__phi_tn"] = pd.to_numeric(plot_df.get("φTn kN-m"), errors="coerce")
     plot_df["__phi_tcr"] = pd.to_numeric(plot_df.get("φTcr kN-m"), errors="coerce")
-    plot_df = plot_df[plot_df["__x_m"].notna() & (plot_df["__phi_tn"].notna() | plot_df["__phi_tcr"].notna())].copy()
+    plot_df["__threshold"] = pd.to_numeric(plot_df.get("Threshold kN-m"), errors="coerce")
+    plot_df = plot_df[
+        plot_df["__x_m"].notna()
+        & (plot_df["__phi_tn"].notna() | plot_df["__phi_tcr"].notna() | plot_df["__threshold"].notna())
+    ].copy()
     if not plot_df.empty:
-        dedupe_columns = [column for column in ["Case", "__x_m", "__phi_tn", "__phi_tcr", "Station type"] if column in plot_df.columns]
+        dedupe_columns = [column for column in ["Case", "__x_m", "__phi_tn", "__phi_tcr", "__threshold", "Station type"] if column in plot_df.columns]
         if dedupe_columns:
             plot_df = plot_df.drop_duplicates(subset=dedupe_columns, keep="first")
         plot_df = _beam_uls_extend_torsion_plot_rows_to_active_domain(plot_df, active_df)
@@ -11945,6 +12787,28 @@ def _make_beam_uls_torsion_capacity_figure(
                         name="-φTcr",
                         line=dict(_BEAM_ULS_REFERENCE_LINE_STYLE),
                         hovertemplate="x=%{x:.3f} m<br>-φTcr=%{y:.3f} kN-m<extra></extra>",
+                    )
+                )
+            threshold_values = [float(value) if math.isfinite(float(value)) else float("nan") for value in case_df["__threshold"].tolist()]
+            if any(math.isfinite(value) for value in threshold_values):
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_values,
+                        y=threshold_values,
+                        mode="lines",
+                        name="0.25φTcr",
+                        line=dict(_BEAM_ULS_REFERENCE_LINE_STYLE),
+                        hovertemplate="x=%{x:.3f} m<br>0.25φTcr=%{y:.3f} kN-m<extra></extra>",
+                    )
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_values,
+                        y=[-v if math.isfinite(v) else float("nan") for v in threshold_values],
+                        mode="lines",
+                        name="-0.25φTcr",
+                        line=dict(_BEAM_ULS_REFERENCE_LINE_STYLE),
+                        hovertemplate="x=%{x:.3f} m<br>-0.25φTcr=%{y:.3f} kN-m<extra></extra>",
                     )
                 )
     governing = _beam_uls_governing_torsion_row(torsion_check_df)
@@ -12040,7 +12904,8 @@ def _beam_uls_construction_demand_from_state(
 _IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION = "IGIRDER.ULS2P.flexure-performance-optimization"
 _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION = "IGIRDER.ULS3A.composite-flexure-audit-closeout"
 _IGIRDER_SHEAR_RESULT_VERSION = "IGIRDER.ULS5A.shear-qa-closeout"
-_IGIRDER_COMBINED_VT_RESULT_VERSION = "IGIRDER.ULS5A.combined-shear-dependency-guard"
+_IGIRDER_TORSION_RESULT_VERSION = "IGIRDER.ULS6.prestressed-torsion-general-procedure"
+_IGIRDER_COMBINED_VT_RESULT_VERSION = "IGIRDER.ULS6.combined-vt-longitudinal-pending"
 
 
 _IGIRDER_INTERFACE_SHEAR_SETTINGS_KEY = "beam_girder_interface_shear_settings"
@@ -13228,16 +14093,16 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
         st.warning("This ULS check requires active final/imported station resultants in Loads.")
         return
 
-    uls_input_hash = _beam_uls_cache_input_hash(
-        st.session_state,
-        active_df,
-        strength_route=strength_route,
-    )
+    check_hashes = {
+        name: _beam_uls_check_input_hash(st.session_state, active_df, strength_route=strength_route, check_name=name)
+        for name in ["Flexure", "Shear", "Torsion", "Shear + Torsion"]
+    }
+    uls_input_hash = check_hashes[selected_check]
 
-    flexure_entry = _beam_uls_current_cached_result(st.session_state, "Flexure", uls_input_hash)
-    shear_entry = _beam_uls_current_cached_result(st.session_state, "Shear", uls_input_hash)
-    torsion_entry = _beam_uls_current_cached_result(st.session_state, "Torsion", uls_input_hash)
-    interaction_entry = _beam_uls_current_cached_result(st.session_state, "Shear + Torsion", uls_input_hash)
+    flexure_entry = _beam_uls_current_cached_result(st.session_state, "Flexure", check_hashes["Flexure"])
+    shear_entry = _beam_uls_current_cached_result(st.session_state, "Shear", check_hashes["Shear"])
+    torsion_entry = _beam_uls_current_cached_result(st.session_state, "Torsion", check_hashes["Torsion"])
+    interaction_entry = _beam_uls_current_cached_result(st.session_state, "Shear + Torsion", check_hashes["Shear + Torsion"])
 
     selected_entry = _beam_uls_current_cached_result(st.session_state, selected_check, uls_input_hash)
     calc_label = f"Calculate {selected_check}"
@@ -13294,14 +14159,14 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                 shear_entry = _beam_uls_store_manual_result(
                     st.session_state,
                     "Shear",
-                    input_hash=uls_input_hash,
+                    input_hash=check_hashes["Shear"],
                     result=shear_source,
                 )
             if torsion_source:
                 torsion_entry = _beam_uls_store_manual_result(
                     st.session_state,
                     "Torsion",
-                    input_hash=uls_input_hash,
+                    input_hash=check_hashes["Torsion"],
                     result=torsion_source,
                 )
     command_status_slot.markdown(_beam_uls_command_panel_html(selected_check, selected_entry), unsafe_allow_html=True)
@@ -13493,14 +14358,57 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
         torsion = _beam_uls_governing_action(active_df, "Tu")
         torsion_has_demand = torsion is not None and float(torsion["abs_demand"]) > _BEAM_ULS_DEMAND_TOL
         torsion_result = _beam_uls_governing_torsion_row(torsion_check_df)
+        igird_torsion_route = bool(strength_route.is_bridge) and _beam_uls_is_precast_composite_bridge(
+            st.session_state, is_bridge=bool(strength_route.is_bridge)
+        )
         if torsion_result is not None:
             torsion_status = str(torsion_result.get("Status") or "REVIEW")
-            torsion_cards = [
-                {"title": "Torsion status", "value": torsion_status, "detail": f"Transverse {torsion_result.get('Transverse status', '-')} · longitudinal {torsion_result.get('Longitudinal status', '-')} · detailing {torsion_result.get('Detailing status', '-')}", "status": "danger" if torsion_status == "FAIL" else ("ready" if torsion_status in {"PASS", "BELOW THRESHOLD"} else "warning"), "strong": True},
-                {"title": "Governing Tu / D/C", "value": f"{torsion_result.get('Demand', '-')} · {torsion_result.get('Utilization', '-')}", "detail": f"{torsion_result.get('Case', '-')} @ x={torsion_result.get('Governing x', '-')}", "status": "info"},
-                {"title": "Torsion capacity", "value": str(torsion_result.get("Capacity") or "-"), "detail": f"φTcr { _format_beam_uls_audit_number(torsion_result.get('φTcr kN-m'), unit='kN-m') }", "status": "info"},
-                {"title": "Route", "value": strength_route.torsion_engine_label, "detail": strength_route.torsion_basis_note, "status": "neutral"},
-            ]
+            if igird_torsion_route:
+                threshold_value = _format_beam_uls_audit_number(torsion_result.get("Threshold kN-m"), unit="kN-m")
+                veff_value = _format_beam_uls_audit_number(torsion_result.get("Veff kN"), unit="kN")
+                theta_value = _format_beam_uls_audit_number(torsion_result.get("θ deg"), unit="°")
+                beta_value = _format_beam_uls_ratio(torsion_result.get("β"))
+                phi_value = _format_beam_uls_ratio(torsion_result.get("φ"))
+                torsion_cards = [
+                    {
+                        "title": "Torsion status",
+                        "value": torsion_status,
+                        "detail": f"Transverse {torsion_result.get('Transverse status', '-')} · longitudinal {torsion_result.get('Longitudinal status', '-')} · detailing {torsion_result.get('Detailing status', '-')}",
+                        "status": "danger" if torsion_status == "FAIL" else ("ready" if torsion_status == "BELOW THRESHOLD" else "warning"),
+                        "strong": True,
+                    },
+                    {
+                        "title": "Governing Tu / D/C",
+                        "value": f"{torsion_result.get('Demand', '-')} · {torsion_result.get('Utilization', '-')}",
+                        "detail": f"{torsion_result.get('Case', '-')} @ x={torsion_result.get('Governing x', '-')}",
+                        "status": "info",
+                    },
+                    {
+                        "title": "Investigation threshold",
+                        "value": f"0.25φTcr = {threshold_value}",
+                        "detail": str(torsion_result.get("Threshold status") or "AASHTO 5.7.2.1"),
+                        "status": "ready" if str(torsion_result.get("Threshold status") or "").upper() == "BELOW THRESHOLD" else "info",
+                    },
+                    {
+                        "title": "General Procedure",
+                        "value": f"Veff {veff_value} · θ {theta_value}",
+                        "detail": f"β {beta_value} · Vu replaced by Veff in εs",
+                        "status": "info",
+                    },
+                    {
+                        "title": "Transverse torsion capacity",
+                        "value": str(torsion_result.get("Capacity") or "-"),
+                        "detail": f"φ {phi_value} · longitudinal Eq. 5.7.3.6.3-1 checked with V+T",
+                        "status": "info",
+                    },
+                ]
+            else:
+                torsion_cards = [
+                    {"title": "Torsion status", "value": torsion_status, "detail": f"Transverse {torsion_result.get('Transverse status', '-')} · longitudinal {torsion_result.get('Longitudinal status', '-')} · detailing {torsion_result.get('Detailing status', '-')}", "status": "danger" if torsion_status == "FAIL" else ("ready" if torsion_status in {"PASS", "BELOW THRESHOLD"} else "warning"), "strong": True},
+                    {"title": "Governing Tu / D/C", "value": f"{torsion_result.get('Demand', '-')} · {torsion_result.get('Utilization', '-')}", "detail": f"{torsion_result.get('Case', '-')} @ x={torsion_result.get('Governing x', '-')}", "status": "info"},
+                    {"title": "Torsion capacity", "value": str(torsion_result.get("Capacity") or "-"), "detail": f"φTcr { _format_beam_uls_audit_number(torsion_result.get('φTcr kN-m'), unit='kN-m') }", "status": "info"},
+                    {"title": "Route", "value": strength_route.torsion_engine_label, "detail": strength_route.torsion_basis_note, "status": "neutral"},
+                ]
         else:
             torsion_cards = [
                 {"title": "Torsion status", "value": "OPTIONAL" if not torsion_has_demand else "NOT READY", "detail": "No active Tu" if not torsion_has_demand else "φTn input path not ready", "status": "neutral" if not torsion_has_demand else "warning", "strong": True},
@@ -13508,7 +14416,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                 {"title": "Torsion capacity", "value": "-", "detail": "φTn not ready", "status": "neutral"},
                 {"title": "Route", "value": strength_route.torsion_engine_label, "detail": strength_route.torsion_basis_note, "status": "neutral"},
             ]
-        _render_analysis_summary_strip(torsion_cards, columns=4)
+        _render_analysis_summary_strip(torsion_cards, columns=5 if igird_torsion_route and torsion_result is not None else 4)
         _render_beam_uls_static_plotly_figure(
             _make_beam_uls_torsion_capacity_figure(
                 active_df,
@@ -13517,14 +14425,32 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                 boundary_capacity_df=torsion_boundary_capacity_df,
             )
         )
-        st.caption(
-            "φTn is the code-routed closed-hoop torsion strength line. "
-            "TORSION.CODE2 also checks longitudinal Al from the ordinary rebar table plus closed-hoop spacing and zone coverage gates."
-        )
+        if igird_torsion_route:
+            st.caption(
+                "Precast I-Girder torsion uses the AASHTO LRFD 5.7.2.1 threshold and, where torsion must be considered, "
+                "replaces Vu by Veff in the 5.7.3.4.2 longitudinal-strain calculation before evaluating station-dependent θ. "
+                "The plotted φTn is the transverse closed-loop torsion component from 5.7.3.6.2; the 0.25φTcr investigation threshold is plotted separately."
+            )
+        else:
+            st.caption(
+                "φTn is the code-routed closed-hoop torsion strength line. "
+                "TORSION.CODE2 also checks longitudinal Al from the ordinary rebar table plus closed-hoop spacing and zone coverage gates."
+            )
         torsion_status_label = str(torsion_result.get("Status") if torsion_result is not None else "").upper()
         torsion_threshold_label = str(torsion_result.get("Threshold status") if torsion_result is not None else "").upper()
         torsion_longitudinal_label = str(torsion_result.get("Longitudinal status") if torsion_result is not None else "").upper()
-        if torsion_has_demand and torsion_status_label == "PASS":
+        if igird_torsion_route and torsion_has_demand:
+            if torsion_status_label == "BELOW THRESHOLD" or torsion_threshold_label == "BELOW THRESHOLD":
+                st.success("Tu is below 0.25φTcr at the governing station; AASHTO 5.7.2.1 permits torsional effects to be neglected for this standalone gate.")
+            elif torsion_status_label == "FAIL":
+                st.error("Precast I-Girder transverse torsion strength/detailing fails at the governing station. Revise the closed-loop transverse reinforcement or section before proceeding to final combined V+T acceptance.")
+            elif torsion_status_label == "LAYOUT REQUIRED":
+                st.warning("Torsion is above the AASHTO investigation threshold, but the verified closed-loop torsion source is incomplete. Confirm the continuous 135°-hook loop and ph in Sections → Rebar.")
+            elif torsion_status_label == "REVIEW" and torsion_longitudinal_label == "COMBINED CHECK REQUIRED":
+                st.warning("The standalone transverse torsion component passes, but final solid prestressed I-Girder torsion acceptance remains REVIEW until the concurrent longitudinal Article 5.7.3.6.3-1 check is completed in Shear + Torsion.")
+            else:
+                st.warning("Torsion demand is present. Review the AASHTO threshold, General Procedure trace, closed-loop detailing, and the longitudinal Combined V+T gate before final acceptance.")
+        elif torsion_has_demand and torsion_status_label == "PASS":
             st.success("Torsion strength, longitudinal Al, and compact closed-hoop detailing gates pass for the governing station.")
         elif torsion_has_demand and (
             torsion_status_label == "BELOW THRESHOLD" or torsion_threshold_label == "BELOW THRESHOLD"
@@ -13543,6 +14469,22 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             st.warning("Torsion demand is present. Review φTn, threshold, longitudinal Al, and detailing output before issuing final member acceptance.")
         else:
             st.info("No active torsion demand is present in the ULS station rows. Keep torsion optional unless the design model produces nonzero Tu.")
+
+        if igird_torsion_route:
+            with st.expander("Calculation trace / Equations — governing torsion station", expanded=False):
+                st.caption(
+                    "Read-only equation trace from the stored/calculated governing Torsion row. Opening this expander does not rerun the solver. "
+                    "AASHTO coefficients written in US customary units are evaluated through explicit SI-safe conversion."
+                )
+                trace_df = _beam_uls_torsion_calculation_trace_dataframe(torsion_result)
+                if trace_df.empty:
+                    st.info("The stored governing Torsion row does not yet contain enough source fields for an equation trace.")
+                else:
+                    st.dataframe(trace_df, use_container_width=True, hide_index=True)
+            with st.expander("Variable definitions / Engineering terms", expanded=False):
+                st.caption("Quick-reference definitions for the active Precast I-Girder Torsion workspace.")
+                st.dataframe(_beam_uls_torsion_variable_definitions_dataframe(), use_container_width=True, hide_index=True)
+
         with st.expander("Torsion strength audit / provided closed-stirrup output", expanded=False):
             audit_df = _beam_uls_torsion_audit_dataframe(torsion_check_df)
             if audit_df.empty:
@@ -13554,13 +14496,22 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             if audit_df.empty:
                 st.info("End-boundary φTcr / φTn values are not available until the provided closed-hoop layout and section/material inputs are ready.")
             else:
-                st.caption("Diagram-boundary capacity values at x=0 and x=L. These are plotted to make the torsion capacity curve continuous; they are not treated as governing torsion design sections.")
+                st.caption("Diagram-boundary capacity values at x=0 and x=L. These are plotted to make the torsion capacity/threshold traces continuous; they are not treated as governing torsion design sections.")
                 st.dataframe(audit_df, use_container_width=True, hide_index=True)
         with st.expander("Torsion method notes", expanded=False):
-            st.write(f"- Torsion route: {strength_route.torsion_basis_note}")
-            st.write("- Bridge Beam/Girder routes to the AASHTO LRFD-compatible φTn basis; Building Beam/Girder routes to the ACI 318 φTn basis. The active workflow, not the section preset name, controls this route.")
-            st.write("- TORSION.CODE2 checks transverse closed-hoop φTn, longitudinal Al from the ordinary rebar table, active zone coverage, and s <= min(ph/8, 300 mm).")
-            st.write("- The current torsion hoop geometry uses an explicit offset of the outside section polygon because the app does not yet have a dedicated torsion hoop layout owner. Verify Ao/Aoh and hook anchorage on drawings before construction issue.")
+            if igird_torsion_route:
+                st.write("- IGIRDER.ULS6 uses AASHTO LRFD 5.7.2.1: torsion is investigated where |Tu| > 0.25φTcr; K uses effective prestress after losses, the explicit fpc−Nu/Ag axial adjustment, and the K≤1.0 extreme-tension-fiber guard when 0.19λ√f'c is exceeded.")
+                st.write("- For solid I-Girders requiring torsion, Veff = √[Vu² + (0.9phTu/2Ao)²] replaces Vu in the Article 5.7.3.4.2 longitudinal-strain equation; θ is therefore station-dependent and is not fixed at 45°.")
+                st.write("- Ao is derived from the AASHTO solid-section shear-flow path using be=Acp/Pcp. The app does not use the ACI-style Ao=0.85Aoh shortcut for this route.")
+                st.write("- ph must be the centerline perimeter of an actually detailed, fully continuous closed torsion loop. Ordinary shear stirrups are not silently assumed to form that loop; 135° hook anchorage remains an explicit confirmation in Sections → Rebar.")
+                st.write("- Tn = 2Ao(At/s)fy cotθ λduct uses one closed-loop leg area At per spacing. AASHTO 5.7.2.7 design fy is enforced for torsion; the current elastic-perfectly-plastic steel basis applies the explicit 75 ksi cap where required. The transverse zone also remains subject to the active AASHTO minimum-reinforcement, spacing, and coverage gates.")
+                st.write("- Standalone Torsion does not issue a final PASS above threshold merely from φTn. The solid prestressed longitudinal requirement is the concurrent Article 5.7.3.6.3-1 equation and remains owned by Shear + Torsion.")
+                st.write("- Anchorage, bearing/end-zone D-regions, final hook/lap geometry, fatigue, and shop-drawing constructability remain separate project checks.")
+            else:
+                st.write(f"- Torsion route: {strength_route.torsion_basis_note}")
+                st.write("- Bridge Beam/Girder routes to the AASHTO LRFD-compatible φTn basis; Building Beam/Girder routes to the ACI 318 φTn basis. The active workflow, not the section preset name, controls this route.")
+                st.write("- TORSION.CODE2 checks transverse closed-hoop φTn, longitudinal Al from the ordinary rebar table, active zone coverage, and s <= min(ph/8, 300 mm).")
+                st.write("- The current torsion hoop geometry uses an explicit offset of the outside section polygon because the app does not yet have a dedicated torsion hoop layout owner. Verify Ao/Aoh and hook anchorage on drawings before construction issue.")
 
     if selected_check == "Shear + Torsion":
         governing_vt = _beam_uls_governing_combined_vt_row(combined_vt_df)
@@ -13664,6 +14615,12 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             st.write("- Near-support critical-section handling follows the adopted AASHTO 5.7.3.2 compression-end-region route. Concentrated loads within dv and support conditions that do not introduce compression require separate support-face review; the app does not infer these exceptions from generic resultants.")
             st.write("- Prestress transfer/development participation is included in the General Procedure εs trace. Flexural φMn end-zone reduction remains outside this Shear milestone.")
             st.write("- Anchorage, pretensioned end confinement, bearing/end-zone strut-and-tie triggers, fatigue, and shop-drawing constructability remain separate project review items.")
+        elif selected_check == "Torsion" and _beam_uls_is_precast_composite_bridge(st.session_state, is_bridge=bool(strength_route.is_bridge)):
+            st.write("- Precast I-Girder Torsion uses AASHTO LRFD 5.7.2.1, 5.7.3.4.2, and 5.7.3.6.2 with station-dependent θ from the torsion-modified General Procedure; the 5.7.2.1 axial-force/K tension-fiber guards and 5.7.2.7 transverse design-fy policy are explicit audit terms.")
+            st.write("- A verified fully continuous closed transverse torsion loop and its centerline perimeter ph are explicit source inputs. Ordinary shear stirrups are not silently promoted to a torsion loop.")
+            st.write("- Standalone Torsion above the investigation threshold certifies the transverse φTn component only. Final longitudinal solid-section acceptance requires the concurrent Article 5.7.3.6.3-1 equation in Shear + Torsion; therefore a transverse pass remains REVIEW here.")
+            st.write("- The app does not use a torsion-only Al shortcut to manufacture a solid prestressed I-Girder PASS.")
+            st.write("- Anchorage, 135° hook/lap execution, pretensioned end confinement, bearing/end-zone D-regions, fatigue, and shop-drawing constructability remain separate project checks.")
         else:
             st.write(f"- Flexure route: {strength_route.flexure_basis_note}")
             st.write("- Flexure audit output reports Mn nominal, route φ, φMn, D/C, bending direction, tension face, method, code-compatible strain-compatibility basis, and resistance-factor policy for benchmark comparison.")

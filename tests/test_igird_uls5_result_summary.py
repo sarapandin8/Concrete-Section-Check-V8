@@ -40,6 +40,7 @@ def _base_state():
                 ]),
             },
             "Torsion": {
+                "result_version": app._IGIRDER_TORSION_RESULT_VERSION,
                 "torsion_check_df": pd.DataFrame([
                     {"Status": "BELOW THRESHOLD", "Case": "Strength I", "Governing x": "2.000 m", "Tu kN-m": 1.0, "Capacity": "φTn = 100 kN-m", "D/C value": 0.01}
                 ]),
@@ -97,3 +98,15 @@ def test_igird_result_summary_is_read_only_source_contract():
     assert "_beam_uls_calculate_selected_check" not in block
     assert "run_rc_pmm_solver" not in block
     assert "stored results only" in block
+
+
+def test_igird_result_summary_filters_old_torsion_version_without_staling_shear():
+    state = _base_state()
+    state["_beam_girder_uls_manual_calculation_cache"]["Torsion"]["result_version"] = "IGIRDER.ULS5.legacy-torsion"
+    rows = app._results_beam_uls_summary_rows(state)
+    by_check = {row["Check"]: row for row in rows}
+    assert by_check["Torsion"]["Status"] == "NOT CALCULATED"
+    assert by_check["Shear"]["Status"] == "PASS"
+    assert by_check["Final Composite Flexure"]["Status"] == "PASS"
+    assert by_check["Girder–Deck Interface Shear"]["Status"] == "PASS"
+    assert by_check["Overall ULS"]["Status"] == "INCOMPLETE"

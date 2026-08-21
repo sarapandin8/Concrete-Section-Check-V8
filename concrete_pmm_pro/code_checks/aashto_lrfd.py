@@ -26,6 +26,7 @@ AASHTO_SHEAR_SIMPLIFIED_BETA = 2.0
 AASHTO_SHEAR_SIMPLIFIED_THETA_DEG = 45.0
 AASHTO_SHEAR_MAX_FC_MPA = 103.42135939752542  # 15 ksi
 AASHTO_SHEAR_TRANSVERSE_FY_MAX_MPA = 689.4757293168361  # 100 ksi
+AASHTO_TORSION_TRANSVERSE_FY_MAX_MPA = ksi_to_mpa(75.0)  # 5.7.2.7, torsion / other elements
 
 AASHTO_SEISMIC_HOOK_FYH_MAX_MPA = 517.106797
 AASHTO_SEISMIC_SPACING_MAX_MM = 101.6  # 4 in
@@ -64,6 +65,30 @@ def aashto_prestressed_shear_phi(*, has_unbonded_or_debonded_strands: bool) -> t
         AASHTO_SHEAR_PHI,
         "AASHTO LRFD 5.5.4.2: prestressed shear/torsion with bonded strands/tendons; phi = 0.90",
     )
+
+
+def aashto_torsion_transverse_design_fy_mpa(fy_input_MPa: float) -> tuple[float, str]:
+    """Return design fy for nonprestressed transverse torsion reinforcement.
+
+    AASHTO LRFD 5.7.2.7 permits higher transverse grades for specified
+    flexural-shear-only cases, but torsion is outside that exception.  For the
+    active prestressed I-Girder torsion route, nonprestressed transverse steel
+    with specified yield strength above 60 ksi is therefore limited to the
+    stress corresponding to 0.0035 strain and not more than 75 ksi.  With the
+    app's elastic-perfectly-plastic reinforcing-steel basis, the controlling
+    explicit code cap is 75 ksi.
+    """
+
+    fy = float(fy_input_MPa)
+    if not math.isfinite(fy) or fy <= 0.0:
+        raise ValueError("fy_input_MPa must be positive and finite.")
+    design = min(fy, AASHTO_TORSION_TRANSVERSE_FY_MAX_MPA)
+    if design < fy - 1.0e-9:
+        return (
+            design,
+            f"AASHTO LRFD 5.7.2.7 torsion branch: transverse design fy limited from {fy:.1f} MPa to 75 ksi ({design:.1f} MPa).",
+        )
+    return design, "AASHTO LRFD 5.7.2.7 torsion branch: entered transverse fy is within the applicable design limit."
 
 
 def aashto_general_shear_parameters(
@@ -538,6 +563,133 @@ class AashtoTorsionResult:
 
 
 @dataclass(frozen=True)
+class AashtoPrestressedTorsionGeneralResult:
+    """AASHTO LRFD 5.7 prestressed solid-section torsion trace.
+
+    This helper owns only the torsion threshold, solid-section Veff term, and
+    transverse torsional resistance.  The concurrent longitudinal resistance
+    equation of Article 5.7.3.6.3 is intentionally outside this result and must
+    be checked by the combined V+T workflow.
+    """
+
+    phi: float
+    fpc_MPa: float
+    k_factor: float
+    k_max: float
+    tcr_Nmm: float
+    phi_tcr_Nmm: float
+    threshold_Nmm: float
+    threshold_status: str
+    veff_N: float
+    theta_deg: float
+    cot_theta: float
+    tn_Nmm: float
+    phi_tn_Nmm: float
+    strength_dc: float
+    at_required_mm2_per_mm: float
+    method: str
+    basis: str
+
+
+def aashto_prestressed_torsion_general_result(
+    *,
+    fc_MPa: float,
+    Acp_mm2: float,
+    Pcp_mm: float,
+    Ao_mm2: float,
+    ph_mm: float,
+    tu_Nmm: float,
+    vu_N: float,
+    at_mm2_per_mm: float,
+    fy_MPa: float,
+    theta_deg: float,
+    phi: float,
+    fpc_MPa: float = 0.0,
+    lambda_concrete: float = 1.0,
+    lambda_duct: float = 1.0,
+    k_max: float = 2.0,
+) -> AashtoPrestressedTorsionGeneralResult:
+    """Evaluate AASHTO LRFD 5.7 prestressed solid-section torsion in SI.
+
+    Code basis:
+    - 5.7.2.1-3: torsion is investigated when |Tu| > 0.25 phi Tcr.
+    - 5.7.2.1-4/-6: solid-section Tcr including prestress factor K.
+    - 5.7.3.4.2-5: solid-section Veff used by the General Procedure strain.
+    - 5.7.3.6.2-1: Tn = 2 Ao (At/s) fy cot(theta) lambda_duct.
+
+    The caller supplies theta from Article 5.7.3.4 after replacing Vu with
+    Veff in the longitudinal-strain calculation.  Longitudinal resistance per
+    5.7.3.6.3-1 is deliberately not certified here.
+    """
+
+    positive = [fc_MPa, Acp_mm2, Pcp_mm, Ao_mm2, ph_mm, fy_MPa, phi, lambda_concrete, lambda_duct, k_max]
+    if not all(math.isfinite(float(v)) and float(v) > 0.0 for v in positive):
+        raise ValueError('fc, Acp, Pcp, Ao, ph, fy, phi, lambda_concrete, lambda_duct, and k_max must be positive finite values.')
+    if float(k_max) > 2.0 + 1.0e-12:
+        raise ValueError('k_max must not exceed the AASHTO upper limit of 2.0.')
+    if not math.isfinite(float(at_mm2_per_mm)) or float(at_mm2_per_mm) < 0.0:
+        raise ValueError('at_mm2_per_mm must be finite and nonnegative.')
+    if not all(math.isfinite(float(v)) for v in [tu_Nmm, vu_N, theta_deg, fpc_MPa]):
+        raise ValueError('tu_Nmm, vu_N, theta_deg, and fpc_MPa must be finite.')
+
+    theta = math.radians(float(theta_deg))
+    tan_theta = math.tan(theta)
+    if abs(tan_theta) <= 1.0e-12:
+        raise ValueError('theta_deg must have nonzero tangent.')
+    cot_theta = 1.0 / tan_theta
+
+    tcr = aashto_torsional_cracking_moment_nmm(
+        fc_MPa=float(fc_MPa),
+        Acp_mm2=float(Acp_mm2),
+        Pcp_mm=float(Pcp_mm),
+        shape='solid',
+        lambda_concrete=float(lambda_concrete),
+        fpc_MPa=float(fpc_MPa),
+        k_max=float(k_max),
+    )
+    phi_tcr = float(phi) * tcr
+    threshold = 0.25 * phi_tcr
+    threshold_status = 'BELOW THRESHOLD' if abs(float(tu_Nmm)) <= threshold + 1.0e-9 else 'DESIGN REQUIRED'
+
+    torsion_equiv_N = 0.9 * float(ph_mm) * abs(float(tu_Nmm)) / (2.0 * float(Ao_mm2))
+    veff = math.hypot(abs(float(vu_N)), torsion_equiv_N)
+    tn = 2.0 * float(Ao_mm2) * float(at_mm2_per_mm) * float(fy_MPa) * cot_theta * float(lambda_duct)
+    phi_tn = float(phi) * tn
+    dc = abs(float(tu_Nmm)) / phi_tn if phi_tn > 0.0 else float('inf')
+    at_req = abs(float(tu_Nmm)) / (float(phi) * 2.0 * float(Ao_mm2) * float(fy_MPa) * cot_theta * float(lambda_duct))
+
+    # Recompute K explicitly for the audit result; the Tcr helper uses the same
+    # SI-safe source conversion.
+    base_stress = aashto_sqrt_fc_stress_mpa(0.126 * float(lambda_concrete), float(fc_MPa))
+    if base_stress <= 0.0:
+        raise ValueError("AASHTO torsion K base stress must be positive.")
+    k_radicand = 1.0 + float(fpc_MPa) / base_stress
+    if k_radicand < 0.0:
+        raise ValueError("AASHTO torsion K is undefined because 1 + fpc/(0.126 lambda sqrt(fc)) is negative.")
+    k = min(float(k_max), math.sqrt(k_radicand))
+
+    return AashtoPrestressedTorsionGeneralResult(
+        phi=float(phi),
+        fpc_MPa=float(fpc_MPa),
+        k_factor=float(k),
+        k_max=float(k_max),
+        tcr_Nmm=float(tcr),
+        phi_tcr_Nmm=float(phi_tcr),
+        threshold_Nmm=float(threshold),
+        threshold_status=threshold_status,
+        veff_N=float(veff),
+        theta_deg=float(theta_deg),
+        cot_theta=float(cot_theta),
+        tn_Nmm=float(tn),
+        phi_tn_Nmm=float(phi_tn),
+        strength_dc=float(dc),
+        at_required_mm2_per_mm=float(at_req),
+        method='AASHTO LRFD 5.7 prestressed solid-section torsion with General Procedure theta',
+        basis='5.7.2.1-3/-4/-6; 5.7.3.4.2-5; 5.7.3.6.2-1; longitudinal 5.7.3.6.3-1 checked separately',
+    )
+
+
+@dataclass(frozen=True)
 class AashtoCombinedShearTorsionResult:
     phi: float
     theta_deg: float
@@ -645,6 +797,7 @@ def aashto_torsional_cracking_moment_nmm(
     shape: str = "solid",
     lambda_concrete: float = 1.0,
     fpc_MPa: float = 0.0,
+    k_max: float = 2.0,
 ) -> float:
     """Return AASHTO LRFD Article 5.7.2.1 torsional cracking moment in N-mm.
 
@@ -655,12 +808,20 @@ def aashto_torsional_cracking_moment_nmm(
     members and keeps prestressed torsion in REVIEW.
     """
 
-    if fc_MPa <= 0 or Acp_mm2 <= 0 or Pcp_mm <= 0 or lambda_concrete <= 0:
-        raise ValueError("fc_MPa, Acp_mm2, Pcp_mm, and lambda_concrete must be positive.")
+    if fc_MPa <= 0 or Acp_mm2 <= 0 or Pcp_mm <= 0 or lambda_concrete <= 0 or k_max <= 0:
+        raise ValueError("fc_MPa, Acp_mm2, Pcp_mm, lambda_concrete, and k_max must be positive.")
+    if float(k_max) > 2.0 + 1.0e-12:
+        raise ValueError("k_max must not exceed 2.0.")
     base_stress = aashto_sqrt_fc_stress_mpa(0.126 * float(lambda_concrete), float(fc_MPa))
-    fpc = max(0.0, float(fpc_MPa))
-    k = math.sqrt(1.0 + fpc / base_stress) if base_stress > 0.0 else 1.0
-    k = min(2.0, max(1.0, k))
+    if base_stress <= 0.0:
+        raise ValueError("AASHTO torsion K base stress must be positive.")
+    fpc = float(fpc_MPa)
+    if not math.isfinite(fpc):
+        raise ValueError("fpc_MPa must be finite.")
+    k_radicand = 1.0 + fpc / base_stress
+    if k_radicand < 0.0:
+        raise ValueError("AASHTO torsion K is undefined because 1 + fpc/(0.126 lambda sqrt(fc)) is negative.")
+    k = min(float(k_max), math.sqrt(k_radicand))
     cracking_stress = aashto_sqrt_fc_stress_mpa(0.126 * k * float(lambda_concrete), float(fc_MPa))
     shape_norm = str(shape or "solid").strip().lower()
     if shape_norm == "hollow":

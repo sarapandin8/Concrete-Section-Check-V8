@@ -61,6 +61,7 @@ DEFAULT_REBAR_INPUT_MODE = REBAR_INPUT_MODE_AUTO_PERIMETER
 SHEAR_REINFORCEMENT_TABLE_KEY = "beam_girder_shear_reinforcement_table"
 SHEAR_REINFORCEMENT_VALID_KEY = "beam_girder_shear_reinforcement_valid"
 SHEAR_DEPTH_SETTINGS_KEY = "beam_girder_shear_depth_settings"
+BEAM_GIRDER_TORSION_SETTINGS_KEY = "beam_girder_torsion_settings"
 COLUMN_PIER_TRANSVERSE_TABLE_KEY = "column_pier_transverse_reinforcement_table"
 COLUMN_PIER_TRANSVERSE_VALID_KEY = "column_pier_transverse_reinforcement_valid"
 COLUMN_PIER_TRANSVERSE_SETTINGS_KEY = "column_pier_transverse_reinforcement_settings"
@@ -2586,6 +2587,83 @@ def _store_shear_reinforcement_metadata(table: pd.DataFrame) -> None:
     st.session_state["project_metadata"] = metadata
 
 
+def _render_igird_torsion_layout_settings() -> None:
+    if str(st.session_state.get("section_preset_key") or "").strip() != "parametric_i_girder":
+        return
+    metadata = dict(st.session_state.get("project_metadata", {}) or {})
+    raw = st.session_state.get(BEAM_GIRDER_TORSION_SETTINGS_KEY)
+    if not isinstance(raw, dict):
+        raw = metadata.get(BEAM_GIRDER_TORSION_SETTINGS_KEY, {})
+    raw = dict(raw or {}) if isinstance(raw, dict) else {}
+    with st.expander("Precast I-Girder torsion hoop / AASHTO geometry source", expanded=False):
+        st.caption(
+            "AASHTO LRFD 5.7.3.6 requires a fully closed transverse torsion path. "
+            "The app derives solid-section Ao from the AASHTO effective-width shear-flow path, but ph must come from the actual closed torsion reinforcement centerline."
+        )
+        closed = st.checkbox(
+            "Verified fully continuous closed torsion loop with 135° standard-hook anchorage",
+            value=bool(raw.get("closed_loop_confirmed", False)),
+            key="beam_girder_torsion_closed_loop_confirmed",
+            help="Confirm only when the provided transverse reinforcement forms a continuous closed torsion loop and is anchored around longitudinal reinforcement. AASHTO 5.10.8.2.6d requires transverse torsion reinforcement to be fully continuous with 135° standard hooks.",
+        )
+        ph = st.number_input(
+            "ph — closed torsion reinforcement centerline perimeter (mm)",
+            min_value=0.0,
+            value=float(raw.get("ph_mm") or 0.0),
+            step=10.0,
+            format="%.1f",
+            key="beam_girder_torsion_ph_mm",
+            help="AASHTO ph is the perimeter of the centerline of the closed transverse torsion reinforcement. Enter the actual detailing geometry; 0 blocks final transverse torsion capacity above the threshold.",
+        )
+        offset = st.number_input(
+            "Hoop centerline offset from outside concrete face (mm) — visual/audit reference",
+            min_value=0.0,
+            value=float(raw.get("hoop_centerline_offset_mm") or 50.0),
+            step=5.0,
+            format="%.1f",
+            key="beam_girder_torsion_hoop_centerline_offset_mm",
+            help="Reference dimension for drawings/audit only in IGIRDER.ULS6. The AASHTO solid-section Ao calculation uses be=Acp/pc; ph remains the entered actual closed-loop perimeter.",
+        )
+        c1, c2 = st.columns(2)
+        with c1:
+            perimeter_ok = st.checkbox(
+                "Longitudinal torsion reinforcement distributed around the hoop perimeter",
+                value=bool(raw.get("longitudinal_perimeter_distribution_confirmed", False)),
+                key="beam_girder_torsion_longitudinal_perimeter_confirmed",
+                help="Stored for the Combined V+T longitudinal Article 5.7.3.6.3 check; standalone Torsion does not use this checkbox to manufacture PASS.",
+            )
+        with c2:
+            corner_ok = st.checkbox(
+                "At least one longitudinal bar/tendon at each hoop corner",
+                value=bool(raw.get("corner_longitudinal_reinforcement_confirmed", False)),
+                key="beam_girder_torsion_corner_longitudinal_confirmed",
+                help="AASHTO 5.7.3.6.3 requires at least one bar or tendon at the corners of the stirrups.",
+            )
+        note = st.text_input(
+            "Torsion detailing note",
+            value=str(raw.get("note") or ""),
+            key="beam_girder_torsion_detailing_note",
+            placeholder="e.g. ph measured from approved closed-hoop cage detail",
+        )
+        settings = {
+            "closed_loop_confirmed": bool(closed),
+            "ph_mm": float(ph) if float(ph) > 0.0 else None,
+            "hoop_centerline_offset_mm": float(offset) if float(offset) > 0.0 else None,
+            "longitudinal_perimeter_distribution_confirmed": bool(perimeter_ok),
+            "corner_longitudinal_reinforcement_confirmed": bool(corner_ok),
+            "note": str(note or ""),
+        }
+        st.session_state[BEAM_GIRDER_TORSION_SETTINGS_KEY] = settings
+        metadata[BEAM_GIRDER_TORSION_SETTINGS_KEY] = settings
+        st.session_state["project_metadata"] = metadata
+        if closed and settings["ph_mm"]:
+            st.success(f"Torsion hoop source stored: verified closed loop; ph = {settings['ph_mm']:,.1f} mm.")
+        elif closed:
+            st.warning("Closed-loop confirmation is stored, but ph is 0/blank. Torsion above 0.25φTcr will remain LAYOUT REQUIRED.")
+        else:
+            st.info("Torsion above the AASHTO threshold will remain LAYOUT REQUIRED until the closed-loop detail is verified. This is intentional; ordinary shear stirrups are not silently treated as torsion hoops.")
+
+
 def _render_shear_reinforcement_layout(rebar_db: pd.DataFrame) -> None:
     st.markdown("#### Beam/Girder Shear Reinforcement Layout")
     st.caption(
@@ -2613,6 +2691,7 @@ def _render_shear_reinforcement_layout(rebar_db: pd.DataFrame) -> None:
     st.markdown(_strip_html(cards), unsafe_allow_html=True)
 
     _render_effective_shear_depth_settings()
+    _render_igird_torsion_layout_settings()
 
     action_cols = st.columns([1.0, 1.0, 3.0], gap="small")
     with action_cols[0]:

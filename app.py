@@ -63,12 +63,15 @@ from concrete_pmm_pro.io.project_io import (
 )
 from concrete_pmm_pro.ui.analysis_page import (
     _IGIRDER_COMBINED_VT_RESULT_VERSION,
+    _IGIRDER_TORSION_RESULT_VERSION,
     _IGIRDER_INTERFACE_SHEAR_RESULT_VERSION,
     _IGIRDER_SHEAR_RESULT_VERSION,
     _beam_uls_shear_decision_summary,
     _beam_uls_shear_utilization_display,
     _beam_uls_shear_calculation_trace_dataframe,
     _beam_uls_shear_variable_definitions_dataframe,
+    _beam_uls_torsion_calculation_trace_dataframe,
+    _beam_uls_torsion_variable_definitions_dataframe,
     _crossbeam_governing_component_summary,
     _render_runtime_diagnostics_expander,
     render_analysis_page,
@@ -2059,21 +2062,20 @@ _RESULTS_DASHBOARD_CSS = """
 
 
 def _results_style_for_status(status: object) -> str:
-    label = str(status or "").strip().upper()
-    normalized = label.replace("_", " ").replace("-", " ")
-    if "PREVIEW FAIL" in normalized:
+    label = str(status or "").strip().upper().replace("_", " ").replace("-", " ")
+    if "PREVIEW FAIL" in label:
         return "danger"
-    if "PREVIEW PASS" in normalized:
+    if "PREVIEW PASS" in label:
         return "ready"
-    if any(token in normalized for token in ["NOT READY", "NOT CALCULATED", "NOT RUN", "INCOMPLETE", "STALE", "PLANNED", "PLACEHOLDER", "DATA REQUIRED"]):
+    if any(token in label for token in ["NOT READY", "NOT CALCULATED", "NOT RUN", "INCOMPLETE", "STALE", "PLANNED", "PLACEHOLDER", "DATA REQUIRED"]):
         return "warning"
-    if any(token in normalized for token in ["FAIL", "ERROR", "DANGER", "EXCEED", "BLOCKED"]):
+    if any(token in label for token in ["FAIL", "ERROR", "DANGER", "EXCEED", "BLOCKED"]):
         return "danger"
-    if any(token in normalized for token in ["REVIEW", "WARNING"]):
+    if any(token in label for token in ["REVIEW", "WARNING"]):
         return "warning"
-    if any(token in normalized for token in ["N/A", "NOT ACTIVE", "NONE", "NO RESULT"]):
+    if any(token in label for token in ["N/A", "NOT ACTIVE", "NONE", "NO RESULT"]):
         return "neutral"
-    if any(token in normalized for token in ["PASS", "READY", "AVAILABLE", "CURRENT", "CALCULATED", "BELOW THRESHOLD", "CLEAR"]):
+    if any(token in label for token in ["PASS", "READY", "AVAILABLE", "CURRENT", "CALCULATED", "BELOW THRESHOLD", "CLEAR"]):
         return "ready"
     return "info"
 
@@ -3630,6 +3632,7 @@ def _results_beam_uls_cache(state: object) -> dict[str, dict[str, object]]:
         filtered.pop("Flexure", None)
         expected_versions = {
             "Shear": _IGIRDER_SHEAR_RESULT_VERSION,
+            "Torsion": _IGIRDER_TORSION_RESULT_VERSION,
             "Shear + Torsion": _IGIRDER_COMBINED_VT_RESULT_VERSION,
             "Interface Shear — Final Composite": _IGIRDER_INTERFACE_SHEAR_RESULT_VERSION,
         }
@@ -3744,6 +3747,10 @@ def _results_beam_uls_action(check_name: str, status: str, row: Mapping[str, obj
         if "Av/s min" in utilization or "Spacing" in utilization or "detailing" in utilization.lower():
             return f"Resolve minimum stirrup/detailing gate: {utilization}. Increase provided shear reinforcement or reduce stirrup spacing before accepting ULS shear."
         return "Resolve governing shear strength/detailing gate in Analysis → ULS Strength → Shear."
+    if check_name == "Torsion" and "REVIEW" in label and str(row_map.get("Longitudinal status") or "").upper() == "COMBINED CHECK REQUIRED":
+        return "Transverse Torsion is checked; complete the concurrent AASHTO 5.7.3.6.3-1 longitudinal gate in Shear + Torsion before final acceptance."
+    if check_name == "Torsion" and "LAYOUT REQUIRED" in label:
+        return "Confirm the continuous closed torsion loop and ph in Sections → Rebar, then recalculate Torsion."
     if "FAIL" in label:
         return "Revise capacity/detailing in the source Analysis check."
     if "PASS" in label or "BELOW THRESHOLD" in label:
@@ -4981,6 +4988,64 @@ def _render_report_qa_igird_shear_equation_trace(state: object) -> None:
         st.dataframe(_beam_uls_shear_variable_definitions_dataframe(), use_container_width=True, hide_index=True)
 
 
+def _render_report_qa_igird_torsion_equation_trace(state: object) -> None:
+    """Render read-only I-Girder Torsion equations from stored ULS evidence."""
+
+    preset_key = str(state.get("section_preset_key") or "").strip() if hasattr(state, "get") else ""
+    if preset_key != "parametric_i_girder":
+        return
+    cache = _results_beam_uls_cache(state)
+    torsion_entry = cache.get("Torsion")
+    governing = _results_beam_uls_best_row(torsion_entry, "Torsion")
+    render_section_bar(
+        "I-Girder Torsion — Stored Equation & Audit Trace",
+        "Read-only AASHTO threshold / Veff / General Procedure / transverse torsion trace from the stored current-version Torsion package. Report / QA does not rerun the solver.",
+        mark="T",
+    )
+    if not governing:
+        st.info("No current-version stored I-Girder Torsion result is available for equation/audit review. Calculate Torsion in Analysis first.")
+        return
+    st.caption(
+        "Standalone I-Girder Torsion reports the AASHTO 5.7.2.1 threshold and transverse 5.7.3.6.2 component. "
+        "When torsion is above threshold, final longitudinal acceptance remains a concurrent Shear + Torsion Article 5.7.3.6.3-1 gate."
+    )
+    trace_df = _beam_uls_torsion_calculation_trace_dataframe(governing)
+    if trace_df.empty:
+        st.warning("Stored Torsion result does not contain enough IGIRDER.ULS6 fields for a full equation trace.")
+    else:
+        st.dataframe(trace_df, use_container_width=True, hide_index=True)
+
+    parameter_rows = [
+        {"Item": "Governing station", "Value": str(governing.get("Governing x") or "-")},
+        {"Item": "Load case", "Value": str(governing.get("Case") or "-")},
+        {"Item": "Tu", "Value": _results_value_with_unit(governing.get("Demand kN-m", governing.get("Demand")), "kN-m")},
+        {"Item": "Threshold status", "Value": str(governing.get("Threshold status") or "-")},
+        {"Item": "Tcr / 0.25phiTcr", "Value": f"{_results_value_with_unit(governing.get('Tcr kN-m'), 'kN-m')} / {_results_value_with_unit(governing.get('Threshold kN-m'), 'kN-m')}"},
+        {"Item": "fpc base / fpc for K", "Value": f"{_results_value_with_unit(governing.get('fpc base MPa'), 'MPa')} / {_results_value_with_unit(governing.get('fpc MPa'), 'MPa')}"},
+        {"Item": "Nu (AASHTO sign)", "Value": _results_value_with_unit(governing.get("Nu AASHTO kN"), "kN")},
+        {"Item": "K / Kmax", "Value": f"{_results_scalar(governing.get('K'))} / {_results_scalar(governing.get('K max'))}"},
+        {"Item": "K tension gate", "Value": f"{_results_value_with_unit(governing.get('Extreme tension MPa'), 'MPa')} / {_results_value_with_unit(governing.get('K tension limit MPa'), 'MPa')} · {str(governing.get('K gate status') or '-')}"},
+        {"Item": "Acp / Pcp / be", "Value": f"{_results_value_with_unit(governing.get('Acp mm2'), 'mm²')} / {_results_value_with_unit(governing.get('Pcp mm'), 'mm')} / {_results_value_with_unit(governing.get('be mm'), 'mm')}"},
+        {"Item": "Ao / ph", "Value": f"{_results_value_with_unit(governing.get('Ao mm2'), 'mm²')} / {_results_value_with_unit(governing.get('ph mm'), 'mm')}"},
+        {"Item": "Vu / Veff", "Value": f"{_results_value_with_unit(governing.get('Vuy kN'), 'kN')} / {_results_value_with_unit(governing.get('Veff kN'), 'kN')}"},
+        {"Item": "epsilon_s raw / adopted", "Value": f"{_results_scalar(governing.get('εs raw'))} / {_results_scalar(governing.get('εs used'))}"},
+        {"Item": "beta / theta", "Value": f"{_results_scalar(governing.get('β'))} / {_results_value_with_unit(governing.get('θ deg'), 'deg')}"},
+        {"Item": "At/s provided / required", "Value": f"{_results_value_with_unit(governing.get('At/s mm2/mm'), 'mm²/mm')} / {_results_value_with_unit(governing.get('Torsion At/s req mm2/mm'), 'mm²/mm')}"},
+        {"Item": "Transverse fy input / design", "Value": f"{_results_value_with_unit(governing.get('fy input MPa'), 'MPa')} / {_results_value_with_unit(governing.get('fy MPa'), 'MPa')}"},
+        {"Item": "Transverse fy policy", "Value": str(governing.get("fy policy") or "-")},
+        {"Item": "Tn / phiTn", "Value": f"{_results_value_with_unit(governing.get('Tn kN-m'), 'kN-m')} / {_results_value_with_unit(governing.get('φTn kN-m'), 'kN-m')}"},
+        {"Item": "Transverse torsion D/C", "Value": _results_scalar(governing.get("D/C value"))},
+        {"Item": "Closed-loop source", "Value": str(governing.get("Closed loop confirmed") if governing.get("Closed loop confirmed") is not None else "-")},
+        {"Item": "Longitudinal status", "Value": str(governing.get("Longitudinal status") or "-")},
+        {"Item": "General Procedure branch", "Value": str(governing.get("General Procedure branch") or "-")},
+        {"Item": "Resistance-factor branch", "Value": str(governing.get("φ policy") or "-")},
+    ]
+    with st.expander("Stored governing inputs / intermediate values", expanded=False):
+        st.dataframe(pd.DataFrame(parameter_rows), use_container_width=True, hide_index=True)
+    with st.expander("Variable definitions / Engineering terms", expanded=False):
+        st.dataframe(_beam_uls_torsion_variable_definitions_dataframe(), use_container_width=True, hide_index=True)
+
+
 def render_report_qa_workspace() -> None:
     render_page_header(
         "Report / QA",
@@ -4996,6 +5061,7 @@ def render_report_qa_workspace() -> None:
     else:
         _render_report_qa_result_summary_alignment(st.session_state)
         _render_report_qa_igird_shear_equation_trace(st.session_state)
+        _render_report_qa_igird_torsion_equation_trace(st.session_state)
         render_section_bar(
             "Traceability / report tools",
             "Report and QA tools summarize stored results only; PMM, SLS, ULS, and verification solvers are not rerun here.",
