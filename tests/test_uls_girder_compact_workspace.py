@@ -1466,7 +1466,7 @@ def test_uls_torsion1_figure_uses_unmarked_red_check_lines_and_marked_demand() -
     fig = _make_beam_uls_torsion_capacity_figure(active, torsion, code_label="AASHTO LRFD")
 
     demand = next(trace for trace in fig.data if str(trace.name).startswith("Demand Tu"))
-    phi_tn = next(trace for trace in fig.data if trace.name == "φTn")
+    phi_tn = next(trace for trace in fig.data if trace.name == "±φTn")
     assert demand.mode == "lines+markers"
     assert phi_tn.mode == "lines"
     assert phi_tn.line.color == "red"
@@ -1493,8 +1493,8 @@ def test_ui_plot6_torsion_figure_extends_capacity_to_active_member_domain_withou
 
     fig = _make_beam_uls_torsion_capacity_figure(active, torsion, code_label="AASHTO LRFD")
 
-    phi_tn = next(trace for trace in fig.data if trace.name == "φTn")
-    phi_tcr = next(trace for trace in fig.data if trace.name == "φTcr")
+    phi_tn = next(trace for trace in fig.data if trace.name == "±φTn")
+    phi_tcr = next(trace for trace in fig.data if trace.name == "±φTcr")
     assert min(float(x) for x in phi_tn.x) == 0.0
     assert max(float(x) for x in phi_tn.x) == 10.0
     assert min(float(x) for x in phi_tcr.x) == 0.0
@@ -1537,7 +1537,7 @@ def test_uls_torsion1_figure_uses_boundary_rows_to_extend_phi_tn_to_member_ends(
 
     assert not boundary.empty
     assert set(boundary["Governing x"]) == {"0.000 m", "20.000 m"}
-    phi_tn = next(trace for trace in fig.data if trace.name == "φTn")
+    phi_tn = next(trace for trace in fig.data if trace.name == "±φTn")
     assert min(float(x) for x in phi_tn.x) == 0.0
     assert max(float(x) for x in phi_tn.x) == 20.0
 

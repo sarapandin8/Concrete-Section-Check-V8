@@ -12223,6 +12223,13 @@ _BEAM_ULS_DEMAND_MARKER_STYLE = {"color": "#1f77b4", "size": 7}
 # station resultants. Use this convention for future beam/girder design diagrams.
 _BEAM_ULS_CHECK_LINE_STYLE = {"color": "red", "dash": "dash", "width": 3}
 _BEAM_ULS_REFERENCE_LINE_STYLE = {"color": "orange", "dash": "dash", "width": 3}
+# Torsion-specific reference hierarchy: cracking resistance remains the shared
+# orange reference style, while the quarter-phiTcr investigation threshold uses
+# the app's existing purple dotted threshold language.  This keeps capacity,
+# cracking reference, and investigation threshold visually distinct in static
+# PDF output without creating per-figure ad-hoc styling.
+_BEAM_ULS_TORSION_CRACKING_LINE_STYLE = dict(_BEAM_ULS_REFERENCE_LINE_STYLE)
+_BEAM_ULS_TORSION_INVESTIGATION_LINE_STYLE = {"color": "#a855f7", "dash": "dot", "width": 2.6}
 _BEAM_ULS_UTIL_STRESS_LINE_STYLE = {"color": "#2563eb", "width": 3}
 _BEAM_ULS_UTIL_TRANSVERSE_LINE_STYLE = {"color": "#0f766e", "width": 3}
 _BEAM_ULS_UTIL_LONGITUDINAL_LINE_STYLE = {"color": "#f59e0b", "width": 3, "dash": "dot"}
@@ -12740,10 +12747,15 @@ def _make_beam_uls_torsion_capacity_figure(
         if dedupe_columns:
             plot_df = plot_df.drop_duplicates(subset=dedupe_columns, keep="first")
         plot_df = _beam_uls_extend_torsion_plot_rows_to_active_domain(plot_df, active_df)
-    has_capacity = not plot_df.empty
-    if has_capacity:
+
+    has_plot_reference = not plot_df.empty
+    has_tn = bool(has_plot_reference and pd.to_numeric(plot_df["__phi_tn"], errors="coerce").notna().any())
+    has_tcr = bool(has_plot_reference and pd.to_numeric(plot_df["__phi_tcr"], errors="coerce").notna().any())
+    has_threshold = bool(has_plot_reference and pd.to_numeric(plot_df["__threshold"], errors="coerce").notna().any())
+
+    if has_plot_reference:
         plot_df = plot_df.sort_values(["Case", "__x_m"], kind="stable")
-        for case_name, case_df in plot_df.groupby("Case", sort=False):
+        for case_index, (case_name, case_df) in enumerate(plot_df.groupby("Case", sort=False)):
             x_values = [float(value) for value in case_df["__x_m"].tolist()]
             tn_values = [float(value) if math.isfinite(float(value)) else float("nan") for value in case_df["__phi_tn"].tolist()]
             if any(math.isfinite(value) for value in tn_values):
@@ -12752,9 +12764,11 @@ def _make_beam_uls_torsion_capacity_figure(
                         x=x_values,
                         y=tn_values,
                         mode="lines",
-                        name="φTn",
+                        name="±φTn",
+                        legendgroup="torsion_phi_tn",
+                        showlegend=case_index == 0,
                         line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
-                        hovertemplate="x=%{x:.3f} m<br>φTn=%{y:.3f} kN-m<extra></extra>",
+                        hovertemplate="x=%{x:.3f} m<br>+φTn=%{y:.3f} kN-m<extra></extra>",
                     )
                 )
                 fig.add_trace(
@@ -12762,7 +12776,9 @@ def _make_beam_uls_torsion_capacity_figure(
                         x=x_values,
                         y=[-v if math.isfinite(v) else float("nan") for v in tn_values],
                         mode="lines",
-                        name="-φTn",
+                        name="±φTn",
+                        legendgroup="torsion_phi_tn",
+                        showlegend=False,
                         line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
                         hovertemplate="x=%{x:.3f} m<br>-φTn=%{y:.3f} kN-m<extra></extra>",
                     )
@@ -12774,9 +12790,11 @@ def _make_beam_uls_torsion_capacity_figure(
                         x=x_values,
                         y=tcr_values,
                         mode="lines",
-                        name="φTcr",
-                        line=dict(_BEAM_ULS_REFERENCE_LINE_STYLE),
-                        hovertemplate="x=%{x:.3f} m<br>φTcr=%{y:.3f} kN-m<extra></extra>",
+                        name="±φTcr",
+                        legendgroup="torsion_phi_tcr",
+                        showlegend=case_index == 0,
+                        line=dict(_BEAM_ULS_TORSION_CRACKING_LINE_STYLE),
+                        hovertemplate="x=%{x:.3f} m<br>+φTcr=%{y:.3f} kN-m<extra></extra>",
                     )
                 )
                 fig.add_trace(
@@ -12784,8 +12802,10 @@ def _make_beam_uls_torsion_capacity_figure(
                         x=x_values,
                         y=[-v if math.isfinite(v) else float("nan") for v in tcr_values],
                         mode="lines",
-                        name="-φTcr",
-                        line=dict(_BEAM_ULS_REFERENCE_LINE_STYLE),
+                        name="±φTcr",
+                        legendgroup="torsion_phi_tcr",
+                        showlegend=False,
+                        line=dict(_BEAM_ULS_TORSION_CRACKING_LINE_STYLE),
                         hovertemplate="x=%{x:.3f} m<br>-φTcr=%{y:.3f} kN-m<extra></extra>",
                     )
                 )
@@ -12796,9 +12816,11 @@ def _make_beam_uls_torsion_capacity_figure(
                         x=x_values,
                         y=threshold_values,
                         mode="lines",
-                        name="0.25φTcr",
-                        line=dict(_BEAM_ULS_REFERENCE_LINE_STYLE),
-                        hovertemplate="x=%{x:.3f} m<br>0.25φTcr=%{y:.3f} kN-m<extra></extra>",
+                        name="±0.25φTcr",
+                        legendgroup="torsion_quarter_phi_tcr",
+                        showlegend=case_index == 0,
+                        line=dict(_BEAM_ULS_TORSION_INVESTIGATION_LINE_STYLE),
+                        hovertemplate="x=%{x:.3f} m<br>+0.25φTcr=%{y:.3f} kN-m<extra></extra>",
                     )
                 )
                 fig.add_trace(
@@ -12806,8 +12828,10 @@ def _make_beam_uls_torsion_capacity_figure(
                         x=x_values,
                         y=[-v if math.isfinite(v) else float("nan") for v in threshold_values],
                         mode="lines",
-                        name="-0.25φTcr",
-                        line=dict(_BEAM_ULS_REFERENCE_LINE_STYLE),
+                        name="±0.25φTcr",
+                        legendgroup="torsion_quarter_phi_tcr",
+                        showlegend=False,
+                        line=dict(_BEAM_ULS_TORSION_INVESTIGATION_LINE_STYLE),
                         hovertemplate="x=%{x:.3f} m<br>-0.25φTcr=%{y:.3f} kN-m<extra></extra>",
                     )
                 )
@@ -12829,7 +12853,14 @@ def _make_beam_uls_torsion_capacity_figure(
                     hovertemplate="x=%{x:.3f} m<br>Governing φTn=%{y:.3f} kN-m<extra></extra>",
                 )
             )
-    subtitle = "demand vs φTn" if has_capacity else "demand only — φTn not ready"
+    if has_tn and (has_tcr or has_threshold):
+        subtitle = "demand vs φTn / torsion thresholds"
+    elif has_tn:
+        subtitle = "demand vs φTn"
+    elif has_tcr or has_threshold:
+        subtitle = "demand vs torsion thresholds — φTn not ready"
+    else:
+        subtitle = "demand only — φTn not ready"
     fig.update_layout(title={"text": f"Torsion Check — Strength ULS<br><sup>{code_label} · {subtitle}</sup>"})
     return fig
 
@@ -14426,10 +14457,21 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             )
         )
         if igird_torsion_route:
+            torsion_phi_tn_ready = bool(
+                torsion_check_df is not None
+                and not torsion_check_df.empty
+                and pd.to_numeric(torsion_check_df.get("φTn kN-m"), errors="coerce").notna().any()
+            )
+            torsion_capacity_caption = (
+                "The red dashed ±φTn trace is the transverse closed-loop torsion component from 5.7.3.6.2. "
+                if torsion_phi_tn_ready
+                else "The transverse ±φTn trace is intentionally hidden until the verified closed-loop torsion layout is ready. "
+            )
             st.caption(
                 "Precast I-Girder torsion uses the AASHTO LRFD 5.7.2.1 threshold and, where torsion must be considered, "
                 "replaces Vu by Veff in the 5.7.3.4.2 longitudinal-strain calculation before evaluating station-dependent θ. "
-                "The plotted φTn is the transverse closed-loop torsion component from 5.7.3.6.2; the 0.25φTcr investigation threshold is plotted separately."
+                + torsion_capacity_caption
+                + "Orange dashed ±φTcr denotes the cracking reference; purple dotted ±0.25φTcr denotes the investigation threshold."
             )
         else:
             st.caption(

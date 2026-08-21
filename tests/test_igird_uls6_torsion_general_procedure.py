@@ -296,3 +296,48 @@ def test_igird_torsion_report_qa_trace_is_read_only_source_contract():
     assert "run_pmm_solver" not in block
     assert "run_rc_pmm_solver" not in block
     assert "does not rerun the solver" in block
+
+
+def test_igird_uls6a_torsion_chart_separates_cracking_and_investigation_threshold_styles():
+    from concrete_pmm_pro.ui.analysis_page import _make_beam_uls_torsion_capacity_figure
+
+    active = pd.DataFrame([
+        {"Active": True, "Station x (m)": 0.0, "Case Name": "Strength I", "Mux": 0.0, "Vuy": 500.0, "Tu": 500.0, "Muy": 0.0, "Vux": 0.0, "Nu": 0.0, "Note": ""},
+        {"Active": True, "Station x (m)": 20.0, "Case Name": "Strength I", "Mux": 0.0, "Vuy": -500.0, "Tu": 500.0, "Muy": 0.0, "Vux": 0.0, "Nu": 0.0, "Note": ""},
+    ])
+    torsion = pd.DataFrame([
+        {"Status": "LAYOUT REQUIRED", "Governing x": "1.000 m", "Case": "Strength I", "Demand kN-m": 500.0, "Abs demand kN-m": 500.0, "φTn kN-m": float("nan"), "φTcr kN-m": 127.93, "Threshold kN-m": 31.98, "D/C value": float("nan")},
+        {"Status": "LAYOUT REQUIRED", "Governing x": "19.000 m", "Case": "Strength I", "Demand kN-m": 500.0, "Abs demand kN-m": 500.0, "φTn kN-m": float("nan"), "φTcr kN-m": 127.93, "Threshold kN-m": 31.98, "D/C value": float("nan")},
+    ])
+
+    fig = _make_beam_uls_torsion_capacity_figure(active, torsion, code_label="AASHTO LRFD 9th Edition")
+    visible_legend_names = [trace.name for trace in fig.data if getattr(trace, "showlegend", True) is not False]
+    assert visible_legend_names.count("±φTcr") == 1
+    assert visible_legend_names.count("±0.25φTcr") == 1
+    assert "φTcr" not in visible_legend_names
+    assert "-φTcr" not in visible_legend_names
+    cracking = next(trace for trace in fig.data if trace.name == "±φTcr" and trace.showlegend is not False)
+    threshold = next(trace for trace in fig.data if trace.name == "±0.25φTcr" and trace.showlegend is not False)
+    assert cracking.line.color != threshold.line.color
+    assert cracking.line.dash != threshold.line.dash
+    assert "demand vs torsion thresholds — φTn not ready" in str(fig.layout.title.text)
+
+
+def test_igird_uls6a_torsion_chart_uses_compact_plus_minus_legends_when_phi_tn_is_ready():
+    from concrete_pmm_pro.ui.analysis_page import _make_beam_uls_torsion_capacity_figure
+
+    active = pd.DataFrame([
+        {"Active": True, "Station x (m)": 0.0, "Case Name": "Strength I", "Mux": 0.0, "Vuy": 100.0, "Tu": 50.0, "Muy": 0.0, "Vux": 0.0, "Nu": 0.0, "Note": ""},
+        {"Active": True, "Station x (m)": 10.0, "Case Name": "Strength I", "Mux": 0.0, "Vuy": -100.0, "Tu": -50.0, "Muy": 0.0, "Vux": 0.0, "Nu": 0.0, "Note": ""},
+    ])
+    torsion = pd.DataFrame([
+        {"Status": "REVIEW", "Governing x": "0.000 m", "Case": "Strength I", "Demand kN-m": 50.0, "Abs demand kN-m": 50.0, "φTn kN-m": 200.0, "φTcr kN-m": 120.0, "Threshold kN-m": 30.0, "D/C value": 0.25},
+        {"Status": "REVIEW", "Governing x": "10.000 m", "Case": "Strength I", "Demand kN-m": -50.0, "Abs demand kN-m": 50.0, "φTn kN-m": 200.0, "φTcr kN-m": 120.0, "Threshold kN-m": 30.0, "D/C value": 0.25},
+    ])
+
+    fig = _make_beam_uls_torsion_capacity_figure(active, torsion, code_label="AASHTO LRFD 9th Edition")
+    visible_legend_names = [trace.name for trace in fig.data if getattr(trace, "showlegend", True) is not False]
+    assert visible_legend_names.count("±φTn") == 1
+    assert visible_legend_names.count("±φTcr") == 1
+    assert visible_legend_names.count("±0.25φTcr") == 1
+    assert "demand vs φTn / torsion thresholds" in str(fig.layout.title.text)
