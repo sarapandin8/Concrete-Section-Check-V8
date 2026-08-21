@@ -3671,7 +3671,7 @@ def _beam_uls_shear_failure_diagnosis(row: Mapping[str, object] | None) -> dict[
             "title": "Shear check passes",
             "reason": f"Strength and provided-stirrup detailing gates pass at x={x_text}.",
             "detail": f"Vu = {demand}; φVn = {capacity}; {_beam_uls_shear_utilization_display(row)}.",
-            "action": "No shear reinforcement change is required for this preview row; continue reviewing development length, anchorage, and shop-drawing detailing separately.",
+            "action": "No shear reinforcement change is required at the governing shear check; continue reviewing development length, anchorage, and shop-drawing detailing separately.",
         }
 
     if detailing_status == "FAIL" or (math.isfinite(detailing_dc) and detailing_dc > 1.0 + 1.0e-9):
@@ -8891,7 +8891,7 @@ def _beam_uls_shear_audit_dataframe(shear_df: pd.DataFrame | None) -> pd.DataFra
                 "Support side": str(row.get("Support side") or "-"),
                 "Critical offset": _format_beam_uls_audit_number(row.get("Critical offset m"), unit="m"),
                 "Case": str(row.get("Case") or "-"),
-                "Status": str(row.get("Status") or "-"),
+                "Status": ("NON-GOVERNING" if idx in near_support_indices else str(row.get("Status") or "-")),
                 "Strength": str(row.get("Strength status") or row.get("Status") or "-"),
                 "Detailing": str(row.get("Detailing status") or "-"),
                 "Vn limit": str(row.get("Vn limit status") or "-"),
@@ -30277,7 +30277,7 @@ def render_analysis_page() -> None:
         "Run and review strength, serviceability, and deflection/camber workflows under the active engineering context.",
         icon="AN",
         kicker="Analysis workspace",
-        badge="Review",
+        badge="On-demand",
         accent="blue",
     )
     active_subpage = _analysis_subpage_choice()

@@ -347,6 +347,11 @@ def test_uls5a_near_support_load_stations_inside_dv_are_diagram_only() -> None:
     assert role_by_x["1.051 m"] == "Critical design section"
     assert role_by_x["17.000 m"] == "Design station"
 
+    status_by_x = dict(zip(audit["Station x"], audit["Status"]))
+    assert status_by_x["1.000 m"] == "NON-GOVERNING"
+    assert status_by_x["1.051 m"] == "PASS"
+    assert status_by_x["17.000 m"] == "PASS"
+
 
 def test_uls5a_governing_shear_equation_trace_is_read_only_and_complete() -> None:
     from concrete_pmm_pro.ui.analysis_page import (
