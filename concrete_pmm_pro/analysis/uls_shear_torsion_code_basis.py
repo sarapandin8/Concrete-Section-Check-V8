@@ -104,7 +104,7 @@ FORMULA_AUDIT_ITEMS: tuple[ShearTorsionFormulaAuditItem, ...] = (
         code_location="Concrete shear/torsion articles for prestressed girders",
         implementation_status="PARTIAL",
         risk_level="CRITICAL",
-        current_app_status="IGIRDER.ULS5 implements AASHTO 5.7.3.4.2 station epsilon_s/beta/theta for Precast I-Girder with explicit transfer/development participation and phi branch trace; other PSC presets remain guarded.",
+        current_app_status="IGIRDER.ULS5A implements AASHTO 5.7.3.4.2 station epsilon_s/beta/theta for Precast I-Girder with explicit transfer/development participation and phi branch trace; other PSC presets remain guarded.",
         required_action="Complete benchmark/visual QA for the I-Girder General Procedure and keep non-I-Girder PSC routes scoped until separately calibrated.",
     ),
     ShearTorsionFormulaAuditItem(
@@ -124,7 +124,7 @@ FORMULA_AUDIT_ITEMS: tuple[ShearTorsionFormulaAuditItem, ...] = (
         code_location="Concrete torsion / combined shear-torsion articles for prestressed girders",
         implementation_status="MISSING",
         risk_level="CRITICAL",
-        current_app_status="IGIRDER.ULS5 deliberately forces Combined V+T to REVIEW because standalone shear uses station-dependent theta while the current torsion/combined formulation remains fixed-theta.",
+        current_app_status="IGIRDER.ULS5A deliberately forces Combined V+T to REVIEW because standalone shear uses station-dependent theta while the current torsion/combined formulation remains fixed-theta.",
         required_action="Calibrate AASHTO prestressed torsion/combined theta consistently before permitting a final Combined V+T PASS.",
     ),
 )

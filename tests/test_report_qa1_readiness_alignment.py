@@ -96,3 +96,19 @@ def test_report_qa_required_actions_match_result_summary_action_rows() -> None:
     assert any(action["Issue"] == "Beam/Girder stage stress — Preview FAIL" for action in actions)
     assert any("Run ULS Strength" in action["Required Action"] for action in actions)
     assert any("Report / QA" in action["Required Action"] for action in actions)
+
+
+def test_report_qa_igird_shear_equation_trace_is_stored_result_only() -> None:
+    start = SOURCE.index("def _render_report_qa_igird_shear_equation_trace")
+    end = SOURCE.index("def render_report_qa_workspace", start)
+    body = SOURCE[start:end]
+
+    assert "I-Girder Shear — Stored Equation & Audit Trace" in body
+    assert "_results_beam_uls_cache(state)" in body
+    assert "_results_beam_uls_best_row(shear_entry, \"Shear\")" in body
+    assert "_beam_uls_shear_calculation_trace_dataframe(governing)" in body
+    assert "_beam_uls_shear_variable_definitions_dataframe()" in body
+    assert "_beam_uls_calculate_selected_check" not in body
+    assert "run_" not in body
+    assert "does not rerun the shear solver" in body
+    assert "_render_report_qa_igird_shear_equation_trace(st.session_state)" in SOURCE

@@ -7702,6 +7702,10 @@ def _beam_uls_shear_result_for_row(
                 "Stirrup": f"{zone.get('Bar Size') or '-'} × {int(float(legs))} legs @ {float(spacing):.0f} mm",
                 "Av/s mm2/mm": avs_mm2_per_mm,
                 "Av/s mm2/m": avs_mm2_per_mm * 1000.0,
+                "f'c MPa": float(fc),
+                "fy MPa": float(fy),
+                "Spacing mm": float(spacing),
+                "λ concrete": 1.0,
                 "Av/s required mm2/mm": detailing.get("Av/s required mm2/mm", float("nan")),
                 "Av/s required mm2/m": detailing.get("Av/s required mm2/m", float("nan")),
                 "Av/s min D/C": detailing.get("Av/s min D/C", float("nan")),
@@ -7730,6 +7734,10 @@ def _beam_uls_shear_result_for_row(
                 "Transfer length max mm": epsilon_trace.get("max_transfer_length_mm", float("nan")),
                 "General Procedure branch": "AASHTO LRFD 5.7.3.4.2-2 — BLOCKED: sx/ag source required for sxe",
                 "sxe mm": float("nan"),
+                "Mu used kN-m": _beam_uls_float(epsilon_trace.get("Mu_used_Nmm")) / 1.0e6,
+                "Nu AASHTO kN": _beam_uls_float(epsilon_trace.get("Nu_AASHTO_N")) / 1000.0,
+                "Vp kN": _beam_uls_float(epsilon_trace.get("Vp_N")) / 1000.0,
+                "Aps fpo kN": _beam_uls_float(epsilon_trace.get("Aps_fpo_N")) / 1000.0,
                 "Code basis": "AASHTO LRFD 5.7.3.4.2 General Procedure",
                 "φ policy": phi_policy,
                 "Method": "AASHTO LRFD 5.7.3.4.2 General Procedure — Eq. -2 source blocked",
@@ -7748,7 +7756,7 @@ def _beam_uls_shear_result_for_row(
         method = "AASHTO LRFD 5.7.3.4.2 prestressed-member General Procedure"
         code_basis = "AASHTO LRFD 5.7.3.3 + 5.7.3.4.2 General Procedure"
         notes.append(
-            "IGIRDER.ULS5 uses station epsilon_s -> beta/theta -> Vc/Vs; Vp=0 until an explicit vertical prestress component is source-owned."
+            "IGIRDER.ULS5A uses station epsilon_s -> beta/theta -> Vc/Vs; Vp=0 until an explicit vertical prestress component is source-owned."
         )
         notes.extend(params.notes)
         notes.append(str(epsilon_trace.get("note") or ""))
@@ -7767,6 +7775,10 @@ def _beam_uls_shear_result_for_row(
             "Transfer length max mm": epsilon_trace.get("max_transfer_length_mm", float("nan")),
             "General Procedure branch": params.basis,
             "sxe mm": params.sxe_mm if params.sxe_mm is not None else float("nan"),
+            "Mu used kN-m": _beam_uls_float(epsilon_trace.get("Mu_used_Nmm")) / 1.0e6,
+            "Nu AASHTO kN": _beam_uls_float(epsilon_trace.get("Nu_AASHTO_N")) / 1000.0,
+            "Vp kN": _beam_uls_float(epsilon_trace.get("Vp_N")) / 1000.0,
+            "Aps fpo kN": _beam_uls_float(epsilon_trace.get("Aps_fpo_N")) / 1000.0,
         }
     elif strength_route.is_bridge:
         phi = 0.90
@@ -7892,6 +7904,10 @@ def _beam_uls_shear_result_for_row(
         "Stirrup": f"{zone.get('Bar Size') or '-'} × {int(float(legs))} legs @ {float(spacing):.0f} mm",
         "Av/s mm2/mm": avs_mm2_per_mm,
         "Av/s mm2/m": avs_mm2_per_mm * 1000.0,
+        "f'c MPa": float(fc),
+        "fy MPa": float(fy),
+        "Spacing mm": float(spacing),
+        "λ concrete": 1.0 if strength_route.is_bridge else float("nan"),
         "Av/s required mm2/mm": detailing.get("Av/s required mm2/mm", float("nan")),
         "Av/s required mm2/m": detailing.get("Av/s required mm2/m", float("nan")),
         "Av/s min D/C": detailing.get("Av/s min D/C", float("nan")),
@@ -7927,8 +7943,10 @@ def _beam_uls_shear_check_dataframe(
         "D/C value", "Strength D/C value", "Detailing D/C value", "Governing D/C value", "Vn limit D/C",
         "Zone", "Stirrup", "Av/s mm2/mm", "Av/s mm2/m", "Av/s required mm2/mm", "Av/s required mm2/m",
         "Av/s min D/C", "s max mm", "Spacing D/C", "Detailing basis", "bw mm", "d mm", "dv mm", "Tension face", "Vn limit status", "β", "θ deg", "cotθ", "φ",
+        "f'c MPa", "fy MPa", "Spacing mm", "λ concrete",
         "εs raw", "εs used", "εs numerator N", "εs denominator N", "As tension mm2", "Aps raw tension mm2", "Aps developed tension mm2",
         "Aps development factor min", "fpo transfer factor min", "fpo full MPa", "Development length max mm", "Transfer length max mm", "General Procedure branch", "sxe mm",
+        "Mu used kN-m", "Nu AASHTO kN", "Vp kN", "Aps fpo kN",
         "Code basis", "φ policy", "Method", "Notes",
     ]
     if active_df.empty:
@@ -7946,7 +7964,7 @@ def _beam_uls_shear_check_dataframe(
                 or column.endswith("mm")
                 or column.endswith("mm2/mm")
                 or column.endswith("mm2/m")
-                or column in {"D/C value", "Strength D/C value", "Detailing D/C value", "Governing D/C value", "Vn limit D/C", "Av/s min D/C", "Spacing D/C", "β", "θ deg", "cotθ", "φ", "εs raw", "εs used", "εs numerator N", "εs denominator N", "As tension mm2", "Aps raw tension mm2", "Aps developed tension mm2", "Aps development factor min", "fpo transfer factor min", "fpo full MPa", "Development length max mm", "Transfer length max mm", "sxe mm"}
+                or column in {"D/C value", "Strength D/C value", "Detailing D/C value", "Governing D/C value", "Vn limit D/C", "Av/s min D/C", "Spacing D/C", "β", "θ deg", "cotθ", "φ", "f'c MPa", "fy MPa", "Spacing mm", "λ concrete", "εs raw", "εs used", "εs numerator N", "εs denominator N", "As tension mm2", "Aps raw tension mm2", "Aps developed tension mm2", "Aps development factor min", "fpo transfer factor min", "fpo full MPa", "Development length max mm", "Transfer length max mm", "sxe mm", "Mu used kN-m", "Nu AASHTO kN", "Vp kN", "Aps fpo kN"}
                 else "-",
             )
         rows.append(result)
@@ -8419,6 +8437,65 @@ def _beam_uls_shear_row_x_m(row: Mapping[str, object]) -> float:
     return _beam_uls_float(text)
 
 
+def _beam_uls_shear_near_support_load_indices(shear_df: pd.DataFrame | None) -> set[object]:
+    """Return ordinary load-station rows inside an adopted dv critical-section region.
+
+    AASHTO LRFD 5.7.3.2 permits the shear design section to be taken at dv
+    from the internal face of a support when the support reaction introduces
+    compression into the member end region.  Concrete Section Pro inserts
+    explicit CRITICAL SHEAR SECTION rows for that adopted route.  Once those
+    rows exist, ordinary imported LOAD STATION rows between the support and
+    the corresponding critical section remain useful for the demand diagram
+    and audit, but they are not independent governing sectional-design rows.
+
+    The concentrated-load-within-dv exception in Article 5.7.3.2 is not
+    inferred from a generic FEA resultant table.  The UI therefore exposes
+    that exception as a visible scope guard rather than silently guessing it.
+    """
+
+    if shear_df is None or shear_df.empty:
+        return set()
+    work = shear_df.copy()
+    work["__x_m"] = work.apply(lambda row: _beam_uls_shear_row_x_m(row), axis=1)
+    if "Case" in work.columns:
+        work["__case"] = work["Case"].astype(str)
+    elif "Case Name" in work.columns:
+        work["__case"] = work["Case Name"].astype(str)
+    else:
+        work["__case"] = "-"
+
+    excluded: set[object] = set()
+    tol = 1.0e-8
+    for _case_name, case_df in work.groupby("__case", dropna=False):
+        station_type = case_df.get("Station type", pd.Series(index=case_df.index, dtype=object)).astype(str).str.upper()
+        critical = case_df[station_type.eq("CRITICAL SHEAR SECTION")].copy()
+        if critical.empty:
+            continue
+        support_side = critical.get("Support side", pd.Series(index=critical.index, dtype=object)).astype(str).str.upper()
+        left_values = pd.to_numeric(critical.loc[support_side.eq("LEFT"), "__x_m"], errors="coerce").dropna()
+        right_values = pd.to_numeric(critical.loc[support_side.eq("RIGHT"), "__x_m"], errors="coerce").dropna()
+
+        # Older caches may not carry Support side.  With two critical rows,
+        # the smaller/larger x values are the left/right adopted sections.
+        all_critical_x = pd.to_numeric(critical["__x_m"], errors="coerce").dropna()
+        left_x = float(left_values.min()) if not left_values.empty else float("nan")
+        right_x = float(right_values.max()) if not right_values.empty else float("nan")
+        if not math.isfinite(left_x) and len(all_critical_x) >= 2:
+            left_x = float(all_critical_x.min())
+        if not math.isfinite(right_x) and len(all_critical_x) >= 2:
+            right_x = float(all_critical_x.max())
+
+        is_load_station = station_type.eq("LOAD STATION") | station_type.eq("-") | station_type.eq("")
+        x_values = pd.to_numeric(case_df["__x_m"], errors="coerce")
+        near_support = pd.Series(False, index=case_df.index)
+        if math.isfinite(left_x):
+            near_support |= x_values < left_x - tol
+        if math.isfinite(right_x):
+            near_support |= x_values > right_x + tol
+        excluded.update(case_df[is_load_station & near_support].index.tolist())
+    return excluded
+
+
 def _beam_uls_shear_design_rows_for_governing(shear_df: pd.DataFrame | None) -> pd.DataFrame:
     """Return rows eligible for the displayed governing shear station.
 
@@ -8454,39 +8531,14 @@ def _beam_uls_shear_design_rows_for_governing(shear_df: pd.DataFrame | None) -> 
     if df.empty:
         return df
 
-    # If the shear workflow inserted critical sections, exact end support rows
-    # from the Loads diagram should remain visible in the peak-demand card but
-    # should not decide the sectional shear pass/fail.  This matches the UI text
-    # "diagram/support demand only" and prevents Railway U-Girder support rows
-    # with no explicit end-zone coverage from overriding a passing critical
-    # section check.
-    station_type = df.get("Station type", pd.Series(index=df.index, dtype=object)).astype(str).str.upper()
-    has_critical = station_type.eq("CRITICAL SHEAR SECTION").any()
-    if has_critical:
-        work = df.copy()
-        work["__x_m"] = work.apply(lambda row: _beam_uls_shear_row_x_m(row), axis=1)
-        if "Case" in work.columns:
-            case_series = work["Case"].astype(str)
-        elif "Case Name" in work.columns:
-            case_series = work["Case Name"].astype(str)
-        else:
-            case_series = pd.Series(["-"] * len(work), index=work.index)
-        work["__case"] = case_series
-        support_indices: set[object] = set()
-        for case_name, case_df in work.groupby("__case", dropna=False):
-            finite_x = pd.to_numeric(case_df["__x_m"], errors="coerce").dropna()
-            if len(finite_x) < 2:
-                continue
-            x_min = float(finite_x.min())
-            x_max = float(finite_x.max())
-            if not math.isfinite(x_min) or not math.isfinite(x_max) or abs(x_max - x_min) <= 1.0e-9:
-                continue
-            case_station_type = case_df.get("Station type", pd.Series(index=case_df.index, dtype=object)).astype(str).str.upper()
-            is_load_station = case_station_type.eq("LOAD STATION") | case_station_type.eq("-") | case_station_type.eq("")
-            at_support = case_df["__x_m"].map(lambda x: math.isfinite(_beam_uls_float(x)) and (abs(float(x) - x_min) <= 1.0e-8 or abs(float(x) - x_max) <= 1.0e-8))
-            support_indices.update(case_df[is_load_station & at_support].index.tolist())
-        if support_indices:
-            df = work.drop(index=list(support_indices), errors="ignore").drop(columns=["__x_m", "__case"], errors="ignore")
+    # If explicit critical sections exist, ordinary load stations between each
+    # support and its adopted critical section are diagram/audit rows only.
+    # This keeps the governing design set consistent with AASHTO 5.7.3.2 and
+    # prevents station spacing (for example x=1.000 m vs dv=1.051 m) from
+    # accidentally changing the design decision.
+    near_support_indices = _beam_uls_shear_near_support_load_indices(df)
+    if near_support_indices:
+        df = df.drop(index=list(near_support_indices), errors="ignore")
     return df
 
 
@@ -8670,9 +8722,132 @@ def _beam_uls_governing_shear_row(shear_df: pd.DataFrame | None) -> dict[str, ob
     return df.loc[idx].drop(labels=["__strength_dc", "__abs_demand", "__is_critical", "__fallback_dc"], errors="ignore").to_dict()
 
 
+def _beam_uls_shear_calculation_trace_dataframe(row: Mapping[str, object] | None) -> pd.DataFrame:
+    """Return a compact governing-station equation/substitution trace for Shear.
+
+    This is intentionally a review trace, not a second solver.  Values are read
+    from the stored/calculated shear result row so opening the expander cannot
+    change engineering results.
+    """
+
+    columns = ["Step", "Equation / substitution", "Result", "Code basis"]
+    if row is None:
+        return pd.DataFrame(columns=columns)
+
+    eps_raw = _beam_uls_float(row.get("εs raw"))
+    eps_used = _beam_uls_float(row.get("εs used"))
+    eps_num = _beam_uls_float(row.get("εs numerator N"))
+    eps_den = _beam_uls_float(row.get("εs denominator N"))
+    beta = _beam_uls_float(row.get("β"))
+    theta = _beam_uls_float(row.get("θ deg"))
+    cot_theta = _beam_uls_float(row.get("cotθ"))
+    fc = _beam_uls_float(row.get("f'c MPa"))
+    bw = _beam_uls_float(row.get("bw mm"))
+    dv = _beam_uls_float(row.get("dv mm"))
+    fy = _beam_uls_float(row.get("fy MPa"))
+    avs = _beam_uls_float(row.get("Av/s mm2/mm"))
+    vc = _beam_uls_float(row.get("Vc kN"))
+    vs = _beam_uls_float(row.get("Vs kN"))
+    vn_uncapped = _beam_uls_float(row.get("Vn uncapped kN"))
+    vn_limit = _beam_uls_float(row.get("Vn limit kN"))
+    vn = _beam_uls_float(row.get("Vn kN"))
+    phi = _beam_uls_float(row.get("φ"))
+    phi_vn = _beam_uls_float(row.get("φVn kN"))
+    vu = abs(_beam_uls_float(row.get("Demand kN")))
+    dc = _beam_uls_float(row.get("Strength D/C value", row.get("D/C value")))
+
+    def n(value: float, digits: int = 3) -> str:
+        return f"{value:,.{digits}f}" if math.isfinite(value) else "-"
+
+    rows: list[dict[str, str]] = []
+    if math.isfinite(eps_raw) and math.isfinite(eps_used):
+        rows.append({
+            "Step": "1 · Longitudinal strain εs",
+            "Equation / substitution": f"εs = numerator / (EsAs + EpAps) = {n(eps_num, 1)} / {n(eps_den, 1)}; raw = {n(eps_raw, 6)}; adopted = {n(eps_used, 6)}",
+            "Result": f"raw {n(eps_raw*1000.0, 3)}‰ → adopted {n(eps_used*1000.0, 3)}‰",
+            "Code basis": "AASHTO LRFD 5.7.3.4.2-4; negative εs may be taken as zero",
+        })
+    if math.isfinite(beta):
+        rows.append({
+            "Step": "2 · Concrete factor β",
+            "Equation / substitution": f"β = 4.8 / (1 + 750εs) = 4.8 / (1 + 750×{n(eps_used, 6)})",
+            "Result": n(beta, 3),
+            "Code basis": "AASHTO LRFD 5.7.3.4.2-1 for section with at least minimum transverse reinforcement",
+        })
+    if math.isfinite(theta):
+        rows.append({
+            "Step": "3 · Compression-field angle θ",
+            "Equation / substitution": f"θ = 29 + 3500εs = 29 + 3500×{n(eps_used, 6)}",
+            "Result": f"{n(theta,2)}°; cotθ = {n(cot_theta,3)}",
+            "Code basis": "AASHTO LRFD 5.7.3.4.2-3",
+        })
+    if all(math.isfinite(v) for v in [beta, fc, bw, dv, vc]):
+        rows.append({
+            "Step": "4 · Concrete shear resistance Vc",
+            "Equation / substitution": f"Vc ≈ 0.083 β λ√f'c bv dv = 0.083×{n(beta,3)}×1.0×√{n(fc,2)}×{n(bw,1)}×{n(dv,1)} N",
+            "Result": f"Vc = {n(vc,2)} kN",
+            "Code basis": "AASHTO LRFD 5.7.3.3-3; SI-safe equivalent of source 0.0316 coefficient in ksi",
+        })
+    if all(math.isfinite(v) for v in [avs, fy, dv, cot_theta, vs]):
+        rows.append({
+            "Step": "5 · Stirrup shear resistance Vs",
+            "Equation / substitution": f"Vs = (Av/s) fy dv cotθ = {n(avs,4)}×{n(fy,1)}×{n(dv,1)}×{n(cot_theta,3)} N",
+            "Result": f"Vs = {n(vs,2)} kN",
+            "Code basis": "AASHTO LRFD 5.7.3.3-4; vertical stirrups, λduct=1.0 for this pretensioned I-girder route",
+        })
+    if math.isfinite(vn):
+        rows.append({
+            "Step": "6 · Nominal resistance Vn",
+            "Equation / substitution": f"Vn = min(Vc + Vs + Vp, 0.25 f'c bv dv + Vp) = min({n(vn_uncapped,2)}, {n(vn_limit,2)}) kN",
+            "Result": f"Vn = {n(vn,2)} kN",
+            "Code basis": "AASHTO LRFD 5.7.3.3-1 and 5.7.3.3-2",
+        })
+    if math.isfinite(phi_vn):
+        rows.append({
+            "Step": "7 · Factored shear resistance φVn",
+            "Equation / substitution": f"φVn = φ × Vn = {n(phi,3)} × {n(vn,2)}",
+            "Result": f"φVn = {n(phi_vn,2)} kN",
+            "Code basis": "AASHTO LRFD 5.5.4.2 resistance-factor branch",
+        })
+    if math.isfinite(dc):
+        rows.append({
+            "Step": "8 · Strength utilization",
+            "Equation / substitution": f"D/C = |Vu| / φVn = {n(vu,2)} / {n(phi_vn,2)}",
+            "Result": f"D/C = {n(dc,3)}",
+            "Code basis": "Concrete Section Pro decision ratio; limit = 1.0",
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def _beam_uls_shear_variable_definitions_dataframe() -> pd.DataFrame:
+    """Return concise engineering definitions for the Shear workspace."""
+
+    rows = [
+        ("Vu", "Factored shear demand at the check station.", "kN", "Demand / D/C", "ULS load resultant"),
+        ("bv", "Effective web width used for shear resistance; for an individual I-girder, the controlling single-web width within dv.", "mm", "Vc, Vn limit", "AASHTO 5.7.2.8"),
+        ("d", "Effective depth to the resultant longitudinal tension force used by the section model.", "mm", "Geometry basis", "Section / reinforcement basis"),
+        ("dv", "Effective shear depth: distance between flexural compression and tension resultants; not less than the applicable AASHTO lower bound.", "mm", "Vc, Vs, critical section", "AASHTO 5.7.2.8"),
+        ("εs", "Net longitudinal tensile strain at the centroid of the tension reinforcement used by the General Procedure.", "strain / ‰", "β and θ", "AASHTO 5.7.3.4.2"),
+        ("β", "Factor representing the ability of diagonally cracked concrete to transmit tension and shear.", "-", "Vc", "AASHTO 5.7.3.4.2"),
+        ("θ", "Angle of inclination of the diagonal compression field to the member longitudinal axis.", "deg", "Vs / MCFT", "AASHTO 5.7.3.4"),
+        ("Vc", "Nominal concrete contribution to shear resistance.", "kN", "Vn", "AASHTO 5.7.3.3"),
+        ("Vs", "Nominal transverse-reinforcement contribution to shear resistance.", "kN", "Vn", "AASHTO 5.7.3.3"),
+        ("Vn", "Nominal shear resistance after applying the AASHTO upper resistance limit.", "kN", "φVn", "AASHTO 5.7.3.3"),
+        ("φVn", "Factored shear resistance used for the ULS strength check.", "kN", "Strength D/C", "AASHTO 5.5.4.2 + 5.7.3.3"),
+        ("Av/s", "Provided transverse reinforcement area per unit longitudinal spacing.", "mm²/mm or mm²/m", "Vs / detailing", "AASHTO 5.7.2.5, 5.7.3.3"),
+        ("Av/s,min", "Minimum transverse shear reinforcement required by the active AASHTO route.", "mm²/mm or mm²/m", "Detailing gate", "AASHTO 5.7.2.5"),
+        ("smax", "Maximum permitted transverse-reinforcement spacing for the current shear-stress level.", "mm", "Detailing gate", "AASHTO 5.7.2.6"),
+        ("Aps", "Prestressing-steel area participating at the station after transfer/development/debonding treatment.", "mm²", "εs", "AASHTO 5.7.2.8 / 5.7.3.4.2 / 5.9.4.3"),
+        ("fpo", "Prestressing parameter representing the locked-in strain difference; 0.7fpu is used for usual prestress levels in this General Procedure trace.", "MPa", "εs", "AASHTO 5.7.3.4.2"),
+        ("Vp", "Component of prestressing force in the direction of the applied shear; positive when resisting Vu.", "kN", "εs, Vn", "AASHTO 5.7.3.3 / 5.7.3.4.2"),
+        ("φ", "Resistance factor selected from the prestressed shear/torsion branch.", "-", "φVn", "AASHTO 5.5.4.2"),
+    ]
+    return pd.DataFrame(rows, columns=["Symbol", "Meaning", "Unit", "Used in", "Code basis"])
+
+
 def _beam_uls_shear_audit_dataframe(shear_df: pd.DataFrame | None) -> pd.DataFrame:
     columns = [
-        "Governing", "Station type", "Station x", "Support side", "Critical offset", "Case", "Status", "Strength", "Detailing", "Vn limit", "Vu demand", "φVn", "D/C", "Strength D/C", "Detailing D/C",
+        "Governing", "Design role", "Station type", "Station x", "Support side", "Critical offset", "Case", "Status", "Strength", "Detailing", "Vn limit", "Vu demand", "φVn", "D/C", "Strength D/C", "Detailing D/C",
         "φVc", "φVs", "φVn limit", "Zone", "Stirrup", "Av/s", "Av/s min", "s max", "Spacing D/C", "Vn limit D/C", "bw", "d", "dv",
         "εs raw", "εs used", "As tension", "Aps raw", "Aps developed", "Aps dev. min", "fpo transfer min", "fpo", "ld max", "lt max", "sxe",
         "β", "θ", "φ", "General Procedure branch", "Code basis", "Method", "Notes",
@@ -8694,12 +8869,24 @@ def _beam_uls_shear_audit_dataframe(shear_df: pd.DataFrame | None) -> pd.DataFra
             ):
                 governing_idx = candidate_idx
                 break
+    near_support_indices = _beam_uls_shear_near_support_load_indices(shear_df)
     rows = []
     for idx, row in df.iterrows():
+        station_type_text = str(row.get("Station type") or "LOAD STATION")
+        station_type_upper = station_type_text.upper()
+        if "BOUNDARY" in station_type_upper:
+            design_role = "Diagram boundary"
+        elif station_type_upper == "CRITICAL SHEAR SECTION":
+            design_role = "Critical design section"
+        elif idx in near_support_indices:
+            design_role = "Near-support diagram only"
+        else:
+            design_role = "Design station"
         rows.append(
             {
                 "Governing": "Yes" if governing_idx is not None and idx == governing_idx else "",
-                "Station type": str(row.get("Station type") or "LOAD STATION"),
+                "Design role": design_role,
+                "Station type": station_type_text,
                 "Station x": str(row.get("Governing x") or "-"),
                 "Support side": str(row.get("Support side") or "-"),
                 "Critical offset": _format_beam_uls_audit_number(row.get("Critical offset m"), unit="m"),
@@ -10311,7 +10498,7 @@ def _beam_uls_combined_vt_check_dataframe(
             result["Code basis"] = "AASHTO LRFD 5.7.3.6 — NOT CERTIFIED pending torsion theta consistency"
             note = str(result.get("Notes") or "").strip()
             guard_note = (
-                "IGIRDER.ULS5 guard: standalone Shear now uses station-dependent theta from AASHTO 5.7.3.4.2, "
+                "IGIRDER.ULS5A guard: standalone Shear now uses station-dependent theta from AASHTO 5.7.3.4.2, "
                 "while the current torsion/combined route still uses its legacy fixed-theta formulation. "
                 "Combined V+T is therefore REVIEW / not certified and cannot produce final PASS."
             )
@@ -11852,8 +12039,8 @@ def _beam_uls_construction_demand_from_state(
 # Supersedes IGIRDER.ULS2.full-span-physical-phiMn while preserving its full-span capacity semantics.
 _IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION = "IGIRDER.ULS2P.flexure-performance-optimization"
 _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION = "IGIRDER.ULS3A.composite-flexure-audit-closeout"
-_IGIRDER_SHEAR_RESULT_VERSION = "IGIRDER.ULS5.prestressed-shear-general-procedure"
-_IGIRDER_COMBINED_VT_RESULT_VERSION = "IGIRDER.ULS5.combined-theta-consistency-guard"
+_IGIRDER_SHEAR_RESULT_VERSION = "IGIRDER.ULS5A.shear-qa-closeout"
+_IGIRDER_COMBINED_VT_RESULT_VERSION = "IGIRDER.ULS5A.combined-shear-dependency-guard"
 
 
 _IGIRDER_INTERFACE_SHEAR_SETTINGS_KEY = "beam_girder_interface_shear_settings"
@@ -13219,7 +13406,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             eps_used = _beam_uls_float(shear_result.get("εs used"))
             if math.isfinite(eps_used):
                 gp_cards = [
-                    {"title": "Longitudinal strain εs", "value": f"{eps_used * 1000.0:.3f}‰", "detail": f"raw {_format_beam_uls_audit_number(shear_result.get('εs raw'), digits=6)}", "status": "info"},
+                    {"title": "Longitudinal strain εs", "value": f"{eps_used * 1000.0:.3f}‰", "detail": f"raw {_beam_uls_float(shear_result.get('εs raw')) * 1000.0:.3f}‰ ({_format_beam_uls_audit_number(shear_result.get('εs raw'), digits=6)} strain)", "status": "info"},
                     {"title": "General Procedure β", "value": _format_beam_uls_ratio(shear_result.get("β")), "detail": str(shear_result.get("General Procedure branch") or "AASHTO 5.7.3.4.2"), "status": "info"},
                     {"title": "Compression field θ", "value": _format_beam_uls_audit_number(shear_result.get("θ deg"), unit="deg"), "detail": f"cotθ {_format_beam_uls_ratio(shear_result.get('cotθ'))}", "status": "info"},
                     {"title": "PSC resistance factor φ", "value": _format_beam_uls_ratio(shear_result.get("φ")), "detail": str(shear_result.get("φ policy") or "AASHTO 5.5.4.2"), "status": "neutral"},
@@ -13229,6 +13416,27 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             _render_analysis_summary_strip(_beam_uls_shear_diagnosis_cards(shear_result), columns=3)
         if shear_result is None:
             _render_beam_uls_shear_layout_readiness_panel(st.session_state)
+        if shear_result is not None:
+            with st.expander("Calculation trace / Equations — governing shear station", expanded=False):
+                st.caption(
+                    "Read-only equation trace from the governing stored/calculated shear row. The expander does not rerun the solver. "
+                    "AASHTO source equations are evaluated with explicit SI-safe conversion where the specification coefficient is written in US customary units."
+                )
+                trace_df = _beam_uls_shear_calculation_trace_dataframe(shear_result)
+                if trace_df.empty:
+                    st.info("Calculation trace is not available until the governing shear row contains the required General Procedure inputs.")
+                else:
+                    st.dataframe(trace_df, use_container_width=True, hide_index=True)
+                raw_eps = _beam_uls_float(shear_result.get("εs raw"))
+                used_eps = _beam_uls_float(shear_result.get("εs used"))
+                if math.isfinite(raw_eps) and math.isfinite(used_eps) and raw_eps < 0.0 and abs(used_eps) <= 1.0e-12:
+                    st.info(f"εs adjustment: raw {raw_eps*1000.0:.3f}‰ ({raw_eps:.6f} strain) → adopted 0.000‰ under the permitted AASHTO 5.7.3.4.2 negative-strain branch.")
+                st.caption(
+                    f"Branch trace: {shear_result.get('General Procedure branch') or '-'} · {shear_result.get('φ policy') or '-'}"
+                )
+            with st.expander("Variable definitions / Engineering terms", expanded=False):
+                st.caption("Quick-reference definitions for the active Shear workspace. Use the code basis column when a deeper specification review is needed.")
+                st.dataframe(_beam_uls_shear_variable_definitions_dataframe(), use_container_width=True, hide_index=True)
         _render_beam_uls_static_plotly_figure(
             _make_beam_uls_shear_capacity_figure(
                 active_df,
@@ -13239,7 +13447,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             )
         )
         st.caption(
-            "Shear capacity is from the active provided stirrup layout by zone. Critical shear sections are inserted near the supports and included in the governing shear D/C; x=0 and x=L remain capacity-boundary graph values only. "
+            "Shear capacity is from the active provided stirrup layout by zone. Critical shear sections are inserted near the supports and included in the governing shear D/C; ordinary load stations between the support and the adopted critical section remain diagram/audit rows only, while x=0 and x=L remain capacity-boundary graph values. "
             "The φVn / φVc / φVs diagram is extended to x=0 and x=L as capacity-boundary values when the provided layout is available. The status combines strength D/C, Vn limit, minimum Av/s, maximum spacing, and zone coverage gates. "
             "For Precast I-Girder General Procedure, strand transfer/development participation is included in the epsilon_s trace only; flexural φMn end-zone reduction remains outside this milestone. Anchorage, bearing/end-zone, and shop-drawing detailing remain separate project review items."
         )
@@ -13258,7 +13466,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             if shear_critical_section_df.empty:
                 st.info("Critical shear section locations are not available until span length, effective d/dv basis, and active ULS station rows are ready. Capacity at those critical sections also needs active stirrup-zone coverage.")
             else:
-                st.caption("Critical shear sections are inserted at approximately d from each support for ACI Building Beam/Girder and dv from each support for AASHTO Bridge Beam/Girder. These rows are included in the governing shear D/C.")
+                st.caption("Critical shear sections are inserted at approximately d from each support for ACI Building Beam/Girder and dv from each support for AASHTO Bridge Beam/Girder. Under the adopted AASHTO 5.7.3.2 compression-end-region route, ordinary load stations between the support and dv are diagram/audit rows only; the critical section is the governing design section for that near-support region.")
                 st.dataframe(_beam_uls_shear_audit_dataframe(shear_critical_section_df), use_container_width=True, hide_index=True)
 
         with st.expander("Shear end-boundary capacity values", expanded=False):
@@ -13272,10 +13480,11 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             st.write(f"- Shear route: {strength_route.shear_basis_note}")
             st.write("- Shear φVn uses active provided stirrup zones only; no minimum stirrup layout is silently assumed; SHEAR.CODE2 also enforces zone coverage, Vn-limit, minimum Av/s, and spacing gates.")
             st.write("- Effective d / dv is read from Sections → Rebar effective shear depth basis when manually defined; otherwise d is estimated from the active reinforcement/prestress centroid and dv is derived for the AASHTO route.")
-            st.write("- Critical shear section rows are inserted at approximately d from each support for ACI and dv from each support for AASHTO; their demand is interpolated from active ULS station rows and they are considered for governing shear D/C.")
+            st.write("- Critical shear section rows are inserted at approximately d from each support for ACI and dv from each support for AASHTO. For the adopted AASHTO 5.7.3.2 compression-end-region route, ordinary load stations between the support and dv remain diagram/audit rows and do not independently govern the sectional shear D/C.")
+            st.write("- AASHTO 5.7.3.2 exception guard: if a concentrated load exists within dv from the support, or the reaction does not introduce compression into the end region, the support-face design route must be reviewed. The generic FEA resultant table does not silently infer those conditions.")
             st.write("- SHEAR.CODE2 checks provided Av/s against the route minimum, checks stirrup spacing, enforces the Vn limit, and requires the active stirrup zone to cover each design/check station.")
             if _beam_uls_is_precast_composite_bridge(st.session_state, is_bridge=bool(strength_route.is_bridge)):
-                st.write("- IGIRDER.ULS5 evaluates AASHTO 5.7.3.4.2 epsilon_s at each check station, including proportional Aps development and linear fpo transfer build-up from the actual bond commencement. Debonded strands use the conservative kappa=2.0 development screen.")
+                st.write("- IGIRDER.ULS5A evaluates AASHTO 5.7.3.4.2 epsilon_s at each check station, including proportional Aps development and linear fpo transfer build-up from the actual bond commencement. Debonded strands use the conservative kappa=2.0 development screen.")
                 st.write("- The shear resistance factor is 0.90 for bonded prestressed sections and 0.85 when the active member contains debonded/unbonded strands, per AASHTO 5.5.4.2.")
                 st.write("- This shear-specific development participation does not alter the accepted flat flexural φMn end-zone policy; flexural development strength remains a separately deferred milestone.")
             st.write("- Anchorage, bearing/end-zone detailing, and shop-drawing constructability remain project review items outside this sectional shear gate.")
@@ -13449,16 +13658,23 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
 
     with st.expander("ULS strength-check limitations", expanded=False):
         st.write(f"- Active ULS strength route: {strength_route.workflow_label} → {strength_route.display_code_label}.")
-        st.write(f"- Flexure route: {strength_route.flexure_basis_note}")
-        st.write("- Flexure audit output reports Mn nominal, route φ, φMn, D/C, bending direction, tension face, method, code-compatible strain-compatibility basis, and resistance-factor policy for benchmark comparison.")
-        st.write("- Flexure φMn is plotted as a section-strength curve along the span; development length, debonding strength, anchorage, interface shear, and end-zone bursting are separate detailing/design checks.")
-        st.write(f"- Shear route: {strength_route.shear_basis_note}")
-        st.write("- Shear φVn uses active provided stirrup zones only; no minimum stirrup layout is silently assumed; SHEAR.CODE2 also enforces zone coverage, Vn-limit, minimum Av/s, and spacing gates.")
-        st.write(f"- Torsion route: {strength_route.torsion_basis_note}")
-        st.write(f"- Overall guard: {strength_route.overall_guard_note}")
-        st.write("- SLS stress, deflection/camber, prestress loss, PMM, and Loads formulas are unchanged.")
-        if flexure_preview_messages:
-            st.caption("Flexure check notes: " + " | ".join(flexure_preview_messages[:5]))
+        if selected_check == "Shear":
+            st.write(f"- Shear route: {strength_route.shear_basis_note}")
+            st.write("- Shear φVn uses active provided stirrup zones only; no minimum stirrup layout is silently assumed; SHEAR.CODE2 also enforces zone coverage, Vn-limit, minimum Av/s, maximum spacing, and the adopted critical-section route.")
+            st.write("- Near-support critical-section handling follows the adopted AASHTO 5.7.3.2 compression-end-region route. Concentrated loads within dv and support conditions that do not introduce compression require separate support-face review; the app does not infer these exceptions from generic resultants.")
+            st.write("- Prestress transfer/development participation is included in the General Procedure εs trace. Flexural φMn end-zone reduction remains outside this Shear milestone.")
+            st.write("- Anchorage, pretensioned end confinement, bearing/end-zone strut-and-tie triggers, fatigue, and shop-drawing constructability remain separate project review items.")
+        else:
+            st.write(f"- Flexure route: {strength_route.flexure_basis_note}")
+            st.write("- Flexure audit output reports Mn nominal, route φ, φMn, D/C, bending direction, tension face, method, code-compatible strain-compatibility basis, and resistance-factor policy for benchmark comparison.")
+            st.write("- Flexure φMn is plotted as a section-strength curve along the span; development length, debonding strength, anchorage, interface shear, and end-zone bursting are separate detailing/design checks.")
+            st.write(f"- Shear route: {strength_route.shear_basis_note}")
+            st.write("- Shear φVn uses active provided stirrup zones only; no minimum stirrup layout is silently assumed; SHEAR.CODE2 also enforces zone coverage, Vn-limit, minimum Av/s, and spacing gates.")
+            st.write(f"- Torsion route: {strength_route.torsion_basis_note}")
+            st.write(f"- Overall guard: {strength_route.overall_guard_note}")
+            st.write("- SLS stress, deflection/camber, prestress loss, PMM, and Loads formulas are unchanged.")
+            if flexure_preview_messages:
+                st.caption("Flexure check notes: " + " | ".join(flexure_preview_messages[:5]))
 
 
 def _analysis_card_html(title: str, value: str, detail: str = "", status: str = "info", strong: bool = False) -> str:

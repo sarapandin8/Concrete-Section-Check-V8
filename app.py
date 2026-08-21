@@ -67,6 +67,8 @@ from concrete_pmm_pro.ui.analysis_page import (
     _IGIRDER_SHEAR_RESULT_VERSION,
     _beam_uls_shear_decision_summary,
     _beam_uls_shear_utilization_display,
+    _beam_uls_shear_calculation_trace_dataframe,
+    _beam_uls_shear_variable_definitions_dataframe,
     _crossbeam_governing_component_summary,
     _render_runtime_diagnostics_expander,
     render_analysis_page,
@@ -4928,6 +4930,57 @@ def _render_report_qa_result_summary_alignment(state: object) -> None:
     _render_results_required_actions(state, rows)
 
 
+def _render_report_qa_igird_shear_equation_trace(state: object) -> None:
+    """Render read-only I-Girder Shear equations from stored ULS evidence only."""
+
+    preset_key = str(state.get("section_preset_key") or "").strip() if hasattr(state, "get") else ""
+    if preset_key != "parametric_i_girder":
+        return
+    cache = _results_beam_uls_cache(state)
+    shear_entry = cache.get("Shear")
+    governing = _results_beam_uls_best_row(shear_entry, "Shear")
+    render_section_bar(
+        "I-Girder Shear — Stored Equation & Audit Trace",
+        "Full read-only derivation trace from the stored current-version Shear package. Report / QA does not rerun the shear solver.",
+        mark="E",
+    )
+    if not governing:
+        st.info("No current-version stored I-Girder Shear result is available for equation/audit review. Calculate Shear in Analysis first.")
+        return
+    st.caption(
+        "This block reads the same stored governing Shear evidence used by Result Summary. If project inputs have changed, follow the Report Readiness / project-state warning and recalculate in Analysis before issue."
+    )
+    trace_df = _beam_uls_shear_calculation_trace_dataframe(governing)
+    if trace_df.empty:
+        st.warning("Stored Shear result does not contain the General Procedure fields required for a full equation trace.")
+    else:
+        st.dataframe(trace_df, use_container_width=True, hide_index=True)
+
+    parameter_rows = [
+        {"Item": "Governing station", "Value": str(governing.get("Governing x") or "-")},
+        {"Item": "Load case", "Value": str(governing.get("Case") or "-")},
+        {"Item": "Vu", "Value": _results_value_with_unit(governing.get("Demand kN", governing.get("Demand")), "kN")},
+        {"Item": "f'c", "Value": _results_value_with_unit(governing.get("f'c MPa"), "MPa")},
+        {"Item": "bv", "Value": _results_value_with_unit(governing.get("bw mm"), "mm")},
+        {"Item": "d / dv", "Value": f"{_results_value_with_unit(governing.get('d mm'), 'mm')} / {_results_value_with_unit(governing.get('dv mm'), 'mm')}"},
+        {"Item": "epsilon_s raw / adopted", "Value": f"{_results_scalar(governing.get('εs raw'))} / {_results_scalar(governing.get('εs used'))}"},
+        {"Item": "beta / theta", "Value": f"{_results_scalar(governing.get('β'))} / {_results_value_with_unit(governing.get('θ deg'), 'deg')}"},
+        {"Item": "Vc / Vs / Vn", "Value": f"{_results_value_with_unit(governing.get('Vc kN'), 'kN')} / {_results_value_with_unit(governing.get('Vs kN'), 'kN')} / {_results_value_with_unit(governing.get('Vn kN'), 'kN')}"},
+        {"Item": "phi / phiVn", "Value": f"{_results_scalar(governing.get('φ'))} / {_results_value_with_unit(governing.get('φVn kN'), 'kN')}"},
+        {"Item": "Strength D/C", "Value": _results_scalar(governing.get("Strength D/C value", governing.get("D/C value")))},
+        {"Item": "Av/s provided / minimum", "Value": f"{_results_value_with_unit(governing.get('Av/s mm2/m'), 'mm²/m')} / {_results_value_with_unit(governing.get('Av/s required mm2/m'), 'mm²/m')}"},
+        {"Item": "s / smax", "Value": f"{_results_value_with_unit(governing.get('Spacing mm'), 'mm')} / {_results_value_with_unit(governing.get('s max mm'), 'mm')}"},
+        {"Item": "Aps raw / developed", "Value": f"{_results_value_with_unit(governing.get('Aps raw tension mm2'), 'mm²')} / {_results_value_with_unit(governing.get('Aps developed tension mm2'), 'mm²')}"},
+        {"Item": "fpo", "Value": _results_value_with_unit(governing.get("fpo full MPa"), "MPa")},
+        {"Item": "General Procedure branch", "Value": str(governing.get("General Procedure branch") or "-")},
+        {"Item": "Resistance-factor branch", "Value": str(governing.get("φ policy") or "-")},
+    ]
+    with st.expander("Stored governing inputs / intermediate values", expanded=False):
+        st.dataframe(pd.DataFrame(parameter_rows), use_container_width=True, hide_index=True)
+    with st.expander("Variable definitions / Engineering terms", expanded=False):
+        st.dataframe(_beam_uls_shear_variable_definitions_dataframe(), use_container_width=True, hide_index=True)
+
+
 def render_report_qa_workspace() -> None:
     render_page_header(
         "Report / QA",
@@ -4942,6 +4995,7 @@ def render_report_qa_workspace() -> None:
         _render_report_qa_crossbeam_workspace(st.session_state)
     else:
         _render_report_qa_result_summary_alignment(st.session_state)
+        _render_report_qa_igird_shear_equation_trace(st.session_state)
         render_section_bar(
             "Traceability / report tools",
             "Report and QA tools summarize stored results only; PMM, SLS, ULS, and verification solvers are not rerun here.",

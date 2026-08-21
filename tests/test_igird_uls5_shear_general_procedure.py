@@ -306,3 +306,93 @@ def test_igird_development_screen_uses_fpu_upper_bound_not_fpy():
     )
     assert float(row["Development length max mm"]) == pytest.approx(expected_ld)
     assert "fps=fpu" in str(row["Notes"])
+
+
+def test_uls5a_near_support_load_stations_inside_dv_are_diagram_only() -> None:
+    """Ordinary stations inside adopted dv must not outrank the critical section."""
+
+    from concrete_pmm_pro.ui.analysis_page import (
+        _beam_uls_governing_shear_row,
+        _beam_uls_shear_audit_dataframe,
+        _beam_uls_shear_near_support_load_indices,
+    )
+
+    shear = pd.DataFrame(
+        [
+            {"Station type": "LOAD STATION", "Governing x": "0.000 m", "Case": "Strength I", "Strength D/C value": 0.90, "Detailing D/C value": 0.20, "Demand kN": 500.0, "Status": "PASS"},
+            {"Station type": "LOAD STATION", "Governing x": "1.000 m", "Case": "Strength I", "Strength D/C value": 0.95, "Detailing D/C value": 0.20, "Demand kN": 450.0, "Status": "PASS"},
+            {"Station type": "CRITICAL SHEAR SECTION", "Support side": "LEFT", "Critical offset m": 1.051, "Governing x": "1.051 m", "Case": "Strength I", "Strength D/C value": 0.31, "Detailing D/C value": 0.20, "Demand kN": 447.0, "Status": "PASS"},
+            {"Station type": "LOAD STATION", "Governing x": "2.000 m", "Case": "Strength I", "Strength D/C value": 0.25, "Detailing D/C value": 0.20, "Demand kN": 400.0, "Status": "PASS"},
+            {"Station type": "LOAD STATION", "Governing x": "17.000 m", "Case": "Strength I", "Strength D/C value": 0.32, "Detailing D/C value": 0.20, "Demand kN": -350.0, "Status": "PASS"},
+            {"Station type": "CRITICAL SHEAR SECTION", "Support side": "RIGHT", "Critical offset m": 1.051, "Governing x": "18.949 m", "Case": "Strength I", "Strength D/C value": 0.30, "Detailing D/C value": 0.20, "Demand kN": -447.0, "Status": "PASS"},
+            {"Station type": "LOAD STATION", "Governing x": "19.000 m", "Case": "Strength I", "Strength D/C value": 0.96, "Detailing D/C value": 0.20, "Demand kN": -450.0, "Status": "PASS"},
+            {"Station type": "LOAD STATION", "Governing x": "20.000 m", "Case": "Strength I", "Strength D/C value": 0.99, "Detailing D/C value": 0.20, "Demand kN": -500.0, "Status": "PASS"},
+        ]
+    )
+
+    excluded = _beam_uls_shear_near_support_load_indices(shear)
+    assert excluded == {0, 1, 6, 7}
+
+    eligible = _beam_uls_shear_design_rows_for_governing(shear)
+    assert set(eligible["Governing x"]) == {"1.051 m", "2.000 m", "17.000 m", "18.949 m"}
+
+    governing = _beam_uls_governing_shear_row(shear)
+    assert governing is not None
+    assert governing["Governing x"] == "17.000 m"
+    assert governing["Strength D/C value"] == pytest.approx(0.32)
+
+    audit = _beam_uls_shear_audit_dataframe(shear)
+    role_by_x = dict(zip(audit["Station x"], audit["Design role"]))
+    assert role_by_x["1.000 m"] == "Near-support diagram only"
+    assert role_by_x["1.051 m"] == "Critical design section"
+    assert role_by_x["17.000 m"] == "Design station"
+
+
+def test_uls5a_governing_shear_equation_trace_is_read_only_and_complete() -> None:
+    from concrete_pmm_pro.ui.analysis_page import (
+        _beam_uls_shear_calculation_trace_dataframe,
+        _beam_uls_shear_variable_definitions_dataframe,
+    )
+
+    row = {
+        "εs raw": -0.001067,
+        "εs used": 0.0,
+        "εs numerator N": -106700.0,
+        "εs denominator N": 100000000.0,
+        "β": 4.8,
+        "θ deg": 29.0,
+        "cotθ": 1.804,
+        "f'c MPa": 45.0,
+        "bw mm": 200.0,
+        "dv mm": 1051.35,
+        "fy MPa": 390.0,
+        "Av/s mm2/mm": 1.0053,
+        "Vc kN": 505.61,
+        "Vs kN": 1003.91,
+        "Vn uncapped kN": 1509.52,
+        "Vn limit kN": 2128.98,
+        "Vn kN": 1509.52,
+        "φ": 0.90,
+        "φVn kN": 1358.57,
+        "Demand kN": -350.0,
+        "Strength D/C value": 0.258,
+    }
+
+    trace = _beam_uls_shear_calculation_trace_dataframe(row)
+    assert list(trace["Step"]) == [
+        "1 · Longitudinal strain εs",
+        "2 · Concrete factor β",
+        "3 · Compression-field angle θ",
+        "4 · Concrete shear resistance Vc",
+        "5 · Stirrup shear resistance Vs",
+        "6 · Nominal resistance Vn",
+        "7 · Factored shear resistance φVn",
+        "8 · Strength utilization",
+    ]
+    assert "raw -1.067‰ → adopted 0.000‰" in trace.iloc[0]["Result"]
+    assert "0.083" in trace.iloc[3]["Equation / substitution"]
+    assert "min(Vc + Vs + Vp" in trace.iloc[5]["Equation / substitution"]
+
+    definitions = _beam_uls_shear_variable_definitions_dataframe()
+    symbols = set(definitions["Symbol"])
+    assert {"Vu", "bv", "d", "dv", "εs", "β", "θ", "Vc", "Vs", "Vn", "φVn", "Av/s", "Av/s,min", "smax", "Aps", "fpo", "Vp", "φ"}.issubset(symbols)
