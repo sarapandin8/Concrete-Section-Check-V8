@@ -234,5 +234,6 @@ def test_igird_project_restore_drops_legacy_generic_flexure_cache() -> None:
 
 def test_result_summary_source_suppresses_legacy_igird_generic_flexure_cache() -> None:
     app_source = (REPO_ROOT / "app.py").read_text(encoding="utf-8")
-    assert 'preset_key == "parametric_i_girder" and "Flexure" in cache' in app_source
+    assert 'if preset_key == "parametric_i_girder":' in app_source
     assert 'filtered.pop("Flexure", None)' in app_source
+    assert 'I-Girder uses stage-owned flexure entries' in app_source

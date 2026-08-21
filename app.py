@@ -62,6 +62,9 @@ from concrete_pmm_pro.io.project_io import (
     project_to_json,
 )
 from concrete_pmm_pro.ui.analysis_page import (
+    _IGIRDER_COMBINED_VT_RESULT_VERSION,
+    _IGIRDER_INTERFACE_SHEAR_RESULT_VERSION,
+    _IGIRDER_SHEAR_RESULT_VERSION,
     _beam_uls_shear_decision_summary,
     _beam_uls_shear_utilization_display,
     _crossbeam_governing_component_summary,
@@ -3592,6 +3595,14 @@ def _results_value_with_unit(value: object, unit: str) -> str:
     return f"{text} {unit}"
 
 
+def _results_numeric_value(value: object) -> float | None:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    return numeric if math.isfinite(numeric) else None
+
+
 def _results_first_existing(row: Mapping[str, object], candidates: list[str], default: object = "-") -> object:
     for candidate in candidates:
         value = row.get(candidate)
@@ -3610,12 +3621,20 @@ def _results_beam_uls_cache(state: object) -> dict[str, dict[str, object]]:
     if not isinstance(cache, dict):
         return {}
     preset_key = str(state.get("section_preset_key") or "").strip() if hasattr(state, "get") else ""
-    if preset_key == "parametric_i_girder" and "Flexure" in cache:
-        # IGIRDER.ULS1 stage-separates Flexure.  Never surface the pre-ULS1
-        # generic Flexure cache in read-only Result Summary because that legacy
-        # result used final FEA demand against precast-only resistance.
+    if preset_key == "parametric_i_girder":
+        # I-Girder uses stage-owned flexure entries and versioned Shear / V+T.
+        # Do not let legacy generic caches appear current in read-only summary.
         filtered = dict(cache)
         filtered.pop("Flexure", None)
+        expected_versions = {
+            "Shear": _IGIRDER_SHEAR_RESULT_VERSION,
+            "Shear + Torsion": _IGIRDER_COMBINED_VT_RESULT_VERSION,
+            "Interface Shear — Final Composite": _IGIRDER_INTERFACE_SHEAR_RESULT_VERSION,
+        }
+        for check_name, expected in expected_versions.items():
+            entry = filtered.get(check_name)
+            if isinstance(entry, dict) and str(entry.get("result_version") or "") != expected:
+                filtered.pop(check_name, None)
         return filtered
     return cache
 
@@ -3734,8 +3753,165 @@ def _results_beam_uls_action(check_name: str, status: str, row: Mapping[str, obj
     return "Review calculated gate and notes."
 
 
+
+def _results_igird_interface_best_row(entry: dict[str, object] | None) -> dict[str, object]:
+    if not isinstance(entry, dict):
+        return {}
+    df = _results_dataframe(entry.get("interface_shear_df"))
+    if df is None or df.empty:
+        return {}
+    work = df.copy()
+    status = work.get("Status", pd.Series(index=work.index, dtype=object)).astype(str).str.upper()
+    priority = status.map({"FAIL": 3, "REVIEW": 2, "PASS": 1}).fillna(0)
+    strength = pd.to_numeric(work.get("Strength D/C"), errors="coerce")
+    minimum = pd.to_numeric(work.get("Minimum Avf D/C"), errors="coerce")
+    rank = pd.concat([strength, minimum], axis=1).max(axis=1, skipna=True).fillna(-1.0)
+    ordering = pd.DataFrame({"priority": priority, "rank": rank}, index=work.index).sort_values(
+        ["priority", "rank"], ascending=[False, False], kind="stable"
+    )
+    return dict(work.loc[ordering.index[0]].to_dict()) if len(ordering.index) else {}
+
+
+def _results_igird_interface_status(entry: dict[str, object] | None, row: Mapping[str, object]) -> str:
+    if not isinstance(entry, dict) or not row:
+        return "NOT CALCULATED"
+    stored = str(entry.get("interface_status") or "").strip().upper()
+    if stored:
+        return stored
+    status = str(row.get("Status") or "REVIEW").strip().upper()
+    return status or "REVIEW"
+
+
+def _results_igird_uls_summary_rows(state: object, cache: dict[str, dict[str, object]]) -> list[dict[str, object]]:
+    """Return stage-specific Precast I-Girder ULS rows from stored results only."""
+
+    code_basis = _results_design_code_label(state)
+    rows: list[dict[str, object]] = []
+
+    def add_flexure(*, label: str, cache_key: str, source_label: str, construction: bool = False) -> None:
+        entry = cache.get(cache_key)
+        row = _results_beam_uls_best_row(entry, "Flexure")
+        status = str(row.get("Status") or ("NOT CALCULATED" if not row else "REVIEW")).strip()
+        if construction and isinstance(entry, dict) and not bool(entry.get("factors_confirmed", False)) and row:
+            status = "REVIEW"
+        rows.append(
+            {
+                "Module": "ULS Precast I-Girder",
+                "Check": label,
+                "Status": status,
+                "Governing Case": _results_scalar(_results_first_existing(row, ["Case", "Case Name"])),
+                "Station / Point": _results_scalar(_results_first_existing(row, ["Governing x", "Station x (m)"])),
+                "Demand": _results_beam_uls_demand("Flexure", row),
+                "Capacity / Limit": _results_beam_uls_capacity("Flexure", row),
+                "D/C / Util.": _results_beam_uls_utilization("Flexure", row),
+                "Required Action": _results_beam_uls_action("Flexure", status, row),
+                "Source": source_label,
+                "Code Basis": code_basis,
+                "__calculated": bool(row),
+            }
+        )
+
+    add_flexure(
+        label="Construction Flexure — Noncomposite",
+        cache_key="Flexure — Construction",
+        source_label="Analysis → ULS Strength → Flexure → Construction",
+        construction=True,
+    )
+    add_flexure(
+        label="Final Composite Flexure",
+        cache_key="Flexure — Final Composite",
+        source_label="Analysis → ULS Strength → Flexure → Final Composite",
+    )
+
+    interface_entry = cache.get("Interface Shear — Final Composite")
+    interface_row = _results_igird_interface_best_row(interface_entry)
+    interface_status = _results_igird_interface_status(interface_entry, interface_row)
+    interface_strength = _results_numeric_value(interface_row.get("Strength D/C"))
+    interface_min = _results_numeric_value(interface_row.get("Minimum Avf D/C"))
+    interface_dc_values = [v for v in [interface_strength, interface_min] if v is not None]
+    interface_dc = max(interface_dc_values) if interface_dc_values else None
+    interface_vui = _results_numeric_value(interface_row.get("vui (MPa)"))
+    interface_cap = _results_numeric_value(interface_row.get("phi vni (MPa)"))
+    rows.append(
+        {
+            "Module": "ULS Precast I-Girder",
+            "Check": "Girder–Deck Interface Shear",
+            "Status": interface_status,
+            "Governing Case": _results_scalar(interface_row.get("Case", "-")),
+            "Station / Point": _results_value_with_unit(interface_row.get("Station x (m)"), "m") if interface_row else "-",
+            "Demand": f"vui = {interface_vui:.3f} MPa" if interface_vui is not None else "-",
+            "Capacity / Limit": f"φvni = {interface_cap:.3f} MPa" if interface_cap is not None else "-",
+            "D/C / Util.": f"{interface_dc:.3f}" if interface_dc is not None else "-",
+            "Required Action": _results_beam_uls_action("Girder–Deck Interface Shear", interface_status, interface_row),
+            "Source": "Analysis → ULS Strength → Flexure → Girder–Deck Interface Shear",
+            "Code Basis": code_basis,
+            "__calculated": bool(interface_row),
+        }
+    )
+
+    for check_name in ["Shear", "Torsion", "Shear + Torsion"]:
+        entry = cache.get(check_name)
+        row = _results_beam_uls_best_row(entry, check_name)
+        status = _results_beam_uls_row_status(check_name, row, cache)
+        utilization = _results_beam_uls_utilization(check_name, row)
+        if check_name == "Shear + Torsion" and str(status).upper() in {"SOURCE BLOCKED", "REVIEW"} and utilization != "-":
+            utilization = f"Interaction D/C {utilization}; {str(status).upper()}"
+        rows.append(
+            {
+                "Module": "ULS Precast I-Girder",
+                "Check": check_name,
+                "Status": status,
+                "Governing Case": _results_scalar(_results_first_existing(row, ["Case", "Load case", "Case Name"])),
+                "Station / Point": _results_scalar(_results_first_existing(row, ["Governing x", "Station x", "Station type"])),
+                "Demand": _results_beam_uls_demand(check_name, row),
+                "Capacity / Limit": _results_beam_uls_capacity(check_name, row),
+                "D/C / Util.": utilization,
+                "Required Action": _results_beam_uls_action(check_name, status, row),
+                "Source": f"Analysis → ULS Strength → {check_name}",
+                "Code Basis": code_basis,
+                "__calculated": bool(row),
+            }
+        )
+
+    required_rows = list(rows)
+    calculated = [row for row in required_rows if bool(row.get("__calculated"))]
+    statuses = [str(row.get("Status") or "").upper() for row in required_rows]
+    if any("FAIL" in status or "SOURCE BLOCKED" in status for status in statuses):
+        overall = "FAIL"
+        action = "Resolve failing/source-blocked I-Girder ULS checks before report handoff."
+    elif len(calculated) < len(required_rows):
+        overall = "INCOMPLETE"
+        action = "Run all required stage-specific I-Girder ULS checks in Analysis."
+    elif any(status not in {"PASS", "BELOW THRESHOLD", "NOT REQUIRED"} for status in statuses):
+        overall = "REVIEW"
+        action = "Resolve REVIEW / not-certified gates before report handoff."
+    else:
+        overall = "PASS"
+        action = "Review stored audit/traceability before final issue."
+    rows.append(
+        {
+            "Module": "ULS Precast I-Girder",
+            "Check": "Overall ULS",
+            "Status": overall,
+            "Governing Case": "-",
+            "Station / Point": "-",
+            "Demand": "-",
+            "Capacity / Limit": "All required I-Girder ULS gates",
+            "D/C / Util.": "-",
+            "Required Action": action,
+            "Source": "Result Summary aggregation — stored results only",
+            "Code Basis": code_basis,
+            "__calculated": bool(calculated),
+        }
+    )
+    return rows
+
+
 def _results_beam_uls_summary_rows(state: object) -> list[dict[str, object]]:
     cache = _results_beam_uls_cache(state)
+    preset_key = str(state.get("section_preset_key") or "").strip() if hasattr(state, "get") else ""
+    if preset_key == "parametric_i_girder":
+        return _results_igird_uls_summary_rows(state, cache)
     rows: list[dict[str, object]] = []
     for check_name in _RESULTS_BEAM_ULS_CHECKS:
         entry = cache.get(check_name)

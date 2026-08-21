@@ -21,6 +21,7 @@ AASHTO_TENSION_CONTROLLED_RC_PHI = 0.90
 AASHTO_TENSION_CONTROLLED_BONDED_PRESTRESS_PHI = 1.00
 AASHTO_TENSION_CONTROLLED_UNBONDED_PRESTRESS_PHI = 0.90
 AASHTO_SHEAR_PHI = 0.90
+AASHTO_SHEAR_PHI_PRESTRESSED_DEBONDED = 0.85
 AASHTO_SHEAR_SIMPLIFIED_BETA = 2.0
 AASHTO_SHEAR_SIMPLIFIED_THETA_DEG = 45.0
 AASHTO_SHEAR_MAX_FC_MPA = 103.42135939752542  # 15 ksi
@@ -29,6 +30,173 @@ AASHTO_SHEAR_TRANSVERSE_FY_MAX_MPA = 689.4757293168361  # 100 ksi
 AASHTO_SEISMIC_HOOK_FYH_MAX_MPA = 517.106797
 AASHTO_SEISMIC_SPACING_MAX_MM = 101.6  # 4 in
 AASHTO_SEISMIC_CONFINEMENT_MIN_LENGTH_MM = 457.2  # 18 in
+
+
+@dataclass(frozen=True)
+class AashtoGeneralShearParameters:
+    """AASHTO LRFD 5.7.3.4.2 General Procedure beta/theta trace."""
+
+    epsilon_s_raw: float
+    epsilon_s_used: float
+    beta: float
+    theta_deg: float
+    has_minimum_transverse_reinforcement: bool
+    sxe_mm: float | None
+    sxe_in: float | None
+    basis: str
+    notes: tuple[str, ...] = ()
+
+
+def aashto_prestressed_shear_phi(*, has_unbonded_or_debonded_strands: bool) -> tuple[float, str]:
+    """Return AASHTO LRFD 5.5.4.2 shear/torsion resistance factor for PSC.
+
+    Normal-weight prestressed concrete with bonded strands/tendons uses 0.90.
+    If unbonded or debonded strands/tendons are present, the Section 5 branch
+    uses 0.85.  The caller owns the project/member classification.
+    """
+
+    if has_unbonded_or_debonded_strands:
+        return (
+            AASHTO_SHEAR_PHI_PRESTRESSED_DEBONDED,
+            "AASHTO LRFD 5.5.4.2: prestressed shear/torsion with unbonded or debonded strands/tendons; phi = 0.85",
+        )
+    return (
+        AASHTO_SHEAR_PHI,
+        "AASHTO LRFD 5.5.4.2: prestressed shear/torsion with bonded strands/tendons; phi = 0.90",
+    )
+
+
+def aashto_general_shear_parameters(
+    *,
+    epsilon_s: float,
+    has_minimum_transverse_reinforcement: bool,
+    sxe_mm: float | None = None,
+) -> AashtoGeneralShearParameters:
+    """Evaluate AASHTO LRFD 5.7.3.4.2 Eqs. 1-3.
+
+    Concrete Section Pro adopts the explicitly permitted negative-strain route
+    in Article 5.7.3.4.2: a calculated negative epsilon_s is taken as zero.
+    The upper bound is 0.006.  For sections below minimum transverse
+    reinforcement, ``sxe`` is dimensional in the source equation (inches), so
+    this helper converts the SI input before Eq. 5.7.3.4.2-2.
+    """
+
+    eps_raw = float(epsilon_s)
+    if not math.isfinite(eps_raw):
+        raise ValueError("epsilon_s must be finite.")
+    notes: list[str] = []
+    if eps_raw < 0.0:
+        eps_used = 0.0
+        notes.append("Negative epsilon_s taken as zero per the permitted Article 5.7.3.4.2 branch.")
+    else:
+        eps_used = min(eps_raw, 0.006)
+        if eps_raw > 0.006:
+            notes.append("epsilon_s limited to 0.006 per Article 5.7.3.4.2.")
+
+    denominator = 1.0 + 750.0 * eps_used
+    if denominator <= 0.0:
+        raise ValueError("General Procedure epsilon_s produces an invalid beta denominator.")
+
+    sxe_in: float | None = None
+    sxe_value_mm: float | None = None
+    if has_minimum_transverse_reinforcement:
+        beta = 4.8 / denominator
+        basis = "AASHTO LRFD 5.7.3.4.2-1 / -3 (section contains at least minimum transverse reinforcement)"
+    else:
+        if sxe_mm is None or not math.isfinite(float(sxe_mm)) or float(sxe_mm) <= 0.0:
+            raise ValueError("sxe_mm is required when the section has less than minimum transverse reinforcement.")
+        sxe_value_mm = float(sxe_mm)
+        sxe_in = sxe_value_mm / 25.4
+        sxe_in_limited = min(max(sxe_in, 12.0), 80.0)
+        if abs(sxe_in_limited - sxe_in) > 1.0e-12:
+            notes.append(f"sxe limited from {sxe_in:.3f} in to {sxe_in_limited:.3f} in (12-80 in code limits).")
+            sxe_in = sxe_in_limited
+            sxe_value_mm = sxe_in * 25.4
+        beta = (4.8 / denominator) * (51.0 / (39.0 + sxe_in))
+        basis = "AASHTO LRFD 5.7.3.4.2-2 / -3 (section contains less than minimum transverse reinforcement)"
+
+    theta_deg = 29.0 + 3500.0 * eps_used
+    return AashtoGeneralShearParameters(
+        epsilon_s_raw=eps_raw,
+        epsilon_s_used=eps_used,
+        beta=beta,
+        theta_deg=theta_deg,
+        has_minimum_transverse_reinforcement=bool(has_minimum_transverse_reinforcement),
+        sxe_mm=sxe_value_mm,
+        sxe_in=sxe_in,
+        basis=basis,
+        notes=tuple(notes),
+    )
+
+
+def aashto_pretensioned_transfer_length_mm(db_mm: float) -> float:
+    """Return 60db transfer length permitted by AASHTO LRFD 5.9.4.3.1/3.2."""
+
+    if not math.isfinite(float(db_mm)) or float(db_mm) <= 0.0:
+        raise ValueError("db_mm must be positive and finite.")
+    return 60.0 * float(db_mm)
+
+
+def aashto_pretensioned_strand_development_length_mm(
+    *,
+    fps_MPa: float,
+    fpe_MPa: float,
+    db_mm: float,
+    member_depth_mm: float,
+    debonded_conservative: bool = False,
+) -> tuple[float, float, str]:
+    """Return AASHTO LRFD 5.9.4.3.2-1 strand development length in mm.
+
+    The source equation is calibrated in ksi and inches, therefore this helper
+    explicitly converts the SI stresses and diameter before evaluating it.
+    ``debonded_conservative=True`` applies kappa=2.0, the Article 5.9.4.3.3F
+    branch, as a conservative screen when the project has not supplied the
+    service-tension classification needed to use a smaller kappa.
+    """
+
+    values = [fps_MPa, fpe_MPa, db_mm, member_depth_mm]
+    if not all(math.isfinite(float(v)) and float(v) > 0.0 for v in values):
+        raise ValueError("fps_MPa, fpe_MPa, db_mm, and member_depth_mm must be positive finite values.")
+    if float(fps_MPa) <= float(fpe_MPa):
+        raise ValueError("fps_MPa must exceed fpe_MPa for development-length evaluation.")
+
+    depth_in = float(member_depth_mm) / 25.4
+    if debonded_conservative:
+        kappa = 2.0
+        kappa_basis = "kappa=2.0 conservative debonded-strand screen (5.9.4.3.3F)"
+    elif depth_in <= 24.0 + 1.0e-12:
+        kappa = 1.0
+        kappa_basis = "kappa=1.0 for pretensioned member depth <= 24 in"
+    else:
+        kappa = 1.6
+        kappa_basis = "kappa=1.6 for pretensioned member depth > 24 in"
+
+    fps_ksi = mpa_to_ksi(float(fps_MPa))
+    fpe_ksi = mpa_to_ksi(float(fpe_MPa))
+    db_in = float(db_mm) / 25.4
+    ld_in = kappa * (fps_ksi - (2.0 / 3.0) * fpe_ksi) * db_in
+    if not math.isfinite(ld_in) or ld_in <= 0.0:
+        raise ValueError("AASHTO development-length equation produced a nonpositive length.")
+    return inch_to_mm(ld_in), kappa, kappa_basis
+
+
+def aashto_pretensioned_transfer_fpo_factor(*, bonded_distance_mm: float, db_mm: float) -> float:
+    """Linear fpo build-up from bond commencement through the 60db transfer length."""
+
+    if not math.isfinite(float(bonded_distance_mm)) or float(bonded_distance_mm) < 0.0:
+        raise ValueError("bonded_distance_mm must be finite and nonnegative.")
+    transfer = aashto_pretensioned_transfer_length_mm(float(db_mm))
+    return min(max(float(bonded_distance_mm) / transfer, 0.0), 1.0)
+
+
+def aashto_development_area_factor(*, bonded_distance_mm: float, development_length_mm: float) -> float:
+    """Proportional Aps/As development factor for Article 5.7.3.4.2 strain input."""
+
+    if not math.isfinite(float(bonded_distance_mm)) or float(bonded_distance_mm) < 0.0:
+        raise ValueError("bonded_distance_mm must be finite and nonnegative.")
+    if not math.isfinite(float(development_length_mm)) or float(development_length_mm) <= 0.0:
+        raise ValueError("development_length_mm must be positive and finite.")
+    return min(max(float(bonded_distance_mm) / float(development_length_mm), 0.0), 1.0)
 
 
 @dataclass(frozen=True)

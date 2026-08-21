@@ -1098,19 +1098,21 @@ def test_perf_uls2_requires_manual_calculate_before_selected_check_runs() -> Non
     assert 'Capacity diagrams, utilization, and audit output are intentionally withheld' in source
 
 
-def test_uls_ui2_source_places_check_tabs_under_compact_table_without_general_diagram_expander() -> None:
+def test_igird_uls5_analysis_source_is_check_specific_without_global_compact_table() -> None:
     from pathlib import Path
 
     source = Path("concrete_pmm_pro/ui/analysis_page.py").read_text()
-    compact_idx = source.index('st.markdown("#### Compact ULS check table")')
     selector_idx = source.index('"ULS check to calculate"')
+    workspace_idx = source.index('st.markdown("#### ULS check workspace")')
     audit_idx = source.index('with st.expander("ULS demand table — audit / source data"')
 
-    assert selector_idx < compact_idx < audit_idx
+    assert selector_idx < workspace_idx < audit_idx
+    assert 'st.markdown("#### Compact ULS check table")' not in source
     assert "st.tabs(BEAM_ULS_CHECK_TAB_LABELS)" not in source
     assert 'with st.expander("ULS demand/capacity diagrams"' not in source
     assert 'with st.expander("Flexure strength audit / benchmark output"' in source
     assert 'with st.expander("Shear strength audit / provided stirrup output"' in source
+    assert "Cross-check aggregation belongs in Result Summary → ULS Summary" in source
 
 
 

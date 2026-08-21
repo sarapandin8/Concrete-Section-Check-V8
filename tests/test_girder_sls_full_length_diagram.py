@@ -305,18 +305,17 @@ def test_deflect_sls1_5_zero_display_and_camber_status_semantics() -> None:
 
 
 
-def test_uls_girder1_adds_compact_beam_girder_uls_workspace() -> None:
+def test_igird_uls5_beam_girder_analysis_is_check_specific_and_summary_is_downstream() -> None:
     assert "ULS.GIRDER1" in SOURCE
-    assert "ULS Beam/Girder decision summary" in SOURCE
-    assert "Loads page is the source of truth" in SOURCE
+    assert "ULS Beam/Girder analysis" in SOURCE
+    assert "Loads is the demand source of truth" in SOURCE
     assert "beam_uls_loads_table" in SOURCE
-    assert "Compact ULS check table" in SOURCE
+    assert 'st.markdown("#### Compact ULS check table")' not in SOURCE
     assert "ULS demand table — audit / source data" in SOURCE
     assert "ULS check workspace" in SOURCE
     assert "BEAM_ULS_CHECK_TAB_LABELS" in SOURCE
-    assert "Check-specific tabs are placed directly under the compact table" in SOURCE
+    assert "Cross-check aggregation belongs in Result Summary → ULS Summary" in SOURCE
     assert "ULS demand/capacity diagrams" not in SOURCE
-    assert "Capacity checks are not available yet; no PASS/FAIL is issued" in SOURCE
 
 
 def test_uls_girder1_routes_beam_workflows_away_from_pmm_solver_workspace() -> None:

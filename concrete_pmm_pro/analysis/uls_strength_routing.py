@@ -78,10 +78,10 @@ def bridge_beam_girder_uls_strength_route(code_edition: object | None = None) ->
         ),
         shear_engine_label="AASHTO LRFD shear strength/detailing gate",
         shear_basis_note=(
-            "Bridge shear uses the SHEAR.CODE2 provided-stirrup sectional gate: Vc = 0.083β√f'c bv dv "
-            "with β=2.0, θ=45°, provided Av/s, Vn capped by 0.25f'c bv dv, minimum Av/s, maximum spacing, "
-            "critical shear sections, and active-zone coverage. Development length, anchorage, bearing/end-zone, "
-            "and shop-drawing details remain project review items."
+            "Bridge shear is workflow/preset aware. Precast I-Girder uses AASHTO LRFD 5.7.3.4.2 General Procedure "
+            "with station epsilon_s, beta/theta, transfer/development participation, provided Av/s, Vn limit, exact minimum Av/s, "
+            "maximum spacing, critical shear sections, and active-zone coverage. Other Bridge presets retain their existing guarded "
+            "sectional route until separately calibrated. Anchorage, bearing/end-zone, and shop-drawing details remain project review items."
         ),
         torsion_engine_label="AASHTO LRFD torsion route",
         torsion_basis_note=(
@@ -90,8 +90,9 @@ def bridge_beam_girder_uls_strength_route(code_edition: object | None = None) ->
             "and shop-drawing checks remain project review items."
         ),
         overall_guard_note=(
-            "Bridge ULS calculated gates may report PASS when flexure, SHEAR.CODE2, TORSION.CODE2, and combined V+T pass. "
-            "Development length, anchorage, bearing/end-zone, shop-drawing detailing, and independent benchmark packages remain project review items."
+            "Bridge ULS check-specific gates report their own status. For Precast I-Girder, Combined V+T remains REVIEW until the torsion theta route is made consistent "
+            "with the station-dependent General Procedure shear theta. Cross-check aggregation belongs in Result Summary. Anchorage, bearing/end-zone, shop-drawing detailing, "
+            "and independent benchmark packages remain project review items."
         ),
         is_code_specific_shear_ready=True,
         is_code_specific_torsion_ready=True,
