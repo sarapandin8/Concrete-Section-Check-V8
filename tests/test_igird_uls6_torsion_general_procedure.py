@@ -341,3 +341,69 @@ def test_igird_uls6a_torsion_chart_uses_compact_plus_minus_legends_when_phi_tn_i
     assert visible_legend_names.count("±φTcr") == 1
     assert visible_legend_names.count("±0.25φTcr") == 1
     assert "demand vs φTn / torsion thresholds" in str(fig.layout.title.text)
+
+
+def test_igird_uls6b_torsion_legend_uses_compact_demand_language():
+    from concrete_pmm_pro.ui.analysis_page import _make_beam_uls_torsion_capacity_figure
+
+    active = pd.DataFrame([
+        {"Active": True, "Station x (m)": 0.0, "Case Name": "Strength I", "Mux": 0.0, "Vuy": 100.0, "Tu": 50.0, "Muy": 0.0, "Vux": 0.0, "Nu": 0.0, "Note": ""},
+        {"Active": True, "Station x (m)": 10.0, "Case Name": "Strength I", "Mux": 0.0, "Vuy": -100.0, "Tu": -50.0, "Muy": 0.0, "Vux": 0.0, "Nu": 0.0, "Note": ""},
+    ])
+    torsion = pd.DataFrame([
+        {"Status": "REVIEW", "Governing x": "0.000 m", "Case": "Strength I", "Demand kN-m": 50.0, "Abs demand kN-m": 50.0, "φTn kN-m": 200.0, "φTcr kN-m": 120.0, "Threshold kN-m": 30.0, "D/C value": 0.25},
+        {"Status": "REVIEW", "Governing x": "10.000 m", "Case": "Strength I", "Demand kN-m": -50.0, "Abs demand kN-m": 50.0, "φTn kN-m": 200.0, "φTcr kN-m": 120.0, "Threshold kN-m": 30.0, "D/C value": 0.25},
+    ])
+
+    fig = _make_beam_uls_torsion_capacity_figure(active, torsion, code_label="AASHTO LRFD 9th Edition")
+    names = [str(trace.name) for trace in fig.data]
+    assert "Tu demand" in names
+    assert "Gov. Tu" in names
+    assert not any(name.startswith("Demand Tu") for name in names)
+    assert fig.layout.legend.entrywidth == 120
+
+
+def test_igird_uls6b_compact_torsion_audit_keeps_decision_fields_and_hides_deep_source_fields():
+    from concrete_pmm_pro.ui.analysis_page import _beam_uls_torsion_compact_audit_dataframe
+
+    source = pd.DataFrame([
+        {
+            "Status": "REVIEW",
+            "Governing x": "1.000 m",
+            "Case": "Strength I",
+            "Threshold status": "DESIGN REQUIRED",
+            "Transverse status": "PASS",
+            "Longitudinal status": "COMBINED CHECK REQUIRED",
+            "Detailing status": "PASS",
+            "Demand kN-m": 50.0,
+            "Abs demand kN-m": 50.0,
+            "φTn kN-m": 200.0,
+            "Tn kN-m": 222.2,
+            "φTcr kN-m": 120.0,
+            "Threshold kN-m": 30.0,
+            "D/C value": 0.25,
+            "Veff kN": 150.0,
+            "θ deg": 31.0,
+            "φ": 0.90,
+            "K": 1.25,
+            "Ao mm2": 250000.0,
+            "Notes": "detail source",
+        }
+    ])
+    compact = _beam_uls_torsion_compact_audit_dataframe(source)
+    assert list(compact.columns) == [
+        "Governing", "Station x", "Case", "Status", "Threshold", "Transverse", "Longitudinal", "Detailing",
+        "Tu demand", "φTn", "φTcr", "0.25φTcr", "D/C", "Veff", "θ", "φ",
+    ]
+    assert compact.iloc[0]["Status"] == "REVIEW"
+    assert compact.iloc[0]["Veff"] == "150.00 kN"
+    assert "K" not in compact.columns
+    assert "Ao" not in compact.columns
+    assert "Notes" not in compact.columns
+
+
+def test_igird_uls6b_analysis_keeps_full_torsion_audit_available_separately():
+    source = open("concrete_pmm_pro/ui/analysis_page.py", encoding="utf-8").read()
+    assert 'with st.expander("Torsion detailed engineering audit", expanded=False)' in source
+    assert "Full stored engineering trace" in source
+    assert "does not rerun the solver" in source

@@ -10367,6 +10367,38 @@ def _beam_uls_torsion_audit_dataframe(torsion_df: pd.DataFrame | None) -> pd.Dat
     return pd.DataFrame(rows, columns=columns)
 
 
+def _beam_uls_torsion_compact_audit_dataframe(torsion_df: pd.DataFrame | None) -> pd.DataFrame:
+    """Return the decision-focused torsion audit used by the Analysis workspace.
+
+    The full engineering trace remains available in the dedicated detailed-audit
+    expander and in Report / QA.  Keeping the default Analysis table compact
+    makes browser/PDF review readable without dropping any stored solver fields.
+    """
+
+    audit = _beam_uls_torsion_audit_dataframe(torsion_df)
+    columns = [
+        "Governing",
+        "Station x",
+        "Case",
+        "Status",
+        "Threshold",
+        "Transverse",
+        "Longitudinal",
+        "Detailing",
+        "Tu demand",
+        "φTn",
+        "φTcr",
+        "0.25φTcr",
+        "D/C",
+        "Veff",
+        "θ",
+        "φ",
+    ]
+    if audit.empty:
+        return pd.DataFrame(columns=columns)
+    return audit[[column for column in columns if column in audit.columns]].copy()
+
+
 def _format_beam_uls_audit_number(value: object, *, digits: int = 2, unit: str = "") -> str:
     try:
         numeric = float(value)
@@ -12713,6 +12745,50 @@ def _beam_uls_extend_torsion_plot_rows_to_active_domain(
     return extended
 
 
+def _polish_igird_uls_torsion_legend(fig: go.Figure) -> go.Figure:
+    """Apply compact, unambiguous legend language to the I-Girder torsion chart.
+
+    Presentation-only closeout: demand/capacity values, threshold traces, and
+    governing-station semantics are unchanged.
+    """
+
+    demand_traces = [
+        trace
+        for trace in list(fig.data)
+        if str(getattr(trace, "name", "") or "").startswith("Demand Tu")
+    ]
+    multiple_cases = len(demand_traces) > 1
+    for trace in list(fig.data):
+        name = str(getattr(trace, "name", "") or "")
+        if name.startswith("Demand Tu"):
+            if multiple_cases and "—" in name:
+                case_name = name.split("—", 1)[1].strip()
+                short_case = case_name if len(case_name) <= 18 else case_name[:17].rstrip() + "…"
+                trace.name = f"Tu demand · {short_case}"
+            else:
+                trace.name = "Tu demand"
+        elif name == "Governing demand":
+            trace.name = "Gov. Tu"
+        elif name == "Governing torsion check":
+            trace.name = "Gov. torsion"
+
+    fig.update_layout(
+        legend={
+            "orientation": "h",
+            "yanchor": "top",
+            "y": -0.20,
+            "xanchor": "center",
+            "x": 0.5,
+            "font": {"size": 10},
+            "itemsizing": "constant",
+            "entrywidth": 120,
+            "entrywidthmode": "pixels",
+        },
+        margin={"l": 82, "r": 42, "t": 86, "b": 126},
+    )
+    return fig
+
+
 def _make_beam_uls_torsion_capacity_figure(
     active_df: pd.DataFrame,
     torsion_check_df: pd.DataFrame | None,
@@ -12728,7 +12804,7 @@ def _make_beam_uls_torsion_capacity_figure(
     )
     if torsion_check_df is None or torsion_check_df.empty:
         fig.update_layout(title={"text": f"Torsion Check — Strength ULS<br><sup>{code_label} · demand only — φTn not ready</sup>"})
-        return fig
+        return _polish_igird_uls_torsion_legend(fig)
     plot_sources = [torsion_check_df]
     if boundary_capacity_df is not None and not boundary_capacity_df.empty:
         plot_sources.append(boundary_capacity_df)
@@ -12862,7 +12938,7 @@ def _make_beam_uls_torsion_capacity_figure(
     else:
         subtitle = "demand only — φTn not ready"
     fig.update_layout(title={"text": f"Torsion Check — Strength ULS<br><sup>{code_label} · {subtitle}</sup>"})
-    return fig
+    return _polish_igird_uls_torsion_legend(fig)
 
 
 def _beam_uls_is_precast_composite_bridge(state: Mapping[str, object], *, is_bridge: bool) -> bool:
@@ -14528,13 +14604,23 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                 st.dataframe(_beam_uls_torsion_variable_definitions_dataframe(), use_container_width=True, hide_index=True)
 
         with st.expander("Torsion strength audit / provided closed-stirrup output", expanded=False):
-            audit_df = _beam_uls_torsion_audit_dataframe(torsion_check_df)
+            audit_df = _beam_uls_torsion_compact_audit_dataframe(torsion_check_df) if igird_torsion_route else _beam_uls_torsion_audit_dataframe(torsion_check_df)
             if audit_df.empty:
                 st.info("Torsion audit output is not available until active ULS demand rows and section inputs are ready.")
             else:
+                if igird_torsion_route:
+                    st.caption("Decision-focused station audit. Full K / strain / reinforcement / geometry source fields are available in Torsion detailed engineering audit below and in Report / QA.")
                 st.dataframe(audit_df, use_container_width=True, hide_index=True)
+        if igird_torsion_route:
+            with st.expander("Torsion detailed engineering audit", expanded=False):
+                detailed_audit_df = _beam_uls_torsion_audit_dataframe(torsion_check_df)
+                if detailed_audit_df.empty:
+                    st.info("Detailed torsion audit output is not available until active ULS demand rows and section inputs are ready.")
+                else:
+                    st.caption("Full stored engineering trace: prestress/K gates, Veff and General Procedure terms, closed-loop reinforcement, fy policy, shear-flow geometry, spacing, and source notes. This view does not rerun the solver.")
+                    st.dataframe(detailed_audit_df, use_container_width=True, hide_index=True)
         with st.expander("Torsion end-boundary capacity values", expanded=False):
-            audit_df = _beam_uls_torsion_audit_dataframe(torsion_boundary_capacity_df)
+            audit_df = _beam_uls_torsion_compact_audit_dataframe(torsion_boundary_capacity_df) if igird_torsion_route else _beam_uls_torsion_audit_dataframe(torsion_boundary_capacity_df)
             if audit_df.empty:
                 st.info("End-boundary φTcr / φTn values are not available until the provided closed-hoop layout and section/material inputs are ready.")
             else:

@@ -1465,7 +1465,7 @@ def test_uls_torsion1_figure_uses_unmarked_red_check_lines_and_marked_demand() -
 
     fig = _make_beam_uls_torsion_capacity_figure(active, torsion, code_label="AASHTO LRFD")
 
-    demand = next(trace for trace in fig.data if str(trace.name).startswith("Demand Tu"))
+    demand = next(trace for trace in fig.data if str(trace.name).startswith("Tu demand"))
     phi_tn = next(trace for trace in fig.data if trace.name == "±φTn")
     assert demand.mode == "lines+markers"
     assert phi_tn.mode == "lines"
