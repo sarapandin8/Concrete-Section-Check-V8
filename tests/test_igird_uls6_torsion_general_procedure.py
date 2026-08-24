@@ -520,3 +520,8 @@ def test_igird_uls6c_rebar_ui_explains_single_longitudinal_source_and_torsion_zo
     assert "Closed Loop" in source
     assert "135° Hook" in source
     assert "At/s = (one closed-loop leg area)/s" in source
+    # Regression: the torsion-layout renderer requires the normalized shear-zone
+    # table.  A zero-argument call caused a runtime TypeError before the shear
+    # editor could render in ULS6C.
+    assert "_render_igird_torsion_layout_settings()" not in source
+    assert "_render_igird_torsion_layout_settings(normalized)" in source

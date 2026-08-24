@@ -2791,7 +2791,6 @@ def _render_shear_reinforcement_layout(rebar_db: pd.DataFrame) -> None:
     st.markdown(_strip_html(cards), unsafe_allow_html=True)
 
     _render_effective_shear_depth_settings()
-    _render_igird_torsion_layout_settings()
 
     action_cols = st.columns([1.0, 1.0, 3.0], gap="small")
     with action_cols[0]:
