@@ -21,6 +21,8 @@ from concrete_pmm_pro.ui.analysis_page import (
     _beam_uls_torsion_check_dataframe,
     _beam_uls_torsion_calculation_trace_dataframe,
     _beam_uls_torsion_variable_definitions_dataframe,
+    _beam_uls_governing_torsion_row,
+    _beam_uls_torsion_diagram_boundary_dataframe,
 )
 
 
@@ -407,3 +409,114 @@ def test_igird_uls6b_analysis_keeps_full_torsion_audit_available_separately():
     assert 'with st.expander("Torsion detailed engineering audit", expanded=False)' in source
     assert "Full stored engineering trace" in source
     assert "does not rerun the solver" in source
+
+
+def _zone_qualified_state(*, hook=True, use=True, ph_mm=4300.0):
+    state = _state(closed=False, ph_mm=0.0)
+    state["beam_girder_torsion_settings"] = {
+        **state["beam_girder_torsion_settings"],
+        "closed_loop_confirmed": False,
+        "ph_mm": None,
+    }
+    state["project_metadata"] = {"beam_girder_torsion_settings": state["beam_girder_torsion_settings"]}
+    zone_settings = [{
+        "Zone": "Full span",
+        "Use for Torsion": use,
+        "Closed Loop": True,
+        "135° Hook": hook,
+        "ph_mm": ph_mm,
+        "Note": "station-qualified torsion source",
+    }]
+    state["beam_girder_torsion_zone_settings"] = zone_settings
+    state["project_metadata"]["beam_girder_torsion_zone_settings"] = zone_settings
+    return state
+
+
+def test_igird_uls6c_station_qualified_transverse_zone_drives_phi_tn_without_legacy_global_source():
+    row = _beam_uls_torsion_check_dataframe(
+        _zone_qualified_state(), _demand(x=5.0), strength_route=_route()
+    ).iloc[0]
+    assert row["Threshold status"] == "DESIGN REQUIRED"
+    assert bool(row["Closed loop confirmed"]) is True
+    assert bool(row["135° hook confirmed"]) is True
+    assert row["Torsion zone source"] == "station-qualified transverse zone"
+    assert float(row["ph mm"]) == pytest.approx(4300.0)
+    assert math.isfinite(float(row["Veff kN"]))
+    assert math.isfinite(float(row["θ deg"]))
+    assert math.isfinite(float(row["φTn kN-m"]))
+    assert math.isfinite(float(row["D/C value"]))
+    assert row["Status"] in {"REVIEW", "FAIL"}
+
+
+def test_igird_uls6c_zone_requires_use_closed_hook_and_ph_before_capacity():
+    missing_use = _beam_uls_torsion_check_dataframe(
+        _zone_qualified_state(use=False), _demand(), strength_route=_route()
+    ).iloc[0]
+    assert missing_use["Status"] == "LAYOUT REQUIRED"
+    assert "not selected for torsion" in str(missing_use["Notes"]).lower()
+
+    missing_hook = _beam_uls_torsion_check_dataframe(
+        _zone_qualified_state(hook=False), _demand(), strength_route=_route()
+    ).iloc[0]
+    assert missing_hook["Status"] == "LAYOUT REQUIRED"
+    assert "135" in str(missing_hook["Notes"])
+
+
+def test_igird_uls6c_physical_support_face_torsion_station_is_not_discarded():
+    active = pd.concat([
+        _demand(x=0.0, tu=800.0, vu=500.0),
+        _demand(x=1.0, tu=500.0, vu=450.0),
+    ], ignore_index=True)
+    df = _beam_uls_torsion_check_dataframe(_zone_qualified_state(), active, strength_route=_route())
+    support = df.iloc[0]
+    assert support["Governing x"] == "0.000 m"
+    assert support["Station type"] == "LOAD STATION"
+    assert support["Support side"] == "LEFT"
+    from concrete_pmm_pro.ui.analysis_page import _beam_uls_torsion_decision_dataframe
+    eligible = _beam_uls_torsion_decision_dataframe(df)
+    assert "0.000 m" in set(eligible["Governing x"].astype(str))
+
+    # With equal status quality, the governing selector must be allowed to pick
+    # the larger physical support-face torsion demand.
+    synthetic = pd.DataFrame([
+        {"Status": "REVIEW", "Station type": "LOAD STATION", "Support side": "LEFT", "Governing x": "0.000 m", "Abs demand kN-m": 800.0, "D/C value": 0.8},
+        {"Status": "REVIEW", "Station type": "LOAD STATION", "Support side": "-", "Governing x": "1.000 m", "Abs demand kN-m": 500.0, "D/C value": 0.5},
+    ])
+    governing = _beam_uls_governing_torsion_row(synthetic)
+    assert governing is not None
+    assert governing["Governing x"] == "0.000 m"
+
+
+def test_igird_uls6c_synthetic_end_capacity_rows_remain_diagram_only():
+    active = _demand(x=5.0, tu=500.0)
+    boundary = _beam_uls_torsion_diagram_boundary_dataframe(
+        _zone_qualified_state(), active, strength_route=_route()
+    )
+    assert not boundary.empty
+    assert set(boundary["Station type"].astype(str)) == {"DIAGRAM BOUNDARY"}
+
+
+def test_igird_uls6c_torsion_zone_metadata_invalidates_only_torsion_family_hashes():
+    state = _zone_qualified_state()
+    active = _demand()
+    shear_1 = _beam_uls_check_input_hash(state, active, strength_route=_route(), check_name="Shear")
+    torsion_1 = _beam_uls_check_input_hash(state, active, strength_route=_route(), check_name="Torsion")
+    state["beam_girder_torsion_zone_settings"] = [{
+        **state["beam_girder_torsion_zone_settings"][0],
+        "ph_mm": 4500.0,
+    }]
+    state["project_metadata"]["beam_girder_torsion_zone_settings"] = state["beam_girder_torsion_zone_settings"]
+    shear_2 = _beam_uls_check_input_hash(state, active, strength_route=_route(), check_name="Shear")
+    torsion_2 = _beam_uls_check_input_hash(state, active, strength_route=_route(), check_name="Torsion")
+    assert shear_1 == shear_2
+    assert torsion_1 != torsion_2
+
+
+def test_igird_uls6c_rebar_ui_explains_single_longitudinal_source_and_torsion_zone_link():
+    source = open("concrete_pmm_pro/ui/rebar_page.py", encoding="utf-8").read()
+    assert "Do not classify individual bars as 'flexure steel' or 'torsion steel'" in source
+    assert "Beam/Girder Torsion Reinforcement Definition" in source
+    assert "Use for Torsion" in source
+    assert "Closed Loop" in source
+    assert "135° Hook" in source
+    assert "At/s = (one closed-loop leg area)/s" in source

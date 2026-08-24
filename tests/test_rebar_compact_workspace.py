@@ -36,4 +36,4 @@ def test_compact1_disabled_rebar_workspace_is_two_column_and_collapsed_details()
 
 def test_compact1_detailed_active_summary_is_collapsed_below_decision_view() -> None:
     assert 'with st.expander("Longitudinal Rebar Summary", expanded=False)' in REBAR_SOURCE
-    assert 'with st.expander("Longitudinal rebar / torsion Al workflow notes", expanded=False)' in REBAR_SOURCE
+    assert 'with st.expander("Longitudinal reinforcement use in Flexure and V+T", expanded=False)' in REBAR_SOURCE

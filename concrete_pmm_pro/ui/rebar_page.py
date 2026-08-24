@@ -62,6 +62,7 @@ SHEAR_REINFORCEMENT_TABLE_KEY = "beam_girder_shear_reinforcement_table"
 SHEAR_REINFORCEMENT_VALID_KEY = "beam_girder_shear_reinforcement_valid"
 SHEAR_DEPTH_SETTINGS_KEY = "beam_girder_shear_depth_settings"
 BEAM_GIRDER_TORSION_SETTINGS_KEY = "beam_girder_torsion_settings"
+BEAM_GIRDER_TORSION_ZONE_SETTINGS_KEY = "beam_girder_torsion_zone_settings"
 COLUMN_PIER_TRANSVERSE_TABLE_KEY = "column_pier_transverse_reinforcement_table"
 COLUMN_PIER_TRANSVERSE_VALID_KEY = "column_pier_transverse_reinforcement_valid"
 COLUMN_PIER_TRANSVERSE_SETTINGS_KEY = "column_pier_transverse_reinforcement_settings"
@@ -2587,81 +2588,180 @@ def _store_shear_reinforcement_metadata(table: pd.DataFrame) -> None:
     st.session_state["project_metadata"] = metadata
 
 
-def _render_igird_torsion_layout_settings() -> None:
+def _igird_torsion_zone_settings_dataframe(shear_table: pd.DataFrame) -> pd.DataFrame:
+    """Return torsion qualification metadata aligned to the provided shear-zone table.
+
+    The physical transverse reinforcement remains owned by the shear-zone table
+    (bar size, legs, spacing, fy, and x-range).  This companion metadata only
+    records whether that same provided zone is intentionally detailed as a
+    closed torsion loop and the actual ph used by the AASHTO torsion route.
+    """
+
+    table = _ensure_shear_reinforcement_columns(pd.DataFrame(shear_table))
+    metadata = dict(st.session_state.get("project_metadata", {}) or {})
+    raw = st.session_state.get(BEAM_GIRDER_TORSION_ZONE_SETTINGS_KEY)
+    if not isinstance(raw, list):
+        raw = metadata.get(BEAM_GIRDER_TORSION_ZONE_SETTINGS_KEY, [])
+    stored = {}
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("Zone") or "").strip()
+            if key:
+                stored[key] = dict(item)
+
+    # Backward-compatible migration from the ULS6/6B global hoop source.
+    legacy = st.session_state.get(BEAM_GIRDER_TORSION_SETTINGS_KEY)
+    if not isinstance(legacy, dict):
+        legacy = metadata.get(BEAM_GIRDER_TORSION_SETTINGS_KEY, {})
+    legacy = dict(legacy or {}) if isinstance(legacy, dict) else {}
+    legacy_closed = bool(legacy.get("closed_loop_confirmed", False))
+    legacy_ph = _to_float(legacy.get("ph_mm"))
+
+    rows = []
+    for _, zone in table.iterrows():
+        zone_name = str(zone.get("Zone") or "Zone").strip() or "Zone"
+        item = stored.get(zone_name, {})
+        use_torsion = _to_bool(item.get("Use for Torsion")) if item else False
+        closed = _to_bool(item.get("Closed Loop")) if item else False
+        hooks = _to_bool(item.get("135° Hook")) if item else False
+        ph_value = _to_float(item.get("ph_mm")) if item else None
+        if not item and legacy_closed and legacy_ph and legacy_ph > 0.0 and _to_bool(zone.get("Active")):
+            use_torsion = True
+            closed = True
+            hooks = True
+            ph_value = float(legacy_ph)
+        diameter = _to_float(zone.get("Diameter_mm"))
+        spacing = _to_float(zone.get("Spacing_mm"))
+        at_per_s = None
+        if diameter and diameter > 0.0 and spacing and spacing > 0.0:
+            at_per_s = math.pi * float(diameter) ** 2 / 4.0 / float(spacing)
+        rows.append({
+            "Zone": zone_name,
+            "Provided Active": bool(_to_bool(zone.get("Active"))),
+            "x start (m)": _to_float(zone.get("x_start_m")),
+            "x end (m)": _to_float(zone.get("x_end_m")),
+            "Stirrup": f"{zone.get('Bar Size') or '-'} @ {float(spacing):.0f} mm" if spacing else str(zone.get("Bar Size") or "-"),
+            "Use for Torsion": bool(use_torsion),
+            "Closed Loop": bool(closed),
+            "135° Hook": bool(hooks),
+            "ph_mm": float(ph_value) if ph_value and ph_value > 0.0 else 0.0,
+            "At/s (mm²/mm)": float(at_per_s) if at_per_s is not None else float("nan"),
+            "Note": str(item.get("Note") or ""),
+        })
+    return pd.DataFrame(rows)
+
+
+def _store_igird_torsion_zone_settings(table: pd.DataFrame) -> None:
+    records = []
+    for _, row in pd.DataFrame(table).iterrows():
+        records.append({
+            "Zone": str(row.get("Zone") or "Zone"),
+            "Use for Torsion": bool(_to_bool(row.get("Use for Torsion"))),
+            "Closed Loop": bool(_to_bool(row.get("Closed Loop"))),
+            "135° Hook": bool(_to_bool(row.get("135° Hook"))),
+            "ph_mm": float(_to_float(row.get("ph_mm")) or 0.0) or None,
+            "Note": str(row.get("Note") or ""),
+        })
+    st.session_state[BEAM_GIRDER_TORSION_ZONE_SETTINGS_KEY] = records
+    metadata = dict(st.session_state.get("project_metadata", {}) or {})
+    metadata[BEAM_GIRDER_TORSION_ZONE_SETTINGS_KEY] = records
+    st.session_state["project_metadata"] = metadata
+
+
+def _render_igird_torsion_layout_settings(shear_table: pd.DataFrame) -> None:
     if str(st.session_state.get("section_preset_key") or "").strip() != "parametric_i_girder":
         return
+
+    st.markdown("#### Beam/Girder Torsion Reinforcement Definition")
+    st.caption(
+        "Torsion reuses the same provided transverse zones shown above. Bar size, spacing, fy, legs, and zone limits are not duplicated here. "
+        "This table only tells Analysis which provided zones are intentionally detailed as closed torsion loops and supplies the actual AASHTO ph centerline perimeter."
+    )
+    st.info(
+        "Shear uses Av/s = (number of effective legs × bar area)/s. Torsion uses At/s = (one closed-loop leg area)/s. "
+        "Checking 'Use for Torsion' does not change the physical stirrup layout; it qualifies that same zone for the torsion solver."
+    )
+
+    source = _igird_torsion_zone_settings_dataframe(shear_table)
+    if source.empty:
+        st.warning("Define at least one transverse reinforcement zone before qualifying torsion reinforcement.")
+        return
+    editor = st.data_editor(
+        source,
+        use_container_width=True,
+        hide_index=True,
+        num_rows="fixed",
+        disabled=["Zone", "Provided Active", "x start (m)", "x end (m)", "Stirrup", "At/s (mm²/mm)"],
+        column_config={
+            "Zone": st.column_config.TextColumn("Zone", width="medium"),
+            "Provided Active": st.column_config.CheckboxColumn("Provided Active", width="small", help="Read-only mirror of the physical transverse zone Active flag. Inactive zones are not used by Shear or Torsion capacity."),
+            "x start (m)": st.column_config.NumberColumn("x start (m)", format="%.3f", width="small"),
+            "x end (m)": st.column_config.NumberColumn("x end (m)", format="%.3f", width="small"),
+            "Stirrup": st.column_config.TextColumn("Provided transverse source", width="medium"),
+            "Use for Torsion": st.column_config.CheckboxColumn("Use for Torsion", width="small", help="Select only when this provided transverse zone is intentionally part of the torsion-resisting cage."),
+            "Closed Loop": st.column_config.CheckboxColumn("Closed Loop", width="small", help="Confirm that the transverse bar forms a fully continuous closed torsion loop."),
+            "135° Hook": st.column_config.CheckboxColumn("135° Hook", width="small", help="Confirm the required 135° standard-hook anchorage for the closed torsion reinforcement."),
+            "ph_mm": st.column_config.NumberColumn("ph (mm)", min_value=0.0, step=10.0, format="%.1f", width="small", help="Perimeter of the centerline of the actual closed transverse torsion reinforcement."),
+            "At/s (mm²/mm)": st.column_config.NumberColumn("At/s (mm²/mm)", format="%.4f", width="small", help="Read-only: one bar area divided by spacing; this differs from shear Av/s when multiple legs are effective."),
+            "Note": st.column_config.TextColumn("Torsion detail note", width="large"),
+        },
+        key="beam_girder_torsion_zone_definition_editor",
+    )
+    _store_igird_torsion_zone_settings(editor)
+
     metadata = dict(st.session_state.get("project_metadata", {}) or {})
     raw = st.session_state.get(BEAM_GIRDER_TORSION_SETTINGS_KEY)
     if not isinstance(raw, dict):
         raw = metadata.get(BEAM_GIRDER_TORSION_SETTINGS_KEY, {})
     raw = dict(raw or {}) if isinstance(raw, dict) else {}
-    with st.expander("Precast I-Girder torsion hoop / AASHTO geometry source", expanded=False):
-        st.caption(
-            "AASHTO LRFD 5.7.3.6 requires a fully closed transverse torsion path. "
-            "The app derives solid-section Ao from the AASHTO effective-width shear-flow path, but ph must come from the actual closed torsion reinforcement centerline."
+    c1, c2 = st.columns([1.0, 2.0])
+    with c1:
+        corner_ok = st.checkbox(
+            "Longitudinal bar/tendon present at each closed-hoop corner",
+            value=bool(raw.get("corner_longitudinal_reinforcement_confirmed", False)),
+            key="beam_girder_torsion_corner_longitudinal_confirmed",
+            help="Combined V+T longitudinal detailing confirmation. This does not classify bars as flexure-only or torsion-only; the same active longitudinal rebar and prestress sources are reused by the concurrent check.",
         )
-        closed = st.checkbox(
-            "Verified fully continuous closed torsion loop with 135° standard-hook anchorage",
-            value=bool(raw.get("closed_loop_confirmed", False)),
-            key="beam_girder_torsion_closed_loop_confirmed",
-            help="Confirm only when the provided transverse reinforcement forms a continuous closed torsion loop and is anchored around longitudinal reinforcement. AASHTO 5.10.8.2.6d requires transverse torsion reinforcement to be fully continuous with 135° standard hooks.",
-        )
-        ph = st.number_input(
-            "ph — closed torsion reinforcement centerline perimeter (mm)",
-            min_value=0.0,
-            value=float(raw.get("ph_mm") or 0.0),
-            step=10.0,
-            format="%.1f",
-            key="beam_girder_torsion_ph_mm",
-            help="AASHTO ph is the perimeter of the centerline of the closed transverse torsion reinforcement. Enter the actual detailing geometry; 0 blocks final transverse torsion capacity above the threshold.",
-        )
-        offset = st.number_input(
-            "Hoop centerline offset from outside concrete face (mm) — visual/audit reference",
-            min_value=0.0,
-            value=float(raw.get("hoop_centerline_offset_mm") or 50.0),
-            step=5.0,
-            format="%.1f",
-            key="beam_girder_torsion_hoop_centerline_offset_mm",
-            help="Reference dimension for drawings/audit only in IGIRDER.ULS6. The AASHTO solid-section Ao calculation uses be=Acp/pc; ph remains the entered actual closed-loop perimeter.",
-        )
-        c1, c2 = st.columns(2)
-        with c1:
-            perimeter_ok = st.checkbox(
-                "Longitudinal torsion reinforcement distributed around the hoop perimeter",
-                value=bool(raw.get("longitudinal_perimeter_distribution_confirmed", False)),
-                key="beam_girder_torsion_longitudinal_perimeter_confirmed",
-                help="Stored for the Combined V+T longitudinal Article 5.7.3.6.3 check; standalone Torsion does not use this checkbox to manufacture PASS.",
-            )
-        with c2:
-            corner_ok = st.checkbox(
-                "At least one longitudinal bar/tendon at each hoop corner",
-                value=bool(raw.get("corner_longitudinal_reinforcement_confirmed", False)),
-                key="beam_girder_torsion_corner_longitudinal_confirmed",
-                help="AASHTO 5.7.3.6.3 requires at least one bar or tendon at the corners of the stirrups.",
-            )
+    with c2:
         note = st.text_input(
-            "Torsion detailing note",
+            "Torsion / longitudinal detailing note",
             value=str(raw.get("note") or ""),
             key="beam_girder_torsion_detailing_note",
-            placeholder="e.g. ph measured from approved closed-hoop cage detail",
+            placeholder="e.g. ph measured from approved closed-hoop cage detail; corner tendon/bar shown on drawing ...",
         )
-        settings = {
-            "closed_loop_confirmed": bool(closed),
-            "ph_mm": float(ph) if float(ph) > 0.0 else None,
-            "hoop_centerline_offset_mm": float(offset) if float(offset) > 0.0 else None,
-            "longitudinal_perimeter_distribution_confirmed": bool(perimeter_ok),
-            "corner_longitudinal_reinforcement_confirmed": bool(corner_ok),
-            "note": str(note or ""),
-        }
-        st.session_state[BEAM_GIRDER_TORSION_SETTINGS_KEY] = settings
-        metadata[BEAM_GIRDER_TORSION_SETTINGS_KEY] = settings
-        st.session_state["project_metadata"] = metadata
-        if closed and settings["ph_mm"]:
-            st.success(f"Torsion hoop source stored: verified closed loop; ph = {settings['ph_mm']:,.1f} mm.")
-        elif closed:
-            st.warning("Closed-loop confirmation is stored, but ph is 0/blank. Torsion above 0.25φTcr will remain LAYOUT REQUIRED.")
-        else:
-            st.info("Torsion above the AASHTO threshold will remain LAYOUT REQUIRED until the closed-loop detail is verified. This is intentional; ordinary shear stirrups are not silently treated as torsion hoops.")
+    settings = {
+        # Keep the legacy keys for project-file compatibility. The station solver
+        # now prefers the zone-qualified source above.
+        "closed_loop_confirmed": bool(raw.get("closed_loop_confirmed", False)),
+        "ph_mm": _to_float(raw.get("ph_mm")),
+        "hoop_centerline_offset_mm": _to_float(raw.get("hoop_centerline_offset_mm")) or 50.0,
+        "longitudinal_perimeter_distribution_confirmed": bool(raw.get("longitudinal_perimeter_distribution_confirmed", False)),
+        "corner_longitudinal_reinforcement_confirmed": bool(corner_ok),
+        "note": str(note or ""),
+    }
+    st.session_state[BEAM_GIRDER_TORSION_SETTINGS_KEY] = settings
+    metadata[BEAM_GIRDER_TORSION_SETTINGS_KEY] = settings
+    st.session_state["project_metadata"] = metadata
+
+    selected = editor[editor["Use for Torsion"].map(_to_bool)].copy() if not editor.empty else pd.DataFrame()
+    ready = selected[
+        selected["Provided Active"].map(_to_bool)
+        & selected["Closed Loop"].map(_to_bool)
+        & selected["135° Hook"].map(_to_bool)
+        & (pd.to_numeric(selected["ph_mm"], errors="coerce").fillna(0.0) > 0.0)
+    ] if not selected.empty else pd.DataFrame()
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Torsion-qualified zones", f"{len(selected):,}")
+    m2.metric("Capacity-ready zones", f"{len(ready):,}")
+    m3.metric("Corner longitudinal detail", "CONFIRMED" if corner_ok else "COMBINED CHECK")
+    if selected.empty:
+        st.warning("No provided transverse zone is currently qualified for torsion. Torsion above 0.25φTcr will remain LAYOUT REQUIRED.")
+    elif len(ready) != len(selected):
+        st.warning("One or more torsion-qualified zones are inactive or still need Closed Loop, 135° Hook, or a positive ph before transverse φTn can be evaluated there.")
+    else:
+        st.success("Selected torsion zones have a complete transverse source: provided bar/spacing/fy + closed-loop confirmation + 135° hook + ph.")
 
 
 def _render_shear_reinforcement_layout(rebar_db: pd.DataFrame) -> None:
@@ -2754,6 +2854,8 @@ def _render_shear_reinforcement_layout(rebar_db: pd.DataFrame) -> None:
         st.info("No shear reinforcement zones are defined yet.")
     else:
         st.dataframe(preview_df, use_container_width=True, hide_index=True)
+
+    _render_igird_torsion_layout_settings(normalized)
 
     with st.expander("Shear reinforcement workflow notes", expanded=False):
         st.write("- Provided stirrup layout is the source of truth for SHEAR.CODE2 φVn checks.")
@@ -2998,7 +3100,7 @@ def _render_longitudinal_rebar_tab(
         with st.container(border=True):
             st.markdown(
                 '<div class="cpmm-rebar-panel-title">Longitudinal Rebar Input</div>'
-                '<div class="cpmm-rebar-panel-subtitle">Single source of truth for ordinary longitudinal bars used by PMM/SLS/flexure and review-only torsion Al workflows.</div>',
+                '<div class="cpmm-rebar-panel-subtitle">Single source of truth for ordinary longitudinal bars. Flexure uses the actual bar coordinates in strain compatibility; Combined V+T reuses the same active bars together with prestressing steel instead of classifying bars as flexure-only or torsion-only.</div>',
                 unsafe_allow_html=True,
             )
             # Keep the summary visually above the editor. The placeholder is
@@ -3117,14 +3219,15 @@ def _render_longitudinal_rebar_tab(
     with st.expander("Longitudinal Rebar Summary", expanded=False):
         st.dataframe(rebar_summary_dataframe(st.session_state["rebars"]), use_container_width=True, hide_index=True)
 
-    with st.expander("Longitudinal rebar / torsion Al workflow notes", expanded=False):
+    with st.expander("Longitudinal reinforcement use in Flexure and V+T", expanded=False):
         st.write("- This ordinary Rebar table remains the single source of truth for longitudinal bars in PMM/SLS/flexure analysis.")
         if member_type == COLUMN_PIER_WORKFLOW_MEMBER_TYPE:
-            st.write("- Column/Pier torsion will read active ordinary rebar from this same table as the longitudinal Al source.")
-            st.write("- Prestress strands, tendons, and PT bars are not counted as longitudinal torsion Al in this milestone.")
+            st.write("- Column/Pier torsion retains its existing guarded longitudinal-rebar route; this note does not change that workflow.")
         else:
-            st.write("- Beam/Girder torsion reads active ordinary bars from this same table as the review-only Al provided source.")
-        st.write("- Do not count flexural bars as torsion perimeter Al unless they are intentionally detailed around the closed-hoop perimeter.")
+            st.write("- Precast I-Girder flexural Mn uses the active ordinary bars at their actual coordinates together with the active prestressing strands/tendons in the sectional strain-compatibility model.")
+            st.write("- Do not classify individual bars as 'flexure steel' or 'torsion steel'. When Shear + Torsion is evaluated, the app will reuse the same active ordinary bars and developed prestressing steel under the concurrent Mu/Nu/Vu/Tu state.")
+            st.write("- Additional ordinary bars introduced because of torsion are still real longitudinal reinforcement and may contribute to Mn when their position and strain make them effective.")
+        st.write("- Torsion-specific inputs on the Transverse Rebar tab qualify the closed transverse loop and ph; they do not create a second longitudinal-bar table.")
 
 
 def _render_beam_girder_transverse_rebar_tab(rebar_db: pd.DataFrame) -> None:

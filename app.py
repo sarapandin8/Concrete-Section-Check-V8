@@ -5011,7 +5011,7 @@ def _render_report_qa_igird_torsion_equation_trace(state: object) -> None:
     )
     trace_df = _beam_uls_torsion_calculation_trace_dataframe(governing)
     if trace_df.empty:
-        st.warning("Stored Torsion result does not contain enough IGIRDER.ULS6 fields for a full equation trace.")
+        st.warning("Stored Torsion result does not contain enough IGIRDER.ULS6C fields for a full equation trace.")
     else:
         st.dataframe(trace_df, use_container_width=True, hide_index=True)
 
