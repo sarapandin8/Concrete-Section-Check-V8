@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from concrete_pmm_pro.code_checks import (
@@ -29,6 +30,7 @@ from concrete_pmm_pro.core.reinforcement_system import (
 )
 from concrete_pmm_pro.geometry.rebar_layout import PerimeterRebarLayoutResult, generate_perimeter_rebar_layout
 from concrete_pmm_pro.geometry.summary import to_shapely_polygon
+from concrete_pmm_pro.geometry.torsion_hoop import derive_closed_hoop_centerline
 from concrete_pmm_pro.serviceability.girder_sls_load_components import BEAM_GIRDER_SYSTEM_SETTINGS_KEY, system_settings_from_mapping
 from concrete_pmm_pro.visualization import create_section_preview
 from concrete_pmm_pro.ui.commercial import render_metric_cards, render_page_header, render_section_bar
@@ -140,10 +142,20 @@ def _commercial_rebar_dashboard_cards(member_type: str) -> list[dict[str, object
 
     table = pd.DataFrame(st.session_state.get("rebar_table", []))
     active_rows = int(pd.Series(table.get("Active", pd.Series(dtype=bool))).fillna(False).astype(bool).sum()) if not table.empty else 0
-    try:
-        total_area = sum(float(getattr(bar, "area", 0.0) or 0.0) for bar in st.session_state.get("rebars", []))
-    except Exception:
-        total_area = 0.0
+    total_area = 0.0
+    if not table.empty:
+        try:
+            active_mask = pd.Series(table.get("Active", pd.Series(index=table.index, dtype=bool))).fillna(False).astype(bool)
+            diameters = pd.to_numeric(table.get("Diameter_mm", pd.Series(index=table.index, dtype=float)), errors="coerce").fillna(0.0)
+            counts = pd.to_numeric(table.get("Count", pd.Series(1.0, index=table.index)), errors="coerce").fillna(1.0).clip(lower=0.0)
+            total_area = float(((math.pi * diameters.pow(2) / 4.0) * counts).where(active_mask, 0.0).sum())
+        except Exception:
+            total_area = 0.0
+    if total_area <= 0.0:
+        try:
+            total_area = sum(float(getattr(bar, "area", 0.0) or 0.0) for bar in st.session_state.get("rebars", []))
+        except Exception:
+            total_area = 0.0
     ordinary_status = "Enabled" if ordinary_rebar_enabled(st.session_state, default=True) else "Disabled"
     prestress_status = "Enabled" if prestressing_steel_enabled(st.session_state, default=True) else "Disabled"
     workflow = "Column/Pier" if member_type == COLUMN_PIER_WORKFLOW_MEMBER_TYPE else "Beam/Girder"
@@ -2588,13 +2600,65 @@ def _store_shear_reinforcement_metadata(table: pd.DataFrame) -> None:
     st.session_state["project_metadata"] = metadata
 
 
-def _igird_torsion_zone_settings_dataframe(shear_table: pd.DataFrame) -> pd.DataFrame:
-    """Return torsion qualification metadata aligned to the provided shear-zone table.
+def _igird_torsion_layout_geometry_settings() -> dict[str, object]:
+    """Return the shared closed-hoop geometry basis for the active I-Girder."""
 
-    The physical transverse reinforcement remains owned by the shear-zone table
-    (bar size, legs, spacing, fy, and x-range).  This companion metadata only
-    records whether that same provided zone is intentionally detailed as a
-    closed torsion loop and the actual ph used by the AASHTO torsion route.
+    metadata = dict(st.session_state.get("project_metadata", {}) or {})
+    raw = st.session_state.get(BEAM_GIRDER_TORSION_SETTINGS_KEY)
+    if not isinstance(raw, dict):
+        raw = metadata.get(BEAM_GIRDER_TORSION_SETTINGS_KEY, {})
+    raw = dict(raw or {}) if isinstance(raw, dict) else {}
+    clear_cover = _to_float(raw.get("clear_cover_mm"))
+    if clear_cover is None or clear_cover < 0.0:
+        legacy_offset = _to_float(raw.get("hoop_centerline_offset_mm"))
+        clear_cover = max(0.0, float(legacy_offset or 50.0) - 0.5 * 12.0)
+    override_enabled = bool(raw.get("hoop_centerline_offset_override_enabled", False))
+    override = _to_float(raw.get("hoop_centerline_offset_override_mm"))
+    if not override_enabled or override is None or override <= 0.0:
+        override = None
+    return {
+        "clear_cover_mm": float(clear_cover),
+        "hoop_centerline_offset_override_enabled": bool(override_enabled),
+        "hoop_centerline_offset_override_mm": float(override) if override is not None else None,
+        "corner_longitudinal_reinforcement_confirmed": bool(raw.get("corner_longitudinal_reinforcement_confirmed", False)),
+        "note": str(raw.get("note") or ""),
+    }
+
+
+def _igird_auto_ph_trace(zone: pd.Series | dict[str, object], settings: dict[str, object]) -> dict[str, object]:
+    geometry = st.session_state.get("section_geometry")
+    if isinstance(geometry, dict):
+        try:
+            geometry = SectionGeometry.model_validate(geometry)
+        except Exception:
+            geometry = None
+    if not isinstance(geometry, SectionGeometry):
+        return {"ready": False, "ph_mm": None, "offset_mm": None, "coords": (), "note": "Active SectionGeometry is required for automatic ph."}
+    diameter = _to_float(zone.get("Diameter_mm"))
+    if diameter is None or diameter <= 0.0:
+        return {"ready": False, "ph_mm": None, "offset_mm": None, "coords": (), "note": "Positive stirrup diameter is required for automatic ph."}
+    result = derive_closed_hoop_centerline(
+        geometry,
+        clear_cover_mm=float(settings.get("clear_cover_mm") or 0.0),
+        bar_diameter_mm=float(diameter),
+        centerline_offset_override_mm=settings.get("hoop_centerline_offset_override_mm"),
+    )
+    return {
+        "ready": bool(result.ready),
+        "ph_mm": result.ph_mm,
+        "offset_mm": result.centerline_offset_mm,
+        "coords": result.coordinates,
+        "note": result.note,
+    }
+
+
+def _igird_torsion_zone_settings_dataframe(shear_table: pd.DataFrame) -> pd.DataFrame:
+    """Return torsion qualification metadata aligned to the provided shear zones.
+
+    ``ph`` is derived automatically from the active I-Girder section geometry
+    and one shared closed-hoop clear-cover basis.  The physical bar size in each
+    zone supplies db/2, so changing spacing alone never changes ph while a
+    different bar diameter updates the centerline offset automatically.
     """
 
     table = _ensure_shear_reinforcement_columns(pd.DataFrame(shear_table))
@@ -2602,23 +2666,15 @@ def _igird_torsion_zone_settings_dataframe(shear_table: pd.DataFrame) -> pd.Data
     raw = st.session_state.get(BEAM_GIRDER_TORSION_ZONE_SETTINGS_KEY)
     if not isinstance(raw, list):
         raw = metadata.get(BEAM_GIRDER_TORSION_ZONE_SETTINGS_KEY, [])
-    stored = {}
+    stored: dict[str, dict[str, object]] = {}
     if isinstance(raw, list):
         for item in raw:
-            if not isinstance(item, dict):
-                continue
-            key = str(item.get("Zone") or "").strip()
-            if key:
-                stored[key] = dict(item)
+            if isinstance(item, dict):
+                key = str(item.get("Zone") or "").strip()
+                if key:
+                    stored[key] = dict(item)
 
-    # Backward-compatible migration from the ULS6/6B global hoop source.
-    legacy = st.session_state.get(BEAM_GIRDER_TORSION_SETTINGS_KEY)
-    if not isinstance(legacy, dict):
-        legacy = metadata.get(BEAM_GIRDER_TORSION_SETTINGS_KEY, {})
-    legacy = dict(legacy or {}) if isinstance(legacy, dict) else {}
-    legacy_closed = bool(legacy.get("closed_loop_confirmed", False))
-    legacy_ph = _to_float(legacy.get("ph_mm"))
-
+    layout = _igird_torsion_layout_geometry_settings()
     rows = []
     for _, zone in table.iterrows():
         zone_name = str(zone.get("Zone") or "Zone").strip() or "Zone"
@@ -2626,17 +2682,12 @@ def _igird_torsion_zone_settings_dataframe(shear_table: pd.DataFrame) -> pd.Data
         use_torsion = _to_bool(item.get("Use for Torsion")) if item else False
         closed = _to_bool(item.get("Closed Loop")) if item else False
         hooks = _to_bool(item.get("135° Hook")) if item else False
-        ph_value = _to_float(item.get("ph_mm")) if item else None
-        if not item and legacy_closed and legacy_ph and legacy_ph > 0.0 and _to_bool(zone.get("Active")):
-            use_torsion = True
-            closed = True
-            hooks = True
-            ph_value = float(legacy_ph)
         diameter = _to_float(zone.get("Diameter_mm"))
         spacing = _to_float(zone.get("Spacing_mm"))
         at_per_s = None
         if diameter and diameter > 0.0 and spacing and spacing > 0.0:
             at_per_s = math.pi * float(diameter) ** 2 / 4.0 / float(spacing)
+        ph_trace = _igird_auto_ph_trace(zone, layout)
         rows.append({
             "Zone": zone_name,
             "Provided Active": bool(_to_bool(zone.get("Active"))),
@@ -2646,9 +2697,11 @@ def _igird_torsion_zone_settings_dataframe(shear_table: pd.DataFrame) -> pd.Data
             "Use for Torsion": bool(use_torsion),
             "Closed Loop": bool(closed),
             "135° Hook": bool(hooks),
-            "ph_mm": float(ph_value) if ph_value and ph_value > 0.0 else 0.0,
+            "ph_mm": float(ph_trace["ph_mm"]) if ph_trace.get("ready") and ph_trace.get("ph_mm") is not None else float("nan"),
+            "Centerline offset (mm)": float(ph_trace["offset_mm"]) if ph_trace.get("offset_mm") is not None else float("nan"),
             "At/s (mm²/mm)": float(at_per_s) if at_per_s is not None else float("nan"),
             "Note": str(item.get("Note") or ""),
+            "ph basis": str(ph_trace.get("note") or ""),
         })
     return pd.DataFrame(rows)
 
@@ -2661,6 +2714,8 @@ def _store_igird_torsion_zone_settings(table: pd.DataFrame) -> None:
             "Use for Torsion": bool(_to_bool(row.get("Use for Torsion"))),
             "Closed Loop": bool(_to_bool(row.get("Closed Loop"))),
             "135° Hook": bool(_to_bool(row.get("135° Hook"))),
+            # ph is derived and persisted only as an audit mirror; Analysis
+            # recomputes it from current geometry + cover + zone bar diameter.
             "ph_mm": float(_to_float(row.get("ph_mm")) or 0.0) or None,
             "Note": str(row.get("Note") or ""),
         })
@@ -2670,99 +2725,194 @@ def _store_igird_torsion_zone_settings(table: pd.DataFrame) -> None:
     st.session_state["project_metadata"] = metadata
 
 
+def _render_igird_torsion_hoop_preview(source: pd.DataFrame, layout: dict[str, object]) -> None:
+    geometry = st.session_state.get("section_geometry")
+    if isinstance(geometry, dict):
+        try:
+            geometry = SectionGeometry.model_validate(geometry)
+        except Exception:
+            geometry = None
+    if not isinstance(geometry, SectionGeometry) or source.empty:
+        return
+    selected = source[source["Use for Torsion"].map(_to_bool)].copy()
+    candidates = selected if not selected.empty else source[source["Provided Active"].map(_to_bool)].copy()
+    if candidates.empty:
+        candidates = source.copy()
+    row = candidates.iloc[0]
+    # Recover the zone diameter from the read-only stirrup source through the
+    # physical shear table, avoiding a second editable geometry input.
+    shear_table = _ensure_shear_reinforcement_columns(pd.DataFrame(st.session_state.get(SHEAR_REINFORCEMENT_TABLE_KEY, [])))
+    match = shear_table[shear_table["Zone"].astype(str) == str(row.get("Zone") or "")]
+    if match.empty:
+        return
+    trace = _igird_auto_ph_trace(match.iloc[0], layout)
+    if not trace.get("ready"):
+        st.warning(str(trace.get("note") or "Automatic closed-hoop geometry is not ready."))
+        return
+    fig = create_section_preview(geometry)
+    coords = list(trace.get("coords") or [])
+    if coords:
+        closed = coords + [coords[0]]
+        fig.add_trace(
+            go.Scatter(
+                x=[xy[0] for xy in closed],
+                y=[xy[1] for xy in closed],
+                mode="lines",
+                line=dict(color="#dc2626", width=3),
+                name="Closed torsion hoop centerline (ph)",
+                hovertemplate="Closed-hoop centerline<extra></extra>",
+            )
+        )
+    fig.update_layout(height=430, margin=dict(l=35, r=35, t=55, b=45), legend=dict(orientation="h", yanchor="top", y=-0.08, xanchor="center", x=0.5))
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    db = _to_float(match.iloc[0].get("Diameter_mm")) or 0.0
+    st.caption(
+        f"Representative zone: {row.get('Zone')}. Red line = closed-hoop centerline used for ph. "
+        f"Auto ph = {float(trace['ph_mm']):,.1f} mm with centerline offset {float(trace['offset_mm']):.1f} mm "
+        f"(clear cover {float(layout['clear_cover_mm']):.1f} mm + db/2 {0.5*db:.1f} mm, unless the audited offset override is enabled)."
+    )
+
+
 def _render_igird_torsion_layout_settings(shear_table: pd.DataFrame) -> None:
     if str(st.session_state.get("section_preset_key") or "").strip() != "parametric_i_girder":
         return
 
     st.markdown("#### Beam/Girder Torsion Reinforcement Definition")
     st.caption(
-        "Torsion reuses the same provided transverse zones shown above. Bar size, spacing, fy, legs, and zone limits are not duplicated here. "
-        "This table only tells Analysis which provided zones are intentionally detailed as closed torsion loops and supplies the actual AASHTO ph centerline perimeter."
+        "Torsion reuses the same provided transverse zones shown above. Bar size, spacing, fy, legs, and zone limits are not duplicated. "
+        "The closed-hoop shape is derived once from the active I-Girder section; ph is calculated automatically from the hoop centerline and is not a per-zone manual input."
     )
     st.info(
         "Shear uses Av/s = (number of effective legs × bar area)/s. Torsion uses At/s = (one closed-loop leg area)/s. "
-        "Checking 'Use for Torsion' does not change the physical stirrup layout; it qualifies that same zone for the torsion solver."
+        "Spacing changes At/s but does not change ph. If a zone uses a different bar diameter, the same section/cover geometry is retained and the centerline offset updates by db/2."
     )
+
+    metadata = dict(st.session_state.get("project_metadata", {}) or {})
+    raw = _igird_torsion_layout_geometry_settings()
+    g1, g2 = st.columns([1.0, 2.0])
+    with g1:
+        clear_cover = st.number_input(
+            "Closed-hoop clear cover (mm)",
+            min_value=0.0,
+            value=float(raw.get("clear_cover_mm") or 0.0),
+            step=5.0,
+            format="%.1f",
+            key="beam_girder_torsion_clear_cover_mm",
+            help="Project clear cover measured from the concrete surface to the outside face of the closed torsion hoop. This is a geometry input, not an automatically selected code minimum.",
+        )
+    with g2:
+        st.caption("Automatic centerline basis: offset = clear cover + db/2. The active I-Girder SectionGeometry is used for every longitudinal zone.")
+        with st.expander("Advanced / audited hoop geometry override", expanded=False):
+            override_enabled = st.checkbox(
+                "Use audited centerline offset instead of cover + db/2",
+                value=bool(raw.get("hoop_centerline_offset_override_enabled", False)),
+                key="beam_girder_torsion_offset_override_enabled",
+            )
+            override_value = st.number_input(
+                "Audited hoop centerline offset (mm)",
+                min_value=0.0,
+                value=float(raw.get("hoop_centerline_offset_override_mm") or 0.0),
+                step=5.0,
+                format="%.1f",
+                disabled=not override_enabled,
+                key="beam_girder_torsion_offset_override_mm",
+                help="Use only when the approved cage detail defines a centerline path that is not represented by clear cover + db/2.",
+            )
+    layout = {
+        **raw,
+        "clear_cover_mm": float(clear_cover),
+        "hoop_centerline_offset_override_enabled": bool(override_enabled),
+        "hoop_centerline_offset_override_mm": float(override_value) if override_enabled and float(override_value) > 0.0 else None,
+    }
+    # Publish before deriving the table so automatic ph uses the visible inputs.
+    stored_raw = st.session_state.get(BEAM_GIRDER_TORSION_SETTINGS_KEY)
+    if not isinstance(stored_raw, dict):
+        stored_raw = metadata.get(BEAM_GIRDER_TORSION_SETTINGS_KEY, {})
+    stored_raw = dict(stored_raw or {}) if isinstance(stored_raw, dict) else {}
+    stored_raw.update(layout)
+    st.session_state[BEAM_GIRDER_TORSION_SETTINGS_KEY] = stored_raw
+    metadata[BEAM_GIRDER_TORSION_SETTINGS_KEY] = stored_raw
+    st.session_state["project_metadata"] = metadata
 
     source = _igird_torsion_zone_settings_dataframe(shear_table)
     if source.empty:
         st.warning("Define at least one transverse reinforcement zone before qualifying torsion reinforcement.")
         return
     editor = st.data_editor(
-        source,
+        source.drop(columns=["ph basis"], errors="ignore"),
         use_container_width=True,
         hide_index=True,
         num_rows="fixed",
-        disabled=["Zone", "Provided Active", "x start (m)", "x end (m)", "Stirrup", "At/s (mm²/mm)"],
+        disabled=["Zone", "Provided Active", "x start (m)", "x end (m)", "Stirrup", "ph_mm", "Centerline offset (mm)", "At/s (mm²/mm)"],
         column_config={
             "Zone": st.column_config.TextColumn("Zone", width="medium"),
-            "Provided Active": st.column_config.CheckboxColumn("Provided Active", width="small", help="Read-only mirror of the physical transverse zone Active flag. Inactive zones are not used by Shear or Torsion capacity."),
+            "Provided Active": st.column_config.CheckboxColumn("Provided Active", width="small"),
             "x start (m)": st.column_config.NumberColumn("x start (m)", format="%.3f", width="small"),
             "x end (m)": st.column_config.NumberColumn("x end (m)", format="%.3f", width="small"),
             "Stirrup": st.column_config.TextColumn("Provided transverse source", width="medium"),
-            "Use for Torsion": st.column_config.CheckboxColumn("Use for Torsion", width="small", help="Select only when this provided transverse zone is intentionally part of the torsion-resisting cage."),
-            "Closed Loop": st.column_config.CheckboxColumn("Closed Loop", width="small", help="Confirm that the transverse bar forms a fully continuous closed torsion loop."),
-            "135° Hook": st.column_config.CheckboxColumn("135° Hook", width="small", help="Confirm the required 135° standard-hook anchorage for the closed torsion reinforcement."),
-            "ph_mm": st.column_config.NumberColumn("ph (mm)", min_value=0.0, step=10.0, format="%.1f", width="small", help="Perimeter of the centerline of the actual closed transverse torsion reinforcement."),
-            "At/s (mm²/mm)": st.column_config.NumberColumn("At/s (mm²/mm)", format="%.4f", width="small", help="Read-only: one bar area divided by spacing; this differs from shear Av/s when multiple legs are effective."),
+            "Use for Torsion": st.column_config.CheckboxColumn("Use for Torsion", width="small", help="Select only when this physical provided zone is intentionally part of the torsion-resisting cage."),
+            "Closed Loop": st.column_config.CheckboxColumn("Closed Loop", width="small", help="Confirm a fully continuous closed transverse torsion loop."),
+            "135° Hook": st.column_config.CheckboxColumn("135° Hook", width="small", help="Confirm the project/code-required closed-loop hook anchorage."),
+            "ph_mm": st.column_config.NumberColumn("Auto ph (mm)", format="%.1f", width="small", help="Read-only automatic centerline perimeter from SectionGeometry + common clear cover + db/2."),
+            "Centerline offset (mm)": st.column_config.NumberColumn("Centerline offset (mm)", format="%.1f", width="small"),
+            "At/s (mm²/mm)": st.column_config.NumberColumn("At/s (mm²/mm)", format="%.4f", width="small"),
             "Note": st.column_config.TextColumn("Torsion detail note", width="large"),
         },
         key="beam_girder_torsion_zone_definition_editor",
     )
     _store_igird_torsion_zone_settings(editor)
+    _render_igird_torsion_hoop_preview(editor, layout)
 
-    metadata = dict(st.session_state.get("project_metadata", {}) or {})
-    raw = st.session_state.get(BEAM_GIRDER_TORSION_SETTINGS_KEY)
-    if not isinstance(raw, dict):
-        raw = metadata.get(BEAM_GIRDER_TORSION_SETTINGS_KEY, {})
-    raw = dict(raw or {}) if isinstance(raw, dict) else {}
+    selected = editor[editor["Use for Torsion"].map(_to_bool)].copy() if not editor.empty else pd.DataFrame()
+    has_selected = not selected.empty
     c1, c2 = st.columns([1.0, 2.0])
     with c1:
         corner_ok = st.checkbox(
             "Longitudinal bar/tendon present at each closed-hoop corner",
-            value=bool(raw.get("corner_longitudinal_reinforcement_confirmed", False)),
+            value=bool(raw.get("corner_longitudinal_reinforcement_confirmed", False)) if has_selected else False,
+            disabled=not has_selected,
             key="beam_girder_torsion_corner_longitudinal_confirmed",
-            help="Combined V+T longitudinal detailing confirmation. This does not classify bars as flexure-only or torsion-only; the same active longitudinal rebar and prestress sources are reused by the concurrent check.",
+            help="Combined V+T longitudinal detailing confirmation. Enabled only after at least one provided zone is selected for torsion.",
         )
     with c2:
         note = st.text_input(
             "Torsion / longitudinal detailing note",
             value=str(raw.get("note") or ""),
             key="beam_girder_torsion_detailing_note",
-            placeholder="e.g. ph measured from approved closed-hoop cage detail; corner tendon/bar shown on drawing ...",
+            placeholder="e.g. corner tendon/bar shown on approved cage drawing ...",
         )
     settings = {
-        # Keep the legacy keys for project-file compatibility. The station solver
-        # now prefers the zone-qualified source above.
-        "closed_loop_confirmed": bool(raw.get("closed_loop_confirmed", False)),
-        "ph_mm": _to_float(raw.get("ph_mm")),
-        "hoop_centerline_offset_mm": _to_float(raw.get("hoop_centerline_offset_mm")) or 50.0,
-        "longitudinal_perimeter_distribution_confirmed": bool(raw.get("longitudinal_perimeter_distribution_confirmed", False)),
-        "corner_longitudinal_reinforcement_confirmed": bool(corner_ok),
+        **stored_raw,
+        "closed_loop_confirmed": False,
+        "ph_mm": None,
+        "hoop_centerline_offset_mm": None,
+        "longitudinal_perimeter_distribution_confirmed": False,
+        "corner_longitudinal_reinforcement_confirmed": bool(corner_ok) if has_selected else False,
         "note": str(note or ""),
     }
     st.session_state[BEAM_GIRDER_TORSION_SETTINGS_KEY] = settings
+    metadata = dict(st.session_state.get("project_metadata", {}) or {})
     metadata[BEAM_GIRDER_TORSION_SETTINGS_KEY] = settings
     st.session_state["project_metadata"] = metadata
 
-    selected = editor[editor["Use for Torsion"].map(_to_bool)].copy() if not editor.empty else pd.DataFrame()
     ready = selected[
         selected["Provided Active"].map(_to_bool)
         & selected["Closed Loop"].map(_to_bool)
         & selected["135° Hook"].map(_to_bool)
         & (pd.to_numeric(selected["ph_mm"], errors="coerce").fillna(0.0) > 0.0)
-    ] if not selected.empty else pd.DataFrame()
+    ] if has_selected else pd.DataFrame()
     m1, m2, m3 = st.columns(3)
     m1.metric("Torsion-qualified zones", f"{len(selected):,}")
     m2.metric("Capacity-ready zones", f"{len(ready):,}")
-    m3.metric("Corner longitudinal detail", "CONFIRMED" if corner_ok else "COMBINED CHECK")
-    if selected.empty:
-        st.warning("No provided transverse zone is currently qualified for torsion. Torsion above 0.25φTcr will remain LAYOUT REQUIRED.")
+    m3.metric("Corner longitudinal detail", "NOT APPLICABLE YET" if not has_selected else ("CONFIRMED" if corner_ok else "COMBINED CHECK"))
+    if not has_selected:
+        st.warning("No provided transverse zone is currently qualified for torsion. Select Use for Torsion only where the actual provided bar forms the intended torsion cage.")
     elif len(ready) != len(selected):
-        st.warning("One or more torsion-qualified zones are inactive or still need Closed Loop, 135° Hook, or a positive ph before transverse φTn can be evaluated there.")
+        st.warning("One or more torsion-qualified zones are inactive or still need Closed Loop / 135° Hook confirmation, or automatic ph could not be derived from the active section geometry.")
     else:
-        st.success("Selected torsion zones have a complete transverse source: provided bar/spacing/fy + closed-loop confirmation + 135° hook + ph.")
-
+        ph_values = pd.to_numeric(ready["ph_mm"], errors="coerce").dropna()
+        ph_note = f" Auto ph range = {ph_values.min():,.1f}–{ph_values.max():,.1f} mm." if not ph_values.empty else ""
+        st.success("Selected torsion zones have a complete transverse source: provided bar/spacing/fy + closed-loop confirmation + 135° hook + automatically derived ph." + ph_note)
 
 def _render_shear_reinforcement_layout(rebar_db: pd.DataFrame) -> None:
     st.markdown("#### Beam/Girder Shear Reinforcement Layout")

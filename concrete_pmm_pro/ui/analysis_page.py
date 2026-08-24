@@ -207,6 +207,7 @@ from concrete_pmm_pro.ui.navigation import (
 )
 from concrete_pmm_pro.ui.commercial import render_metric_cards, render_page_header, render_section_bar
 from concrete_pmm_pro.geometry.summary import summarize_geometry, to_shapely_polygon
+from concrete_pmm_pro.geometry.torsion_hoop import derive_closed_hoop_centerline
 from concrete_pmm_pro.reporting import (
     build_result_traceability_snapshot,
     build_report_manifest,
@@ -5746,7 +5747,7 @@ def _beam_uls_member_end_side(x_m: object, span_m: object | None = None) -> str 
 def _beam_uls_torsion_decision_dataframe(torsion_df: pd.DataFrame | None) -> pd.DataFrame:
     """Return physical torsion load stations eligible for governing decisions.
 
-    IGIRDER.ULS6C distinguishes physical support-face demand stations from
+    IGIRDER.ULS6D distinguishes physical support-face demand stations from
     synthetic plot-boundary rows. Only rows explicitly tagged DIAGRAM BOUNDARY
     are excluded; x=0 and x=L load stations may govern torsion.
     """
@@ -9077,7 +9078,7 @@ def _beam_uls_shear_variable_definitions_dataframe() -> pd.DataFrame:
 def _beam_uls_torsion_calculation_trace_dataframe(row: Mapping[str, object] | None) -> pd.DataFrame:
     """Return the read-only governing-station equation trace for Torsion.
 
-    IGIRDER.ULS6C intentionally reads values already produced by the Torsion
+    IGIRDER.ULS6D intentionally reads values already produced by the Torsion
     calculation.  Opening this table must never become a second solver path.
     Legacy/non-I-Girder rows simply yield the subset of trace steps supported by
     their stored fields.
@@ -9392,12 +9393,23 @@ def _beam_uls_igird_torsion_settings(state: Mapping[str, object]) -> dict[str, o
         metadata = _beam_uls_get_state_value(state, "project_metadata", {})
         raw = metadata.get(_IGIRDER_TORSION_SETTINGS_KEY) if isinstance(metadata, Mapping) else None
     raw = dict(raw or {}) if isinstance(raw, Mapping) else {}
-    ph_manual = _beam_uls_float(raw.get("ph_mm"))
-    offset = _beam_uls_float(raw.get("hoop_centerline_offset_mm"))
+    clear_cover = _beam_uls_float(raw.get("clear_cover_mm"))
+    if not math.isfinite(clear_cover) or clear_cover < 0.0:
+        legacy_offset = _beam_uls_float(raw.get("hoop_centerline_offset_mm"))
+        clear_cover = max(0.0, (legacy_offset if math.isfinite(legacy_offset) and legacy_offset > 0.0 else 50.0) - 6.0)
+    override_enabled = bool(raw.get("hoop_centerline_offset_override_enabled", False))
+    override = _beam_uls_float(raw.get("hoop_centerline_offset_override_mm"))
+    if not override_enabled or not math.isfinite(override) or override <= 0.0:
+        override = float("nan")
+    legacy_ph = _beam_uls_float(raw.get("ph_mm"))
     return {
+        # Legacy global ph keys remain readable for old project files only.
         "closed_loop_confirmed": bool(raw.get("closed_loop_confirmed", False)),
-        "ph_mm": float(ph_manual) if math.isfinite(ph_manual) and ph_manual > 0.0 else None,
-        "hoop_centerline_offset_mm": float(offset) if math.isfinite(offset) and offset > 0.0 else 50.0,
+        "ph_mm": float(legacy_ph) if math.isfinite(legacy_ph) and legacy_ph > 0.0 else None,
+        "clear_cover_mm": float(clear_cover),
+        "hoop_centerline_offset_override_enabled": bool(override_enabled and math.isfinite(override)),
+        "hoop_centerline_offset_override_mm": float(override) if math.isfinite(override) else None,
+        "hoop_centerline_offset_mm": None,
         "longitudinal_perimeter_distribution_confirmed": bool(raw.get("longitudinal_perimeter_distribution_confirmed", False)),
         "corner_longitudinal_reinforcement_confirmed": bool(raw.get("corner_longitudinal_reinforcement_confirmed", False)),
         "note": str(raw.get("note") or ""),
@@ -9413,7 +9425,8 @@ def _beam_uls_igird_torsion_zone_source(
 
     Bar size, legs, spacing, fy, and x-range remain owned by the provided shear
     reinforcement zone table. Torsion metadata only qualifies that same physical
-    zone as a continuous closed torsion loop and supplies the actual ph.
+    zone as a continuous closed torsion loop. ph is derived from the active
+    section geometry plus the shared closed-hoop cover/centerline basis.
     """
     zone = _beam_uls_active_shear_zone_for_station(state, x_m, require_coverage=True)
     if zone is None:
@@ -9433,8 +9446,31 @@ def _beam_uls_igird_torsion_zone_source(
         use = _beam_uls_active_value(matched.get("Use for Torsion"))
         closed = _beam_uls_active_value(matched.get("Closed Loop"))
         hooks = _beam_uls_active_value(matched.get("135° Hook"))
-        ph = _beam_uls_float(matched.get("ph_mm"))
         reasons = []
+        settings = _beam_uls_igird_torsion_settings(state)
+        geometry = _beam_uls_get_state_value(state, "section_geometry")
+        if isinstance(geometry, Mapping):
+            try:
+                geometry = SectionGeometry.model_validate(geometry)
+            except Exception:
+                geometry = None
+        diameter = _beam_uls_float(zone.get("Diameter_mm"))
+        ph = float("nan")
+        offset = float("nan")
+        ph_note = ""
+        if isinstance(geometry, SectionGeometry) and math.isfinite(diameter) and diameter > 0.0:
+            ph_result = derive_closed_hoop_centerline(
+                geometry,
+                clear_cover_mm=float(settings.get("clear_cover_mm") or 0.0),
+                bar_diameter_mm=float(diameter),
+                centerline_offset_override_mm=settings.get("hoop_centerline_offset_override_mm"),
+            )
+            if ph_result.ready and ph_result.ph_mm is not None:
+                ph = float(ph_result.ph_mm)
+                offset = float(ph_result.centerline_offset_mm or float("nan"))
+            ph_note = str(ph_result.note or "")
+        else:
+            ph_note = "Active SectionGeometry and a positive zone stirrup diameter are required for automatic ph."
         if not use:
             reasons.append(f"Provided transverse zone '{zone_name}' is not selected for torsion.")
         if use and not closed:
@@ -9442,14 +9478,17 @@ def _beam_uls_igird_torsion_zone_source(
         if use and not hooks:
             reasons.append("135° standard-hook anchorage is not confirmed for this zone.")
         if use and (not math.isfinite(ph) or ph <= 0.0):
-            reasons.append("Positive ph centerline perimeter is not defined for this zone.")
+            reasons.append("Automatic ph could not be derived from the active section + closed-hoop geometry basis.")
         return {
             "ready": bool(use and closed and hooks and math.isfinite(ph) and ph > 0.0),
             "zone": zone, "zone_name": zone_name,
             "use_for_torsion": bool(use), "closed_loop_confirmed": bool(closed),
             "hook_135_confirmed": bool(hooks),
             "ph_mm": float(ph) if math.isfinite(ph) and ph > 0.0 else None,
-            "note": str(matched.get("Note") or ""), "reason": " ".join(reasons),
+            "hoop_centerline_offset_mm": float(offset) if math.isfinite(offset) else None,
+            "ph_source": "auto from section geometry + clear cover + db/2" if not settings.get("hoop_centerline_offset_override_enabled") else "auto from section geometry + audited centerline offset",
+            "note": " ".join(part for part in [str(matched.get("Note") or ""), ph_note] if part),
+            "reason": " ".join(reasons),
             "source": "station-qualified transverse zone",
         }
     legacy = _beam_uls_igird_torsion_settings(state)
@@ -9479,7 +9518,8 @@ def _beam_uls_igird_aashto_solid_torsion_geometry(
     Article C5.7.3.6.2 permits Ao for solid sections to be taken as the area
     enclosed by the centerline of effective width be=Acp/pc.  This is not the
     ACI-style Ao=0.85Aoh shortcut.  ph remains the actual centerline perimeter
-    of the closed transverse torsion reinforcement and is user-confirmed.
+    of the closed transverse torsion reinforcement and is derived automatically
+    from the active section and closed-hoop geometry basis.
     """
 
     metrics = _beam_uls_outer_polygon_metrics(section_geometry)
@@ -9510,11 +9550,11 @@ def _beam_uls_igird_aashto_solid_torsion_geometry(
         return {
             "ready": False, "Acp mm2": acp, "Pcp mm": pcp, "be mm": be, "Ao mm2": ao,
             "ph mm": ph_manual,
-            "Note": "AASHTO solid-section Ao is available, but final torsion capacity requires a user-confirmed closed transverse torsion loop and its centerline perimeter ph in Sections → Rebar.",
+            "Note": "AASHTO solid-section Ao is available, but final torsion capacity requires a confirmed closed transverse torsion loop and an automatic ph derived from the active section/closed-hoop geometry basis in Sections → Rebar.",
         }
     return {
         "ready": True, "Acp mm2": acp, "Pcp mm": pcp, "be mm": be, "Ao mm2": ao, "ph mm": ph_manual,
-        "Note": "Ao from AASHTO C5.7.3.6.2 solid-section shear-flow centerline using be=Acp/pc; ph from the user-confirmed closed torsion hoop centerline.",
+        "Note": "Ao from AASHTO C5.7.3.6.2 solid-section shear-flow centerline using be=Acp/pc; ph from the automatically derived closed torsion hoop centerline.",
     }
 
 
@@ -9768,17 +9808,52 @@ def _beam_uls_igird_torsion_result_for_row(
             "Method": "AASHTO LRFD 5.7 prestressed torsion — no demand", "Notes": "No finite Tu demand.",
         }
 
-    analysis_input, input_messages = _beam_uls_flexure_analysis_input_for_station(state, row=row, strength_route=strength_route)
+    analysis_input, input_messages = _beam_uls_flexure_analysis_input_for_station(
+        state,
+        row=row,
+        strength_route=strength_route,
+        capacity_direction=1.0,
+    )
     notes.extend(input_messages or [])
+    longitudinal_source_ready = analysis_input is not None
     if analysis_input is None:
-        return {
-            "Check": "Torsion", "Status": "REVIEW", "Station type": station_type, "Support side": support_side or "-",
-            "Transverse status": "NOT READY", "Longitudinal status": "NOT CHECKED", "Detailing status": "NOT READY",
-            "Governing x": _format_beam_uls_x(x_m), "Case": case, "Demand": _format_beam_uls_demand(tu_kNm, "kN-m"),
-            "Capacity": "-", "Utilization": "-", "Demand kN-m": tu_kNm, "Abs demand kN-m": abs(tu_kNm),
-            "φTn kN-m": float("nan"), "D/C value": float("nan"), "Method": "AASHTO LRFD 5.7 prestressed torsion",
-            "Notes": "; ".join(notes) or "Section/material input not ready for prestressed torsion.",
-        }
+        # Tcr/K threshold screening depends on section/material/prestress state,
+        # not on having a developed flexural steel set at the exact station.
+        # Build a section-only AnalysisInput so a physical support-face row with
+        # Mux=0 or zero transferred strands is still screened for torsion.
+        geometry_fallback = _beam_uls_get_state_value(state, "section_geometry")
+        concrete_fallback = _beam_uls_get_state_value(state, "concrete_material")
+        if isinstance(geometry_fallback, Mapping):
+            try:
+                geometry_fallback = SectionGeometry.model_validate(geometry_fallback)
+            except Exception:
+                geometry_fallback = None
+        if isinstance(concrete_fallback, Mapping):
+            try:
+                concrete_fallback = ConcreteMaterial.model_validate(concrete_fallback)
+            except Exception:
+                concrete_fallback = None
+        if isinstance(geometry_fallback, SectionGeometry) and isinstance(concrete_fallback, ConcreteMaterial):
+            analysis_input = AnalysisInput(
+                section_geometry=geometry_fallback,
+                concrete_material=concrete_fallback,
+                rebar_materials=list(_beam_uls_get_state_value(state, "rebar_materials", []) or []),
+                prestress_materials=list(_beam_uls_get_state_value(state, "prestress_materials", []) or []),
+                rebars=[],
+                prestress_elements=[],
+                load_cases=[],
+                settings=_beam_uls_analysis_settings_from_state(state, code_label=strength_route.solver_code_label),
+            )
+            notes.append("Section-only torsion threshold fallback used: no developed longitudinal steel is available at this station, but the physical Tu row remains eligible for Tcr screening.")
+        else:
+            return {
+                "Check": "Torsion", "Status": "REVIEW", "Station type": station_type, "Support side": support_side or "-",
+                "Transverse status": "NOT READY", "Longitudinal status": "NOT CHECKED", "Detailing status": "NOT READY",
+                "Governing x": _format_beam_uls_x(x_m), "Case": case, "Demand": _format_beam_uls_demand(tu_kNm, "kN-m"),
+                "Capacity": "-", "Utilization": "-", "Demand kN-m": tu_kNm, "Abs demand kN-m": abs(tu_kNm),
+                "φTn kN-m": float("nan"), "D/C value": float("nan"), "Method": "AASHTO LRFD 5.7 prestressed torsion",
+                "Notes": "; ".join(notes) or "Section/material input not ready for prestressed torsion.",
+            }
 
     fc = float(analysis_input.concrete_material.fc_MPa)
     metrics = _beam_uls_outer_polygon_metrics(analysis_input.section_geometry)
@@ -9884,7 +9959,7 @@ def _beam_uls_igird_torsion_result_for_row(
     if not bool(geometry.get("ready")):
         return {
             **common, "Status": "LAYOUT REQUIRED", "Transverse status": "NOT READY", "Longitudinal status": "COMBINED CHECK REQUIRED",
-            "Detailing status": "LAYOUT REQUIRED", "Capacity": "Closed torsion loop / ph required", "Utilization": "-",
+            "Detailing status": "LAYOUT REQUIRED", "Capacity": "Closed torsion loop / automatic ph geometry required", "Utilization": "-",
             "φTn kN-m": float("nan"), "D/C value": float("nan"), "Ao mm2": ao, "ph mm": ph, "be mm": _beam_uls_float(geometry.get("be mm")),
             "Closed loop confirmed": bool(torsion_source.get("closed_loop_confirmed", False)),
             "135° hook confirmed": bool(torsion_source.get("hook_135_confirmed", False)),
@@ -9913,6 +9988,27 @@ def _beam_uls_igird_torsion_result_for_row(
             "Detailing status": "NOT READY", "Capacity": "Transverse design fy source not ready", "Utilization": "-",
             "φTn kN-m": float("nan"), "D/C value": float("nan"), "Ao mm2": ao, "ph mm": ph,
             "fy input MPa": fy_input, "Notes": f"AASHTO 5.7.2.7 transverse design fy evaluation failed: {exc}",
+        }
+
+    if not longitudinal_source_ready:
+        return {
+            **common,
+            "Status": "REVIEW",
+            "Transverse status": "NOT READY",
+            "Longitudinal status": "COMBINED CHECK REQUIRED",
+            "Detailing status": "REVIEW",
+            "Capacity": "General Procedure longitudinal-strain source not ready",
+            "Utilization": "-",
+            "φTn kN-m": float("nan"),
+            "D/C value": float("nan"),
+            "Ao mm2": ao,
+            "ph mm": ph,
+            "be mm": _beam_uls_float(geometry.get("be mm")),
+            "Closed loop confirmed": bool(torsion_source.get("closed_loop_confirmed", False)),
+            "135° hook confirmed": bool(torsion_source.get("hook_135_confirmed", False)),
+            "Zone": str(torsion_source.get("zone_name") or "-"),
+            "Method": "AASHTO LRFD 5.7 prestressed torsion — support/station threshold evaluated; General Procedure source pending",
+            "Notes": "; ".join(part for part in [*notes, str(fpc_trace.get("note") or ""), "Tcr/0.25φTcr was evaluated at the physical station, but station-dependent θ/φTn requires developed longitudinal steel for εs."] if part),
         }
 
     depth_values = _beam_uls_effective_shear_depth_values_mm(
@@ -9993,7 +10089,7 @@ def _beam_uls_igird_torsion_result_for_row(
         "Capacity": f"φTn = {result.phi_tn_Nmm/1.0e6:,.2f} kN-m", "Utilization": _format_beam_uls_ratio(result.strength_dc),
         "φTn kN-m": result.phi_tn_Nmm / 1.0e6, "Tn kN-m": result.tn_Nmm / 1.0e6, "D/C value": result.strength_dc,
         "Acp mm2": acp, "Pcp mm": pcp, "be mm": _beam_uls_float(geometry.get("be mm")), "Ao mm2": ao, "Aoh mm2": float("nan"), "ph mm": ph,
-        "Hoop offset mm": _beam_uls_float(settings.get("hoop_centerline_offset_mm")), "At mm2": stirrup_area, "At/s mm2/mm": at_per_s,
+        "Hoop offset mm": _beam_uls_float(torsion_source.get("hoop_centerline_offset_mm")), "At mm2": stirrup_area, "At/s mm2/mm": at_per_s,
         "Torsion At/s req mm2/mm": result.at_required_mm2_per_mm, "At D/C": at_dc,
         "fy input MPa": fy_input, "fy MPa": fy, "fy policy": fy_policy, "Zone": str(zone.get("Zone") or "Zone"),
         "Stirrup": f"{zone.get('Bar Size') or '-'} closed torsion loop @ {spacing:.0f} mm", "Spacing mm": spacing,
@@ -10937,7 +11033,7 @@ def _beam_uls_check_input_hash(
 ) -> str:
     """Return a check-specific Beam/Girder ULS engineering signature.
 
-    IGIRDER.ULS6C adds station-qualified torsion layout inputs (closed-loop confirmation and
+    IGIRDER.ULS6D adds station-qualified torsion layout inputs (closed-loop confirmation and
     ph).  They must invalidate Torsion and dependent Shear+Torsion without
     staling accepted Shear/Flexure/Interface results.
     """
@@ -10951,12 +11047,25 @@ def _beam_uls_check_input_hash(
     zone_settings = _beam_uls_get_state_value(state, _IGIRDER_TORSION_ZONE_SETTINGS_KEY)
     if not isinstance(zone_settings, list) and isinstance(metadata, Mapping):
         zone_settings = metadata.get(_IGIRDER_TORSION_ZONE_SETTINGS_KEY, [])
+    canonical_zone_settings = []
+    if isinstance(zone_settings, list):
+        for item in zone_settings:
+            if not isinstance(item, Mapping):
+                continue
+            canonical_zone_settings.append({
+                "Zone": str(item.get("Zone") or ""),
+                "Use for Torsion": bool(_beam_uls_active_value(item.get("Use for Torsion"))),
+                "Closed Loop": bool(_beam_uls_active_value(item.get("Closed Loop"))),
+                "135° Hook": bool(_beam_uls_active_value(item.get("135° Hook"))),
+            })
     return _beam_uls_hash_payload({
         "kind": _BEAM_ULS_INPUT_HASH_KIND + ".torsion",
         "base": base,
         "check": str(check_name),
         "torsion_settings": settings,
-        "torsion_zone_settings": zone_settings if isinstance(zone_settings, list) else [],
+        # ph is a derived audit mirror, not an independent source.  Hash the
+        # qualification flags and the shared geometry basis instead.
+        "torsion_zone_settings": canonical_zone_settings,
     })
 
 
@@ -11457,7 +11566,7 @@ def _beam_uls_combined_vt_check_dataframe(
             result["Code basis"] = "AASHTO LRFD 5.7.3.6 — NOT CERTIFIED pending full concurrent longitudinal Eq. 5.7.3.6.3-1"
             note = str(result.get("Notes") or "").strip()
             guard_note = (
-                "IGIRDER.ULS6C guard: standalone Shear and the transverse Torsion component now use the AASHTO General Procedure family with torsion-modified Veff/theta. "
+                "IGIRDER.ULS6D guard: standalone Shear and the transverse Torsion component now use the AASHTO General Procedure family with torsion-modified Veff/theta. "
                 "Final Combined V+T acceptance still requires implementation and QA of the concurrent solid-section longitudinal resistance Eq. 5.7.3.6.3-1. "
                 "Combined V+T is therefore REVIEW / not certified and cannot produce final PASS."
             )
@@ -13100,8 +13209,8 @@ def _beam_uls_construction_demand_from_state(
 _IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION = "IGIRDER.ULS2P.flexure-performance-optimization"
 _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION = "IGIRDER.ULS3A.composite-flexure-audit-closeout"
 _IGIRDER_SHEAR_RESULT_VERSION = "IGIRDER.ULS5A.shear-qa-closeout"
-_IGIRDER_TORSION_RESULT_VERSION = "IGIRDER.ULS6C.torsion-rebar-source-closeout"
-_IGIRDER_COMBINED_VT_RESULT_VERSION = "IGIRDER.ULS6C.combined-vt-longitudinal-pending"
+_IGIRDER_TORSION_RESULT_VERSION = "IGIRDER.ULS6D.auto-ph-support-face-closeout"
+_IGIRDER_COMBINED_VT_RESULT_VERSION = "IGIRDER.ULS6D.combined-vt-longitudinal-pending"
 
 
 _IGIRDER_INTERFACE_SHEAR_SETTINGS_KEY = "beam_girder_interface_shear_settings"
@@ -14570,7 +14679,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                         "title": "Torsion status",
                         "value": torsion_status,
                         "detail": (
-                            "Complete the station-qualified closed-loop / 135° hook / ph source in Sections → Rebar → Transverse Rebar"
+                            "Complete the torsion-qualified closed-loop / 135° hook source in Sections → Rebar → Transverse Rebar; ph is derived automatically from the section/cover geometry"
                             if torsion_status == "LAYOUT REQUIRED"
                             else f"Transverse {torsion_result.get('Transverse status', '-')} · longitudinal {torsion_result.get('Longitudinal status', '-')} · detailing {torsion_result.get('Detailing status', '-')}"
                         ),
@@ -14656,7 +14765,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             elif torsion_status_label == "FAIL":
                 st.error("Precast I-Girder transverse torsion strength/detailing fails at the governing station. Revise the closed-loop transverse reinforcement or section before proceeding to final combined V+T acceptance.")
             elif torsion_status_label == "LAYOUT REQUIRED":
-                st.warning("Torsion is above the AASHTO investigation threshold, but the verified closed-loop torsion source is incomplete. Confirm the continuous 135°-hook loop and ph in Sections → Rebar.")
+                st.warning("Torsion is above the AASHTO investigation threshold, but the verified closed-loop torsion source is incomplete. Confirm the torsion-qualified closed loop and 135° hook in Sections → Rebar; ph is calculated automatically from the active section and closed-hoop cover basis.")
             elif torsion_status_label == "REVIEW" and torsion_longitudinal_label == "COMBINED CHECK REQUIRED":
                 st.warning("The standalone transverse torsion component passes, but final solid prestressed I-Girder torsion acceptance remains REVIEW until the concurrent longitudinal Article 5.7.3.6.3-1 check is completed in Shear + Torsion.")
             else:
@@ -14721,10 +14830,10 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                 st.dataframe(audit_df, use_container_width=True, hide_index=True)
         with st.expander("Torsion method notes", expanded=False):
             if igird_torsion_route:
-                st.write("- IGIRDER.ULS6C uses AASHTO LRFD 5.7.2.1: torsion is investigated where |Tu| > 0.25φTcr; K uses effective prestress after losses, the explicit fpc−Nu/Ag axial adjustment, and the K≤1.0 extreme-tension-fiber guard when 0.19λ√f'c is exceeded.")
+                st.write("- IGIRDER.ULS6D uses AASHTO LRFD 5.7.2.1: torsion is investigated where |Tu| > 0.25φTcr; K uses effective prestress after losses, the explicit fpc−Nu/Ag axial adjustment, and the K≤1.0 extreme-tension-fiber guard when 0.19λ√f'c is exceeded.")
                 st.write("- For solid I-Girders requiring torsion, Veff = √[Vu² + (0.9phTu/2Ao)²] replaces Vu in the Article 5.7.3.4.2 longitudinal-strain equation; θ is therefore station-dependent and is not fixed at 45°.")
                 st.write("- Ao is derived from the AASHTO solid-section shear-flow path using be=Acp/Pcp. The app does not use the ACI-style Ao=0.85Aoh shortcut for this route.")
-                st.write("- ph must be the centerline perimeter of an actually detailed, fully continuous closed torsion loop. Ordinary shear stirrups are not silently assumed to form that loop; 135° hook anchorage remains an explicit confirmation in Sections → Rebar.")
+                st.write("- ph is the centerline perimeter of the actually detailed closed torsion hoop. For Precast I-Girder it is derived automatically from the active section geometry plus the shared closed-hoop cover/centerline basis; ordinary shear stirrups are not silently assumed to form that loop, and 135° hook anchorage remains an explicit confirmation in Sections → Rebar.")
                 st.write("- Tn = 2Ao(At/s)fy cotθ λduct uses one closed-loop leg area At per spacing. AASHTO 5.7.2.7 design fy is enforced for torsion; the current elastic-perfectly-plastic steel basis applies the explicit 75 ksi cap where required. The transverse zone also remains subject to the active AASHTO minimum-reinforcement, spacing, and coverage gates.")
                 st.write("- Standalone Torsion does not issue a final PASS above threshold merely from φTn. The solid prestressed longitudinal requirement is the concurrent Article 5.7.3.6.3-1 equation and remains owned by Shear + Torsion.")
                 st.write("- Anchorage, bearing/end-zone D-regions, final hook/lap geometry, fatigue, and shop-drawing constructability remain separate project checks.")

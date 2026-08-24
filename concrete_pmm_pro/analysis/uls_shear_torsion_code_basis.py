@@ -124,7 +124,7 @@ FORMULA_AUDIT_ITEMS: tuple[ShearTorsionFormulaAuditItem, ...] = (
         code_location="Concrete torsion / combined shear-torsion articles for prestressed girders",
         implementation_status="PARTIAL",
         risk_level="CRITICAL",
-        current_app_status="IGIRDER.ULS6C evaluates the prestressed solid I-Girder torsion threshold, torsion-modified Veff, station-dependent General Procedure theta, and transverse 5.7.3.6.2 resistance. Standalone Torsion remains REVIEW above threshold because the concurrent longitudinal 5.7.3.6.3-1 equation is not yet certified.",
+        current_app_status="IGIRDER.ULS6D evaluates the prestressed solid I-Girder torsion threshold, torsion-modified Veff, station-dependent General Procedure theta, and transverse 5.7.3.6.2 resistance. Standalone Torsion remains REVIEW above threshold because the concurrent longitudinal 5.7.3.6.3-1 equation is not yet certified.",
         required_action="Complete the concurrent 5.7.3.6.1 transverse reinforcement sum and 5.7.3.6.3-1 longitudinal resistance in Combined V+T before permitting final PASS.",
     ),
 )

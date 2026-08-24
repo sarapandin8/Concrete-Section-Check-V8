@@ -72,6 +72,9 @@ def _state(*, closed=True, ph_mm=4300.0, debonded=False, fy_mpa=390.0):
         "closed_loop_confirmed": closed,
         "ph_mm": ph_mm,
         "hoop_centerline_offset_mm": 50.0,
+        "clear_cover_mm": 40.0,
+        "hoop_centerline_offset_override_enabled": False,
+        "hoop_centerline_offset_override_mm": None,
         "longitudinal_perimeter_distribution_confirmed": True,
         "corner_longitudinal_reinforcement_confirmed": True,
         "note": "QA torsion cage",
@@ -440,7 +443,7 @@ def test_igird_uls6c_station_qualified_transverse_zone_drives_phi_tn_without_leg
     assert bool(row["Closed loop confirmed"]) is True
     assert bool(row["135° hook confirmed"]) is True
     assert row["Torsion zone source"] == "station-qualified transverse zone"
-    assert float(row["ph mm"]) == pytest.approx(4300.0)
+    assert float(row["ph mm"]) == pytest.approx(4432.0)
     assert math.isfinite(float(row["Veff kN"]))
     assert math.isfinite(float(row["θ deg"]))
     assert math.isfinite(float(row["φTn kN-m"]))
@@ -464,7 +467,7 @@ def test_igird_uls6c_zone_requires_use_closed_hook_and_ph_before_capacity():
 
 def test_igird_uls6c_physical_support_face_torsion_station_is_not_discarded():
     active = pd.concat([
-        _demand(x=0.0, tu=800.0, vu=500.0),
+        _demand(x=0.0, tu=800.0, vu=500.0, mux=0.0),
         _demand(x=1.0, tu=500.0, vu=450.0),
     ], ignore_index=True)
     df = _beam_uls_torsion_check_dataframe(_zone_qualified_state(), active, strength_route=_route())
@@ -472,6 +475,8 @@ def test_igird_uls6c_physical_support_face_torsion_station_is_not_discarded():
     assert support["Governing x"] == "0.000 m"
     assert support["Station type"] == "LOAD STATION"
     assert support["Support side"] == "LEFT"
+    assert support["Threshold status"] == "DESIGN REQUIRED"
+    assert math.isfinite(float(support["φTcr kN-m"]))
     from concrete_pmm_pro.ui.analysis_page import _beam_uls_torsion_decision_dataframe
     eligible = _beam_uls_torsion_decision_dataframe(df)
     assert "0.000 m" in set(eligible["Governing x"].astype(str))
@@ -503,9 +508,19 @@ def test_igird_uls6c_torsion_zone_metadata_invalidates_only_torsion_family_hashe
     torsion_1 = _beam_uls_check_input_hash(state, active, strength_route=_route(), check_name="Torsion")
     state["beam_girder_torsion_zone_settings"] = [{
         **state["beam_girder_torsion_zone_settings"][0],
-        "ph_mm": 4500.0,
+        "ph_mm": 4500.0,  # derived audit mirror; must not be an independent source
     }]
     state["project_metadata"]["beam_girder_torsion_zone_settings"] = state["beam_girder_torsion_zone_settings"]
+    shear_mirror = _beam_uls_check_input_hash(state, active, strength_route=_route(), check_name="Shear")
+    torsion_mirror = _beam_uls_check_input_hash(state, active, strength_route=_route(), check_name="Torsion")
+    assert shear_1 == shear_mirror
+    assert torsion_1 == torsion_mirror
+
+    state["beam_girder_torsion_settings"] = {
+        **state["beam_girder_torsion_settings"],
+        "clear_cover_mm": 50.0,
+    }
+    state["project_metadata"]["beam_girder_torsion_settings"] = state["beam_girder_torsion_settings"]
     shear_2 = _beam_uls_check_input_hash(state, active, strength_route=_route(), check_name="Shear")
     torsion_2 = _beam_uls_check_input_hash(state, active, strength_route=_route(), check_name="Torsion")
     assert shear_1 == shear_2
@@ -520,6 +535,9 @@ def test_igird_uls6c_rebar_ui_explains_single_longitudinal_source_and_torsion_zo
     assert "Closed Loop" in source
     assert "135° Hook" in source
     assert "At/s = (one closed-loop leg area)/s" in source
+    assert "Auto ph (mm)" in source
+    assert "clear cover + db/2" in source
+    assert "NOT APPLICABLE YET" in source
     # Regression: the torsion-layout renderer requires the normalized shear-zone
     # table.  A zero-argument call caused a runtime TypeError before the shear
     # editor could render in ULS6C.
