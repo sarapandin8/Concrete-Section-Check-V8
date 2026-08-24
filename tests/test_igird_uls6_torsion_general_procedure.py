@@ -23,6 +23,7 @@ from concrete_pmm_pro.ui.analysis_page import (
     _beam_uls_torsion_variable_definitions_dataframe,
     _beam_uls_governing_torsion_row,
     _beam_uls_torsion_diagram_boundary_dataframe,
+    _beam_uls_torsion_coverage_summary,
 )
 
 
@@ -397,8 +398,8 @@ def test_igird_uls6b_compact_torsion_audit_keeps_decision_fields_and_hides_deep_
     ])
     compact = _beam_uls_torsion_compact_audit_dataframe(source)
     assert list(compact.columns) == [
-        "Governing", "Station x", "Case", "Status", "Threshold", "Transverse", "Longitudinal", "Detailing",
-        "Tu demand", "φTn", "φTcr", "0.25φTcr", "D/C", "Veff", "θ", "φ",
+        "Governing", "Station x", "Case", "Status", "Threshold", "Coverage", "Transverse", "Longitudinal",
+        "Hoop detailing", "Corner detail", "Tu demand", "φTn", "φTcr", "0.25φTcr", "D/C", "Veff", "θ", "φ",
     ]
     assert compact.iloc[0]["Status"] == "REVIEW"
     assert compact.iloc[0]["Veff"] == "150.00 kN"
@@ -543,3 +544,75 @@ def test_igird_uls6c_rebar_ui_explains_single_longitudinal_source_and_torsion_zo
     # editor could render in ULS6C.
     assert "_render_igird_torsion_layout_settings()" not in source
     assert "_render_igird_torsion_layout_settings(normalized)" in source
+
+
+def _partial_torsion_zone_state(*, corner_confirmed=False):
+    state = _zone_qualified_state()
+    state["beam_girder_shear_reinforcement_table"] = pd.DataFrame([
+        {
+            "Active": True, "Zone": "Left", "x_start_m": 0.0, "x_end_m": 10.0,
+            "Bar Size": "DB12", "Diameter_mm": 12.0, "Legs": 2.0, "Spacing_mm": 100.0, "fy_MPa": 390.0, "Note": "left",
+        },
+        {
+            "Active": True, "Zone": "Right", "x_start_m": 10.0, "x_end_m": 20.0,
+            "Bar Size": "DB12", "Diameter_mm": 12.0, "Legs": 2.0, "Spacing_mm": 100.0, "fy_MPa": 390.0, "Note": "right",
+        },
+    ])
+    zone_settings = [
+        {"Zone": "Left", "Use for Torsion": True, "Closed Loop": True, "135° Hook": True, "Note": "qualified"},
+        {"Zone": "Right", "Use for Torsion": False, "Closed Loop": False, "135° Hook": False, "Note": "not qualified"},
+    ]
+    state["beam_girder_torsion_zone_settings"] = zone_settings
+    state["beam_girder_torsion_settings"] = {
+        **state["beam_girder_torsion_settings"],
+        "corner_longitudinal_reinforcement_confirmed": corner_confirmed,
+    }
+    state["project_metadata"] = {
+        "beam_girder_torsion_settings": state["beam_girder_torsion_settings"],
+        "beam_girder_torsion_zone_settings": zone_settings,
+    }
+    return state
+
+
+def test_igird_uls6e_coverage_summary_exposes_uncovered_design_required_stations_even_when_covered_station_fails():
+    active = pd.concat([
+        _demand(x=5.0, tu=500.0, vu=400.0),
+        _demand(x=15.0, tu=500.0, vu=400.0),
+    ], ignore_index=True)
+    df = _beam_uls_torsion_check_dataframe(_partial_torsion_zone_state(), active, strength_route=_route())
+    left = df.iloc[0]
+    right = df.iloc[1]
+    assert left["Coverage status"] == "PASS"
+    assert right["Coverage status"] == "REQUIRED"
+    assert right["Status"] == "LAYOUT REQUIRED"
+    summary = _beam_uls_torsion_coverage_summary(df)
+    assert summary["status"] == "REQUIRED"
+    assert summary["required_stations"] == 2
+    assert summary["covered_stations"] == 1
+    assert "15.000 m" in summary["uncovered_stations"]
+
+
+def test_igird_uls6e_corner_detail_is_separate_from_transverse_hoop_detailing():
+    row = _beam_uls_torsion_check_dataframe(
+        _partial_torsion_zone_state(corner_confirmed=False), _demand(x=5.0, tu=500.0), strength_route=_route()
+    ).iloc[0]
+    assert row["Coverage status"] == "PASS"
+    assert row["Hoop detailing status"] in {"PASS", "FAIL", "LAYOUT REQUIRED"}
+    assert row["Corner longitudinal status"] == "NOT CONFIRMED"
+
+    confirmed = _beam_uls_torsion_check_dataframe(
+        _partial_torsion_zone_state(corner_confirmed=True), _demand(x=5.0, tu=500.0), strength_route=_route()
+    ).iloc[0]
+    assert confirmed["Corner longitudinal status"] == "CONFIRMED"
+
+
+def test_igird_uls6e_rebar_ui_uses_not_confirmed_for_corner_detail_and_does_not_overstate_pass():
+    source = open("concrete_pmm_pro/ui/rebar_page.py", encoding="utf-8").read()
+    assert '"NOT CONFIRMED"' in source
+    assert '"CONFIRMED" if corner_ok else "COMBINED CHECK"' not in source
+
+
+def test_igird_uls6e_result_versions_invalidate_torsion_and_dependent_combined_only():
+    assert _IGIRDER_TORSION_RESULT_VERSION.startswith("IGIRDER.ULS6E.")
+    assert _IGIRDER_COMBINED_VT_RESULT_VERSION.startswith("IGIRDER.ULS6E.")
+    assert _IGIRDER_SHEAR_RESULT_VERSION.startswith("IGIRDER.ULS5")

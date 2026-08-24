@@ -85,8 +85,8 @@ def bridge_beam_girder_uls_strength_route(code_edition: object | None = None) ->
         ),
         torsion_engine_label="AASHTO LRFD torsion route",
         torsion_basis_note=(
-            "Bridge torsion is workflow/preset aware. Precast I-Girder uses IGIRDER.ULS6D with AASHTO 5.7.2.1 prestressed threshold, "
-            "torsion-modified Veff, station-dependent General Procedure theta, and transverse 5.7.3.6.2 resistance; final longitudinal "
+            "Bridge torsion is workflow/preset aware. Precast I-Girder uses IGIRDER.ULS6E with AASHTO 5.7.2.1 prestressed threshold, "
+            "torsion-modified Veff, station-dependent General Procedure theta, transverse 5.7.3.6.2 resistance, and explicit design-station torsion-zone coverage; final longitudinal "
             "5.7.3.6.3-1 acceptance remains owned by Combined V+T. Other Bridge presets retain TORSION.CODE2 until separately calibrated."
         ),
         overall_guard_note=(

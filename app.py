@@ -4997,6 +4997,7 @@ def _render_report_qa_igird_torsion_equation_trace(state: object) -> None:
     cache = _results_beam_uls_cache(state)
     torsion_entry = cache.get("Torsion")
     governing = _results_beam_uls_best_row(torsion_entry, "Torsion")
+    coverage_summary = torsion_entry.get("torsion_coverage_summary") if isinstance(torsion_entry, dict) else None
     render_section_bar(
         "I-Girder Torsion — Stored Equation & Audit Trace",
         "Read-only AASHTO threshold / Veff / General Procedure / transverse torsion trace from the stored current-version Torsion package. Report / QA does not rerun the solver.",
@@ -5011,7 +5012,7 @@ def _render_report_qa_igird_torsion_equation_trace(state: object) -> None:
     )
     trace_df = _beam_uls_torsion_calculation_trace_dataframe(governing)
     if trace_df.empty:
-        st.warning("Stored Torsion result does not contain enough IGIRDER.ULS6D fields for a full equation trace.")
+        st.warning("Stored Torsion result does not contain enough IGIRDER.ULS6E fields for a full equation trace.")
     else:
         st.dataframe(trace_df, use_container_width=True, hide_index=True)
 
@@ -5036,7 +5037,10 @@ def _render_report_qa_igird_torsion_equation_trace(state: object) -> None:
         {"Item": "Tn / phiTn", "Value": f"{_results_value_with_unit(governing.get('Tn kN-m'), 'kN-m')} / {_results_value_with_unit(governing.get('φTn kN-m'), 'kN-m')}"},
         {"Item": "Transverse torsion D/C", "Value": _results_scalar(governing.get("D/C value"))},
         {"Item": "Closed-loop source", "Value": str(governing.get("Closed loop confirmed") if governing.get("Closed loop confirmed") is not None else "-")},
-        {"Item": "Longitudinal status", "Value": str(governing.get("Longitudinal status") or "-")},
+        {"Item": "Torsion-zone coverage", "Value": (str(coverage_summary.get("detail") or coverage_summary.get("status") or "-") if isinstance(coverage_summary, dict) else str(governing.get("Coverage status") or "-"))},
+        {"Item": "Hoop detailing", "Value": str(governing.get("Hoop detailing status") or governing.get("Detailing status") or "-")},
+        {"Item": "Corner longitudinal detail", "Value": str(governing.get("Corner longitudinal status") or "-")},
+        {"Item": "Longitudinal strength status", "Value": str(governing.get("Longitudinal status") or "-")},
         {"Item": "General Procedure branch", "Value": str(governing.get("General Procedure branch") or "-")},
         {"Item": "Resistance-factor branch", "Value": str(governing.get("φ policy") or "-")},
     ]

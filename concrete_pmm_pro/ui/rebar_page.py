@@ -2904,7 +2904,7 @@ def _render_igird_torsion_layout_settings(shear_table: pd.DataFrame) -> None:
     m1, m2, m3 = st.columns(3)
     m1.metric("Torsion-qualified zones", f"{len(selected):,}")
     m2.metric("Capacity-ready zones", f"{len(ready):,}")
-    m3.metric("Corner longitudinal detail", "NOT APPLICABLE YET" if not has_selected else ("CONFIRMED" if corner_ok else "COMBINED CHECK"))
+    m3.metric("Corner longitudinal detail", "NOT APPLICABLE YET" if not has_selected else ("CONFIRMED" if corner_ok else "NOT CONFIRMED"))
     if not has_selected:
         st.warning("No provided transverse zone is currently qualified for torsion. Select Use for Torsion only where the actual provided bar forms the intended torsion cage.")
     elif len(ready) != len(selected):
