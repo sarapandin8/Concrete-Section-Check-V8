@@ -1,0 +1,14 @@
+{
+  "cases": 80,
+  "exact_dataframe_and_metadata_equal": true,
+  "covers": [
+    "duplicate axial values",
+    "exact stations",
+    "interpolation brackets",
+    "NaN axial values",
+    "capped axial values",
+    "outside range",
+    "empty/fallback slices",
+    "permuted order"
+  ]
+}

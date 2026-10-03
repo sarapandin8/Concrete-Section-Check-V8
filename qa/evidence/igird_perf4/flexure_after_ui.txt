@@ -1,0 +1,181 @@
+Deploy
+Concrete Section Pro
+
+Bridge Beam / Girder · Precast I-Girder · AASHTO LRFD 9th Edition · L = 20 m
+
+Workspace
+
+Prestress
+
+Analysis
+
+ULS Beam/Girder analysis
+
+Check-specific Beam/Girder ULS workspace. Loads is the demand source of truth; global ULS aggregation is reserved for Result Summary.
+
+keyboard_arrow_right
+
+Beam/Girder ULS scope / engineering assumptions
+
+WORKFLOW
+Bridge Beam/Girder
+Selected in Setup
+DESIGN CODE
+AASHTO LRFD 9th Edition
+Active ULS code route
+ULS SOURCE
+Auto Construction + Loads FEA
+stage-separated demand
+
+ULS check to calculate
+
+Flexure
+
+Shear
+
+Torsion
+
+Shear + Torsion
+
+Flexure stage
+
+Construction — Noncomposite
+
+Final — Composite
+
+Final Composite Flexure — imported FEA demand
+
+Demand = verified Final ULS FEA resultants. Resistance = precast I-Girder + effective CIP deck. Current solver scope is positive longitudinal flexure; composite-action interface shear remains a separate acceptance gate.
+
+Composite action — girder/deck interface inputs
+
+Only interface-specific detailing is entered here. Demand comes from verified Final ULS Vuy; girder geometry, concrete strengths, prestress/tension-steel centroid, and stirrup zones are reused from the existing project inputs.
+
+Interface surface condition
+
+Interface width bvi
+
+Auto — I-Girder top flange B1
+
+Manual override
+
+Manual bvi (mm)
+
+Girder stirrups extend across the interface and are fully developed/anchored in the CIP deck
+
+Pc = 0 is used as the conservative default; no clamping-force credit is taken.
+
+COMPOSITE SECTION
+READY
+Be=1,200 mm · Tslab=300 mm
+AASHTO STRENGTH F'C
+35 MPa
+lower of deck 35 / girder 45 MPa
+EFFECTIVE WIDTH BASIS
+REVIEW
+AASHTO helper · Be=1,200 mm
+COMPOSITE ACTION GATE
+INTERFACE SHEAR PENDING
+AASHTO 5.7.4 · section Mn and interface transfer are separate gates
+SELECTED ULS COMMAND
+Flexure — Final Composite · Calculated for current inputs · 2026-10-03 08:40:55
+The selected check has a stored result for the current input hash. Review the workspace cards, diagrams, and audit output below.
+
+Primary action
+
+Calculate Final Composite Flexure
+
+FINAL COMPOSITE STATUS
+REVIEW
+REVIEW until section and interface-shear gates are both current PASS
+SECTION FLEXURE
+REVIEW
+AASHTO positive composite section strength
+GOVERNING MU / D/C
+7,184.69 kN-m · 0.694
+ENV_ULS @ x=10.000 m · numerical PASS; helper-calculated Be not engineer-confirmed
+ΦMN, COMPOSITE
+φMn = 10,354.17 kN-m
+AASHTO φ=1.00 route · Final effective prestress
+NEUTRAL AXIS AT GOVERNING SECTION
+c = 253.9 mm
+DECK · compression-face θ=90.0°
+AASHTO 5.6.3.2.6 APPLICABILITY
+NOT REQUIRED
+NA remains within CIP deck; below-deck condition is not invoked
+DECK LONGITUDINAL REBAR CREDIT
+EXCLUDED
+Conservative default · no deck longitudinal steel credit in +Mn
+Girder–Deck Interface Shear — AASHTO 5.7.4
+DEMAND SOURCE
+FINAL ULS Vuy
+AASHTO 5.7.4.5 · absolute verified FEA shear
+INTERFACE WIDTH BVI
+600 mm
+Auto from I-Girder top flange B1
+SURFACE BASIS
+ROUGHENED 6.35 mm
+CIP slab on clean girder · intentionally roughened 6.35 mm (0.25 in)
+CROSSING REINFORCEMENT
+REVIEW
+Active Sections → Rebar stirrup zones are Avf source
+SELECTED ULS COMMAND
+Interface Shear — Final Composite · NOT CALCULATED
+Run only this selected ULS check for the current model inputs. Other checks remain cached until model inputs change.
+
+Composite-action gate
+
+Calculate Interface Shear
+
+INTERFACE SHEAR
+NOT CALCULATED
+Run the current AASHTO 5.7.4 composite-action gate
+GOVERNING VUI / D/C
+-
+Final ULS Vuy → interface demand
+ΦVNI
+-
+c + μAvffy with K1f'c and K2 caps
+AVF PROVIDED / MINIMUM
+-
+Active stirrup zone crossing the interface
+
+Unit-safe AASHTO trace: c = 0.280 ksi → 1.931 MPa; K2 = 1.800 ksi → 12.411 MPa; fy interface cap = 60 ksi → 413.685 MPa. Internal equilibrium uses N, mm, MPa only.
+
+Calculate Interface Shear to close the Final Composite composite-action acceptance gate.
+
+Governing demand
+D/C 0.694
+0
+5
+10
+15
+20
+0
+2k
+4k
+6k
+8k
+10k
+Demand Mux
+φMn
+Gov. flexure
+Flexure Check — Strength ULS​AASHTO LRFD 9th Edition · Final composite +M · demand vs φMn​
+Distance from left end of member (m)
+Moment (kN-m)
+
+Section flexure capacity uses the effective CIP deck and Final effective prestress. A section PASS does not certify composite action until girder-deck interface shear is verified.
+
+keyboard_arrow_down
+
+Final Composite flexure strength audit / benchmark output
+
+Final Composite flexure notes: IGIRDER.ULS3A Final Composite positive flexure uses the AASHTO Section 5 strain-compatibility engine. | Composite concrete strength basis = 35 MPa (lower of deck/girder f'c). | AASHTO LRFD 5.6.3.2.6 composite flexure basis: deck f'c=35 MPa is used for the composite compression section. | Deck longitudinal reinforcement is excluded from positive composite Mn by project selection (conservative default). | Girder–deck interface shear remains a separate composite-action acceptance gate and is not included in Mn. | IGIRDER.PERF4: 5 physical PMM cloud(s) built for 21 station row(s) in 5.53 s. Concrete/rebar base sweeps: 1; reused: 4. Each station retains its own Nu and moment check; neutral-axis resolution and equations are unchanged. | Full-span φMn capacity evaluated at 21 station row(s); zero-demand stations retain physical section capacity with D/C not applicable. | Dedicated girder strand layout included in flexure check at the demand station using final effective prestress force.
+
+keyboard_arrow_right
+
+Composite flexure basis / limitations
+
+keyboard_arrow_right
+
+Final Composite ULS demand table — audit / source data

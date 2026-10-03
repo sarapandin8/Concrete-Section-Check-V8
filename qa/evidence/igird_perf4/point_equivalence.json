@@ -1,0 +1,68 @@
+{
+  "reference": "solver file extracted from exact DBQA1/PERF3 delivered ZIP",
+  "physical_clouds": 10,
+  "points_compared": 86400,
+  "all_fields_warnings_info_exact": true,
+  "records": [
+    {
+      "stage": "Final Composite",
+      "first_station_m": 0.0,
+      "points": 8640,
+      "all_fields_warnings_info_exact": true
+    },
+    {
+      "stage": "Final Composite",
+      "first_station_m": 2.0,
+      "points": 8640,
+      "all_fields_warnings_info_exact": true
+    },
+    {
+      "stage": "Final Composite",
+      "first_station_m": 3.0,
+      "points": 8640,
+      "all_fields_warnings_info_exact": true
+    },
+    {
+      "stage": "Final Composite",
+      "first_station_m": 4.0,
+      "points": 8640,
+      "all_fields_warnings_info_exact": true
+    },
+    {
+      "stage": "Final Composite",
+      "first_station_m": 5.0,
+      "points": 8640,
+      "all_fields_warnings_info_exact": true
+    },
+    {
+      "stage": "Construction",
+      "first_station_m": 0.0,
+      "points": 8640,
+      "all_fields_warnings_info_exact": true
+    },
+    {
+      "stage": "Construction",
+      "first_station_m": 2.0,
+      "points": 8640,
+      "all_fields_warnings_info_exact": true
+    },
+    {
+      "stage": "Construction",
+      "first_station_m": 3.0,
+      "points": 8640,
+      "all_fields_warnings_info_exact": true
+    },
+    {
+      "stage": "Construction",
+      "first_station_m": 4.0,
+      "points": 8640,
+      "all_fields_warnings_info_exact": true
+    },
+    {
+      "stage": "Construction",
+      "first_station_m": 5.0,
+      "points": 8640,
+      "all_fields_warnings_info_exact": true
+    }
+  ]
+}

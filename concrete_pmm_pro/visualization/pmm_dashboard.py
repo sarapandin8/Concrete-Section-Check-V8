@@ -158,10 +158,53 @@ def _interpolate_between_rows(left: pd.Series, right: pd.Series, ratio: float, t
     return interpolated
 
 
+def _prepare_slice_groups(pmm_df: pd.DataFrame, p_column: str) -> list[tuple[float, pd.DataFrame, list[float]]]:
+    """Prepare the accepted radius tie-break/sort once for a fixed PMM cloud."""
+    groups = []
+    for theta, group in pmm_df.groupby("theta_rad", sort=False):
+        working = group[pd.notna(group[p_column])].copy()
+        if len(working) >= 2:
+            working["_radius"] = [math.hypot(mx, my) for mx, my in
+                                  working[["phiMnx_kNm", "phiMny_kNm"]].itertuples(index=False, name=None)]
+            working = working.sort_values([p_column, "_radius"]).drop_duplicates(subset=[p_column], keep="last")
+            working = working.sort_values(p_column).drop(columns=["_radius"])
+            p_values = working[p_column].astype(float).to_list()
+        else:
+            p_values = []
+        groups.append((float(theta), working, p_values))
+    return groups
+
+
+class PreparedPMMSlice:
+    """Calculation-local immutable snapshot for repeated axial-load queries.
+
+    The same interpolation and tolerance fallback remain authoritative. No
+    demand value, force or capacity is approximated or discarded.
+    """
+
+    def __init__(self, pmm_df: pd.DataFrame) -> None:
+        self._frame = pmm_df.copy(deep=True)
+        required = {"theta_rad", "c_mm", "phiMnx_kNm", "phiMny_kNm"}
+        self._groups = (
+            _prepare_slice_groups(self._frame, _resolve_slice_p_column(self._frame, "phiPn_kN"))
+            if not self._frame.empty and required.issubset(self._frame.columns) else None
+        )
+        self._last_pu: float | None = None
+        self._last_slice: pd.DataFrame | None = None
+
+    def at_pu(self, Pu_kN: float) -> pd.DataFrame:
+        if self._last_slice is None or Pu_kN != self._last_pu:
+            result = pmm_slice_at_pu_interpolated(self._frame, Pu_kN, _prepared_groups=self._groups)
+            self._last_pu, self._last_slice = Pu_kN, result
+        return self._last_slice.copy(deep=True)
+
+
 def pmm_slice_at_pu_interpolated(
     pmm_df: pd.DataFrame,
     Pu_kN: float,
     p_column: str = "phiPn_kN",
+    *,
+    _prepared_groups: list[tuple[float, pd.DataFrame, list[float]]] | None = None,
 ) -> pd.DataFrame:
     """Interpolate one PMM slice point per neutral-axis angle at a selected Pu."""
 
@@ -184,19 +227,11 @@ def pmm_slice_at_pu_interpolated(
     resolved_p_column = _resolve_slice_p_column(pmm_df, p_column)
     rows: list[dict[str, Any]] = []
     skipped_theta_count = 0
-    for theta, group in pmm_df.groupby("theta_rad", sort=False):
-        working = group.copy()
-        working = working[pd.notna(working[resolved_p_column])].copy()
-        if len(working) < 2:
+    groups = _prepared_groups if _prepared_groups is not None else _prepare_slice_groups(pmm_df, resolved_p_column)
+    for theta, working, p_values in groups:
+        if not p_values:
             skipped_theta_count += 1
             continue
-        # PERF3: keep math.hypot and the accepted duplicate-selection order,
-        # but avoid allocating one pandas Series per PMM point.
-        working["_radius"] = [math.hypot(mx, my) for mx, my in
-                              working[["phiMnx_kNm", "phiMny_kNm"]].itertuples(index=False, name=None)]
-        working = working.sort_values([resolved_p_column, "_radius"]).drop_duplicates(subset=[resolved_p_column], keep="last")
-        working = working.sort_values(resolved_p_column).drop(columns=["_radius"])
-        p_values = working[resolved_p_column].astype(float).to_list()
         if Pu_kN < min(p_values) or Pu_kN > max(p_values):
             skipped_theta_count += 1
             continue

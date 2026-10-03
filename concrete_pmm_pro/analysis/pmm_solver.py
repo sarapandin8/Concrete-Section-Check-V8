@@ -34,6 +34,7 @@ import math
 from typing import Iterable
 
 from concrete_pmm_pro.analysis.result_models import PMMPoint, PMMSolverResult
+from concrete_pmm_pro.analysis.pmm_section_cache import PMMSectionCache, SectionBasePoint, compression_membership
 from concrete_pmm_pro.analysis.prestress_stress import (
     PRESTRESS_COMPRESSION_REVERSAL_WARNING,
     PRESTRESS_FPU_CAP_WARNING,
@@ -202,13 +203,13 @@ def run_pmm_solver(analysis_input: AnalysisInput) -> PMMSolverResult:
     return run_rc_pmm_solver(analysis_input)
 
 
-def run_rc_pmm_solver(analysis_input: AnalysisInput) -> PMMSolverResult:
+def run_rc_pmm_solver(analysis_input: AnalysisInput, *, section_cache: PMMSectionCache | None = None) -> PMMSolverResult:
     """Run the legacy ACI-oriented RC/PSC PMM sweep using `AnalysisInput`."""
 
-    return _run_pmm_solver_engine(analysis_input, code_basis="ACI")
+    return _run_pmm_solver_engine(analysis_input, code_basis="ACI", section_cache=section_cache)
 
 
-def run_aashto_lrfd_column_pmm_solver(analysis_input: AnalysisInput) -> PMMSolverResult:
+def run_aashto_lrfd_column_pmm_solver(analysis_input: AnalysisInput, *, section_cache: PMMSectionCache | None = None) -> PMMSolverResult:
     """Run AASHTO LRFD 9th Edition Column/Pier/Wall/Pylon PMM sweep.
 
     PMM1 scope is B-region axial-flexure using the shared strain-compatible
@@ -217,10 +218,10 @@ def run_aashto_lrfd_column_pmm_solver(analysis_input: AnalysisInput) -> PMMSolve
     hollow-wall local buckling adjustments remain separate guarded milestones.
     """
 
-    return _run_pmm_solver_engine(analysis_input, code_basis="AASHTO")
+    return _run_pmm_solver_engine(analysis_input, code_basis="AASHTO", section_cache=section_cache)
 
 
-def _run_pmm_solver_engine(analysis_input: AnalysisInput, *, code_basis: str) -> PMMSolverResult:
+def _run_pmm_solver_engine(analysis_input: AnalysisInput, *, code_basis: str, section_cache: PMMSectionCache | None = None) -> PMMSolverResult:
     """Run a PMM sweep using `AnalysisInput` and an explicit code basis.
 
     The function deliberately avoids any Streamlit dependency. Future solver
@@ -381,57 +382,89 @@ def _run_pmm_solver_engine(analysis_input: AnalysisInput, *, code_basis: str) ->
         warnings.append("Displaced concrete at ordinary rebar locations is not subtracted. Compression capacity may be overestimated.")
     info.append("Neutral-axis c_min uses relative lower bound for numerical robustness.")
 
+    # PERF4 is opt-in for the I-girder Calculate operation. Exact physical
+    # inputs (including bar order/material fallback) guard the base sweep.
+    # Only concrete + ordinary rebar terms are reused; prestress is never part
+    # of this cache and is evaluated below for every physical strand state.
+    rebar_materials = [_rebar_material_for(bar, analysis_input.rebar_materials) for bar in rebars]
+    rebar_xy = tuple((float(bar.x_mm), float(bar.y_mm)) for bar in rebars)
+    base_key = (
+        section_polygon.wkb, code_basis, fc_MPa, ecu, alpha1, beta1, concrete_stress_MPa,
+        settings.neutral_axis_angle_steps, settings.neutral_axis_depth_steps,
+        settings.subtract_rebar_displaced_concrete,
+        tuple((bar.x_mm, bar.y_mm, bar.area_mm2, mat.fy_MPa, mat.Es_MPa)
+              for bar, mat in zip(rebars, rebar_materials)),
+    )
+    cached_base = section_cache.get(base_key) if section_cache is not None else None
+    new_base: list[SectionBasePoint] = []
+    base_index = 0
     points: list[PMMPoint] = []
     for theta in _angle_values(settings.neutral_axis_angle_steps):
         frame = projection_frame(section_polygon, theta)
         for c_mm in _depth_values(frame.projected_depth_mm, settings.neutral_axis_depth_steps):
-            block_depth_mm = beta1 * c_mm
-            compression_region = compression_block_polygon(section_polygon, frame, block_depth_mm)
-            concrete_area = max(0.0, float(compression_region.area))
-            concrete_force = concrete_stress_MPa * concrete_area
-
-            Pn = concrete_force
-            if concrete_area > 0.0:
-                concrete_centroid = compression_region.centroid
-                Mnx = concrete_force * (float(concrete_centroid.y) - y_ref)
-                Mny = concrete_force * (float(concrete_centroid.x) - x_ref)
+            if cached_base is not None:
+                base = cached_base[base_index]
+                concrete_area, concrete_force = base.concrete_area, base.concrete_force
+                Pn, Mnx, Mny = base.Pn, base.Mnx, base.Mny
+                eps_t, eps_t_fy, eps_t_es = base.eps_t, base.eps_t_fy, base.eps_t_es
+                rebar_displaced_concrete_subtracted = base.rebar_displaced_concrete_subtracted
+                rebar_inside_compression_count = base.rebar_inside_compression_count
             else:
-                Mnx = 0.0
-                Mny = 0.0
+                block_depth_mm = beta1 * c_mm
+                compression_region = compression_block_polygon(section_polygon, frame, block_depth_mm)
+                concrete_area = max(0.0, float(compression_region.area))
+                concrete_force = concrete_stress_MPa * concrete_area
 
-            eps_t: float | None = None
-            eps_t_fy = 420.0
-            eps_t_es = 200000.0
-            rebar_displaced_concrete_subtracted = 0.0
-            rebar_inside_compression_count = 0
-            for rebar in rebars:
-                material = _rebar_material_for(rebar, analysis_input.rebar_materials)
-                eps_s = steel_strain_at_point(rebar.x_mm, rebar.y_mm, frame, c_mm, ecu)
-                fs = _clamp(material.Es_MPa * eps_s, -material.fy_MPa, material.fy_MPa)
-                inside_compression = is_point_inside_compression_block(rebar.x_mm, rebar.y_mm, compression_region)
-                force, rebar_force_metadata = rebar_net_force_n(
-                    rebar.area_mm2,
-                    fs,
-                    fc_MPa,
-                    inside_compression,
-                    settings.subtract_rebar_displaced_concrete,
-                    concrete_stress_MPa=concrete_stress_MPa,
-                )
-                if inside_compression:
-                    rebar_inside_compression_count += 1
-                rebar_displaced_concrete_subtracted += rebar.area_mm2 * float(
-                    rebar_force_metadata["concrete_stress_subtracted_MPa"]
-                )
-                Pn += force
-                Mnx += force * (rebar.y_mm - y_ref)
-                Mny += force * (rebar.x_mm - x_ref)
+                Pn = concrete_force
+                if concrete_area > 0.0:
+                    concrete_centroid = compression_region.centroid
+                    Mnx = concrete_force * (float(concrete_centroid.y) - y_ref)
+                    Mny = concrete_force * (float(concrete_centroid.x) - x_ref)
+                else:
+                    Mnx = 0.0
+                    Mny = 0.0
 
-                if eps_s < 0.0:
-                    tensile_strain = -eps_s
-                    if eps_t is None or tensile_strain > eps_t:
-                        eps_t = tensile_strain
-                        eps_t_fy = material.fy_MPa
-                        eps_t_es = material.Es_MPa
+                eps_t: float | None = None
+                eps_t_fy = 420.0
+                eps_t_es = 200000.0
+                rebar_displaced_concrete_subtracted = 0.0
+                rebar_inside_compression_count = 0
+                membership = compression_membership(compression_region, rebar_xy) if section_cache is not None else None
+                for bar_index, rebar in enumerate(rebars):
+                    material = rebar_materials[bar_index]
+                    eps_s = steel_strain_at_point(rebar.x_mm, rebar.y_mm, frame, c_mm, ecu)
+                    fs = _clamp(material.Es_MPa * eps_s, -material.fy_MPa, material.fy_MPa)
+                    inside_compression = (membership[bar_index] if membership is not None else
+                                          is_point_inside_compression_block(rebar.x_mm, rebar.y_mm, compression_region))
+                    force, rebar_force_metadata = rebar_net_force_n(
+                        rebar.area_mm2,
+                        fs,
+                        fc_MPa,
+                        inside_compression,
+                        settings.subtract_rebar_displaced_concrete,
+                        concrete_stress_MPa=concrete_stress_MPa,
+                    )
+                    if inside_compression:
+                        rebar_inside_compression_count += 1
+                    rebar_displaced_concrete_subtracted += rebar.area_mm2 * float(
+                        rebar_force_metadata["concrete_stress_subtracted_MPa"]
+                    )
+                    Pn += force
+                    Mnx += force * (rebar.y_mm - y_ref)
+                    Mny += force * (rebar.x_mm - x_ref)
+
+                    if eps_s < 0.0:
+                        tensile_strain = -eps_s
+                        if eps_t is None or tensile_strain > eps_t:
+                            eps_t = tensile_strain
+                            eps_t_fy = material.fy_MPa
+                            eps_t_es = material.Es_MPa
+                if section_cache is not None:
+                    new_base.append(SectionBasePoint(
+                        concrete_area, concrete_force, Pn, Mnx, Mny, eps_t, eps_t_fy, eps_t_es,
+                        rebar_displaced_concrete_subtracted, rebar_inside_compression_count,
+                    ))
+            base_index += 1
 
             prestress_force = 0.0
             point_stress_warnings: list[str] = []
@@ -549,6 +582,8 @@ def _run_pmm_solver_engine(analysis_input: AnalysisInput, *, code_basis: str) ->
                 )
             )
 
+    if section_cache is not None and cached_base is None:
+        section_cache.store(base_key, new_base)
     info.append(f"Generated {len(points)} PMM point(s) using {'AASHTO LRFD 9th' if use_aashto else 'ACI-oriented'} PMM route.")
     if any(PRESTRESS_LINEAR_CAP_FALLBACK_WARNING in warning for warning in warnings):
         info.append("Prestress linear_cap fallback occurred for at least one PMM point.")

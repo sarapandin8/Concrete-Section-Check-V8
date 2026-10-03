@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from concrete_pmm_pro.analysis.pmm_prepared import PreparedPMMCheck
 
 from concrete_pmm_pro.analysis.result_models import PMMSolverResult, pmm_result_to_display_dataframe
 from concrete_pmm_pro.analysis.warnings import (
@@ -217,7 +220,11 @@ def _axial_only_check(combo: LoadCase, max_phiPn_N: float) -> DemandCapacityResu
 def check_uls_demands_against_rc_pmm(
     pmm_result: PMMSolverResult,
     load_cases: list[LoadCase],
+    *,
+    prepared: PreparedPMMCheck | None = None,
 ) -> DemandCapacitySummary:
+    if prepared is not None and prepared.result is not pmm_result:
+        raise ValueError("Prepared PMM check belongs to a different physical point cloud.")
     warnings = [
         PMM_PROTOTYPE_WARNING,
         DCR_PROTOTYPE_WARNING,
@@ -250,7 +257,7 @@ def check_uls_demands_against_rc_pmm(
         )
 
     results: list[DemandCapacityResult] = []
-    display_df = pmm_result_to_display_dataframe(pmm_result)
+    display_df = prepared.display_dataframe if prepared is not None else pmm_result_to_display_dataframe(pmm_result)
     build_slice_envelope = None
     estimate_directional_capacity_from_envelope = None
     estimate_directional_capacity_from_slice = None
@@ -268,7 +275,7 @@ def check_uls_demands_against_rc_pmm(
         build_slice_envelope = _build_slice_envelope
         estimate_directional_capacity_from_envelope = _estimate_directional_capacity_from_envelope
         estimate_directional_capacity_from_slice = _estimate_directional_capacity_from_slice
-        pmm_slice_at_pu = _pmm_slice_at_pu
+        pmm_slice_at_pu = ((lambda _df, pu: prepared.slice_at_pu(pu)) if prepared is not None else _pmm_slice_at_pu)
     for combo in active_uls:
         mu = math.hypot(combo.Mux_Nmm, combo.Muy_Nmm)
         angle = math.atan2(combo.Muy_Nmm, combo.Mux_Nmm) if mu > 0 else 0.0

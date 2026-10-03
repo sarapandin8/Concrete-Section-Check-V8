@@ -1,0 +1,22 @@
+{
+  "no_baseline_files_removed": true,
+  "changed_existing_files": [
+    "concrete_pmm_pro/analysis/capacity_check.py",
+    "concrete_pmm_pro/analysis/pmm_solver.py",
+    "concrete_pmm_pro/ui/analysis_page.py",
+    "concrete_pmm_pro/visualization/pmm_dashboard.py"
+  ],
+  "protected_files_byte_identical": [
+    "concrete_pmm_pro/analysis/prestress_stress.py",
+    "concrete_pmm_pro/analysis/strain_compatibility.py",
+    "concrete_pmm_pro/analysis/slice_envelope.py",
+    "concrete_pmm_pro/analysis/igird_combined_vt.py",
+    "concrete_pmm_pro/analysis/igird_composite_flexure.py",
+    "concrete_pmm_pro/ui/igird_combined_vt.py",
+    "concrete_pmm_pro/ui/prestress_page.py",
+    "concrete_pmm_pro/validation/igird_debonding.py",
+    "concrete_pmm_pro/io/project_io.py",
+    "app.py",
+    "requirements.txt"
+  ]
+}

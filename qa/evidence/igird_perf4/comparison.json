@@ -1,0 +1,45 @@
+{
+  "baseline_zip": "concrete-section-pro_IGIRDER-DBQA1-PERF3-debond-audit-flexure.zip",
+  "baseline_sha256": "8e095d6b6a3553307ce39a5c4d003b4f91db9d573a85daf8104da4af3bce15f5",
+  "input_json": "I_Girder_20m.json",
+  "input_sha256": "c27a27278fef69b5347e7216f5b3c9324f723a9a0ca2d5b52a8956c1fe765799",
+  "input_unchanged": true,
+  "grid_unchanged": [
+    72,
+    120
+  ],
+  "baseline_seconds": 45.83238448999998,
+  "optimized_seconds": 5.416091307999977,
+  "speedup": 8.46226215246816,
+  "reduction_pct": 88.18282887031178,
+  "base_sweeps_built": 1,
+  "base_sweeps_reused": 4,
+  "physical_pmm_clouds": 5,
+  "station_result_rows": 21,
+  "all_result_columns_exactly_equal": true,
+  "pmm_points_exactly_compared": 86400,
+  "nu_range_kN": [
+    -1.492,
+    575.159
+  ],
+  "nu_zero_diagnostic_only_seconds": 4.190989704000003,
+  "nu_zero_changes_strength": true,
+  "max_absolute_Mn_change_pct": 4.090943484697062,
+  "regression_modules": 47,
+  "regression_tests": 506,
+  "regression_failures": 0,
+  "regression_errors": 0,
+  "regression_skips": 0,
+  "limitations": [
+    "Single cold calculation per baseline/optimized variant in the same local environment; not a deployment SLA.",
+    "Nu=0 comparison is a separate QA copy and is not used by production results.",
+    "Nu sign/source, including whether FEA values contain prestress effects, is not established by the JSON.",
+    "Existing primary-Mux flexure scope, composite Be/interface gates, debonding FAIL/development review, and ENV_ULS concurrency limitations remain."
+  ],
+  "browser_verification": {
+    "calculate_button_seconds": 6.40526789799992,
+    "page_errors": [],
+    "streamlit_exceptions": 0,
+    "PERF4_audit_visible": true
+  }
+}

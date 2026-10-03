@@ -91,6 +91,8 @@ from concrete_pmm_pro.analysis.crossbeam_sls_transfer import (
 from concrete_pmm_pro.crossbeam.station_force_contract import canonical_sls_stage
 from concrete_pmm_pro.analysis.preflight import build_analysis_input_from_session_state, check_analysis_readiness
 from concrete_pmm_pro.analysis.pmm_solver import run_aashto_lrfd_column_pmm_solver, run_pmm_solver, run_rc_pmm_solver
+from concrete_pmm_pro.analysis.pmm_section_cache import PMMSectionCache
+from concrete_pmm_pro.analysis.pmm_prepared import PreparedFlexureCloud, PreparedPMMCheck
 from concrete_pmm_pro.analysis.prestress_checks import (
     PrestressCheckSummary,
     check_prestress_elements_for_analysis,
@@ -5991,6 +5993,8 @@ def _beam_uls_has_bonded_prestress(analysis_input: AnalysisInput | None) -> bool
 def _beam_uls_nominal_flexure_capacity_from_pmm(
     pmm_result: PMMSolverResult,
     load_cases: list[LoadCase],
+    *,
+    prepared: PreparedPMMCheck | None = None,
 ) -> tuple[float | None, list[str]]:
     """Return nominal Mn from an already-solved PMM point cloud.
 
@@ -6020,13 +6024,14 @@ def _beam_uls_nominal_flexure_capacity_from_pmm(
                 }
             )
             for point in pmm_result.points
-        ]
+        ] if prepared is None else []
         nominal_pmm = PMMSolverResult(
             points=nominal_points,
             warnings=list(pmm_result.warnings),
             info=[*list(pmm_result.info), "IGIRDER.ULS2P nominal-capacity view reused the solved PMM point cloud."],
-        )
-        nominal_summary = check_uls_demands_against_rc_pmm(nominal_pmm, load_cases)
+        ) if prepared is None else prepared.result
+        options = {"prepared": prepared} if prepared is not None else {}
+        nominal_summary = check_uls_demands_against_rc_pmm(nominal_pmm, load_cases, **options)
         nominal_result = nominal_summary.results[0] if nominal_summary.results else None
     except Exception as exc:
         return None, [f"Nominal flexure capacity interpolation failed: {exc}"]
@@ -6290,6 +6295,7 @@ def _beam_uls_positive_mx_neutral_axis_from_pmm(
     pmm_result: PMMSolverResult,
     *,
     Pu_N: float,
+    prepared: PreparedPMMCheck | None = None,
 ) -> tuple[float, float] | None:
     """Return (c_mm, theta_deg) for the +Mx uniaxial PMM slice at Pu.
 
@@ -6300,10 +6306,11 @@ def _beam_uls_positive_mx_neutral_axis_from_pmm(
     """
 
     try:
-        pmm_df = pmm_result_to_display_dataframe(pmm_result)
+        pmm_df = prepared.display_dataframe if prepared is not None else pmm_result_to_display_dataframe(pmm_result)
         if pmm_df.empty:
             return None
-        slice_df = pmm_slice_at_pu(pmm_df, N_to_kN(float(Pu_N)))
+        slice_df = (prepared.slice_at_pu(N_to_kN(float(Pu_N))) if prepared is not None else
+                    pmm_slice_at_pu(pmm_df, N_to_kN(float(Pu_N))))
         if slice_df.empty or "theta_rad" not in slice_df.columns or "c_mm" not in slice_df.columns:
             return None
         working = slice_df.copy()
@@ -6334,6 +6341,8 @@ def _beam_uls_solve_flexure_capacity_state(
     strength_route: BeamGirderUlsStrengthRoute,
     use_aashto_solver: bool = False,
     pmm_cloud_cache: dict[str, PMMSolverResult] | None = None,
+    section_cache: PMMSectionCache | None = None,
+    prepared_cloud_cache: dict[str, PreparedFlexureCloud] | None = None,
 ) -> dict[str, object]:
     """Run the detailed flexure solver once for one capacity-state key.
 
@@ -6356,14 +6365,22 @@ def _beam_uls_solve_flexure_capacity_state(
         ) if pmm_cloud_cache is not None else None
         pmm_result = pmm_cloud_cache.get(cloud_key) if pmm_cloud_cache is not None else None
         if pmm_result is None:
+            solver_options = {"section_cache": section_cache} if section_cache is not None else {}
             pmm_result = (
-                run_aashto_lrfd_column_pmm_solver(analysis_input)
+                run_aashto_lrfd_column_pmm_solver(analysis_input, **solver_options)
                 if use_aashto_solver
-                else run_rc_pmm_solver(analysis_input)
+                else run_rc_pmm_solver(analysis_input, **solver_options)
             )
             if pmm_cloud_cache is not None:
                 pmm_cloud_cache[cloud_key] = pmm_result
-        summary = check_uls_demands_against_rc_pmm(pmm_result, analysis_input.load_cases)
+        prepared_cloud = None
+        if prepared_cloud_cache is not None and cloud_key is not None:
+            prepared_cloud = prepared_cloud_cache.get(cloud_key)
+            if prepared_cloud is None:
+                prepared_cloud = PreparedFlexureCloud(pmm_result)
+                prepared_cloud_cache[cloud_key] = prepared_cloud
+        check_options = {"prepared": prepared_cloud.reduced} if prepared_cloud is not None else {}
+        summary = check_uls_demands_against_rc_pmm(pmm_result, analysis_input.load_cases, **check_options)
         result = summary.results[0] if summary.results else None
     except Exception as exc:
         return {"state": "solver_error", "error": f"Flexure check solver error: {exc}"}
@@ -6377,6 +6394,7 @@ def _beam_uls_solve_flexure_capacity_state(
     nominal_capacity_nmm, nominal_messages = _beam_uls_nominal_flexure_capacity_from_pmm(
         pmm_result,
         analysis_input.load_cases,
+        **({"prepared": prepared_cloud.nominal} if prepared_cloud is not None else {}),
     )
     routed_capacity_nmm, routed_basis_note = apply_flexure_code_basis(
         phi_capacity_nmm=float(result.capacity_phiMn_Nmm),
@@ -6391,6 +6409,7 @@ def _beam_uls_solve_flexure_capacity_state(
         neutral_axis = _beam_uls_positive_mx_neutral_axis_from_pmm(
             pmm_result,
             Pu_N=float(getattr(load_case, "Pu_N", 0.0) or 0.0),
+            **({"prepared": prepared_cloud.reduced} if prepared_cloud is not None else {}),
         )
     return {
         "state": "ok",
@@ -6542,6 +6561,8 @@ def _beam_uls_flexure_preview_dataframe(
         and _beam_uls_get_state_value(state, "section_preset_key") == "parametric_i_girder"
         else None
     )
+    section_cache = PMMSectionCache() if pmm_cloud_cache is not None else None
+    prepared_cloud_cache: dict[str, PreparedFlexureCloud] | None = {} if pmm_cloud_cache is not None else None
     capacity_cache_hits = 0
     capacity_cache_misses = 0
     for _, demand_row in demand_rows.iterrows():
@@ -6625,7 +6646,8 @@ def _beam_uls_flexure_preview_dataframe(
         if cache_hit:
             capacity_cache_hits += 1
         else:
-            cloud_options = {"pmm_cloud_cache": pmm_cloud_cache} if pmm_cloud_cache is not None else {}
+            cloud_options = ({"pmm_cloud_cache": pmm_cloud_cache, "section_cache": section_cache,
+                              "prepared_cloud_cache": prepared_cloud_cache} if pmm_cloud_cache is not None else {})
             capacity_state = _beam_uls_solve_flexure_capacity_state(
                 analysis_input,
                 strength_route=strength_route,
@@ -6816,8 +6838,9 @@ def _beam_uls_flexure_preview_dataframe(
         )
     if pmm_cloud_cache is not None:
         messages.insert(0,
-            f"IGIRDER.PERF3: {len(pmm_cloud_cache)} physical PMM cloud(s) built for "
+            f"IGIRDER.PERF4: {len(pmm_cloud_cache)} physical PMM cloud(s) built for "
             f"{len(demand_rows)} station row(s) in {time.perf_counter() - started:.2f} s. "
+            f"Concrete/rebar base sweeps: {section_cache.build_count}; reused: {section_cache.hit_count}. "
             "Each station retains its own Nu and moment check; neutral-axis resolution and equations are unchanged."
         )
     return pd.DataFrame(rows, columns=columns), deduplicate_warnings(messages)
