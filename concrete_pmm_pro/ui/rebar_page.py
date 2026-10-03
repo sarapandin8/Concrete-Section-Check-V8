@@ -2874,6 +2874,13 @@ def _render_igird_torsion_layout_settings(shear_table: pd.DataFrame) -> None:
             key="beam_girder_torsion_corner_longitudinal_confirmed",
             help="Combined V+T longitudinal detailing confirmation. Enabled only after at least one provided zone is selected for torsion.",
         )
+        perimeter_ok = st.checkbox(
+            "Existing longitudinal bars/tendons are distributed around the selected hoop perimeter",
+            value=bool(stored_raw.get("longitudinal_perimeter_distribution_confirmed", False)) if has_selected else False,
+            disabled=not has_selected,
+            key="beam_girder_torsion_perimeter_longitudinal_confirmed",
+            help="Confirm the existing Longitudinal Rebar/strand coordinates and cage drawing satisfy the physical perimeter distribution for AASHTO 5.7.3.6.3. This is a detailing confirmation, not an additional steel source or strength result.",
+        )
     with c2:
         note = st.text_input(
             "Torsion / longitudinal detailing note",
@@ -2886,7 +2893,7 @@ def _render_igird_torsion_layout_settings(shear_table: pd.DataFrame) -> None:
         "closed_loop_confirmed": False,
         "ph_mm": None,
         "hoop_centerline_offset_mm": None,
-        "longitudinal_perimeter_distribution_confirmed": False,
+        "longitudinal_perimeter_distribution_confirmed": bool(perimeter_ok) if has_selected else False,
         "corner_longitudinal_reinforcement_confirmed": bool(corner_ok) if has_selected else False,
         "note": str(note or ""),
     }
@@ -3148,6 +3155,9 @@ def _render_longitudinal_rebar_tab(
             "For Beam/Girder torsion, active ordinary bars are also the review-only Al source; do not duplicate Al in a separate table."
         )
     ordinary_rebar_system_enabled = reconcile_ordinary_rebar_system_flag_for_rebar_page(st.session_state, default=True)
+    if ordinary_rebar_system_enabled:
+        from concrete_pmm_pro.ui.igird_combined_vt import render_development_inputs
+        render_development_inputs()
     # Legacy UI.COMPACT1 source marker retained after Section Builder sync hotfix:
     # if not ordinary_rebar_enabled(st.session_state, default=True):
     if not ordinary_rebar_system_enabled:

@@ -937,6 +937,13 @@ def _prestress_table_metadata_from_session(session_state: Any) -> list[dict[str,
 
 def project_from_session_state(session_state: Any) -> ProjectModel:
     metadata = dict(_get_session_value(session_state, "project_metadata", {}) or {})
+    from concrete_pmm_pro.analysis.igird_combined_vt import DEVELOPMENT_KEY, development_settings
+    if _get_session_value(session_state, DEVELOPMENT_KEY, None) is not None:
+        metadata[DEVELOPMENT_KEY] = development_settings(session_state)
+    for key, expected_type in (("beam_girder_torsion_settings", dict), ("beam_girder_torsion_zone_settings", list)):
+        raw = _get_session_value(session_state, key, None)
+        if isinstance(raw, expected_type):
+            metadata[key] = raw.copy()
     for flag_name in (
         "rebars_valid_for_analysis",
         "prestress_valid_for_analysis",
@@ -1685,6 +1692,19 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
     if REINFORCEMENT_FLAGS_PRESET_KEY in project.metadata:
         session_state[REINFORCEMENT_FLAGS_PRESET_KEY] = project.metadata[REINFORCEMENT_FLAGS_PRESET_KEY]
     session_state["project_metadata"] = dict(project.metadata)
+    # A previous project's ordinary-bar development confirmation must not
+    # leak into a newly loaded model or its widget defaults.
+    from concrete_pmm_pro.analysis.igird_combined_vt import DEVELOPMENT_KEY, development_settings
+    session_state[DEVELOPMENT_KEY] = development_settings({"project_metadata": project.metadata})
+    for key, expected_type in (("beam_girder_torsion_settings", dict), ("beam_girder_torsion_zone_settings", list)):
+        raw = project.metadata.get(key)
+        session_state[key] = raw.copy() if isinstance(raw, expected_type) else expected_type()
+    for key in ("igird_vt_bars_continuous", "igird_vt_bars_left_anchor", "igird_vt_bars_right_anchor",
+                "igird_vt_bars_ld", "igird_vt_bars_development_note", "beam_girder_torsion_perimeter_longitudinal_confirmed",
+                "beam_girder_torsion_corner_longitudinal_confirmed", "beam_girder_torsion_zone_definition_editor",
+                "beam_girder_torsion_clear_cover_mm", "beam_girder_torsion_offset_override_enabled",
+                "beam_girder_torsion_offset_override_mm", "beam_girder_torsion_detailing_note"):
+        session_state.pop(key, None)
     analysis_restored = _restore_analysis_results_metadata(project, session_state)
     _reset_loaded_project_dirty_state(session_state, analysis_restored=analysis_restored)
     session_state[CROSSBEAM_PROJECT_GEOMETRY_AUDIT_KEY] = (

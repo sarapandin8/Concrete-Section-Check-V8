@@ -192,7 +192,8 @@ def test_igird_combined_guard_now_points_to_longitudinal_equation_not_fixed_thet
     assert not decision.empty
     assert set(decision["Status"]) == {"REVIEW"}
     notes = " ".join(decision["Notes"].astype(str).tolist()).lower()
-    assert "5.7.3.6.3-1" in notes
+    assert "verified final composite" in notes
+    assert decision["Code basis"].str.contains("5.7.3.6.3-1", regex=False).all()
     assert "fixed-theta" not in notes
 
 
@@ -614,7 +615,7 @@ def test_igird_uls6e_rebar_ui_uses_not_confirmed_for_corner_detail_and_does_not_
 
 def test_igird_uls6e_result_versions_invalidate_torsion_and_dependent_combined_only():
     assert _IGIRDER_TORSION_RESULT_VERSION.startswith("IGIRDER.ULS6E.")
-    assert _IGIRDER_COMBINED_VT_RESULT_VERSION.startswith("IGIRDER.ULS6E.")
+    assert _IGIRDER_COMBINED_VT_RESULT_VERSION.startswith("IGIRDER.ULS7.")
     assert _IGIRDER_SHEAR_RESULT_VERSION.startswith("IGIRDER.ULS5")
 
 

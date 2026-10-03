@@ -91,7 +91,7 @@ def bridge_beam_girder_uls_strength_route(code_edition: object | None = None) ->
         ),
         overall_guard_note=(
             "Bridge ULS check-specific gates report their own status. For Precast I-Girder, Shear and Torsion now share the station-dependent General Procedure family, "
-            "but Combined V+T remains REVIEW until the concurrent transverse-sum and longitudinal 5.7.3.6.3-1 equations are certified. Cross-check aggregation belongs in Result Summary. Anchorage, bearing/end-zone, shop-drawing detailing, "
+            "and IGIRDER.ULS7 checks the concurrent 5.7.3.6.1 transverse sum and 5.7.3.6.3-1 longitudinal force using developed physical steel. Missing development or detailing sources withhold PASS. Cross-check aggregation belongs in Result Summary. Anchorage, bearing/end-zone, shop-drawing detailing, "
             "and independent benchmark packages remain project review items."
         ),
         is_code_specific_shear_ready=True,

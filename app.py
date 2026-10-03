@@ -70,6 +70,10 @@ from concrete_pmm_pro.ui.analysis_page import (
     _beam_uls_shear_utilization_display,
     _beam_uls_shear_calculation_trace_dataframe,
     _beam_uls_shear_variable_definitions_dataframe,
+    _beam_uls_governing_combined_vt_row,
+    _active_beam_uls_demand_dataframe_from_session,
+    _beam_uls_strength_route_from_state,
+    _beam_uls_check_input_hash,
     _beam_uls_torsion_calculation_trace_dataframe,
     _beam_uls_torsion_variable_definitions_dataframe,
     _crossbeam_governing_component_summary,
@@ -3640,6 +3644,15 @@ def _results_beam_uls_cache(state: object) -> dict[str, dict[str, object]]:
             entry = filtered.get(check_name)
             if isinstance(entry, dict) and str(entry.get("result_version") or "") != expected:
                 filtered.pop(check_name, None)
+        combined = filtered.get("Shear + Torsion")
+        if isinstance(combined, dict) and combined.get("input_hash"):
+            # Read-only signatures, no solver: a changed development/source
+            # input must not leave a stale ULS7 PASS in Summary or Report/QA.
+            active = _active_beam_uls_demand_dataframe_from_session(state)
+            route = _beam_uls_strength_route_from_state(state, is_bridge=True, is_building=False)
+            current_hash = _beam_uls_check_input_hash(state, active, strength_route=route, check_name="Shear + Torsion")
+            if str(combined["input_hash"]) != current_hash:
+                filtered.pop("Shear + Torsion", None)
         return filtered
     return cache
 
@@ -3651,6 +3664,10 @@ def _results_beam_uls_best_row(entry: dict[str, object] | None, check_name: str)
     if df is None or df.empty:
         return {}
     work_df = df.copy()
+    if check_name == "Shear + Torsion" and entry.get("result_version") == _IGIRDER_COMBINED_VT_RESULT_VERSION:
+        # An unresolved required row governs over a numerical PASS; strength
+        # failures still govern over unresolved rows, as in Analysis.
+        return _beam_uls_governing_combined_vt_row(work_df) or {}
     if check_name == "Shear":
         # Keep Result Summary aligned with Analysis > ULS compact table.  The
         # compact Shear row is not simply the maximum strength D/C row: a
@@ -3679,6 +3696,25 @@ def _results_beam_uls_best_row(entry: dict[str, object] | None, check_name: str)
 
 def _results_beam_uls_row_status(check_name: str, row: Mapping[str, object], cache: dict[str, dict[str, object]]) -> str:
     status = str(row.get("__decision_status") or row.get("Status") or "").strip()
+    if check_name == "Torsion" and status.upper() == "REVIEW":
+        combined_entry = cache.get("Shear + Torsion")
+        combined_row = _results_beam_uls_best_row(combined_entry, "Shear + Torsion")
+        torsion_entry = cache.get("Torsion", {})
+        torsion_df = _results_dataframe(torsion_entry.get("torsion_check_df"))
+        if (isinstance(combined_entry, dict)
+                and combined_entry.get("result_version") == _IGIRDER_COMBINED_VT_RESULT_VERSION
+                and combined_row.get("Status") == "PASS" and torsion_df is not None and not torsion_df.empty):
+            design = torsion_df.loc[torsion_df.get("Threshold status", pd.Series(index=torsion_df.index, dtype=object)).eq("DESIGN REQUIRED")]
+            accepted = not design.empty and all(
+                design.get(key, pd.Series(index=design.index, dtype=object)).eq(value).all()
+                for key, value in [("Transverse status", "PASS"), ("Hoop detailing status", "PASS"),
+                                   ("Coverage status", "PASS"), ("Corner longitudinal status", "CONFIRMED")]
+            )
+            coverage = torsion_entry.get("torsion_coverage_summary", {})
+            if accepted and coverage.get("status") == "PASS":
+                # Resolve only the pending longitudinal dependency in Summary;
+                # the stored standalone component result is unchanged.
+                return "PASS — COMPONENT"
     if check_name == "Shear + Torsion":
         shear_row = _results_beam_uls_best_row(cache.get("Shear"), "Shear")
         torsion_row = _results_beam_uls_best_row(cache.get("Torsion"), "Torsion")
@@ -3732,6 +3768,8 @@ def _results_beam_uls_capacity(check_name: str, row: Mapping[str, object]) -> st
         return _results_scalar(_results_first_existing(row, ["Capacity", "φVn kN", "phiVn kN"]))
     if check_name == "Torsion":
         return _results_scalar(_results_first_existing(row, ["Capacity", "φTn kN-m", "phiTn kN-m"]))
+    if check_name == "Shear + Torsion" and row.get("Result version") == _IGIRDER_COMBINED_VT_RESULT_VERSION:
+        return _results_scalar(row.get("Capacity", "-"))
     return _results_scalar(_results_first_existing(row, ["Capacity", "Capacity / Limit", "Interaction limit", "limit"]))
 
 
@@ -3742,6 +3780,12 @@ def _results_beam_uls_action(check_name: str, status: str, row: Mapping[str, obj
         return "Resolve source Shear/Torsion FAIL before accepting V+T interaction. Interaction D/C is informational until source gates pass."
     if check_name == "Shear + Torsion" and "DATA REQUIRED" in label:
         return "Complete required V+T source data before accepting interaction."
+    if check_name == "Shear + Torsion" and row_map.get("Result version") == _IGIRDER_COMBINED_VT_RESULT_VERSION:
+        if "PASS" in label:
+            return "Review stored concurrent force, developed steel, transverse allocation and detailing audit before issue."
+        return str(row_map.get("Notes") or "Resolve concurrent transverse/longitudinal and development gates in Analysis → Shear + Torsion.")
+    if check_name == "Torsion" and label == "PASS — COMPONENT":
+        return "Transverse torsion component accepted; concurrent longitudinal acceptance is recorded in the current Shear + Torsion result."
     if check_name == "Shear" and "FAIL" in label:
         utilization = _beam_uls_shear_utilization_display(row_map) if row_map else ""
         if "Av/s min" in utilization or "Spacing" in utilization or "detailing" in utilization.lower():
@@ -3891,7 +3935,7 @@ def _results_igird_uls_summary_rows(state: object, cache: dict[str, dict[str, ob
     elif len(calculated) < len(required_rows):
         overall = "INCOMPLETE"
         action = "Run all required stage-specific I-Girder ULS checks in Analysis."
-    elif any(status not in {"PASS", "BELOW THRESHOLD", "NOT REQUIRED"} for status in statuses):
+    elif any(status not in {"PASS", "PASS — COMPONENT", "BELOW THRESHOLD", "NOT REQUIRED"} for status in statuses):
         overall = "REVIEW"
         action = "Resolve REVIEW / not-certified gates before report handoff."
     else:
@@ -4686,6 +4730,8 @@ def _render_results_static_plotly_figure(fig: go.Figure, *, caption: str | None 
         )
         fig.update_xaxes(tickfont=dict(size=10), title_font=dict(size=12))
         fig.update_yaxes(tickfont=dict(size=10), title_font=dict(size=12))
+        if isinstance(fig.layout.meta, dict) and fig.layout.meta.get("igird_concurrent_vt") == _IGIRDER_COMBINED_VT_RESULT_VERSION:
+            fig.update_layout(legend={"itemwidth": 30, "entrywidth": 185, "entrywidthmode": "pixels"})
         image_bytes = fig.to_image(
             format="png",
             width=_RESULTS_STATIC_FIG_WIDTH,
@@ -5050,6 +5096,26 @@ def _render_report_qa_igird_torsion_equation_trace(state: object) -> None:
         st.dataframe(_beam_uls_torsion_variable_definitions_dataframe(), use_container_width=True, hide_index=True)
 
 
+def _render_report_qa_igird_combined_vt_equation_trace(state: object) -> None:
+    """Show the same stored ULS7 governing row as Analysis and Summary."""
+    if not hasattr(state, "get") or state.get("section_preset_key") != "parametric_i_girder":
+        return
+    from concrete_pmm_pro.ui.igird_combined_vt import calculation_trace, variable_definitions
+    entry = _results_beam_uls_cache(state).get("Shear + Torsion")
+    governing = _results_beam_uls_best_row(entry, "Shear + Torsion")
+    render_section_bar("I-Girder Concurrent V+T — Stored Equation & Audit Trace",
+        "AASHTO 5.7.3.6.3-1 from current stored concurrent actions and developed steel. Report / QA does not rerun the solver.", mark="V")
+    if not governing:
+        st.info("No current stored ULS7 result. Calculate Shear + Torsion in Analysis for the current inputs.")
+        return
+    st.dataframe(calculation_trace(governing), use_container_width=True, hide_index=True)
+    with st.expander("Concurrent V+T — stored inputs / all station gates", expanded=False):
+        st.dataframe(_results_dataframe(entry.get("combined_vt_df")), use_container_width=True, hide_index=True)
+    with st.expander("Concurrent V+T — variable definitions", expanded=False):
+        st.dataframe(variable_definitions(), use_container_width=True, hide_index=True)
+    st.caption("Standalone Torsion is a transverse component. This concurrent gate owns longitudinal force acceptance. Sectional acceptance remains subject to the stated uniaxial/positive-composite scope and confirmed detailing/development sources.")
+
+
 def render_report_qa_workspace() -> None:
     render_page_header(
         "Report / QA",
@@ -5066,6 +5132,7 @@ def render_report_qa_workspace() -> None:
         _render_report_qa_result_summary_alignment(st.session_state)
         _render_report_qa_igird_shear_equation_trace(st.session_state)
         _render_report_qa_igird_torsion_equation_trace(st.session_state)
+        _render_report_qa_igird_combined_vt_equation_trace(st.session_state)
         render_section_bar(
             "Traceability / report tools",
             "Report and QA tools summarize stored results only; PMM, SLS, ULS, and verification solvers are not rerun here.",

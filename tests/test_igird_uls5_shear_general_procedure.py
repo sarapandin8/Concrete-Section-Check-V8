@@ -218,7 +218,7 @@ def test_igird_debonding_changes_phi_and_reduces_end_zone_prestress_participatio
     assert float(debonded["Aps development factor min"]) < float(bonded["Aps development factor min"])
 
 
-def test_igird_combined_vt_is_review_until_torsion_theta_route_is_consistent():
+def test_igird_combined_vt_with_missing_composite_fps_source_remains_review():
     state = _state()
     combined = _beam_uls_combined_vt_check_dataframe(state, _demand(tu_kNm=20.0), strength_route=_route())
     assert not combined.empty
@@ -226,7 +226,7 @@ def test_igird_combined_vt_is_review_until_torsion_theta_route_is_consistent():
     assert not decision.empty
     assert set(decision["Status"]) == {"REVIEW"}
     assert "PASS" not in set(combined["Status"])
-    assert any("theta" in str(note).lower() or "θ" in str(note) for note in decision["Notes"].tolist())
+    assert any("verified final composite" in str(note).lower() for note in decision["Notes"].tolist())
 
 
 def test_igird_shear_cache_version_is_selective_and_flexure_cache_is_not_invalidated():

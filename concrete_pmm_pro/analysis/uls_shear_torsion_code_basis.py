@@ -124,8 +124,8 @@ FORMULA_AUDIT_ITEMS: tuple[ShearTorsionFormulaAuditItem, ...] = (
         code_location="Concrete torsion / combined shear-torsion articles for prestressed girders",
         implementation_status="PARTIAL",
         risk_level="CRITICAL",
-        current_app_status="IGIRDER.ULS6E evaluates the prestressed solid I-Girder torsion threshold, torsion-modified Veff, station-dependent General Procedure theta, transverse 5.7.3.6.2 resistance, and an explicit full-station torsion-zone coverage gate. Hoop detailing and corner-longitudinal confirmation are reported separately. Standalone Torsion remains REVIEW above threshold after transverse acceptance because the concurrent longitudinal 5.7.3.6.3-1 equation is not yet certified.",
-        required_action="Complete the concurrent 5.7.3.6.1 transverse reinforcement sum and 5.7.3.6.3-1 longitudinal resistance in Combined V+T before permitting final PASS.",
+        current_app_status="IGIRDER.ULS6E retains the standalone solid I-Girder torsion threshold, Veff, General Procedure and transverse component. IGIRDER.ULS7 evaluates the concurrent 5.7.3.6.1 transverse sum and 5.7.3.6.3-1 longitudinal force from one physical action row with developed Aps and ordinary As. Nominal fps uses the verified composite section. Missing development, coverage, corner or perimeter confirmations withhold PASS. Other bridge presets remain guarded.",
+        required_action="Review ULS7 stored equations and station gates; confirm ordinary continuity/development, strand development and physical hoop/corner/perimeter details. Biaxial, negative composite flexure and bearing/D-region design require separate review.",
     ),
 )
 

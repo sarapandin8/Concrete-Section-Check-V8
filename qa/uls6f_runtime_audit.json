@@ -1,0 +1,57 @@
+{
+  "ready": {
+    "stations": 21,
+    "all_finite": true,
+    "chart_equals_stored_audit": true,
+    "phiTn_kNm_by_x": {
+      "0.0": 182.02427033715614,
+      "1.0": 182.02427033715614,
+      "2.0": 182.02427033715614,
+      "3.0": 182.02427033715614,
+      "4.0": 122.3719322376515,
+      "5.0": 142.4499309687359,
+      "6.0": 142.559774566006,
+      "7.0": 85.587188166687,
+      "8.0": 85.62388162260275,
+      "9.0": 85.64591126265618,
+      "10.0": 85.65325673913962,
+      "11.0": 85.64591126265618,
+      "12.0": 85.62388162260275,
+      "13.0": 85.587188166687,
+      "14.0": 85.53586473960361,
+      "15.0": 142.4499309687359,
+      "16.0": 122.3719322376515,
+      "17.0": 121.3495135581041,
+      "18.0": 182.02427033715614,
+      "19.0": 182.02427033715614,
+      "20.0": 182.02427033715614
+    },
+    "coverage": {
+      "status": "PASS",
+      "required_stations": 21,
+      "covered_stations": 21,
+      "uncovered_stations": [],
+      "detail": "Torsion-qualified transverse source covers all 21 design-required station(s)."
+    }
+  },
+  "missing_zone": {
+    "real_gap_stations": [
+      7.0,
+      8.0,
+      9.0,
+      10.0,
+      11.0,
+      12.0,
+      13.0,
+      14.0
+    ],
+    "coverage": {
+      "status": "PASS",
+      "required_stations": 21,
+      "covered_stations": 21,
+      "uncovered_stations": [],
+      "detail": "Torsion-qualified transverse source covers all 21 design-required station(s)."
+    }
+  },
+  "exceptions": 0
+}

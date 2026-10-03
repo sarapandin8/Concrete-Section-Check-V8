@@ -1,0 +1,32 @@
+{
+  "source": "AASHTO LRFD 9th (2020), 5.7.3.6.3-1",
+  "independent_hand_arithmetic": true,
+  "Mu_term_kN": 925.925925925926,
+  "Nu_term_kN": 111.11111111111111,
+  "Vs_used_kN": 555.5555555555555,
+  "shear_term_kN": 277.77777777777777,
+  "torsion_term_kN": 500.0,
+  "required_longitudinal_kN": 1752.0113523833566,
+  "resistance_kN": 2300.0,
+  "longitudinal_DC": 0.7617440662536333,
+  "inputs_SI": {
+    "mu_Nmm": 1000000000.0,
+    "nu_compression_positive_N": -200000.0,
+    "vu_N": 500000.0,
+    "tu_Nmm": 150000000.0,
+    "phi": 0.9,
+    "fc_MPa": 45.0,
+    "bv_mm": 200.0,
+    "dv_mm": 1200.0,
+    "Ao_mm2": 300000.0,
+    "ph_mm": 4000.0,
+    "fy_MPa": 390.0,
+    "cot_theta": 1.25,
+    "vc_N": 300000.0,
+    "avs_provided": 3.0,
+    "ats_required": 0.5,
+    "avs_minimum": 0.3,
+    "aps_fps_N": 2000000.0,
+    "as_fy_N": 300000.0
+  }
+}

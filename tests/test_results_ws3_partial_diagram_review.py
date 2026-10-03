@@ -8,7 +8,7 @@ SOURCE = Path("app.py").read_text(encoding="utf-8")
 
 def test_results_executive_state_reports_partial_beam_uls_results() -> None:
     assert 'title": "Overall Status: INCOMPLETE"' in SOURCE
-    assert 'Beam/Girder ULS checks have stored results' in SOURCE
+    assert 'checks have current stored results. Missing/stale checks:' in SOURCE
     assert '_render_results_executive_summary(governing_rows, st.session_state)' in SOURCE
 
 

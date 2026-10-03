@@ -103,6 +103,10 @@ from concrete_pmm_pro.analysis.result_models import (
     summarize_pmm_result,
 )
 from concrete_pmm_pro.analysis.igird_composite_flexure import prepare_aashto_composite_positive_flexure
+from concrete_pmm_pro.analysis.igird_combined_vt import (
+    RESULT_VERSION as IGIRD_CONCURRENT_VT_VERSION,
+    development_settings as igird_longitudinal_development_settings,
+)
 from concrete_pmm_pro.analysis.igird_interface_shear import (
     DEFAULT_PHI_SHEAR as IGIRD_INTERFACE_PHI,
     INTERFACE_FY_CAP_MPA as IGIRD_INTERFACE_FY_CAP_MPA,
@@ -10847,6 +10851,8 @@ def _render_beam_uls_static_plotly_figure(fig: go.Figure, *, caption: str | None
         )
         fig.update_xaxes(tickfont=dict(size=11), title_font=dict(size=13))
         fig.update_yaxes(tickfont=dict(size=11), title_font=dict(size=13))
+        if isinstance(fig.layout.meta, dict) and fig.layout.meta.get("igird_concurrent_vt") == IGIRD_CONCURRENT_VT_VERSION:
+            fig.update_layout(legend={"itemwidth": 30, "entrywidth": 205, "entrywidthmode": "pixels"})
         image_bytes = fig.to_image(
             format="png",
             width=_BEAM_ULS_STATIC_FIG_WIDTH,
@@ -11156,6 +11162,8 @@ def _beam_uls_check_input_hash(
         # ph is a derived audit mirror, not an independent source.  Hash the
         # qualification flags and the shared geometry basis instead.
         "torsion_zone_settings": canonical_zone_settings,
+        **({"longitudinal_development": igird_longitudinal_development_settings(state)}
+           if check_name == "Shear + Torsion" else {}),
     })
 
 
@@ -11639,6 +11647,9 @@ def _beam_uls_combined_vt_check_dataframe(
     *,
     strength_route: BeamGirderUlsStrengthRoute,
 ) -> pd.DataFrame:
+    if strength_route.is_bridge and _beam_uls_is_precast_composite_bridge(state, is_bridge=True):
+        from concrete_pmm_pro.ui.igird_combined_vt import check_dataframe
+        return check_dataframe(state, active_df, strength_route=strength_route)
     columns = [
         "Check", "Status", "Station type", "Support side", "Critical offset m", "Governing x", "Case", "Vu kN", "Tu kN-m", "Shape",
         "Stress status", "Transverse status", "Longitudinal status", "Stress D/C value", "Transverse D/C value", "Longitudinal D/C value", "Overall D/C value",
@@ -11691,7 +11702,7 @@ def _beam_uls_governing_combined_vt_row(vt_df: pd.DataFrame | None) -> dict[str,
     df["__dc"] = pd.to_numeric(df.get("Overall D/C value"), errors="coerce")
     tu_source = df["Tu kN-m"] if "Tu kN-m" in df.columns else pd.Series([float("nan")] * len(df), index=df.index)
     df["__tu"] = pd.to_numeric(tu_source, errors="coerce").abs()
-    status_priority = {"FAIL": 4, "DATA REQUIRED": 3, "PASS": 2, "PASS — REVIEW": 2, "BOUNDARY SKIPPED": 0, "NOT APPLICABLE": 0}
+    status_priority = {"FAIL": 5, "DATA REQUIRED": 4, "REVIEW": 3, "PASS": 2, "PASS — REVIEW": 2, "BOUNDARY SKIPPED": 0, "NOT APPLICABLE": 0, "NO DEMAND": 0}
     df["__status_priority"] = df.get("Status", pd.Series(index=df.index, dtype=object)).map(lambda value: status_priority.get(str(value), 1))
     idx = df.sort_values(["__status_priority", "__dc", "__tu"], ascending=[False, False, False]).index[0]
     return vt_df.loc[idx].drop(labels=["__dc", "__tu", "__status_priority"], errors="ignore").to_dict()
@@ -11867,6 +11878,18 @@ def _beam_uls_combined_vt_plot_dataframe(vt_df: pd.DataFrame | None) -> pd.DataF
         plot_df[column] = pd.to_numeric(plot_df[column], errors="coerce")
     if "Case" not in plot_df.columns:
         plot_df["Case"] = "-"
+    if "Result version" in plot_df.columns and plot_df["Result version"].eq(IGIRD_CONCURRENT_VT_VERSION).all():
+        # Concurrent rows at the same x are checked independently. The chart
+        # shows the largest utilization at x; an unresolved physical row
+        # keeps a real gap and is never filled from a neighbour.
+        assembled = []
+        for (_, _), group in plot_df.groupby(["Case", "__x_m"], sort=False):
+            chosen = group.iloc[0].copy()
+            for column in trace_columns:
+                values = pd.to_numeric(group.get(column, pd.Series(float("nan"), index=group.index)), errors="coerce")
+                chosen[column] = values.max() if values.notna().all() else float("nan")
+            assembled.append(chosen)
+        return pd.DataFrame(assembled)
     for case_name, case_idx in plot_df.groupby("Case", sort=False).groups.items():
         case_df = plot_df.loc[list(case_idx)].copy()
         interior_df = case_df[~case_df["__is_boundary"]].copy()
@@ -11948,10 +11971,13 @@ def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *,
         ("Transverse D/C", "Transverse D/C value"),
         ("Long. Al D/C", "Longitudinal D/C value"),
     ]
+    is_uls7 = "Result version" in plot_df.columns and plot_df["Result version"].eq(IGIRD_CONCURRENT_VT_VERSION).all()
+    if is_uls7:
+        traces = [("Veff limit D/C", "Stress D/C value"), ("Transverse D/C", "Transverse D/C value"), ("Longitudinal D/C", "Longitudinal D/C value")]
     has_trace = False
     if not plot_df.empty:
         plot_df = plot_df.sort_values(["Case", "__x_m"], kind="stable")
-        for case_name, case_df in plot_df.groupby("Case", sort=False):
+        for case_index, (case_name, case_df) in enumerate(plot_df.groupby("Case", sort=False), 1):
             for trace_name, column in traces:
                 if not _beam_uls_combined_vt_should_plot_trace(case_df, column):
                     continue
@@ -11962,7 +11988,7 @@ def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *,
                             x=case_df["__x_m"],
                             y=values,
                             mode="lines+markers",
-                            name=f"{trace_name} — {case_name}",
+                            name=(trace_name if plot_df["Case"].nunique() == 1 else f"{trace_name} · C{case_index}") if is_uls7 else f"{trace_name} — {case_name}",
                             line=dict(_BEAM_ULS_UTIL_LINE_STYLE.get(column, {"width": 3})),
                             marker=dict(_BEAM_ULS_UTIL_MARKER_STYLE.get(column, {"size": 7})),
                             hovertemplate=f"{trace_name}<br>x=%{{x:.3f}} m<br>D/C=%{{y:.3f}}<extra></extra>",
@@ -12023,6 +12049,9 @@ def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *,
         margin=dict(l=82, r=42, t=86, b=116),
         height=_BEAM_ULS_STATIC_FIG_HEIGHT,
     )
+    if is_uls7:
+        fig.update_layout(meta={"igird_concurrent_vt": IGIRD_CONCURRENT_VT_VERSION},
+            legend={"itemwidth": 30, "entrywidth": 205, "entrywidthmode": "pixels"})
     return fig
 
 
@@ -13367,7 +13396,7 @@ _IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION = "IGIRDER.ULS2P.flexure-performanc
 _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION = "IGIRDER.ULS3A.composite-flexure-audit-closeout"
 _IGIRDER_SHEAR_RESULT_VERSION = "IGIRDER.ULS5A.shear-qa-closeout"
 _IGIRDER_TORSION_RESULT_VERSION = "IGIRDER.ULS6E.torsion-coverage-detailing-closeout"
-_IGIRDER_COMBINED_VT_RESULT_VERSION = "IGIRDER.ULS6E.combined-vt-longitudinal-pending"
+_IGIRDER_COMBINED_VT_RESULT_VERSION = IGIRD_CONCURRENT_VT_VERSION
 
 
 _IGIRDER_INTERFACE_SHEAR_SETTINGS_KEY = "beam_girder_interface_shear_settings"
@@ -15020,6 +15049,12 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                 st.write("- The current torsion hoop geometry uses an explicit offset of the outside section polygon because the app does not yet have a dedicated torsion hoop layout owner. Verify Ao/Aoh and hook anchorage on drawings before construction issue.")
 
     if selected_check == "Shear + Torsion":
+        if is_precast_composite_bridge:
+            from concrete_pmm_pro.ui.igird_combined_vt import render_workspace
+            render_workspace(combined_vt_df, code_label=code_label)
+            with st.expander("ULS demand table — audit / source data", expanded=False):
+                st.dataframe(_beam_uls_audit_dataframe(active_df), use_container_width=True, hide_index=True)
+            return
         governing_vt = _beam_uls_governing_combined_vt_row(combined_vt_df)
         if governing_vt is not None:
             status = str(governing_vt.get("Status") or "REVIEW")
