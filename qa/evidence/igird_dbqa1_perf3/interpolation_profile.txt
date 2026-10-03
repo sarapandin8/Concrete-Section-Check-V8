@@ -1,0 +1,38 @@
+         6122684 function calls (5991798 primitive calls) in 2.780 seconds
+
+   Ordered by: cumulative time
+   List reduced from 811 to 30 due to restriction <30>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.006    0.006    2.780    2.780 /workspace/scratch/42ffe4c93098/development/concrete-section-pro/concrete_pmm_pro/ui/analysis_page.py:6331(_beam_uls_solve_flexure_capacity_state)
+        3    0.001    0.000    2.374    0.791 /workspace/scratch/42ffe4c93098/development/concrete-section-pro/concrete_pmm_pro/visualization/pmm_dashboard.py:243(pmm_slice_at_pu)
+        3    0.046    0.015    2.373    0.791 /workspace/scratch/42ffe4c93098/development/concrete-section-pro/concrete_pmm_pro/visualization/pmm_dashboard.py:161(pmm_slice_at_pu_interpolated)
+        2    0.000    0.000    1.723    0.861 /workspace/scratch/42ffe4c93098/development/concrete-section-pro/concrete_pmm_pro/analysis/capacity_check.py:217(check_uls_demands_against_rc_pmm)
+    26282    0.031    0.000    1.185    0.000 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/frame.py:1505(iterrows)
+27445/27218    0.132    0.000    1.147    0.000 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/series.py:389(__init__)
+        1    0.006    0.006    0.957    0.957 /workspace/scratch/42ffe4c93098/development/concrete-section-pro/concrete_pmm_pro/ui/analysis_page.py:5991(_beam_uls_nominal_flexure_capacity_from_pmm)
+        1    0.000    0.000    0.927    0.927 /workspace/scratch/42ffe4c93098/development/concrete-section-pro/concrete_pmm_pro/ui/analysis_page.py:6289(_beam_uls_positive_mx_neutral_axis_from_pmm)
+      227    0.001    0.000    0.394    0.002 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/frame.py:10170(apply)
+      227    0.001    0.000    0.390    0.002 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/apply.py:864(apply)
+      227    0.001    0.000    0.388    0.002 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/apply.py:1061(apply_standard)
+    29514    0.088    0.000    0.355    0.000 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/construction.py:517(sanitize_array)
+      227    0.019    0.000    0.346    0.002 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/apply.py:1070(apply_series_generator)
+    72590    0.066    0.000    0.254    0.000 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/series.py:1095(__getitem__)
+1385552/1382936    0.153    0.000    0.231    0.000 {built-in method builtins.isinstance}
+        3    0.000    0.000    0.221    0.074 /workspace/scratch/42ffe4c93098/development/concrete-section-pro/concrete_pmm_pro/analysis/result_models.py:58(pmm_result_to_display_dataframe)
+63526/63291    0.046    0.000    0.205    0.000 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/generic.py:6301(__setattr__)
+    25920    0.013    0.000    0.195    0.000 /workspace/scratch/42ffe4c93098/development/concrete-section-pro/concrete_pmm_pro/visualization/pmm_dashboard.py:193(<lambda>)
+      440    0.005    0.000    0.192    0.000 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/frame.py:6997(sort_values)
+     2266    0.007    0.000    0.154    0.000 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/frame.py:4062(__getitem__)
+        3    0.019    0.006    0.150    0.050 /workspace/scratch/42ffe4c93098/development/concrete-section-pro/concrete_pmm_pro/analysis/result_models.py:54(to_dataframe)
+     1341    0.003    0.000    0.138    0.000 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/generic.py:6662(copy)
+    27218    0.038    0.000    0.137    0.000 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/internals/managers.py:1863(from_array)
+    26581    0.082    0.000    0.136    0.000 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/dtypes/cast.py:1156(maybe_infer_to_datetimelike)
+    32333    0.043    0.000    0.130    0.000 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/generic.py:278(__init__)
+    28098    0.083    0.000    0.129    0.000 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/series.py:784(name)
+     1341    0.005    0.000    0.123    0.000 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/internals/managers.py:557(copy)
+     8641    0.074    0.000    0.117    0.000 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pydantic/main.py:393(model_copy)
+    72590    0.045    0.000    0.113    0.000 /opt/codex/runtimes/codex-primary-runtime/dependencies/python/lib/python3.12/site-packages/pandas/core/series.py:1220(_get_value)
+      216    0.015    0.000    0.101    0.000 /workspace/scratch/42ffe4c93098/development/concrete-section-pro/concrete_pmm_pro/visualization/pmm_dashboard.py:138(_interpolate_between_rows)
+
+

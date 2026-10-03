@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import re
+import time
 from collections.abc import Mapping
 from datetime import datetime
 from html import escape
@@ -6332,6 +6333,7 @@ def _beam_uls_solve_flexure_capacity_state(
     *,
     strength_route: BeamGirderUlsStrengthRoute,
     use_aashto_solver: bool = False,
+    pmm_cloud_cache: dict[str, PMMSolverResult] | None = None,
 ) -> dict[str, object]:
     """Run the detailed flexure solver once for one capacity-state key.
 
@@ -6342,11 +6344,25 @@ def _beam_uls_solve_flexure_capacity_state(
     """
 
     try:
-        pmm_result = (
-            run_aashto_lrfd_column_pmm_solver(analysis_input)
-            if use_aashto_solver
-            else run_rc_pmm_solver(analysis_input)
-        )
+        # IGIRDER.PERF3: a PMM cloud depends on the physical section and solver
+        # settings. Nu and the moment ray are applied by the demand check below,
+        # and do not enter the accepted neutral-axis sweep. Keep their individual
+        # capacity-state keys; reuse only the underlying cloud within this run.
+        cloud_key = _beam_uls_flexure_capacity_state_key(
+            analysis_input.model_copy(update={"load_cases": []}),
+            strength_route=strength_route,
+            demand_kNm=1.0,
+            solver_engine="aashto_section5" if use_aashto_solver else "shared_rc",
+        ) if pmm_cloud_cache is not None else None
+        pmm_result = pmm_cloud_cache.get(cloud_key) if pmm_cloud_cache is not None else None
+        if pmm_result is None:
+            pmm_result = (
+                run_aashto_lrfd_column_pmm_solver(analysis_input)
+                if use_aashto_solver
+                else run_rc_pmm_solver(analysis_input)
+            )
+            if pmm_cloud_cache is not None:
+                pmm_cloud_cache[cloud_key] = pmm_result
         summary = check_uls_demands_against_rc_pmm(pmm_result, analysis_input.load_cases)
         result = summary.results[0] if summary.results else None
     except Exception as exc:
@@ -6409,6 +6425,7 @@ def _beam_uls_flexure_preview_dataframe(
     older call sites, but new UI code should pass ``strength_route``.
     """
 
+    started = time.perf_counter()
     if strength_route is None:
         display = str(code_label or "").strip().casefold()
         route_is_building = bool(is_building) or "aci" in display or "318" in display
@@ -6518,6 +6535,13 @@ def _beam_uls_flexure_preview_dataframe(
     # design route, and Nu are identical.  Debonding or tension-face changes
     # naturally create a different key.
     capacity_state_cache: dict[str, dict[str, object]] = {}
+    # Scope this optimization to the requested precast I-Girder full-span route.
+    # A new Calculate starts an empty cache; no cloud survives input edits/load.
+    pmm_cloud_cache: dict[str, PMMSolverResult] | None = (
+        {} if full_span_capacity and strength_route.is_bridge
+        and _beam_uls_get_state_value(state, "section_preset_key") == "parametric_i_girder"
+        else None
+    )
     capacity_cache_hits = 0
     capacity_cache_misses = 0
     for _, demand_row in demand_rows.iterrows():
@@ -6601,10 +6625,12 @@ def _beam_uls_flexure_preview_dataframe(
         if cache_hit:
             capacity_cache_hits += 1
         else:
+            cloud_options = {"pmm_cloud_cache": pmm_cloud_cache} if pmm_cloud_cache is not None else {}
             capacity_state = _beam_uls_solve_flexure_capacity_state(
                 analysis_input,
                 strength_route=strength_route,
                 use_aashto_solver=use_aashto_solver,
+                **cloud_options,
             )
             capacity_state_cache[capacity_state_key] = capacity_state
             capacity_cache_misses += 1
@@ -6787,6 +6813,12 @@ def _beam_uls_flexure_preview_dataframe(
         messages.append(
             f"Flexure capacity-state cache reused {capacity_cache_hits} station row(s); "
             f"{capacity_cache_misses} unique detailed capacity state(s) solved."
+        )
+    if pmm_cloud_cache is not None:
+        messages.insert(0,
+            f"IGIRDER.PERF3: {len(pmm_cloud_cache)} physical PMM cloud(s) built for "
+            f"{len(demand_rows)} station row(s) in {time.perf_counter() - started:.2f} s. "
+            "Each station retains its own Nu and moment check; neutral-axis resolution and equations are unchanged."
         )
     return pd.DataFrame(rows, columns=columns), deduplicate_warnings(messages)
 

@@ -22,7 +22,9 @@ from concrete_pmm_pro.core.design_code import (
     normalize_project_design_code,
     project_design_code_from_session,
     workflow_project_design_code_from_session,
+    workflow_project_code_edition_from_session,
 )
+from concrete_pmm_pro.validation.igird_debonding import igird_debonding_audit, debonding_status
 from concrete_pmm_pro.core.reinforcement_system import ordinary_rebar_enabled, prestressing_steel_enabled
 from concrete_pmm_pro.core.units import kN_to_N
 from concrete_pmm_pro.data.prestress_tendon_products import (
@@ -4805,11 +4807,33 @@ def _girder_debonding_schedule_dataframe(table: pd.DataFrame, span_length_m: flo
     return pd.DataFrame(rows)
 
 
-def _render_girder_debonding_rule_dashboard(table: pd.DataFrame, span_length_m: float) -> None:
+def _girder_debonding_qa(table: pd.DataFrame, span_length_m: float, geometry: SectionGeometry | None = None,
+                         *, layout_errors=(), layout_warnings=()) -> tuple[str, pd.DataFrame, bool]:
+    """Select the edition-specific I-Girder audit; preserve other preset routes."""
+    geometry = geometry or st.session_state.get("section_geometry")
+    scoped = (
+        _current_or_geometry_section_preset_key(geometry) == "parametric_i_girder"
+        and workflow_project_design_code_from_session(st.session_state) == PROJECT_CODE_AASHTO_LRFD
+        and workflow_project_code_edition_from_session(st.session_state) == "AASHTO LRFD 9th Edition"
+    )
+    if scoped:
+        points = _girder_strand_point_layout_dataframe(table, geometry)
+        if not points.empty:
+            points["Diameter mm"] = points["Strand Size"].map(lambda size: _strand_size_properties(size)["diameter_mm"])
+        params = st.session_state.get("section_parameters") or (getattr(geometry, "metadata", {}) or {}).get("parameters", {})
+        audit = igird_debonding_audit(table, span_length_m=span_length_m, section_parameters=params, points=points)
+        return debonding_status(audit, layout_errors=layout_errors, layout_warnings=layout_warnings), audit, True
+    audit = girder_debonding_rule_audit_dataframe(table, span_length_m=span_length_m)
+    return debonding_status(audit, layout_errors=layout_errors, layout_warnings=layout_warnings), audit, False
+
+
+def _render_girder_debonding_rule_dashboard(table: pd.DataFrame, span_length_m: float,
+                                           geometry: SectionGeometry | None = None) -> None:
     """Render PS6A debonding QA without claiming code certification."""
 
-    status = girder_debonding_preview_status(table, span_length_m=span_length_m)
-    audit = girder_debonding_rule_audit_dataframe(table, span_length_m=span_length_m)
+    errors, warnings = _validate_girder_strand_layout(table, span_length_m=span_length_m, geometry=geometry)
+    status, audit, scoped = _girder_debonding_qa(table, span_length_m, geometry,
+                                              layout_errors=errors, layout_warnings=warnings)
     critical = girder_critical_transfer_station_dataframe(table, span_length_m=span_length_m)
     active = _active_girder_strand_layout_rows(table)
     debonded_rows = 0
@@ -4820,20 +4844,31 @@ def _render_girder_debonding_rule_dashboard(table: pd.DataFrame, span_length_m: 
         if left > 1e-9 or right > 1e-9:
             debonded_rows += 1
         max_debond = max(max_debond, left, right)
-    tone = "ready" if status == "OK" else ("danger" if status == "ERROR" else "review")
+    tone = "ready" if status == "OK" else ("danger" if status in {"ERROR", "FAIL"} else "review")
     metrics = [
-        PrestressMetric("Debonding QA", status, "Individual preview only", tone, strong=True),
+        PrestressMetric("Debonding QA", status, "AASHTO 9th detailing screen" if scoped else "Individual preview only", tone, strong=True),
         PrestressMetric("Debonded rows", f"{debonded_rows} / {len(active)}", "Active row groups", "info"),
-        PrestressMetric("Max debond length", f"{max_debond:.3f} m", f"L/5 = {span_length_m / 5.0:.3f} m", "neutral"),
+        PrestressMetric("Max debond length", f"{max_debond:.3f} m", f"0.20L = {span_length_m / 5.0:.3f} m · recommendation" if scoped else f"L/5 = {span_length_m / 5.0:.3f} m", "neutral"),
         PrestressMetric("Critical stations", str(len(critical.index)), "End faces + sleeve transitions", "info"),
     ]
     st.markdown(_metric_strip_html(metrics), unsafe_allow_html=True)
     if status == "ERROR":
         st.error("Debonding QA found preview input errors. Review before using the prestress preview.")
+    elif status == "FAIL":
+        st.error("Debonding detailing screen FAIL. Review the flagged strand numbers and code clauses before accepting this layout.")
     elif status == "REVIEW":
         st.warning("Debonding QA requires engineering review. This is not a final AASHTO/ACI code-certified debonding check.")
     else:
         st.success("Debonding QA preview has no input errors. Final code-certified checks and auto-recommendation are still future milestones.")
+
+    if scoped:
+        st.caption("AASHTO LRFD 9th Edition · 5.9.4.3.3(A-I), pp. 5-144–145. ERROR = invalid input; FAIL = detected detailing violation; REVIEW = recommendation or unverified development/strength requirement.")
+        actions = audit[audit["Status"].isin(["ERROR", "FAIL", "REVIEW"])].rename(columns={
+            "Rule": "Check / code clause", "Demand / value": "Affected strands / finding",
+            "Limit / expectation": "Required action / criterion",
+        })
+        st.markdown("##### Required detailing review")
+        st.dataframe(actions.drop(columns=["Engineering note"]), use_container_width=True, hide_index=True)
 
     with st.expander("Debonding rule audit — individual preview", expanded=status != "OK"):
         st.dataframe(audit, use_container_width=True, hide_index=True)
@@ -7155,12 +7190,15 @@ def _render_girder_strand_layout_and_debonding_ui(geometry: SectionGeometry | No
         st.dataframe(normalized[audit_columns], use_container_width=True, hide_index=True)
 
     errors, warnings = _validate_girder_strand_layout(normalized, span_length_m=float(span), geometry=geometry)
-    preview_status = girder_debonding_preview_status(normalized, span_length_m=float(span))
+    preview_status, rule_audit, scoped_debond_qa = _girder_debonding_qa(normalized, float(span), geometry,
+                                                                   layout_errors=errors, layout_warnings=warnings)
+    rule_failures = int(rule_audit["Status"].isin(["ERROR", "FAIL"]).sum())
+    rule_reviews = int((rule_audit["Status"] == "REVIEW").sum())
     metrics = [
         PrestressMetric("Active strand groups", str(len(_active_girder_strand_layout_rows(normalized))), "Rows used by debond preview", "info", strong=True),
         PrestressMetric("Total strands", f"{int((_active_girder_strand_layout_rows(normalized)['No. Strands']).sum())}" if not _active_girder_strand_layout_rows(normalized).empty else "0", "Active groups only", "info"),
         PrestressMetric("Span convention", "x = 0 → L", "Left support to right support", "neutral"),
-        PrestressMetric("Debonding QA", preview_status, f"{len(errors)} layout error(s), {len(warnings)} warning(s)", "ready" if preview_status == "OK" else ("danger" if preview_status == "ERROR" else "review"), strong=True),
+        PrestressMetric("Debonding QA", preview_status, f"Layout errors: {len(errors)} · Rule failures: {rule_failures} · Review: {rule_reviews}" if scoped_debond_qa else f"{len(errors)} layout error(s), {len(warnings)} warning(s)", "ready" if preview_status == "OK" else ("danger" if preview_status in {"ERROR", "FAIL"} else "review"), strong=True),
     ]
     st.markdown(_metric_strip_html(metrics), unsafe_allow_html=True)
     if errors:
@@ -7215,7 +7253,7 @@ def _render_girder_strand_layout_and_debonding_ui(geometry: SectionGeometry | No
                 "The schematic is a detailing/preview view only. Transfer-length force build-up after each sleeve transition remains a future milestone."
             )
     with tab_rules:
-        _render_girder_debonding_rule_dashboard(normalized, float(span))
+        _render_girder_debonding_rule_dashboard(normalized, float(span), geometry)
     with tab_losses:
         _render_girder_force_states_losses_workspace(normalized, geometry)
     with tab_advisory:
@@ -7784,6 +7822,15 @@ def _build_prestress_status_rows(
                 strong=True,
             ),
         ]
+        table = st.session_state.get("girder_strand_layout_table")
+        if table is not None:
+            settings = _girder_prestress_system_settings_from_session()
+            status, _, scoped = _girder_debonding_qa(pd.DataFrame(table), float(settings["span_length_m"]))
+            if scoped:
+                rows[0] = PrestressMetric("Input readiness", "Ready" if geometry_available else "Not ready",
+                                         detail="section geometry available", status="ready" if geometry_available else "danger", strong=True)
+                rows.insert(1, PrestressMetric("Debonding detailing", status, detail="AASHTO 9th layout screen",
+                    status="danger" if status in {"ERROR", "FAIL"} else ("review" if status == "REVIEW" else "ready"), strong=True))
         rows.extend(_girder_strand_layout_status_metrics())
         return rows
 

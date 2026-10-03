@@ -1,0 +1,25 @@
+{
+  "baseline_sha256": "e551039e88ade179a09d2a9da27c456b42c982834f79008c7588fd0bdbe6e974",
+  "modified": [
+    "concrete_pmm_pro/ui/prestress_page.py",
+    "concrete_pmm_pro/ui/analysis_page.py",
+    "concrete_pmm_pro/visualization/pmm_dashboard.py"
+  ],
+  "added": [
+    "qa/igird_dbqa_perf_runtime.py",
+    "tests/test_igird_perf3.py",
+    "tests/test_igird_dbqa1.py",
+    "qa/fixtures/I_Girder_20m.json",
+    "concrete_pmm_pro/validation/igird_debonding.py"
+  ],
+  "protected_files_exactly_equal": {
+    "concrete_pmm_pro/analysis/pmm_solver.py": true,
+    "concrete_pmm_pro/analysis/prestress_stress.py": true,
+    "concrete_pmm_pro/analysis/capacity_check.py": true,
+    "concrete_pmm_pro/analysis/igird_combined_vt.py": true,
+    "concrete_pmm_pro/analysis/igird_composite_flexure.py": true,
+    "concrete_pmm_pro/ui/igird_combined_vt.py": true,
+    "concrete_pmm_pro/io/project_io.py": true,
+    "app.py": true
+  }
+}

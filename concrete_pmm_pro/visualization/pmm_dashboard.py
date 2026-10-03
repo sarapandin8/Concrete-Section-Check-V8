@@ -190,7 +190,10 @@ def pmm_slice_at_pu_interpolated(
         if len(working) < 2:
             skipped_theta_count += 1
             continue
-        working["_radius"] = working.apply(lambda row: math.hypot(row["phiMnx_kNm"], row["phiMny_kNm"]), axis=1)
+        # PERF3: keep math.hypot and the accepted duplicate-selection order,
+        # but avoid allocating one pandas Series per PMM point.
+        working["_radius"] = [math.hypot(mx, my) for mx, my in
+                              working[["phiMnx_kNm", "phiMny_kNm"]].itertuples(index=False, name=None)]
         working = working.sort_values([resolved_p_column, "_radius"]).drop_duplicates(subset=[resolved_p_column], keep="last")
         working = working.sort_values(resolved_p_column).drop(columns=["_radius"])
         p_values = working[resolved_p_column].astype(float).to_list()
@@ -206,14 +209,14 @@ def pmm_slice_at_pu_interpolated(
             continue
 
         interpolated_row: dict[str, Any] | None = None
-        sorted_rows = list(working.iterrows())
-        for (_, left), (_, right) in zip(sorted_rows[:-1], sorted_rows[1:]):
-            p1 = float(left[resolved_p_column])
-            p2 = float(right[resolved_p_column])
+        # Only the bracketing rows require Series objects. The same adjacent
+        # pairs and predicates are inspected in the same order as before.
+        for index, (p1, p2) in enumerate(zip(p_values[:-1], p_values[1:])):
             if p1 == p2:
                 continue
             if (p1 <= Pu_kN <= p2) or (p2 <= Pu_kN <= p1):
                 ratio = (Pu_kN - p1) / (p2 - p1)
+                left, right = working.iloc[index], working.iloc[index + 1]
                 interpolated_row = _interpolate_between_rows(left, right, ratio, float(theta), Pu_kN, resolved_p_column)
                 break
         if interpolated_row is None:

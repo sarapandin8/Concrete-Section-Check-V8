@@ -1,0 +1,18 @@
+{
+  "variant": "baseline",
+  "wall_seconds": 164.56993099300007,
+  "pmm_calls": 21,
+  "pmm_seconds": 135.96324916399965,
+  "row_count": 21,
+  "capacity_state_count": 21,
+  "physical_cloud_count": 5,
+  "grid": [
+    72,
+    120
+  ],
+  "messages": [
+    "Full-span \u03c6Mn capacity evaluated at 21 station row(s); zero-demand stations retain physical section capacity with D/C not applicable.",
+    "Dedicated girder strand layout included in flexure check at the demand station using final effective prestress force.",
+    "Nominal Mn reused the solved PMM point cloud; no duplicate neutral-axis sweep was run."
+  ]
+}

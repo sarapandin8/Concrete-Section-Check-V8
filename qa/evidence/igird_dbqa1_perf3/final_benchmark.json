@@ -1,0 +1,19 @@
+{
+  "variant": "final",
+  "wall_seconds": 50.14067199600004,
+  "pmm_calls": 5,
+  "pmm_seconds": 35.067223509000314,
+  "row_count": 21,
+  "capacity_state_count": 21,
+  "physical_cloud_count": 5,
+  "grid": [
+    72,
+    120
+  ],
+  "messages": [
+    "IGIRDER.PERF3: 5 physical PMM cloud(s) built for 21 station row(s) in 50.10 s. Each station retains its own Nu and moment check; neutral-axis resolution and equations are unchanged.",
+    "Full-span \u03c6Mn capacity evaluated at 21 station row(s); zero-demand stations retain physical section capacity with D/C not applicable.",
+    "Dedicated girder strand layout included in flexure check at the demand station using final effective prestress force.",
+    "Nominal Mn reused the solved PMM point cloud; no duplicate neutral-axis sweep was run."
+  ]
+}

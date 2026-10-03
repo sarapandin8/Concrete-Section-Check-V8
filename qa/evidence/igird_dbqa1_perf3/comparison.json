@@ -1,0 +1,30 @@
+{
+  "numeric_columns": [
+    "Utilization",
+    "Demand kN-m",
+    "Capacity kN-m",
+    "Utilization value",
+    "Capacity plot sign",
+    "Mn nominal kN-m",
+    "\u03c6 value",
+    "\u03c6Mn kN-m",
+    "D/C value",
+    "Neutral axis c mm",
+    "Neutral axis \u03b8 deg"
+  ],
+  "all_21_stations_bit_equal": true,
+  "statuses_identical": true,
+  "baseline_seconds": 164.56993099300007,
+  "final_seconds": 50.14067199600004,
+  "speedup": 3.2821644473797362,
+  "time_reduction_percent": 69.53230052813673,
+  "pmm_solves": [
+    21,
+    5
+  ],
+  "resolution": [
+    72,
+    120
+  ],
+  "note": "Timing is this machine, kernel + station audit only; not deployment/network timing."
+}
