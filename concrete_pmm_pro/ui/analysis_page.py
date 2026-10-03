@@ -12981,6 +12981,66 @@ def _beam_uls_active_station_domain(active_df: pd.DataFrame | None) -> tuple[flo
     return float(x_min), float(x_max)
 
 
+def _beam_uls_coalesce_torsion_plot_rows(plot_df: pd.DataFrame) -> pd.DataFrame:
+    """Return one chart row per Case/x, preferring physical finite results.
+
+    IGIRDER.ULS6F chart closeout: a physical torsion station and a synthetic
+    DIAGRAM BOUNDARY row can legitimately share x=0 or x=L.  Plotly treats a
+    NaN row at the same x as a line break, so a synthetic threshold-only row
+    must never interrupt an already finite physical φTn result.  This helper
+    coalesces duplicate Case/x rows metric-by-metric, preferring non-boundary
+    finite engineering results and falling back to diagram-only references
+    only when no physical finite value exists.  It is display-only and does
+    not alter stored solver/audit rows.
+    """
+
+    if plot_df is None or plot_df.empty or "__x_m" not in plot_df.columns:
+        return plot_df
+    df = plot_df.copy()
+    case_col = "Case" if "Case" in df.columns else None
+    station_type = df.get("Station type", pd.Series(index=df.index, dtype=object)).astype(str).str.upper()
+    boundary_extension = df.get("__Plot boundary extension", pd.Series(False, index=df.index))
+    boundary_extension = boundary_extension.map(lambda value: bool(value) if pd.notna(value) else False)
+    df["__is_diagram_boundary"] = station_type.eq("DIAGRAM BOUNDARY") | boundary_extension
+
+    group_cols = ["__x_m"] if case_col is None else [case_col, "__x_m"]
+    rows: list[pd.Series] = []
+    for _, group in df.groupby(group_cols, sort=False, dropna=False):
+        group = group.copy()
+        physical = group.loc[~group["__is_diagram_boundary"]]
+        preferred = physical if not physical.empty else group
+
+        # Start from the most engineering-relevant row.  If more than one
+        # physical row exists at a Case/x pair, keep the row with the largest
+        # finite D/C when available; otherwise retain stable source order.
+        preferred = preferred.copy()
+        preferred["__rank_dc"] = pd.to_numeric(preferred.get("D/C value"), errors="coerce")
+        if preferred["__rank_dc"].notna().any():
+            base = preferred.sort_values("__rank_dc", ascending=False, kind="stable").iloc[0].copy()
+        else:
+            base = preferred.iloc[0].copy()
+
+        for metric in ("__phi_tn", "__phi_tcr", "__threshold"):
+            if metric not in group.columns:
+                continue
+            physical_values = pd.to_numeric(physical.get(metric), errors="coerce").dropna() if not physical.empty else pd.Series(dtype=float)
+            any_values = pd.to_numeric(group.get(metric), errors="coerce").dropna()
+            if not physical_values.empty:
+                base[metric] = float(physical_values.iloc[0])
+            elif not any_values.empty:
+                base[metric] = float(any_values.iloc[0])
+            else:
+                base[metric] = float("nan")
+
+        base["__has_physical_source"] = bool(not physical.empty)
+        rows.append(base.drop(labels=["__rank_dc"], errors="ignore"))
+
+    if not rows:
+        return df.drop(columns=["__is_diagram_boundary"], errors="ignore")
+    out = pd.DataFrame(rows)
+    return out.drop(columns=["__is_diagram_boundary"], errors="ignore")
+
+
 def _beam_uls_extend_torsion_plot_rows_to_active_domain(
     plot_df: pd.DataFrame,
     active_df: pd.DataFrame | None,
@@ -13112,7 +13172,12 @@ def _make_beam_uls_torsion_capacity_figure(
         dedupe_columns = [column for column in ["Case", "__x_m", "__phi_tn", "__phi_tcr", "__threshold", "Station type"] if column in plot_df.columns]
         if dedupe_columns:
             plot_df = plot_df.drop_duplicates(subset=dedupe_columns, keep="first")
+        # Physical station rows and synthetic DIAGRAM BOUNDARY rows may share
+        # x=0/L.  Coalesce them before plotting so a boundary NaN cannot break
+        # an otherwise finite full-span φTn trace.
+        plot_df = _beam_uls_coalesce_torsion_plot_rows(plot_df)
         plot_df = _beam_uls_extend_torsion_plot_rows_to_active_domain(plot_df, active_df)
+        plot_df = _beam_uls_coalesce_torsion_plot_rows(plot_df)
 
     has_plot_reference = not plot_df.empty
     has_tn = bool(has_plot_reference and pd.to_numeric(plot_df["__phi_tn"], errors="coerce").notna().any())

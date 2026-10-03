@@ -616,3 +616,90 @@ def test_igird_uls6e_result_versions_invalidate_torsion_and_dependent_combined_o
     assert _IGIRDER_TORSION_RESULT_VERSION.startswith("IGIRDER.ULS6E.")
     assert _IGIRDER_COMBINED_VT_RESULT_VERSION.startswith("IGIRDER.ULS6E.")
     assert _IGIRDER_SHEAR_RESULT_VERSION.startswith("IGIRDER.ULS5")
+
+
+def test_igird_uls6f_torsion_chart_coalesces_physical_end_with_threshold_only_boundary_without_phi_tn_gap():
+    """Synthetic diagram-boundary rows must not break a finite physical φTn end station."""
+    from concrete_pmm_pro.ui.analysis_page import _make_beam_uls_torsion_capacity_figure
+
+    active = pd.DataFrame([
+        {"Active": True, "Station x (m)": 0.0, "Case Name": "Strength I", "Mux": 0.0, "Vuy": 500.0, "Tu": 500.0, "Muy": 0.0, "Vux": 0.0, "Nu": 0.0, "Note": ""},
+        {"Active": True, "Station x (m)": 1.0, "Case Name": "Strength I", "Mux": 10.0, "Vuy": 450.0, "Tu": 500.0, "Muy": 0.0, "Vux": 0.0, "Nu": 0.0, "Note": ""},
+        {"Active": True, "Station x (m)": 20.0, "Case Name": "Strength I", "Mux": 0.0, "Vuy": -500.0, "Tu": 500.0, "Muy": 0.0, "Vux": 0.0, "Nu": 0.0, "Note": ""},
+    ])
+    torsion = pd.DataFrame([
+        {"Status": "FAIL", "Station type": "LOAD STATION", "Governing x": "0.000 m", "Case": "Strength I", "Demand kN-m": 500.0, "Abs demand kN-m": 500.0, "φTn kN-m": 190.0, "φTcr kN-m": 127.93, "Threshold kN-m": 31.98, "D/C value": 2.632},
+        {"Status": "FAIL", "Station type": "LOAD STATION", "Governing x": "1.000 m", "Case": "Strength I", "Demand kN-m": 500.0, "Abs demand kN-m": 500.0, "φTn kN-m": 205.0, "φTcr kN-m": 127.93, "Threshold kN-m": 31.98, "D/C value": 2.439},
+        {"Status": "FAIL", "Station type": "LOAD STATION", "Governing x": "20.000 m", "Case": "Strength I", "Demand kN-m": 500.0, "Abs demand kN-m": 500.0, "φTn kN-m": 190.0, "φTcr kN-m": 127.93, "Threshold kN-m": 31.98, "D/C value": 2.632},
+    ])
+    boundary = pd.DataFrame([
+        {"Status": "BELOW THRESHOLD", "Station type": "DIAGRAM BOUNDARY", "Governing x": "0.000 m", "Case": "Strength I", "Demand kN-m": 0.0, "Abs demand kN-m": 0.0, "φTn kN-m": float("nan"), "φTcr kN-m": 127.93, "Threshold kN-m": 31.98, "D/C value": float("nan")},
+        {"Status": "BELOW THRESHOLD", "Station type": "DIAGRAM BOUNDARY", "Governing x": "20.000 m", "Case": "Strength I", "Demand kN-m": 0.0, "Abs demand kN-m": 0.0, "φTn kN-m": float("nan"), "φTcr kN-m": 127.93, "Threshold kN-m": 31.98, "D/C value": float("nan")},
+    ])
+
+    fig = _make_beam_uls_torsion_capacity_figure(
+        active,
+        torsion,
+        code_label="AASHTO LRFD 9th Edition",
+        boundary_capacity_df=boundary,
+    )
+    phi_tn = next(trace for trace in fig.data if trace.name == "±φTn" and trace.showlegend is not False)
+    xs = [float(x) for x in phi_tn.x]
+    ys = [float(y) for y in phi_tn.y]
+    assert xs == [0.0, 1.0, 20.0]
+    assert ys == [190.0, 205.0, 190.0]
+    assert all(math.isfinite(y) for y in ys)
+
+
+def test_igird_uls6f_torsion_chart_uses_single_full_span_phi_tn_row_per_case_station():
+    """All capacity-ready physical stations plot once with no interior NaN breaks."""
+    from concrete_pmm_pro.ui.analysis_page import _make_beam_uls_torsion_capacity_figure
+
+    active_rows = []
+    torsion_rows = []
+    phi_values = [190.0, 205.0, 233.0, 260.0, 178.5, 178.6, 178.7, 107.3, 107.3, 107.4, 107.5, 107.4, 107.3, 107.3, 107.25, 178.5, 178.6, 178.7, 205.0, 233.0, 190.0]
+    for x, phi in enumerate(phi_values):
+        active_rows.append({"Active": True, "Station x (m)": float(x), "Case Name": "Strength I", "Mux": 0.0, "Vuy": 500.0 - 25.0*x, "Tu": 500.0, "Muy": 0.0, "Vux": 0.0, "Nu": 0.0, "Note": ""})
+        torsion_rows.append({"Status": "FAIL", "Station type": "LOAD STATION", "Governing x": f"{float(x):.3f} m", "Case": "Strength I", "Demand kN-m": 500.0, "Abs demand kN-m": 500.0, "φTn kN-m": phi, "φTcr kN-m": 127.93, "Threshold kN-m": 31.98, "D/C value": 500.0/phi})
+    boundary = pd.DataFrame([
+        {"Status": "BELOW THRESHOLD", "Station type": "DIAGRAM BOUNDARY", "Governing x": "0.000 m", "Case": "Strength I", "φTn kN-m": float("nan"), "φTcr kN-m": 127.93, "Threshold kN-m": 31.98},
+        {"Status": "BELOW THRESHOLD", "Station type": "DIAGRAM BOUNDARY", "Governing x": "20.000 m", "Case": "Strength I", "φTn kN-m": float("nan"), "φTcr kN-m": 127.93, "Threshold kN-m": 31.98},
+    ])
+
+    fig = _make_beam_uls_torsion_capacity_figure(
+        pd.DataFrame(active_rows),
+        pd.DataFrame(torsion_rows),
+        code_label="AASHTO LRFD 9th Edition",
+        boundary_capacity_df=boundary,
+    )
+    phi_tn = next(trace for trace in fig.data if trace.name == "±φTn" and trace.showlegend is not False)
+    xs = [float(x) for x in phi_tn.x]
+    ys = [float(y) for y in phi_tn.y]
+    assert xs == [float(i) for i in range(21)]
+    assert len(xs) == len(set(xs)) == 21
+    assert all(math.isfinite(y) for y in ys)
+    assert ys[14] == phi_values[14]
+    assert ys[15] == phi_values[15]
+
+
+def test_igird_uls6f_torsion_chart_preserves_real_capacity_gap_when_physical_station_is_not_ready():
+    """A true uncovered/not-ready physical station remains a visible φTn gap."""
+    from concrete_pmm_pro.ui.analysis_page import _make_beam_uls_torsion_capacity_figure
+
+    active = pd.DataFrame([
+        {"Active": True, "Station x (m)": 0.0, "Case Name": "Strength I", "Mux": 0.0, "Vuy": 100.0, "Tu": 500.0, "Muy": 0.0, "Vux": 0.0, "Nu": 0.0, "Note": ""},
+        {"Active": True, "Station x (m)": 1.0, "Case Name": "Strength I", "Mux": 0.0, "Vuy": 100.0, "Tu": 500.0, "Muy": 0.0, "Vux": 0.0, "Nu": 0.0, "Note": ""},
+        {"Active": True, "Station x (m)": 2.0, "Case Name": "Strength I", "Mux": 0.0, "Vuy": 100.0, "Tu": 500.0, "Muy": 0.0, "Vux": 0.0, "Nu": 0.0, "Note": ""},
+    ])
+    torsion = pd.DataFrame([
+        {"Status": "FAIL", "Station type": "LOAD STATION", "Governing x": "0.000 m", "Case": "Strength I", "φTn kN-m": 200.0, "φTcr kN-m": 127.93, "Threshold kN-m": 31.98, "D/C value": 2.5},
+        {"Status": "LAYOUT REQUIRED", "Station type": "LOAD STATION", "Governing x": "1.000 m", "Case": "Strength I", "φTn kN-m": float("nan"), "φTcr kN-m": 127.93, "Threshold kN-m": 31.98, "D/C value": float("nan")},
+        {"Status": "FAIL", "Station type": "LOAD STATION", "Governing x": "2.000 m", "Case": "Strength I", "φTn kN-m": 210.0, "φTcr kN-m": 127.93, "Threshold kN-m": 31.98, "D/C value": 500.0/210.0},
+    ])
+
+    fig = _make_beam_uls_torsion_capacity_figure(active, torsion, code_label="AASHTO LRFD 9th Edition")
+    phi_tn = next(trace for trace in fig.data if trace.name == "±φTn" and trace.showlegend is not False)
+    ys = [float(y) for y in phi_tn.y]
+    assert math.isfinite(ys[0])
+    assert math.isnan(ys[1])
+    assert math.isfinite(ys[2])
