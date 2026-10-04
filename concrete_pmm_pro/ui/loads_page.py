@@ -2010,9 +2010,19 @@ def _render_workflow_import_tools(
     replace_callback: Any | None = None,
     append_callback: Any | None = None,
     template_df: pd.DataFrame | None = None,
+    csi_girder: bool = False,
+    import_force_unit: str = 'kN',
+    import_moment_unit: str = 'kN-m',
 ) -> None:
     """Render download/import/apply controls for workflow-specific load inputs."""
 
+    if csi_girder:
+        mode = st.radio('Import table format', ['CSiBridge girder forces', 'App columns (legacy)'], horizontal=True, key=key_prefix+'_format')
+        if mode == 'CSiBridge girder forces':
+            from concrete_pmm_pro.ui.girder_csi_import import render_import
+            render_import(state_key=state_key, editor_key=editor_key, key_prefix=key_prefix,
+                force_unit=import_force_unit, moment_unit=import_moment_unit)
+            return
     template = _stringify_table(template_df, columns) if template_df is not None else _sample_workflow_template(table_name, columns, stage_label=stage_label)
     st.markdown(f"**{title}**")
     st.caption("Download the template, fill it in Excel, upload it, validate, then replace or append rows.")
@@ -2756,6 +2766,9 @@ def _render_beam_girder_load_tables(force_unit: str, moment_unit: str) -> None:
                 key_prefix="bridge_beam_uls_station_loads",
                 unique_key_columns=["Case Name", "Station x (m)"],
                 template_df=uls_template,
+                csi_girder=_active_is_precast_i_girder(),
+                import_force_unit=force_unit,
+                import_moment_unit=moment_unit,
             )
         uls_df = _stringify_table(pd.DataFrame(st.session_state.get("beam_uls_loads_table")), BEAM_ULS_LOAD_COLUMNS)
         edited_uls = st.data_editor(

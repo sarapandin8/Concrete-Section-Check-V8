@@ -123,7 +123,7 @@ def render_trace(frame: pd.DataFrame | None, *, stage: str) -> None:
             format_func=lambda i: labels[i], key=WIDGET_PREFIX + "trace_" + stage.replace(" ", "_"))
         row = frame.iloc[position]
         st.caption("Nu input is the preserved Loads value. Nu kN is the compression-positive value used in equilibrium; CSI input uses Nu = −P. AASHTO tension-positive Nu is the opposite of solver Nu.")
-        fields = ["Nu input kN", "Nu input convention", "Nu conversion factor", "Nu action", "Nu kN", "Nu AASHTO tension-positive kN", "Mn nominal kN-m", "φ value", "φMn kN-m", "Neutral axis c mm",
+        fields = ["Source sheet", "Source Excel row", "Source ItemType", "Source row set", "Source coupling", "Nu input kN", "Nu input convention", "Nu conversion factor", "Nu action", "Nu kN", "Nu AASHTO tension-positive kN", "Mn nominal kN-m", "φ value", "φMn kN-m", "Neutral axis c mm",
             "Stress block a mm", "α1", "β1", "Net tensile strain", "Strain condition", "Cc kN",
             "Ordinary steel force kN", "Strand force kN", "φPn kN", "Force residual N",
             "Moment reference y mm", "Full-development reference φMn kN-m", "Development source status", "Minimum flexure gate"]

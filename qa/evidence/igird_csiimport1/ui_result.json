@@ -1,0 +1,22 @@
+{
+  "method": "Streamlit AppTest with fixture upload bytes; no browser rendering claim",
+  "selected_girder": "Left Exterior Girder",
+  "source_rows": 80,
+  "Max": 40,
+  "Min": 40,
+  "wrong_scope_blocked": true,
+  "replace_applied": true,
+  "duplicate_append_blocked": true,
+  "legacy_mode_renders": true,
+  "final_rows": 80,
+  "negative_rows_screened": 1,
+  "final_flexure_button_seconds": 8.188241428999845,
+  "status_counts": {
+    "REVIEW": 78,
+    "FAIL": 2
+  },
+  "streamlit_exceptions": 0,
+  "stored_trace_visible": true,
+  "dashboard_reads_current_result": true,
+  "browser_verification": "BLOCKED: local Chrome executables are truncated and fail before launching; network download timed out."
+}

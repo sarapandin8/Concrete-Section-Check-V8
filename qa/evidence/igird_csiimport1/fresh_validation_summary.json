@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "compileall": "PASS",
+  "modules": 45,
+  "tests": 501,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 39.366,
+  "app_startup": "PASS",
+  "production_ui_actions": "PASS \u2014 Streamlit AppTest with fixture upload bytes",
+  "browser_visual_verification": "NOT COMPLETED"
+}

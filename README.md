@@ -1,3 +1,15 @@
+# Concrete Section Pro — IGIRDER.CSIIMPORT1
+
+The Precast I-Girder Loads importer now reads native multi-sheet CSiBridge member forces with a units row and both Max/Min bounds. Select **Left Exterior Girder**, the largest |M3| in the supplied workbook. All 80 original rows remain, including repeated stations; no force component or sign is mixed across rows. The default critical-member comparison ranks |M3| demand, with separate |V2| and |T| leaders. It does not establish the critical member by capacity ratio for every check.
+
+Run `streamlit run app.py`. On Loads → ULS → Final Composite import, keep **CSiBridge girder forces**, upload the native workbook, check the selected worksheet and FEA envelope name, then **Replace current rows**. Download the new Excel template from the same panel. The existing **App columns (legacy)** import remains available. Native imports normalize declared units to kN/kN-m and preserve raw CSI signs; the FLEXSIGN1 Nu conversion remains inside the solver.
+
+Final Composite screens all 80 imported rows, including the negative Mux bound. Negative composite acceptance and concurrent Mu/Nu/Vu/Tu are not established by this worksheet. Numerical screening and failures remain visible; coupled PASS is REVIEW. Use CSiBridge Correspondence / governing load-case actions for final coupled acceptance. M2/Muy is preserved but the developed flexure route remains primary-axis Mux only. The current AASHTO development, φ, prestress, geometry and detailing rules are unchanged.
+
+See `PROJECT_HANDOFF_CONCRETE_SECTION_PRO_IGIRDER_CSIIMPORT1_2026-10-04.md`, `tests/test_igird_csi_import.py` and `qa/evidence/igird_csiimport1/`. The shipped Excel asset is static; the app needs no spreadsheet-authoring dependency. `python qa/igird_csi_import_ui_verify.py` runs the production Streamlit import and Calculate controls using fixture upload bytes. This is an AppTest check, not a browser visual verification.
+
+## Previous accepted milestone
+
 # Concrete Section Pro — IGIRDER.FLEXSIGN1
 
 Precast I-Girder ULS now accepts unchanged CSiBridge frame P signs through an explicit Loads / Analysis convention selector. Raw P is positive in tension; solver Nu is positive in compression and equals −P. Flexure, Shear, Torsion and concurrent Shear + Torsion share this conversion. All imported table values are preserved. See `PROJECT_HANDOFF_CONCRETE_SECTION_PRO_IGIRDER_FLEXSIGN1_2026-10-04.md` and `docs/CONCRETE_SECTION_PRO_FLEXSIGN1_REVIEW_2026-10-04.md`.

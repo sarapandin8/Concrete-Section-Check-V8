@@ -53,7 +53,8 @@ def check_dataframe(state, active_df, *, strength_route) -> pd.DataFrame:
             rows.append(_check_row(state, source.to_dict(), strength_route=strength_route,
                 face=face, source_index=i, nominal_cache=nominal_cache,
                 ambiguous_case=str(source.get("Case Name")) in ambiguous_cases))
-    return pd.DataFrame(rows)
+    from concrete_pmm_pro.io.girder_csi_import import apply_source_gate
+    return apply_source_gate(pd.DataFrame(rows), active_df)
 
 
 def _check_row(state, row, *, strength_route, face, source_index, nominal_cache, ambiguous_case):

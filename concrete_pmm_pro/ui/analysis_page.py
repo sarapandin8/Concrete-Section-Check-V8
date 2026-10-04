@@ -120,6 +120,10 @@ from concrete_pmm_pro.analysis.girder_axial_convention import (
     axial_demand_compression_positive_kN as girder_axial_demand_kN,
     axial_trace as girder_axial_trace,
 )
+from concrete_pmm_pro.io.girder_csi_import import (
+    VERSION as GIRDER_CSI_IMPORT_VERSION, ENVELOPE_NOTE as GIRDER_CSI_ENVELOPE_NOTE,
+    apply_source_gate as girder_csi_source_gate, source_cases as girder_csi_source_cases,
+)
 from concrete_pmm_pro.analysis.igird_combined_vt import (
     RESULT_VERSION as IGIRD_CONCURRENT_VT_VERSION,
     development_settings as igird_longitudinal_development_settings,
@@ -6538,6 +6542,10 @@ def _beam_uls_developed_igird_flexure_dataframe(
             if numerical_status == "PASS" and minimum_gate.startswith("REVIEW"):
                 status = "REVIEW"
             notes = f"Strand development included; {result['strain_condition']}; force residual={result['residual_N']:.6g} N. " + result["source_note"]
+            if sign < 0 and '_igird_flexure_precast_depth_mm' in state:
+                notes += ' Negative-composite directional screening; continuity-region deck tension reinforcement and negative-flexure acceptance require separate review.'
+                if status == 'PASS':
+                    status = 'REVIEW'
             row.update({"Status": status, "Numerical status": numerical_status,
                 "Capacity": f"φMn = {capacity:,.2f} kN-m", "Capacity kN-m": capacity,
                 "φMn kN-m": capacity, "Mn nominal kN-m": max(0, result["Mn_Nmm"] / 1e6),
@@ -6586,7 +6594,9 @@ def _beam_uls_developed_igird_flexure_dataframe(
                 row["Status"] = "REVIEW"
     messages.insert(0, f"IGIRDER.FLEXDEP1: {len(rows)} original demand stations in {time.perf_counter() - started:.3f} s; "
         f"{len(references)} reference equilibrium state(s). Every station retains its Nu; no angular PMM sweep.")
-    return pd.DataFrame(rows), messages
+    if girder_csi_source_cases(active_df):
+        messages.append(GIRDER_CSI_ENVELOPE_NOTE)
+    return girder_csi_source_gate(pd.DataFrame(rows), active_df), messages
 
 
 def _beam_uls_flexure_preview_dataframe(
@@ -8490,7 +8500,7 @@ def _beam_uls_shear_check_dataframe(
                 else "-",
             )
         rows.append(result)
-    return pd.DataFrame(rows, columns=columns)
+    return girder_csi_source_gate(pd.DataFrame(rows, columns=columns), active_df)
 
 
 
@@ -10740,7 +10750,7 @@ def _beam_uls_torsion_check_dataframe(
             df.at[idx, "Coverage status"] = "-"
             df.at[idx, "Corner longitudinal status"] = "-"
         df.at[idx, "Hoop detailing status"] = str(row.get("Detailing status") or "-")
-    return df
+    return girder_csi_source_gate(df, active_df)
 
 
 def _beam_uls_governing_torsion_row(torsion_df: pd.DataFrame | None) -> dict[str, object] | None:
@@ -11345,6 +11355,7 @@ def _beam_uls_cache_input_hash(
     if str(state.get("section_preset_key") or "") == "parametric_i_girder":
         payload["axial_input"] = {"version": GIRDER_AXIAL_CONVENTION_VERSION,
             **girder_axial_convention(state)}
+        payload["csi_import_source_contract"] = GIRDER_CSI_IMPORT_VERSION
     return _beam_uls_hash_payload(payload)
 
 
@@ -14191,7 +14202,7 @@ def _render_beam_girder_final_composite_flexure_guard(
 
     st.markdown("#### Final Composite Flexure — imported FEA demand")
     st.caption(
-        "Demand = verified Final ULS FEA resultants. Resistance = precast I-Girder + effective CIP deck. "
+        "Demand = imported Final ULS FEA resultants. Resistance = precast I-Girder + effective CIP deck. "
         "Current solver scope is positive longitudinal flexure; composite-action interface shear remains a separate acceptance gate."
     )
     if active_df.empty:
@@ -14204,7 +14215,10 @@ def _render_beam_girder_final_composite_flexure_guard(
     positive_mask = finite_mask & (mux > _BEAM_ULS_DEMAND_TOL)
     zero_mask = finite_mask & (mux.abs() <= _BEAM_ULS_DEMAND_TOL)
     negative_mask = finite_mask & (mux < -_BEAM_ULS_DEMAND_TOL)
-    supported_df = active_df.loc[positive_mask | zero_mask].copy()
+    native_csi_source = bool(girder_csi_source_cases(active_df))
+    # Screen every imported bound in its actual direction. Positive-composite
+    # certification scope and the source-concurrency gate remain separate.
+    supported_df = active_df.loc[finite_mask if native_csi_source else positive_mask | zero_mask].copy()
     positive_count = int(positive_mask.sum())
     negative_count = int(negative_mask.sum())
 
@@ -14273,9 +14287,10 @@ def _render_beam_girder_final_composite_flexure_guard(
     if negative_count:
         st.warning(
             f"{negative_count} active Final ULS row(s) have negative Mux. IGIRDER.ULS3 does not certify negative composite flexure; "
-            "continuity-region deck longitudinal tension reinforcement is a separate future check. Positive/zero Mux rows are evaluated below."
+            + ("these imported rows are retained in directional numerical screening; continuity-region deck tension reinforcement requires separate negative-flexure review."
+                if native_csi_source else "continuity-region deck longitudinal tension reinforcement is a separate future check. Positive/zero Mux rows are evaluated below.")
         )
-    if positive_count <= 0:
+    if positive_count <= 0 and not (native_csi_source and negative_count):
         st.warning("No positive Final ULS Mux row is available for the current IGIRDER.ULS3 positive composite-flexure route.")
         return
     if composite_state is None:
@@ -14342,7 +14357,8 @@ def _render_beam_girder_final_composite_flexure_guard(
                 "deck_rebar_credit": deck_rebar_credit,
                 "Be_mode": be_mode,
                 "Be_strength_verified": be_strength_verified,
-                "negative_mux_rows_excluded": negative_count,
+                "negative_mux_rows_excluded": 0 if native_csi_source else negative_count,
+                "negative_mux_rows_screened": negative_count if native_csi_source else 0,
                 "result_version": _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION,
             },
         )
@@ -14702,6 +14718,9 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
         from concrete_pmm_pro.ui.girder_axial_convention import render_axial_convention
         render_axial_convention()
     active_df = _active_beam_uls_demand_dataframe_from_session(st.session_state)
+
+    if is_precast_composite_bridge and girder_csi_source_cases(active_df):
+        st.warning('Final Composite FEA source: '+GIRDER_CSI_ENVELOPE_NOTE)
 
     basis_cards = [
         {"title": "Workflow", "value": workflow_label, "detail": "Selected in Setup", "status": "info"},
@@ -31899,8 +31918,9 @@ def _igird_composite_flexure_dashboard_state(session_state: Mapping[str, Any]) -
         finite_mask = mux.notna()
         positive_mask = finite_mask & (mux > _BEAM_ULS_DEMAND_TOL)
         zero_mask = finite_mask & (mux.abs() <= _BEAM_ULS_DEMAND_TOL)
-        supported_df = active_df.loc[positive_mask | zero_mask].copy()
-        if int(positive_mask.sum()) <= 0:
+        native_csi_source = bool(girder_csi_source_cases(active_df))
+        supported_df = active_df.loc[finite_mask if native_csi_source else positive_mask | zero_mask].copy()
+        if int(positive_mask.sum()) <= 0 and not (native_csi_source and (mux < -_BEAM_ULS_DEMAND_TOL).any()):
             return "REVIEW", "Final Composite positive-flexure route has no positive Mux row", "warning"
 
         input_hash = _beam_uls_final_composite_flexure_hash(
