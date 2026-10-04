@@ -1,0 +1,63 @@
+{
+  "Shear": {
+    "rows": 88,
+    "statuses": {
+      "REVIEW": 65,
+      "FAIL": 19,
+      "PASS": 4
+    },
+    "legend": [
+      "Demand Vuy \u2014 ENV_ULS / Left Exterior Girder / Max / set 1",
+      "Demand Vuy \u2014 ENV_ULS / Left Exterior Girder / Max / set 2",
+      "Demand Vuy \u2014 ENV_ULS / Left Exterior Girder / Min / set 1",
+      "Demand Vuy \u2014 ENV_ULS / Left Exterior Girder / Min / set 2",
+      "Governing demand",
+      "\u03c6Vn",
+      "-\u03c6Vn",
+      "\u03c6Vc",
+      "\u03c6Vn",
+      "-\u03c6Vn",
+      "\u03c6Vc",
+      "\u03c6Vn",
+      "-\u03c6Vn",
+      "\u03c6Vc",
+      "\u03c6Vn",
+      "-\u03c6Vn",
+      "\u03c6Vc",
+      "Critical section for shear loading",
+      "Governing shear check"
+    ]
+  },
+  "Torsion": {
+    "rows": 80,
+    "statuses": {
+      "LAYOUT REQUIRED": 63,
+      "REVIEW": 17
+    },
+    "legend": [
+      "Tu demand \u00b7 ENV_ULS / Left Ex\u2026",
+      "Tu demand \u00b7 ENV_ULS / Left Ex\u2026",
+      "Tu demand \u00b7 ENV_ULS / Left Ex\u2026",
+      "Tu demand \u00b7 ENV_ULS / Left Ex\u2026",
+      "Gov. Tu",
+      "\u00b1\u03c6Tcr",
+      "\u00b10.25\u03c6Tcr"
+    ]
+  },
+  "Shear + Torsion": {
+    "rows": 88,
+    "statuses": {
+      "DATA REQUIRED": 71,
+      "REVIEW": 17
+    },
+    "finite_dc_rows": 0,
+    "review_reasons": {
+      "Muy requires biaxial review outside the uniaxial solid I-Girder V+T route.; Vux requires biaxial review outside the uniaxial solid I-Girder V+T route.; Provided transverse zone 'Midspan' is not selected for torsion.": 35,
+      "Muy requires biaxial review outside the uniaxial solid I-Girder V+T route.; Vux requires biaxial review outside the uniaxial solid I-Girder V+T route.; Longitudinal material SD40 is unresolved.": 17,
+      "Muy requires biaxial review outside the uniaxial solid I-Girder V+T route.; Vux requires biaxial review outside the uniaxial solid I-Girder V+T route.; Provided transverse zone 'Right support' is not selected for torsion.": 10,
+      "Muy requires biaxial review outside the uniaxial solid I-Girder V+T route.; Vux requires biaxial review outside the uniaxial solid I-Girder V+T route.; Provided transverse zone 'Left support' is not selected for torsion.": 10,
+      "Muy requires biaxial review outside the uniaxial solid I-Girder V+T route.; Vux requires biaxial review outside the uniaxial solid I-Girder V+T route.; Provided transverse zone 'Right transition' is not selected for torsion.": 9,
+      "Muy requires biaxial review outside the uniaxial solid I-Girder V+T route.; Vux requires biaxial review outside the uniaxial solid I-Girder V+T route.; Provided transverse zone 'Left transition' is not selected for torsion.": 7
+    }
+  }
+}

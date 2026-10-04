@@ -1,3 +1,9 @@
+# Concrete Section Pro — IGIRDER.CHART2
+
+Shear and Torsion legends identify native Max/Min occurrences and show resistance/reference quantities once. Exact finite copies are drawn once, while genuinely different case-dependent paths and gaps remain. Precast I-Girder V/T Analysis uses the established browser Plotly renderer with full source hover.
+
+Combined V+T now reports completed check rows and finite-D/C rows, with a visible required-input/source-action table. Missing torsion-qualified cage inputs or unresolved longitudinal materials retain their engineering gates; no capacity is assumed to make a graph. See `PROJECT_HANDOFF_CONCRETE_SECTION_PRO_IGIRDER_CHART2_2026-10-04.md` for verification and input guidance.
+
 # Concrete Section Pro — IGIRDER.CHART1
 
 Final Composite charts now use short, distinct Max/Min/occurrence labels and show φMn once in the legend. Exact coincident resistance paths are drawn once; genuinely different capacity paths and missing-equilibrium gaps remain. Interface shear shows one blue maximum scalar demand envelope and one dashed-red minimum available resistance curve, with original source cases on hover. All original row-based calculations and D/C remain in the audit.

@@ -12237,7 +12237,8 @@ def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *,
                             name=(trace_name if plot_df["Case"].nunique() == 1 else f"{trace_name} · C{case_index}") if is_uls7 else f"{trace_name} — {case_name}",
                             line=dict(_BEAM_ULS_UTIL_LINE_STYLE.get(column, {"width": 3})),
                             marker=dict(_BEAM_ULS_UTIL_MARKER_STYLE.get(column, {"size": 7})),
-                            hovertemplate=f"{trace_name}<br>x=%{{x:.3f}} m<br>D/C=%{{y:.3f}}<extra></extra>",
+                            customdata=[[str(case_name)] for _ in case_df["__x_m"]],
+                            hovertemplate=f"{trace_name}<br>x=%{{x:.3f}} m<br>D/C=%{{y:.3f}}<br>%{{customdata[0]}}<extra></extra>",
                         )
                     )
                     has_trace = True
@@ -12296,6 +12297,14 @@ def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *,
         height=_BEAM_ULS_STATIC_FIG_HEIGHT,
     )
     if is_uls7:
+        from concrete_pmm_pro.visualization.igird_uls_chart_display import compact_reference_paths
+        families = {}
+        for trace in fig.data:
+            name = str(trace.name or "")
+            for prefix, short in (("Veff limit D/C", "Veff D/C"), ("Transverse D/C", "Transverse D/C"), ("Longitudinal D/C", "Long. D/C")):
+                if name == prefix or name.startswith(prefix+" · C"):
+                    families[name] = short
+        compact_reference_paths(fig, families)
         fig.update_layout(meta={"igird_concurrent_vt": IGIRD_CONCURRENT_VT_VERSION},
             legend={"itemwidth": 30, "entrywidth": 205, "entrywidthmode": "pixels"})
     return fig
@@ -13069,6 +13078,7 @@ def _make_beam_uls_shear_capacity_figure(
     code_label: str,
     boundary_capacity_df: pd.DataFrame | None = None,
     critical_section_df: pd.DataFrame | None = None,
+    compact_csi_legend: bool = False,
 ) -> go.Figure:
     fig = _make_beam_uls_demand_figure(
         active_df,
@@ -13078,6 +13088,9 @@ def _make_beam_uls_shear_capacity_figure(
     )
     if shear_check_df is None or shear_check_df.empty:
         fig.update_layout(title={"text": f"Shear Check — Strength ULS<br><sup>{code_label} · demand only — φVn not ready</sup>"})
+        if compact_csi_legend:
+            from concrete_pmm_pro.visualization.igird_uls_chart_display import polish_shear_legend
+            polish_shear_legend(fig)
         return fig
     plot_sources = [shear_check_df]
     if critical_section_df is not None and not critical_section_df.empty:
@@ -13108,7 +13121,8 @@ def _make_beam_uls_shear_capacity_figure(
                     mode="lines",
                     name="φVn",
                     line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
-                    hovertemplate="x=%{x:.3f} m<br>φVn=%{y:.3f} kN<extra></extra>",
+                    customdata=[[str(case_name)] for _ in x_values],
+                    hovertemplate="x=%{x:.3f} m<br>φVn=%{y:.3f} kN<br>%{customdata[0]}<extra></extra>",
                 )
             )
             fig.add_trace(
@@ -13118,7 +13132,8 @@ def _make_beam_uls_shear_capacity_figure(
                     mode="lines",
                     name="-φVn",
                     line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
-                    hovertemplate="x=%{x:.3f} m<br>-φVn=%{y:.3f} kN<extra></extra>",
+                    customdata=[[str(case_name)] for _ in x_values],
+                    hovertemplate="x=%{x:.3f} m<br>-φVn=%{y:.3f} kN<br>%{customdata[0]}<extra></extra>",
                 )
             )
             vc_values = [float(value) if math.isfinite(float(value)) else float("nan") for value in case_df["__phi_vc"].tolist()]
@@ -13130,7 +13145,8 @@ def _make_beam_uls_shear_capacity_figure(
                         mode="lines",
                         name="φVc",
                         line=dict(_BEAM_ULS_REFERENCE_LINE_STYLE),
-                        hovertemplate="x=%{x:.3f} m<br>φVc=%{y:.3f} kN<extra></extra>",
+                        customdata=[[str(case_name)] for _ in x_values],
+                        hovertemplate="x=%{x:.3f} m<br>φVc=%{y:.3f} kN<br>%{customdata[0]}<extra></extra>",
                     )
                 )
     critical_x_values: list[float] = []
@@ -13204,6 +13220,9 @@ def _make_beam_uls_shear_capacity_figure(
     )
     fig.update_xaxes(title_text="Distance from left end of member (m)", showgrid=True, gridcolor="rgba(2, 6, 23, 0.08)")
     fig.update_yaxes(title_text="Shear, Vu (kN)", zeroline=True, zerolinewidth=1.5, zerolinecolor="rgba(15, 23, 42, 0.55)", showgrid=True, gridcolor="rgba(2, 6, 23, 0.08)")
+    if compact_csi_legend:
+        from concrete_pmm_pro.visualization.igird_uls_chart_display import polish_shear_legend
+        polish_shear_legend(fig)
     return fig
 
 
@@ -13390,6 +13409,12 @@ def _polish_igird_uls_torsion_legend(fig: go.Figure) -> go.Figure:
     governing-station semantics are unchanged.
     """
 
+    from concrete_pmm_pro.visualization.igird_uls_chart_display import (
+        compact_csi_demand_labels, compact_reference_paths,
+    )
+    compact_csi_demand_labels(fig, component="Tu", unit="kN-m")
+    if any(str(trace.name or "").startswith(("Tu Max ", "Tu Min ")) for trace in fig.data):
+        compact_reference_paths(fig, {"±φTn":"±φTn", "±φTcr":"±φTcr", "±0.25φTcr":"±0.25φTcr"})
     demand_traces = [
         trace
         for trace in list(fig.data)
@@ -13487,7 +13512,8 @@ def _make_beam_uls_torsion_capacity_figure(
                         legendgroup="torsion_phi_tn",
                         showlegend=case_index == 0,
                         line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
-                        hovertemplate="x=%{x:.3f} m<br>+φTn=%{y:.3f} kN-m<extra></extra>",
+                        customdata=[[str(case_name)] for _ in x_values],
+                        hovertemplate="x=%{x:.3f} m<br>+φTn=%{y:.3f} kN-m<br>%{customdata[0]}<extra></extra>",
                     )
                 )
                 fig.add_trace(
@@ -13499,7 +13525,8 @@ def _make_beam_uls_torsion_capacity_figure(
                         legendgroup="torsion_phi_tn",
                         showlegend=False,
                         line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
-                        hovertemplate="x=%{x:.3f} m<br>-φTn=%{y:.3f} kN-m<extra></extra>",
+                        customdata=[[str(case_name)] for _ in x_values],
+                        hovertemplate="x=%{x:.3f} m<br>-φTn=%{y:.3f} kN-m<br>%{customdata[0]}<extra></extra>",
                     )
                 )
             tcr_values = [float(value) if math.isfinite(float(value)) else float("nan") for value in case_df["__phi_tcr"].tolist()]
@@ -13513,7 +13540,8 @@ def _make_beam_uls_torsion_capacity_figure(
                         legendgroup="torsion_phi_tcr",
                         showlegend=case_index == 0,
                         line=dict(_BEAM_ULS_TORSION_CRACKING_LINE_STYLE),
-                        hovertemplate="x=%{x:.3f} m<br>+φTcr=%{y:.3f} kN-m<extra></extra>",
+                        customdata=[[str(case_name)] for _ in x_values],
+                        hovertemplate="x=%{x:.3f} m<br>+φTcr=%{y:.3f} kN-m<br>%{customdata[0]}<extra></extra>",
                     )
                 )
                 fig.add_trace(
@@ -13525,7 +13553,8 @@ def _make_beam_uls_torsion_capacity_figure(
                         legendgroup="torsion_phi_tcr",
                         showlegend=False,
                         line=dict(_BEAM_ULS_TORSION_CRACKING_LINE_STYLE),
-                        hovertemplate="x=%{x:.3f} m<br>-φTcr=%{y:.3f} kN-m<extra></extra>",
+                        customdata=[[str(case_name)] for _ in x_values],
+                        hovertemplate="x=%{x:.3f} m<br>-φTcr=%{y:.3f} kN-m<br>%{customdata[0]}<extra></extra>",
                     )
                 )
             threshold_values = [float(value) if math.isfinite(float(value)) else float("nan") for value in case_df["__threshold"].tolist()]
@@ -13539,7 +13568,8 @@ def _make_beam_uls_torsion_capacity_figure(
                         legendgroup="torsion_quarter_phi_tcr",
                         showlegend=case_index == 0,
                         line=dict(_BEAM_ULS_TORSION_INVESTIGATION_LINE_STYLE),
-                        hovertemplate="x=%{x:.3f} m<br>+0.25φTcr=%{y:.3f} kN-m<extra></extra>",
+                        customdata=[[str(case_name)] for _ in x_values],
+                        hovertemplate="x=%{x:.3f} m<br>+0.25φTcr=%{y:.3f} kN-m<br>%{customdata[0]}<extra></extra>",
                     )
                 )
                 fig.add_trace(
@@ -13551,7 +13581,8 @@ def _make_beam_uls_torsion_capacity_figure(
                         legendgroup="torsion_quarter_phi_tcr",
                         showlegend=False,
                         line=dict(_BEAM_ULS_TORSION_INVESTIGATION_LINE_STYLE),
-                        hovertemplate="x=%{x:.3f} m<br>-0.25φTcr=%{y:.3f} kN-m<extra></extra>",
+                        customdata=[[str(case_name)] for _ in x_values],
+                        hovertemplate="x=%{x:.3f} m<br>-0.25φTcr=%{y:.3f} kN-m<br>%{customdata[0]}<extra></extra>",
                     )
                 )
     governing = _beam_uls_governing_torsion_row(torsion_check_df)
@@ -14929,12 +14960,13 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
         )
 
     if run_selected_check:
-        calculation_result = _beam_uls_calculate_selected_check(
-            st.session_state,
-            active_df,
-            selected_check=selected_check,
-            strength_route=strength_route,
-        )
+        with st.spinner(f"Calculating {selected_check} for the current ULS rows..."):
+            calculation_result = _beam_uls_calculate_selected_check(
+                st.session_state,
+                active_df,
+                selected_check=selected_check,
+                strength_route=strength_route,
+            )
         selected_entry = _beam_uls_store_manual_result(
             st.session_state,
             selected_check,
@@ -15109,15 +15141,22 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             with st.expander("Variable definitions / Engineering terms", expanded=False):
                 st.caption("Quick-reference definitions for the active Shear workspace. Use the code basis column when a deeper specification review is needed.")
                 st.dataframe(_beam_uls_shear_variable_definitions_dataframe(), use_container_width=True, hide_index=True)
-        _render_beam_uls_static_plotly_figure(
-            _make_beam_uls_shear_capacity_figure(
+        shear_figure = _make_beam_uls_shear_capacity_figure(
                 active_df,
                 shear_check_df,
                 code_label=code_label,
                 boundary_capacity_df=shear_boundary_capacity_df,
                 critical_section_df=shear_critical_section_df,
+                compact_csi_legend=is_precast_composite_bridge,
             )
-        )
+        if is_precast_composite_bridge:
+            domain = _beam_uls_full_member_plot_range(active_df, _beam_uls_span_length_from_state(st.session_state, is_building=False))
+            if domain is not None:
+                shear_figure.update_xaxes(range=list(domain))
+            _render_beam_uls_browser_plotly_figure(shear_figure, interactive=True)
+            st.caption("Vuy Max/Min 1/2 are the unchanged CSI source occurrences. ±φVn shares one legend entry; genuinely different case-dependent resistances remain and exact finite duplicate paths are drawn once. Hover shows the full source case; each original D/C and governing check remains row-based.")
+        else:
+            _render_beam_uls_static_plotly_figure(shear_figure)
         st.caption(
             "Shear capacity is from the active provided stirrup layout by zone. Critical shear sections are inserted near the supports and included in the governing shear D/C; ordinary load stations between the support and the adopted critical section remain diagram/audit rows only, while x=0 and x=L remain capacity-boundary graph values. "
             "The φVn / φVc / φVs diagram is extended to x=0 and x=L as capacity-boundary values when the provided layout is available. The status combines strength D/C, Vn limit, minimum Av/s, maximum spacing, and zone coverage gates. "
@@ -15236,14 +15275,20 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                 {"title": "Route", "value": strength_route.torsion_engine_label, "detail": strength_route.torsion_basis_note, "status": "neutral"},
             ]
         _render_analysis_summary_strip(torsion_cards, columns=5 if igird_torsion_route and torsion_result is not None else 4)
-        _render_beam_uls_static_plotly_figure(
-            _make_beam_uls_torsion_capacity_figure(
+        torsion_figure = _make_beam_uls_torsion_capacity_figure(
                 active_df,
                 torsion_check_df,
                 code_label=code_label,
                 boundary_capacity_df=torsion_boundary_capacity_df,
             )
-        )
+        if igird_torsion_route:
+            domain = _beam_uls_full_member_plot_range(active_df, _beam_uls_span_length_from_state(st.session_state, is_building=False))
+            if domain is not None:
+                torsion_figure.update_xaxes(range=list(domain))
+            _render_beam_uls_browser_plotly_figure(torsion_figure, interactive=True)
+            st.caption("Tu Max/Min 1/2 identify the original CSI source occurrences. Coincident finite reference paths are drawn once; different capacities and missing-source gaps remain. Hover shows the full source case. φTn requires a verified torsion-qualified closed hoop; φTcr and 0.25φTcr are reference/threshold curves.")
+        else:
+            _render_beam_uls_static_plotly_figure(torsion_figure)
         if igird_torsion_route:
             torsion_phi_tn_ready = bool(
                 torsion_check_df is not None

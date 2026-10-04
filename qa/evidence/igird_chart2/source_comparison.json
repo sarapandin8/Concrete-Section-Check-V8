@@ -1,0 +1,35 @@
+{
+  "baseline_sha256": "742abd38c546e8d3dc6455c7535a3586974c59f8711776e678165cfb4a9e74b3",
+  "existing_production_python_unchanged": 188,
+  "modified_definitions": {
+    "concrete_pmm_pro/ui/analysis_page.py": {
+      "changed": [
+        "_make_beam_uls_combined_vt_utilization_figure",
+        "_make_beam_uls_shear_capacity_figure",
+        "_polish_igird_uls_torsion_legend",
+        "_make_beam_uls_torsion_capacity_figure",
+        "_render_beam_girder_uls_workspace"
+      ],
+      "added": []
+    },
+    "concrete_pmm_pro/ui/igird_combined_vt.py": {
+      "changed": [
+        "render_workspace"
+      ],
+      "added": [
+        "source_readiness_dataframe"
+      ]
+    },
+    "concrete_pmm_pro/visualization/igird_uls_chart_display.py": {
+      "changed": [
+        "compact_csi_flexure_demand_labels"
+      ],
+      "added": [
+        "compact_csi_demand_labels",
+        "compact_reference_paths",
+        "polish_shear_legend"
+      ]
+    }
+  },
+  "engineering_producers_unchanged": true
+}

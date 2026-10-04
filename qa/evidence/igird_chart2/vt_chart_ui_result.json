@@ -1,0 +1,28 @@
+{
+  "method": "Full app.py Streamlit AppTest; original 80-row source fixture with P=0 in-memory only",
+  "streamlit_exceptions": 0,
+  "force_coordinates_unchanged": true,
+  "legend_entries_unique": true,
+  "maximum_shear_torsion_label_length": 12,
+  "full_span": [
+    0,
+    20
+  ],
+  "analysis_rasterization_calls": 0,
+  "review_solver_calls": 0,
+  "shear_rows": 88,
+  "torsion_rows": 80,
+  "combined_rows": 88,
+  "incomplete_combined_finite_dc_rows": 0,
+  "incomplete_combined_statuses": {
+    "DATA REQUIRED": 71,
+    "REVIEW": 17
+  },
+  "baseline_all_numeric_and_status_rows_unchanged": true,
+  "missing_material_and_hoop_actions_visible": true,
+  "hypothetical_confirmed_qa_finite_dc_rows": 84,
+  "hypothetical_confirmed_qa_changes_user_inputs": false,
+  "native_envelope_coupled_pass_withheld": true,
+  "preview_rendering": "Matplotlib using actual production Plotly coordinates; standalone HTML embeds Plotly JS",
+  "browser_visual_verification": "NOT COMPLETED; no browser screenshot claim"
+}

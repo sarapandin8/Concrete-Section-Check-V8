@@ -364,14 +364,21 @@ def render_workspace(df: pd.DataFrame | None, *, code_label: str) -> None:
         {"title":"Development","value":str(gov.get('Development status','REVIEW')),"detail":f"As factor {value('Ordinary development factor')} · Aps factor {value('Aps development factor min')}","status":"info" if gov.get('Development status') == 'PASS' else 'warning'},
     ]
     ap._render_analysis_summary_strip(cards, columns=5)
+    dc_columns = [c for c in ("Stress D/C value", "Transverse D/C value", "Longitudinal D/C value") if c in df]
+    finite_rows = df[dc_columns].apply(lambda column: pd.to_numeric(column, errors="coerce").map(lambda v: pd.notna(v) and math.isfinite(float(v)))).any(axis=1) if dc_columns else pd.Series(False, index=df.index)
+    st.caption(f"Calculation completed: {len(df)} concurrent check rows; {int(finite_rows.sum())} rows with finite D/C. Original source rows and acceptance gates are retained.")
+    readiness = source_readiness_dataframe(df)
+    if not readiness.empty:
+        st.caption("Required inputs / blocking sources")
+        st.dataframe(readiness, use_container_width=True, hide_index=True)
     if ap._beam_uls_combined_vt_has_finite_utilization(df):
-        ap._render_beam_uls_static_plotly_figure(ap._make_beam_uls_combined_vt_utilization_figure(df,code_label=code_label))
+        ap._render_beam_uls_browser_plotly_figure(ap._make_beam_uls_combined_vt_utilization_figure(df,code_label=code_label), interactive=True)
         st.caption("Transverse D/C compares the sum of concurrent shear/torsion requirements with one physical transverse source. Longitudinal D/C is F/(Aps·fps+As·fy) from 5.7.3.6.3-1. Veff limit D/C is an additional conservative compression guard. Red dashed line: D/C=1.0. Real missing sources remain gaps.")
         cases=df["Case"].drop_duplicates().tolist()
         if len(cases)>1:
             st.caption("Chart cases: " + "; ".join(f"C{i}: {case}" for i,case in enumerate(sorted(cases),1)))
     else:
-        st.info("Utilization curves require finite source terms. Missing sources are listed below.")
+        st.info("Calculation completed, but no finite D/C can be drawn yet. Complete the required inputs listed above, then press Calculate Shear + Torsion again.")
     missing = df.loc[df["Status"].isin(["REVIEW","DATA REQUIRED"])]
     uncovered = df.loc[df.get("Coverage status",pd.Series(index=df.index,dtype=object)).eq("REQUIRED")]
     if not uncovered.empty:
@@ -386,7 +393,7 @@ def render_workspace(df: pd.DataFrame | None, *, code_label: str) -> None:
         st.warning("Concurrent V+T needs review. " + str(gov.get("Review reason") or "Complete the sources and confirmations before final sectional acceptance."))
     compact = [c for c in ["Governing x","Case","Tension face","Status","Transverse status","Longitudinal status",
         "Coverage status","Development status","Detailing status","Corner longitudinal status","Perimeter longitudinal status","Prestress dominance status",
-        "Transverse D/C value","Longitudinal required kN","Longitudinal resistance kN","Longitudinal D/C value"] if c in df]
+        "Transverse D/C value","Longitudinal required kN","Longitudinal resistance kN","Longitudinal D/C value","Review reason"] if c in df]
     st.dataframe(df[compact],use_container_width=True,hide_index=True)
     with st.expander("Calculation trace / Equations — governing concurrent V+T station",expanded=False):
         st.dataframe(calculation_trace(gov),use_container_width=True,hide_index=True)
@@ -395,3 +402,52 @@ def render_workspace(df: pd.DataFrame | None, *, code_label: str) -> None:
     with st.expander("Concurrent V+T — detailed engineering audit",expanded=False):
         st.dataframe(df,use_container_width=True,hide_index=True)
     st.caption("Scope: uniaxial solid pretensioned I-Girder sectional V+T with concurrent imported actions. Nominal positive-flexure fps uses the verified composite section; ordinary bars remain the same physical source used by Flexure. Vp=0 and λduct=1 for straight pretensioned strands. Negative composite flexure, biaxial shear/flexure, fatigue, bearing/D-regions, hook/lap execution and shop-drawing verification remain separate. Missing continuity/development confirmation withholds PASS.")
+
+
+def source_readiness_dataframe(df: pd.DataFrame | None) -> pd.DataFrame:
+    """Summarize stored blocking reasons and actionable input locations without solving."""
+    columns = ["Required source / review", "Check rows", "Stations", "Input location", "Required action"]
+    if df is None or df.empty:
+        return pd.DataFrame(columns=columns)
+    unresolved = df.loc[df["Status"].isin(["DATA REQUIRED", "REVIEW"])].copy(deep=True)
+    groups = {}
+    for _, row in unresolved.iterrows():
+        reason = str(row.get("Review reason") or "").strip()
+        # Early-return rows append their actual blocking gate after advisory
+        # notes. Keep each gate separate; never convert missing strength to zero.
+        reasons = [r.strip() for r in reason.split(";") if r.strip()]
+        if not reasons:
+            reasons = [str(row.get("Source coupling") or "Review the stored equation/source trace.")]
+        for issue in dict.fromkeys(reasons):
+            if pd.notna(row.get("Source ItemType")) and issue.startswith(("Muy requires biaxial review", "Vux requires biaxial review")):
+                # Native M2/V3 are retained reference values in this workflow,
+                # not missing primary V/T inputs. Original advisory notes stay
+                # unchanged in the compact and detailed engineering audit.
+                continue
+            group = groups.setdefault(issue, {"count":0, "stations":set()})
+            group["count"] += 1
+            group["stations"].add(str(row.get("Governing x") or "-"))
+    rows = []
+    for issue, group in groups.items():
+        lower = issue.lower()
+        location, action = "Analysis → Calculation trace / Equations", "Review this stored source/check and correct the model before recalculating."
+        if "transverse zone" in lower or "closed hoop" in lower or "closed torsion loop" in lower or "135°" in lower or "torsion" in lower and "zone" in lower:
+            location = "Sections → Rebar → Transverse Rebar"
+            action = "Check zone ranges and actual cage details; confirm Use for Torsion, Closed Loop and 135° Hook for applicable zones."
+        elif "material" in lower and ("unresolved" in lower or "unavailable" in lower):
+            location = "Materials / Sections → Rebar → Longitudinal Rebar"
+            action = "Define the referenced reinforcing-steel material with verified fy, or assign the existing bars to the correct defined material."
+        elif "ordinary" in lower and ("continu" in lower or "development" in lower) or "anchorage" in lower:
+            location = "Sections → Rebar → Longitudinal Rebar → Longitudinal development — Shear + Torsion"
+            action = "Verify bar continuity, end anchorage and governing ld; enter only confirmations supported by the actual cage and calculation."
+        elif "corner" in lower or "perimeter" in lower:
+            location = "Sections → Rebar → Transverse Rebar"
+            action = "Verify and confirm the actual corner bars/strands and longitudinal perimeter distribution."
+        elif "concurren" in lower or "envelope" in lower:
+            location = "Loads → Final ULS"
+            action = "Use corresponding concurrent FEA action rows for final coupled acceptance; Max/Min bounds retain numerical screening only."
+        stations = sorted(group["stations"], key=lambda s: _number(s.replace(" m", "")))
+        station_text = ", ".join(stations[:6]) + (f" … ({len(stations)} positions)" if len(stations) > 6 else "")
+        rows.append({"Required source / review":issue, "Check rows":group["count"], "Stations":station_text,
+            "Input location":location, "Required action":action})
+    return pd.DataFrame(rows, columns=columns)

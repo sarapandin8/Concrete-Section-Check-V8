@@ -39,26 +39,79 @@ def interface_station_envelope(result_df: pd.DataFrame) -> pd.DataFrame:
 
 def compact_csi_flexure_demand_labels(fig) -> None:
     """Keep Max/Min and occurrence visible instead of truncating their shared prefix."""
+    compact_csi_demand_labels(fig, component='Mux', unit='kN-m')
+
+
+def compact_csi_demand_labels(fig, *, component: str, unit: str) -> None:
+    """Short source labels with unchanged native force coordinates and full hover."""
     labels = {}
     native = []
     for trace in fig.data:
         name = str(trace.name or '')
-        if not name.startswith('Demand Mux') or '—' not in name:
+        if not name.startswith('Demand '+component) or '—' not in name:
             continue
         case = name.split('—', 1)[1].strip()
         match = re.search(r'/\s*(Max|Min)\s*/\s*set\s+(\d+)\s*$', case)
         if match:
-            label = f'Mux {match.group(1)} {match.group(2)}'
+            label = f'{component} {match.group(1)} {match.group(2)}'
             labels[label] = labels.get(label, 0) + 1
             native.append((trace, case, match.group(1), match.group(2), label))
     for index, (trace, case, step, occurrence, label) in enumerate(native, 1):
-        trace.name = label if labels[label] == 1 else f'Mux {step} C{index}'
+        trace.name = label if labels[label] == 1 else f'{component} {step} C{index}'
         trace.legendgroup = 'igird_demand_' + case
         trace.customdata = [[case] for _ in trace.x]
-        trace.hovertemplate = 'x=%{x:.3f} m<br>Mux=%{y:.3f} kN-m<br>%{customdata[0]}<extra></extra>'
+        trace.hovertemplate = 'x=%{x:.3f} m<br>'+component+'=%{y:.3f} '+unit+'<br>%{customdata[0]}<extra></extra>'
         # All demand remains blue; the lower bound uses a dotted pattern.
         trace.line.dash = 'solid' if step == 'Max' else 'dot'
         trace.marker.symbol = 'circle' if occurrence == '1' else 'diamond'
+
+
+def compact_reference_paths(fig, families: dict[str, str]) -> None:
+    """One legend per quantity; drop exact finite copies, retain distinct/gapped paths.
+
+    Positive and negative references share a legend but retain their original
+    coordinates. Unlike a scalar envelope, this keeps every different case's
+    resistance/threshold path and its source identity.
+    """
+    seen_points = set()
+    legend_seen = set()
+    kept = []
+    for trace in fig.data:
+        original = str(trace.name or '')
+        if original not in families:
+            kept.append(trace)
+            continue
+        family = families[original]
+        try:
+            coordinates = tuple((float(x), float(y)) for x, y in zip(trace.x, trace.y))
+            finite = bool(coordinates) and all(math.isfinite(x) and math.isfinite(y) for x, y in coordinates)
+        except (TypeError, ValueError):
+            coordinates, finite = (), False
+        signature = (family, coordinates)
+        if finite and signature in seen_points:
+            continue
+        if finite:
+            seen_points.add(signature)
+        trace.name = family
+        trace.legendgroup = 'igird_reference_'+family
+        trace.showlegend = family not in legend_seen
+        trace.connectgaps = False
+        legend_seen.add(family)
+        kept.append(trace)
+    fig.data = tuple(kept)
+
+
+def polish_shear_legend(fig) -> None:
+    """Compact demand sources and resistance legends without changing checks."""
+    compact_csi_demand_labels(fig, component='Vuy', unit='kN')
+    compact_reference_paths(fig, {'φVn':'±φVn', '-φVn':'±φVn', 'φVc':'φVc'})
+    for trace in fig.data:
+        if trace.name == 'Governing demand':
+            trace.name, trace.showlegend = 'Gov. Vu', False
+        elif trace.name == 'Governing shear check':
+            trace.name = 'Gov. shear'
+        elif trace.name == 'Critical section for shear loading':
+            trace.name = 'Critical x'
 
 
 def deduplicate_coincident_flexure_capacity(fig) -> None:

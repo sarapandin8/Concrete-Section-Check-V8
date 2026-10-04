@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "compileall": "PASS",
+  "modules": 50,
+  "tests": 608,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 55.554,
+  "app_startup": "PASS",
+  "native_import_ui_actions": "PASS \u2014 full app.py Streamlit AppTest with actual Calculate controls",
+  "prior_flexure_interface_ui_actions": "PASS \u2014 full app.py Streamlit AppTest with actual Calculate controls",
+  "shear_torsion_combined_ui_actions": "PASS \u2014 full app.py Streamlit AppTest with actual Calculate controls",
+  "browser_visual_verification": "NOT COMPLETED; scientific previews are exact production trace renders, not browser screenshots"
+}
