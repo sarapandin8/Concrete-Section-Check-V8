@@ -1,0 +1,18 @@
+{
+  "stages": [
+    {
+      "stage": "construction",
+      "calculate_button_seconds": 3.3715137389999654,
+      "trace_visible": true
+    },
+    {
+      "stage": "final",
+      "calculate_button_seconds": 2.977049309999529,
+      "trace_visible": true
+    }
+  ],
+  "page_errors": [],
+  "console_errors": [],
+  "streamlit_exceptions": 0,
+  "agent_browser_fallback_reason": "IPC socket bind: Operation not permitted"
+}

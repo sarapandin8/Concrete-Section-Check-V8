@@ -106,6 +106,14 @@ from concrete_pmm_pro.analysis.result_models import (
     summarize_pmm_result,
 )
 from concrete_pmm_pro.analysis.igird_composite_flexure import prepare_aashto_composite_positive_flexure
+from concrete_pmm_pro.analysis.igird_flexure_development import (
+    RESULT_VERSION as IGIRD_FLEXURE_DEVELOPMENT_VERSION,
+    SETTINGS_KEY as IGIRD_FLEXURE_DEVELOPMENT_KEY,
+    SectionEquilibrium as IgirdFlexureSectionEquilibrium,
+    development_settings as igird_flexure_development_settings,
+    strand_families as igird_flexure_strand_families,
+    solve_developed_station as solve_igird_developed_flexure_station,
+)
 from concrete_pmm_pro.analysis.igird_combined_vt import (
     RESULT_VERSION as IGIRD_CONCURRENT_VT_VERSION,
     development_settings as igird_longitudinal_development_settings,
@@ -6426,6 +6434,150 @@ def _beam_uls_solve_flexure_capacity_state(
     }
 
 
+def _beam_uls_developed_igird_flexure_dataframe(
+    state: Mapping[str, object], active_df: pd.DataFrame, *,
+    strength_route: BeamGirderUlsStrengthRoute, prestress_force_stage: str,
+) -> tuple[pd.DataFrame, list[str]]:
+    """AASHTO developed resistance at every original, coupled demand station.
+
+    No new/interpolated FEA force rows are invented. Nu is included in every
+    root solve. A reference solve may be shared only at exactly equal Nu/sign.
+    """
+    if active_df.empty:
+        return pd.DataFrame(), ["No current source stations for developed flexure."]
+    started = time.perf_counter()
+    settings = igird_flexure_development_settings(state)
+    params = dict(_beam_uls_get_state_value(state, "section_parameters", {}) or {})
+    span = _beam_uls_span_length_from_state(state, is_building=False)
+    table = _beam_uls_get_state_value(state, "girder_strand_layout_table")
+    messages = [
+        "AASHTO LRFD 9th (2020) 5.9.4.3.1--3: each strand family is stress-limited using its bonded distance from each end/sleeve; Mn is recomputed by equilibrium.",
+        "5.5.4.2: strain-based phi multiplies both Pn and Mn; phi*Pn equals the original external station Nu. Primary Mux flexure only; imported Muy is not checked.",
+        "fps reference comes from the fully developed section at the same Nu/sign and current steel material law; the available fpx limit is not fpu resistance.",
+        "Debonded kappa=2.0 is used when service tension exists or is unclassified; kappa=1.6/1.0 requires the no-service-tension declaration.",
+        "No beam extension is credited unless entered. Sleeve lengths are measured from the physical cut ends. Ordinary bars use conservative straight-bar development unless verified ld/anchorage is entered.",
+    ]
+    contexts = {}
+    references = {}
+    rows = []
+    source = active_df.assign(__station_numeric=pd.to_numeric(active_df["Station x (m)"], errors="coerce"))
+    source = source.sort_values(["Case Name", "__station_numeric"], kind="stable")
+    for _, demand_row in source.iterrows():
+        x = _beam_uls_float(demand_row.get("Station x (m)"))
+        mu = _beam_uls_float(demand_row.get("Mux"))
+        nu = _beam_uls_float(demand_row.get("Nu"))
+        sign = -1.0 if math.isfinite(mu) and mu < 0 else 1.0
+        case = str(demand_row.get("Case Name") or "-")
+        row = {"Check": "Flexure", "Governing x": _format_beam_uls_x(x), "Case": case,
+            "Demand": _format_beam_uls_demand(mu, "kN-m"), "Demand kN-m": mu,
+            "Nu kN": nu, "Station x (m)": x, "Capacity plot sign": sign,
+            "Route": "AASHTO LRFD developed pretensioned I-Girder",
+            "Code basis": "AASHTO LRFD 9th (2020) 5.6.2.1 + 5.9.4.3",
+            "Capacity basis": "AASHTO available developed section resistance",
+            "Strain compatibility basis": "AASHTO alpha1/beta1 and existing steel laws",
+            "Solver basis": "Fixed-axis equilibrium: phi*Pn(c)=Nu; strand fpx stress caps",
+            "Method": "AASHTO developed section equilibrium",
+            "Material model scope": "Current concrete, ordinary rebar, and bonded-strand models",
+            "Bending direction": _beam_uls_flexure_direction_label(sign),
+            "Tension face": _beam_uls_flexure_tension_face_label(sign),
+            "Neutral axis θ deg": 90.0 if sign > 0 else 270.0,
+            "Benchmark readiness": "Developed resistance; source/detailing/composite gates remain separate"}
+        try:
+            if not all(math.isfinite(v) for v in (x, mu, nu)) or not 0 <= x <= span:
+                raise ValueError("Station/Mux/Nu must be finite, with x inside the station span.")
+            if sign not in contexts:
+                # The middle-station bridge creates the validated base input.
+                # Replace its sleeve-filtered rows with all physical families
+                # for the reference solve; actual strength is limited below.
+                middle_row = dict(demand_row)
+                middle_row["Station x (m)"] = 0.5 * span
+                ai, notes = _beam_uls_flexure_analysis_input_for_station(state,
+                    row=middle_row, strength_route=strength_route,
+                    capacity_direction=sign, prestress_force_stage=prestress_force_stage)
+                if ai is None:
+                    raise ValueError("; ".join(notes))
+                generic_ps = _beam_uls_get_state_value(state, "prestress_elements", []) or []
+                if ai.settings.include_prestress and generic_ps:
+                    raise ValueError("Generic prestress rows have no physical bond-end mapping; use the dedicated I-Girder strand layout for this route.")
+                families = igird_flexure_strand_families(table,
+                    y_min_mm=_beam_uls_section_bounds(ai.section_geometry)[1],
+                    span_m=span, stage=prestress_force_stage, settings=settings)
+                if not ai.settings.include_prestress:
+                    raise ValueError("Prestressing steel is disabled; developed pretensioned I-Girder route requires it.")
+                ai = ai.model_copy(update={"prestress_elements": [f.element for f in families]})
+                contexts[sign] = (IgirdFlexureSectionEquilibrium(ai, sign), families)
+            context, families = contexts[sign]
+            reference_key = (sign, nu)
+            if reference_key not in references:
+                references[reference_key] = context.solve(nu * 1000.0)
+            result = solve_igird_developed_flexure_station(context, families,
+                reference=references[reference_key], x_m=x, span_m=span, nu_n=nu * 1000.0,
+                precast_depth_mm=float(state.get("_igird_flexure_precast_depth_mm", context.h)),
+                girder_fc_mpa=float(state.get("_igird_flexure_precast_fc_MPa", context.fc)),
+                settings=settings, params=params)
+            capacity = max(0.0, result["phiMn_Nmm"] / 1e6)
+            zero_mu = abs(mu) <= _BEAM_ULS_DEMAND_TOL
+            utilization = float("nan") if zero_mu else (abs(mu) / capacity if capacity > 0 else float("inf"))
+            numerical_status = "SECTION PREVIEW" if zero_mu else ("PASS" if utilization <= 1 else "FAIL")
+            status = numerical_status
+            if numerical_status == "PASS" and result["source_status"] != "PASS":
+                status = "REVIEW"
+            minimum_gate = ("NOT APPLICABLE: compression-controlled" if result["strain_condition"] == "compression-controlled" else
+                "PASS via 1.33Mu" if zero_mu or capacity >= 1.33 * abs(mu) else "REVIEW: cracking-resistance branch required")
+            if numerical_status == "PASS" and minimum_gate.startswith("REVIEW"):
+                status = "REVIEW"
+            notes = f"Strand development included; {result['strain_condition']}; force residual={result['residual_N']:.6g} N. " + result["source_note"]
+            row.update({"Status": status, "Numerical status": numerical_status,
+                "Capacity": f"φMn = {capacity:,.2f} kN-m", "Capacity kN-m": capacity,
+                "φMn kN-m": capacity, "Mn nominal kN-m": max(0, result["Mn_Nmm"] / 1e6),
+                "φ value": result["phi"], "Route φ": f"φ = {result['phi']:.3f}",
+                "φ policy": result["phi_basis"] + "; evaluated at station net tensile strain",
+                "Utilization": "-" if zero_mu else _format_beam_uls_ratio(utilization),
+                "Utilization value": utilization, "D/C value": utilization,
+                "Neutral axis c mm": result["c_mm"], "Stress block a mm": result["a_mm"],
+                "α1": result["alpha1"], "β1": result["beta1"],
+                "Net tensile strain": result["eps_t"], "Strain condition": result["strain_condition"],
+                "Pn nominal kN": result["Pn_N"] / 1000.0,
+                "φPn kN": result["phiPn_N"] / 1000.0,
+                "Force residual N": result["residual_N"],
+                "Cc kN": result["Cc_N"] / 1000.0,
+                "Ordinary steel force kN": result["As_force_N"] / 1000.0,
+                "Strand force kN": result["Aps_force_N"] / 1000.0,
+                "Moment reference y mm": result["y_reference_mm"],
+                "Full-development reference φMn kN-m": result["reference_phiMn_kNm"],
+                "Full-development reference c mm": result["reference_c_mm"],
+                "Development source status": result["source_status"],
+                "Minimum flexure gate": minimum_gate,
+                "Strand development trace": result["strand_trace"],
+                "Ordinary bar development trace": result["bar_trace"], "Notes": notes})
+        except (ValueError, TypeError, KeyError) as exc:
+            text_error = str(exc)
+            unavailable_equilibrium = "No directional axial-flexural equilibrium" in text_error
+            # A failed equilibrium has no valid Mn. Keep a chart gap instead
+            # of plotting a fictitious zero-resistance section.
+            capacity = float("nan")
+            row.update({"Status": "FAIL" if unavailable_equilibrium else "REVIEW",
+                "Numerical status": "NO EQUILIBRIUM" if unavailable_equilibrium else "SOURCE BLOCKED",
+                "Capacity": "No axial-flexural equilibrium" if unavailable_equilibrium else "-",
+                "Capacity kN-m": capacity, "φMn kN-m": capacity,
+                "Utilization value": float("inf") if unavailable_equilibrium else float("nan"),
+                "D/C value": float("inf") if unavailable_equilibrium else float("nan"),
+                "Utilization": "FAIL" if unavailable_equilibrium else "-",
+                "Development source status": "REVIEW", "Notes": text_error})
+            if hasattr(exc, "strand_trace"):
+                row["Strand development trace"] = exc.strand_trace
+                row["Ordinary bar development trace"] = exc.bar_trace
+        rows.append(row)
+    if any(not math.isfinite(_beam_uls_float(r.get("Capacity kN-m"))) for r in rows):
+        messages.append("Full-span strength coverage is incomplete: resolve blocked source station(s); no final flexure PASS is issued.")
+        for row in rows:
+            if row.get("Status") == "PASS":
+                row["Status"] = "REVIEW"
+    messages.insert(0, f"IGIRDER.FLEXDEP1: {len(rows)} original demand stations in {time.perf_counter() - started:.3f} s; "
+        f"{len(references)} reference equilibrium state(s). Every station retains its Nu; no angular PMM sweep.")
+    return pd.DataFrame(rows), messages
+
+
 def _beam_uls_flexure_preview_dataframe(
     state: Mapping[str, object],
     active_df: pd.DataFrame,
@@ -6436,6 +6588,7 @@ def _beam_uls_flexure_preview_dataframe(
     prestress_force_stage: str = "final",
     full_span_capacity: bool = False,
     use_aashto_solver: bool = False,
+    apply_girder_development: bool = False,
 ) -> tuple[pd.DataFrame, list[str]]:
     """Return station-by-station flexure check rows using the routed ULS basis.
 
@@ -6454,6 +6607,12 @@ def _beam_uls_flexure_preview_dataframe(
             project_design_code=code_label,
             code_edition=code_label,
         )
+
+    if apply_girder_development:
+        if not strength_route.is_bridge or _beam_uls_get_state_value(state, "section_preset_key") != "parametric_i_girder":
+            raise ValueError("Developed flexure is scoped to the AASHTO Precast I-Girder workflow.")
+        return _beam_uls_developed_igird_flexure_dataframe(
+            state, active_df, strength_route=strength_route, prestress_force_stage=prestress_force_stage)
 
     columns = [
         "Check",
@@ -11230,6 +11389,10 @@ def _beam_uls_manual_cache(state: Mapping[str, object]) -> dict[str, dict[str, o
 def _beam_uls_expected_result_version(state: Mapping[str, object], check_name: str) -> str | None:
     if str(_beam_uls_get_state_value(state, "section_preset_key") or "").strip() != "parametric_i_girder":
         return None
+    if check_name == "Flexure — Construction":
+        return _IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION
+    if check_name == "Flexure — Final Composite":
+        return _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION
     if check_name == "Shear":
         return _IGIRDER_SHEAR_RESULT_VERSION
     if check_name == "Torsion":
@@ -12795,13 +12958,16 @@ def _make_beam_uls_flexure_preview_figure(
     else:
         preview_df["__capacity_plot_sign"] = preview_df["__demand_kNm"].map(lambda demand: -1.0 if pd.notna(demand) and float(demand) < 0.0 else 1.0)
 
-    capacity_df = preview_df[preview_df["__x_m"].notna() & preview_df["__demand_kNm"].notna() & preview_df["__capacity_kNm"].notna()].copy()
-    if capacity_df.empty:
+    developed_route = "Numerical status" in preview_df.columns
+    station_df = preview_df[preview_df["__x_m"].notna() & preview_df["__demand_kNm"].notna()].copy()
+    capacity_df = station_df[station_df["__capacity_kNm"].notna()].copy()
+    if capacity_df.empty and not developed_route:
         fig.update_layout(title={"text": f"Flexure Check — Strength ULS<br><sup>{code_label} · demand only — φMn not ready</sup>"})
         return fig
 
     capacity_df = capacity_df.sort_values(["Case", "__x_m"], kind="stable")
-    for case_name, case_df in capacity_df.groupby("Case", sort=False):
+    path_df = station_df.sort_values(["Case", "__x_m"], kind="stable") if developed_route else capacity_df
+    for case_name, case_df in path_df.groupby("Case", sort=False):
         x_values: list[float] = []
         y_values: list[float] = []
         for _, row in case_df.iterrows():
@@ -12819,11 +12985,13 @@ def _make_beam_uls_flexure_preview_figure(
                 mode="lines",
                 name=f"φMn",
                 line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
+                connectgaps=False,
                 hovertemplate="x=%{x:.3f} m<br>φMn=%{y:.3f} kN-m<extra></extra>",
             )
         )
 
-    governing_candidates = capacity_df[capacity_df["__utilization"].notna()].copy()
+    governing_source = station_df if developed_route else capacity_df
+    governing_candidates = governing_source[governing_source["__utilization"].notna()].copy()
     if not governing_candidates.empty:
         idx = governing_candidates["__utilization"].astype(float).idxmax()
         row = governing_candidates.loc[idx]
@@ -12834,21 +13002,23 @@ def _make_beam_uls_flexure_preview_figure(
             sign = -1.0 if demand < 0.0 else 1.0
         utilization = float(row["__utilization"])
         status = str(row.get("Status") or "REVIEW")
+        available = math.isfinite(capacity)
         fig.add_trace(
             go.Scatter(
                 x=[float(row["__x_m"])],
-                y=[sign * capacity],
+                y=[sign * capacity if available else float(row["__demand_kNm"])],
                 mode="markers+text",
-                text=[f"D/C {utilization:.3f}"],
-                textposition="bottom center" if sign > 0.0 else "top center",
+                text=[f"D/C {utilization:.3f}" if available else "NO EQUILIBRIUM" if row.get("Numerical status") == "NO EQUILIBRIUM" else "RESISTANCE UNAVAILABLE"],
+                textposition=("bottom center" if sign > 0.0 else "top center") if available else "top left",
                 textfont=dict(size=10),
-                marker=dict(size=9),
+                marker=dict(size=9) if available else dict(size=11, symbol="x", color="red"),
                 cliponaxis=False,
                 name="Governing flexure check",
                 hovertemplate=(
                     "x=%{x:.3f} m<br>"
                     f"Status={status}<br>"
-                    "Governing φMn=%{y:.3f} kN-m<extra></extra>"
+                    + ("Governing φMn=%{y:.3f} kN-m<extra></extra>" if available else
+                       "Demand=%{y:.3f} kN-m<br>Resistance unavailable; see stored equilibrium trace<extra></extra>")
                 ),
             )
         )
@@ -13447,8 +13617,10 @@ def _beam_uls_construction_demand_from_state(
 
 
 # Supersedes IGIRDER.ULS2.full-span-physical-phiMn while preserving its full-span capacity semantics.
-_IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION = "IGIRDER.ULS2P.flexure-performance-optimization"
-_IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION = "IGIRDER.ULS3A.composite-flexure-audit-closeout"
+# Supersedes IGIRDER.ULS2P.flexure-performance-optimization and
+# IGIRDER.ULS3A.composite-flexure-audit-closeout: engineering results changed.
+_IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION = IGIRD_FLEXURE_DEVELOPMENT_VERSION + ".construction"
+_IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION = IGIRD_FLEXURE_DEVELOPMENT_VERSION + ".final-composite"
 _IGIRDER_SHEAR_RESULT_VERSION = "IGIRDER.ULS5A.shear-qa-closeout"
 _IGIRDER_TORSION_RESULT_VERSION = "IGIRDER.ULS6E.torsion-coverage-detailing-closeout"
 _IGIRDER_COMBINED_VT_RESULT_VERSION = IGIRD_CONCURRENT_VT_VERSION
@@ -13898,6 +14070,8 @@ def _beam_uls_final_composite_preparation(
     composite_state = dict(state)
     composite_state["section_geometry"] = prep.geometry
     composite_state["concrete_material"] = prep.concrete_material
+    composite_state["_igird_flexure_precast_depth_mm"] = _beam_uls_section_bounds(geometry)[3] - _beam_uls_section_bounds(geometry)[1]
+    composite_state["_igird_flexure_precast_fc_MPa"] = float(concrete.fc_MPa)
 
     existing_rebars = list(_beam_uls_get_state_value(state, "rebars", []) or [])
     if prep.deck_rebars:
@@ -13925,6 +14099,7 @@ def _beam_uls_final_composite_flexure_hash(
     return _beam_uls_hash_payload(
         {
             "result_version": _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION,
+            "flexure_development": igird_flexure_development_settings(state),
             "engineering_input_hash": _beam_uls_cache_input_hash(
                 state, supported_df, strength_route=strength_route
             ),
@@ -13945,6 +14120,7 @@ def _beam_uls_construction_flexure_hash(
     return _beam_uls_hash_payload(
         {
             "result_version": _IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION,
+            "flexure_development": igird_flexure_development_settings(state),
             "engineering_input_hash": _beam_uls_cache_input_hash(
                 state, construction_df, strength_route=strength_route
             ),
@@ -14126,10 +14302,11 @@ def _render_beam_girder_final_composite_flexure_guard(
             prestress_force_stage="final",
             full_span_capacity=True,
             use_aashto_solver=True,
+            apply_girder_development=True,
         )
         preview_messages = deduplicate_warnings(
             [
-                "IGIRDER.ULS3A Final Composite positive flexure uses the AASHTO Section 5 strain-compatibility engine.",
+                "IGIRDER.FLEXDEP1 Final Composite positive flexure includes AASHTO 5.9.4.3 strand development and strain-based phi.",
                 f"Composite concrete strength basis = {design_fc:g} MPa (lower of deck/girder f'c).",
                 *prep_messages,
                 *preview_messages,
@@ -14229,7 +14406,7 @@ def _render_beam_girder_final_composite_flexure_guard(
         {
             "title": "φMn, composite",
             "value": cap_value,
-            "detail": f"AASHTO φ=1.00 route · Final effective prestress" if cap_value != "-" else "not calculated",
+            "detail": f"AASHTO strain-based φ · developed Final strand force" if cap_value != "-" else "not calculated",
             "status": "info",
         },
     ]
@@ -14261,6 +14438,18 @@ def _render_beam_girder_final_composite_flexure_guard(
             article_style = "warning"
         na_value = f"c = {na_c_mm:,.1f} mm"
         na_detail = f"{na_region} · compression-face θ={na_theta_deg:,.1f}°" if math.isfinite(na_theta_deg) else na_region
+    elif isinstance(gov, Mapping) and gov.get("Numerical status") == "NO EQUILIBRIUM":
+        na_value = "NO EQUILIBRIUM"
+        na_detail = "Applied Nu cannot be balanced by the developed section at this station"
+        article_value = "UNAVAILABLE"
+        article_detail = "No valid neutral axis; review physical cut ends and anchorage"
+        article_style = "warning"
+    elif isinstance(gov, Mapping) and preview_df is not None and not preview_df.empty:
+        na_value = "UNAVAILABLE"
+        na_detail = "Resolve the stored section/source issue in Calculation trace"
+        article_value = "REVIEW"
+        article_detail = "Neutral-axis applicability cannot be evaluated at the governing station"
+        article_style = "warning"
     else:
         na_value = "NOT CALCULATED"
         na_detail = "Run current Final Composite flexure to populate NA evidence"
@@ -14425,7 +14614,7 @@ def _render_beam_girder_final_composite_flexure_guard(
                 )
             ),
             caption=(
-                "Section flexure capacity uses the effective CIP deck and Final effective prestress. "
+                "Available section flexure capacity includes strand transfer/development, ordinary-bar development, and the effective CIP deck. "
                 "A section PASS does not certify composite action until girder-deck interface shear is verified."
             ),
         )
@@ -14435,6 +14624,8 @@ def _render_beam_girder_final_composite_flexure_guard(
             if preview_messages:
                 st.caption("Final Composite flexure notes: " + " | ".join(preview_messages[:8]))
 
+    from concrete_pmm_pro.ui.igird_flexure_development import render_trace as render_flexure_development_trace
+    render_flexure_development_trace(preview_df, stage="Final Composite")
     with st.expander("Composite flexure basis / limitations", expanded=False):
         st.markdown(
             f"- Effective CIP deck used in section strength: **Be = {be_mm:,.1f} mm**, **Tslab = {tslab_mm:,.1f} mm**.\n"
@@ -14449,10 +14640,9 @@ def _render_beam_girder_final_composite_flexure_guard(
 def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> None:
     """Render compact ULS demand/flexure-check workspace for Bridge/Building Beam/Girder.
 
-    This is intentionally decision-first and read-only for demand. ULS.FLEX1
-    adds a primary Mux flexure strength check from the existing strain-
-    compatibility engine while keeping shear, torsion, development length,
-    debonding strength, and report certification as future milestones.
+    Demand remains read-only. The dedicated I-Girder FLEXDEP1 route includes
+    AASHTO transfer/development limits; other Beam/Girder routes retain their
+    existing workflow-specific engines and checks.
     """
 
     is_bridge = is_beam_girder_future_workflow(mode_settings)
@@ -14519,6 +14709,8 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
     selected_check = str(selected_check_raw) if selected_check_raw in BEAM_ULS_CHECK_TAB_LABELS else BEAM_ULS_CHECK_TAB_LABELS[0]
 
     if is_precast_composite_bridge and selected_check == "Flexure":
+        from concrete_pmm_pro.ui.igird_flexure_development import render_inputs as render_flexure_development_inputs
+        render_flexure_development_inputs()
         flexure_stage = st.radio(
             "Flexure stage",
             ["Construction — Noncomposite", "Final — Composite"],
@@ -14583,6 +14775,8 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                 strength_route=strength_route,
                 prestress_force_stage="construction",
                 full_span_capacity=True,
+                use_aashto_solver=True,
+                apply_girder_development=True,
             )
             construction_entry = _beam_uls_store_manual_result(
                 st.session_state,
@@ -14619,8 +14813,8 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             )
         )
         st.caption(
-            "Construction demand is automatic. φMn is the full-span precast section-strength curve using station-dependent strand participation and Construction-stage effective prestress force. "
-            "Zero-demand support stations retain physical section capacity with D/C not applicable; φMn is not forced to zero for diagram boundaries. "
+            "Construction demand is automatic. φMn includes AASHTO strand transfer/development and ordinary-bar development in the noncomposite precast section. "
+            "Each station retains its external Nu; both Pn and Mn use the strain-based φ. Capacity is computed at source stations; connecting lines are visual interpolation. "
             "If the factor gate is not confirmed, D/C is visible for audit but the engineering status remains REVIEW rather than PASS/FAIL."
         )
         with st.expander("Construction flexure strength audit / benchmark output", expanded=False):
@@ -14629,6 +14823,8 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                 st.info("Run Construction Flexure to populate the noncomposite capacity audit.")
             else:
                 st.dataframe(audit_df, use_container_width=True, hide_index=True)
+        from concrete_pmm_pro.ui.igird_flexure_development import render_trace as render_flexure_development_trace
+        render_flexure_development_trace(preview_df, stage="Construction")
         with st.expander("Construction ULS demand audit", expanded=False):
             st.dataframe(_beam_uls_audit_dataframe(construction_df), use_container_width=True, hide_index=True)
             if preview_messages:

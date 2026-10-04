@@ -16,6 +16,7 @@ from concrete_pmm_pro.core.aashto_units import inch_to_mm, mpa_to_ksi
 from concrete_pmm_pro.core.models import ConcreteMaterial, Point2D, SectionGeometry
 from concrete_pmm_pro.ui.analysis_page import (
     _IGIRDER_COMBINED_VT_RESULT_VERSION,
+    _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION,
     _IGIRDER_SHEAR_RESULT_VERSION,
     _beam_uls_combined_vt_check_dataframe,
     _beam_uls_current_cached_result,
@@ -229,14 +230,15 @@ def test_igird_combined_vt_with_missing_composite_fps_source_remains_review():
     assert any("verified final composite" in str(note).lower() for note in decision["Notes"].tolist())
 
 
-def test_igird_shear_cache_version_is_selective_and_flexure_cache_is_not_invalidated():
+def test_igird_shear_cache_version_is_selective_and_current_flexure_cache_is_not_invalidated():
     input_hash = "qa-hash"
     cache_key = "_beam_girder_uls_manual_calculation_cache"
     state = {
         "section_preset_key": "parametric_i_girder",
         cache_key: {
             "Shear": {"input_hash": input_hash, "status": "PASS", "check": "Shear"},
-            "Flexure — Final Composite": {"input_hash": input_hash, "status": "PASS", "check": "Flexure — Final Composite"},
+            "Flexure — Final Composite": {"input_hash": input_hash, "status": "PASS", "check": "Flexure — Final Composite",
+                "result_version": _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION},
         },
     }
     assert _beam_uls_current_cached_result(state, "Shear", input_hash) is None

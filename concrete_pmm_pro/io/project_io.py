@@ -937,6 +937,9 @@ def _prestress_table_metadata_from_session(session_state: Any) -> list[dict[str,
 
 def project_from_session_state(session_state: Any) -> ProjectModel:
     metadata = dict(_get_session_value(session_state, "project_metadata", {}) or {})
+    from concrete_pmm_pro.analysis.igird_flexure_development import SETTINGS_KEY as FLEXURE_DEVELOPMENT_KEY, development_settings as flexure_development_settings
+    if _get_session_value(session_state, FLEXURE_DEVELOPMENT_KEY, None) is not None:
+        metadata[FLEXURE_DEVELOPMENT_KEY] = flexure_development_settings(session_state)
     from concrete_pmm_pro.analysis.igird_combined_vt import DEVELOPMENT_KEY, development_settings
     if _get_session_value(session_state, DEVELOPMENT_KEY, None) is not None:
         metadata[DEVELOPMENT_KEY] = development_settings(session_state)
@@ -1696,6 +1699,13 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
     # leak into a newly loaded model or its widget defaults.
     from concrete_pmm_pro.analysis.igird_combined_vt import DEVELOPMENT_KEY, development_settings
     session_state[DEVELOPMENT_KEY] = development_settings({"project_metadata": project.metadata})
+    from concrete_pmm_pro.analysis.igird_flexure_development import (
+        SETTINGS_KEY as FLEXURE_DEVELOPMENT_KEY, development_settings as flexure_development_settings,
+    )
+    session_state[FLEXURE_DEVELOPMENT_KEY] = flexure_development_settings({"project_metadata": project.metadata})
+    for key in list(session_state):
+        if str(key).startswith("igird_flexdep_"):
+            session_state.pop(key, None)
     for key, expected_type in (("beam_girder_torsion_settings", dict), ("beam_girder_torsion_zone_settings", list)):
         raw = project.metadata.get(key)
         session_state[key] = raw.copy() if isinstance(raw, expected_type) else expected_type()
