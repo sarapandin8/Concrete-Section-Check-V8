@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "compileall": "PASS",
+  "modules": 46,
+  "tests": 514,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 39.932,
+  "app_startup": "PASS",
+  "production_ui_actions": "PASS \u2014 full app.py Streamlit AppTest with original workbook upload bytes",
+  "browser_visual_verification": "NOT COMPLETED"
+}

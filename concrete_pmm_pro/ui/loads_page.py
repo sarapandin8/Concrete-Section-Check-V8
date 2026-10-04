@@ -2017,12 +2017,10 @@ def _render_workflow_import_tools(
     """Render download/import/apply controls for workflow-specific load inputs."""
 
     if csi_girder:
-        mode = st.radio('Import table format', ['CSiBridge girder forces', 'App columns (legacy)'], horizontal=True, key=key_prefix+'_format')
-        if mode == 'CSiBridge girder forces':
-            from concrete_pmm_pro.ui.girder_csi_import import render_import
-            render_import(state_key=state_key, editor_key=editor_key, key_prefix=key_prefix,
-                force_unit=import_force_unit, moment_unit=import_moment_unit)
-            return
+        from concrete_pmm_pro.ui.girder_csi_import import render_import
+        render_import(state_key=state_key, editor_key=editor_key, key_prefix=key_prefix,
+            force_unit=import_force_unit, moment_unit=import_moment_unit)
+        return
     template = _stringify_table(template_df, columns) if template_df is not None else _sample_workflow_template(table_name, columns, stage_label=stage_label)
     st.markdown(f"**{title}**")
     st.caption("Download the template, fill it in Excel, upload it, validate, then replace or append rows.")

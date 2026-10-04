@@ -7,7 +7,7 @@ import math
 import re
 import pandas as pd
 
-VERSION = 'IGIRDER.CSIIMPORT1.source-rows-v1'
+VERSION = 'IGIRDER.CSIIMPORT2.auto-detect-v2'
 SOURCE_TAG = 'CSP_CSI_SOURCE='
 CSI_COLUMNS = ['Layout Line Distance','Girder Distance','ItemType','P','V2','V3','T','M2','M3']
 APP_COLUMNS = ['Active','Station x (m)','Case Name','Mux','Vuy','Tu','Muy','Vux','Nu','Note']
@@ -33,6 +33,13 @@ def is_csi_table(frame):
     keys={_key(c) for c in frame.columns}
     return {'p','v2','v3','t','m2','m3'}<=keys and bool(keys & {'girderdistance','layoutlinedistance','distance','station'})
 
+def is_app_table(frame):
+    keys={_key(c) for c in frame.columns}
+    return bool(keys & {'casename','comboname','loadcase','outputcase','case','name'}) and bool(
+        keys & {'stationxm','stationsm','station','s','sm','distance','distancem','x','xm','location','locationm'}) and bool(
+        keys & {'mux','mx','muy','my','vuy','vy','vux','vx','nu','p','n','tu','t',
+            'momentx','momenty','shearx','sheary','axial','axialforce','torsion'})
+
 def read_tables(payload: bytes, filename: str):
     """Read worksheet headers explicitly; do not silently use the bridge-total sheet."""
     raw = ({'CSV':pd.read_csv(BytesIO(payload),header=None,encoding='utf-8-sig')}
@@ -42,7 +49,8 @@ def read_tables(payload: bytes, filename: str):
         for i in range(min(25,len(grid))):
             header=grid.iloc[i].tolist()
             keys={_key(c) for c in header if not _blank(c)}
-            if {'p','v2','v3','t','m2','m3'}<=keys or {'casename','stationxm'}<=keys:
+            probe=pd.DataFrame(columns=[c for c in header if not _blank(c)])
+            if {'p','v2','v3','t','m2','m3'}<=keys or is_app_table(probe):
                 frame=grid.iloc[i+1:].copy()
                 frame.columns=[str(c).strip() if not _blank(c) else f'Unnamed {j}' for j,c in enumerate(header)]
                 frame.attrs['header_row']=i+1
@@ -159,7 +167,7 @@ def apply_source_gate(result,source):
     if not sources or result is None or result.empty or 'Case' not in result:
         return result
     result=result.copy(deep=True)
-    original_rows={(str(row.get('Case Name')),float(row.get('Station x (m)'))):source_info(row)
+    original_rows={(str(row.get('Case Name')),float(row.get('Station x (m)'))):row
         for _,row in source.iterrows() if source_info(row)}
     for i,row in result.iterrows():
         info=sources.get(str(row.get('Case')))
@@ -168,9 +176,13 @@ def apply_source_gate(result,source):
         result.at[i,'Source ItemType']=info.get('step','UNKNOWN')
         result.at[i,'Source sheet']=info.get('sheet','UNKNOWN')
         result.at[i,'Source row set']=info.get('occurrence')
-        exact=original_rows.get((str(row.get('Case')),float(row.get('Station x (m)',float('nan')))))
-        if exact:
+        exact_row=original_rows.get((str(row.get('Case')),float(row.get('Station x (m)',float('nan')))))
+        if exact_row is not None:
+            exact=source_info(exact_row)
             result.at[i,'Source Excel row']=exact.get('row')
+            for field in ('Mux','Vuy','Tu','Muy','Vux','Nu'):
+                unit='kN-m' if field in {'Mux','Tu','Muy'} else 'kN'
+                result.at[i,f'Source {field} {unit}']=float(exact_row.get(field))
         result.at[i,'Source coupling']='ENVELOPE — REVIEW' if info.get('kind')=='ENVELOPE' else 'UNVERIFIED — REVIEW'
         note=ENVELOPE_NOTE if info.get('kind')=='ENVELOPE' else 'CSI source concurrency is unverified; use corresponding concurrent FEA actions for final acceptance.'
         result.at[i,'Notes']=str(row.get('Notes') or '')+' '+note
@@ -189,6 +201,12 @@ def append_errors(current, imported, *, current_is_csi):
         if axial.isna().any() or axial.abs().gt(0).any():
             errors.append('Existing rows have a different or undeclared Nu convention. Replace rows, or first verify that the existing rows use raw CSI P signs.')
     combined=pd.concat([current,imported],ignore_index=True)
-    if not combined.empty and combined.duplicated(['Case Name','Station x (m)']).any():
-        errors.append('Append would repeat a Case Name / station. Replace this import, or enter a distinct FEA case / envelope name.')
+    if not combined.empty:
+        # Legacy app imports contain numeric text; match stations by value so
+        # an existing 2.0 and uploaded "2" cannot duplicate the same source path.
+        keys=combined[['Case Name','Station x (m)']].copy()
+        keys['Station x (m)']=pd.to_numeric(keys['Station x (m)'],errors='coerce')
+        keys['Case Name']=keys['Case Name'].astype(str).str.strip().str.casefold()
+        if keys.duplicated(['Case Name','Station x (m)']).any():
+            errors.append('Append would repeat a Case Name / station. Replace this import, or enter a distinct FEA case / envelope name.')
     return errors

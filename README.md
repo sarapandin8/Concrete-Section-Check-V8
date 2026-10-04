@@ -1,3 +1,17 @@
+# Concrete Section Pro — IGIRDER.CSIIMPORT2
+
+The Precast I-Girder ULS panel now accepts the user's unchanged latest single-sheet CSiBridge Excel through one uploader with automatic format detection. All 80 rows, both Max/Min, repeated stations and all six signed force components are retained. Existing app-column CSV/XLSX tables use the same uploader. The previous format radio is removed.
+
+Run `streamlit run app.py`. On Loads → ULS → Final Composite import, use kN / kN-m, upload the original Excel, confirm Left Exterior Girder and the actual FEA envelope name, then **Replace current rows**. No header changes, units-row deletion or manual force edits are required. Existing native multi-sheet imports still select the largest |M3| girder demand by default.
+
+**M2→Muy and V3→Vux are reference only**, as confirmed by the user. P→Nu, V2→Vuy, T→Tu and M3→Mux feed the existing relevant checks. All six source quantities are retained in Analysis inputs and in the stored result trace. CSI signs and the existing internal Nu = −P conversion remain intact. Engineering equations and source-coupling REVIEW/FAIL gates are unchanged.
+
+See `PROJECT_HANDOFF_CONCRETE_SECTION_PRO_IGIRDER_CSIIMPORT2_2026-10-04.md`, `tests/test_igird_csi_import_auto.py` and `qa/evidence/igird_csiimport2/`. `python qa/igird_csi_import_ui_verify.py` exercises the full app.py using original workbook upload bytes, including a persisted old legacy-format selection, all 480 force values, actual Final Calculate, reference trace and legacy compatibility. This is Streamlit AppTest verification; browser visual verification is not completed.
+
+## Previous milestone instructions (historical)
+
+The CSIIMPORT1 format-radio steps below are superseded by automatic detection above.
+
 # Concrete Section Pro — IGIRDER.CSIIMPORT1
 
 The Precast I-Girder Loads importer now reads native multi-sheet CSiBridge member forces with a units row and both Max/Min bounds. Select **Left Exterior Girder**, the largest |M3| in the supplied workbook. All 80 original rows remain, including repeated stations; no force component or sign is mixed across rows. The default critical-member comparison ranks |M3| demand, with separate |V2| and |T| leaders. It does not establish the critical member by capacity ratio for every check.
