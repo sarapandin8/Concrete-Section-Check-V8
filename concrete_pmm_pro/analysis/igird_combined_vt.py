@@ -17,7 +17,7 @@ from concrete_pmm_pro.analysis.strain_compatibility import (
 )
 from concrete_pmm_pro.analysis.prestress_stress import prestress_stress_mpa
 
-RESULT_VERSION = "IGIRDER.ULS7.concurrent-vt-longitudinal"
+RESULT_VERSION = "IGIRDER.VTQA1.concurrent-vt-partial-results"
 DEVELOPMENT_KEY = "igird_longitudinal_development_settings"
 
 
@@ -25,6 +25,18 @@ def development_settings(state: Mapping) -> dict:
     raw = state.get(DEVELOPMENT_KEY)
     if not isinstance(raw, Mapping):
         raw = (state.get("project_metadata") or {}).get(DEVELOPMENT_KEY, {})
+    if not raw:
+        legacy = state.get("igird_flexure_development_settings")
+        if not isinstance(legacy, Mapping):
+            legacy = (state.get("project_metadata") or {}).get("igird_flexure_development_settings", {})
+        if isinstance(legacy, Mapping):
+            raw = {
+                "continuous_full_span_confirmed": legacy.get("bars_continuous_confirmed", False),
+                "left_end_anchored_confirmed": legacy.get("left_bar_anchored", False),
+                "right_end_anchored_confirmed": legacy.get("right_bar_anchored", False),
+                "development_length_mm": legacy.get("bar_ld_mm", 0.0),
+                "note": legacy.get("note", ""),
+            }
     raw = raw if isinstance(raw, Mapping) else {}
     try:
         ld = float(raw.get("development_length_mm", 0.0))

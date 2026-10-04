@@ -1,0 +1,35 @@
+{
+  "cage_only": {
+    "rows": 88,
+    "statuses": {
+      "REVIEW": 88
+    },
+    "finite_checks": {
+      "Overall D/C value": 0,
+      "Stress D/C value": 0,
+      "Transverse D/C value": 0,
+      "Longitudinal D/C value": 0
+    },
+    "review_reasons": {
+      "Muy requires biaxial review outside the uniaxial solid I-Girder V+T route.; Vux requires biaxial review outside the uniaxial solid I-Girder V+T route.; Longitudinal material SD40 is unresolved.": 84,
+      "Muy requires biaxial review outside the uniaxial solid I-Girder V+T route.; Vux requires biaxial review outside the uniaxial solid I-Girder V+T route.; General Procedure source: AASHTO epsilon_s denominator EsAs + EpAps is zero; longitudinal tension-side reinforcement source is required.": 4
+    }
+  },
+  "material_defined_qa": {
+    "rows": 88,
+    "statuses": {
+      "FAIL": 61,
+      "REVIEW": 27
+    },
+    "finite_checks": {
+      "Overall D/C value": 84,
+      "Stress D/C value": 84,
+      "Transverse D/C value": 84,
+      "Longitudinal D/C value": 84
+    },
+    "review_reasons": {
+      "Muy requires biaxial review outside the uniaxial solid I-Girder V+T route.; Vux requires biaxial review outside the uniaxial solid I-Girder V+T route.; Composite effective width Be is not confirmed for strength; nominal fps is audit-only until verification.; Ordinary bar continuity/development is unconfirmed; zero ordinary strength/stiffness credit, final PASS withheld.": 84,
+      "Muy requires biaxial review outside the uniaxial solid I-Girder V+T route.; Vux requires biaxial review outside the uniaxial solid I-Girder V+T route.; General Procedure source: AASHTO epsilon_s denominator EsAs + EpAps is zero; longitudinal tension-side reinforcement source is required.": 4
+    }
+  }
+}

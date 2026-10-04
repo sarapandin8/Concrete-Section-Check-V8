@@ -188,8 +188,12 @@ def test_physical_supports_and_zero_moment_both_halves_remain_eligible():
     assert supports["Mu kN-m"].eq(0.0).all()
 
 
-def test_biaxial_and_invalid_concurrent_actions_never_pass():
-    assert physical(check(muy=100.0))["Status"] == "REVIEW"
+def test_reference_m2_and_invalid_primary_actions():
+    base = physical(check())
+    reference = physical(check(muy=100.0))
+    assert reference["Status"] == base["Status"]
+    assert reference["Overall D/C value"] == pytest.approx(base["Overall D/C value"])
+    assert reference["M2 reference kN-m"] == 100.0
     r=physical(check(nu=float("nan")))
     assert r["Status"] == "REVIEW"
     assert math.isnan(r["Overall D/C value"])
@@ -211,14 +215,14 @@ def test_different_vectors_at_one_case_station_are_not_enveloped():
     assert set(physical_rows["Status"]) == {"REVIEW"}
 
 
-def test_development_hash_changes_combined_only_and_keeps_uls6e_torsion():
+def test_development_hash_changes_all_three_vt_checks():
     state=ready_state(); actions=_demand()
     before={c:ap._beam_uls_check_input_hash(state,actions,strength_route=_route(),check_name=c) for c in ["Flexure","Shear","Torsion","Shear + Torsion"]}
     state[DEVELOPMENT_KEY]["left_end_anchored_confirmed"]=False
     after={c:ap._beam_uls_check_input_hash(state,actions,strength_route=_route(),check_name=c) for c in before}
-    assert before["Shear + Torsion"] != after["Shear + Torsion"]
-    assert all(before[c] == after[c] for c in ["Flexure","Shear","Torsion"])
-    assert ap._IGIRDER_TORSION_RESULT_VERSION == "IGIRDER.ULS6E.torsion-coverage-detailing-closeout"
+    assert all(before[c] != after[c] for c in ["Shear","Torsion","Shear + Torsion"])
+    assert before["Flexure"] == after["Flexure"]
+    assert ap._IGIRDER_TORSION_RESULT_VERSION.startswith("IGIRDER.VTQA1.")
 
 
 def test_summary_rejects_stale_combined_development_without_solving(monkeypatch):

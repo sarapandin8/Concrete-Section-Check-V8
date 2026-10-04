@@ -1,0 +1,30 @@
+{
+  "method": "Full app.py Streamlit AppTest, actual Calculate and material/development controls",
+  "streamlit_exceptions": 0,
+  "native_rows": 80,
+  "numeric_source_components_preserved": 480,
+  "missing_material_not_auto_defined": true,
+  "photographed_transverse_confirmations_respected": true,
+  "partial_before_rows": 88,
+  "partial_before_transverse_numeric_rows": 84,
+  "overall_before_numeric_rows": 0,
+  "verified_qa_overall_numeric_rows": 84,
+  "combined_rows": 88,
+  "shear_rows": 88,
+  "torsion_rows": 80,
+  "default_legend_entries": 2,
+  "selected_case_legend_entries_at_most": 3,
+  "full_span": [
+    0,
+    20
+  ],
+  "force_coordinates_unchanged": true,
+  "review_solver_calls": 0,
+  "analysis_rasterization_calls": 0,
+  "native_envelope_coupled_pass_withheld": true,
+  "original_bar_geometry_unchanged": true,
+  "material_and_development_json_roundtrip": "PASS",
+  "user_fixture_and_workbook_modified": false,
+  "preview_rendering": "Matplotlib from exact production Plotly coordinates; standalone HTML embeds JS",
+  "browser_visual_verification": "Not performed; these scientific previews are not browser screenshots"
+}

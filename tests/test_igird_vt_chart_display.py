@@ -76,7 +76,7 @@ def test_incomplete_sources_show_material_and_zone_actions_without_altering_resu
     material = readiness.loc[readiness['Required source / review'].str.contains('SD40')].iloc[0]
     assert zone['Check rows'] == 2 and zone['Stations'] == '1.000 m'
     assert 'Transverse Rebar' in zone['Input location'] and '135° Hook' in zone['Required action']
-    assert 'Materials' in material['Input location'] and 'verified fy' in material['Required action']
+    assert 'Complete missing longitudinal materials' in material['Input location'] and 'verified fy' in material['Required action']
     pd.testing.assert_frame_equal(df,before)
 
 

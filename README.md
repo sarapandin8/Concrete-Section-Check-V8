@@ -1,3 +1,15 @@
+# Concrete Section Pro — IGIRDER.VTQA1
+
+Shear, Torsion and Combined V+T show one maximum original D/C curve and limit=1.0 by default. Choose a single case for the signed force/resistance diagram. Three main cards and collapsed traces reduce workspace clutter; detailed source checks remain available.
+
+Analysis exposes missing longitudinal material and development inputs. Define actual verified fy/Es, confirm real continuity/anchorage/ld, then Calculate Shear + Torsion once to refresh all three V/T results. Independently known partial checks stay visible when another source is missing; missing overall acceptance stays unresolved.
+
+Automatic I-girder dv now uses conservative 0.72h instead of treating an area centroid as the code's force-weighted de. Verified manual dv remains available. Unknown bar materials receive zero stiffness, developed As is credited once, fc design limits are 15 ksi for shear and 10 ksi for torsion/required combined checks, and M2/V3 remain raw references. V/T geometry is precast; composite deck torsion is not certified. The user supplies P=0 in Excel. Native Max/Min source coupling gates remain.
+
+Run `streamlit run app.py`. See `PROJECT_HANDOFF_CONCRETE_SECTION_PRO_IGIRDER_VTQA1_2026-10-04.md`, `IGIRDER_VTQA1_CALCULATION_REVIEW_2026-10-04.md` and `qa/evidence/igird_vtqa1/` for source provisions, assumptions and verification. Hypothetical QA materials/development are not production inputs.
+
+## Historical milestones
+
 # Concrete Section Pro — IGIRDER.CHART2
 
 Shear and Torsion legends identify native Max/Min occurrences and show resistance/reference quantities once. Exact finite copies are drawn once, while genuinely different case-dependent paths and gaps remain. Precast I-Girder V/T Analysis uses the established browser Plotly renderer with full source hover.

@@ -1,0 +1,29 @@
+{
+  "status": "PASS",
+  "compileall": "PASS",
+  "modules": 51,
+  "tests": 621,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 47.744,
+  "app_startup": "PASS",
+  "native_import_ui_actions": "PASS \u2014 full app.py Streamlit AppTest with actual Calculate controls",
+  "prior_flexure_interface_ui_actions": "PASS \u2014 full app.py Streamlit AppTest with actual Calculate controls",
+  "shear_torsion_combined_ui_actions": "PASS \u2014 full app.py Streamlit AppTest with actual Calculate controls",
+  "independent_equation_substitution": {
+    "status": "PASS",
+    "method": "Independent US-customary equations converted with ksi, inch, kip constants; no production equation helpers",
+    "scalar_comparisons": 1723,
+    "max_relative_error": 7.078310013771191e-13,
+    "max_absolute_error": 9.549694368615746e-11,
+    "rows_checked": {
+      "shear": 84,
+      "torsion": 59,
+      "combined": 84
+    },
+    "scope": "Normal-weight solid precast I-girder, straight pretensioned strands, source-qualified hoops; hypothetical verified bar properties/development only",
+    "code": "AASHTO LRFD 9th (2020): 5.7.2.1; 5.7.3.3; 5.7.3.4.2; 5.7.3.6.1/.2/.3"
+  },
+  "browser_visual_verification": "NOT COMPLETED; scientific previews are exact production trace renders, not browser screenshots"
+}

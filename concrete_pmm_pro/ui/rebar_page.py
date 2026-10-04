@@ -2910,7 +2910,7 @@ def _render_igird_torsion_layout_settings(shear_table: pd.DataFrame) -> None:
     ] if has_selected else pd.DataFrame()
     m1, m2, m3 = st.columns(3)
     m1.metric("Torsion-qualified zones", f"{len(selected):,}")
-    m2.metric("Capacity-ready zones", f"{len(ready):,}")
+    m2.metric("Transverse-ready zones", f"{len(ready):,}")
     m3.metric("Corner longitudinal detail", "NOT APPLICABLE YET" if not has_selected else ("CONFIRMED" if corner_ok else "NOT CONFIRMED"))
     if not has_selected:
         st.warning("No provided transverse zone is currently qualified for torsion. Select Use for Torsion only where the actual provided bar forms the intended torsion cage.")
@@ -2920,6 +2920,7 @@ def _render_igird_torsion_layout_settings(shear_table: pd.DataFrame) -> None:
         ph_values = pd.to_numeric(ready["ph_mm"], errors="coerce").dropna()
         ph_note = f" Auto ph range = {ph_values.min():,.1f}–{ph_values.max():,.1f} mm." if not ph_values.empty else ""
         st.success("Selected torsion zones have a complete transverse source: provided bar/spacing/fy + closed-loop confirmation + 135° hook + automatically derived ph." + ph_note)
+        st.caption("Transverse-ready confirms the hoop source only. Longitudinal steel materials, development and concurrent V+T strength are checked in Analysis.")
 
 def _render_shear_reinforcement_layout(rebar_db: pd.DataFrame) -> None:
     st.markdown("#### Beam/Girder Shear Reinforcement Layout")

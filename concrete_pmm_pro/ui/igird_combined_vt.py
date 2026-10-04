@@ -16,7 +16,7 @@ from concrete_pmm_pro.code_checks.aashto_lrfd import (
     aashto_general_shear_parameters, aashto_min_transverse_avs_mm2_per_mm,
     aashto_prestressed_shear_phi, aashto_torsion_transverse_design_fy_mpa,
 )
-from concrete_pmm_pro.core.aashto_units import aashto_sqrt_fc_stress_mpa
+from concrete_pmm_pro.core.aashto_units import aashto_sqrt_fc_stress_mpa, ksi_to_mpa
 
 
 def _number(v) -> float:
@@ -75,16 +75,27 @@ def _check_row(state, row, *, strength_route, face, source_index, nominal_cache,
         "Overall D/C value": float("nan"), "Development status": "REVIEW"}
     notes = []
     def blocked(note, *, status="REVIEW"):
-        return {**result, "Status": status, "Review reason": "; ".join([*notes, note]), "Notes": "; ".join([*notes, note])}
+        known_failure = any(result.get(key) == "FAIL" for key in ("Stress status", "Transverse status", "Detailing status"))
+        partial = any(math.isfinite(_number(result.get(key))) for key in ("Stress D/C value", "Transverse D/C value"))
+        failures = []
+        for label, key, dc_key in (("Compression/Veff", "Stress status", "Stress D/C value"),
+                ("Transverse reinforcement", "Transverse status", "Transverse D/C value"),
+                ("Transverse detailing", "Detailing status", "Spacing D/C")):
+            if result.get(key) == "FAIL":
+                dc = _number(result.get(dc_key))
+                failures.append(label + (f" D/C={dc:.3f}" if math.isfinite(dc) else " fails"))
+        return {**result, "Status": "FAIL" if known_failure else status,
+            "Calculation status": "PARTIAL" if partial else "SOURCE REQUIRED",
+            "Longitudinal status": "DATA REQUIRED", "Overall D/C value": float("nan"),
+            "Failure reason": "; ".join(failures),
+            "Review reason": "; ".join([*notes, note]), "Notes": "; ".join([*notes, note])}
     if not all(math.isfinite(v) for v in [x, mu, nu, vu, tu, span]) or span <= 0 or not 0 <= x <= span:
         return blocked("Concurrent Mu, Nu, Vu, Tu and physical station must all be finite within the member.")
     if max(abs(mu), abs(nu), abs(vu), abs(tu)) <= 1e-9:
         return {**result, "Status": "NO DEMAND", "Stress status": "NOT REQUIRED", "Transverse status": "NOT REQUIRED",
             "Longitudinal status": "NOT REQUIRED", "Development status": "NOT REQUIRED", "Notes": "Zero concurrent actions."}
-    for key in ["Muy", "Vux"]:
-        value = _number(row.get(key, 0.0))
-        if not math.isfinite(value) or abs(value) > 1e-6:
-            notes.append(f"{key} requires biaxial review outside the uniaxial solid I-Girder V+T route.")
+    result.update({"M2 reference kN-m": row.get("Muy"), "V3 reference kN": row.get("Vux"),
+        "Section basis": "PRECAST I-GIRDER", "Reference action policy": "M2 and V3 retained as reference only"})
     if ambiguous_case:
         notes.append("Multiple concurrent action vectors at the same case/x: all physical rows checked; supplemental dv interpolation is withheld.")
     torsion = ap._beam_uls_igird_torsion_result_for_row(state, row, strength_route=strength_route) if abs(tu) > 1e-9 else {}
@@ -109,7 +120,7 @@ def _check_row(state, row, *, strength_route, face, source_index, nominal_cache,
         strength_route=strength_route, capacity_direction=-1.0 if face == "top" else 1.0)
     if inp is None:
         return blocked("; ".join(messages))
-    fc = float(inp.concrete_material.fc_MPa)
+    fc = min(float(inp.concrete_material.fc_MPa), ksi_to_mpa(10.0 if needs_t else 15.0))
     if inp.concrete_material.density_kg_m3 < 2200.0:
         return blocked("Lightweight concrete requires a verified lambda/source branch; the ULS7 normal-weight route does not infer lambda.")
     bv = _number(ap._beam_uls_web_width_mm(inp.section_geometry)[0])
@@ -128,6 +139,7 @@ def _check_row(state, row, *, strength_route, face, source_index, nominal_cache,
     provided = bar_area * legs / spacing
     avmin = aashto_min_transverse_avs_mm2_per_mm(fc, bv, fy, lambda_concrete=1.0)
     result.update({"f'c MPa": fc, "bw mm": bv, "d mm": d, "dv mm": dv, "φ": phi,
+        "dv basis": depths.get("dv_note"),
         "φ policy": phi_note, "fy input MPa": fy_input, "fy MPa": fy, "fy policy": fy_note,
         "Spacing mm": spacing, "Provided transverse mm2/mm": provided, "Minimum transverse req mm2/mm": avmin})
     if provided < avmin - 1e-12:
@@ -137,23 +149,50 @@ def _check_row(state, row, *, strength_route, face, source_index, nominal_cache,
     if needs_t and not all(math.isfinite(v) and v > 0 for v in [ao, ph]):
         return blocked("AASHTO solid shear-flow Ao / derived hoop ph is unavailable.", status="DATA REQUIRED")
     veff = math.hypot(abs(vu)*1000.0, 0.9*ph*abs(tu)*1e6/(2*ao)) if needs_t else abs(vu)*1000.0
+    # This compression guard is independent of the longitudinal material/fps
+    # source. Retain it even if a later longitudinal input is unavailable.
+    strut_dc = veff / (phi * 0.25 * fc * bv * dv)
+    detail = ap._beam_uls_shear_detailing_guard(strength_route=strength_route, fc_MPa=fc,
+        bw_mm=bv, d_eff_mm=d, dv_mm=dv, spacing_mm=spacing, avs_mm2_per_mm=provided,
+        fy_MPa=fy, vu_N=veff)
+    result.update({"Stress D/C value": strut_dc, "Stress status": "PASS" if strut_dc <= 1+1e-9 else "FAIL",
+        "Veff kN": veff/1000.0, "Ao mm2": ao, "ph mm": ph,
+        "Detailing status": detail.get("Detailing status"), "Spacing D/C": detail.get("Spacing D/C"),
+        "s max mm": detail.get("s max mm")})
     dev_settings = development_settings(state)
     dev_factor = ordinary_development_factor(dev_settings, x_m=x, span_m=span) if inp.rebars else 1.0
     result.update({"Ordinary development factor": dev_factor if dev_factor is not None else float("nan"),
         "Ordinary ld mm": dev_settings["development_length_mm"],
         "Development status": "PASS" if dev_factor is not None else "REVIEW"})
+    if dev_factor is None:
+        notes.append("Ordinary bar continuity/development is unconfirmed; zero ordinary strength/stiffness credit, final PASS withheld.")
     # No unverified bar development is credited in the strain denominator.
     eps_inp = inp.model_copy(update={"rebars": [b.model_copy(update={"diameter_mm": b.diameter_mm*math.sqrt(dev_factor)})
         for b in inp.rebars] if dev_factor is not None and dev_factor > 0 else []})
     eps = ap._beam_uls_igird_general_shear_epsilon(state, analysis_input=eps_inp, x_m=x,
         span_length_m=span, tension_face=face, mux_kNm=mu, vu_kN=vu,
-        nu_compression_positive_kN=nu, dv_mm=dv, effective_shear_kN=veff/1000.0 if needs_t else None)
+        nu_compression_positive_kN=nu, dv_mm=dv, effective_shear_kN=veff/1000.0 if needs_t else None,
+        ordinary_development_applied=True)
     if not eps.get("ready"):
         return blocked("General Procedure source: " + str(eps.get("note") or ""))
     params = aashto_general_shear_parameters(epsilon_s=float(eps["epsilon_s_raw"]), has_minimum_transverse_reinforcement=True)
     theta, cot = params.theta_deg, 1.0/math.tan(math.radians(params.theta_deg))
     vc = aashto_sqrt_fc_stress_mpa(0.0316 * params.beta, fc) * bv * dv
     at_req = abs(tu)*1e6/(phi*2*ao*fy*cot) if needs_t else 0.0
+    partial_values = concurrent_vt_si(mu_Nmm=mu*1e6, nu_compression_positive_N=nu*1000,
+        vu_N=vu*1000, tu_Nmm=tu*1e6 if needs_t else 0.0, phi=phi, fc_MPa=fc,
+        bv_mm=bv, dv_mm=dv, Ao_mm2=ao, ph_mm=ph, fy_MPa=fy, cot_theta=cot, vc_N=vc,
+        avs_provided=provided, ats_required=at_req, avs_minimum=avmin, aps_fps_N=0.0, as_fy_N=0.0)
+    result.update({"Transverse D/C value": partial_values["transverse_dc"],
+        "Transverse status": "PASS" if partial_values["transverse_dc"] <= 1+1e-9 else "FAIL",
+        "Vc kN": vc/1000.0, "Vs allocated kN": partial_values["vs_nominal_N"]/1000.0,
+        "Vs used kN": partial_values["vs_used_N"]/1000.0, "β": params.beta, "θ deg": theta, "θ cot": cot,
+        "εs raw": eps["epsilon_s_raw"], "εs used": params.epsilon_s_used,
+        "εs numerator N": eps.get("numerator_N"), "εs denominator N": eps.get("denominator_N"),
+        "Av shear req mm2/mm": partial_values["shear_required"], "At torsion req mm2/mm": at_req,
+        "Governing transverse req mm2/mm": partial_values["combined_required"],
+        "Combined transverse req mm2/mm": partial_values["combined_required"],
+        "Av available for shear mm2/mm": partial_values["available_shear"]})
     _, ymin, _, ymax = ap._beam_uls_section_bounds(inp.section_geometry)
     ymid = 0.5*(ymin+ymax)
     mats = {m.name: m for m in inp.rebar_materials}
@@ -247,9 +286,9 @@ def _check_row(state, row, *, strength_route, face, source_index, nominal_cache,
     failures = [result[k] for k in ["Stress status","Transverse status","Longitudinal status","Detailing status"]]
     review = dev_factor is None or bool(notes) or (needs_t and (not corner or not perimeter)) or mu < -1e-9
     result["Status"] = "FAIL" if "FAIL" in failures else ("REVIEW" if review else "PASS")
+    result["Calculation status"] = "COMPLETE"
     if dev_factor is None:
         result["Longitudinal status"] = "REVIEW" if long_pass else "FAIL"
-        notes.append("Ordinary bar continuity/development is unconfirmed; zero ordinary strength/stiffness credit, final PASS withheld.")
     if mu < -1e-9:
         notes.append("Top tension-side force checked; negative composite flexure certification remains separate and is outside the accepted positive route.")
     if not ps_dominance:
@@ -306,14 +345,14 @@ def variable_definitions() -> pd.DataFrame:
     ],columns=["Variable","Engineering meaning","Unit"])
 
 
-def render_development_inputs() -> None:
+def render_development_inputs(*, expanded: bool = False) -> None:
     import streamlit as st
     from concrete_pmm_pro.analysis.igird_combined_vt import DEVELOPMENT_KEY
     if str(st.session_state.get("section_preset_key") or "") != "parametric_i_girder":
         return
     current = development_settings(st.session_state)
-    with st.expander("Longitudinal development — Shear + Torsion", expanded=False):
-        st.caption("The existing Longitudinal Rebar table remains the only ordinary-bar source. These confirmations govern its development credit in the concurrent check.")
+    with st.expander("Longitudinal development — V/T", expanded=expanded):
+        st.caption("The existing Longitudinal Rebar table is the ordinary-bar source. These confirmations govern bar development credit in Shear, Torsion and Combined V+T.")
         continuous = st.checkbox("All active ordinary bars are continuous over the full physical member",
             value=current["continuous_full_span_confirmed"], key="igird_vt_bars_continuous")
         cols = st.columns(2)
@@ -363,23 +402,20 @@ def render_workspace(df: pd.DataFrame | None, *, code_label: str) -> None:
         {"title":"General Procedure","value":f"θ {value('θ deg','deg')}","detail":f"β {value('β')} · Veff {value('Veff kN','kN')}","status":"info"},
         {"title":"Development","value":str(gov.get('Development status','REVIEW')),"detail":f"As factor {value('Ordinary development factor')} · Aps factor {value('Aps development factor min')}","status":"info" if gov.get('Development status') == 'PASS' else 'warning'},
     ]
-    ap._render_analysis_summary_strip(cards, columns=5)
+    ap._render_analysis_summary_strip(cards[:3], columns=3)
     dc_columns = [c for c in ("Stress D/C value", "Transverse D/C value", "Longitudinal D/C value") if c in df]
     finite_rows = df[dc_columns].apply(lambda column: pd.to_numeric(column, errors="coerce").map(lambda v: pd.notna(v) and math.isfinite(float(v)))).any(axis=1) if dc_columns else pd.Series(False, index=df.index)
     st.caption(f"Calculation completed: {len(df)} concurrent check rows; {int(finite_rows.sum())} rows with finite D/C. Original source rows and acceptance gates are retained.")
     readiness = source_readiness_dataframe(df)
     if not readiness.empty:
-        st.caption("Required inputs / blocking sources")
-        st.dataframe(readiness, use_container_width=True, hide_index=True)
+        with st.expander("Required inputs / source review", expanded=False):
+            st.dataframe(readiness, use_container_width=True, hide_index=True)
     if ap._beam_uls_combined_vt_has_finite_utilization(df):
-        ap._render_beam_uls_browser_plotly_figure(ap._make_beam_uls_combined_vt_utilization_figure(df,code_label=code_label), interactive=True)
-        st.caption("Transverse D/C compares the sum of concurrent shear/torsion requirements with one physical transverse source. Longitudinal D/C is F/(Aps·fps+As·fy) from 5.7.3.6.3-1. Veff limit D/C is an additional conservative compression guard. Red dashed line: D/C=1.0. Real missing sources remain gaps.")
-        cases=df["Case"].drop_duplicates().tolist()
-        if len(cases)>1:
-            st.caption("Chart cases: " + "; ".join(f"C{i}: {case}" for i,case in enumerate(sorted(cases),1)))
+        from concrete_pmm_pro.ui.igird_vt_workspace import render_combined_chart
+        render_combined_chart(df, code_label=code_label)
     else:
         st.info("Calculation completed, but no finite D/C can be drawn yet. Complete the required inputs listed above, then press Calculate Shear + Torsion again.")
-    missing = df.loc[df["Status"].isin(["REVIEW","DATA REQUIRED"])]
+    missing = df.loc[df["Status"].isin(["REVIEW","DATA REQUIRED"]) | df.get("Calculation status",pd.Series(index=df.index,dtype=object)).eq("PARTIAL")]
     uncovered = df.loc[df.get("Coverage status",pd.Series(index=df.index,dtype=object)).eq("REQUIRED")]
     if not uncovered.empty:
         st.warning(f"Transverse coverage is incomplete at {len(uncovered)} check row(s), even if another covered station governs a strength failure.")
@@ -391,10 +427,11 @@ def render_workspace(df: pd.DataFrame | None, *, code_label: str) -> None:
         st.success("All current concurrent V+T sectional rows and required development/detailing gates pass within the stated scope.")
     else:
         st.warning("Concurrent V+T needs review. " + str(gov.get("Review reason") or "Complete the sources and confirmations before final sectional acceptance."))
-    compact = [c for c in ["Governing x","Case","Tension face","Status","Transverse status","Longitudinal status",
+    compact = [c for c in ["Governing x","Case","Tension face","Status","Calculation status","Transverse status","Longitudinal status",
         "Coverage status","Development status","Detailing status","Corner longitudinal status","Perimeter longitudinal status","Prestress dominance status",
         "Transverse D/C value","Longitudinal required kN","Longitudinal resistance kN","Longitudinal D/C value","Review reason"] if c in df]
-    st.dataframe(df[compact],use_container_width=True,hide_index=True)
+    with st.expander("Station results / source status", expanded=False):
+        st.dataframe(df[compact],use_container_width=True,hide_index=True)
     with st.expander("Calculation trace / Equations — governing concurrent V+T station",expanded=False):
         st.dataframe(calculation_trace(gov),use_container_width=True,hide_index=True)
     with st.expander("Variable definitions / Engineering terms",expanded=False):
@@ -409,7 +446,8 @@ def source_readiness_dataframe(df: pd.DataFrame | None) -> pd.DataFrame:
     columns = ["Required source / review", "Check rows", "Stations", "Input location", "Required action"]
     if df is None or df.empty:
         return pd.DataFrame(columns=columns)
-    unresolved = df.loc[df["Status"].isin(["DATA REQUIRED", "REVIEW"])].copy(deep=True)
+    partial = df.get("Calculation status", pd.Series(index=df.index, dtype=object)).eq("PARTIAL")
+    unresolved = df.loc[df["Status"].isin(["DATA REQUIRED", "REVIEW"]) | partial].copy(deep=True)
     groups = {}
     for _, row in unresolved.iterrows():
         reason = str(row.get("Review reason") or "").strip()
@@ -435,10 +473,10 @@ def source_readiness_dataframe(df: pd.DataFrame | None) -> pd.DataFrame:
             location = "Sections → Rebar → Transverse Rebar"
             action = "Check zone ranges and actual cage details; confirm Use for Torsion, Closed Loop and 135° Hook for applicable zones."
         elif "material" in lower and ("unresolved" in lower or "unavailable" in lower):
-            location = "Materials / Sections → Rebar → Longitudinal Rebar"
-            action = "Define the referenced reinforcing-steel material with verified fy, or assign the existing bars to the correct defined material."
+            location = "Analysis → Complete missing longitudinal materials"
+            action = "Enter verified fy and Es for the referenced steel grade here, or assign the bars to an existing defined material in Sections."
         elif "ordinary" in lower and ("continu" in lower or "development" in lower) or "anchorage" in lower:
-            location = "Sections → Rebar → Longitudinal Rebar → Longitudinal development — Shear + Torsion"
+            location = "Analysis → Longitudinal development — Shear + Torsion"
             action = "Verify bar continuity, end anchorage and governing ld; enter only confirmations supported by the actual cage and calculation."
         elif "corner" in lower or "perimeter" in lower:
             location = "Sections → Rebar → Transverse Rebar"
