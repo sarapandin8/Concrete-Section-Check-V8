@@ -1,0 +1,44 @@
+{
+  "release": "IGIRDER.CHART3",
+  "status": "PASS",
+  "method": "Actual app.py Streamlit Calculate and case/anchorage controls; independent US-unit torsion equation check",
+  "streamlit_exceptions": 0,
+  "native_rows": 80,
+  "preserved_force_components": 480,
+  "exact_vtqa1_decision_frames_unchanged": [
+    "shear_check_df",
+    "shear_critical_section_df",
+    "shear_boundary_capacity_df",
+    "torsion_check_df",
+    "torsion_boundary_capacity_df",
+    "combined_vt_df"
+  ],
+  "direct_combined_calculation_seconds": 2.8640238959997077,
+  "actual_ui_calculation_seconds": {
+    "Calculate Shear + Torsion": 4.221647819000282,
+    "Calculate Torsion": 1.1329624970003351,
+    "Calculate Shear": 1.4319974410000214,
+    "Calculate Construction Flexure": 2.6698188319996916,
+    "Calculate Final Composite Flexure": 4.614880684999662,
+    "Calculate Interface Shear": 1.0240363559996695
+  },
+  "force_diagrams_tested": 16,
+  "full_case_force_domain": [
+    0,
+    20
+  ],
+  "torsion_diagram_stations": 84,
+  "unanchored_numeric_resistance_stations": 76,
+  "anchored_numeric_resistance_stations": 84,
+  "below_threshold_resistance_stations_restored": 17,
+  "independent_torsion_scalars_checked": 168,
+  "shear_shared_endpoints_use_actual_forces": true,
+  "shear_diagram_stations": 84,
+  "independent_shear_diagram_scalars_checked": 168,
+  "both_flexure_stages_interface_and_combined_ui": "PASS",
+  "review_solver_calls": 0,
+  "source_fixture_and_workbook_modified": false,
+  "automatic_anchorage_confirmation": false,
+  "automatic_material_definition": false,
+  "preview_method": "Scientific plots and standalone HTML from production Plotly figures; no browser screenshot claim"
+}

@@ -134,7 +134,7 @@ def make_overview_figure(active_df, frame, *, check_name, code_label, span_m, in
     return fig
 
 
-def render_strength_chart(active_df, frame, *, check_name, code_label, state, boundary=None, critical=None):
+def render_strength_chart(active_df, frame, *, check_name, code_label, state, boundary=None, critical=None, diagram=None):
     import streamlit as st
     from concrete_pmm_pro.ui import analysis_page as ap
     if frame is None or frame.empty:
@@ -161,13 +161,18 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
         checked = frame.loc[frame["Case"].eq(case)]
         def pick(source):
             return source.loc[source["Case"].eq(case)] if source is not None and not source.empty else None
+        selected_diagram = pick(diagram)
         if check_name == "Shear":
             fig = ap._make_beam_uls_shear_capacity_figure(demands,checked,code_label=code_label,
-                boundary_capacity_df=pick(boundary),critical_section_df=pick(critical),compact_csi_legend=True)
+                boundary_capacity_df=pick(boundary),critical_section_df=pick(critical),compact_csi_legend=True,
+                member_length_m=span,source_context_df=active_df,diagram_capacity_df=selected_diagram)
             fig.data = tuple(t for t in fig.data if t.name not in {"φVc","Critical x"})
         else:
-            fig = ap._make_beam_uls_torsion_capacity_figure(demands,checked,code_label=code_label,boundary_capacity_df=pick(boundary))
-            have_tn = pd.to_numeric(checked.get("φTn kN-m"),errors="coerce").notna().any()
+            fig = ap._make_beam_uls_torsion_capacity_figure(demands,checked,code_label=code_label,
+                boundary_capacity_df=pick(boundary),diagram_capacity_df=selected_diagram,
+                member_length_m=span,source_context_df=active_df)
+            capacity_source = selected_diagram if selected_diagram is not None and not selected_diagram.empty else checked
+            have_tn = pd.to_numeric(capacity_source.get("φTn kN-m"),errors="coerce").notna().any()
             hide = {"±φTcr","±0.25φTcr"} if have_tn else {"±φTcr"}
             fig.data = tuple(t for t in fig.data if t.name not in hide)
         for trace in fig.data:
@@ -175,6 +180,26 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
                 trace.showlegend = False
         fig.update_xaxes(range=[0.0,span])
         st.caption(str(case) + ". Blue: original signed demand. Red: ±φVn or ±φTn for this case; the negative branch mirrors the resistance magnitude. Purple, if shown: investigation threshold.")
+        shared = (fig.layout.meta or {}).get("shared_csi_endpoints", [])
+        if shared:
+            st.caption("Shared physical endpoints at x=0/L use the unique original Excel row from the same girder, case and Max/Min family. They are diagram points only; hover shows the originating row. Stored import and design checks are unchanged.")
+        if check_name == "Torsion" and diagram is not None and not diagram.empty:
+            st.caption("φTn is also evaluated for the diagram where Tu is below 0.25φTcr or zero, using the actual station actions and qualified reinforcement. The original threshold/design decisions are unchanged; no end resistance is copied from an interior station.")
+            with st.expander("Torsion diagram capacity — station / source / θ trace",expanded=False):
+                columns = [column for column in ("Governing x","Case","Demand kN-m","φTn kN-m",
+                    "Threshold status","Source decision status","Diagram evaluation status","εs raw","θ deg",
+                    "Ao mm2","At/s mm2/mm","fy MPa","φ","Diagram source case","Diagram source sheet",
+                    "Diagram source row","Diagram source type","Notes") if column in selected_diagram]
+                st.dataframe(selected_diagram[columns],hide_index=True,use_container_width=True)
+        if check_name == "Shear" and diagram is not None and not diagram.empty:
+            st.caption("φVn at shared physical endpoints uses their actual Excel forces. Zero-force synthetic boundary capacities are not used in this case diagram. The original support/critical-section design decisions are unchanged.")
+        missing = (fig.layout.meta or {}).get("unavailable_capacity", [])
+        if missing:
+            st.caption("Grey × at the chart foot marks unavailable resistance, not zero capacity. Hover for the missing station source.")
+            with st.expander("Missing capacity at plotted stations",expanded=False):
+                st.dataframe(pd.DataFrame([{"x (m)":row["x_m"],"Quantity":row["quantity"],
+                    "Case": "; ".join(row["cases"]),"Reason":row["reason"]} for row in missing]),
+                    hide_index=True,use_container_width=True)
     ap._render_beam_uls_browser_plotly_figure(fig,interactive=True)
     st.caption("Incomplete input checks remain REVIEW. CSI Max/Min rows are numerical screening; final coupled acceptance needs verified concurrent actions.")
 
@@ -193,4 +218,5 @@ def render_combined_chart(frame, *, code_label):
     if frame[[c for c in ["Stress D/C value", "Transverse D/C value", "Longitudinal D/C value", "Spacing D/C"] if c in frame]].apply(lambda c: pd.to_numeric(c, errors="coerce").map(math.isinf)).any().any():
         st.caption("An infinite ratio is labelled ∞ and drawn at the top of the chart; it has no finite plotted magnitude.")
     with st.expander("Combined components / individual cases",expanded=False):
-        ap._render_beam_uls_browser_plotly_figure(ap._make_beam_uls_combined_vt_utilization_figure(frame,code_label=code_label),interactive=True)
+        ap._render_beam_uls_browser_plotly_figure(ap._make_beam_uls_combined_vt_utilization_figure(frame,code_label=code_label,member_length_m=span),interactive=True)
+        st.caption("The x-axis covers the physical span. Component D/C values are plotted only at evaluated design stations; support boundaries and unavailable source terms are not assigned a numeric D/C.")

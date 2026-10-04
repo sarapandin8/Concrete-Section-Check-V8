@@ -19,6 +19,7 @@ from concrete_pmm_pro.ui import analysis_page as ap
 from concrete_pmm_pro.ui.igird_combined_vt import source_readiness_dataframe
 from concrete_pmm_pro.io.project_io import project_from_json,apply_project_to_session_state,project_from_session_state,project_to_json
 from concrete_pmm_pro.io.girder_csi_import import read_tables,prepare_csi_table
+from concrete_pmm_pro.visualization.igird_uls_chart_display import native_csi_diagram_rows
 
 def element(elements,label): return next(e for e in elements if e.label==label)
 def ok(at): assert not at.exception,[e.message for e in at.exception]
@@ -122,12 +123,13 @@ with patch.object(ap,'_render_beam_uls_browser_plotly_figure',side_effect=captur
             assert len(names)==len(set(names)) and len(names)<=3,names
             component='Vuy' if name=='Shear' else 'Tu'
             trace=next(t for t in detail.data if t.name.startswith(component+' ') or t.name.startswith('Demand '+component))
-            expected=source.loc[source['Case Name'].eq(case)].sort_values('Station x (m)',kind='stable')
+            expected=native_csi_diagram_rows(source.loc[source['Case Name'].eq(case)],
+                member_length_m=20,source_context_df=source).sort_values('Station x (m)',kind='stable')
             assert list(trace.x)==expected['Station x (m)'].tolist()
             assert list(trace.y)==expected[component].tolist()
             assert '±φVn' in names if name=='Shear' else '±φTn' in names
             assert tuple(detail.layout.xaxis.range)==(0,20)
-            preview(detail,name.lower()+'_selected_case','One original signed CSI case; its own positive/negative resistance. End-zone missing stiffness is not patched or extrapolated.')
+            preview(detail,name.lower()+'_selected_case','Original signed CSI rows with shared physical endpoints; same-family source retained. Missing end resistance is not extrapolated.')
             # Switching display options never changes cached engineering rows.
             pd.testing.assert_frame_equal(frame,at.session_state[ap._BEAM_ULS_MANUAL_CALC_CACHE_KEY][name][key])
     pd.testing.assert_frame_equal(source,at.session_state['beam_uls_loads_table'])

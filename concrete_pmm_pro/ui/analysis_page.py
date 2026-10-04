@@ -8063,6 +8063,7 @@ def _beam_uls_shear_result_for_row(
     case = str(row.get("Case Name") or "-")
     diagram_boundary = bool(row.get("__Diagram boundary"))
     critical_section = bool(row.get("__Critical shear section"))
+    capacity_diagram = bool(row.get("__Capacity diagram"))
     station_type = "DIAGRAM BOUNDARY" if diagram_boundary else ("CRITICAL SHEAR SECTION" if critical_section else "LOAD STATION")
     support_side = str(row.get("__Support side") or "-")
     critical_offset_m = _beam_uls_float(row.get("__Critical offset m"))
@@ -8070,7 +8071,7 @@ def _beam_uls_shear_result_for_row(
     if critical_section:
         notes.append("Critical shear section inserted by Analysis; demand is interpolated from active ULS station rows and this row is considered for governing shear D/C.")
     if not math.isfinite(vu_kN) or abs(vu_kN) <= _BEAM_ULS_DEMAND_TOL:
-        if not diagram_boundary:
+        if not diagram_boundary and not (capacity_diagram and math.isfinite(vu_kN)):
             return {
                 "Check": "Shear",
                 "Status": "NO DEMAND",
@@ -8085,7 +8086,7 @@ def _beam_uls_shear_result_for_row(
                 "Notes": "No finite Vuy demand.",
             }
         vu_kN = 0.0
-        notes.append("Diagram boundary capacity value only; not a governing shear design section.")
+        notes.append("Capacity diagram value only; original zero-demand decision is unchanged." if capacity_diagram else "Diagram boundary capacity value only; not a governing shear design section.")
     zone = _beam_uls_active_shear_zone_for_station(state, x_m, require_coverage=not diagram_boundary)
     if zone is None:
         return {
@@ -8102,7 +8103,8 @@ def _beam_uls_shear_result_for_row(
             "Zone": "-",
             "Notes": "No active stirrup zone covers this design/check station. Extend or add a provided stirrup zone; nearest zones are not used for final shear acceptance.",
         }
-    analysis_input, input_messages = _beam_uls_flexure_analysis_input_for_station(state, row=row, strength_route=strength_route)
+    analysis_input, input_messages = _beam_uls_flexure_analysis_input_for_station(state, row=row,
+        strength_route=strength_route, capacity_direction=1.0 if capacity_diagram else None)
     if input_messages:
         notes.extend(input_messages)
     if analysis_input is None:
@@ -8986,6 +8988,67 @@ def _beam_uls_torsion_diagram_boundary_dataframe(
             if math.isfinite(phi_tn) or math.isfinite(phi_tcr):
                 rows.append(result)
     return pd.DataFrame(rows, columns=columns)
+
+
+def _beam_uls_igird_torsion_diagram_capacity_dataframe(
+    state: Mapping[str, object], active_df: pd.DataFrame, torsion_check_df: pd.DataFrame,
+    *, strength_route: BeamGirderUlsStrengthRoute,
+) -> pd.DataFrame:
+    return _beam_uls_igird_station_capacity_diagram_dataframe(state, active_df, torsion_check_df,
+        check_name="Torsion", strength_route=strength_route)
+
+
+def _beam_uls_igird_shear_diagram_capacity_dataframe(
+    state: Mapping[str, object], active_df: pd.DataFrame, shear_check_df: pd.DataFrame,
+    *, strength_route: BeamGirderUlsStrengthRoute,
+) -> pd.DataFrame:
+    return _beam_uls_igird_station_capacity_diagram_dataframe(state, active_df, shear_check_df,
+        check_name="Shear", strength_route=strength_route)
+
+
+def _beam_uls_igird_station_capacity_diagram_dataframe(
+    state: Mapping[str, object], active_df: pd.DataFrame, check_df: pd.DataFrame,
+    *, check_name: str, strength_route: BeamGirderUlsStrengthRoute,
+) -> pd.DataFrame:
+    """Compute omitted diagram capacities on Calculate, never on review.
+
+    Threshold and zero-demand decisions remain in check_df unchanged.
+    A separate diagram may evaluate 5.7.3.6.2 where design is not required,
+    using the actual station actions and the same qualified section, hoop,
+    development and General Procedure sources. No nearest-capacity extension
+    or artificial Tu is used. Every output row is excluded from decisions.
+    """
+    if not (strength_route.is_bridge and _beam_uls_is_precast_composite_bridge(state, is_bridge=True)):
+        return pd.DataFrame()
+    from concrete_pmm_pro.visualization.igird_uls_chart_display import native_csi_diagram_rows
+    span = _beam_uls_span_length_from_state(state, is_building=False)
+    demands = native_csi_diagram_rows(active_df, member_length_m=span)
+    existing = {(str(row.get("Case")), _beam_uls_shear_row_x_m(row)): row.to_dict()
+        for _, row in check_df.iterrows() if row.get("Station type") not in {"DIAGRAM BOUNDARY", "CRITICAL SHEAR SECTION"}}
+    metric = "φVn kN" if check_name == "Shear" else "φTn kN-m"
+    evaluate = _beam_uls_shear_result_for_row if check_name == "Shear" else _beam_uls_igird_torsion_result_for_row
+    rows = []
+    for _, source in demands.iterrows():
+        key = (str(source.get("Case Name")), float(source["Station x (m)"]))
+        original = existing.get(key, {})
+        result = dict(original)
+        if not math.isfinite(_beam_uls_float(result.get(metric))):
+            demand = source.to_dict()
+            demand["__Capacity diagram"] = True
+            result = evaluate(state, demand, strength_route=strength_route)
+        note = "Capacity diagram only; the original threshold/design decision is unchanged."
+        source_type = "Shared physical endpoint — diagram only" if source.get("__Shared CSI endpoint") else "Original station actions — capacity diagram only"
+        rows.append({**result, "Case": key[0], "Governing x": _format_beam_uls_x(key[1]),
+            "Station type": "CAPACITY DIAGRAM", "Status": "DIAGRAM ONLY", "D/C value": float("nan"),
+            "Utilization": "-", "Diagram only": True,
+            "Diagram evaluation status": result.get("Status", "REVIEW"),
+            "Source decision status": original.get("Status", "SHARED ENDPOINT"),
+            "Diagram source case": source.get("__Source case", key[0]),
+            "Diagram source sheet": source.get("__Source sheet", ""),
+            "Diagram source row": source.get("__Source row", ""),
+            "Diagram source type": source_type,
+            "Notes": str(result.get("Notes") or "") + "; " + note})
+    return pd.DataFrame(rows)
 
 
 def _beam_uls_shear_row_x_m(row: Mapping[str, object]) -> float:
@@ -10126,12 +10189,13 @@ def _beam_uls_igird_torsion_result_for_row(
     support_side = _beam_uls_member_end_side(x_m, span_m)
     explicit_boundary = bool(row.get("__Diagram boundary"))
     station_type = "DIAGRAM BOUNDARY" if explicit_boundary else "LOAD STATION"
+    capacity_diagram = bool(row.get("__Capacity diagram"))
     notes: list[str] = []
     if station_type == "DIAGRAM BOUNDARY":
         notes.append("Synthetic torsion capacity row is a diagram boundary only and is excluded from governing torsion decisions.")
     elif support_side:
         notes.append("Physical support-face ULS torsion station remains eligible to govern; the shear dv critical-section exclusion is not applied to standalone torsion.")
-    if not math.isfinite(tu_kNm) or abs(tu_kNm) <= _BEAM_ULS_DEMAND_TOL:
+    if not math.isfinite(tu_kNm) or (abs(tu_kNm) <= _BEAM_ULS_DEMAND_TOL and not capacity_diagram):
         return {
             "Check": "Torsion", "Status": "NO DEMAND", "Station type": station_type, "Support side": support_side or "-",
             "Transverse status": "NO DEMAND", "Longitudinal status": "NOT CHECKED", "Detailing status": "NO DEMAND",
@@ -10256,7 +10320,7 @@ def _beam_uls_igird_torsion_result_for_row(
         "Threshold basis": "AASHTO LRFD 5.7.2.1-3/-4/-6: investigate torsion when |Tu| > 0.25φTcr",
         "Code basis": "AASHTO LRFD 9th Ed. 5.7.2.1; 5.7.3.4.2; 5.7.3.6.2",
     }
-    if threshold_status == "BELOW THRESHOLD":
+    if threshold_status == "BELOW THRESHOLD" and not capacity_diagram:
         return {
             **common, "Status": "BELOW THRESHOLD", "Transverse status": "NOT REQUIRED", "Longitudinal status": "NOT REQUIRED",
             "Detailing status": "NOT REQUIRED", "Capacity": f"0.25φTcr = {threshold_kNm:,.2f} kN-m", "Utilization": "-",
@@ -11086,6 +11150,12 @@ def _render_beam_uls_browser_plotly_figure(fig: go.Figure, *, caption: str | Non
         st.plotly_chart(fig, use_container_width=True, config=config)
     if caption:
         st.caption(caption)
+    meta = dict(fig.layout.meta or {})
+    if meta.get("demand_component") == "Mux":
+        if meta.get("shared_csi_endpoints"):
+            st.caption("Unique CSI physical endpoints at x=0/L are shared within the same girder/case/Max-or-Min family for the diagram only. Original imported rows and design decisions are unchanged; full source identity is retained on hover.")
+        if meta.get("unavailable_capacity"):
+            st.caption("Grey × at the chart foot marks unavailable φMn, not zero capacity. The station audit identifies the missing development/equilibrium source.")
 
 
 def _render_beam_uls_static_plotly_figure(fig: go.Figure, *, caption: str | None = None) -> None:
@@ -11546,6 +11616,8 @@ def _beam_uls_calculate_selected_check(
             "shear_check_df": shear_check_df,
             "shear_critical_section_df": shear_critical_section_df,
             "shear_boundary_capacity_df": shear_boundary_capacity_df,
+            "shear_diagram_capacity_df": _beam_uls_igird_shear_diagram_capacity_dataframe(
+                state, active_df, shear_station_check_df, strength_route=strength_route),
         }
     if selected_check == "Torsion":
         torsion_check_df = _beam_uls_torsion_check_dataframe(
@@ -11561,6 +11633,8 @@ def _beam_uls_calculate_selected_check(
         return {
             "torsion_check_df": torsion_check_df,
             "torsion_boundary_capacity_df": torsion_boundary_capacity_df,
+            "torsion_diagram_capacity_df": _beam_uls_igird_torsion_diagram_capacity_dataframe(
+                state, active_df, torsion_check_df, strength_route=strength_route),
             "torsion_coverage_summary": _beam_uls_torsion_coverage_summary(torsion_check_df),
         }
     if selected_check == "Shear + Torsion":
@@ -11603,8 +11677,12 @@ def _beam_uls_calculate_selected_check(
             "shear_check_df": shear_check_df,
             "shear_critical_section_df": shear_critical_section_df,
             "shear_boundary_capacity_df": shear_boundary_capacity_df,
+            "shear_diagram_capacity_df": _beam_uls_igird_shear_diagram_capacity_dataframe(
+                state, active_df, shear_station_check_df, strength_route=strength_route),
             "torsion_check_df": torsion_check_df,
             "torsion_boundary_capacity_df": torsion_boundary_capacity_df,
+            "torsion_diagram_capacity_df": _beam_uls_igird_torsion_diagram_capacity_dataframe(
+                state, active_df, torsion_check_df, strength_route=strength_route),
             "torsion_coverage_summary": _beam_uls_torsion_coverage_summary(torsion_check_df),
             "combined_vt_df": combined_vt_df,
             "interaction_status": _beam_uls_torsion_interaction_status(active_df),
@@ -12231,7 +12309,7 @@ def _beam_uls_combined_vt_should_plot_trace(plot_df: pd.DataFrame, column: str) 
             return False
     return True
 
-def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *, code_label: str) -> go.Figure:
+def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *, code_label: str, member_length_m: float | None = None) -> go.Figure:
     fig = go.Figure()
     if vt_df is None or vt_df.empty:
         fig.add_annotation(
@@ -12349,6 +12427,13 @@ def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *,
         compact_reference_paths(fig, families)
         fig.update_layout(meta={"igird_concurrent_vt": IGIRD_CONCURRENT_VT_VERSION},
             legend={"itemwidth": 30, "entrywidth": 205, "entrywidthmode": "pixels"})
+        domain_rows = pd.DataFrame({"Station x (m)": vt_df["Governing x"].astype(str).str.replace(" m", "", regex=False)})
+        domain = _beam_uls_full_member_plot_range(domain_rows, member_length_m)
+        if domain is not None:
+            fig.update_xaxes(range=list(domain))
+            for trace in fig.data:
+                if trace.name == "Limit = 1.0":
+                    trace.x = list(domain)
     return fig
 
 
@@ -12899,16 +12984,26 @@ def _make_beam_uls_demand_figure(
     y_label: str,
     governing_df: pd.DataFrame | None = None,
     member_length_m: float | None = None,
+    source_context_df: pd.DataFrame | None = None,
 ) -> go.Figure:
-    plot_df = active_df[["Station x (m)", "Case Name", column]].copy()
+    from concrete_pmm_pro.visualization.igird_uls_chart_display import native_csi_diagram_rows
+    plot_df = native_csi_diagram_rows(active_df, member_length_m=member_length_m,
+        source_context_df=source_context_df)
+    plot_df["Station x (m)"] = pd.to_numeric(plot_df["Station x (m)"], errors="coerce")
+    plot_df[column] = pd.to_numeric(plot_df[column], errors="coerce")
     plot_df = plot_df[pd.to_numeric(plot_df["Station x (m)"], errors="coerce").notna()]
-    plot_df = plot_df[pd.to_numeric(plot_df[column], errors="coerce").notna()]
+    plot_df[column] = plot_df[column].map(lambda value: float(value) if pd.notna(value) and math.isfinite(float(value)) else float("nan"))
     plot_df = plot_df.sort_values(["Case Name", "Station x (m)"], kind="stable")
     fig = go.Figure()
     if plot_df.empty:
         fig.add_annotation(text="No active finite ULS demand rows", x=0.5, y=0.5, showarrow=False, xref="paper", yref="paper")
     else:
         for case_name, case_df in plot_df.groupby("Case Name", sort=False):
+            native = case_df.get("__Source sheet", pd.Series(dtype=object)).astype(str).ne("").any()
+            source_data = [[str(case_name), row.get("__Source case", str(case_name)),
+                row.get("__Source sheet", ""), row.get("__Source row", ""),
+                "Shared physical endpoint — diagram only" if row.get("__Shared CSI endpoint") else "Original source row"]
+                for _, row in case_df.iterrows()] if native else [[str(case_name)] for _ in case_df.index]
             fig.add_trace(
                 go.Scatter(
                     x=case_df["Station x (m)"],
@@ -12917,7 +13012,10 @@ def _make_beam_uls_demand_figure(
                     name=f"Demand {column} — {case_name}",
                     line=dict(_BEAM_ULS_DEMAND_LINE_STYLE),
                     marker=dict(_BEAM_ULS_DEMAND_MARKER_STYLE),
-                    hovertemplate="x=%{x:.3f} m<br>Demand=%{y:.3f}<extra></extra>",
+                    connectgaps=False,
+                    customdata=source_data,
+                    hovertemplate="x=%{x:.3f} m<br>Demand=%{y:.3f}" + (
+                        "<br>Diagram: %{customdata[0]}<br>Source: %{customdata[1]}<br>%{customdata[2]} · Excel row %{customdata[3]}<br>%{customdata[4]}" if native else "<br>%{customdata[0]}") + "<extra></extra>",
                 )
             )
         governing_source = governing_df if isinstance(governing_df, pd.DataFrame) and not governing_df.empty else active_df
@@ -12931,8 +13029,9 @@ def _make_beam_uls_demand_figure(
                     x=[governing["x_m"]],
                     y=[governing["demand"]],
                     mode="markers+text",
-                    text=["Governing demand"],
-                    textposition="top center",
+                    text=["Governing original demand" if plot_df.get("__Shared CSI endpoint", pd.Series(dtype=bool)).any() else "Governing demand"],
+                    textposition="top left" if member_length_m and governing["x_m"] > 0.7*member_length_m else "top right",
+                    cliponaxis=False,
                     name="Governing demand",
                     marker={"color": "#1f77b4", "size": 10, "symbol": "diamond"},
                     hovertemplate="x=%{x:.3f} m<br>Demand=%{y:.3f}<extra></extra>",
@@ -12947,6 +13046,10 @@ def _make_beam_uls_demand_figure(
         height=_BEAM_ULS_STATIC_FIG_HEIGHT,
     )
     fig.add_hline(y=0.0, line_width=1)
+    shared = plot_df.loc[plot_df.get("__Shared CSI endpoint", pd.Series(False, index=plot_df.index))]
+    fig.update_layout(meta={"demand_component": column, "shared_csi_endpoints": [{"case": row["Case Name"],
+        "x_m": float(row["Station x (m)"]), "source_case": row["__Source case"],
+        "source_sheet": row["__Source sheet"], "source_row": row["__Source row"]} for _, row in shared.iterrows()]})
     if member_length_m is not None:
         domain = _beam_uls_full_member_plot_range(active_df, member_length_m)
         if domain is not None:
@@ -13066,7 +13169,7 @@ def _make_beam_uls_flexure_preview_figure(
             go.Scatter(
                 x=x_values,
                 y=y_values,
-                mode="lines",
+                mode="lines+markers" if sum(math.isfinite(v) for v in y_values) == 1 else "lines",
                 name=f"φMn",
                 line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
                 connectgaps=False,
@@ -13109,6 +13212,9 @@ def _make_beam_uls_flexure_preview_figure(
         )
 
 
+    if developed_route:
+        from concrete_pmm_pro.visualization.igird_uls_chart_display import mark_unavailable_capacity
+        mark_unavailable_capacity(fig, station_df, metric="__capacity_kNm", label="φMn")
     fig.update_layout(title={"text": f"Flexure Check — Strength ULS<br><sup>{code_label} · demand vs φMn</sup>"})
     return fig
 
@@ -13121,12 +13227,17 @@ def _make_beam_uls_shear_capacity_figure(
     boundary_capacity_df: pd.DataFrame | None = None,
     critical_section_df: pd.DataFrame | None = None,
     compact_csi_legend: bool = False,
+    member_length_m: float | None = None,
+    source_context_df: pd.DataFrame | None = None,
+    diagram_capacity_df: pd.DataFrame | None = None,
 ) -> go.Figure:
     fig = _make_beam_uls_demand_figure(
         active_df,
         column="Vuy",
         title=f"Shear Check — Strength ULS<br><sup>{code_label}</sup>",
         y_label="Shear, Vu (kN)",
+        member_length_m=member_length_m,
+        source_context_df=source_context_df,
     )
     if shear_check_df is None or shear_check_df.empty:
         fig.update_layout(title={"text": f"Shear Check — Strength ULS<br><sup>{code_label} · demand only — φVn not ready</sup>"})
@@ -13134,17 +13245,30 @@ def _make_beam_uls_shear_capacity_figure(
             from concrete_pmm_pro.visualization.igird_uls_chart_display import polish_shear_legend
             polish_shear_legend(fig)
         return fig
-    plot_sources = [shear_check_df]
+    have_diagram = isinstance(diagram_capacity_df, pd.DataFrame) and not diagram_capacity_df.empty
+    plot_sources = [diagram_capacity_df if have_diagram else shear_check_df]
     if critical_section_df is not None and not critical_section_df.empty:
         plot_sources.append(critical_section_df)
-    if boundary_capacity_df is not None and not boundary_capacity_df.empty:
+    if not have_diagram and boundary_capacity_df is not None and not boundary_capacity_df.empty:
         plot_sources.append(boundary_capacity_df)
     plot_df = pd.concat(plot_sources, ignore_index=True, sort=False).copy()
     plot_df["__x_m"] = plot_df["Governing x"].map(lambda value: str(value or "").replace(" m", ""))
     plot_df["__x_m"] = pd.to_numeric(plot_df["__x_m"], errors="coerce")
     plot_df["__phi_vn"] = pd.to_numeric(plot_df.get("φVn kN"), errors="coerce")
     plot_df["__phi_vc"] = pd.to_numeric(plot_df.get("φVc kN"), errors="coerce")
-    plot_df = plot_df[plot_df["__x_m"].notna() & plot_df["__phi_vn"].notna()].copy()
+    if compact_csi_legend:
+        plot_df = plot_df[plot_df["__x_m"].notna()].copy()
+        # Keep unavailable stations in the path instead of connecting across
+        # them. At duplicate x, prefer finite physical resistance, then an
+        # explicit calculated diagram boundary (the accepted boundary route).
+        station_type = plot_df.get("Station type", pd.Series("", index=plot_df.index))
+        plot_df["__boundary"] = station_type.eq("DIAGRAM BOUNDARY")
+        plot_df["__missing"] = ~plot_df["__phi_vn"].map(lambda v: pd.notna(v) and math.isfinite(float(v)))
+        plot_df = plot_df.sort_values(["__missing", "__boundary"], kind="stable").drop_duplicates(["Case", "__x_m"])
+        from concrete_pmm_pro.visualization.igird_uls_chart_display import mark_unavailable_capacity
+        mark_unavailable_capacity(fig, plot_df, metric="__phi_vn", label="φVn")
+    else:
+        plot_df = plot_df[plot_df["__x_m"].notna() & plot_df["__phi_vn"].notna()].copy()
     has_capacity_plot = not plot_df.empty
     if has_capacity_plot:
         dedupe_columns = [column for column in ["Case", "__x_m", "__phi_vn", "Station type"] if column in plot_df.columns]
@@ -13156,12 +13280,14 @@ def _make_beam_uls_shear_capacity_figure(
         for case_name, case_df in plot_df.groupby("Case", sort=False):
             x_values = [float(value) for value in case_df["__x_m"].tolist()]
             vn_values = [float(value) for value in case_df["__phi_vn"].tolist()]
+            capacity_mode = "lines+markers" if sum(math.isfinite(v) for v in vn_values) == 1 else "lines"
             fig.add_trace(
                 go.Scatter(
                     x=x_values,
                     y=vn_values,
-                    mode="lines",
+                    mode=capacity_mode,
                     name="φVn",
+                    connectgaps=False,
                     line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
                     customdata=[[str(case_name)] for _ in x_values],
                     hovertemplate="x=%{x:.3f} m<br>φVn=%{y:.3f} kN<br>%{customdata[0]}<extra></extra>",
@@ -13171,8 +13297,9 @@ def _make_beam_uls_shear_capacity_figure(
                 go.Scatter(
                     x=x_values,
                     y=[-v for v in vn_values],
-                    mode="lines",
+                    mode=capacity_mode,
                     name="-φVn",
+                    connectgaps=False,
                     line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
                     customdata=[[str(case_name)] for _ in x_values],
                     hovertemplate="x=%{x:.3f} m<br>-φVn=%{y:.3f} kN<br>%{customdata[0]}<extra></extra>",
@@ -13500,18 +13627,24 @@ def _make_beam_uls_torsion_capacity_figure(
     *,
     code_label: str,
     boundary_capacity_df: pd.DataFrame | None = None,
+    diagram_capacity_df: pd.DataFrame | None = None,
+    member_length_m: float | None = None,
+    source_context_df: pd.DataFrame | None = None,
 ) -> go.Figure:
     fig = _make_beam_uls_demand_figure(
         active_df,
         column="Tu",
         title=f"Torsion Check — Strength ULS<br><sup>{code_label}</sup>",
         y_label="Torsion, Tu (kN-m)",
+        member_length_m=member_length_m,
+        source_context_df=source_context_df,
     )
     if torsion_check_df is None or torsion_check_df.empty:
         fig.update_layout(title={"text": f"Torsion Check — Strength ULS<br><sup>{code_label} · demand only — φTn not ready</sup>"})
         return _polish_igird_uls_torsion_legend(fig)
-    plot_sources = [torsion_check_df]
-    if boundary_capacity_df is not None and not boundary_capacity_df.empty:
+    have_diagram = isinstance(diagram_capacity_df, pd.DataFrame) and not diagram_capacity_df.empty
+    plot_sources = [diagram_capacity_df if have_diagram else torsion_check_df]
+    if not have_diagram and boundary_capacity_df is not None and not boundary_capacity_df.empty:
         plot_sources.append(boundary_capacity_df)
     plot_df = pd.concat(plot_sources, ignore_index=True, sort=False).copy()
     plot_df["__x_m"] = plot_df["Governing x"].map(lambda value: str(value or "").replace(" m", ""))
@@ -13519,10 +13652,7 @@ def _make_beam_uls_torsion_capacity_figure(
     plot_df["__phi_tn"] = pd.to_numeric(plot_df.get("φTn kN-m"), errors="coerce")
     plot_df["__phi_tcr"] = pd.to_numeric(plot_df.get("φTcr kN-m"), errors="coerce")
     plot_df["__threshold"] = pd.to_numeric(plot_df.get("Threshold kN-m"), errors="coerce")
-    plot_df = plot_df[
-        plot_df["__x_m"].notna()
-        & (plot_df["__phi_tn"].notna() | plot_df["__phi_tcr"].notna() | plot_df["__threshold"].notna())
-    ].copy()
+    plot_df = plot_df[plot_df["__x_m"].notna()].copy()
     if not plot_df.empty:
         dedupe_columns = [column for column in ["Case", "__x_m", "__phi_tn", "__phi_tcr", "__threshold", "Station type"] if column in plot_df.columns]
         if dedupe_columns:
@@ -13531,7 +13661,8 @@ def _make_beam_uls_torsion_capacity_figure(
         # x=0/L.  Coalesce them before plotting so a boundary NaN cannot break
         # an otherwise finite full-span φTn trace.
         plot_df = _beam_uls_coalesce_torsion_plot_rows(plot_df)
-        plot_df = _beam_uls_extend_torsion_plot_rows_to_active_domain(plot_df, active_df)
+        if not have_diagram:
+            plot_df = _beam_uls_extend_torsion_plot_rows_to_active_domain(plot_df, active_df)
         plot_df = _beam_uls_coalesce_torsion_plot_rows(plot_df)
 
     has_plot_reference = not plot_df.empty
@@ -13544,31 +13675,37 @@ def _make_beam_uls_torsion_capacity_figure(
         for case_index, (case_name, case_df) in enumerate(plot_df.groupby("Case", sort=False)):
             x_values = [float(value) for value in case_df["__x_m"].tolist()]
             tn_values = [float(value) if math.isfinite(float(value)) else float("nan") for value in case_df["__phi_tn"].tolist()]
+            capacity_mode = "lines+markers" if sum(math.isfinite(v) for v in tn_values) == 1 else "lines"
+            source_data = [[str(case_name), str(row.get("Diagram source case") or case_name),
+                str(row.get("Diagram source sheet") or ""), str(row.get("Diagram source row") or ""),
+                str(row.get("Diagram source type") or "Stored capacity row")] for _, row in case_df.iterrows()]
             if any(math.isfinite(value) for value in tn_values):
                 fig.add_trace(
                     go.Scatter(
                         x=x_values,
                         y=tn_values,
-                        mode="lines",
+                        mode=capacity_mode,
+                        connectgaps=False,
                         name="±φTn",
                         legendgroup="torsion_phi_tn",
                         showlegend=case_index == 0,
                         line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
-                        customdata=[[str(case_name)] for _ in x_values],
-                        hovertemplate="x=%{x:.3f} m<br>+φTn=%{y:.3f} kN-m<br>%{customdata[0]}<extra></extra>",
+                        customdata=source_data,
+                        hovertemplate="x=%{x:.3f} m<br>+φTn=%{y:.3f} kN-m<br>Diagram: %{customdata[0]}<br>Source: %{customdata[1]}<br>%{customdata[2]} · Excel row %{customdata[3]}<br>%{customdata[4]}<extra></extra>",
                     )
                 )
                 fig.add_trace(
                     go.Scatter(
                         x=x_values,
                         y=[-v if math.isfinite(v) else float("nan") for v in tn_values],
-                        mode="lines",
+                        mode=capacity_mode,
+                        connectgaps=False,
                         name="±φTn",
                         legendgroup="torsion_phi_tn",
                         showlegend=False,
                         line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
-                        customdata=[[str(case_name)] for _ in x_values],
-                        hovertemplate="x=%{x:.3f} m<br>-φTn=%{y:.3f} kN-m<br>%{customdata[0]}<extra></extra>",
+                        customdata=source_data,
+                        hovertemplate="x=%{x:.3f} m<br>-φTn=%{y:.3f} kN-m<br>Diagram: %{customdata[0]}<br>Source: %{customdata[1]}<br>%{customdata[2]} · Excel row %{customdata[3]}<br>%{customdata[4]}<extra></extra>",
                     )
                 )
             tcr_values = [float(value) if math.isfinite(float(value)) else float("nan") for value in case_df["__phi_tcr"].tolist()]
@@ -13627,6 +13764,9 @@ def _make_beam_uls_torsion_capacity_figure(
                         hovertemplate="x=%{x:.3f} m<br>-0.25φTcr=%{y:.3f} kN-m<br>%{customdata[0]}<extra></extra>",
                     )
                 )
+    if have_diagram:
+        from concrete_pmm_pro.visualization.igird_uls_chart_display import mark_unavailable_capacity
+        mark_unavailable_capacity(fig, plot_df, metric="__phi_tn", label="φTn")
     governing = _beam_uls_governing_torsion_row(torsion_check_df)
     if governing is not None:
         x_text = str(governing.get("Governing x") or "").replace(" m", "")
@@ -13728,8 +13868,8 @@ def _beam_uls_construction_demand_from_state(
 # IGIRDER.ULS3A.composite-flexure-audit-closeout: engineering results changed.
 _IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION = IGIRD_FLEXURE_DEVELOPMENT_VERSION + ".construction"
 _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION = IGIRD_FLEXURE_DEVELOPMENT_VERSION + ".final-composite"
-_IGIRDER_SHEAR_RESULT_VERSION = "IGIRDER.VTQA1.shear-developed-source"
-_IGIRDER_TORSION_RESULT_VERSION = "IGIRDER.VTQA1.torsion-developed-source"
+_IGIRDER_SHEAR_RESULT_VERSION = "IGIRDER.VTQA1.shear-developed-source.chart3-capacity-diagram"
+_IGIRDER_TORSION_RESULT_VERSION = "IGIRDER.VTQA1.torsion-developed-source.chart3-capacity-diagram"
 _IGIRDER_COMBINED_VT_RESULT_VERSION = IGIRD_CONCURRENT_VT_VERSION
 
 
@@ -15029,12 +15169,12 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             interaction_entry = selected_entry
             shear_source = {
                 key: calculation_result[key]
-                for key in ["shear_check_df", "shear_critical_section_df", "shear_boundary_capacity_df"]
+                for key in ["shear_check_df", "shear_critical_section_df", "shear_boundary_capacity_df", "shear_diagram_capacity_df"]
                 if key in calculation_result
             }
             torsion_source = {
                 key: calculation_result[key]
-                for key in ["torsion_check_df", "torsion_boundary_capacity_df", "torsion_coverage_summary"]
+                for key in ["torsion_check_df", "torsion_boundary_capacity_df", "torsion_diagram_capacity_df", "torsion_coverage_summary"]
                 if key in calculation_result
             }
             if shear_source:
@@ -15062,11 +15202,13 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
     flexure_preview_df = _beam_uls_cached_dataframe(flexure_entry, "flexure_preview_df")
     flexure_preview_messages = _beam_uls_cached_messages(flexure_entry, "flexure_preview_messages")
     shear_check_df = _beam_uls_cached_dataframe(shear_entry, "shear_check_df")
+    shear_diagram_capacity_df = _beam_uls_cached_dataframe(shear_entry, "shear_diagram_capacity_df")
     shear_critical_section_df_cached = _beam_uls_cached_dataframe(shear_entry, "shear_critical_section_df")
     shear_boundary_capacity_df_cached = _beam_uls_cached_dataframe(shear_entry, "shear_boundary_capacity_df")
     shear_critical_section_df = shear_critical_section_df_cached if shear_critical_section_df_cached is not None else pd.DataFrame()
     shear_boundary_capacity_df = shear_boundary_capacity_df_cached if shear_boundary_capacity_df_cached is not None else pd.DataFrame()
     torsion_check_df = _beam_uls_cached_dataframe(torsion_entry, "torsion_check_df")
+    torsion_diagram_capacity_df = _beam_uls_cached_dataframe(torsion_entry, "torsion_diagram_capacity_df")
     torsion_boundary_capacity_df_cached = _beam_uls_cached_dataframe(torsion_entry, "torsion_boundary_capacity_df")
     torsion_boundary_capacity_df = torsion_boundary_capacity_df_cached if torsion_boundary_capacity_df_cached is not None else pd.DataFrame()
     torsion_coverage_summary = torsion_entry.get("torsion_coverage_summary") if isinstance(torsion_entry, dict) else None
@@ -15191,7 +15333,8 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
         if is_precast_composite_bridge:
             from concrete_pmm_pro.ui.igird_vt_workspace import render_strength_chart
             render_strength_chart(active_df, shear_check_df, check_name="Shear", code_label=code_label,
-                state=st.session_state, boundary=shear_boundary_capacity_df, critical=shear_critical_section_df)
+                state=st.session_state, boundary=shear_boundary_capacity_df, critical=shear_critical_section_df,
+                diagram=shear_diagram_capacity_df)
         else:
             _render_beam_uls_static_plotly_figure(_make_beam_uls_shear_capacity_figure(
                 active_df, shear_check_df, code_label=code_label,
@@ -15315,7 +15458,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
         if igird_torsion_route:
             from concrete_pmm_pro.ui.igird_vt_workspace import render_strength_chart
             render_strength_chart(active_df, torsion_check_df, check_name="Torsion", code_label=code_label,
-                state=st.session_state, boundary=torsion_boundary_capacity_df)
+                state=st.session_state, boundary=torsion_boundary_capacity_df, diagram=torsion_diagram_capacity_df)
         else:
             _render_beam_uls_static_plotly_figure(_make_beam_uls_torsion_capacity_figure(
                 active_df, torsion_check_df, code_label=code_label, boundary_capacity_df=torsion_boundary_capacity_df))

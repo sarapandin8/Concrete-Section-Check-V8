@@ -1,0 +1,74 @@
+{
+  "status": "PASS",
+  "compileall": "PASS",
+  "modules": 52,
+  "tests": 642,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 50.456,
+  "app_startup": "PASS",
+  "native_import_ui": "PASS \u2014 actual app.py Streamlit AppTest Calculate controls",
+  "prior_flexure_interface_ui": "PASS \u2014 actual app.py Streamlit AppTest Calculate controls",
+  "prior_material_development_partial_vt_ui": "PASS \u2014 actual app.py Streamlit AppTest Calculate controls",
+  "all_case_span_anchorage_capacity_ui": "PASS \u2014 actual app.py Streamlit AppTest Calculate controls",
+  "independent_original_vt_equations": {
+    "status": "PASS",
+    "method": "Independent US-customary equations converted with ksi, inch, kip constants; no production equation helpers",
+    "scalar_comparisons": 1723,
+    "max_relative_error": 7.078310013771191e-13,
+    "max_absolute_error": 9.549694368615746e-11,
+    "rows_checked": {
+      "shear": 84,
+      "torsion": 59,
+      "combined": 84
+    },
+    "scope": "Normal-weight solid precast I-girder, straight pretensioned strands, source-qualified hoops; hypothetical verified bar properties/development only",
+    "code": "AASHTO LRFD 9th (2020): 5.7.2.1; 5.7.3.3; 5.7.3.4.2; 5.7.3.6.1/.2/.3"
+  },
+  "full_span_and_diagram_verification": {
+    "release": "IGIRDER.CHART3",
+    "status": "PASS",
+    "method": "Actual app.py Streamlit Calculate and case/anchorage controls; independent US-unit torsion equation check",
+    "streamlit_exceptions": 0,
+    "native_rows": 80,
+    "preserved_force_components": 480,
+    "exact_vtqa1_decision_frames_unchanged": [
+      "shear_check_df",
+      "shear_critical_section_df",
+      "shear_boundary_capacity_df",
+      "torsion_check_df",
+      "torsion_boundary_capacity_df",
+      "combined_vt_df"
+    ],
+    "direct_combined_calculation_seconds": 2.8640238959997077,
+    "actual_ui_calculation_seconds": {
+      "Calculate Shear + Torsion": 4.221647819000282,
+      "Calculate Torsion": 1.1329624970003351,
+      "Calculate Shear": 1.4319974410000214,
+      "Calculate Construction Flexure": 2.6698188319996916,
+      "Calculate Final Composite Flexure": 4.614880684999662,
+      "Calculate Interface Shear": 1.0240363559996695
+    },
+    "force_diagrams_tested": 16,
+    "full_case_force_domain": [
+      0,
+      20
+    ],
+    "torsion_diagram_stations": 84,
+    "unanchored_numeric_resistance_stations": 76,
+    "anchored_numeric_resistance_stations": 84,
+    "below_threshold_resistance_stations_restored": 17,
+    "independent_torsion_scalars_checked": 168,
+    "shear_shared_endpoints_use_actual_forces": true,
+    "shear_diagram_stations": 84,
+    "independent_shear_diagram_scalars_checked": 168,
+    "both_flexure_stages_interface_and_combined_ui": "PASS",
+    "review_solver_calls": 0,
+    "source_fixture_and_workbook_modified": false,
+    "automatic_anchorage_confirmation": false,
+    "automatic_material_definition": false,
+    "preview_method": "Scientific plots and standalone HTML from production Plotly figures; no browser screenshot claim"
+  },
+  "browser_visual_verification": "Scientific previews from production traces; no browser screenshot claim"
+}

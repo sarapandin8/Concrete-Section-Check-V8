@@ -1,0 +1,27 @@
+{
+  "method": "Full app.py Streamlit AppTest; original fixture forces with user-confirmed P=0, unchanged 250-mm deck",
+  "streamlit_exceptions": 0,
+  "final_rows": 80,
+  "interface_rows": 80,
+  "interface_display_demand_curves": 1,
+  "interface_display_capacity_curves": 1,
+  "flexure_demand_curves": 4,
+  "flexure_coincident_capacity_curves": 1,
+  "legend_entries_unique": true,
+  "maximum_legend_label_length": 12,
+  "full_span": [
+    0,
+    20
+  ],
+  "all_original_checks_retained": true,
+  "review_does_not_rerun_solvers": true,
+  "midspan_phiMn_kNm": 9975.756314059774,
+  "interface_governing_vui_MPa": 1.71429110490605,
+  "interface_governing_DC": 0.560094491991222,
+  "flexure_status_counts": {
+    "REVIEW": 76,
+    "FAIL": 4
+  },
+  "preview_rendering": "Matplotlib from actual production Plotly trace coordinates; standalone interactive Plotly HTML also provided",
+  "browser_visual_verification": "NOT COMPLETED; no browser screenshot or print-layout claim"
+}
