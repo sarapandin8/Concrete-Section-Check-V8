@@ -1,0 +1,16 @@
+{
+  "baseline_sha256": "7e632d217913213ca0adcfa537f17052051d2bc86b9159db694410df50c22847",
+  "modified_production_python_files": [
+    "concrete_pmm_pro/ui/analysis_page.py"
+  ],
+  "modified_top_level_ui_definitions": [
+    "_render_beam_uls_browser_plotly_figure",
+    "_polish_igird_uls_flexure_legend",
+    "_make_beam_uls_flexure_preview_figure",
+    "_igird_interface_figure",
+    "_render_beam_girder_final_composite_flexure_guard"
+  ],
+  "added_top_level_ui_definitions": [],
+  "unchanged_production_python_files": 189,
+  "engineering_producers_unchanged": true
+}

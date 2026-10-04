@@ -1,3 +1,13 @@
+# Concrete Section Pro — IGIRDER.CHART1
+
+Final Composite charts now use short, distinct Max/Min/occurrence labels and show φMn once in the legend. Exact coincident resistance paths are drawn once; genuinely different capacity paths and missing-equilibrium gaps remain. Interface shear shows one blue maximum scalar demand envelope and one dashed-red minimum available resistance curve, with original source cases on hover. All original row-based calculations and D/C remain in the audit.
+
+Run `streamlit run app.py`, open Analysis → ULS → Flexure → Final Composite and calculate the required checks. Hover shows full source identity. The user's P=0 decision is entered in their Excel; no automatic axial override is added. Import, signs, material/development rules and all engineering equations are unchanged.
+
+See `PROJECT_HANDOFF_CONCRETE_SECTION_PRO_IGIRDER_CHART1_2026-10-04.md`, `tests/test_igird_chart_display.py` and `qa/evidence/igird_chart1/`. `python qa/igird_chart_ui_verify.py` exercises full app.py and exports exact trace previews. PNGs use Matplotlib; standalone Plotly HTML is interactive. These are not browser screenshots, and browser print-layout verification is not completed.
+
+## Previous milestone
+
 # Concrete Section Pro — IGIRDER.CSIIMPORT2
 
 The Precast I-Girder ULS panel now accepts the user's unchanged latest single-sheet CSiBridge Excel through one uploader with automatic format detection. All 80 rows, both Max/Min, repeated stations and all six signed force components are retained. Existing app-column CSV/XLSX tables use the same uploader. The previous format radio is removed.

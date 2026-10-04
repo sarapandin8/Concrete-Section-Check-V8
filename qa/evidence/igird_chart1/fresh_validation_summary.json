@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "compileall": "PASS",
+  "modules": 48,
+  "tests": 527,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 41.478,
+  "app_startup": "PASS",
+  "native_import_ui_actions": "PASS \u2014 full app.py Streamlit AppTest with actual Calculate controls",
+  "chart_ui_actions": "PASS \u2014 full app.py Streamlit AppTest with actual Calculate controls",
+  "browser_visual_verification": "NOT COMPLETED; scientific previews are exact production trace renders, not browser screenshots"
+}

@@ -11005,7 +11005,7 @@ _BEAM_ULS_STATIC_FIG_WIDTH = 1440
 _BEAM_ULS_STATIC_FIG_HEIGHT = 560
 
 
-def _render_beam_uls_browser_plotly_figure(fig: go.Figure, *, caption: str | None = None) -> None:
+def _render_beam_uls_browser_plotly_figure(fig: go.Figure, *, caption: str | None = None, interactive: bool = False) -> None:
     """Render a wide Beam/Girder ULS engineering figure in the browser.
 
     IGIRDER.ULS2P uses this route for the Construction Flexure workspace so a
@@ -11042,6 +11042,9 @@ def _render_beam_uls_browser_plotly_figure(fig: go.Figure, *, caption: str | Non
         "staticPlot": True,
         "responsive": True,
     }
+    if interactive:
+        config["staticPlot"] = False
+        fig.update_layout(dragmode=False)
     try:
         # Prefer the current Streamlit stretch contract.  In print/PDF review
         # layouts the legacy use_container_width path can leave Plotly at its
@@ -12911,6 +12914,11 @@ def _polish_igird_uls_flexure_legend(fig: go.Figure) -> go.Figure:
     values, markers, and hover data are unchanged.
     """
 
+    from concrete_pmm_pro.visualization.igird_uls_chart_display import (
+        compact_csi_flexure_demand_labels, deduplicate_coincident_flexure_capacity,
+    )
+    compact_csi_flexure_demand_labels(fig)
+    deduplicate_coincident_flexure_capacity(fig)
     demand_traces = [
         trace
         for trace in list(fig.data)
@@ -13011,7 +13019,8 @@ def _make_beam_uls_flexure_preview_figure(
                 name=f"φMn",
                 line=dict(_BEAM_ULS_CHECK_LINE_STYLE),
                 connectgaps=False,
-                hovertemplate="x=%{x:.3f} m<br>φMn=%{y:.3f} kN-m<extra></extra>",
+                customdata=[[str(case_name)] for _ in x_values],
+                hovertemplate="x=%{x:.3f} m<br>φMn=%{y:.3f} kN-m<br>%{customdata[0]}<extra></extra>",
             )
         )
 
@@ -14018,14 +14027,24 @@ def _igird_interface_figure(result_df: pd.DataFrame, *, code_label: str, member_
     fig = go.Figure()
     if result_df is None or result_df.empty:
         return fig
-    for case, group in result_df.groupby("Case", sort=False):
-        group = group.sort_values("Station x (m)")
-        fig.add_trace(go.Scatter(x=group["Station x (m)"], y=group["vui (MPa)"], mode="lines+markers", name=f"Demand vui · {case}", hovertemplate="x=%{x:.3f} m<br>vui=%{y:.3f} MPa<extra></extra>"))
-    cap = result_df.sort_values("Station x (m)")
-    fig.add_trace(go.Scatter(x=cap["Station x (m)"], y=cap["phi vni (MPa)"], mode="lines", name="φvni", line={"dash": "dash", "color": "red"}, hovertemplate="x=%{x:.3f} m<br>φvni=%{y:.3f} MPa<extra></extra>"))
+    from concrete_pmm_pro.visualization.igird_uls_chart_display import interface_station_envelope
+    display = interface_station_envelope(result_df)
+    fig.add_trace(go.Scatter(x=display["Station x (m)"], y=display["vui (MPa)"],
+        mode="lines+markers", name="vui max", legendgroup="igird_interface_demand",
+        line=dict(_BEAM_ULS_DEMAND_LINE_STYLE), marker=dict(_BEAM_ULS_DEMAND_MARKER_STYLE),
+        customdata=display[["Demand source case", "Source rows"]].values, connectgaps=False,
+        hovertemplate="x=%{x:.3f} m<br>Max vui=%{y:.3f} MPa<br>%{customdata[0]}<br>Original rows at station=%{customdata[1]}<extra></extra>"))
+    fig.add_trace(go.Scatter(x=display["Station x (m)"], y=display["phi vni (MPa)"],
+        mode="lines", name="φvni", legendgroup="igird_interface_resistance",
+        line=dict(_BEAM_ULS_CHECK_LINE_STYLE), customdata=display[["Resistance source case"]].values,
+        connectgaps=False,
+        hovertemplate="x=%{x:.3f} m<br>Min φvni=%{y:.3f} MPa<br>%{customdata[0]}<extra></extra>"))
     gov = _igird_interface_governing_row(result_df)
     if gov is not None and math.isfinite(_beam_uls_float(gov.get("vui (MPa)"))):
-        fig.add_trace(go.Scatter(x=[_beam_uls_float(gov.get("Station x (m)"))], y=[_beam_uls_float(gov.get("vui (MPa)"))], mode="markers", name="Gov. interface", marker={"size": 9}, hovertemplate="Governing interface check<extra></extra>"))
+        fig.add_trace(go.Scatter(x=[_beam_uls_float(gov.get("Station x (m)"))], y=[_beam_uls_float(gov.get("vui (MPa)"))],
+            mode="markers", name="Gov.", marker={"size": 10, "symbol": "diamond", "color": "#0f172a"},
+            customdata=[[str(gov.get("Case") or "-"), _beam_uls_float(gov.get("Strength D/C"))]],
+            hovertemplate="Governing original check row<br>x=%{x:.3f} m<br>vui=%{y:.3f} MPa<br>%{customdata[0]}<br>Strength D/C=%{customdata[1]:.3f}<extra></extra>"))
     fig.update_layout(
         title={"text": f"Girder–Deck Interface Shear — Strength ULS<br><sup>{code_label} · AASHTO 5.7.4</sup>"},
         xaxis_title="Distance from left end of member (m)",
@@ -14605,9 +14624,12 @@ def _render_beam_girder_final_composite_flexure_guard(
         _render_beam_uls_browser_plotly_figure(
             _igird_interface_figure(interface_df, code_label=code_label, member_length_m=member_length_m),
             caption=(
+                "Blue vui max is the maximum interface demand across all Max/Min row sets at each station. "
+                "Red φvni is the minimum available resistance at that station. Governing D/C and acceptance use each original check row; all rows remain in the audit. "
                 "Demand follows AASHTO 5.7.4.5 using Final ULS Vuy and dv from the station tension-steel centroid to slab mid-thickness. "
                 "Resistance follows 5.7.4.3 with Pc = 0, weaker-side f'c, the 60-ksi fy cap, and active stirrup zones only when interface anchorage is confirmed."
             ),
+            interactive=True,
         )
         with st.expander("Girder–Deck interface shear audit", expanded=False):
             st.dataframe(interface_df, use_container_width=True, hide_index=True)
@@ -14646,9 +14668,11 @@ def _render_beam_girder_final_composite_flexure_guard(
                 )
             ),
             caption=(
+                "Mux Max/Min 1/2 identifies the imported bound and repeated source row set; full case names are available on hover and in the audit. Coincident φMn paths share one curve and one legend entry; distinct resistance paths and missing-equilibrium gaps remain visible. "
                 "Available section flexure capacity includes strand transfer/development, ordinary-bar development, and the effective CIP deck. "
                 "A section PASS does not certify composite action until girder-deck interface shear is verified."
             ),
+            interactive=True,
         )
         with st.expander("Final Composite flexure strength audit / benchmark output", expanded=False):
             audit_df = _beam_uls_flexure_audit_dataframe(preview_df)
