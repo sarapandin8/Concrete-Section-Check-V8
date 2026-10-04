@@ -30,7 +30,7 @@ from concrete_pmm_pro.serviceability.girder_prestress_station import (
     active_girder_strand_rows, debonded_strand_numbers_for_row,
 )
 
-RESULT_VERSION = "IGIRDER.FLEXDEP1.aashto-developed-flexure"
+RESULT_VERSION = "IGIRDER.FLEXDEP1.aashto-developed-flexure.CSI-sign1"
 SETTINGS_KEY = "igird_flexure_development_settings"
 MPA_PER_KSI = 6.894757293168
 

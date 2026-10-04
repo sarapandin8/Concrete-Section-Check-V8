@@ -3,10 +3,36 @@ from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
+import math
 
 from concrete_pmm_pro.analysis.igird_flexure_development import SETTINGS_KEY, development_settings
 
 WIDGET_PREFIX = "igird_flexdep_"
+
+
+def render_failure_summary(frame: pd.DataFrame | None, *, stage: str) -> None:
+    """Read stored station failures; no solve or demand alteration on reruns."""
+    if frame is None or frame.empty or "Numerical status" not in frame:
+        return
+    failures = frame[frame["Numerical status"].isin(["FAIL", "NO EQUILIBRIUM"])].copy()
+    if failures.empty:
+        return
+    descriptions = []
+    for _,row in failures.head(5).iterrows():
+        x = float(row["Station x (m)"])
+        nu = float(row["Nu kN"])
+        raw = float(row["Nu input kN"])
+        capacity = float(row.get("φMn kN-m", float("nan")))
+        demand = float(row["Demand kN-m"])
+        detail = (f"φMn={capacity:,.3f} < |Mu|={abs(demand):,.3f} kN-m" if math.isfinite(capacity)
+            else "NO EQUILIBRIUM; φMn unavailable")
+        strand = row.get("Strand development trace") or []
+        bars = row.get("Ordinary bar development trace") or []
+        if strand and all(float(t.get("fpx_limit_MPa",-1))==0 for t in strand) and all(float(t.get("factor",-1))==0 for t in bars):
+            detail += "; no developed strand / ordinary-bar force at this cut end"
+        descriptions.append(f"x={x:.3f} m: Nu input={raw:+.3f} kN → solver Nu={nu:+.3f} kN ({row.get('Nu action','—')}); {detail}.")
+    st.error(f"{stage}: {len(failures)} failing section station(s) under the entered development / anchorage assumptions.\n\n" + "\n\n".join(descriptions))
+    st.caption("Physical cut-end force transfer requires the real FEA force reference and end anchorage / D-region detailing. A beam-theory section result alone does not certify the end region; failed endpoints remain visible.")
 
 
 def render_inputs() -> None:
@@ -96,7 +122,8 @@ def render_trace(frame: pd.DataFrame | None, *, stage: str) -> None:
         position = st.selectbox("Stored station", list(range(len(frame))), index=default,
             format_func=lambda i: labels[i], key=WIDGET_PREFIX + "trace_" + stage.replace(" ", "_"))
         row = frame.iloc[position]
-        fields = ["Nu kN", "Mn nominal kN-m", "φ value", "φMn kN-m", "Neutral axis c mm",
+        st.caption("Nu input is the preserved Loads value. Nu kN is the compression-positive value used in equilibrium; CSI input uses Nu = −P. AASHTO tension-positive Nu is the opposite of solver Nu.")
+        fields = ["Nu input kN", "Nu input convention", "Nu conversion factor", "Nu action", "Nu kN", "Nu AASHTO tension-positive kN", "Mn nominal kN-m", "φ value", "φMn kN-m", "Neutral axis c mm",
             "Stress block a mm", "α1", "β1", "Net tensile strain", "Strain condition", "Cc kN",
             "Ordinary steel force kN", "Strand force kN", "φPn kN", "Force residual N",
             "Moment reference y mm", "Full-development reference φMn kN-m", "Development source status", "Minimum flexure gate"]

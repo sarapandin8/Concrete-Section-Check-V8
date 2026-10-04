@@ -937,6 +937,9 @@ def _prestress_table_metadata_from_session(session_state: Any) -> list[dict[str,
 
 def project_from_session_state(session_state: Any) -> ProjectModel:
     metadata = dict(_get_session_value(session_state, "project_metadata", {}) or {})
+    from concrete_pmm_pro.analysis.girder_axial_convention import SETTINGS_KEY as AXIAL_CONVENTION_KEY, axial_convention
+    if _get_session_value(session_state, AXIAL_CONVENTION_KEY, None) is not None:
+        metadata[AXIAL_CONVENTION_KEY] = {"input_sign": axial_convention(session_state)["input_sign"]}
     from concrete_pmm_pro.analysis.igird_flexure_development import SETTINGS_KEY as FLEXURE_DEVELOPMENT_KEY, development_settings as flexure_development_settings
     if _get_session_value(session_state, FLEXURE_DEVELOPMENT_KEY, None) is not None:
         metadata[FLEXURE_DEVELOPMENT_KEY] = flexure_development_settings(session_state)
@@ -1695,6 +1698,14 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
     if REINFORCEMENT_FLAGS_PRESET_KEY in project.metadata:
         session_state[REINFORCEMENT_FLAGS_PRESET_KEY] = project.metadata[REINFORCEMENT_FLAGS_PRESET_KEY]
     session_state["project_metadata"] = dict(project.metadata)
+    from concrete_pmm_pro.analysis.girder_axial_convention import SETTINGS_KEY as AXIAL_CONVENTION_KEY
+    if AXIAL_CONVENTION_KEY in project.metadata:
+        session_state[AXIAL_CONVENTION_KEY] = dict(project.metadata[AXIAL_CONVENTION_KEY])
+    else:
+        session_state.pop(AXIAL_CONVENTION_KEY, None)
+    for key in list(session_state):
+        if str(key).startswith("igird_axial_"):
+            session_state.pop(key, None)
     # A previous project's ordinary-bar development confirmation must not
     # leak into a newly loaded model or its widget defaults.
     from concrete_pmm_pro.analysis.igird_combined_vt import DEVELOPMENT_KEY, development_settings

@@ -1,0 +1,302 @@
+{
+  "version": "IGIRDER.FLEXDEP1.aashto-developed-flexure.CSI-sign1",
+  "input": "I_Girder_20m_IGIRDER_FLEXSIGN1_CSiBridge_deck250.json",
+  "input_sha256": "c59a8405ba0d96b6827fda4d54e28a90ebfccc4c5e543a2df4b9bea675f816d6",
+  "code": "AASHTO LRFD 9th Edition (2020)",
+  "deck_mm": 250.0,
+  "effective_width_mm": 1200.0,
+  "qa_deck_override": null,
+  "development_settings": {
+    "left_extension_m": 0.0,
+    "right_extension_m": 0.0,
+    "debonded_service_condition": "unknown",
+    "bars_continuous_confirmed": false,
+    "left_bar_anchored": false,
+    "right_bar_anchored": false,
+    "bar_ld_mm": 0.0,
+    "note": "User confirmed 2026-10-04: x=0 and x=20 m are the physical beam and strand cut ends. All imported force signs remain as CSiBridge output."
+  },
+  "axial_input_convention": {
+    "input_sign": "CSI_TENSION_POSITIVE",
+    "declared": true
+  },
+  "construction_factors_confirmed": false,
+  "stages": {
+    "construction": {
+      "seconds": 1.832539884999278,
+      "rows": 41,
+      "max_abs_force_residual_N": 0.019221568072680384,
+      "status_counts": {
+        "REVIEW": 39,
+        "SECTION PREVIEW": 2
+      },
+      "numerical_status_counts": {
+        "PASS": 39,
+        "SECTION PREVIEW": 2
+      },
+      "station_samples": [
+        {
+          "Station x (m)": 0.0,
+          "Nu kN": -0.0,
+          "Demand kN-m": 0.0,
+          "φMn kN-m": 0.0,
+          "Mn nominal kN-m": 0.0,
+          "φ value": 0.75,
+          "Strand force kN": 0.0,
+          "Utilization value": null,
+          "Numerical status": "SECTION PREVIEW",
+          "Status": "SECTION PREVIEW"
+        },
+        {
+          "Station x (m)": 0.5,
+          "Nu kN": -0.0,
+          "Demand kN-m": 390.43875,
+          "φMn kN-m": 2571.4922038078653,
+          "Mn nominal kN-m": 2571.4922038078653,
+          "φ value": 1.0,
+          "Strand force kN": -1602.1213910761155,
+          "Utilization value": 0.15183353440536915,
+          "Numerical status": "PASS",
+          "Status": "REVIEW"
+        },
+        {
+          "Station x (m)": 1.0,
+          "Nu kN": -0.0,
+          "Demand kN-m": 760.855,
+          "φMn kN-m": 4173.25281672061,
+          "Mn nominal kN-m": 4173.25281672061,
+          "φ value": 1.0,
+          "Strand force kN": -2545.417289863049,
+          "Utilization value": 0.18231701586626822,
+          "Numerical status": "PASS",
+          "Status": "REVIEW"
+        },
+        {
+          "Station x (m)": 2.0,
+          "Nu kN": -0.0,
+          "Demand kN-m": 1441.6200000000001,
+          "φMn kN-m": 4762.518585716341,
+          "Mn nominal kN-m": 4762.518585716341,
+          "φ value": 1.0,
+          "Strand force kN": -2981.485734665774,
+          "Utilization value": 0.3027011809095466,
+          "Numerical status": "PASS",
+          "Status": "REVIEW"
+        },
+        {
+          "Station x (m)": 5.0,
+          "Nu kN": -0.0,
+          "Demand kN-m": 3003.3750000000005,
+          "φMn kN-m": 6745.235341439146,
+          "Mn nominal kN-m": 6745.235341439146,
+          "φ value": 1.0,
+          "Strand force kN": -4783.374077862202,
+          "Utilization value": 0.445258741611113,
+          "Numerical status": "PASS",
+          "Status": "REVIEW"
+        },
+        {
+          "Station x (m)": 7.0,
+          "Nu kN": -0.0,
+          "Demand kN-m": 3644.095,
+          "φMn kN-m": 7610.138625425259,
+          "Mn nominal kN-m": 7610.138625425259,
+          "φ value": 1.0,
+          "Strand force kN": -5582.651527762884,
+          "Utilization value": 0.4788473875922813,
+          "Numerical status": "PASS",
+          "Status": "REVIEW"
+        },
+        {
+          "Station x (m)": 8.5,
+          "Nu kN": -0.0,
+          "Demand kN-m": 3914.39875,
+          "φMn kN-m": 7682.527967221217,
+          "Mn nominal kN-m": 7682.527967221217,
+          "φ value": 1.0,
+          "Strand force kN": -5651.466719036119,
+          "Utilization value": 0.5095196225384968,
+          "Numerical status": "PASS",
+          "Status": "REVIEW"
+        },
+        {
+          "Station x (m)": 10.0,
+          "Nu kN": -0.0,
+          "Demand kN-m": 4004.5000000000005,
+          "φMn kN-m": 7682.527967221217,
+          "Mn nominal kN-m": 7682.527967221217,
+          "φ value": 1.0,
+          "Strand force kN": -5651.466719036119,
+          "Utilization value": 0.5212476956915569,
+          "Numerical status": "PASS",
+          "Status": "REVIEW"
+        },
+        {
+          "Station x (m)": 19.0,
+          "Nu kN": -0.0,
+          "Demand kN-m": 760.855,
+          "φMn kN-m": 4173.25281672061,
+          "Mn nominal kN-m": 4173.25281672061,
+          "φ value": 1.0,
+          "Strand force kN": -2545.417289863049,
+          "Utilization value": 0.18231701586626822,
+          "Numerical status": "PASS",
+          "Status": "REVIEW"
+        },
+        {
+          "Station x (m)": 19.5,
+          "Nu kN": -0.0,
+          "Demand kN-m": 390.43875,
+          "φMn kN-m": 2571.4922038078653,
+          "Mn nominal kN-m": 2571.4922038078653,
+          "φ value": 1.0,
+          "Strand force kN": -1602.1213910761155,
+          "Utilization value": 0.15183353440536915,
+          "Numerical status": "PASS",
+          "Status": "REVIEW"
+        },
+        {
+          "Station x (m)": 20.0,
+          "Nu kN": -0.0,
+          "Demand kN-m": 0.0,
+          "φMn kN-m": 0.0,
+          "Mn nominal kN-m": 0.0,
+          "φ value": 0.75,
+          "Strand force kN": 0.0,
+          "Utilization value": null,
+          "Numerical status": "SECTION PREVIEW",
+          "Status": "SECTION PREVIEW"
+        }
+      ],
+      "messages": [
+        "IGIRDER.FLEXDEP1: 41 original demand stations in 1.831 s; 1 reference equilibrium state(s). Every station retains its Nu; no angular PMM sweep.",
+        "AASHTO LRFD 9th (2020) 5.9.4.3.1--3: each strand family is stress-limited using its bonded distance from each end/sleeve; Mn is recomputed by equilibrium.",
+        "5.5.4.2: strain-based phi multiplies both Pn and Mn; phi*Pn equals compression-positive Nu after the declared input-sign conversion. Original Loads values are preserved. Primary Mux flexure only; imported Muy is not checked.",
+        "fps reference comes from the fully developed section at the same Nu/sign and current steel material law; the available fpx limit is not fpu resistance.",
+        "Debonded kappa=2.0 is used when service tension exists or is unclassified; kappa=1.6/1.0 requires the no-service-tension declaration.",
+        "No beam extension is credited unless entered. Sleeve lengths are measured from the physical cut ends. Ordinary bars use conservative straight-bar development unless verified ld/anchorage is entered."
+      ]
+    },
+    "final": {
+      "seconds": 1.9289819260011427,
+      "rows": 21,
+      "max_abs_force_residual_N": 0.01694473135557928,
+      "status_counts": {
+        "REVIEW": 19,
+        "FAIL": 2
+      },
+      "numerical_status_counts": {
+        "PASS": 19,
+        "NO EQUILIBRIUM": 1,
+        "FAIL": 1
+      },
+      "station_samples": [
+        {
+          "Station x (m)": 0.0,
+          "Nu kN": -575.159,
+          "Demand kN-m": 334.5637,
+          "φMn kN-m": null,
+          "Mn nominal kN-m": null,
+          "φ value": null,
+          "Strand force kN": null,
+          "Utilization value": null,
+          "Numerical status": "NO EQUILIBRIUM",
+          "Status": "FAIL"
+        },
+        {
+          "Station x (m)": 1.0,
+          "Nu kN": -505.298,
+          "Demand kN-m": 1425.2639,
+          "φMn kN-m": 4444.665291058342,
+          "Mn nominal kN-m": 4444.665291058342,
+          "φ value": 1.0,
+          "Strand force kN": -2220.555719528397,
+          "Utilization value": 0.3206684433285241,
+          "Numerical status": "PASS",
+          "Status": "REVIEW"
+        },
+        {
+          "Station x (m)": 2.0,
+          "Nu kN": -447.252,
+          "Demand kN-m": 2595.4702,
+          "φMn kN-m": 5390.188768199842,
+          "Mn nominal kN-m": 5390.188768199842,
+          "φ value": 1.0,
+          "Strand force kN": -2757.110796133122,
+          "Utilization value": 0.48151749625399626,
+          "Numerical status": "PASS",
+          "Status": "REVIEW"
+        },
+        {
+          "Station x (m)": 5.0,
+          "Nu kN": -233.754,
+          "Demand kN-m": 5371.943,
+          "φMn kN-m": 8306.077881457488,
+          "Mn nominal kN-m": 8306.077881457488,
+          "φ value": 1.0,
+          "Strand force kN": -4710.658228114361,
+          "Utilization value": 0.646748450552377,
+          "Numerical status": "PASS",
+          "Status": "REVIEW"
+        },
+        {
+          "Station x (m)": 7.0,
+          "Nu kN": -97.74,
+          "Demand kN-m": 6524.7141,
+          "φMn kN-m": 9658.081794037731,
+          "Mn nominal kN-m": 9658.081794037731,
+          "φ value": 1.0,
+          "Strand force kN": -5593.6808223540465,
+          "Utilization value": 0.6755703916307617,
+          "Numerical status": "PASS",
+          "Status": "REVIEW"
+        },
+        {
+          "Station x (m)": 10.0,
+          "Nu kN": -25.94,
+          "Demand kN-m": 7184.6936,
+          "φMn kN-m": 9964.073204861135,
+          "Mn nominal kN-m": 9964.073204861135,
+          "φ value": 1.0,
+          "Strand force kN": -5779.448705084342,
+          "Utilization value": 0.7210598971206704,
+          "Numerical status": "PASS",
+          "Status": "REVIEW"
+        },
+        {
+          "Station x (m)": 19.0,
+          "Nu kN": -10.93,
+          "Demand kN-m": 1377.3409,
+          "φMn kN-m": 4745.654240246116,
+          "Mn nominal kN-m": 4745.654240246116,
+          "φ value": 1.0,
+          "Strand force kN": -2220.3936058937998,
+          "Utilization value": 0.2902320376228187,
+          "Numerical status": "PASS",
+          "Status": "REVIEW"
+        },
+        {
+          "Station x (m)": 20.0,
+          "Nu kN": 1.492,
+          "Demand kN-m": 4.4723,
+          "φMn kN-m": 1.048919122693697,
+          "Mn nominal kN-m": 1.3985588302582628,
+          "φ value": 0.75,
+          "Strand force kN": 0.0,
+          "Utilization value": 4.263722438880534,
+          "Numerical status": "FAIL",
+          "Status": "FAIL"
+        }
+      ],
+      "messages": [
+        "IGIRDER.FLEXDEP1: 21 original demand stations in 1.928 s; 21 reference equilibrium state(s). Every station retains its Nu; no angular PMM sweep.",
+        "AASHTO LRFD 9th (2020) 5.9.4.3.1--3: each strand family is stress-limited using its bonded distance from each end/sleeve; Mn is recomputed by equilibrium.",
+        "5.5.4.2: strain-based phi multiplies both Pn and Mn; phi*Pn equals compression-positive Nu after the declared input-sign conversion. Original Loads values are preserved. Primary Mux flexure only; imported Muy is not checked.",
+        "fps reference comes from the fully developed section at the same Nu/sign and current steel material law; the available fpx limit is not fpu resistance.",
+        "Debonded kappa=2.0 is used when service tension exists or is unclassified; kappa=1.6/1.0 requires the no-service-tension declaration.",
+        "No beam extension is credited unless entered. Sleeve lengths are measured from the physical cut ends. Ordinary bars use conservative straight-bar development unless verified ld/anchorage is entered.",
+        "Full-span strength coverage is incomplete: resolve blocked source station(s); no final flexure PASS is issued."
+      ]
+    }
+  }
+}

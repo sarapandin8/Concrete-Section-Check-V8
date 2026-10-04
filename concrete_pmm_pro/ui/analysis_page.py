@@ -114,6 +114,12 @@ from concrete_pmm_pro.analysis.igird_flexure_development import (
     strand_families as igird_flexure_strand_families,
     solve_developed_station as solve_igird_developed_flexure_station,
 )
+from concrete_pmm_pro.analysis.girder_axial_convention import (
+    VERSION as GIRDER_AXIAL_CONVENTION_VERSION,
+    axial_convention as girder_axial_convention,
+    axial_demand_compression_positive_kN as girder_axial_demand_kN,
+    axial_trace as girder_axial_trace,
+)
 from concrete_pmm_pro.analysis.igird_combined_vt import (
     RESULT_VERSION as IGIRD_CONCURRENT_VT_VERSION,
     development_settings as igird_longitudinal_development_settings,
@@ -5951,7 +5957,7 @@ def _beam_uls_flexure_analysis_input_for_station(
         return None, messages + ["No active ordinary rebar or bonded prestress is available for flexure strength check."]
 
     mu = _beam_uls_float(row.get("Mux"))
-    nu = _beam_uls_float(row.get("Nu"))
+    nu = girder_axial_demand_kN(row, state)
     if not math.isfinite(mu):
         return None, messages + ["Mux demand is not finite."]
     if abs(mu) <= _BEAM_ULS_DEMAND_TOL:
@@ -5965,6 +5971,10 @@ def _beam_uls_flexure_analysis_input_for_station(
         nu = 0.0
     case = str(row.get("Case Name") or "ULS").strip() or "ULS"
     x_label = _format_beam_uls_x(row.get("Station x (m)"))
+    # This adapter has supplied canonical compression-positive Nu. Do not
+    # let the generic PMM input-sign flag invert the same force again.
+    if str(state.get("section_preset_key") or "") == "parametric_i_girder":
+        settings = settings.model_copy(update={"compression_positive": True})
     load = LoadCase(
         name=f"{case} @ x={x_label}",
         Pu_N=float(nu) * 1000.0,
@@ -6452,7 +6462,7 @@ def _beam_uls_developed_igird_flexure_dataframe(
     table = _beam_uls_get_state_value(state, "girder_strand_layout_table")
     messages = [
         "AASHTO LRFD 9th (2020) 5.9.4.3.1--3: each strand family is stress-limited using its bonded distance from each end/sleeve; Mn is recomputed by equilibrium.",
-        "5.5.4.2: strain-based phi multiplies both Pn and Mn; phi*Pn equals the original external station Nu. Primary Mux flexure only; imported Muy is not checked.",
+        "5.5.4.2: strain-based phi multiplies both Pn and Mn; phi*Pn equals compression-positive Nu after the declared input-sign conversion. Original Loads values are preserved. Primary Mux flexure only; imported Muy is not checked.",
         "fps reference comes from the fully developed section at the same Nu/sign and current steel material law; the available fpx limit is not fpu resistance.",
         "Debonded kappa=2.0 is used when service tension exists or is unclassified; kappa=1.6/1.0 requires the no-service-tension declaration.",
         "No beam extension is credited unless entered. Sleeve lengths are measured from the physical cut ends. Ordinary bars use conservative straight-bar development unless verified ld/anchorage is entered.",
@@ -6465,12 +6475,13 @@ def _beam_uls_developed_igird_flexure_dataframe(
     for _, demand_row in source.iterrows():
         x = _beam_uls_float(demand_row.get("Station x (m)"))
         mu = _beam_uls_float(demand_row.get("Mux"))
-        nu = _beam_uls_float(demand_row.get("Nu"))
+        nu_trace = girder_axial_trace(demand_row, state)
+        nu = nu_trace["Nu kN"]
         sign = -1.0 if math.isfinite(mu) and mu < 0 else 1.0
         case = str(demand_row.get("Case Name") or "-")
         row = {"Check": "Flexure", "Governing x": _format_beam_uls_x(x), "Case": case,
             "Demand": _format_beam_uls_demand(mu, "kN-m"), "Demand kN-m": mu,
-            "Nu kN": nu, "Station x (m)": x, "Capacity plot sign": sign,
+            **nu_trace, "Station x (m)": x, "Capacity plot sign": sign,
             "Route": "AASHTO LRFD developed pretensioned I-Girder",
             "Code basis": "AASHTO LRFD 9th (2020) 5.6.2.1 + 5.9.4.3",
             "Capacity basis": "AASHTO available developed section resistance",
@@ -7740,7 +7751,7 @@ def _beam_uls_igird_torsion_k_trace(
         return {"ready": False, "note": "Positive gross section area Ag is required for torsion K."}
 
     fpc_base = _beam_uls_float(fpc_trace.get("fpc_MPa"))
-    nu_app_kN = _beam_uls_float(row.get("Nu"))
+    nu_app_kN = girder_axial_demand_kN(row, state)
     nu_app_kN = nu_app_kN if math.isfinite(nu_app_kN) else 0.0
     nu_aashto_n = -float(nu_app_kN) * 1000.0
     fpc_for_k = float(fpc_base) - nu_aashto_n / ag
@@ -8127,7 +8138,7 @@ def _beam_uls_shear_result_for_row(
         depth_for_vs = float(dv_eff_mm) if dv_eff_mm is not None and math.isfinite(float(dv_eff_mm)) and float(dv_eff_mm) > 0.0 else float(d_eff_mm)
         depth_label = "dv"
         span_length_m = _beam_uls_span_length_from_state(state, is_building=False)
-        nu_kN = _beam_uls_float(row.get("Nu"))
+        nu_kN = girder_axial_demand_kN(row, state)
         epsilon_trace = _beam_uls_igird_general_shear_epsilon(
             state,
             analysis_input=analysis_input,
@@ -9524,7 +9535,7 @@ def _beam_uls_torsion_variable_definitions_dataframe() -> pd.DataFrame:
         ("Tcr", "Pure torsional cracking moment of the concrete section, including the prestress compression factor K for the prestressed I-Girder route.", "kN-m", "0.25φTcr threshold", "AASHTO 5.7.2.1"),
         ("fpc", "Unfactored concrete compressive stress after prestress losses. For K under axial force, AASHTO replaces it by fpc − Nu/Ag with Nu positive in tension.", "MPa", "K, Tcr", "AASHTO 5.7.2.1"),
         ("K", "Prestress factor for torsional cracking. The usual upper bound is 2.0, but K must not exceed 1.0 when gross-section extreme tensile stress from factored load plus effective prestress exceeds 0.19λ√f'c.", "-", "Tcr", "AASHTO 5.7.2.1-6 and K provisions"),
-        ("Nu", "Factored axial force used in the K adjustment. The app Loads convention is compression-positive; the AASHTO K equation is tension-positive and the trace shows the converted sign.", "kN", "fpc − Nu/Ag", "AASHTO 5.7.2.1"),
+        ("Nu", "Factored axial force used in the K adjustment. Loads retain the declared source sign; solver Nu is compression-positive after conversion. The AASHTO K equation uses tension-positive Nu, as shown in the trace.", "kN", "fpc − Nu/Ag", "AASHTO 5.7.2.1"),
         ("Acp", "Area enclosed by the outside perimeter of the concrete cross section.", "mm²", "Tcr, be", "AASHTO 5.7.2.1"),
         ("Pcp", "Outside perimeter of the concrete cross section.", "mm", "Tcr, be", "AASHTO 5.7.2.1"),
         ("be", "Effective width of the solid-section torsional shear-flow path, taken as Acp/Pcp in this route.", "mm", "Ao", "AASHTO C5.7.3.6.2"),
@@ -10069,7 +10080,7 @@ def _beam_uls_igird_torsion_result_for_row(
     tu_kNm = _beam_uls_float(row.get("Tu"))
     vu_kN = _beam_uls_float(row.get("Vuy"))
     mux_kNm = _beam_uls_float(row.get("Mux"))
-    nu_kN = _beam_uls_float(row.get("Nu"))
+    nu_kN = girder_axial_demand_kN(row, state)
     case = str(row.get("Case Name") or "-")
     span_m = _beam_uls_span_length_from_state(state, is_building=False)
     support_side = _beam_uls_member_end_side(x_m, span_m)
@@ -11331,6 +11342,9 @@ def _beam_uls_cache_input_hash(
         "construction_uls": _beam_uls_state_values(state, [BEAM_GIRDER_CONSTRUCTION_ULS_SETTINGS_KEY]),
         "analysis_settings": _beam_uls_state_values(state, ["analysis_settings"]),
     }
+    if str(state.get("section_preset_key") or "") == "parametric_i_girder":
+        payload["axial_input"] = {"version": GIRDER_AXIAL_CONVENTION_VERSION,
+            **girder_axial_convention(state)}
     return _beam_uls_hash_payload(payload)
 
 
@@ -14411,6 +14425,8 @@ def _render_beam_girder_final_composite_flexure_guard(
         },
     ]
     _render_analysis_summary_strip(final_cards, columns=4)
+    from concrete_pmm_pro.ui.igird_flexure_development import render_failure_summary
+    render_failure_summary(preview_df, stage="Final Composite")
 
     na_c_mm = _beam_uls_float(gov.get("Neutral axis c mm")) if isinstance(gov, Mapping) else float("nan")
     na_theta_deg = _beam_uls_float(gov.get("Neutral axis θ deg")) if isinstance(gov, Mapping) else float("nan")
@@ -14682,6 +14698,9 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                 "Final positive composite φMn uses the AASHTO Section 5 conservative lower-f'c composite strength route; girder-deck interface shear remains a separate acceptance gate."
             )
 
+    if is_precast_composite_bridge:
+        from concrete_pmm_pro.ui.girder_axial_convention import render_axial_convention
+        render_axial_convention()
     active_df = _active_beam_uls_demand_dataframe_from_session(st.session_state)
 
     basis_cards = [

@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 from concrete_pmm_pro.io.project_io import project_from_json, apply_project_to_session_state
 from concrete_pmm_pro.ui import analysis_page as a
 from concrete_pmm_pro.analysis.igird_flexure_development import RESULT_VERSION, development_settings
+from concrete_pmm_pro.analysis.girder_axial_convention import axial_trace, axial_convention
 
 
 def clean_json(value):
@@ -49,6 +50,7 @@ def verify(input_path: Path, out: Path, deck_mm: float | None = None):
         'code': 'AASHTO LRFD 9th Edition (2020)',
         'deck_mm': prep.deck_thickness_mm, 'effective_width_mm': prep.effective_width_mm,
         'qa_deck_override': deck_mm, 'development_settings': development_settings(state),
+        'axial_input_convention': axial_convention(state),
         'construction_factors_confirmed': demand.factors_ready, 'stages': {}}
     for stage, source_state, source in [('construction', state, construction), ('final', composite, final)]:
         started = time.perf_counter()
@@ -59,7 +61,8 @@ def verify(input_path: Path, out: Path, deck_mm: float | None = None):
         expected = source.assign(__x=pd.to_numeric(source['Station x (m)'])).sort_values(['Case Name', '__x'], kind='stable')
         assert len(result) == len(source)
         assert result['Station x (m)'].tolist() == expected['__x'].tolist()
-        assert result['Nu kN'].tolist() == pd.to_numeric(expected['Nu']).tolist()
+        assert result['Nu input kN'].tolist() == pd.to_numeric(expected['Nu']).tolist()
+        assert result['Nu kN'].tolist() == [axial_trace(row, source_state)['Nu kN'] for _,row in expected.iterrows()]
         valid = result[result['Force residual N'].notna()]
         assert valid['Force residual N'].abs().max() < .021
         assert (valid['φMn kN-m'] <= valid['Full-development reference φMn kN-m'] * 1.000001).all()

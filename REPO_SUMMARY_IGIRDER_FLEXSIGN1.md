@@ -1,0 +1,1 @@
+Added explicit CSiBridge axial-force convention handling across I-Girder ULS checks while preserving imported actions, invalidating stale results, and exposing both physical-end flexure failures in the dashboard and stored traces.

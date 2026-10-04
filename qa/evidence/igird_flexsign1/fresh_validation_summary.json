@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "compileall": "PASS",
+  "modules": 41,
+  "tests": 423,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 31.63,
+  "app_startup": "PASS"
+}

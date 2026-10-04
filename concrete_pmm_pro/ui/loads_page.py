@@ -2742,6 +2742,8 @@ def _render_beam_girder_load_tables(force_unit: str, moment_unit: str) -> None:
             st.caption(
                 "For Precast I-Girder, this station table is the final factored FEA strength demand after composite action. It is not reused as the Construction-stage demand."
             )
+            from concrete_pmm_pro.ui.girder_axial_convention import render_axial_convention
+            render_axial_convention()
         with st.expander("Import Bridge Beam/Girder ULS station loads from Excel / CSV", expanded=False):
             st.caption("Bridge ULS loads are station-based factored resultants. The same case name may repeat at different Station x values.")
             _render_workflow_import_tools(
@@ -2770,7 +2772,7 @@ def _render_beam_girder_load_tables(force_unit: str, moment_unit: str) -> None:
                 "Tu": st.column_config.TextColumn(f"Tu ({moment_unit})", help="Factored torsion about member longitudinal axis."),
                 "Muy": st.column_config.TextColumn(f"Muy ({moment_unit})", help="Optional lateral/minor bending about y-axis."),
                 "Vux": st.column_config.TextColumn(f"Vux ({force_unit})", help="Optional lateral shear in x-direction."),
-                "Nu": st.column_config.TextColumn(f"Nu ({force_unit})", help="Optional axial force for special girder/frame action."),
+                "Nu": st.column_config.TextColumn(f"Nu ({force_unit})", help="Raw axial input. For unchanged CSiBridge P choose CSI tension-positive above; for already-converted Nu choose compression-positive. Table values are preserved."),
                 "Note": st.column_config.TextColumn("Note"),
             },
             key="beam_uls_loads_editor",

@@ -58,13 +58,16 @@ def check_dataframe(state, active_df, *, strength_route) -> pd.DataFrame:
 
 def _check_row(state, row, *, strength_route, face, source_index, nominal_cache, ambiguous_case):
     from concrete_pmm_pro.ui import analysis_page as ap
-    x, mu, nu, vu, tu = [_number(row.get(k)) for k in ["Station x (m)", "Mux", "Nu", "Vuy", "Tu"]]
+    from concrete_pmm_pro.analysis.girder_axial_convention import axial_trace
+    x, mu, _raw_nu, vu, tu = [_number(row.get(k)) for k in ["Station x (m)", "Mux", "Nu", "Vuy", "Tu"]]
+    nu_trace = axial_trace(row, state)
+    nu = nu_trace["Nu kN"]
     span = ap._beam_uls_span_length_from_state(state, is_building=False)
     side = ap._beam_uls_member_end_side(x, span)
     result = {"Check": "Shear + Torsion", "Status": "REVIEW", "Station type": str(row.get("__VT station type") or "LOAD STATION"),
         "Governing x": ap._format_beam_uls_x(x), "Case": str(row.get("Case Name") or "-"),
         "Source row": source_index, "Support side": side or "-", "Tension face": face.upper(),
-        "Mu kN-m": mu, "Nu app kN": nu, "Nu AASHTO kN": -nu, "Vu kN": vu, "Tu kN-m": tu,
+        "Mu kN-m": mu, **nu_trace, "Nu app kN": nu, "Nu AASHTO kN": -nu, "Vu kN": vu, "Tu kN-m": tu,
         "Shape": "SOLID", "Result version": RESULT_VERSION,
         "Code basis": "AASHTO LRFD 9th Ed. 5.7.3.4.2; 5.7.3.6.1; 5.7.3.6.3-1",
         "Stress status": "REVIEW", "Transverse status": "REVIEW", "Longitudinal status": "REVIEW",
@@ -290,7 +293,7 @@ def calculation_trace(row: Mapping | None) -> pd.DataFrame:
 
 def variable_definitions() -> pd.DataFrame:
     return pd.DataFrame([
-        ("Mu, Nu, Vu, Tu","Concurrent imported flexure, axial, shear and torsion resultants; Nu in Loads is compression-positive.","kN-m, kN, kN, kN-m"),
+        ("Mu, Nu, Vu, Tu","Concurrent imported actions. Nu input follows the declared source convention; Nu(app) is compression-positive after conversion.","kN-m, kN, kN, kN-m"),
         ("Veff","Torsion-modified shear used in longitudinal strain; actual Vu remains in Eq. 5.7.3.6.3-1.","kN"),
         ("Av/s physical, At/s","Av/s = effective shear legs×bar area/spacing; At/s = one closed hoop leg/spacing. The same hoop is counted once.","mm²/mm"),
         ("Ao, ph","Ao is AASHTO shear-flow enclosed area; ph is the actual derived closed-hoop centerline perimeter.","mm², mm"),
