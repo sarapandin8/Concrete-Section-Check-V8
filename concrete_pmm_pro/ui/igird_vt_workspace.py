@@ -169,6 +169,9 @@ def make_overview_figure(active_df, frame, *, check_name, code_label, span_m, in
         title=f"{check_name} — {'investigation' if investigation else 'utilization'}<br><sup>{code_label} · {subtitle}</sup>",
         y_label="Investigation ratio" if investigation else "Demand / capacity, D/C")
     fig.data = ()
+    # The demand template note refers to a single demand case; an overview
+    # displays checked case/component ratios instead.
+    fig.update_layout(annotations=[])
     if not envelope.empty:
         finite = [v for v in envelope["D/C"] if math.isfinite(v)]
         ceiling = max([1.0, *finite])*1.16
@@ -196,7 +199,7 @@ def make_overview_figure(active_df, frame, *, check_name, code_label, span_m, in
     return fig
 
 
-def render_strength_chart(active_df, frame, *, check_name, code_label, state, boundary=None, critical=None, diagram=None):
+def render_strength_chart(active_df, frame, *, check_name, code_label, state, boundary=None, critical=None, diagram=None, key_prefix="", member_name=""):
     import streamlit as st
     from concrete_pmm_pro.ui import analysis_page as ap
     if frame is None or frame.empty:
@@ -204,7 +207,7 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
         return
     span = ap._beam_uls_span_length_from_state(state, is_building=False)
     view = st.radio("Chart view", ["Overview — utilization", "Selected case — demand / capacity"],
-        horizontal=True, key=f"igird_vt_{check_name}_chart_view")
+        horizontal=True, key=f"{key_prefix}igird_vt_{check_name}_chart_view")
     investigation = check_name == "Torsion" and not pd.to_numeric(frame.get("φTn kN-m"),errors="coerce").notna().any()
     if view == "Overview — utilization":
         fig = make_overview_figure(active_df,frame,check_name=check_name,code_label=code_label,span_m=span,investigation=investigation)
@@ -218,7 +221,7 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
         cases = frame["Case"].dropna().drop_duplicates().tolist()
         gov = ap._beam_uls_governing_shear_row(frame) if check_name == "Shear" else ap._beam_uls_governing_torsion_row(frame)
         default = cases.index(gov["Case"]) if gov and gov.get("Case") in cases else 0
-        case = st.selectbox("Case for diagram", cases, index=default, key=f"igird_vt_{check_name}_diagram_case")
+        case = st.selectbox("Case for diagram", cases, index=default, key=f"{key_prefix}igird_vt_{check_name}_diagram_case")
         demands = active_df.loc[active_df["Case Name"].eq(case)]
         checked = frame.loc[frame["Case"].eq(case)]
         def pick(source):
@@ -262,19 +265,25 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
                 st.dataframe(pd.DataFrame([{"x (m)":row["x_m"],"Quantity":row["quantity"],
                     "Case": "; ".join(row["cases"]),"Reason":row["reason"]} for row in missing]),
                     hide_index=True,use_container_width=True)
+    if member_name:
+        from concrete_pmm_pro.ui.igird_member_results import titled_figure
+        fig = titled_figure(fig, member_name)
     ap._render_beam_uls_browser_plotly_figure(fig,interactive=True)
     st.caption("Incomplete input checks remain REVIEW. CSI Max/Min rows are numerical screening; final coupled acceptance needs verified concurrent actions.")
 
 
-def render_combined_chart(frame, *, code_label):
+def render_combined_chart(frame, *, code_label, member_name=""):
     import streamlit as st
     from concrete_pmm_pro.ui import analysis_page as ap
     # Stored rows supply the domain context; no importer or solver runs.
     active = pd.DataFrame({"Case Name":frame["Case"],"Station x (m)":frame["Governing x"].astype(str).str.replace(" m","",regex=False).astype(float),
         "Vuy":pd.to_numeric(frame.get("Vu kN"),errors="coerce")})
     span = ap._beam_uls_span_length_from_state(st.session_state,is_building=False)
-    ap._render_beam_uls_browser_plotly_figure(make_overview_figure(active,frame,check_name="Shear + Torsion",
-        code_label=code_label,span_m=span),interactive=True)
+    fig = make_overview_figure(active,frame,check_name="Shear + Torsion",code_label=code_label,span_m=span)
+    if member_name:
+        from concrete_pmm_pro.ui.igird_member_results import titled_figure
+        fig = titled_figure(fig,member_name)
+    ap._render_beam_uls_browser_plotly_figure(fig,interactive=True)
     partial = int(frame.get("Calculation status",pd.Series(index=frame.index,dtype=object)).eq("PARTIAL").sum())
     st.caption(f"Blue: largest available original Veff/transverse/longitudinal/spacing D/C at each station. Red: limit 1.0. Partial rows: {partial}. Missing sub-checks are not a completed overall check.")
     if frame[[c for c in ["Stress D/C value", "Transverse D/C value", "Longitudinal D/C value", "Spacing D/C"] if c in frame]].apply(lambda c: pd.to_numeric(c, errors="coerce").map(math.isinf)).any().any():

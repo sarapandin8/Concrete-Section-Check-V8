@@ -15128,6 +15128,9 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             help="Construction uses the precast girder only and automatic construction demand. Final uses imported FEA Strength demand and requires composite section resistance.",
         )
         if flexure_stage == "Final — Composite":
+            from concrete_pmm_pro.ui.igird_member_results import render_collection
+            if render_collection(check_name="Flexure", route=strength_route, code_label=code_label):
+                return
             _render_beam_girder_final_composite_flexure_guard(
                 active_df, code_label=code_label, strength_route=strength_route
             )
@@ -15247,6 +15250,11 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
     if is_precast_composite_bridge and selected_check in {"Shear", "Torsion", "Shear + Torsion"}:
         from concrete_pmm_pro.ui.igird_vt_workspace import render_input_checks
         render_input_checks(st.session_state, check_name=selected_check)
+
+    if is_precast_composite_bridge:
+        from concrete_pmm_pro.ui.igird_member_results import render_collection
+        if render_collection(check_name=selected_check, route=strength_route, code_label=code_label):
+            return
 
     check_hashes = {
         name: _beam_uls_check_input_hash(st.session_state, active_df, strength_route=strength_route, check_name=name)
