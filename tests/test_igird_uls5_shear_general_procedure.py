@@ -84,6 +84,10 @@ def _state(*, debonded: bool = False):
         "prestress_elements": [],
         "prestress_materials": [],
         "beam_girder_system_settings": {"span_length_m": 20.0},
+        # Controlled QA geometry: internal faces at the physical end. This
+        # must be explicit; production no longer infers faces from x=0/L.
+        "igird_shear_support_settings": {"locations_confirmed": True,
+            "offset_reference": "inside_face", "left_offset_m": 0.0, "right_offset_m": 0.0},
         "beam_girder_shear_reinforcement_table": pd.DataFrame(
             [
                 {
@@ -221,13 +225,14 @@ def test_igird_debonding_changes_phi_and_reduces_end_zone_prestress_participatio
 
 def test_igird_combined_vt_with_missing_composite_fps_source_remains_review():
     state = _state()
+    state["section_parameters"] = {"composite_enabled": True}
     combined = _beam_uls_combined_vt_check_dataframe(state, _demand(tu_kNm=20.0), strength_route=_route())
     assert not combined.empty
     decision = combined[combined["Status"] != "DIAGRAM BOUNDARY"]
     assert not decision.empty
     assert set(decision["Status"]) == {"REVIEW"}
     assert "PASS" not in set(combined["Status"])
-    assert any("verified final composite" in str(note).lower() for note in decision["Notes"].tolist())
+    assert any("composite" in str(note).lower() for note in decision["Notes"].tolist())
 
 
 def test_igird_shear_cache_version_is_selective_and_current_flexure_cache_is_not_invalidated():
@@ -292,9 +297,10 @@ def test_igird_critical_sections_are_inserted_near_dv_and_boundary_rows_do_not_g
     eligible = _beam_uls_shear_design_rows_for_governing(combined)
     assert not eligible.empty
     assert "DIAGRAM BOUNDARY" not in set(eligible["Station type"].astype(str))
-    # Exact x=0/L load rows remain diagram demand context once dv critical rows exist.
+    # Physical cut-end rows cannot use an unverified bearing-face exception.
     eligible_x = pd.to_numeric(eligible["Governing x"].astype(str).str.replace(" m", "", regex=False), errors="coerce")
-    assert not any(abs(x) < 1.0e-9 or abs(x - 20.0) < 1.0e-9 for x in eligible_x.dropna())
+    assert any(abs(x) < 1.0e-9 for x in eligible_x.dropna())
+    assert any(abs(x - 20.0) < 1.0e-9 for x in eligible_x.dropna())
 
 
 def test_igird_development_screen_uses_fpu_upper_bound_not_fpy():

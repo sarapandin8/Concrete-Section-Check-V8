@@ -18,6 +18,47 @@ def missing_bar_materials(state: Mapping) -> list[str]:
     return sorted({str(get(b, "material_name")) for b in state.get("rebars", []) or []} - known)
 
 
+def render_support_geometry(state, *, span_m):
+    import streamlit as st
+    from concrete_pmm_pro.analysis.igird_shear_support import SETTINGS_KEY, support_settings, support_basis
+    settings = support_settings(state)
+    with st.expander("Bearing locations / shear section basis", expanded=False):
+        st.caption("Offsets are measured from each physical beam end. Bearing length is along the beam; 0 means unknown. These inputs do not change the strand cut ends or imported loads.")
+        confirmed = st.checkbox("Bearing locations are defined", value=settings["locations_confirmed"],
+            key="igird_support_widget_confirmed")
+        labels = {"Bearing centerline": "centerline", "Internal bearing face": "inside_face"}
+        reference = st.selectbox("Bearing offset reference", list(labels),
+            index=0 if settings["offset_reference"] != "inside_face" else 1,
+            key="igird_support_widget_reference")
+        values = {}
+        for col, side in zip(st.columns(2), ("left", "right")):
+            with col:
+                values[f"{side}_offset_m"] = st.number_input(f"{side.title()} bearing offset from beam end (m)",
+                    min_value=0.0, value=float(settings[f"{side}_offset_m"] or 0.0), step=0.05,
+                    key=f"igird_support_widget_{side}_offset")
+                values[f"{side}_bearing_length_mm"] = st.number_input(f"{side.title()} bearing length along beam (mm; 0 = unknown)",
+                    min_value=0.0, value=float(settings[f"{side}_bearing_length_mm"] or 0.0), step=50.0,
+                    key=f"igird_support_widget_{side}_length")
+        note = st.text_input("Bearing drawing / coordinate reference", value=settings["note"], key="igird_support_widget_note")
+        values.update({"locations_confirmed": confirmed, "offset_reference": labels[reference], "note": note})
+        state[SETTINGS_KEY] = values
+        state["project_metadata"] = {**(state.get("project_metadata") or {}), SETTINGS_KEY: values}
+        st.markdown("The composite compression section uses the lower deck/girder f'c conservatively. Final-Composite acceptance requires confirmed effective width and a current Interface Shear PASS. "
+            "AASHTO 5.7.3.2 locates an eligible critical section dv from the internal support face. This release retains every original force row, including end overhangs; reaction compression, concentrated loads and end-region detailing are not inferred.")
+    basis = support_basis(state, span_m=span_m)
+    if basis["supports"]:
+        coords = []
+        for support in basis["supports"]:
+            cl, face = support["centerline_x_m"], support["inside_face_x_m"]
+            coords.append(f'{support["side"]}: CL ' + (f'x={cl:.3f} m' if cl is not None else 'unknown') +
+                ', inside face ' + (f'x={face:.3f} m' if face is not None else 'unknown'))
+        st.caption("Bearings — " + "; ".join(coords) + ". Physical beam/strand ends remain x=0/L.")
+    if basis["status"] == "INVALID":
+        st.warning(basis["note"])
+    elif basis["status"] != "FACES KNOWN":
+        st.caption(basis["note"] + " No face+dv marker is assigned until the faces are known.")
+
+
 def render_input_checks(state, *, check_name: str) -> None:
     import streamlit as st
     from concrete_pmm_pro.core.models import RebarMaterial
@@ -28,9 +69,18 @@ def render_input_checks(state, *, check_name: str) -> None:
     dev = development_settings(state)
     span = ap._beam_uls_span_length_from_state(state, is_building=False)
     development_ready = not state.get("rebars") or ordinary_development_factor(dev, x_m=span/2, span_m=span) is not None
-    st.caption("Section basis: precast I-girder for V/T geometry. Deck strength is credited in Final-Composite flexure separately.")
-    if ap._beam_uls_shear_depth_settings_from_state(state).get("dv_mm") is None:
-        st.caption("Auto shear depth: dv=0.72h under 5.7.2.8, conservatively. A verified force-weighted de/dv may be entered in Sections → Rebar.")
+    composite = bool((state.get("section_parameters") or {}).get("composite_enabled"))
+    st.caption("Final-Composite: deck concrete participates in the flexural C/T resultants and shear depth. Web width and web concrete strength remain the precast girder properties."
+        if composite else "Section basis: precast I-girder; composite deck action is disabled.")
+    st.caption("Auto dv=max(C/T lever arm, 0.9de, 0.72h), with station strand/bar development. Torsion Ao/ph and the closed hoop remain the qualified precast section.")
+    if composite:
+        from concrete_pmm_pro.ui import igird_shear_section
+        route = ap._beam_uls_strength_route_from_state(state,is_bridge=True,is_building=False)
+        gate, gate_notes = igird_shear_section.composite_action_gate(state,strength_route=route)
+        if gate != "PASS":
+            st.info("Final-Composite action: " + gate + ". " + " ".join(gate_notes) +
+                " Calculate Interface Shear in Flexure → Final — Composite, then recalculate this check.")
+    render_support_geometry(state, span_m=span)
     if missing:
         st.warning("Longitudinal material missing: " + ", ".join(missing) + ". Define its verified properties below; choosing a hoop does not define the longitudinal steel material.")
         with st.expander("Complete missing longitudinal materials", expanded=True):

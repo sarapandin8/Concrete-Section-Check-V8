@@ -14,8 +14,9 @@ from concrete_pmm_pro.analysis.igird_combined_vt import (
 )
 from concrete_pmm_pro.code_checks.aashto_lrfd import (
     aashto_general_shear_parameters, aashto_min_transverse_avs_mm2_per_mm,
-    aashto_prestressed_shear_phi, aashto_torsion_transverse_design_fy_mpa,
+    aashto_prestressed_shear_phi, aashto_torsion_transverse_design_fy_mpa, aashto_shear_transverse_design_fy_mpa,
 )
+from concrete_pmm_pro.ui import igird_shear_section
 from concrete_pmm_pro.core.aashto_units import aashto_sqrt_fc_stress_mpa, ksi_to_mpa
 
 
@@ -30,6 +31,8 @@ def check_dataframe(state, active_df, *, strength_route) -> pd.DataFrame:
     from concrete_pmm_pro.ui import analysis_page as ap
     if active_df.empty:
         return pd.DataFrame()
+    if igird_shear_section.RUNTIME_KEY not in state:
+        state = {**state, igird_shear_section.RUNTIME_KEY: {"active_df": active_df}}
     # Keep every physical concurrent row (including both support faces).
     # Supplemental critical rows are only interpolated when each case has
     # unambiguous action vectors at every source x; no separate envelopes.
@@ -116,25 +119,27 @@ def _check_row(state, row, *, strength_route, face, source_index, nominal_cache,
         result["Coverage status"] = "PASS" if source.get("ready") else "REQUIRED"
         if not source.get("ready"):
             return blocked(str(source.get("reason") or "Torsion-qualified closed hoop with 135° hook and finite auto ph required."), status="DATA REQUIRED")
-    inp, messages = ap._beam_uls_flexure_analysis_input_for_station(state, row=row,
+    inp, messages = igird_shear_section.analysis_input_for_station(state, row=row,
         strength_route=strength_route, capacity_direction=-1.0 if face == "top" else 1.0)
     if inp is None:
         return blocked("; ".join(messages))
-    fc = min(float(inp.concrete_material.fc_MPa), ksi_to_mpa(10.0 if needs_t else 15.0))
+    prepared = igird_shear_section.prepared_section(state)
+    fc = min(prepared["web_fc_MPa"], ksi_to_mpa(10.0 if needs_t else 15.0))
     if inp.concrete_material.density_kg_m3 < 2200.0:
         return blocked("Lightweight concrete requires a verified lambda/source branch; the ULS7 normal-weight route does not infer lambda.")
-    bv = _number(ap._beam_uls_web_width_mm(inp.section_geometry)[0])
+    bv = _number(ap._beam_uls_web_width_mm(prepared["web_geometry"])[0])
     # This sign only selects the physical tension half/depth; the real Mu
     # remains unchanged in epsilon and in the longitudinal force equation.
     depths = ap._beam_uls_effective_shear_depth_values_mm(state, inp,
-        mux_kNm=-abs(mu or 1.0) if face == "top" else abs(mu or 1.0), strength_route=strength_route)
+        mux_kNm=-abs(mu or 1.0) if face == "top" else abs(mu or 1.0), strength_route=strength_route, row=row)
+    result.update(igird_shear_section.trace_columns(depths))
     dv, d = _number(depths.get("dv_mm")), _number(depths.get("d_mm"))
     bar_area, legs, spacing, fy_input = [ap._beam_uls_stirrup_area_mm2(zone), _number(zone.get("Legs")), _number(zone.get("Spacing_mm")), _number(zone.get("fy_MPa"))]
     if not all(math.isfinite(v) and v > 0 for v in [fc, bv, dv, bar_area, legs, spacing, fy_input]):
         return blocked("Transverse geometry, spacing, material or effective depth is incomplete.", status="DATA REQUIRED")
     if needs_t and legs < 2:
         return blocked("Solid closed hoop needs at least two physical effective shear legs.", status="DATA REQUIRED")
-    fy, fy_note = aashto_torsion_transverse_design_fy_mpa(fy_input)
+    fy, fy_note = (aashto_torsion_transverse_design_fy_mpa if needs_t else aashto_shear_transverse_design_fy_mpa)(fy_input)
     phi, phi_note = aashto_prestressed_shear_phi(has_unbonded_or_debonded_strands=ap._beam_uls_igird_has_debonded_strands(state))
     provided = bar_area * legs / spacing
     avmin = aashto_min_transverse_avs_mm2_per_mm(fc, bv, fy, lambda_concrete=1.0)
@@ -154,7 +159,7 @@ def _check_row(state, row, *, strength_route, face, source_index, nominal_cache,
     strut_dc = veff / (phi * 0.25 * fc * bv * dv)
     detail = ap._beam_uls_shear_detailing_guard(strength_route=strength_route, fc_MPa=fc,
         bw_mm=bv, d_eff_mm=d, dv_mm=dv, spacing_mm=spacing, avs_mm2_per_mm=provided,
-        fy_MPa=fy, vu_N=veff)
+        fy_MPa=fy, vu_N=veff, phi=phi)
     result.update({"Stress D/C value": strut_dc, "Stress status": "PASS" if strut_dc <= 1+1e-9 else "FAIL",
         "Veff kN": veff/1000.0, "Ao mm2": ao, "ph mm": ph,
         "Detailing status": detail.get("Detailing status"), "Spacing D/C": detail.get("Spacing D/C"),
@@ -208,14 +213,6 @@ def _check_row(state, row, *, strength_route, face, source_index, nominal_cache,
     fps_trace = {"ready": True, "fps_min_MPa": 0.0, "c_mm": float("nan"), "residual_N": 0.0}
     if aps_dev > 0:
         nominal_inp = inp
-        if mu >= 0:
-            prep, composite_state, prep_notes = ap._beam_uls_final_composite_preparation(state)
-            if not prep.ready or composite_state is None:
-                return blocked("Nominal fps requires the verified Final Composite section: " + "; ".join(prep_notes))
-            if not bool((state.get("section_parameters") or {}).get("Be_strength_verified", False)):
-                notes.append("Composite effective width Be is not confirmed for strength; nominal fps is audit-only until verification.")
-            nominal_inp, _ = ap._beam_uls_flexure_analysis_input_for_station(composite_state, row=row,
-                strength_route=strength_route, capacity_direction=-1.0 if face == "top" else 1.0)
         if nominal_inp is None:
             return blocked("Nominal fps analysis input is unavailable.")
         # The concurrent route owns developed precast ordinary bars only.
@@ -240,7 +237,7 @@ def _check_row(state, row, *, strength_route, face, source_index, nominal_cache,
         aps_fps_N=aps_force, as_fy_N=as_force)
     detail = ap._beam_uls_shear_detailing_guard(strength_route=strength_route, fc_MPa=fc,
         bw_mm=bv, d_eff_mm=d, dv_mm=dv, spacing_mm=spacing, avs_mm2_per_mm=provided,
-        fy_MPa=fy, vu_N=veff)
+        fy_MPa=fy, vu_N=veff, phi=phi)
     config = ap._beam_uls_igird_torsion_settings(state)
     corner = bool(config.get("corner_longitudinal_reinforcement_confirmed"))
     perimeter = bool(config.get("longitudinal_perimeter_distribution_confirmed"))
@@ -284,8 +281,8 @@ def _check_row(state, row, *, strength_route, face, source_index, nominal_cache,
         "Capacity": f"Long. R = {values['longitudinal_resistance_N']/1000:,.2f} kN",
         "Demand": f"Long. F = {values['longitudinal_required_N']/1000:,.2f} kN"})
     failures = [result[k] for k in ["Stress status","Transverse status","Longitudinal status","Detailing status"]]
-    review = dev_factor is None or bool(notes) or (needs_t and (not corner or not perimeter)) or mu < -1e-9
-    result["Status"] = "FAIL" if "FAIL" in failures else ("REVIEW" if review else "PASS")
+    review = dev_factor is None or bool(notes) or (needs_t and (not corner or not perimeter)) or mu < -1e-9 or depths.get("Depth source status") != "PASS" or depths.get("Composite action status") not in {"PASS", "NOT APPLICABLE"}
+    result["Status"] = "FAIL" if "FAIL" in failures or depths.get("Composite action status") == "FAIL" else ("REVIEW" if review else "PASS")
     result["Calculation status"] = "COMPLETE"
     if dev_factor is None:
         result["Longitudinal status"] = "REVIEW" if long_pass else "FAIL"
@@ -306,7 +303,7 @@ def _check_row(state, row, *, strength_route, face, source_index, nominal_cache,
         "Straight pretensioned strands: Vp=0, lambda_duct=1. No tendon slope or duct is inferred.",
         "Nominal fps equilibrium uses developed ordinary bars; optional deck-bar force is excluded from this source.",
         "Veff compression cap is an additional conservative guard; no ACI Aoh/ph stress shortcut is used.",
-        str(eps.get("note") or ""),str(fps_trace.get("note") or ""),str(dev_settings.get("note") or "")])
+        str(eps.get("note") or ""),str(fps_trace.get("note") or ""),str(dev_settings.get("note") or ""), str(depths.get("Depth note") or "")])
     result["Notes"] = "; ".join(n for n in notes if n)
     return result
 
@@ -357,15 +354,16 @@ def render_development_inputs(*, expanded: bool = False) -> None:
             value=current["continuous_full_span_confirmed"], key="igird_vt_bars_continuous")
         cols = st.columns(2)
         with cols[0]:
-            left = st.checkbox("Left end: full bar strength is anchored at the support face",
+            left = st.checkbox("Left physical end x=0: full bar strength is verified",
                 value=current["left_end_anchored_confirmed"], key="igird_vt_bars_left_anchor")
         with cols[1]:
-            right = st.checkbox("Right end: full bar strength is anchored at the support face",
+            right = st.checkbox("Right physical end x=L: full bar strength is verified",
                 value=current["right_end_anchored_confirmed"], key="igird_vt_bars_right_anchor")
         ld = st.number_input("Verified governing straight-bar development length ld (mm)",
             min_value=0.0, value=current["development_length_mm"], step=50.0, key="igird_vt_bars_ld",
-            help="Enter the largest required development length among active bars, verified under AASHTO 5.10.8.2.1a. A confirmed end anchorage removes that end's development build-up only.")
+            help="Enter the largest required straight-bar development length, at least 304.8 mm under 5.10.8.2.1a. End anchorage must justify full strength at the model's physical cut-end coordinates; it removes that end's build-up only.")
         note = st.text_input("Development / anchorage drawing or calculation reference", value=current["note"], key="igird_vt_bars_development_note")
+        st.caption("These end confirmations apply to x=0/L. Anchorage at an inset bearing alone does not establish full bar strength at the physical beam end.")
         settings = {"continuous_full_span_confirmed": continuous, "left_end_anchored_confirmed": left,
             "right_end_anchored_confirmed": right, "development_length_mm": ld, "note": note}
         # Metadata persists through the existing project JSON route; no schema change.
@@ -373,10 +371,10 @@ def render_development_inputs(*, expanded: bool = False) -> None:
         metadata = dict(st.session_state.get("project_metadata") or {})
         metadata[DEVELOPMENT_KEY] = settings
         st.session_state["project_metadata"] = metadata
-        if not continuous or (not (left and right) and ld <= 0):
+        if not continuous or (not (left and right) and ld < 304.8):
             st.warning("Development is unconfirmed. Combined V+T will withhold final PASS and will not assume ordinary bar strength or stiffness.")
         else:
-            st.caption("Straight unanchored ends use min(available bonded length/ld, 1). Cut-off bars or mixed anchorage details require separate review; the common full-span assumption must be valid for every active bar.")
+            st.caption("Straight unanchored ends receive zero strength below 304.8 mm bonded length, then min(available length/ld, 1). Cut-off bars or mixed anchorage require separate review; each end declaration must justify the actual x=0/L cut-end station.")
 
 
 def render_workspace(df: pd.DataFrame | None, *, code_label: str) -> None:

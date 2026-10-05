@@ -1,0 +1,34 @@
+{
+  "release": "IGIRDER.SHEARCOMP1",
+  "date": "2026-10-05",
+  "status": "PASS",
+  "regression": {
+    "tests": 661,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "modules": 53,
+  "fresh_extraction_app": {
+    "status": "PASS",
+    "method": "Fresh ZIP AppTest app.py startup and actual unchanged-P project Calculate Combined",
+    "exceptions": 0,
+    "native_rows": 80,
+    "preserved_components": 480,
+    "bearing_offsets_m": [
+      0.4,
+      0.4
+    ],
+    "unknown_bearing_length_not_invented": true,
+    "automatic_material_or_width_confirmation": false,
+    "total_app_startup_navigation_and_calculation_seconds": 6.512547265000194
+  },
+  "compile": "PASS",
+  "python_fingerprint_sha256": "a4a960de11bc01ab8810df38bfc81539ae17a77e09c4fb407725f8b5874b37c9",
+  "fresh_candidate_python_fingerprint_equal": true,
+  "source_example": "Latest unchanged Left Exterior Excel forces; bearing CL 0.4 m from each end; lengths unknown",
+  "source_fixtures_unchanged": true,
+  "scalar_substitutions": 3459,
+  "engineering_review_not_promoted_to_pass": true,
+  "preview_method": "Scientific coordinates, not browser screenshots"
+}

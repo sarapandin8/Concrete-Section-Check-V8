@@ -125,13 +125,15 @@ def test_auto_depth_does_not_substitute_area_centroid_for_code_force_centroid():
     state = ready_state(); row = _demand().iloc[0]
     inp, _ = ap._beam_uls_flexure_analysis_input_for_station(state,row=row,strength_route=_route())
     depth = ap._beam_uls_effective_shear_depth_values_mm(state,inp,mux_kNm=1000,strength_route=_route())
-    assert depth['dv_mm'] == pytest.approx(.72*1600)
+    assert depth['dv_mm'] == pytest.approx(max(depth['C-T lever arm mm'],.9*depth['de mm'],.72*1820))
+    assert depth['dv_mm'] > .72*1600
     assert '0.72h' in depth['dv_note']
     moved = inp.model_copy(update={'rebars':[b.model_copy(update={'y_mm':b.y_mm-50}) for b in inp.rebars]})
     assert ap._beam_uls_effective_shear_depth_values_mm(state,moved,mux_kNm=1000,strength_route=_route())['dv_mm'] == depth['dv_mm']
-    state['beam_girder_shear_depth_settings'] = {'mode':'Manual effective shear depth','dv_mm':1400,'note':'Verified resultant separation'}
+    manual_value = depth['dv lower bound mm']
+    state['beam_girder_shear_depth_settings'] = {'mode':'Manual effective shear depth','dv_mm':manual_value,'note':'Verified conservative depth'}
     manual = ap._beam_uls_effective_shear_depth_values_mm(state,inp,mux_kNm=1000,strength_route=_route())
-    assert manual['dv_mm'] == 1400
+    assert manual['dv_mm'] == manual_value
     state['beam_girder_shear_depth_settings']['dv_mm'] = 2000
     assert math.isnan(ap._beam_uls_effective_shear_depth_values_mm(state,inp,mux_kNm=1000,strength_route=_route())['dv_mm'])
     demand = _demand(x=10,mux=1000,vu=200,tu=500)

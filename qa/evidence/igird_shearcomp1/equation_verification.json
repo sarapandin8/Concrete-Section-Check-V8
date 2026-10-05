@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "method": "Independent US-customary equations converted with ksi, inch, kip constants; no production equation helpers",
+  "scalar_comparisons": 1811,
+  "max_relative_error": 1.2798351963521135e-12,
+  "max_absolute_error": 1.1641532182693481e-10,
+  "rows_checked": {
+    "shear": 88,
+    "torsion": 63,
+    "combined": 88
+  },
+  "scope": "Normal-weight solid precast I-girder, straight pretensioned strands, source-qualified hoops; hypothetical verified bar properties/development only",
+  "code": "AASHTO LRFD 9th (2020): 5.7.2.1; 5.7.3.3; 5.7.3.4.2; 5.7.3.6.1/.2/.3"
+}

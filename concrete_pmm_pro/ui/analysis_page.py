@@ -106,6 +106,7 @@ from concrete_pmm_pro.analysis.result_models import (
     summarize_pmm_result,
 )
 from concrete_pmm_pro.analysis.igird_composite_flexure import prepare_aashto_composite_positive_flexure
+from concrete_pmm_pro.ui import igird_shear_section
 from concrete_pmm_pro.analysis.igird_flexure_development import (
     RESULT_VERSION as IGIRD_FLEXURE_DEVELOPMENT_VERSION,
     SETTINGS_KEY as IGIRD_FLEXURE_DEVELOPMENT_KEY,
@@ -7182,8 +7183,16 @@ def _beam_uls_effective_shear_depth_values_mm(
     *,
     mux_kNm: float,
     strength_route: BeamGirderUlsStrengthRoute,
+    row: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Return explicit d/dv values and basis notes for the local shear station."""
+
+    if strength_route.is_bridge and str(_beam_uls_get_state_value(state or {}, "section_preset_key") or "") == "parametric_i_girder":
+        if row is None:
+            span = _beam_uls_span_length_from_state(state or {}, is_building=False)
+            row = {"Station x (m)": span / 2.0, "Case Name": "Depth reference", "Mux": mux_kNm, "Nu": 0.0}
+        return igird_shear_section.depth_values(state or {}, row=row, strength_route=strength_route,
+            capacity_direction=-1.0 if mux_kNm < 0 else 1.0)
 
     d_eff_mm, tension_face, d_note = _beam_uls_effective_shear_depth_mm(
         analysis_input,
@@ -7206,13 +7215,6 @@ def _beam_uls_effective_shear_depth_values_mm(
                 if math.isfinite(dv_mm) else "Manual dv exceeds the physical section depth; verify the shear-depth input before calculating.")
             if settings.get("note"):
                 dv_note += f" Basis note: {settings.get('note')}"
-        elif igird and math.isfinite(h_mm) and h_mm > 0.0:
-            # 5.7.2.8-2 defines de by As*fy and Aps*fps force weights, including
-            # development. An area centroid is not that force centroid. Until
-            # a verified force-weighted de/dv is supplied, use the permitted
-            # conservative 0.72h lower bound; do not infer extra lever arm.
-            dv_mm = 0.72 * h_mm
-            dv_note = "AASHTO 5.7.2.8 conservative automatic dv=0.72h. The displayed area-centroid d is an audit estimate only; verified force-weighted de/dv may be entered in Sections → Rebar."
         elif d_eff_mm is not None and math.isfinite(float(d_eff_mm)) and math.isfinite(h_mm) and h_mm > 0.0:
             dv_mm = _beam_uls_bridge_dv_from_depth_mm(float(d_eff_mm), float(h_mm))
             dv_note = "dv derived from the active d and section depth using the current AASHTO-compatible basis."
@@ -7534,6 +7536,11 @@ def _beam_uls_igird_prestress_general_shear_terms(
     except Exception:
         return {"ready": False, "note": "Section bounds unavailable for Aps tension-half classification."}
     h_mm = float(y_max) - float(y_min)
+    # Composite depth classifies the tension half; strand development kappa
+    # still depends on the depth of the precast member containing the strand.
+    precast_h_mm = h_mm
+    if bool((_beam_uls_get_state_value(state, "section_parameters", {}) or {}).get("composite_enabled")):
+        precast_h_mm = float(igird_shear_section.prepared_section(state)["precast_depth_mm"])
     if h_mm <= 0.0 or not math.isfinite(h_mm):
         return {"ready": False, "note": "Invalid section depth for strand development evaluation."}
     top = str(tension_face).strip().lower().startswith("top")
@@ -7588,7 +7595,7 @@ def _beam_uls_igird_prestress_general_shear_terms(
                     fps_MPa=_GIRDER_STRAND_FPU_MPA_DEFAULT,
                     fpe_MPa=fpe_mpa,
                     db_mm=float(db_mm),
-                    member_depth_mm=h_mm,
+                    member_depth_mm=precast_h_mm,
                     debonded_conservative=is_debonded,
                 )
                 dev_factor = aashto_development_area_factor(
@@ -7630,7 +7637,7 @@ def _beam_uls_igird_prestress_general_shear_terms(
             "used_debonded": False,
             "note": f"No prestressing strands lie on the {('top' if top else 'bottom')} flexural tension half at this station.",
         }
-    notes.insert(0, "Aps in epsilon_s is reduced linearly by bonded distance / conservative development length; fps=fpu is used as an explicit upper-bound development screen because this shear route does not own a station nominal-flexural fps solve.")
+    notes.insert(0, "Aps in epsilon_s is reduced by bonded distance / conservative development length. Its separate fps=fpu screen conservatively bounds ld; developed nominal flexural stresses are used independently for de/dv.")
     notes.insert(1, f"fpo = 0.70 fpu = {fpo_full_mpa:.1f} MPa and is ramped linearly through 60db from bond commencement.")
     return {
         "ready": True,
@@ -7969,6 +7976,8 @@ def _beam_uls_shear_detailing_guard(
     avs_mm2_per_mm: float,
     fy_MPa: float,
     vu_N: float = 0.0,
+    phi: float = 0.90,
+    vp_N: float = 0.0,
 ) -> dict[str, object]:
     """Return shear minimum-reinforcement and spacing detailing gate values.
 
@@ -8009,6 +8018,7 @@ def _beam_uls_shear_detailing_guard(
             float(bw_mm),
             depth_for_spacing,
             float(vu_N),
+            phi=float(phi), vp_N=float(vp_N),
         )
         basis = "AASHTO LRFD 5.7.2.5 minimum Av/s + 5.7.2.6 maximum spacing"
         notes.append(
@@ -8048,6 +8058,8 @@ def _beam_uls_shear_detailing_guard(
         "Detailing D/C value": detailing_dc,
         "Detailing basis": basis,
         "Detailing notes": " ".join(notes),
+        "Shear stress MPa": shear_stress_ratio * float(fc_MPa) if strength_route.is_bridge else float("nan"),
+        "Shear stress / fc": shear_stress_ratio if strength_route.is_bridge else float("nan"),
     }
 
 
@@ -8069,7 +8081,7 @@ def _beam_uls_shear_result_for_row(
     critical_offset_m = _beam_uls_float(row.get("__Critical offset m"))
     notes: list[str] = []
     if critical_section:
-        notes.append("Critical shear section inserted by Analysis; demand is interpolated from active ULS station rows and this row is considered for governing shear D/C.")
+        notes.append("Supplemental shear section inserted by Analysis; demand is interpolated from active ULS rows. I-girder markers use the entered internal bearing face plus station dv; reaction/load/end-region conditions are not certified and every original source row remains checked.")
     if not math.isfinite(vu_kN) or abs(vu_kN) <= _BEAM_ULS_DEMAND_TOL:
         if not diagram_boundary and not (capacity_diagram and math.isfinite(vu_kN)):
             return {
@@ -8103,8 +8115,10 @@ def _beam_uls_shear_result_for_row(
             "Zone": "-",
             "Notes": "No active stirrup zone covers this design/check station. Extend or add a provided stirrup zone; nearest zones are not used for final shear acceptance.",
         }
-    analysis_input, input_messages = _beam_uls_flexure_analysis_input_for_station(state, row=row,
-        strength_route=strength_route, capacity_direction=1.0 if capacity_diagram else None)
+    is_igird_general = strength_route.is_bridge and _beam_uls_is_precast_composite_bridge(state, is_bridge=True)
+    input_builder = igird_shear_section.analysis_input_for_station if is_igird_general else _beam_uls_flexure_analysis_input_for_station
+    analysis_input, input_messages = input_builder(state, row=row,
+        strength_route=strength_route, capacity_direction=-1.0 if mux_kNm < 0 else 1.0)
     if input_messages:
         notes.extend(input_messages)
     if analysis_input is None:
@@ -8124,19 +8138,23 @@ def _beam_uls_shear_result_for_row(
         }
     concrete = analysis_input.concrete_material
     fc = float(concrete.fc_MPa)
-    if strength_route.is_bridge and _beam_uls_is_precast_composite_bridge(state, is_bridge=True):
-        fc = min(fc, ksi_to_mpa(15.0))  # Article 5.7.2.1 shear design strength limit.
-    bw_mm, bw_note = _beam_uls_web_width_mm(analysis_input.section_geometry)
+    web_geometry = analysis_input.section_geometry
+    if is_igird_general:
+        prepared_shear = igird_shear_section.prepared_section(state)
+        fc = min(prepared_shear["web_fc_MPa"], ksi_to_mpa(15.0))
+        web_geometry = prepared_shear["web_geometry"]
+    bw_mm, bw_note = _beam_uls_web_width_mm(web_geometry)
     depth_values = _beam_uls_effective_shear_depth_values_mm(
         state,
         analysis_input,
         mux_kNm=mux_kNm,
         strength_route=strength_route,
+        row=row,
     )
     d_eff_mm = depth_values.get("d_mm")
     dv_eff_mm = depth_values.get("dv_mm")
     tension_face = str(depth_values.get("tension_face") or "-")
-    notes.extend([bw_note, str(depth_values.get("d_note") or ""), str(depth_values.get("dv_note") or "")])
+    notes.extend([bw_note, str(depth_values.get("d_note") or ""), str(depth_values.get("dv_note") or ""), str(depth_values.get("Depth note") or "")])
     if bw_mm is None or d_eff_mm is None or fc <= 0.0 or (
             strength_route.is_bridge and _beam_uls_is_precast_composite_bridge(state, is_bridge=True)
             and not math.isfinite(_beam_uls_float(dv_eff_mm))):
@@ -8153,11 +8171,18 @@ def _beam_uls_shear_result_for_row(
             "D/C value": float("nan"),
             "Zone": str(zone.get("Zone") or "-"),
             "Notes": "; ".join(notes),
+            **(igird_shear_section.trace_columns(depth_values) if is_igird_general else {}),
         }
     stirrup_area = _beam_uls_stirrup_area_mm2(zone)
     legs = _beam_uls_float(zone.get("Legs"))
     spacing = _beam_uls_float(zone.get("Spacing_mm"))
     fy = _beam_uls_float(zone.get("fy_MPa"))
+    fy_input = fy
+    fy_policy = "Entered transverse yield strength"
+    if is_igird_general and math.isfinite(fy) and fy > 0:
+        from concrete_pmm_pro.code_checks.aashto_lrfd import aashto_shear_transverse_design_fy_mpa
+        fy, fy_policy = aashto_shear_transverse_design_fy_mpa(fy)
+        notes.append(fy_policy)
     if not all(math.isfinite(value) and value > 0.0 for value in [stirrup_area, legs, spacing, fy]):
         return {
             "Check": "Shear",
@@ -8175,7 +8200,6 @@ def _beam_uls_shear_result_for_row(
         }
     avs_mm2_per_mm = float(stirrup_area) * float(legs) / float(spacing)
     general_trace: dict[str, object] = {}
-    is_igird_general = strength_route.is_bridge and _beam_uls_is_precast_composite_bridge(state, is_bridge=True)
     if is_igird_general:
         depth_for_vs = float(dv_eff_mm) if dv_eff_mm is not None and math.isfinite(float(dv_eff_mm)) and float(dv_eff_mm) > 0.0 else float(d_eff_mm)
         depth_label = "dv"
@@ -8207,6 +8231,7 @@ def _beam_uls_shear_result_for_row(
                 "Zone": str(zone.get("Zone") or "-"),
                 "Method": "AASHTO LRFD 5.7.3.4.2 General Procedure — source review",
                 "Notes": "; ".join(part for part in notes + [str(epsilon_trace.get("note") or "")] if part),
+                **igird_shear_section.trace_columns(depth_values),
             }
         avs_min_exact = aashto_min_transverse_avs_mm2_per_mm(fc, float(bw_mm), float(fy), lambda_concrete=1.0)
         has_minimum_transverse = avs_mm2_per_mm + 1.0e-12 >= avs_min_exact
@@ -8234,6 +8259,7 @@ def _beam_uls_shear_result_for_row(
                 avs_mm2_per_mm=float(avs_mm2_per_mm),
                 fy_MPa=float(fy),
                 vu_N=abs(float(vu_kN)) * 1000.0,
+                phi=phi,
             )
             detailing_dc = _beam_uls_float(detailing.get("Detailing D/C value"))
             notes.extend(theta_trace.notes)
@@ -8305,6 +8331,7 @@ def _beam_uls_shear_result_for_row(
                 "Code basis": "AASHTO LRFD 5.7.3.4.2 General Procedure",
                 "φ policy": phi_policy,
                 "Method": "AASHTO LRFD 5.7.3.4.2 General Procedure — Eq. -2 source blocked",
+                **igird_shear_section.trace_columns(depth_values),
                 "Notes": "; ".join(part for part in notes if part),
             }
         params = aashto_general_shear_parameters(
@@ -8401,6 +8428,7 @@ def _beam_uls_shear_result_for_row(
         avs_mm2_per_mm=float(avs_mm2_per_mm),
         fy_MPa=float(fy),
         vu_N=abs(float(vu_kN)) * 1000.0,
+        phi=phi,
     )
     detailing_status = str(detailing.get("Detailing status") or "REVIEW")
     detailing_dc = _beam_uls_float(detailing.get("Detailing D/C value"))
@@ -8408,9 +8436,10 @@ def _beam_uls_shear_result_for_row(
     governing_dc = max(finite_dcs) if finite_dcs else float("nan")
     if diagram_boundary:
         status = "DIAGRAM BOUNDARY"
-    elif strength_status == "FAIL" or detailing_status == "FAIL":
+    elif strength_status == "FAIL" or detailing_status == "FAIL" or (is_igird_general and depth_values.get("Composite action status") == "FAIL"):
         status = "FAIL"
-    elif detailing_status == "REVIEW" or vn_limit_status == "REVIEW" or (is_igird_general and not epsilon_trace.get("ordinary_source_ready", True)):
+    elif detailing_status == "REVIEW" or vn_limit_status == "REVIEW" or (is_igird_general and (not epsilon_trace.get("ordinary_source_ready", True)
+            or depth_values.get("Depth source status") != "PASS" or depth_values.get("Composite action status") not in {"PASS", "NOT APPLICABLE"})):
         status = "REVIEW"
     else:
         status = "PASS"
@@ -8470,6 +8499,7 @@ def _beam_uls_shear_result_for_row(
         "Av/s mm2/m": avs_mm2_per_mm * 1000.0,
         "f'c MPa": float(fc),
         "fy MPa": float(fy),
+        "fy input MPa": float(fy_input), "fy policy": fy_policy,
         "Spacing mm": float(spacing),
         "λ concrete": 1.0 if strength_route.is_bridge else float("nan"),
         "Av/s required mm2/mm": detailing.get("Av/s required mm2/mm", float("nan")),
@@ -8477,6 +8507,7 @@ def _beam_uls_shear_result_for_row(
         "Av/s min D/C": detailing.get("Av/s min D/C", float("nan")),
         "s max mm": detailing.get("s max mm", float("nan")),
         "Spacing D/C": detailing.get("Spacing D/C", float("nan")),
+        "Shear stress MPa": detailing.get("Shear stress MPa"), "Shear stress / fc": detailing.get("Shear stress / fc"),
         "Detailing basis": detailing.get("Detailing basis", "-"),
         "bw mm": float(bw_mm),
         f"{depth_label} mm": float(depth_for_vs),
@@ -8491,6 +8522,7 @@ def _beam_uls_shear_result_for_row(
         "φ policy": phi_policy,
         "Method": method,
         **general_trace,
+        **(igird_shear_section.trace_columns(depth_values) if is_igird_general else {}),
         "Notes": "; ".join(part for part in notes if part),
     }
 
@@ -8511,11 +8543,13 @@ def _beam_uls_shear_check_dataframe(
         "εs raw", "εs used", "εs numerator N", "εs denominator N", "As tension mm2", "Aps raw tension mm2", "Aps developed tension mm2",
         "Aps development factor min", "fpo transfer factor min", "fpo full MPa", "Development length max mm", "Transfer length max mm", "General Procedure branch", "sxe mm",
         "Mu used kN-m", "Nu AASHTO kN", "Vp kN", "Aps fpo kN",
-        "Code basis", "φ policy", "Method", "Notes",
-    ]
+        "Code basis", "φ policy", "Method", "Notes", "fy input MPa", "fy policy", "Shear stress MPa", "Shear stress / fc",
+    ] + igird_shear_section.DEPTH_COLUMNS
     if active_df.empty:
         return pd.DataFrame(columns=columns)
     rows = []
+    if str(state.get("section_preset_key") or "") == "parametric_i_girder" and igird_shear_section.RUNTIME_KEY not in state:
+        state = {**state, igird_shear_section.RUNTIME_KEY: {"active_df": active_df}}
     for _, demand_row in active_df.iterrows():
         result = _beam_uls_shear_result_for_row(state, demand_row, strength_route=strength_route)
         if "dv mm" not in result and "dv mm" in columns:
@@ -8643,6 +8677,14 @@ def _beam_uls_shear_default_critical_section_rows(
     span_m = _beam_uls_span_length_from_state(state, is_building=strength_route.is_building)
     if not math.isfinite(span_m) or span_m <= 0.0:
         return []
+    is_igird = strength_route.is_bridge and str(state.get("section_preset_key") or "") == "parametric_i_girder"
+    support_positions = [("Left", 0.0), ("Right", float(span_m))]
+    if is_igird:
+        from concrete_pmm_pro.analysis.igird_shear_support import support_basis
+        bearing = support_basis(state, span_m=span_m)
+        if bearing["status"] != "FACES KNOWN":
+            return []
+        support_positions = [(s["side"], s["inside_face_x_m"]) for s in bearing["supports"]]
     cases = [str(value or "-") for value in active_df.get("Case Name", pd.Series(["-"])).dropna().unique().tolist()]
     if not cases:
         cases = ["-"]
@@ -8678,7 +8720,8 @@ def _beam_uls_shear_default_critical_section_rows(
         df["__x_m"] = df.apply(_numeric_x_from_row, axis=1)
         df = df[pd.to_numeric(df["__x_m"], errors="coerce").notna()].copy()
         if not df.empty:
-            df["__support_distance"] = df["__x_m"].map(lambda x: abs(float(x) - (0.0 if support_side == "Left" else float(span_m))))
+            support_x = dict(support_positions)[support_side]
+            df["__support_distance"] = df["__x_m"].map(lambda x: abs(float(x) - support_x))
             df = df.sort_values("__support_distance", kind="stable")
         depth_columns = ["dv mm", "d mm"] if strength_route.is_bridge else ["d mm"]
         for _, depth_row in df.iterrows():
@@ -8724,6 +8767,7 @@ def _beam_uls_shear_default_critical_section_rows(
             analysis_input,
             mux_kNm=mux_kNm,
             strength_route=strength_route,
+            row=support_row,
         )
         d_eff_mm = depth_values.get("d_mm")
         if d_eff_mm is None or not math.isfinite(float(d_eff_mm)) or float(d_eff_mm) <= 0.0:
@@ -8738,14 +8782,33 @@ def _beam_uls_shear_default_critical_section_rows(
     rows: list[dict[str, object]] = []
     seen: set[tuple[str, str, float]] = set()
     for case_name in cases:
-        for support_side, support_x in (("Left", 0.0), ("Right", float(span_m))):
+        for support_side, support_x in support_positions:
             offset_m = _offset_from_station_depths(case_name, support_side)
             if offset_m is None or not math.isfinite(float(offset_m)) or float(offset_m) <= 1.0e-9:
                 offset_m = _offset_from_support_analysis(case_name, support_x)
             if offset_m is None or not math.isfinite(float(offset_m)) or float(offset_m) <= 1.0e-9:
                 continue
-            x_crit = float(offset_m) if support_side == "Left" else float(span_m) - float(offset_m)
+            x_crit = support_x + float(offset_m) if support_side == "Left" else support_x - float(offset_m)
             x_crit = min(max(float(x_crit), 0.0), float(span_m))
+            if is_igird:
+                # dv is station-dependent after transfer/development. These
+                # supplemental face+dv markers use dv at their own x. They
+                # do not authorize exemption of any original force row.
+                for _ in range(12):
+                    local_row = _beam_uls_interpolated_demand_row_for_case(active_df, case_name=case_name, x_m=x_crit)
+                    if local_row is None:
+                        break
+                    local = igird_shear_section.depth_values(state, row=local_row, strength_route=strength_route)
+                    local_dv = _beam_uls_float(local.get("dv_mm"))
+                    if not math.isfinite(local_dv) or local_dv <= 0:
+                        break
+                    offset_m = min(local_dv / 1000.0, 0.5 * span_m)
+                    new_x = support_x + offset_m if support_side == "Left" else support_x - offset_m
+                    new_x = min(max(new_x, support_positions[0][1]), support_positions[1][1])
+                    if abs(new_x - x_crit) <= 1e-6:
+                        x_crit = new_x
+                        break
+                    x_crit = new_x
             key = (case_name, support_side, round(x_crit, 9))
             if key in seen:
                 continue
@@ -8755,6 +8818,8 @@ def _beam_uls_shear_default_critical_section_rows(
                     "Case": str(case_name),
                     "Support side": support_side,
                     "Critical offset m": float(offset_m),
+                    "Support face x m": float(support_x),
+                    "Marker basis": "Internal face + station dv; near-support exception not adopted" if is_igird else "Support + effective depth",
                     "Governing x": _format_beam_uls_x(x_crit),
                     "x_m": x_crit,
                 }
@@ -9080,6 +9145,11 @@ def _beam_uls_shear_near_support_load_indices(shear_df: pd.DataFrame | None) -> 
 
     if shear_df is None or shear_df.empty:
         return set()
+    # SHEARCOMP1 does not infer internal bearing faces from physical cut ends.
+    # Without a support/reaction/concentrated-load declaration, source rows
+    # remain eligible. Existing non-I-girder/legacy rules are unchanged.
+    if "Section basis" in shear_df and shear_df["Section basis"].isin(["FINAL COMPOSITE", "PRECAST I-GIRDER"]).any():
+        return set()
     work = shear_df.copy()
     work["__x_m"] = work.apply(lambda row: _beam_uls_shear_row_x_m(row), axis=1)
     if "Case" in work.columns:
@@ -9385,6 +9455,14 @@ def _beam_uls_shear_calculation_trace_dataframe(row: Mapping[str, object] | None
         return f"{value:,.{digits}f}" if math.isfinite(value) else "-"
 
     rows: list[dict[str, str]] = []
+    de = _beam_uls_float(row.get("de mm"))
+    lever = _beam_uls_float(row.get("C-T lever arm mm"))
+    h = _beam_uls_float(row.get("h mm"))
+    if all(math.isfinite(v) for v in [de, lever, h, dv]):
+        rows.append({"Step": "0 · Resisting section and developed shear depth",
+            "Equation / substitution": f"{row.get('Section basis')}; de=Σ(Aps fps dp + As fy ds)/Σ(Aps fps + As fy); dv=max({n(lever,1)}, 0.9×{n(de,1)}, 0.72×{n(h,1)}) mm",
+            "Result": f"de={n(de,1)} mm; dv={n(dv,1)} mm; C={n(_beam_uls_float(row.get('C kN')),2)} kN; T={n(_beam_uls_float(row.get('T kN')),2)} kN",
+            "Code basis": "AASHTO 5.7.2.8-2 / C5.7.2.8-1; station-developed strand/bar forces; debonded kappa=2"})
     if math.isfinite(eps_raw) and math.isfinite(eps_used):
         rows.append({
             "Step": "1 · Longitudinal strain εs",
@@ -9441,6 +9519,12 @@ def _beam_uls_shear_calculation_trace_dataframe(row: Mapping[str, object] | None
             "Result": f"D/C = {n(dc,3)}",
             "Code basis": "Concrete Section Pro decision ratio; limit = 1.0",
         })
+    stress = _beam_uls_float(row.get("Shear stress MPa"))
+    if math.isfinite(stress):
+        rows.append({"Step": "9 · Shear stress and maximum stirrup spacing",
+            "Equation / substitution": f"vu=(|Vu|−φVp)/(φ bv dv)=({n(vu,2)}×1000−{n(phi,3)}×{n(_beam_uls_float(row.get('Vp kN')),2)}×1000)/({n(phi,3)}×{n(bw,1)}×{n(dv,1)}) MPa; branch at vu/f'c=0.125",
+            "Result": f"vu={n(stress,3)} MPa; vu/f'c={n(_beam_uls_float(row.get('Shear stress / fc')),4)}; smax={n(_beam_uls_float(row.get('s max mm')),1)} mm",
+            "Code basis": "AASHTO 5.7.2.8-1 and 5.7.2.6"})
     return pd.DataFrame(rows, columns=columns)
 
 
@@ -9451,6 +9535,10 @@ def _beam_uls_shear_variable_definitions_dataframe() -> pd.DataFrame:
         ("Vu", "Factored shear demand at the check station.", "kN", "Demand / D/C", "ULS load resultant"),
         ("bv", "Effective web width used for shear resistance; for an individual I-girder, the controlling single-web width within dv.", "mm", "Vc, Vn limit", "AASHTO 5.7.2.8"),
         ("d", "Effective depth to the resultant longitudinal tension force used by the section model.", "mm", "Geometry basis", "Section / reinforcement basis"),
+        ("de", "Force-weighted effective depth from the compression face: weights Aps fps and developed As fy; not an area centroid.", "mm", "dv lower bound", "AASHTO 5.7.2.8-2"),
+        ("h", "Total resisting section depth: precast girder plus structural deck for Final-Composite.", "mm", "0.72h lower bound", "AASHTO 5.7.2.8"),
+        ("C, T", "Actual nominal flexural compression and tension resultants after strand/bar development; their centroid distance defines the lever arm.", "kN", "dv", "AASHTO 5.7.2.8"),
+        ("vu", "Shear stress including resistance factor: (|Vu|−φVp)/(φ bv dv); controls the stirrup spacing branch.", "MPa", "smax", "AASHTO 5.7.2.8-1"),
         ("dv", "Effective shear depth: distance between flexural compression and tension resultants; not less than the applicable AASHTO lower bound.", "mm", "Vc, Vs, critical section", "AASHTO 5.7.2.8"),
         ("εs", "Net longitudinal tensile strain at the centroid of the tension reinforcement used by the General Procedure.", "strain / ‰", "β and θ", "AASHTO 5.7.3.4.2"),
         ("β", "Factor representing the ability of diagonally cracked concrete to transmit tension and shear.", "-", "Vc", "AASHTO 5.7.3.4.2"),
@@ -10409,7 +10497,7 @@ def _beam_uls_igird_torsion_result_for_row(
         }
 
     depth_values = _beam_uls_effective_shear_depth_values_mm(
-        state, analysis_input, mux_kNm=mux_kNm, strength_route=strength_route
+        state, analysis_input, mux_kNm=mux_kNm, strength_route=strength_route, row=row
     )
     notes.extend([str(depth_values.get("d_note") or ""), str(depth_values.get("dv_note") or "")])
     d_eff = _beam_uls_float(depth_values.get("d_mm"))
@@ -10418,6 +10506,14 @@ def _beam_uls_igird_torsion_result_for_row(
     tension_face = str(depth_values.get("tension_face") or "-")
     if not math.isfinite(depth_for_gp) or depth_for_gp <= 0.0:
         return {**common, "Status": "REVIEW", "Transverse status": "NOT READY", "Longitudinal status": "COMBINED CHECK REQUIRED", "Detailing status": "NOT READY", "Capacity": "d/dv source not ready", "Utilization": "-", "D/C value": float("nan"), "φTn kN-m": float("nan"), "Notes": "Effective shear depth is required for the torsion-modified General Procedure."}
+
+    strain_input, strain_messages = igird_shear_section.analysis_input_for_station(state, row=row,
+        strength_route=strength_route, capacity_direction=-1.0 if mux_kNm < 0 else 1.0)
+    if strain_input is None:
+        return {**common, "Status": "REVIEW", "φTn kN-m": float("nan"), "D/C value": float("nan"), "Notes": "; ".join(strain_messages)}
+    common.update(igird_shear_section.trace_columns(depth_values))
+    notes.append(str(depth_values.get("Depth note") or ""))
+    notes.append("Ao/ph/Acp/Pcp and concrete torsion properties remain the qualified precast solid I-girder; Final-Composite flexural de/dv is used for the compatible longitudinal strain field.")
 
     avs = stirrup_area * legs / spacing
     avs_min = aashto_min_transverse_avs_mm2_per_mm(fc, _beam_uls_web_width_mm(analysis_input.section_geometry)[0] or 0.0, fy, lambda_concrete=1.0)
@@ -10434,7 +10530,7 @@ def _beam_uls_igird_torsion_result_for_row(
     torsion_equiv_n = 0.9 * ph * tu_nmm / (2.0 * ao)
     veff_n = math.hypot(vu_n, torsion_equiv_n)
     eps_trace = _beam_uls_igird_general_shear_epsilon(
-        state, analysis_input=analysis_input, x_m=x_m, span_length_m=span_m, tension_face=tension_face,
+        state, analysis_input=strain_input, x_m=x_m, span_length_m=span_m, tension_face=tension_face,
         mux_kNm=mux_kNm if math.isfinite(mux_kNm) else 0.0, vu_kN=vu_kN if math.isfinite(vu_kN) else 0.0,
         nu_compression_positive_kN=nu_kN if math.isfinite(nu_kN) else 0.0, dv_mm=depth_for_gp,
         effective_shear_kN=veff_n / 1000.0,
@@ -10456,6 +10552,7 @@ def _beam_uls_igird_torsion_result_for_row(
         strength_route=strength_route, fc_MPa=fc, bw_mm=float(_beam_uls_web_width_mm(analysis_input.section_geometry)[0] or 0.0),
         d_eff_mm=d_eff if math.isfinite(d_eff) and d_eff > 0.0 else depth_for_gp, dv_mm=depth_for_gp,
         spacing_mm=spacing, avs_mm2_per_mm=avs, fy_MPa=fy, vu_N=result.veff_N,
+        phi=phi,
     )
     spacing_dc = _beam_uls_float(detailing.get("Spacing D/C"))
     at_dc = result.at_required_mm2_per_mm / at_per_s if at_per_s > 0.0 else float("inf")
@@ -10799,9 +10896,11 @@ def _beam_uls_torsion_check_dataframe(
         "Coverage status", "Hoop detailing status", "Corner longitudinal status",
         "Detailing status", "s max torsion mm", "Spacing D/C", "Detailing D/C value", "Detailing notes",
         "Zone", "Stirrup", "θ deg", "cotθ", "φ", "Code basis", "φ policy", "Method", "Threshold basis", "Notes",
-    ]
+    ] + igird_shear_section.DEPTH_COLUMNS
     if active_df.empty:
         return pd.DataFrame(columns=columns)
+    if str(state.get("section_preset_key") or "") == "parametric_i_girder" and igird_shear_section.RUNTIME_KEY not in state:
+        state = {**state, igird_shear_section.RUNTIME_KEY: {"active_df": active_df}}
     rows: list[dict[str, object]] = []
     for _, demand_row in active_df.iterrows():
         result = _beam_uls_torsion_result_for_row(state, demand_row, strength_route=strength_route)
@@ -11481,10 +11580,19 @@ def _beam_uls_check_input_hash(
     base = _beam_uls_cache_input_hash(state, active_df, strength_route=strength_route)
     is_igird = str(_beam_uls_get_state_value(state, "section_preset_key") or "").strip() == "parametric_i_girder"
     if is_igird and check_name in {"Shear", "Torsion", "Shear + Torsion"}:
+        from concrete_pmm_pro.analysis.igird_shear_support import support_settings
+        interface_entry = _beam_uls_manual_cache(state).get(_IGIRDER_INTERFACE_SHEAR_CHECK_NAME, {})
+        interface_entry = interface_entry if isinstance(interface_entry, Mapping) else {}
         base = _beam_uls_hash_payload({
-            "base": base, "version": "IGIRDER.VTQA1",
+            "base": base, "version": igird_shear_section.RESULT_VERSION,
             "longitudinal_development": igird_longitudinal_development_settings(state),
             "longitudinal_materials": _beam_uls_get_state_value(state, "rebar_materials", []),
+            "physical_geometry": igird_shear_section.geometry_signature(state),
+            "support_geometry": support_settings(state),
+            "composite_interface_gate": {
+                "input_hash": interface_entry.get("input_hash"), "result_version": interface_entry.get("result_version"),
+                "status": _igird_interface_overall_status(_beam_uls_cached_dataframe(interface_entry, "interface_shear_df")),
+            } if bool((state.get("section_parameters") or {}).get("composite_enabled")) else None,
         })
     if not is_igird or check_name not in {"Torsion", "Shear + Torsion"}:
         return base
@@ -11585,6 +11693,8 @@ def _beam_uls_calculate_selected_check(
     selected_check: str,
     strength_route: BeamGirderUlsStrengthRoute,
 ) -> dict[str, object]:
+    if selected_check in {"Shear", "Torsion", "Shear + Torsion"} and str(state.get("section_preset_key") or "") == "parametric_i_girder":
+        state = {**state, igird_shear_section.RUNTIME_KEY: {"active_df": active_df}}
     if selected_check == "Flexure":
         flexure_preview_df, flexure_preview_messages = _beam_uls_flexure_preview_dataframe(
             state,
@@ -13868,8 +13978,8 @@ def _beam_uls_construction_demand_from_state(
 # IGIRDER.ULS3A.composite-flexure-audit-closeout: engineering results changed.
 _IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION = IGIRD_FLEXURE_DEVELOPMENT_VERSION + ".construction"
 _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION = IGIRD_FLEXURE_DEVELOPMENT_VERSION + ".final-composite"
-_IGIRDER_SHEAR_RESULT_VERSION = "IGIRDER.VTQA1.shear-developed-source.chart3-capacity-diagram"
-_IGIRDER_TORSION_RESULT_VERSION = "IGIRDER.VTQA1.torsion-developed-source.chart3-capacity-diagram"
+_IGIRDER_SHEAR_RESULT_VERSION = igird_shear_section.RESULT_VERSION + ".shear.chart3"
+_IGIRDER_TORSION_RESULT_VERSION = igird_shear_section.RESULT_VERSION + ".torsion.chart3"
 _IGIRDER_COMBINED_VT_RESULT_VERSION = IGIRD_CONCURRENT_VT_VERSION
 
 
@@ -15339,7 +15449,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             _render_beam_uls_static_plotly_figure(_make_beam_uls_shear_capacity_figure(
                 active_df, shear_check_df, code_label=code_label,
                 boundary_capacity_df=shear_boundary_capacity_df, critical_section_df=shear_critical_section_df))
-        st.caption("Shear uses the active stirrup zones and AASHTO General Procedure with developed longitudinal steel. Critical sections near the supports govern; support-to-critical audit rows are excluded from the design D/C overview. Capacity curves retain the original full-span boundary data.")
+        st.caption("Shear uses the active stirrup zones and AASHTO General Procedure with developed longitudinal steel. Every original I-girder force row remains checked; supplemental bearing-face markers do not authorize a near-support exception. Capacity diagrams retain the full physical span.")
         with st.expander("Shear strength audit / provided stirrup output", expanded=False):
             st.caption(
                 "SHEAR.CODE2 sectional shear output from active ULS Vuy rows and active provided stirrup zones: "
@@ -15353,9 +15463,9 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                 st.dataframe(shear_audit_df, use_container_width=True, hide_index=True)
         with st.expander("Critical shear section checks", expanded=False):
             if shear_critical_section_df.empty:
-                st.info("Critical shear section locations are not available until span length, effective d/dv basis, and active ULS station rows are ready. Capacity at those critical sections also needs active stirrup-zone coverage.")
+                st.info("Supplemental section locations require known internal bearing faces, a valid span/depth and ULS actions. Enter bearing locations and lengths in Bearing locations / shear section basis. Original force rows remain checked while these faces are unknown.")
             else:
-                st.caption("Critical shear sections are inserted at approximately d from each support for ACI Building Beam/Girder and dv from each support for AASHTO Bridge Beam/Girder. Under the adopted AASHTO 5.7.3.2 compression-end-region route, ordinary load stations between the support and dv are diagram/audit rows only; the critical section is the governing design section for that near-support region.")
+                st.caption("I-girder supplemental markers are inserted only when internal bearing faces are known, at face + local dv. Every original row, including the end overhang, remains checked. Reaction compression, concentrated loads and end-region detailing under 5.7.3.2 are not inferred from imported resultants.")
                 st.dataframe(_beam_uls_shear_audit_dataframe(shear_critical_section_df), use_container_width=True, hide_index=True)
 
         with st.expander("Shear end-boundary capacity values", expanded=False):

@@ -91,6 +91,22 @@ def aashto_torsion_transverse_design_fy_mpa(fy_input_MPa: float) -> tuple[float,
     return design, "AASHTO LRFD 5.7.2.7 torsion branch: entered transverse fy is within the applicable design limit."
 
 
+def aashto_shear_transverse_design_fy_mpa(fy_input_MPa: float, *, qualifying_5_4_3_3: bool = False) -> tuple[float, str]:
+    """5.7.2.7 fy policy; 100 ksi requires the declared 5.4.3.3 exception.
+
+    The default route has no verified Seismic Zone 1 / special-application
+    source, so it uses the general 0.0035-strain/75-ksi branch. The app's EPP
+    law with Es=200000 MPa makes 75 ksi the controlling cap in that branch.
+    """
+    fy = float(fy_input_MPa)
+    if not math.isfinite(fy) or fy <= 0:
+        raise ValueError("fy_input_MPa must be positive and finite.")
+    cap = AASHTO_SHEAR_TRANSVERSE_FY_MAX_MPA if qualifying_5_4_3_3 else AASHTO_TORSION_TRANSVERSE_FY_MAX_MPA
+    design = min(fy, cap)
+    branch = "verified 5.4.3.3 flexural-shear-only exception; 100 ksi maximum" if qualifying_5_4_3_3 else "general 0.0035-strain/75-ksi branch; 5.4.3.3 exception not declared"
+    return design, f"AASHTO LRFD 5.7.2.7: {branch}; fy input={fy:.1f}, design={design:.1f} MPa."
+
+
 def aashto_general_shear_parameters(
     *,
     epsilon_s: float,
@@ -961,17 +977,21 @@ def aashto_min_transverse_avs_mm2_per_mm(fc_MPa: float, bv_mm: float, fy_MPa: fl
     return stress_mpa * float(bv_mm) / float(fy_MPa)
 
 
-def aashto_shear_smax_mm(fc_MPa: float, bv_mm: float, dv_mm: float, vu_N: float) -> tuple[float, float, str]:
+def aashto_shear_smax_mm(fc_MPa: float, bv_mm: float, dv_mm: float, vu_N: float,
+                        *, phi: float = AASHTO_SHEAR_PHI, vp_N: float = 0.0) -> tuple[float, float, str]:
     """Return AASHTO LRFD Article 5.7.2.6 maximum transverse spacing.
 
     The spacing branch is based on ``vu/f'c``.  Because both stresses are in
     MPa in the app, the 0.125 threshold is dimensionless and can be applied
-    directly after computing ``vu = Vu/(bv*dv)``.
+    directly after computing ``vu = (|Vu| - phi*Vp)/(phi*bv*dv)``
+    under Article 5.7.2.8-1. Vp is positive when resisting the applied shear.
     """
 
-    if fc_MPa <= 0 or bv_mm <= 0 or dv_mm <= 0:
-        raise ValueError("fc_MPa, bv_mm, and dv_mm must be positive.")
-    vu_mpa = abs(float(vu_N)) / (float(bv_mm) * float(dv_mm))
+    if not all(math.isfinite(float(v)) and v > 0 for v in (fc_MPa, bv_mm, dv_mm, phi)) or phi > 1:
+        raise ValueError("fc_MPa, bv_mm, dv_mm and phi must be positive finite values; phi <= 1.")
+    if not all(math.isfinite(float(v)) for v in (vu_N, vp_N)):
+        raise ValueError("Vu and Vp must be finite.")
+    vu_mpa = max(0.0, abs(float(vu_N)) - phi * float(vp_N)) / (phi * float(bv_mm) * float(dv_mm))
     ratio = vu_mpa / float(fc_MPa)
     if ratio < 0.125:
         return min(0.8 * float(dv_mm), 24.0 * 25.4), ratio, "vu < 0.125 fc: smax = min(0.8dv, 24 in)"
@@ -1025,8 +1045,8 @@ def aashto_simplified_shear_result(
     vu_over_phi_vn = abs(float(vu_N)) / phi_vn_N if phi_vn_N > 0.0 else float("nan")
     avs_required = aashto_min_transverse_avs_mm2_per_mm(float(fc_MPa), float(bv_mm), float(fy_MPa), lambda_concrete=float(lambda_concrete))
     avs_dc = avs_required / float(avs_mm2_per_mm) if float(avs_mm2_per_mm) > 0.0 else float("inf")
-    s_max_mm, stress_ratio, spacing_basis = aashto_shear_smax_mm(float(fc_MPa), float(bv_mm), float(dv_mm), float(vu_N))
-    shear_stress_mpa = abs(float(vu_N)) / (float(bv_mm) * float(dv_mm))
+    s_max_mm, stress_ratio, spacing_basis = aashto_shear_smax_mm(float(fc_MPa), float(bv_mm), float(dv_mm), float(vu_N), phi=phi, vp_N=vp_N)
+    shear_stress_mpa = max(0.0, abs(float(vu_N)) - phi * float(vp_N)) / (phi * float(bv_mm) * float(dv_mm))
     return AashtoShearResult(
         phi=float(phi),
         beta=beta,

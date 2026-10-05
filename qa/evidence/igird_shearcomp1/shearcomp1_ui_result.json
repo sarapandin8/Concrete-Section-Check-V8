@@ -1,0 +1,45 @@
+{
+  "release": "IGIRDER.SHEARCOMP1",
+  "status": "PASS",
+  "method": "Actual app.py Streamlit Calculate and case/anchorage controls; independent US-unit torsion equation check",
+  "streamlit_exceptions": 0,
+  "native_rows": 80,
+  "preserved_force_components": 480,
+  "source_frames_unchanged": true,
+  "direct_combined_calculation_seconds": 4.181954875999963,
+  "actual_ui_calculation_seconds": {
+    "Calculate Shear + Torsion": 7.191009715999826,
+    "Calculate Torsion": 3.2542466469999454,
+    "Calculate Shear": 4.134503986000254,
+    "Calculate Construction Flexure": 3.4564388529997814,
+    "Calculate Final Composite Flexure": 5.586880946999827,
+    "Calculate Interface Shear": 1.4435594819997277
+  },
+  "force_diagrams_tested": 16,
+  "full_case_force_domain": [
+    0,
+    20
+  ],
+  "torsion_diagram_stations": 84,
+  "unanchored_numeric_resistance_stations": 76,
+  "anchored_numeric_resistance_stations": 84,
+  "below_threshold_resistance_stations_restored": 17,
+  "independent_torsion_scalars_checked": 168,
+  "shear_shared_endpoints_use_actual_forces": true,
+  "shear_diagram_stations": 84,
+  "independent_shear_diagram_scalars_checked": 168,
+  "both_flexure_stages_interface_and_combined_ui": "PASS",
+  "review_solver_calls": 0,
+  "source_fixture_and_workbook_modified": false,
+  "automatic_anchorage_confirmation": false,
+  "automatic_material_definition": false,
+  "bearing_offsets_m": [
+    0.4,
+    0.4
+  ],
+  "unknown_bearing_length_creates_no_critical_marker": true,
+  "bearing_width_400mm_for_ui_QA_only": true,
+  "all_original_shear_rows_retained": true,
+  "effective_width_not_auto_confirmed": true,
+  "preview_method": "Scientific plots and standalone HTML from production Plotly figures; no browser screenshot claim"
+}

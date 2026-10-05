@@ -240,6 +240,67 @@ class SectionEquilibrium:
             "fps_MPa": fps_values, "y_reference_mm": self.yref,
             "phi_basis": phi_result.basis, "Mny_Nmm": mny}
 
+    def force_resultants(self, result: Mapping, *, bar_factors: list[float]) -> dict:
+        """Resolve physical C/T resultants from an already solved section.
+
+        Concrete displaced by ordinary bars is removed from the concrete
+        resultant before physical steel forces are classified. This leaves
+        the accepted Pn/Mn response unchanged and also works when Nu != 0.
+        """
+        c, a = float(result["c_mm"]), float(result["a_mm"])
+        region = self.polygon.intersection(box(self.xmin - 1, self.ymax - a, self.xmax + 1, self.ymax + 1)
+            if self.sign > 0 else box(self.xmin - 1, self.ymin - 1, self.xmax + 1, self.ymin + a))
+        cc = float(result["Cc_N"])
+        cy = cc * region.centroid.y if cc > 0 else 0.0
+        compression, compression_y = cc, cy
+        tension = tension_y = nominal_tension = nominal_depth = 0.0
+        bar_trace = []
+        for bar, factor in zip(self.bars, bar_factors):
+            mat = self.materials[bar.material_name]
+            fs = max(-mat.fy_MPa * factor, min(mat.fy_MPa * factor, mat.Es_MPa * self.strain(bar.y_mm, c)))
+            displaced = self.alpha * self.fc * bar.area_mm2 if self.ai.settings.subtract_rebar_displaced_concrete and region.covers(Point(bar.x_mm, bar.y_mm)) else 0.0
+            compression -= displaced
+            compression_y -= displaced * bar.y_mm
+            force = bar.area_mm2 * fs
+            if force >= 0:
+                compression += force
+                compression_y += force * bar.y_mm
+            else:
+                tension -= force
+                tension_y -= force * bar.y_mm
+                weight = bar.area_mm2 * mat.fy_MPa * factor
+                depth = self.ymax - bar.y_mm if self.sign > 0 else bar.y_mm - self.ymin
+                nominal_tension += weight
+                nominal_depth += weight * depth
+            bar_trace.append({"Bar": bar.label or bar.material_name, "y_mm": bar.y_mm,
+                "factor": factor, "fs_MPa": fs, "force_N": force})
+        strand_trace = []
+        for element, fps in zip(self.elements, result["fps_MPa"]):
+            force = element.total_area_mm2 * float(fps)
+            if force >= 0:
+                tension += force
+                tension_y += force * element.y_mm
+                depth = self.ymax - element.y_mm if self.sign > 0 else element.y_mm - self.ymin
+                nominal_tension += force
+                nominal_depth += force * depth
+            else:
+                compression -= force
+                compression_y -= force * element.y_mm
+            strand_trace.append({"Family": element.label, "y_mm": element.y_mm,
+                "Aps_mm2": element.total_area_mm2, "fps_MPa": fps, "force_N": force})
+        if min(compression, tension, nominal_tension) <= 1e-6:
+            raise ValueError("No developed flexural C/T resultants exist at this station; dv cannot be certified from longitudinal steel.")
+        yc, yt = compression_y / compression, tension_y / tension
+        lever = self.sign * (yc - yt)
+        de = nominal_depth / nominal_tension
+        if not (0 < lever <= self.h and 0 < de <= self.h):
+            raise ValueError("Flexural C/T lever arm or force-weighted de is outside the physical section.")
+        return {"C_N": compression, "T_N": tension, "y_C_mm": yc, "y_T_mm": yt,
+            "lever_arm_mm": lever, "de_mm": de,
+            "force_balance_N": compression - tension - float(result["Pn_N"]),
+            "moment_balance_Nmm": self.sign * (compression_y - tension_y - float(result["Pn_N"]) * self.yref) - float(result["Mn_Nmm"]),
+            "bar_force_trace": bar_trace, "strand_force_trace": strand_trace}
+
     def solve(self, nu_n: float, **limits) -> dict:
         """Bracket every sampled branch; require phi*Pn=Nu, select directional M.
 

@@ -1,0 +1,1 @@
+Corrects Final-Composite I-girder shear depth, development and spacing checks, separates inset bearing coordinates from strand cut ends, and preserves full-span source-backed V/T diagrams and acceptance gates.

@@ -67,8 +67,10 @@ def ordinary_development_factor(settings: Mapping, *, x_m: float, span_m: float)
     if left and right:
         return 1.0
     ld = float(settings.get("development_length_mm", 0.0))
-    if not math.isfinite(ld) or ld <= 0:
+    if not math.isfinite(ld) or ld < 304.8:
         return None
+    if (not left and 1000.0 * x_m < 304.8) or (not right and 1000.0 * (span_m - x_m) < 304.8):
+        return 0.0
     lf = 1.0 if left else min(1.0, 1000.0 * x_m / ld)
     rf = 1.0 if right else min(1.0, 1000.0 * (span_m - x_m) / ld)
     return max(0.0, min(lf, rf))

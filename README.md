@@ -1,3 +1,11 @@
+# Concrete Section Pro — IGIRDER.SHEARCOMP1
+
+Final-Composite V/T now uses developed flexural C/T resultants and force-weighted de for dv, with precast web properties retained. Stirrup spacing stress includes phi. Bearing centerlines/internal faces are distinct from physical strand cut ends; unknown bearing lengths do not create fictitious support faces or near-support exemptions.
+
+Run `streamlit run app.py`. See the new handoff and `docs/CONCRETE_SECTION_PRO_IGIRDER_SHEARCOMP1_REVIEW_2026-10-05.md`. The `examples/` model records bearing CL x=0.4/19.6 m and the unchanged latest Excel forces, including original P; import your own P=0 Excel if that is the intended source. No material/anchorage/interface confirmation is inferred. Recalculate Interface/Shear/Torsion/Combined for the current inputs. Full-span diagrams retain genuine missing-source markers.
+
+## Previous milestone
+
 # Concrete Section Pro — IGIRDER.VTQA1
 
 Shear, Torsion and Combined V+T show one maximum original D/C curve and limit=1.0 by default. Choose a single case for the signed force/resistance diagram. Three main cards and collapsed traces reduce workspace clutter; detailed source checks remain available.

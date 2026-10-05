@@ -946,6 +946,9 @@ def project_from_session_state(session_state: Any) -> ProjectModel:
     from concrete_pmm_pro.analysis.igird_combined_vt import DEVELOPMENT_KEY, development_settings
     if _get_session_value(session_state, DEVELOPMENT_KEY, None) is not None:
         metadata[DEVELOPMENT_KEY] = development_settings(session_state)
+    from concrete_pmm_pro.analysis.igird_shear_support import SETTINGS_KEY as SUPPORT_KEY, support_settings
+    if _get_session_value(session_state, SUPPORT_KEY, None) is not None:
+        metadata[SUPPORT_KEY] = support_settings(session_state)
     for key, expected_type in (("beam_girder_torsion_settings", dict), ("beam_girder_torsion_zone_settings", list)):
         raw = _get_session_value(session_state, key, None)
         if isinstance(raw, expected_type):
@@ -1714,6 +1717,11 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
         SETTINGS_KEY as FLEXURE_DEVELOPMENT_KEY, development_settings as flexure_development_settings,
     )
     session_state[FLEXURE_DEVELOPMENT_KEY] = flexure_development_settings({"project_metadata": project.metadata})
+    from concrete_pmm_pro.analysis.igird_shear_support import SETTINGS_KEY as SUPPORT_KEY, support_settings
+    session_state[SUPPORT_KEY] = support_settings({"project_metadata": project.metadata})
+    for key in list(session_state):
+        if str(key).startswith("igird_support_widget_"):
+            session_state.pop(key, None)
     for key in list(session_state):
         if str(key).startswith("igird_flexdep_"):
             session_state.pop(key, None)

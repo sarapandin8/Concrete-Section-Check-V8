@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "method": "Fresh ZIP AppTest app.py startup and actual unchanged-P project Calculate Combined",
+  "exceptions": 0,
+  "native_rows": 80,
+  "preserved_components": 480,
+  "bearing_offsets_m": [
+    0.4,
+    0.4
+  ],
+  "unknown_bearing_length_not_invented": true,
+  "automatic_material_or_width_confirmation": false,
+  "total_app_startup_navigation_and_calculation_seconds": 6.512547265000194
+}

@@ -91,6 +91,8 @@ def _state(*, closed=True, ph_mm=4300.0, debonded=False, fy_mpa=390.0):
         "prestress_elements": [],
         "prestress_materials": [],
         "beam_girder_system_settings": {"span_length_m": 20.0},
+        "igird_shear_support_settings": {"locations_confirmed": True,
+            "offset_reference": "inside_face", "left_offset_m": 0.0, "right_offset_m": 0.0},
         "beam_girder_torsion_settings": torsion_settings,
         "project_metadata": {"beam_girder_torsion_settings": torsion_settings},
         "beam_girder_shear_reinforcement_table": pd.DataFrame([
@@ -192,10 +194,10 @@ def test_igird_combined_guard_now_points_to_longitudinal_equation_not_fixed_thet
     assert not decision.empty
     assert set(decision["Status"]) <= {"REVIEW", "FAIL"}
     assert not decision["Status"].eq("PASS").any()
-    assert decision["Overall D/C value"].isna().all()
+    assert decision["Overall D/C value"].notna().all()
     assert decision["Transverse D/C value"].notna().any()
     notes = " ".join(decision["Notes"].astype(str).tolist()).lower()
-    assert "verified final composite" in notes
+    assert decision["Section basis"].eq("PRECAST I-GIRDER").all()
     assert decision["Code basis"].str.contains("5.7.3.6.3-1", regex=False).all()
     assert "fixed-theta" not in notes
 
@@ -617,9 +619,9 @@ def test_igird_uls6e_rebar_ui_uses_not_confirmed_for_corner_detail_and_does_not_
 
 
 def test_vtqa1_versions_invalidate_all_vt_development_sources():
-    assert _IGIRDER_TORSION_RESULT_VERSION.startswith("IGIRDER.VTQA1.")
+    assert _IGIRDER_TORSION_RESULT_VERSION.startswith("IGIRDER.SHEARCOMP1.")
     assert _IGIRDER_COMBINED_VT_RESULT_VERSION.startswith("IGIRDER.VTQA1.")
-    assert _IGIRDER_SHEAR_RESULT_VERSION.startswith("IGIRDER.VTQA1.")
+    assert _IGIRDER_SHEAR_RESULT_VERSION.startswith("IGIRDER.SHEARCOMP1.")
 
 
 def test_igird_uls6f_torsion_chart_coalesces_physical_end_with_threshold_only_boundary_without_phi_tn_gap():

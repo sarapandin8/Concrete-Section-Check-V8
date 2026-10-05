@@ -42,9 +42,21 @@ def ready_state():
 
 
 def check(state=None, **actions):
-    return ap._beam_uls_combined_vt_check_dataframe(state or ready_state(),
-        _demand(x=actions.pop("x",10.0), mux=actions.pop("mux",1000.0),
-                vu=actions.pop("vu",200.0),tu=actions.pop("tu",200.0), **actions), strength_route=_route())
+    state = state or ready_state()
+    demand = _demand(x=actions.pop("x",10.0), mux=actions.pop("mux",1000.0),
+                vu=actions.pop("vu",200.0),tu=actions.pop("tu",200.0), **actions)
+    # Explicitly verified hypothetical interface detailing for this ready QA
+    # model. Compute its actual independent check; never fabricate a PASS.
+    state[ap._IGIRDER_INTERFACE_SHEAR_SETTINGS_KEY] = {"stirrups_cross_and_anchored":True}
+    prep, composite, _ = ap._beam_uls_final_composite_preparation(state)
+    settings = ap._igird_interface_shear_settings_from_state(state)
+    source = ap._igird_interface_source_dataframe(demand)
+    interface, _ = ap._igird_interface_shear_dataframe(state,source,prep=prep,
+        composite_state=composite,settings=settings,strength_route=_route())
+    signature = ap._igird_interface_shear_hash(state,source,settings=settings,strength_route=_route())
+    ap._beam_uls_store_manual_result(state,ap._IGIRDER_INTERFACE_SHEAR_CHECK_NAME,input_hash=signature,
+        result={"result_version":ap._IGIRDER_INTERFACE_SHEAR_RESULT_VERSION,"interface_shear_df":interface})
+    return ap._beam_uls_combined_vt_check_dataframe(state,demand,strength_route=_route())
 
 
 def physical(df):
@@ -123,7 +135,7 @@ def test_nominal_fps_matches_closed_form_elastic_rectangular_equilibrium():
     assert 0 < r["fps_min_MPa"] < 1860
 
 
-@pytest.mark.parametrize("x,expected",[(0.0,0.0),(.25,.25),(.5,.5),(1.0,1.0),(10.0,1.0),(19.5,.5),(20.0,0.0)])
+@pytest.mark.parametrize("x,expected",[(0.0,0.0),(.25,0),(.5,.5),(1.0,1.0),(10.0,1.0),(19.5,.5),(20.0,0.0)])
 def test_ordinary_bar_development_and_end_symmetry(x,expected):
     settings={"continuous_full_span_confirmed":True,"development_length_mm":1000.0}
     assert ordinary_development_factor(settings,x_m=x,span_m=20.0) == expected
@@ -222,7 +234,7 @@ def test_development_hash_changes_all_three_vt_checks():
     after={c:ap._beam_uls_check_input_hash(state,actions,strength_route=_route(),check_name=c) for c in before}
     assert all(before[c] != after[c] for c in ["Shear","Torsion","Shear + Torsion"])
     assert before["Flexure"] == after["Flexure"]
-    assert ap._IGIRDER_TORSION_RESULT_VERSION.startswith("IGIRDER.VTQA1.")
+    assert ap._IGIRDER_TORSION_RESULT_VERSION.startswith("IGIRDER.SHEARCOMP1.")
 
 
 def test_summary_rejects_stale_combined_development_without_solving(monkeypatch):

@@ -1,0 +1,1313 @@
+model,case,x,quantity,stored,independent,abs_error
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,0.000 m,vu MPa,3.23281045751634,3.2328104575163397,4.440892098500626e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,0.000 m,vu/fc,0.071840232389252,0.071840232389252,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,0.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,0.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,0.000 m,dv mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,0.000 m,epsilon numerator N,1384936.0,1384936.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,0.000 m,epsilon denominator N,429769875.01108384,429769875.0110838,5.960464477539063e-08
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,0.000 m,epsilon raw,0.0032225059980397,0.003222505998039724,2.3852447794681098e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,0.000 m,vu MPa,6.498958916900094,6.498958916900094,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,0.000 m,vu/fc,0.1444213092644465,0.14442130926444652,2.7755575615628914e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,0.000 m,smax mm,304.79999999999995,304.8,5.684341886080802e-14
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,0.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,0.000 m,dv mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,0.000 m,epsilon numerator N,2784154.0,2784154.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,0.000 m,epsilon denominator N,339292006.58769774,339292006.5876977,5.960464477539063e-08
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,0.000 m,epsilon raw,0.0082057753968346,0.00820577539683468,7.979727989493313e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.000 m,vu MPa,2.772492291107492,2.7724922911074925,4.440892098500626e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.000 m,vu/fc,0.0616109398023887,0.06161093980238872,2.0816681711721685e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.000 m,dv mm,1305.6186517340543,1305.6186517340543,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.000 m,epsilon numerator N,964651.6138875928,964651.6138875932,3.4924596548080444e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.000 m,epsilon denominator N,540952244.1408343,540952244.1408343,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.000 m,epsilon raw,0.0017832472724458,0.0017832472724458293,2.927345865710862e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.000 m,vu MPa,5.773472162920585,5.773472162920586,8.881784197001252e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.000 m,vu/fc,0.1282993813982352,0.12829938139823524,2.7755575615628914e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.000 m,smax mm,304.79999999999995,304.8,5.684341886080802e-14
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.000 m,dv mm,1305.6186517340543,1305.6186517340543,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.000 m,epsilon numerator N,1820547.8738105888,1820547.8738105888,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.000 m,epsilon denominator N,540952244.1408343,540952244.1408343,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.000 m,epsilon raw,0.0033654502657661,0.003365450265766192,9.194034422677078e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.000 m,vu MPa,2.704316361951102,2.7043163619511024,4.440892098500626e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.000 m,vu/fc,0.0600959191544689,0.06009591915446894,4.163336342344337e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.000 m,dv mm,1305.6186517340543,1305.6186517340543,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.000 m,epsilon numerator N,947715.3351291122,947715.3351291122,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.000 m,epsilon denominator N,540952244.1408343,540952244.1408343,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.000 m,epsilon raw,0.0017519390027382,0.0017519390027382511,5.117434254131581e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.000 m,vu MPa,5.649875132485267,5.649875132485267,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.000 m,vu/fc,0.1255527807218948,0.12555278072189482,2.7755575615628914e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.000 m,smax mm,304.79999999999995,304.8,5.684341886080802e-14
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.000 m,dv mm,1305.6186517340543,1305.6186517340543,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.000 m,epsilon numerator N,1765681.8738105888,1765681.8738105888,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.000 m,epsilon denominator N,540952244.1408343,540952244.1408343,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.000 m,epsilon raw,0.0032640254161713,0.0032640254161713064,6.5052130349130266e-18
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,2.000 m,vu MPa,2.348436451849881,2.348436451849881,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,2.000 m,vu/fc,0.0521874767077751,0.052187476707775134,3.469446951953614e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,2.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,2.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,2.000 m,dv mm,1328.2304076932908,1328.2304076932908,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,2.000 m,epsilon numerator N,997440.0612134888,997440.0612134887,1.1641532182693481e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,2.000 m,epsilon denominator N,652134613.2705848,652134613.2705848,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,2.000 m,epsilon raw,0.0015295002610137,0.0015295002610137933,9.324138683375338e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,2.000 m,vu MPa,5.051271904569845,5.051271904569845,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,2.000 m,vu/fc,0.1122504867682187,0.11225048676821878,8.326672684688674e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,2.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,2.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,2.000 m,dv mm,1328.2304076932908,1328.2304076932908,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,2.000 m,epsilon numerator N,796433.7476211777,796433.7476211777,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,2.000 m,epsilon denominator N,652134613.2705848,652134613.2705848,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,2.000 m,epsilon raw,0.0012212720064449,0.001221272006444964,6.396792817664476e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,2.000 m,vu MPa,2.2944504250750004,2.2944504250750004,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,2.000 m,vu/fc,0.0509877872238889,0.0509877872238889,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,2.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,2.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,2.000 m,dv mm,1328.2304076932908,1328.2304076932908,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,2.000 m,epsilon numerator N,987454.0462924656,987454.0462924656,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,2.000 m,epsilon denominator N,652134613.2705848,652134613.2705848,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,2.000 m,epsilon raw,0.0015141874487234,0.0015141874487234884,8.847089727481716e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,2.000 m,vu MPa,4.933237812231524,4.933237812231524,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,2.000 m,vu/fc,0.1096275069384783,0.10962750693847831,1.3877787807814457e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,2.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,2.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,2.000 m,dv mm,1328.2304076932908,1328.2304076932908,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,2.000 m,epsilon numerator N,743129.7476211777,743129.7476211777,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,2.000 m,epsilon denominator N,652134613.2705848,652134613.2705848,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,2.000 m,epsilon raw,0.001139534280958,0.0011395342809580897,8.977193988179977e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,3.000 m,vu MPa,1.987718982303252,1.9877189823032517,2.220446049250313e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,3.000 m,vu/fc,0.0441715329400722,0.04417153294007226,6.245004513516506e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,3.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,3.000 m,dv lower bound mm,1274.1185505055455,1274.1185505055455,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,3.000 m,dv mm,1344.6184059251525,1344.6184059251525,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,3.000 m,epsilon numerator N,846800.3996878746,846800.3996878746,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,3.000 m,epsilon denominator N,777361071.1325145,777361071.1325145,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,3.000 m,epsilon raw,0.0010893269950528,0.0010893269950528858,8.586881206085195e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,3.000 m,vu MPa,4.390941809552501,4.390941809552501,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,3.000 m,vu/fc,0.0975764846567222,0.09757648465672225,5.551115123125783e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,3.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,3.000 m,dv lower bound mm,1274.1185505055455,1274.1185505055455,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,3.000 m,dv mm,1344.6184059251525,1344.6184059251525,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,3.000 m,epsilon numerator N,27.608795371372253,27.608795371372253,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,3.000 m,epsilon denominator N,777361071.1325145,777361071.1325145,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,3.000 m,epsilon raw,3.5516050901738386e-08,3.551605090173838e-08,6.617444900424222e-24
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,3.000 m,vu MPa,1.9412811407599284,1.9412811407599284,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,3.000 m,vu/fc,0.0431395809057761,0.04313958090577619,9.020562075079397e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,3.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,3.000 m,dv lower bound mm,1274.1185505055455,1274.1185505055455,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,3.000 m,dv mm,1344.6184059251525,1344.6184059251525,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,3.000 m,epsilon numerator N,840757.5518857841,840757.5518857841,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,3.000 m,epsilon denominator N,777361071.1325145,777361071.1325145,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,3.000 m,epsilon raw,0.001081553454511,0.0010815534545110539,5.377642775528102e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,3.000 m,vu MPa,4.2771023830202015,4.2771023830202015,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,3.000 m,vu/fc,0.0950467196226711,0.09504671962267114,4.163336342344337e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,3.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,3.000 m,dv lower bound mm,1274.1185505055455,1274.1185505055455,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,3.000 m,dv mm,1344.6184059251525,1344.6184059251525,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,3.000 m,epsilon numerator N,-26679.49264005525,-26679.49264005525,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,3.000 m,epsilon denominator N,777361071.1325145,777361071.1325145,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,3.000 m,epsilon raw,-3.432059261880284e-05,-3.432059261880284e-05,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,4.000 m,vu MPa,1.661019533484948,1.661019533484948,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,4.000 m,vu/fc,0.0369115451885544,0.0369115451885544,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,4.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,4.000 m,dv lower bound mm,1286.1323359068829,1286.1323359068829,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,4.000 m,dv mm,1359.1758564826546,1359.1758564826546,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,4.000 m,epsilon numerator N,994661.78739533,994661.7873953301,1.1641532182693481e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,4.000 m,epsilon denominator N,842267004.1183472,842267004.1183474,2.384185791015625e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,4.000 m,epsilon raw,0.0011809340536098,0.0011809340536098809,8.088148206741863e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,4.000 m,vu MPa,3.751568387674389,3.7515683876743884,4.440892098500626e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,4.000 m,vu/fc,0.0833681863927642,0.0833681863927642,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,4.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,4.000 m,dv lower bound mm,1286.1323359068829,1286.1323359068829,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,4.000 m,dv mm,1359.1758564826546,1359.1758564826546,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,4.000 m,epsilon numerator N,-276546.3257359485,-276546.3257359485,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,4.000 m,epsilon denominator N,842267004.1183472,842267004.1183474,2.384185791015625e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,4.000 m,epsilon raw,-0.0003283356992304,-0.00032833569923046733,6.732895491134983e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,4.000 m,vu MPa,1.6196190127451855,1.6196190127451857,2.220446049250313e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,4.000 m,vu/fc,0.0359915336165596,0.035991533616559684,8.326672684688674e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,4.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,4.000 m,dv lower bound mm,1286.1323359068829,1286.1323359068829,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,4.000 m,dv mm,1359.1758564826546,1359.1758564826546,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,4.000 m,epsilon numerator N,990118.3898550784,990118.3898550784,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,4.000 m,epsilon denominator N,842267004.1183472,842267004.1183474,2.384185791015625e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,4.000 m,epsilon raw,0.00117553980509,0.001175539805090069,6.895525817007808e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,4.000 m,vu MPa,3.641553623174623,3.641553623174623,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,4.000 m,vu/fc,0.0809234138483249,0.08092341384832495,5.551115123125783e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,4.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,4.000 m,dv lower bound mm,1286.1323359068829,1286.1323359068829,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,4.000 m,dv mm,1359.1758564826546,1359.1758564826546,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,4.000 m,epsilon numerator N,-301809.0245309719,-301809.0245309719,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,4.000 m,epsilon denominator N,842267004.1183472,842267004.1183474,2.384185791015625e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,4.000 m,epsilon raw,-0.000358329393239,-0.0003583293932390168,1.680513367352532e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,5.000 m,vu MPa,1.3542552635106195,1.3542552635106195,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,5.000 m,vu/fc,0.0300945614113471,0.0300945614113471,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,5.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,5.000 m,dv lower bound mm,1301.2897926507287,1301.2897926507285,2.2737367544323206e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,5.000 m,dv mm,1376.4717537924057,1376.4717537924057,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,5.000 m,epsilon numerator N,1116850.6349869724,1116850.634986972,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,5.000 m,epsilon denominator N,893761996.1363368,893761996.1363368,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,5.000 m,epsilon raw,0.0012496063155683,0.0012496063155683838,8.391724815037804e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,5.000 m,vu MPa,3.124005901687008,3.1240059016870076,4.440892098500626e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,5.000 m,vu/fc,0.0694223533708223,0.06942235337082239,9.71445146547012e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,5.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,5.000 m,dv lower bound mm,1301.2897926507287,1301.2897926507285,2.2737367544323206e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,5.000 m,dv mm,1376.4717537924057,1376.4717537924057,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,5.000 m,epsilon numerator N,-520795.7301965933,-520795.7301965938,5.238689482212067e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,5.000 m,epsilon denominator N,893761996.1363368,893761996.1363368,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,5.000 m,epsilon raw,-0.0005827006881563,-0.0005827006881563022,2.2768245622195593e-18
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,5.000 m,vu MPa,1.316421962213476,1.316421962213476,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,5.000 m,vu/fc,0.0292538213825216,0.02925382138252169,9.020562075079397e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,5.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,5.000 m,dv lower bound mm,1301.2897926507287,1301.2897926507285,2.2737367544323206e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,5.000 m,dv mm,1376.4717537924057,1376.4717537924057,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,5.000 m,epsilon numerator N,1112693.626737033,1112693.6267370326,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,5.000 m,epsilon denominator N,893761996.1363368,893761996.1363368,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,5.000 m,epsilon raw,0.0012449551799552,0.0012449551799552008,8.673617379884035e-19
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,5.000 m,vu MPa,3.017424795355736,3.0174247953557356,4.440892098500626e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,5.000 m,vu/fc,0.0670538843412385,0.06705388434123857,6.938893903907228e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,5.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,5.000 m,dv lower bound mm,1301.2897926507287,1301.2897926507285,2.2737367544323206e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,5.000 m,dv mm,1376.4717537924057,1376.4717537924057,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,5.000 m,epsilon numerator N,-545185.8460468352,-545185.8460468356,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,5.000 m,epsilon denominator N,893761996.1363368,893761996.1363368,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,5.000 m,epsilon raw,-0.0006099899619849,-0.0006099899619849931,9.313296661650483e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,6.000 m,vu MPa,1.0439033361236094,1.0439033361236094,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,6.000 m,vu/fc,0.0231978519138579,0.023197851913857988,8.673617379884035e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,6.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,6.000 m,dv lower bound mm,1318.6585991273575,1318.6585991273575,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,6.000 m,dv mm,1394.866585789436,1394.866585789436,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,6.000 m,epsilon numerator N,991341.0874749958,991341.0874749958,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,6.000 m,epsilon denominator N,963982439.797232,963982439.7972317,3.5762786865234375e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,6.000 m,epsilon raw,0.0010283808568997,0.0010283808568997573,5.724587470723463e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,6.000 m,vu MPa,2.524803978933356,2.5248039789333556,4.440892098500626e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,6.000 m,vu/fc,0.0561067550874079,0.0561067550874079,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,6.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,6.000 m,dv lower bound mm,1318.6585991273575,1318.6585991273575,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,6.000 m,dv mm,1394.866585789436,1394.866585789436,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,6.000 m,epsilon numerator N,-940593.9717305916,-940593.9717305917,1.1641532182693481e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,6.000 m,epsilon denominator N,963982439.797232,963982439.7972317,3.5762786865234375e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,6.000 m,epsilon raw,-0.000975737661703,-0.0009757376617030913,9.128982292327947e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,6.000 m,vu MPa,0.9930867536179356,0.9930867536179356,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,6.000 m,vu/fc,0.022068594524843,0.022068594524843013,1.3877787807814457e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,6.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,6.000 m,dv lower bound mm,1318.6585991273575,1318.6585991273575,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,6.000 m,dv mm,1394.866585789436,1394.866585789436,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,6.000 m,epsilon numerator N,983291.828518514,983291.828518514,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,6.000 m,epsilon denominator N,963982439.797232,963982439.7972317,3.5762786865234375e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,6.000 m,epsilon raw,0.0010200308511069,0.0010200308511069392,3.924811864397526e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,6.000 m,vu MPa,2.428809135151061,2.428809135151061,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,6.000 m,vu/fc,0.0539735363366902,0.05397353633669024,4.163336342344337e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,6.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,6.000 m,dv lower bound mm,1318.6585991273575,1318.6585991273575,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,6.000 m,dv mm,1394.866585789436,1394.866585789436,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,6.000 m,epsilon numerator N,-962690.958213984,-962690.958213984,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,6.000 m,epsilon denominator N,963982439.797232,963982439.7972317,3.5762786865234375e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,6.000 m,epsilon raw,-0.0009986602644094,-0.0009986602644094645,6.461844948013606e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,7.000 m,vu MPa,0.704119000187426,0.704119000187426,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,7.000 m,vu/fc,0.0156470888930539,0.015647088893053912,1.0408340855860843e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,7.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,7.000 m,dv lower bound mm,1323.1967038558423,1323.1967038558425,2.2737367544323206e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,7.000 m,dv mm,1399.587953635559,1399.587953635559,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,7.000 m,epsilon numerator N,873178.8405260164,873178.840526016,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,7.000 m,epsilon denominator N,1021721939.797232,1021721939.7972317,3.5762786865234375e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,7.000 m,epsilon raw,0.0008546149461166,0.0008546149461166556,5.561957144850638e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,7.000 m,vu MPa,1.991960220984952,1.991960220984952,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,7.000 m,vu/fc,0.0442657826885544,0.04426578268855449,9.020562075079397e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,7.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,7.000 m,dv lower bound mm,1323.1967038558423,1323.1967038558425,2.2737367544323206e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,7.000 m,dv mm,1399.587953635559,1399.587953635559,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,7.000 m,epsilon numerator N,-1298502.653090394,-1298502.6530903946,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,7.000 m,epsilon denominator N,1021721939.797232,1021721939.7972317,3.5762786865234375e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,7.000 m,epsilon raw,-0.0012708963197443,-0.0012708963197443838,8.391724815037804e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,7.000 m,vu MPa,0.637868408953837,0.637868408953837,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,7.000 m,vu/fc,0.0141748535323074,0.01417485353230749,8.847089727481716e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,7.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,7.000 m,dv lower bound mm,1323.1967038558423,1323.1967038558425,2.2737367544323206e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,7.000 m,dv mm,1399.587953635559,1399.587953635559,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,7.000 m,epsilon numerator N,861231.7493341248,861231.7493341244,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,7.000 m,epsilon denominator N,1021721939.797232,1021721939.7972317,3.5762786865234375e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,7.000 m,epsilon raw,0.0008429218516194,0.0008429218516194751,7.513521055324546e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,7.000 m,vu MPa,1.9043798225756687,1.9043798225756692,4.440892098500626e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,7.000 m,vu/fc,0.0423195516127926,0.04231955161279265,4.85722573273506e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,7.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,7.000 m,dv lower bound mm,1323.1967038558423,1323.1967038558425,2.2737367544323206e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,7.000 m,dv mm,1399.587953635559,1399.587953635559,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,7.000 m,epsilon numerator N,-1318727.4726198344,-1318727.4726198348,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,7.000 m,epsilon denominator N,1021721939.797232,1021721939.7972317,3.5762786865234375e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,7.000 m,epsilon raw,-0.0012906911570104,-0.0012906911570104349,3.491130995403324e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,8.000 m,vu MPa,0.3284503542776564,0.32845035427765645,5.551115123125783e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,8.000 m,vu/fc,0.0072988967617256,0.007298896761725699,9.8879238130678e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,8.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,8.000 m,dv lower bound mm,1326.3008691947762,1326.3008691947762,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,8.000 m,dv mm,1402.7010202867814,1402.7010202867814,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,8.000 m,epsilon numerator N,768726.9015854131,768726.9015854131,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,8.000 m,epsilon denominator N,1061257036.5114212,1061257036.5114207,4.76837158203125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,8.000 m,epsilon raw,0.0007243550573877,0.0007243550573877778,7.773729576721067e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,8.000 m,vu MPa,1.4931780348409247,1.4931780348409247,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,8.000 m,vu/fc,0.0331817341075761,0.033181734107576105,6.938893903907228e-18
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,8.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,8.000 m,dv lower bound mm,1326.3008691947762,1326.3008691947762,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,8.000 m,dv mm,1402.7010202867814,1402.7010202867814,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,8.000 m,epsilon numerator N,-1571785.4892548914,-1571785.4892548914,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,8.000 m,epsilon denominator N,1061257036.5114212,1061257036.5114207,4.76837158203125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,8.000 m,epsilon raw,-0.001481060134519,-0.0014810601345190484,4.83554168928535e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,8.000 m,vu MPa,0.2528315397895854,0.2528315397895854,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,8.000 m,vu/fc,0.0056184786619907,0.0056184786619907865,8.673617379884035e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,8.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,8.000 m,dv lower bound mm,1326.3008691947762,1326.3008691947762,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,8.000 m,dv mm,1402.7010202867814,1402.7010202867814,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,8.000 m,epsilon numerator N,753455.7892899131,753455.7892899131,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,8.000 m,epsilon denominator N,1061257036.5114212,1061257036.5114207,4.76837158203125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,8.000 m,epsilon raw,0.0007099654121179,0.0007099654121179575,5.746271514173174e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,8.000 m,vu MPa,1.4105559250891515,1.4105559250891515,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,8.000 m,vu/fc,0.0313456872242033,0.03134568722420337,6.938893903907228e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,8.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,8.000 m,dv lower bound mm,1326.3008691947762,1326.3008691947762,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,8.000 m,dv mm,1402.7010202867814,1402.7010202867814,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,8.000 m,epsilon numerator N,-1591042.13419279,-1591042.13419279,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,8.000 m,epsilon denominator N,1061257036.5114212,1061257036.5114207,4.76837158203125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,8.000 m,epsilon raw,-0.0014992052626787,-0.0014992052626787628,6.288372600415926e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,9.000 m,vu MPa,0.0664034207356482,0.06640342073564824,4.163336342344337e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,9.000 m,vu/fc,0.0014756315719032,0.0014756315719032943,9.432558900623889e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,9.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,9.000 m,dv lower bound mm,1327.5945334557248,1327.5945334557248,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,9.000 m,dv mm,1403.9850768509623,1403.9850768509623,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,9.000 m,epsilon numerator N,721941.2000829121,721941.200082913,9.313225746154785e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,9.000 m,epsilon denominator N,1082066681.5827053,1082066681.582705,2.384185791015625e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,9.000 m,epsilon raw,0.0006671873484053,0.0006671873484053241,2.4069288229178198e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,9.000 m,vu MPa,1.017486095594227,1.0174860955942275,4.440892098500626e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,9.000 m,vu/fc,0.0226108021243161,0.022610802124316168,6.938893903907228e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,9.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,9.000 m,dv lower bound mm,1327.5945334557248,1327.5945334557248,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,9.000 m,dv mm,1403.9850768509623,1403.9850768509623,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,9.000 m,epsilon numerator N,-1757994.4751552376,-1757994.4751552371,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,9.000 m,epsilon denominator N,1082066681.5827053,1082066681.582705,2.384185791015625e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,9.000 m,epsilon raw,-0.0016246637153487,-0.0016246637153487379,3.7947076036992655e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,9.000 m,vu MPa,0.1414544949761471,0.14145449497614715,5.551115123125783e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,9.000 m,vu/fc,0.0031434332216921,0.0031434332216921587,5.854691731421724e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,9.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,9.000 m,dv lower bound mm,1327.5945334557248,1327.5945334557248,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,9.000 m,dv mm,1403.9850768509623,1403.9850768509623,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,9.000 m,epsilon numerator N,741238.9726364501,741238.972636451,9.313225746154785e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,9.000 m,epsilon denominator N,1082066681.5827053,1082066681.582705,2.384185791015625e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,9.000 m,epsilon raw,0.0006850215289433,0.0006850215289433587,5.865533753146579e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,9.000 m,vu MPa,0.9357942603047033,0.9357942603047034,1.1102230246251565e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,9.000 m,vu/fc,0.0207954280067711,0.020795428006771186,8.673617379884035e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,9.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,9.000 m,dv lower bound mm,1327.5945334557248,1327.5945334557248,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,9.000 m,dv mm,1403.9850768509623,1403.9850768509623,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,9.000 m,epsilon numerator N,-1777287.7721247436,-1777287.772124743,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,9.000 m,epsilon denominator N,1082066681.5827053,1082066681.582705,2.384185791015625e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,9.000 m,epsilon raw,-0.0016424937597423,-0.0016424937597423848,8.478460988836645e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,10.000 m,vu MPa,0.4711798028854186,0.4711798028854188,1.6653345369377348e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,10.000 m,vu/fc,0.0104706622863426,0.01047066228634264,3.9898639947466563e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,10.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,10.000 m,dv lower bound mm,1327.5945334557248,1327.5945334557248,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,10.000 m,dv mm,1403.9850768509623,1403.9850768509623,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,10.000 m,epsilon numerator N,859118.2614567857,859118.2614567867,9.313225746154785e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,10.000 m,epsilon denominator N,1084150875.0110838,1084150875.0110834,4.76837158203125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,10.000 m,epsilon raw,0.0007924342277987,0.0007924342277987866,8.66277535815918e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,10.000 m,vu MPa,0.5560097643741353,0.5560097643741354,1.1102230246251565e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,10.000 m,vu/fc,0.0123557725416474,0.012355772541647454,5.377642775528102e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,10.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,10.000 m,dv lower bound mm,1327.5945334557248,1327.5945334557248,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,10.000 m,dv mm,1403.9850768509623,1403.9850768509623,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,10.000 m,epsilon numerator N,-1859608.366827876,-1859608.3668278758,2.3283064365386963e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,10.000 m,epsilon denominator N,1084150875.0110838,1084150875.0110834,4.76837158203125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,10.000 m,epsilon raw,-0.0017152671364203,-0.0017152671364203482,4.8138576458356397e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,10.000 m,vu MPa,0.549180464367882,0.5491804643678823,2.220446049250313e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,10.000 m,vu/fc,0.0122040103192862,0.012204010319286272,7.28583859910259e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,10.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,10.000 m,dv lower bound mm,1327.5945334557248,1327.5945334557248,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,10.000 m,dv mm,1403.9850768509623,1403.9850768509623,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,10.000 m,epsilon numerator N,879182.9264166998,879182.9264167007,9.313225746154785e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,10.000 m,epsilon denominator N,1084150875.0110838,1084150875.0110834,4.76837158203125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,10.000 m,epsilon raw,0.0008109414904154,0.0008109414904154486,4.85722573273506e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,10.000 m,vu MPa,0.4776781122778718,0.47767811227787194,1.1102230246251565e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,10.000 m,vu/fc,0.0106150691617304,0.010615069161730488,8.847089727481716e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,10.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,10.000 m,dv lower bound mm,1327.5945334557248,1327.5945334557248,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,10.000 m,dv mm,1403.9850768509623,1403.9850768509623,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,10.000 m,epsilon numerator N,-1880554.0346142915,-1880554.0346142915,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,10.000 m,epsilon denominator N,1084150875.0110838,1084150875.0110834,4.76837158203125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,10.000 m,epsilon raw,-0.0017345870191684,-0.0017345870191684035,3.469446951953614e-18
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,11.000 m,vu MPa,0.9400594304926576,0.9400594304926577,1.1102230246251565e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,11.000 m,vu/fc,0.0208902095665035,0.020890209566503504,3.469446951953614e-18
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,11.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,11.000 m,dv lower bound mm,1327.5945334557248,1327.5945334557248,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,11.000 m,dv mm,1403.9850768509623,1403.9850768509623,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,11.000 m,epsilon numerator N,942245.091694682,942245.0916946828,8.149072527885437e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,11.000 m,epsilon denominator N,1082066681.5827053,1082066681.582705,2.384185791015625e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,11.000 m,epsilon raw,0.0008707828341193,0.0008707828341193266,2.667137344314341e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,11.000 m,vu MPa,0.1593656959127927,0.15936569591279276,5.551115123125783e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,11.000 m,vu/fc,0.0035414599091731,0.0035414599091731724,7.24247051220317e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,11.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,11.000 m,dv lower bound mm,1327.5945334557248,1327.5945334557248,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,11.000 m,dv mm,1403.9850768509623,1403.9850768509623,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,11.000 m,epsilon numerator N,-1970949.3736508512,-1970949.3736508507,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,11.000 m,epsilon denominator N,1082066681.5827053,1082066681.582705,2.384185791015625e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,11.000 m,epsilon raw,-0.0018214675742238,-0.0018214675742238037,3.686287386450715e-18
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,11.000 m,vu MPa,1.0221911900157137,1.0221911900157137,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,11.000 m,vu/fc,0.0227153597781269,0.02271535977812697,6.938893903907228e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,11.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,11.000 m,dv lower bound mm,1327.5945334557248,1327.5945334557248,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,11.000 m,dv mm,1403.9850768509623,1403.9850768509623,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,11.000 m,epsilon numerator N,962370.461919332,962370.4619193329,8.149072527885437e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,11.000 m,epsilon denominator N,1082066681.5827053,1082066681.582705,2.384185791015625e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,11.000 m,epsilon raw,0.000889381845222,0.0008893818452220557,5.572799166575493e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,11.000 m,vu MPa,0.0849053770716077,0.08490537707160778,8.326672684688674e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,11.000 m,vu/fc,0.0018867861571468,0.0018867861571468395,3.946495907847236e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,11.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,11.000 m,dv lower bound mm,1327.5945334557248,1327.5945334557248,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,11.000 m,dv mm,1403.9850768509623,1403.9850768509623,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,11.000 m,epsilon numerator N,-1991752.8873543632,-1991752.8873543628,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,11.000 m,epsilon denominator N,1082066681.5827053,1082066681.582705,2.384185791015625e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,11.000 m,epsilon raw,-0.0018406932966839,-0.001840693296683979,7.914675859144182e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,12.000 m,vu MPa,1.42423960918823,1.4242396091882297,2.220446049250313e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,12.000 m,vu/fc,0.0316497690930717,0.031649769093071774,7.632783294297951e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,12.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,12.000 m,dv lower bound mm,1326.3008691947762,1326.3008691947762,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,12.000 m,dv mm,1402.7010202867814,1402.7010202867814,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,12.000 m,epsilon numerator N,1052623.5934268003,1052623.5934268003,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,12.000 m,epsilon denominator N,1061257036.5114212,1061257036.5114207,4.76837158203125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,12.000 m,epsilon raw,0.0009918648896661,0.0009918648896661262,2.6237692574149207e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,12.000 m,vu MPa,0.2247848100149503,0.22478481001495035,5.551115123125783e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,12.000 m,vu/fc,0.0049952180003322,0.00499521800033223,3.0357660829594124e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,12.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,12.000 m,dv lower bound mm,1326.3008691947762,1326.3008691947762,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,12.000 m,dv mm,1402.7010202867814,1402.7010202867814,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,12.000 m,epsilon numerator N,-1889790.8547209704,-1889790.8547209706,2.3283064365386963e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,12.000 m,epsilon denominator N,1061257036.5114212,1061257036.5114207,4.76837158203125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,12.000 m,epsilon raw,-0.0017807098466297,-0.001780709846629727,2.688821387764051e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,12.000 m,vu MPa,1.5072601099879377,1.507260109987938,2.220446049250313e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,12.000 m,vu/fc,0.033494669110843,0.03349466911084306,6.245004513516506e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,12.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,12.000 m,dv lower bound mm,1326.3008691947762,1326.3008691947762,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,12.000 m,dv mm,1402.7010202867814,1402.7010202867814,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,12.000 m,epsilon numerator N,1071478.8389253812,1071478.8389253812,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,12.000 m,epsilon denominator N,1061257036.5114212,1061257036.5114207,4.76837158203125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,12.000 m,epsilon raw,0.0010096317876464,0.0010096317876464327,3.2742905609062234e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,12.000 m,vu MPa,0.2975855320376274,0.29758553203762744,5.551115123125783e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,12.000 m,vu/fc,0.0066130118230583,0.006613011823058387,8.760353553682876e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,12.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,12.000 m,dv lower bound mm,1326.3008691947762,1326.3008691947762,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,12.000 m,dv mm,1402.7010202867814,1402.7010202867814,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,12.000 m,epsilon numerator N,-1875697.1958255512,-1875697.1958255512,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,12.000 m,epsilon denominator N,1061257036.5114212,1061257036.5114207,4.76837158203125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,12.000 m,epsilon raw,-0.0017674296907291,-0.0017674296907291844,8.435092901937224e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,13.000 m,vu MPa,1.9239990422596371,1.9239990422596374,2.220446049250313e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,13.000 m,vu/fc,0.0427555342724363,0.042755534272436384,8.326672684688674e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,13.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,13.000 m,dv lower bound mm,1323.1967038558423,1323.1967038558425,2.2737367544323206e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,13.000 m,dv mm,1399.587953635559,1399.587953635559,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,13.000 m,epsilon numerator N,1194497.057093068,1194497.0570930676,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,13.000 m,epsilon denominator N,1021721939.797232,1021721939.7972317,3.5762786865234375e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,13.000 m,epsilon raw,0.0011691018960893,0.0011691018960893846,8.456776945386935e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,13.000 m,vu MPa,0.6018409986858472,0.6018409986858472,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,13.000 m,vu/fc,0.013374244415241,0.013374244415241049,4.85722573273506e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,13.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,13.000 m,dv lower bound mm,1323.1967038558423,1323.1967038558425,2.2737367544323206e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,13.000 m,dv mm,1399.587953635559,1399.587953635559,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,13.000 m,epsilon numerator N,-1651168.102925668,-1651168.1029256685,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,13.000 m,epsilon denominator N,1021721939.797232,1021721939.7972317,3.5762786865234375e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,13.000 m,epsilon raw,-0.0016160640567759,-0.001616064056775912,1.214306433183765e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,13.000 m,vu MPa,2.0123443716848763,2.0123443716848763,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,13.000 m,vu/fc,0.0447187638152194,0.04471876381521948,7.632783294297951e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,13.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,13.000 m,dv lower bound mm,1323.1967038558423,1323.1967038558425,2.2737367544323206e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,13.000 m,dv mm,1399.587953635559,1399.587953635559,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,13.000 m,epsilon numerator N,1213000.0305704763,1213000.0305704759,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,13.000 m,epsilon denominator N,1021721939.797232,1021721939.7972317,3.5762786865234375e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,13.000 m,epsilon raw,0.0011872114939718,0.0011872114939718381,3.8163916471489756e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,13.000 m,vu MPa,0.6635062067413707,0.6635062067413707,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,13.000 m,vu/fc,0.0147445823720304,0.014744582372030461,6.071532165918825e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,13.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,13.000 m,dv lower bound mm,1323.1967038558423,1323.1967038558425,2.2737367544323206e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,13.000 m,dv mm,1399.587953635559,1399.587953635559,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,13.000 m,epsilon numerator N,-1639866.6663745358,-1639866.6663745362,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,13.000 m,epsilon denominator N,1021721939.797232,1021721939.7972317,3.5762786865234375e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,13.000 m,epsilon raw,-0.0016050028902188,-0.0016050028902188202,2.0166160408230382e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,14.000 m,vu MPa,2.449641825406499,2.449641825406499,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,14.000 m,vu/fc,0.0544364850090333,0.05443648500903331,6.938893903907228e-18
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,14.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,14.000 m,dv lower bound mm,1318.6585991273575,1318.6585991273575,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,14.000 m,dv mm,1394.866585789436,1394.866585789436,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,14.000 m,epsilon numerator N,1360608.398118151,1360608.398118151,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,14.000 m,epsilon denominator N,963982439.797232,963982439.7972317,3.5762786865234375e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,14.000 m,epsilon raw,0.0014114452109774,0.0014114452109774398,3.9898639947466563e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,14.000 m,vu MPa,0.9493591898003976,0.9493591898003977,1.1102230246251565e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,14.000 m,vu/fc,0.0210968708844532,0.02109687088445328,8.326672684688674e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,14.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,14.000 m,dv lower bound mm,1318.6585991273575,1318.6585991273575,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,14.000 m,dv mm,1394.866585789436,1394.866585789436,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,14.000 m,epsilon numerator N,-1341295.7733795824,-1341295.7733795824,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,14.000 m,epsilon denominator N,963982439.797232,963982439.7972317,3.5762786865234375e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,14.000 m,epsilon raw,-0.0013914110029449,-0.0013914110029449463,4.640385298237959e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,14.000 m,vu MPa,2.5456535377639,2.5456535377638994,4.440892098500626e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,14.000 m,vu/fc,0.0565700786169755,0.05657007861697554,4.163336342344337e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,14.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,14.000 m,dv lower bound mm,1318.6585991273575,1318.6585991273575,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,14.000 m,dv mm,1394.866585789436,1394.866585789436,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,14.000 m,epsilon numerator N,1379794.2670975286,1379794.2670975286,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,14.000 m,epsilon denominator N,963982439.797232,963982439.7972317,3.5762786865234375e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,14.000 m,epsilon raw,0.0014313479272379,0.0014313479272379283,2.8189256484623115e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,14.000 m,vu MPa,0.9999185265357108,0.9999185265357109,1.1102230246251565e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,14.000 m,vu/fc,0.0222204117007935,0.022220411700793575,7.632783294297951e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,14.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,14.000 m,dv lower bound mm,1318.6585991273575,1318.6585991273575,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,14.000 m,dv mm,1394.866585789436,1394.866585789436,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,14.000 m,epsilon numerator N,-1332654.1902921165,-1332654.1902921163,2.3283064365386963e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,14.000 m,epsilon denominator N,963982439.797232,963982439.7972317,3.5762786865234375e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,14.000 m,epsilon raw,-0.0013824465418399,-0.0013824465418399454,4.5319650809894085e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,15.000 m,vu MPa,3.036458967272315,3.036458967272315,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,15.000 m,vu/fc,0.0674768659393847,0.06747686593938478,6.938893903907228e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,15.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,15.000 m,dv lower bound mm,1301.2897926507287,1301.2897926507285,2.2737367544323206e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,15.000 m,dv mm,1376.4717537924057,1376.4717537924057,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,15.000 m,epsilon numerator N,1547367.6678597005,1547367.6678597,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,15.000 m,epsilon denominator N,893761996.1363368,893761996.1363368,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,15.000 m,epsilon raw,0.0017312972296303,0.001731297229630315,1.496198998029996e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,15.000 m,vu MPa,1.2733237081095916,1.2733237081095916,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,15.000 m,vu/fc,0.0282960824024353,0.02829608240243537,6.938893903907228e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,15.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,15.000 m,dv lower bound mm,1301.2897926507287,1301.2897926507285,2.2737367544323206e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,15.000 m,dv mm,1376.4717537924057,1376.4717537924057,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,15.000 m,epsilon numerator N,-985337.1608039484,-985337.160803949,5.820766091346741e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,15.000 m,epsilon denominator N,893761996.1363368,893761996.1363368,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,15.000 m,epsilon raw,-0.0011024603474565,-0.0011024603474565763,7.632783294297951e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,15.000 m,vu MPa,3.1428093045682264,3.1428093045682264,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,15.000 m,vu/fc,0.0698402067681828,0.06984020676818281,1.3877787807814457e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,15.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,15.000 m,dv lower bound mm,1301.2897926507287,1301.2897926507285,2.2737367544323206e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,15.000 m,dv mm,1376.4717537924057,1376.4717537924057,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,15.000 m,epsilon numerator N,1567635.2657875298,1567635.2657875293,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,15.000 m,epsilon denominator N,893761996.1363368,893761996.1363368,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,15.000 m,epsilon raw,0.0017539739579041,0.0017539739579041109,1.0842021724855044e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,15.000 m,vu MPa,1.3113749579401308,1.3113749579401308,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,15.000 m,vu/fc,0.0291416657320029,0.029141665732002907,6.938893903907228e-18
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,15.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,15.000 m,dv lower bound mm,1301.2897926507287,1301.2897926507285,2.2737367544323206e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,15.000 m,dv mm,1376.4717537924057,1376.4717537924057,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,15.000 m,epsilon numerator N,-979649.645259806,-979649.6452598064,4.656612873077393e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,15.000 m,epsilon denominator N,893761996.1363368,893761996.1363368,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,15.000 m,epsilon raw,-0.0010960967791142,-0.0010960967791143002,1.0018028073766061e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,16.000 m,vu MPa,3.660392894215829,3.6603928942158297,8.881784197001252e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,16.000 m,vu/fc,0.0813420643159073,0.08134206431590732,1.3877787807814457e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,16.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,16.000 m,dv lower bound mm,1286.1323359068829,1286.1323359068829,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,16.000 m,dv mm,1359.1758564826546,1359.1758564826546,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,16.000 m,epsilon numerator N,1490885.1149961916,1490885.1149961916,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,16.000 m,epsilon denominator N,842267004.1183472,842267004.1183474,2.384185791015625e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,16.000 m,epsilon raw,0.00177008609824,0.0017700860982400618,6.179952383167375e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,16.000 m,vu MPa,1.5758944192856608,1.5758944192856608,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,16.000 m,vu/fc,0.0350198759841257,0.035019875984125794,9.020562075079397e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,16.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,16.000 m,dv lower bound mm,1286.1323359068829,1286.1323359068829,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,16.000 m,dv mm,1359.1758564826546,1359.1758564826546,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,16.000 m,epsilon numerator N,-814049.4387465317,-814049.4387465317,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,16.000 m,epsilon denominator N,842267004.1183472,842267004.1183474,2.384185791015625e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,16.000 m,epsilon raw,-0.0009664980757481,-0.0009664980757481379,3.7947076036992655e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,16.000 m,vu MPa,3.7709010372818015,3.7709010372818015,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,16.000 m,vu/fc,0.0837978008284844,0.08379780082848448,8.326672684688674e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,16.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,16.000 m,dv lower bound mm,1286.1323359068829,1286.1323359068829,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,16.000 m,dv mm,1359.1758564826546,1359.1758564826546,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,16.000 m,epsilon numerator N,1511228.61667594,1511228.6166759399,2.3283064365386963e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,16.000 m,epsilon denominator N,842267004.1183472,842267004.1183474,2.384185791015625e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,16.000 m,epsilon raw,0.0017942393674293,0.0017942393674293766,7.654467337747661e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,16.000 m,vu MPa,1.6173598582578186,1.6173598582578184,2.220446049250313e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,16.000 m,vu/fc,0.035941330183507,0.03594133018350708,7.632783294297951e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,16.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,16.000 m,dv lower bound mm,1286.1323359068829,1286.1323359068829,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,16.000 m,dv mm,1359.1758564826546,1359.1758564826546,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,16.000 m,epsilon numerator N,-807417.5788308566,-807417.5788308566,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,16.000 m,epsilon denominator N,842267004.1183472,842267004.1183474,2.384185791015625e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,16.000 m,epsilon raw,-0.0009586242544025,-0.0009586242544025931,9.313296661650483e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,17.000 m,vu MPa,4.298709212919634,4.298709212919634,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,17.000 m,vu/fc,0.095526871398214,0.09552687139821409,8.326672684688674e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,17.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,17.000 m,dv lower bound mm,1274.1185505055455,1274.1185505055455,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,17.000 m,dv mm,1344.6184059251525,1344.6184059251525,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,17.000 m,epsilon numerator N,1401287.1794253755,1401287.1794253755,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,17.000 m,epsilon denominator N,777361071.1325145,777361071.1325145,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,17.000 m,epsilon raw,0.0018026207273074,0.0018026207273074293,2.927345865710862e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,17.000 m,vu MPa,1.896059476319671,1.896059476319671,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,17.000 m,vu/fc,0.042134655029326,0.04213465502932602,2.0816681711721685e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,17.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,17.000 m,dv lower bound mm,1274.1185505055455,1274.1185505055455,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,17.000 m,dv mm,1344.6184059251525,1344.6184059251525,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,17.000 m,epsilon numerator N,-607375.8455760067,-607375.8455760067,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,17.000 m,epsilon denominator N,777361071.1325145,777361071.1325145,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,17.000 m,epsilon raw,-0.0007813304114793,-0.000781330411479364,6.407634839389331e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,17.000 m,vu MPa,4.414709759915655,4.414709759915655,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,17.000 m,vu/fc,0.098104661331459,0.098104661331459,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,17.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,17.000 m,dv lower bound mm,1274.1185505055455,1274.1185505055455,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,17.000 m,dv mm,1344.6184059251525,1344.6184059251525,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,17.000 m,epsilon numerator N,1422751.3372298,1422751.3372298,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,17.000 m,epsilon denominator N,777361071.1325145,777361071.1325145,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,17.000 m,epsilon raw,0.0018302322949579,0.0018302322949579086,8.673617379884035e-18
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,17.000 m,vu MPa,1.941753612440256,1.9417536124402561,2.220446049250313e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,17.000 m,vu/fc,0.0431500802764501,0.043150080276450134,3.469446951953614e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,17.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,17.000 m,dv lower bound mm,1274.1185505055455,1274.1185505055455,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,17.000 m,dv mm,1344.6184059251525,1344.6184059251525,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,17.000 m,epsilon numerator N,-599449.1808784823,-599449.1808784823,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,17.000 m,epsilon denominator N,777361071.1325145,777361071.1325145,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,17.000 m,epsilon raw,-0.0007711335222963,-0.0007711335222963538,5.377642775528102e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.000 m,vu MPa,4.963919944593819,4.963919944593819,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.000 m,vu/fc,0.1103093321020848,0.11030933210208486,6.938893903907228e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.000 m,dv mm,1328.2304076932908,1328.2304076932908,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.000 m,epsilon numerator N,1593437.1413946669,1593437.1413946669,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.000 m,epsilon denominator N,652134613.2705848,652134613.2705848,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.000 m,epsilon raw,0.0024434175229608,0.002443417522960885,8.500145032286355e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.000 m,vu MPa,2.244609674843293,2.244609674843293,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.000 m,vu/fc,0.0498802149965176,0.04988021499651762,2.0816681711721685e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.000 m,dv mm,1328.2304076932908,1328.2304076932908,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.000 m,epsilon numerator N,-49925.08388504037,-49925.08388504037,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.000 m,epsilon denominator N,652134613.2705848,652134613.2705848,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.000 m,epsilon raw,-7.655640855291538e-05,-7.655640855291538e-05,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.000 m,vu MPa,5.087246350467495,5.087246350467495,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.000 m,vu/fc,0.1130499188992776,0.11304991889927768,8.326672684688674e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.000 m,dv mm,1328.2304076932908,1328.2304076932908,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.000 m,epsilon numerator N,1617149.8436341323,1617149.8436341323,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.000 m,epsilon denominator N,652134613.2705848,652134613.2705848,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.000 m,epsilon raw,0.0024797791908695,0.002479779190869511,1.0842021724855044e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.000 m,vu MPa,2.2956727502095258,2.2956727502095258,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.000 m,vu/fc,0.0510149500046561,0.051014950004656126,2.7755575615628914e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.000 m,dv mm,1328.2304076932908,1328.2304076932908,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.000 m,epsilon numerator N,-40347.98300930066,-40347.98300930066,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.000 m,epsilon denominator N,652134613.2705848,652134613.2705848,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.000 m,epsilon raw,-6.187063558388275e-05,-6.187063558388275e-05,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,19.000 m,vu MPa,5.703660768374045,5.703660768374045,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,19.000 m,vu/fc,0.1267480170749787,0.12674801707497876,5.551115123125783e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,19.000 m,smax mm,304.79999999999995,304.8,5.684341886080802e-14
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,19.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,19.000 m,dv mm,1305.6186517340543,1305.6186517340543,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,19.000 m,epsilon numerator N,1789557.8738105888,1789557.8738105888,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,19.000 m,epsilon denominator N,540952244.1408343,540952244.1408343,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,19.000 m,epsilon raw,0.0033081623991649,0.0033081623991649176,1.7780915628762273e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,19.000 m,vu MPa,2.6422813124828006,2.642281312482801,4.440892098500626e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,19.000 m,vu/fc,0.0587173624996177,0.0587173624996178,1.0408340855860843e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,19.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,19.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,19.000 m,dv mm,1305.6186517340543,1305.6186517340543,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,19.000 m,epsilon numerator N,430579.8738105889,430579.87381058885,5.820766091346741e-11
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,19.000 m,epsilon denominator N,540952244.1408343,540952244.1408343,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,19.000 m,epsilon raw,0.0007959665173299,0.000795966517329928,2.7972416050126014e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,19.000 m,vu MPa,5.837440035122702,5.837440035122703,8.881784197001252e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,19.000 m,vu/fc,0.1297208896693933,0.1297208896693934,1.1102230246251565e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,19.000 m,smax mm,304.79999999999995,304.8,5.684341886080802e-14
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,19.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,19.000 m,dv mm,1305.6186517340543,1305.6186517340543,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,19.000 m,epsilon numerator N,1848943.8738105888,1848943.8738105888,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,19.000 m,epsilon denominator N,540952244.1408343,540952244.1408343,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,19.000 m,epsilon raw,0.0034179428846758,0.0034179428846758332,3.3393426912553537e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,19.000 m,vu MPa,2.70231145258852,2.7023114525885203,4.440892098500626e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,19.000 m,vu/fc,0.0600513656130782,0.06005136561307823,2.7755575615628914e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,19.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,19.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,19.000 m,dv mm,1305.6186517340543,1305.6186517340543,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,19.000 m,epsilon numerator N,457227.8738105889,457227.87381058885,5.820766091346741e-11
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,19.000 m,epsilon denominator N,540952244.1408343,540952244.1408343,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,19.000 m,epsilon raw,0.0008452277973941,0.0008452277973941666,6.657001339060997e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,20.000 m,vu MPa,6.578734827264239,6.578734827264239,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,20.000 m,vu/fc,0.1461941072725386,0.14619410727253865,5.551115123125783e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,20.000 m,smax mm,304.79999999999995,304.8,5.684341886080802e-14
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,20.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,20.000 m,dv mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,20.000 m,epsilon numerator N,2818330.0,2818330.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,20.000 m,epsilon denominator N,429769875.01108384,429769875.0110838,5.960464477539063e-08
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,20.000 m,epsilon raw,0.0065577653620494,0.006557765362049434,3.382710778154774e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,20.000 m,vu MPa,3.149677871148459,3.149677871148459,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,20.000 m,vu/fc,0.0699928415810768,0.06999284158107687,6.938893903907228e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,20.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,20.000 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,20.000 m,dv mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,20.000 m,epsilon numerator N,1349322.0,1349322.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,20.000 m,epsilon denominator N,429769875.01108384,429769875.0110838,5.960464477539063e-08
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,20.000 m,epsilon raw,0.0031396383936058,0.0031396383936058824,8.239936510889834e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.927 m,vu MPa,2.3785066569717093,2.3785066569717093,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.927 m,vu/fc,0.0528557034882602,0.05285570348826021,6.938893903907228e-18
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.927 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.927 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.927 m,dv mm,1326.8356192878573,1326.8356192878573,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.927 m,epsilon numerator N,995665.6754423796,995665.6754423797,1.1641532182693481e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.927 m,epsilon denominator N,644000023.7880859,644000023.7880858,1.1920928955078125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.927 m,epsilon raw,0.0015460646563112,0.0015460646563112748,7.48099499014998e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.073 m,vu MPa,5.016206010126258,5.016206010126259,8.881784197001252e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.073 m,vu/fc,0.1114712446694724,0.11147124466947243,2.7755575615628914e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.073 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.073 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.073 m,dv mm,1326.8356192878573,1326.8356192878573,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.073 m,epsilon numerator N,1593019.5797730745,1593019.5797730745,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.073 m,epsilon denominator N,644000023.7880857,644000023.7880858,1.1920928955078125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.073 m,epsilon raw,0.0024736327964752,0.0024736327964752875,8.760353553682876e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.927 m,vu MPa,5.102278057122754,5.102278057122754,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.927 m,vu/fc,0.11338395682495,0.11338395682495009,8.326672684688674e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.927 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.927 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.927 m,dv mm,1326.8356192878573,1326.8356192878573,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.927 m,epsilon numerator N,871362.4261966178,871362.4261966178,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.927 m,epsilon denominator N,644000023.7880859,644000023.7880858,1.1920928955078125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.927 m,epsilon raw,0.001353047195668,0.0013530471956680356,3.5561831257524545e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.073 m,vu MPa,2.2728006772547893,2.2728006772547893,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.073 m,vu/fc,0.0505066817167731,0.0505066817167731,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.073 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.073 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.073 m,dv mm,1326.8356192878573,1326.8356192878573,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.073 m,epsilon numerator N,-19837.971166667063,-19837.971166667063,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.073 m,epsilon denominator N,644000023.7880857,644000023.7880858,1.1920928955078125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.073 m,epsilon raw,-3.080430191598088e-05,-3.0804301915980875e-05,6.776263578034403e-21
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.927 m,vu MPa,2.323509598177283,2.323509598177283,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.927 m,vu/fc,0.0516335466261618,0.05163354662616184,4.163336342344337e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.927 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.927 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.927 m,dv mm,1326.8356192878573,1326.8356192878573,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.927 m,epsilon numerator N,985175.407011056,985175.4070110561,1.1641532182693481e-10
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.927 m,epsilon denominator N,644000023.7880859,644000023.7880858,1.1920928955078125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.927 m,epsilon raw,0.0015297754202183,0.001529775420218365,6.505213034913027e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.073 m,vu MPa,5.140260835824472,5.1402608358244715,8.881784197001252e-16
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.073 m,vu/fc,0.1142280185738771,0.11422801857387714,4.163336342344337e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.073 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.073 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.073 m,dv mm,1326.8356192878573,1326.8356192878573,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.073 m,epsilon numerator N,1616929.283642504,1616929.283642504,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.073 m,epsilon denominator N,644000023.7880857,644000023.7880858,1.1920928955078125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.073 m,epsilon raw,0.0025107596644663,0.0025107596644663626,6.245004513516506e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.927 m,vu MPa,4.9838665567912495,4.9838665567912495,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.927 m,vu/fc,0.1107525901509166,0.11075259015091665,5.551115123125783e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.927 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.927 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.927 m,dv mm,1326.8356192878573,1326.8356192878573,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.927 m,epsilon numerator N,817944.1434297448,817944.1434297448,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.927 m,epsilon denominator N,644000023.7880859,644000023.7880858,1.1920928955078125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.927 m,epsilon raw,0.001270099554684,0.001270099554684018,1.7997756063259374e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.073 m,vu MPa,2.3244993412406343,2.3244993412406343,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.073 m,vu/fc,0.0516555409164585,0.05165554091645854,4.163336342344337e-17
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.073 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.073 m,dv lower bound mm,1260.0,1260.0,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.073 m,dv mm,1326.8356192878573,1326.8356192878573,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.073 m,epsilon numerator N,-10199.353119997308,-10199.353119997308,0.0
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.073 m,epsilon denominator N,644000023.7880857,644000023.7880858,1.1920928955078125e-07
+shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.073 m,epsilon raw,-1.5837504259710245e-05,-1.5837504259710245e-05,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.000 m,vu MPa,2.301492183856125,2.301492183856125,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.000 m,vu/fc,0.051144270752358334,0.051144270752358334,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.000 m,dv lower bound mm,1437.1607112260629,1437.1607112260626,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.000 m,dv mm,1572.8133566779525,1572.8133566779525,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.000 m,epsilon numerator N,1031849.4350673156,1031849.4350673156,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.000 m,epsilon denominator N,111182369.12975048,111182369.1297505,2.9802322387695312e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,1.000 m,epsilon raw,0.0185613860029037,0.01856138600290377,6.938893903907228e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.000 m,vu MPa,4.851203198980932,4.851203198980932,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.000 m,vu/fc,0.10780451553290961,0.10780451553290961,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.000 m,dv lower bound mm,1437.1602868065338,1437.1602868065338,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.000 m,dv mm,1553.831623206369,1553.831623206369,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.000 m,epsilon numerator N,1395258.8738105888,1395258.8738105888,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.000 m,epsilon denominator N,111182369.12975048,111182369.1297505,2.9802322387695312e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,1.000 m,epsilon raw,0.0125492817317313,0.012549281731731343,4.336808689942018e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.000 m,vu MPa,2.2452349821675357,2.2452349821675357,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.000 m,vu/fc,0.04989411071483413,0.04989411071483413,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.000 m,dv lower bound mm,1437.1607051260105,1437.1607051260103,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.000 m,dv mm,1572.5774408451107,1572.5774408451107,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.000 m,epsilon numerator N,1006928.893395381,1006928.893395381,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.000 m,epsilon denominator N,111182369.12975048,111182369.1297505,2.9802322387695312e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,1.000 m,epsilon raw,0.0181131037461576,0.01811310374615761,1.0408340855860843e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.000 m,vu MPa,4.746070204854896,4.746070204854896,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.000 m,vu/fc,0.10546822677455325,0.10546822677455325,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.000 m,dv lower bound mm,1437.1602948921573,1437.1602948921573,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.000 m,dv mm,1554.250576697212,1554.250576697212,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.000 m,epsilon numerator N,1355354.8738105888,1355354.8738105888,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.000 m,epsilon denominator N,111182369.12975048,111182369.1297505,2.9802322387695312e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,1.000 m,epsilon raw,0.0121903759059935,0.012190375905993525,2.42861286636753e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,2.000 m,vu MPa,1.9938284635207564,1.9938284635207564,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,2.000 m,vu/fc,0.04430729918935014,0.04430729918935014,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,2.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,2.000 m,dv lower bound mm,1437.1695962049776,1437.1695962049776,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,2.000 m,dv mm,1564.459913654894,1564.459913654894,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,2.000 m,epsilon numerator N,926337.503796909,926337.503796909,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,2.000 m,epsilon denominator N,222364738.25950092,222364738.259501,8.940696716308594e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,2.000 m,epsilon raw,0.0083316942339649,0.008331694233964987,8.673617379884035e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,2.000 m,vu MPa,4.3345932747676645,4.3345932747676645,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,2.000 m,vu/fc,0.096324294994837,0.096324294994837,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,2.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,2.000 m,dv lower bound mm,1437.1680387477866,1437.1680387477866,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,2.000 m,dv mm,1547.839097207128,1547.839097207128,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,2.000 m,epsilon numerator N,425350.7476211777,425350.74762117746,2.3283064365386963e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,2.000 m,epsilon denominator N,222364738.25950092,222364738.259501,8.940696716308594e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,2.000 m,epsilon raw,0.001912851610154,0.0019128516101540817,8.174884380540703e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,2.000 m,vu MPa,1.9482689870401466,1.9482689870401464,2.220446049250313e-16
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,2.000 m,vu/fc,0.04329486637866992,0.04329486637866992,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,2.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,2.000 m,dv lower bound mm,1437.16957272414,1437.16957272414,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,2.000 m,dv mm,1564.239252280729,1564.239252280729,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,2.000 m,epsilon numerator N,908354.224412574,908354.224412574,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,2.000 m,epsilon denominator N,222364738.25950092,222364738.259501,8.940696716308594e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,2.000 m,epsilon raw,0.0081699484506623,0.008169948450662344,4.336808689942018e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,2.000 m,vu MPa,4.232608968715947,4.232608968715947,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,2.000 m,vu/fc,0.09405797708257661,0.09405797708257661,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,2.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,2.000 m,dv lower bound mm,1437.1680597331963,1437.1680597331963,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,2.000 m,dv mm,1548.0939815179925,1548.0939815179925,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,2.000 m,epsilon numerator N,381163.7476211777,381163.7476211777,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,2.000 m,epsilon denominator N,222364738.25950092,222364738.259501,8.940696716308594e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,2.000 m,epsilon raw,0.0017141375498859,0.0017141375498859774,7.741203511546502e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,3.000 m,vu MPa,1.7317348551850245,1.7317348551850245,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,3.000 m,vu/fc,0.038482996781889434,0.038482996781889434,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,3.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,3.000 m,dv lower bound mm,1429.7922276338822,1429.7922276338822,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,3.000 m,dv mm,1543.3791849885715,1543.3791849885715,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,3.000 m,epsilon numerator N,689253.3288866677,689253.3288866677,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,3.000 m,epsilon denominator N,347591196.12143064,347591196.12143064,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,3.000 m,epsilon raw,0.0039658848473588,0.003965884847358894,9.454242944073599e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,3.000 m,vu MPa,3.8619368120913204,3.8619368120913204,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,3.000 m,vu/fc,0.08582081804647379,0.08582081804647379,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,3.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,3.000 m,dv lower bound mm,1429.7192213515636,1429.7192213515636,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,3.000 m,dv mm,1528.8031533776884,1528.8031533776884,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,3.000 m,epsilon numerator N,-498507.5229838209,-498507.5229838209,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,3.000 m,epsilon denominator N,347591196.12143064,347591196.12143064,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,3.000 m,epsilon raw,-0.0014341776447343,-0.001434177644734327,2.688821387764051e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,3.000 m,vu MPa,1.6915521766253019,1.6915521766253017,2.220446049250313e-16
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,3.000 m,vu/fc,0.03759004836945115,0.03759004836945115,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,3.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,3.000 m,dv lower bound mm,1429.7907623069743,1429.7907623069743,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,3.000 m,dv mm,1543.1284881491329,1543.1284881491329,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,3.000 m,epsilon numerator N,673826.3453253619,673826.3453253619,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,3.000 m,epsilon denominator N,347591196.12143064,347591196.12143064,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,3.000 m,epsilon raw,0.0038771197478198,0.0038771197478198577,5.767955557622884e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,3.000 m,vu MPa,3.7614475272862578,3.7614475272862578,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,3.000 m,vu/fc,0.08358772282858351,0.08358772282858351,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,3.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,3.000 m,dv lower bound mm,1429.7198563841644,1429.7198563841644,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,3.000 m,dv mm,1528.9514333287734,1528.9514333287734,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,3.000 m,epsilon numerator N,-519852.87812171504,-519852.87812171504,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,3.000 m,epsilon denominator N,347591196.12143064,347591196.12143064,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,3.000 m,epsilon raw,-0.0014955870111857,-0.001495587011185706,6.071532165918825e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,4.000 m,vu MPa,1.4744261686770923,1.4744261686770928,4.440892098500626e-16
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,4.000 m,vu/fc,0.03276502597060205,0.03276502597060206,6.938893903907228e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,4.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,4.000 m,dv lower bound mm,1426.3302230439886,1426.3302230439886,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,4.000 m,dv mm,1531.1839243089655,1531.1839243089655,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,4.000 m,epsilon numerator N,771459.1647824114,771459.1647824119,4.656612873077393e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,4.000 m,epsilon denominator N,412497129.1072634,412497129.10726357,1.7881393432617188e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,4.000 m,epsilon raw,0.003740434104121,0.003740434104121029,2.905661822261152e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,4.000 m,vu MPa,3.358660310287912,3.358660310287912,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,4.000 m,vu/fc,0.07463689578417582,0.07463689578417582,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,4.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,4.000 m,dv lower bound mm,1426.2574272191748,1426.2574272191748,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,4.000 m,dv mm,1518.1771019985904,1518.1771019985904,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,4.000 m,epsilon numerator N,-764707.0846621152,-764707.0846621152,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,4.000 m,epsilon denominator N,412497129.1072634,412497129.10726357,1.7881393432617188e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,4.000 m,epsilon raw,-0.0018538482590584,-0.0018538482590584645,6.461844948013606e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,4.000 m,vu MPa,1.437927927578614,1.437927927578614,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,4.000 m,vu/fc,0.031953953946191424,0.031953953946191424,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,4.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,4.000 m,dv lower bound mm,1426.3285013311015,1426.3285013311017,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,4.000 m,dv mm,1530.916130497909,1530.916130497909,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,4.000 m,epsilon numerator N,757078.3324016146,757078.3324016146,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,4.000 m,epsilon denominator N,412497129.1072634,412497129.10726357,1.7881393432617188e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,4.000 m,epsilon raw,0.0036707083709411,0.003670708370941161,6.114900252818245e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,4.000 m,vu MPa,3.2599707361684365,3.259970736168437,4.440892098500626e-16
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,4.000 m,vu/fc,0.07244379413707637,0.07244379413707637,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,4.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,4.000 m,dv lower bound mm,1426.257872591542,1426.257872591542,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,4.000 m,dv mm,1518.2687714930917,1518.2687714930917,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,4.000 m,epsilon numerator N,-786740.3384033323,-786740.3384033323,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,4.000 m,epsilon denominator N,412497129.1072634,412497129.10726357,1.7881393432617188e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,4.000 m,epsilon raw,-0.0019072625792718,-0.0019072625792718003,2.168404344971009e-19
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,5.000 m,vu MPa,1.2234155430511517,1.2234155430511517,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,5.000 m,vu/fc,0.02718701206780337,0.02718701206780337,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,5.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,5.000 m,dv lower bound mm,1428.1805468009177,1428.1805468009177,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,5.000 m,dv mm,1523.6802640238486,1523.6802640238486,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,5.000 m,epsilon numerator N,857127.6667078845,857127.666707884,4.656612873077393e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,5.000 m,epsilon denominator N,463992121.125253,463992121.1252531,5.960464477539063e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,5.000 m,epsilon raw,0.0036945785399511,0.003694578539951136,3.599551212651875e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,5.000 m,vu MPa,2.8437988169376527,2.8437988169376527,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,5.000 m,vu/fc,0.06319552926528117,0.06319552926528117,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,5.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,5.000 m,dv lower bound mm,1428.1377959932818,1428.1377959932818,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,5.000 m,dv mm,1512.0991881498544,1512.0991881498544,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,5.000 m,epsilon numerator N,-992943.099524686,-992943.0995246866,5.820766091346741e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,5.000 m,epsilon denominator N,463992121.125253,463992121.1252531,5.960464477539063e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,5.000 m,epsilon raw,-0.002139999914474,-0.0021399999144740755,7.546047120499111e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,5.000 m,vu MPa,1.1894408713668028,1.1894408713668028,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,5.000 m,vu/fc,0.02643201936370673,0.02643201936370673,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,5.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,5.000 m,dv lower bound mm,1428.1794558013617,1428.1794558013617,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,5.000 m,dv mm,1523.419692965998,1523.419692965998,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,5.000 m,epsilon numerator N,843562.498227228,843562.4982272275,4.656612873077393e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,5.000 m,epsilon denominator N,463992121.125253,463992121.1252531,5.960464477539063e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,5.000 m,epsilon raw,0.0036361069932888,0.0036361069932888393,3.946495907847236e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,5.000 m,vu MPa,2.7466677417069807,2.7466677417069807,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,5.000 m,vu/fc,0.06103706092682179,0.06103706092682179,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,5.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,5.000 m,dv lower bound mm,1428.137992043654,1428.137992043654,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,5.000 m,dv mm,1512.1596023182524,1512.1596023182524,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,5.000 m,epsilon numerator N,-1015247.2020252153,-1015247.2020252156,3.4924596548080444e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,5.000 m,epsilon denominator N,463992121.125253,463992121.1252531,5.960464477539063e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,5.000 m,epsilon raw,-0.0021880699171423,-0.0021880699171423065,6.5052130349130266e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,6.000 m,vu MPa,0.9577265491249602,0.9577265491249602,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,6.000 m,vu/fc,0.021282812202776894,0.021282812202776894,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,6.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,6.000 m,dv lower bound mm,1434.556591622276,1434.556591622276,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,6.000 m,dv mm,1520.3774852888143,1520.3774852888143,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,6.000 m,epsilon numerator N,716292.7626083395,716292.7626083395,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,6.000 m,epsilon denominator N,534212564.7861481,534212564.78614795,1.1920928955078125e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,6.000 m,epsilon raw,0.002681676957168,0.0026816769571680913,9.150666335777657e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,6.000 m,vu MPa,2.3320967254217053,2.332096725421705,4.440892098500626e-16
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,6.000 m,vu/fc,0.05182437167603789,0.051824371676037886,6.938893903907228e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,6.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,6.000 m,dv lower bound mm,1434.5815519216428,1434.5815519216428,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,6.000 m,dv mm,1510.1280609386065,1510.1280609386065,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,6.000 m,epsilon numerator N,-1393363.4886822295,-1393363.48868223,4.656612873077393e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,6.000 m,epsilon denominator N,534212564.7861481,534212564.78614795,1.1920928955078125e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,6.000 m,epsilon raw,-0.0026082566763288,-0.0026082566763288525,5.2475385148298415e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,6.000 m,vu MPa,0.911244750262926,0.911244750262926,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,6.000 m,vu/fc,0.02024988333917613,0.02024988333917613,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,6.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,6.000 m,dv lower bound mm,1434.5572258726004,1434.5572258726004,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,6.000 m,dv mm,1520.1443179914938,1520.1443179914938,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,6.000 m,epsilon numerator N,699866.9087406578,699866.9087406578,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,6.000 m,epsilon denominator N,534212564.7861481,534212564.78614795,1.1920928955078125e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,6.000 m,epsilon raw,0.0026201813842428,0.0026201813842428937,9.367506770274758e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,6.000 m,vu MPa,2.2433670210294863,2.2433670210294863,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,6.000 m,vu/fc,0.049852600467321914,0.049852600467321914,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,6.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,6.000 m,dv lower bound mm,1434.581461551274,1434.581461551274,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,6.000 m,dv mm,1510.1696129631316,1510.1696129631316,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,6.000 m,epsilon numerator N,-1414032.8569391342,-1414032.8569391342,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,6.000 m,epsilon denominator N,534212564.7861481,534212564.78614795,1.1920928955078125e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,6.000 m,epsilon raw,-0.0026469479569526,-0.002646947956952659,5.898059818321144e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,7.000 m,vu MPa,0.6493307936641719,0.6493307936641719,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,7.000 m,vu/fc,0.014429573192537154,0.014429573192537154,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,7.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,7.000 m,dv lower bound mm,1435.7502995019315,1435.7502995019317,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,7.000 m,dv mm,1517.6801719616503,1517.6801719616503,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,7.000 m,epsilon numerator N,559600.0282999836,559600.0282999831,4.656612873077393e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,7.000 m,epsilon denominator N,591952064.7861482,591952064.786148,2.384185791015625e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,7.000 m,epsilon raw,0.00189069372873,0.0018906937287300365,3.642919299551295e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,7.000 m,vu MPa,1.8481256876748704,1.8481256876748704,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,7.000 m,vu/fc,0.04106945972610823,0.04106945972610823,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,7.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,7.000 m,dv lower bound mm,1435.7863413590217,1435.7863413590217,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,7.000 m,dv mm,1508.5140301898273,1508.5140301898273,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,7.000 m,epsilon numerator N,-1748154.8183629634,-1748154.8183629639,4.656612873077393e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,7.000 m,epsilon denominator N,591952064.7861482,591952064.786148,2.384185791015625e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,7.000 m,epsilon raw,-0.0029532033459407,-0.00295320334594071,9.974659986866641e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,7.000 m,vu MPa,0.5883104636520998,0.5883104636520998,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,7.000 m,vu/fc,0.013073565858935552,0.013073565858935552,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,7.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,7.000 m,dv lower bound mm,1435.7511448444154,1435.7511448444152,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,7.000 m,dv mm,1517.486083171902,1517.486083171902,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,7.000 m,epsilon numerator N,540650.8835314754,540650.883531475,4.656612873077393e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,7.000 m,epsilon denominator N,591952064.7861482,591952064.786148,2.384185791015625e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,7.000 m,epsilon raw,0.0018266711637429,0.0018266711637429415,4.141652298894627e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,7.000 m,vu MPa,1.766854384884025,1.766854384884025,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,7.000 m,vu/fc,0.03926343077520056,0.03926343077520056,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,7.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,7.000 m,dv lower bound mm,1435.786296397589,1435.786296397589,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,7.000 m,dv mm,1508.5267250240777,1508.5267250240777,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,7.000 m,epsilon numerator N,-1767970.4395395983,-1767970.4395395988,4.656612873077393e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,7.000 m,epsilon denominator N,591952064.7861482,591952064.786148,2.384185791015625e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,7.000 m,epsilon raw,-0.0029866783895386,-0.002986678389538697,9.6710833785707e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,8.000 m,vu MPa,0.30381922630319297,0.303819226303193,5.551115123125783e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,8.000 m,vu/fc,0.006751538362293177,0.006751538362293179,1.734723475976807e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,8.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,8.000 m,dv lower bound mm,1437.0254591778223,1437.0254591778223,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,8.000 m,dv mm,1516.4203156750043,1516.4203156750043,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,8.000 m,epsilon numerator N,423854.26185732894,423854.26185732987,9.313225746154785e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,8.000 m,epsilon denominator N,631487161.5003375,631487161.500337,4.76837158203125e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,8.000 m,epsilon raw,0.0013424002503876,0.0013424002503876831,8.304988641238964e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,8.000 m,vu MPa,1.388891168808154,1.388891168808154,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,8.000 m,vu/fc,0.030864248195736757,0.030864248195736757,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,8.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,8.000 m,dv lower bound mm,1437.0489275846542,1437.0489275846542,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,8.000 m,dv mm,1508.024818631765,1508.024818631765,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,8.000 m,epsilon numerator N,-2022103.9584239956,-2022103.9584239954,2.3283064365386963e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,8.000 m,epsilon denominator N,631487161.5003375,631487161.500337,4.76837158203125e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,8.000 m,epsilon raw,-0.0032021299587781,-0.0032021299587781347,3.469446951953614e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,8.000 m,vu MPa,0.23389290977879698,0.23389290977879698,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,8.000 m,vu/fc,0.0051976202173066,0.0051976202173066,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,8.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,8.000 m,dv lower bound mm,1437.0258917362942,1437.0258917362942,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,8.000 m,dv mm,1516.279647634189,1516.279647634189,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,8.000 m,epsilon numerator N,403519.9173722733,403519.91737227235,9.313225746154785e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,8.000 m,epsilon denominator N,631487161.5003375,631487161.500337,4.76837158203125e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,8.000 m,epsilon raw,0.0012779988002085,0.0012779988002085676,6.765421556309548e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,8.000 m,vu MPa,1.3120382490770008,1.3120382490770006,2.220446049250313e-16
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,8.000 m,vu/fc,0.029156405535044463,0.029156405535044456,6.938893903907228e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,8.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,8.000 m,dv lower bound mm,1437.0489237317952,1437.048923731795,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,8.000 m,dv mm,1508.026337407484,1508.026337407484,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,8.000 m,epsilon numerator N,-2041337.352244899,-2041337.3522448991,2.3283064365386963e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,8.000 m,epsilon denominator N,631487161.5003375,631487161.500337,4.76837158203125e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,8.000 m,epsilon raw,-0.0032325872586149,-0.003232587258614932,3.165870343657673e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,9.000 m,vu MPa,0.061492136435262745,0.06149213643526274,6.938893903907228e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,9.000 m,vu/fc,0.0013664919207836165,0.0013664919207836165,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,9.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,9.000 m,dv lower bound mm,1437.723738724373,1437.7237387243733,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,9.000 m,dv mm,1516.119249863034,1516.119249863034,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,9.000 m,epsilon numerator N,360661.8455027202,360661.8455027202,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,9.000 m,epsilon denominator N,652296806.5716214,652296806.5716212,2.384185791015625e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,9.000 m,epsilon raw,0.0011058212821807,0.0011058212821807524,5.2475385148298415e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,9.000 m,vu MPa,0.947337326274216,0.947337326274216,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,9.000 m,vu/fc,0.021051940583871467,0.021051940583871467,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,9.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,9.000 m,dv lower bound mm,1437.7145306376433,1437.7145306376433,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,9.000 m,dv mm,1507.947860279015,1507.947860279015,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,9.000 m,epsilon numerator N,-2212594.109542097,-2212594.109542097,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,9.000 m,epsilon denominator N,652296806.5716214,652296806.5716212,2.384185791015625e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,9.000 m,epsilon raw,-0.0033920051228997,-0.0033920051228997663,6.635317295611287e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,9.000 m,vu MPa,0.13099446037201964,0.13099446037201964,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,9.000 m,vu/fc,0.0029109880082671034,0.0029109880082671034,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,9.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,9.000 m,dv lower bound mm,1437.7237083759887,1437.7237083759887,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,9.000 m,dv mm,1516.0946458039753,1516.0946458039753,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,9.000 m,epsilon numerator N,379009.7838748256,379009.7838748256,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,9.000 m,epsilon denominator N,652296806.5716214,652296806.5716212,2.384185791015625e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,9.000 m,epsilon raw,0.0011620776924138,0.0011620776924138165,1.6479873021779667e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,9.000 m,vu MPa,0.8712913297511821,0.871291329751182,1.1102230246251565e-16
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,9.000 m,vu/fc,0.019362029550026267,0.019362029550026267,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,9.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,9.000 m,dv lower bound mm,1437.7145061693072,1437.7145061693072,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,9.000 m,dv mm,1507.9240795909068,1507.9240795909068,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,9.000 m,epsilon numerator N,-2232751.944911626,-2232751.9449116266,4.656612873077393e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,9.000 m,epsilon denominator N,652296806.5716214,652296806.5716212,2.384185791015625e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,9.000 m,epsilon raw,-0.0034229079805658,-0.003422907980565859,5.898059818321144e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,10.000 m,vu MPa,0.43633659087703147,0.4363365908770315,5.551115123125783e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,10.000 m,vu/fc,0.009696368686156255,0.009696368686156255,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,10.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,10.000 m,dv lower bound mm,1437.7237135834714,1437.7237135834714,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,10.000 m,dv mm,1516.0988686166324,1516.0988686166324,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,10.000 m,epsilon numerator N,493108.02969804313,493108.02969804313,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,10.000 m,epsilon denominator N,654381000.0,654380999.9999996,3.5762786865234375e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,10.000 m,epsilon raw,0.0015070976379144,0.0015070976379144363,3.642919299551295e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,10.000 m,vu MPa,0.5177091664603236,0.5177091664603235,1.1102230246251565e-16
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,10.000 m,vu/fc,0.011504648143562748,0.011504648143562744,3.469446951953614e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,10.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,10.000 m,dv lower bound mm,1437.714433290405,1437.714433290405,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,10.000 m,dv mm,1507.8531776866505,1507.8531776866505,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,10.000 m,epsilon numerator N,-2319140.0433869674,-2319140.043386968,4.656612873077393e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,10.000 m,epsilon denominator N,654381000.0,654380999.9999996,3.5762786865234375e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,10.000 m,epsilon raw,-0.0035440210571318,-0.003544021057131807,7.37257477290143e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,10.000 m,vu MPa,0.5085632532817834,0.5085632532817834,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,10.000 m,vu/fc,0.011301405628484076,0.011301405628484076,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,10.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,10.000 m,dv lower bound mm,1437.7237354210972,1437.7237354210972,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,10.000 m,dv mm,1516.1165725109354,1516.1165725109354,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,10.000 m,epsilon numerator N,513674.8043066105,513674.8043066105,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,10.000 m,epsilon denominator N,654381000.0,654380999.9999996,3.5762786865234375e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,10.000 m,epsilon raw,0.0015699563535818,0.0015699563535818148,1.474514954580286e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,10.000 m,vu MPa,0.4447807077811797,0.4447807077811796,5.551115123125783e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,10.000 m,vu/fc,0.00988401572847066,0.009884015728470658,1.734723475976807e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,10.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,10.000 m,dv lower bound mm,1437.7144077512032,1437.7144077512032,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,10.000 m,dv mm,1507.828306047874,1507.828306047874,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,10.000 m,epsilon numerator N,-2340819.771129408,-2340819.771129408,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,10.000 m,epsilon denominator N,654381000.0,654380999.9999996,3.5762786865234375e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,10.000 m,epsilon raw,-0.0035771511873501,-0.0035771511873501968,9.6710833785707e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,11.000 m,vu MPa,0.8704925773978579,0.8704925773978579,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,11.000 m,vu/fc,0.019344279497730175,0.019344279497730175,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,11.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,11.000 m,dv lower bound mm,1437.7238222148192,1437.723822214819,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,11.000 m,dv mm,1516.1868648093928,1516.1868648093928,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,11.000 m,epsilon numerator N,582422.8242888153,582422.8242888153,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,11.000 m,epsilon denominator N,652296806.5716214,652296806.5716212,2.384185791015625e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,11.000 m,epsilon raw,0.001785760158324,0.0017857601583240808,8.088148206741863e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,11.000 m,vu MPa,0.14839169245020034,0.14839169245020034,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,11.000 m,vu/fc,0.0032975931655600077,0.0032975931655600077,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,11.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,11.000 m,dv lower bound mm,1437.7143929805725,1437.7143929805725,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,11.000 m,dv mm,1507.8139155169893,1507.8139155169893,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,11.000 m,epsilon numerator N,-2429778.1834522905,-2429778.1834522905,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,11.000 m,epsilon denominator N,652296806.5716214,652296806.5716212,2.384185791015625e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,11.000 m,epsilon raw,-0.0037249579623467,-0.0037249579623467076,7.806255641895632e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,11.000 m,vu MPa,0.9465318955066209,0.946531895506621,1.1102230246251565e-16
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,11.000 m,vu/fc,0.021034042122369354,0.021034042122369354,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,11.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,11.000 m,dv lower bound mm,1437.7238508789858,1437.7238508789858,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,11.000 m,dv mm,1516.2100540758263,1516.2100540758263,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,11.000 m,epsilon numerator N,603308.1814395972,603308.1814395981,9.313225746154785e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,11.000 m,epsilon denominator N,652296806.5716214,652296806.5716212,2.384185791015625e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,11.000 m,epsilon raw,0.0018497965201163,0.0018497965201163553,5.5294310796760726e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,11.000 m,vu MPa,0.07905772142015485,0.07905772142015485,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,11.000 m,vu/fc,0.0017568382537812188,0.0017568382537812188,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,11.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,11.000 m,dv lower bound mm,1437.714413103735,1437.714413103735,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,11.000 m,dv mm,1507.833519757262,1507.833519757262,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,11.000 m,epsilon numerator N,-2449671.814472198,-2449671.814472198,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,11.000 m,epsilon denominator N,652296806.5716214,652296806.5716212,2.384185791015625e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,11.000 m,epsilon raw,-0.0037554557830005,-0.0037554557830005685,6.852157730108388e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,12.000 m,vu MPa,1.3175222111689244,1.3175222111689244,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,12.000 m,vu/fc,0.02927827135930943,0.02927827135930943,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,12.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,12.000 m,dv lower bound mm,1437.0257746272505,1437.0257746272503,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,12.000 m,dv mm,1516.317778938023,1516.317778938023,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,12.000 m,epsilon numerator N,702517.7977809431,702517.7977809431,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,12.000 m,epsilon denominator N,631487161.5003375,631487161.500337,4.76837158203125e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,12.000 m,epsilon raw,0.0022249630415663,0.0022249630415663428,4.2934406030425976e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,12.000 m,vu MPa,0.20908974063239272,0.20908974063239272,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,12.000 m,vu/fc,0.004646438680719838,0.004646438680719838,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,12.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,12.000 m,dv lower bound mm,1437.0490080625248,1437.0490080625248,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,12.000 m,dv mm,1507.9930818188272,1507.9930818188272,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,12.000 m,epsilon numerator N,-2340159.6052137143,-2340159.6052137143,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,12.000 m,epsilon denominator N,631487161.5003375,631487161.500337,4.76837158203125e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,12.000 m,epsilon raw,-0.0037057912620959,-0.0037057912620959365,3.642919299551295e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,12.000 m,vu MPa,1.3942981151921696,1.3942981151921696,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,12.000 m,vu/fc,0.030984402559825992,0.030984402559825992,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,12.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,12.000 m,dv lower bound mm,1437.02569466621,1437.02569466621,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,12.000 m,dv mm,1516.3437941148272,1516.3437941148272,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,12.000 m,epsilon numerator N,722341.3889889969,722341.3889889969,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,12.000 m,epsilon denominator N,631487161.5003375,631487161.500337,4.76837158203125e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,12.000 m,epsilon raw,0.0022877468712833,0.002287746871283341,4.0766001685454967e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,12.000 m,vu MPa,0.27679484677756644,0.27679484677756644,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,12.000 m,vu/fc,0.006150996595057032,0.006150996595057032,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,12.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,12.000 m,dv lower bound mm,1437.04883562205,1437.0488356220499,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,12.000 m,dv mm,1508.0610577523073,1508.0610577523073,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,12.000 m,epsilon numerator N,-2323404.546608947,-2323404.546608947,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,12.000 m,epsilon denominator N,631487161.5003375,631487161.500337,4.76837158203125e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,12.000 m,epsilon raw,-0.0036792585633709,-0.0036792585633709787,7.849623728795052e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,13.000 m,vu MPa,1.775099277948263,1.775099277948263,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,13.000 m,vu/fc,0.03944665062107251,0.03944665062107251,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,13.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,13.000 m,dv lower bound mm,1435.753292493176,1435.753292493176,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,13.000 m,dv mm,1516.9888894695532,1516.9888894695532,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,13.000 m,epsilon numerator N,854638.0285519119,854638.0285519115,4.656612873077393e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,13.000 m,epsilon denominator N,591952064.7861482,591952064.786148,2.384185791015625e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,13.000 m,epsilon raw,0.002887524444604,0.002887524444604017,1.691355389077387e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,13.000 m,vu MPa,0.5582477835581261,0.5582477835581261,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,13.000 m,vu/fc,0.012405506301291691,0.012405506301291691,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,13.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,13.000 m,dv lower bound mm,1435.7850370275803,1435.7850370275805,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,13.000 m,dv mm,1508.8808886905335,1508.8808886905335,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,13.000 m,epsilon numerator N,-2086126.1868667407,-2086126.1868667416,9.313225746154785e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,13.000 m,epsilon denominator N,591952064.7861482,591952064.786148,2.384185791015625e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,13.000 m,epsilon raw,-0.0035241471581324,-0.0035241471581324542,5.421010862427522e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,13.000 m,vu MPa,1.856572636198939,1.8565726361989385,4.440892098500626e-16
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,13.000 m,vu/fc,0.04125716969330975,0.041257169693309746,6.938893903907228e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,13.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,13.000 m,dv lower bound mm,1435.7531701489077,1435.7531701489077,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,13.000 m,dv mm,1517.0173718291717,1517.0173718291717,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,13.000 m,epsilon numerator N,874318.6140225837,874318.6140225823,1.3969838619232178e-09
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,13.000 m,epsilon denominator N,591952064.7861482,591952064.786148,2.384185791015625e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,13.000 m,epsilon raw,0.0029540182931482,0.0029540182931482592,5.941427905220564e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,13.000 m,vu MPa,0.6153958625690564,0.6153958625690564,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,13.000 m,vu/fc,0.013675463612645699,0.013675463612645699,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,13.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,13.000 m,dv lower bound mm,1435.7845942088832,1435.7845942088832,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,13.000 m,dv mm,1509.004773351788,1509.004773351788,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,13.000 m,epsilon numerator N,-2070151.6899414763,-2070151.6899414768,4.656612873077393e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,13.000 m,epsilon denominator N,591952064.7861482,591952064.786148,2.384185791015625e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,13.000 m,epsilon raw,-0.003497161025512,-0.0034971610255120095,9.540979117872439e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,14.000 m,vu MPa,2.2495740895621004,2.2495740895621004,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,14.000 m,vu/fc,0.04999053532360223,0.04999053532360223,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,14.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,14.000 m,dv lower bound mm,1434.5604998716929,1434.5604998716929,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,14.000 m,dv mm,1518.9202015021872,1518.9202015021872,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,14.000 m,epsilon numerator N,1032366.084228014,1032366.0842280141,1.1641532182693481e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,14.000 m,epsilon denominator N,534212564.7861481,534212564.78614795,1.1920928955078125e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,14.000 m,epsilon raw,0.0038650011335517,0.00386500113355171,9.974659986866641e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,14.000 m,vu MPa,0.8762690751305233,0.8762690751305233,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,14.000 m,vu/fc,0.01947264611401163,0.01947264611401163,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,14.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,14.000 m,dv lower bound mm,1434.5791657192233,1434.5791657192233,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,14.000 m,dv mm,1511.2132213127084,1511.2132213127084,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,14.000 m,epsilon numerator N,-1753351.1273666762,-1753351.1273666762,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,14.000 m,epsilon denominator N,534212564.7861481,534212564.78614795,1.1920928955078125e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,14.000 m,epsilon raw,-0.003282122591161,-0.0032821225911610014,1.3010426069826053e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,14.000 m,vu MPa,2.3377005495439795,2.3377005495439795,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,14.000 m,vu/fc,0.05194890110097732,0.05194890110097732,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,14.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,14.000 m,dv lower bound mm,1434.5604248694076,1434.5604248694076,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,14.000 m,dv mm,1518.9486350235068,1518.9486350235068,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,14.000 m,epsilon numerator N,1052823.7736167195,1052823.7736167195,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,14.000 m,epsilon denominator N,534212564.7861481,534212564.78614795,1.1920928955078125e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,14.000 m,epsilon raw,0.0039415912055089,0.003941591205508909,8.673617379884035e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,14.000 m,vu MPa,0.9228289608451272,0.9228289608451272,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,14.000 m,vu/fc,0.020507310241002826,0.020507310241002826,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,14.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,14.000 m,dv lower bound mm,1434.5787754642315,1434.5787754642315,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,14.000 m,dv mm,1511.3883507721248,1511.3883507721248,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,14.000 m,epsilon numerator N,-1738211.9283948075,-1738211.9283948077,2.3283064365386963e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,14.000 m,epsilon denominator N,534212564.7861481,534212564.78614795,1.1920928955078125e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,14.000 m,epsilon raw,-0.0032537833120616,-0.0032537833120616245,2.42861286636753e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,15.000 m,vu MPa,2.74735341911106,2.74735341911106,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,15.000 m,vu/fc,0.061052298202468,0.061052298202468,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,15.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,15.000 m,dv lower bound mm,1428.1708985020275,1428.1708985020275,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,15.000 m,dv mm,1521.3186519528167,1521.3186519528167,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,15.000 m,epsilon numerator N,1203034.6248221984,1203034.624822198,4.656612873077393e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,15.000 m,epsilon denominator N,463992121.125253,463992121.1252531,5.960464477539063e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,15.000 m,epsilon raw,0.0051855821254233,0.005185582125423388,8.760353553682876e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,15.000 m,vu MPa,1.1575173608314855,1.1575173608314855,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,15.000 m,vu/fc,0.025722608018477457,0.025722608018477457,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,15.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,15.000 m,dv lower bound mm,1428.1447082676095,1428.1447082676095,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,15.000 m,dv mm,1514.1838705451787,1514.1838705451787,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,15.000 m,epsilon numerator N,-1380899.693580185,-1380899.6935801855,4.656612873077393e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,15.000 m,epsilon denominator N,463992121.125253,463992121.1252531,5.960464477539063e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,15.000 m,epsilon raw,-0.0029761274614562,-0.002976127461456218,1.8214596497756474e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,15.000 m,vu MPa,2.843519844282304,2.8435198442823046,4.440892098500626e-16
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,15.000 m,vu/fc,0.0631893298729401,0.0631893298729401,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,15.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,15.000 m,dv lower bound mm,1428.1710221761457,1428.1710221761455,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,15.000 m,dv mm,1521.3497609284254,1521.3497609284254,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,15.000 m,epsilon numerator N,1224808.7322203936,1224808.7322203931,4.656612873077393e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,15.000 m,epsilon denominator N,463992121.125253,463992121.1252531,5.960464477539063e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,15.000 m,epsilon raw,0.0052794376303202,0.00527943763032028,7.979727989493313e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,15.000 m,vu MPa,1.1919348599659672,1.1919348599659672,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,15.000 m,vu/fc,0.026487441332577046,0.026487441332577046,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,15.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,15.000 m,dv lower bound mm,1428.1454553367305,1428.1454553367303,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,15.000 m,dv mm,1514.4037219339602,1514.4037219339602,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,15.000 m,epsilon numerator N,-1367135.7128654548,-1367135.7128654553,4.656612873077393e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,15.000 m,epsilon denominator N,463992121.125253,463992121.1252531,5.960464477539063e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,15.000 m,epsilon raw,-0.0029464632062069,-0.002946463206206904,3.903127820947816e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,16.000 m,vu MPa,3.256298722265459,3.256298722265459,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,16.000 m,vu/fc,0.07236219382812131,0.07236219382812131,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,16.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,16.000 m,dv lower bound mm,1426.3094932569784,1426.3094932569784,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,16.000 m,dv mm,1527.844363000442,1527.844363000442,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,16.000 m,epsilon numerator N,1148368.207472596,1148368.2074725959,2.3283064365386963e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,16.000 m,epsilon denominator N,412497129.1072634,412497129.10726357,1.7881393432617188e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,16.000 m,epsilon raw,0.0055678846054416,0.005567884605441607,6.938893903907228e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,16.000 m,vu MPa,1.4077220207173924,1.4077220207173926,2.220446049250313e-16
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,16.000 m,vu/fc,0.03128271157149761,0.03128271157149761,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,16.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,16.000 m,dv lower bound mm,1426.2743777253618,1426.2743777253618,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,16.000 m,dv mm,1521.5487259105855,1521.5487259105855,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,16.000 m,epsilon numerator N,-1179023.9634365973,-1179023.963436597,2.3283064365386963e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,16.000 m,epsilon denominator N,412497129.1072634,412497129.10726357,1.7881393432617188e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,16.000 m,epsilon raw,-0.0028582598041064,-0.002858259804106442,4.206704429243757e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,16.000 m,vu MPa,3.35457613901588,3.3545761390158804,4.440892098500626e-16
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,16.000 m,vu/fc,0.07454613642257511,0.07454613642257511,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,16.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,16.000 m,dv lower bound mm,1426.3095776853197,1426.3095776853197,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,16.000 m,dv mm,1527.8584937894475,1527.8584937894475,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,16.000 m,epsilon numerator N,1169772.795421619,1169772.7954216194,4.656612873077393e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,16.000 m,epsilon denominator N,412497129.1072634,412497129.10726357,1.7881393432617188e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,16.000 m,epsilon raw,0.0056716651480861,0.005671665148086099,8.673617379884035e-19
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,16.000 m,vu MPa,1.4445128186738245,1.4445128186738243,2.220446049250313e-16
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,16.000 m,vu/fc,0.03210028485941832,0.03210028485941832,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,16.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,16.000 m,dv lower bound mm,1426.2757507010622,1426.2757507010622,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,16.000 m,dv mm,1521.811673922302,1521.811673922302,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,16.000 m,epsilon numerator N,-1162746.1860752092,-1162746.1860752092,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,16.000 m,epsilon denominator N,412497129.1072634,412497129.10726357,1.7881393432617188e-07
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,16.000 m,epsilon raw,-0.0028187982510124,-0.0028187982510124447,4.466912950640278e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,17.000 m,vu MPa,3.7557801123633903,3.7557801123633903,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,17.000 m,vu/fc,0.083461780274742,0.083461780274742,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,17.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,17.000 m,dv lower bound mm,1429.7677714278095,1429.7677714278097,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,17.000 m,dv mm,1538.9941254506832,1538.9941254506832,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,17.000 m,epsilon numerator N,1086786.7340577766,1086786.7340577766,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,17.000 m,epsilon denominator N,347591196.12143064,347591196.12143064,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,17.000 m,epsilon raw,0.0062532466079958,0.006253246607995841,4.0766001685454967e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,17.000 m,vu MPa,1.6621737975982076,1.6621737975982076,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,17.000 m,vu/fc,0.03693719550218239,0.03693719550218239,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,17.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,17.000 m,dv lower bound mm,1429.7418182878578,1429.7418182878578,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,17.000 m,dv mm,1533.8206355268949,1533.8206355268949,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,17.000 m,epsilon numerator N,-922505.4143647024,-922505.4143647023,1.1641532182693481e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,17.000 m,epsilon denominator N,347591196.12143064,347591196.12143064,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,17.000 m,epsilon raw,-0.0026539953389453,-0.0026539953389453108,1.0842021724855044e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,17.000 m,vu MPa,3.857178825654692,3.8571788256546915,4.440892098500626e-16
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,17.000 m,vu/fc,0.0857150850145487,0.0857150850145487,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,17.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,17.000 m,dv lower bound mm,1429.7676675239186,1429.7676675239186,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,17.000 m,dv mm,1538.9745376901074,1538.9745376901074,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,17.000 m,epsilon numerator N,1108203.8499057838,1108203.8499057838,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,17.000 m,epsilon denominator N,347591196.12143064,347591196.12143064,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,17.000 m,epsilon raw,0.0063764782438196,0.006376478243819696,9.627715291671279e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,17.000 m,vu MPa,1.7019094802847228,1.7019094802847228,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,17.000 m,vu/fc,0.03782021067299384,0.03782021067299384,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,17.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,17.000 m,dv lower bound mm,1429.74319851348,1429.7431985134801,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,17.000 m,dv mm,1534.110760474774,1534.110760474774,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,17.000 m,epsilon numerator N,-903908.4038161983,-903908.4038161985,1.1641532182693481e-10
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,17.000 m,epsilon denominator N,347591196.12143064,347591196.12143064,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,17.000 m,epsilon raw,-0.002600492802759,-0.002600492802759075,7.502679033599691e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.000 m,vu MPa,4.229548277942151,4.229548277942151,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.000 m,vu/fc,0.09398996173204781,0.09398996173204781,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.000 m,dv lower bound mm,1437.1690243591263,1437.1690243591265,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.000 m,dv mm,1558.8495457421714,1558.8495457421714,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.000 m,epsilon numerator N,1326702.9343653051,1326702.9343653051,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.000 m,epsilon denominator N,222364738.25950092,222364738.259501,8.940696716308594e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,18.000 m,epsilon raw,0.0119326737211098,0.011932673721109816,1.5612511283791264e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.000 m,vu MPa,1.9172187495098594,1.9172187495098594,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.000 m,vu/fc,0.0426048611002191,0.0426048611002191,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.000 m,dv lower bound mm,1437.168664482694,1437.1686644826943,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.000 m,dv mm,1555.0436403209608,1555.0436403209608,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.000 m,epsilon numerator N,-298623.028684583,-298623.028684583,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.000 m,epsilon denominator N,222364738.25950092,222364738.259501,8.940696716308594e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,18.000 m,epsilon raw,-0.0013429423703684,-0.0013429423703684895,8.955509944730267e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.000 m,vu MPa,4.334866167188957,4.334866167188957,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.000 m,vu/fc,0.09633035927086571,0.09633035927086571,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.000 m,dv lower bound mm,1437.1690160747278,1437.1690160747278,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.000 m,dv mm,1558.7644539668456,1558.7644539668456,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.000 m,epsilon numerator N,1348073.1204268932,1348073.1204268932,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.000 m,epsilon denominator N,222364738.25950092,222364738.259501,8.940696716308594e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,18.000 m,epsilon raw,0.0121248821281518,0.012124882128151845,4.5102810375396984e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.000 m,vu MPa,1.9604266567952007,1.9604266567952007,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.000 m,vu/fc,0.04356503681767113,0.04356503681767113,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.000 m,dv lower bound mm,1437.1686942032634,1437.1686942032634,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.000 m,dv mm,1555.3667067177178,1555.3667067177178,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.000 m,epsilon numerator N,-277366.37144274195,-277366.37144274195,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.000 m,epsilon denominator N,222364738.25950092,222364738.259501,8.940696716308594e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,18.000 m,epsilon raw,-0.0012473487191078,-0.0012473487191078548,5.4860629927766524e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,19.000 m,vu MPa,4.755629592981011,4.755629592981011,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,19.000 m,vu/fc,0.10568065762180025,0.10568065762180025,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,19.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,19.000 m,dv lower bound mm,1437.1605416118416,1437.1605416118416,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,19.000 m,dv mm,1565.8927460086306,1565.8927460086306,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,19.000 m,epsilon numerator N,1795022.8738105888,1795022.8738105888,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,19.000 m,epsilon denominator N,111182369.12975048,111182369.1297505,2.9802322387695312e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 1,19.000 m,epsilon raw,0.0322897036258651,0.032289703625865106,6.938893903907228e-18
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,19.000 m,vu MPa,2.205950465013439,2.2059504650134385,4.440892098500626e-16
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,19.000 m,vu/fc,0.04902112144474309,0.04902112144474308,1.3877787807814457e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,19.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,19.000 m,dv lower bound mm,1437.1604953979995,1437.1604953979997,2.2737367544323206e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,19.000 m,dv mm,1563.8663784251685,1563.8663784251685,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,19.000 m,epsilon numerator N,363671.8738105889,363671.87381058885,5.820766091346741e-11
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,19.000 m,epsilon denominator N,111182369.12975048,111182369.1297505,2.9802322387695312e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 1,19.000 m,epsilon raw,0.0032709491321072,0.0032709491321072817,8.153200337090993e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,19.000 m,vu MPa,4.867500220257669,4.867500220257669,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,19.000 m,vu/fc,0.10816667156128153,0.10816667156128153,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,19.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,19.000 m,dv lower bound mm,1437.160539172943,1437.160539172943,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,19.000 m,dv mm,1565.787415173828,1565.787415173828,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,19.000 m,epsilon numerator N,1850646.8738105888,1850646.8738105888,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,19.000 m,epsilon denominator N,111182369.12975048,111182369.1297505,2.9802322387695312e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Max / set 2,19.000 m,epsilon raw,0.0332902939251253,0.03329029392512535,4.85722573273506e-17
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,19.000 m,vu MPa,2.2555494870866397,2.2555494870866397,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,19.000 m,vu/fc,0.05012332193525866,0.05012332193525866,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,19.000 m,smax mm,609.5999999999999,609.6,1.1368683772161603e-13
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,19.000 m,dv lower bound mm,1437.1605034829104,1437.1605034829104,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,19.000 m,dv mm,1564.225593583083,1564.225593583083,0.0
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,19.000 m,epsilon numerator N,403149.3738105889,403149.37381058885,5.820766091346741e-11
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,19.000 m,epsilon denominator N,111182369.12975048,111182369.1297505,2.9802322387695312e-08
+actual_source_shear_check_df,ENV_ULS / Left Exterior Girder / Min / set 2,19.000 m,epsilon raw,0.0036260189179825,0.0036260189179825003,4.336808689942018e-19

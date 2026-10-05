@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "scalar_comparisons": 1312,
+  "max_abs_error": 4.76837158203125e-07,
+  "methods": [
+    "Direct AASHTO 5.7.2.8 depth bounds",
+    "vu=(|Vu|-phi*Vp)/(phi*bv*dv)",
+    "5.7.2.6 spacing threshold",
+    "Direct 5.7.3.4.2 epsilon numerator/denominator; Es=200000 MPa and Ep=195000 MPa for this source"
+  ],
+  "scope": "Stored force-resultant equilibrium and independently checked rectangular C/T/de analytic unit test; no independent general polygon solver claim."
+}

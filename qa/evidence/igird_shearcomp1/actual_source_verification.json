@@ -1,0 +1,87 @@
+{
+  "release": "IGIRDER.SHEARCOMP1",
+  "status": "PASS",
+  "actual_source_model": "I_Girder_20m_IGIRDER_SHEARCOMP1_FinalComposite_bearing400.json",
+  "native_rows": 80,
+  "preserved_components": 480,
+  "external_Nu_all_zero": false,
+  "physical_domain_m": [
+    0,
+    20
+  ],
+  "bearings": {
+    "status": "BEARING LENGTH REQUIRED",
+    "supports": [
+      {
+        "side": "Left",
+        "centerline_x_m": 0.4,
+        "inside_face_x_m": null,
+        "outer_face_x_m": null,
+        "length_mm": null
+      },
+      {
+        "side": "Right",
+        "centerline_x_m": 19.6,
+        "inside_face_x_m": null,
+        "outer_face_x_m": null,
+        "length_mm": null
+      }
+    ],
+    "near_support_exception": false,
+    "note": "The bearing centerlines are known, but the internal faces require the bearing lengths along the beam. Every original force row remains checked; the Article 5.7.3.2 near-support exception is not adopted."
+  },
+  "direct_calculation_seconds": 4.351691095000206,
+  "frames": {
+    "shear_check_df": {
+      "rows": 80,
+      "status": {
+        "REVIEW": 68,
+        "FAIL": 12
+      }
+    },
+    "shear_critical_section_df": {
+      "rows": 0,
+      "status": {}
+    },
+    "shear_boundary_capacity_df": {
+      "rows": 0,
+      "status": {}
+    },
+    "shear_diagram_capacity_df": {
+      "rows": 84,
+      "status": {
+        "DIAGRAM ONLY": 84
+      }
+    },
+    "torsion_check_df": {
+      "rows": 80,
+      "status": {
+        "LAYOUT REQUIRED": 63,
+        "REVIEW": 17
+      }
+    },
+    "torsion_boundary_capacity_df": {
+      "rows": 8,
+      "status": {
+        "BELOW THRESHOLD": 8
+      }
+    },
+    "torsion_diagram_capacity_df": {
+      "rows": 84,
+      "status": {
+        "DIAGRAM ONLY": 84
+      }
+    },
+    "combined_vt_df": {
+      "rows": 80,
+      "status": {
+        "DATA REQUIRED": 63,
+        "REVIEW": 12,
+        "FAIL": 5
+      }
+    }
+  },
+  "source_and_materials_unchanged": true,
+  "hypothetical_confirmations_added": false,
+  "meaning": "QA PASS means calculations/source preservation verified; it does not convert engineering REVIEW/FAIL to PASS."
+}
