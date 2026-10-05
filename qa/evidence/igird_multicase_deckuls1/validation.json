@@ -1,0 +1,21 @@
+{
+  "release": "IGIRDER.MULTICASE1 / DECKULS1",
+  "pytest_passed": 688,
+  "modules": 54,
+  "new_tests": 27,
+  "compile": "PASS",
+  "streamlit_import_and_deck_ui": {
+    "batch_rows": 6,
+    "batch_cases": 2,
+    "import_exceptions": 0,
+    "deck_exceptions": 0,
+    "layer_fy": [
+      390,
+      490
+    ]
+  },
+  "actual_source_rows": 80,
+  "actual_source_force_values_preserved": 480,
+  "browser_screenshot": "Not verified: browser installation was blocked by download/certificate failures. AppTest interaction checks passed; no browser visual-check claim.",
+  "scope": "Sectional AASHTO ULS; full bearing/STM, composite deck torsional force-flow, transverse slab design, biaxial/fatigue and execution detailing remain separate."
+}

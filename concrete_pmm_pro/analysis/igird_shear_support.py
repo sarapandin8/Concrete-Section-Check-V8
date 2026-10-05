@@ -60,3 +60,22 @@ def support_basis(state, *, span_m):
         "note": ("Internal faces are known; supplemental face+dv sections are audit locations. " if ready else
             "The bearing centerlines are known, but the internal faces require the bearing lengths along the beam. ") +
             "Every original force row remains checked; the Article 5.7.3.2 near-support exception is not adopted."}
+
+
+def station_region(state, *, x_m, span_m, h_mm):
+    """Location audit, not a shear exemption or a solved strut-and-tie model."""
+    basis = support_basis(state,span_m=span_m)
+    if not basis['supports']:
+        return {'Support region':'UNCONFIRMED', 'Support region status':'REVIEW',
+            'Support region note':basis['note']}
+    left,right = basis['supports']
+    lx = left['outer_face_x_m'] if left['outer_face_x_m'] is not None else left['centerline_x_m']
+    rx = right['outer_face_x_m'] if right['outer_face_x_m'] is not None else right['centerline_x_m']
+    if lx is not None and x_m < lx or rx is not None and x_m > rx:
+        region = 'END OVERHANG / SUPPORT REGION'
+    else:
+        positions = [s['centerline_x_m'] if s['centerline_x_m'] is not None else s['inside_face_x_m'] for s in basis['supports']]
+        distance = min(abs(x_m-p) for p in positions if p is not None)
+        region = 'SUPPORT D-REGION REVIEW' if distance <= h_mm/1000 else 'SECTIONAL REGION'
+    return {'Support region':region,'Support region status':'NOT APPLICABLE' if region=='SECTIONAL REGION' else 'REVIEW',
+        'Support region note':'One-depth proximity is a location flag, not proof of the complete D-region boundary. Original force and capacity checks remain. Bearing reaction, loaded area, end reinforcement and STM/nodes require separate design.' if region!='SECTIONAL REGION' else 'Sectional check location; local load discontinuities remain a project review.'}

@@ -619,9 +619,9 @@ def test_igird_uls6e_rebar_ui_uses_not_confirmed_for_corner_detail_and_does_not_
 
 
 def test_vtqa1_versions_invalidate_all_vt_development_sources():
-    assert _IGIRDER_TORSION_RESULT_VERSION.startswith("IGIRDER.SHEARCOMP1.")
+    assert _IGIRDER_TORSION_RESULT_VERSION.startswith("IGIRDER.DECKULS1.")
     assert _IGIRDER_COMBINED_VT_RESULT_VERSION.startswith("IGIRDER.VTQA1.")
-    assert _IGIRDER_SHEAR_RESULT_VERSION.startswith("IGIRDER.SHEARCOMP1.")
+    assert _IGIRDER_SHEAR_RESULT_VERSION.startswith("IGIRDER.DECKULS1.")
 
 
 def test_igird_uls6f_torsion_chart_coalesces_physical_end_with_threshold_only_boundary_without_phi_tn_gap():

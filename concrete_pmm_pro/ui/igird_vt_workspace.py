@@ -81,6 +81,18 @@ def render_input_checks(state, *, check_name: str) -> None:
             st.info("Final-Composite action: " + gate + ". " + " ".join(gate_notes) +
                 " Calculate Interface Shear in Flexure → Final — Composite, then recalculate this check.")
     render_support_geometry(state, span_m=span)
+    with st.expander('ULS Final scope / completion checklist',expanded=False):
+        params = state.get('section_parameters') or {}
+        st.dataframe(pd.DataFrame([
+            ['Concurrent vectors','Envelope retains REVIEW; declared Static/step or Correspondence vectors accepted with recorded basis','Loads → multi-file import'],
+            ['Composite action','Effective width and current Interface Shear PASS required','Sections + Flexure → Final Composite'],
+            ['Deck longitudinal reinforcement','Top/bottom grade, diameter, spacing, cover and independent cutoff/development feed Final ULS','Sections → Composite Deck Longitudinal Reinforcement'],
+            ['Composite torsion','Resistance uses the physical girder closed hoop. Deck torsional force-flow and slab checks are not certified','Separate slab/connection design'],
+            ['Bearing / D-region','Physical coordinates and region audit only; bearing/nodal/STM design requires reaction and end details','Bearing editor + separate end-region design'],
+            ['Below minimum reinforcement','Confirmed ag and verified sx enable numerical Eq.-2 audit; minimum detailing can still FAIL','Sections → General shear crack spacing'],
+            ['Other checks','Biaxial, fatigue, slab transverse design and hook/lap execution remain separate; sectional PASS is not complete bridge approval','Project design / drawing review'],
+        ],columns=['Check','Acceptance / scope','Input or action']),use_container_width=True,hide_index=True)
+
     if missing:
         st.warning("Longitudinal material missing: " + ", ".join(missing) + ". Define its verified properties below; choosing a hoop does not define the longitudinal steel material.")
         with st.expander("Complete missing longitudinal materials", expanded=True):

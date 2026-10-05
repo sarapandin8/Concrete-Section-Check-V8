@@ -234,7 +234,7 @@ def test_development_hash_changes_all_three_vt_checks():
     after={c:ap._beam_uls_check_input_hash(state,actions,strength_route=_route(),check_name=c) for c in before}
     assert all(before[c] != after[c] for c in ["Shear","Torsion","Shear + Torsion"])
     assert before["Flexure"] == after["Flexure"]
-    assert ap._IGIRDER_TORSION_RESULT_VERSION.startswith("IGIRDER.SHEARCOMP1.")
+    assert ap._IGIRDER_TORSION_RESULT_VERSION.startswith("IGIRDER.DECKULS1.")
 
 
 def test_summary_rejects_stale_combined_development_without_solving(monkeypatch):

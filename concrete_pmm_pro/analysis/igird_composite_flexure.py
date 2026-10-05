@@ -48,6 +48,7 @@ class CompositeFlexurePreparation:
     ready: bool
     warnings: tuple[str, ...]
     info: tuple[str, ...]
+    deck_rebar_materials: tuple[RebarMaterial, ...] = ()
 
 
 def _finite_positive(value: object) -> bool:
@@ -161,8 +162,8 @@ def deck_longitudinal_rebars_from_parameters(
         cover = _float(params.get(f"deck_long_rebar_{prefix}_cover_mm"), 0.0)
         if dia <= 0.0 or spacing <= 0.0:
             continue
-        if cover < 0.0:
-            warnings.append(f"{face} deck longitudinal rebar cover is negative; layer is not credited.")
+        if cover < 0.0 or cover + dia >= tslab_mm:
+            warnings.append(f"{face} deck longitudinal rebar cover/diameter does not fit the slab thickness; layer is not credited.")
             continue
         if prefix == "top":
             y = deck_top - cover - 0.5 * dia
@@ -179,10 +180,21 @@ def deck_longitudinal_rebars_from_parameters(
             label=f"{face} deck longitudinal rebar · equivalent As over Be",
         )
         if layer is not None:
+            layer_fy = _float(params.get(f'deck_long_rebar_{prefix}_fy_MPa'),fy)
+            if not 0 < layer_fy <= 1000:
+                warnings.append(f'{face} deck layer fy is invalid.')
+                continue
+            if f'deck_long_rebar_{prefix}_fy_MPa' in params:
+                layer = layer.model_copy(update={'material_name':DECK_REBAR_MATERIAL_NAME+' · '+face})
             layers.append(layer)
             info.append(
                 f"{face} deck longitudinal rebar credited as equivalent As={layer.area_mm2:,.1f} mm² over Be={be_mm:,.1f} mm at y={y:,.1f} mm."
             )
+    if len(layers) == 2:
+        top_db = _float(params.get('deck_long_rebar_top_diameter_mm'))
+        bottom_db = _float(params.get('deck_long_rebar_bottom_diameter_mm'))
+        if layers[0].y_mm-layers[1].y_mm < .5*(top_db+bottom_db):
+            warnings.append('Top and bottom deck longitudinal bars overlap; correct covers/layer order.')
     if not layers:
         warnings.append("Deck longitudinal rebar credit is enabled but no valid top/bottom layer is defined; no deck rebar is credited.")
         return (), None, warnings, info
@@ -288,7 +300,10 @@ def prepare_aashto_composite_positive_flexure(
         effective_width_mm=float(be),
         deck_thickness_mm=float(tslab),
         deck_rebar_credit_enabled=credit,
-        ready=geometry is not None,
+        ready=geometry is not None and not rebar_warnings,
         warnings=tuple(warnings),
         info=tuple(info),
+        deck_rebar_materials=tuple(RebarMaterial(name=bar.material_name,
+            fy_MPa=_float(params.get('deck_long_rebar_'+('top' if str(bar.label).startswith('Top') else 'bottom')+'_fy_MPa'), deck_mat.fy_MPa),
+            Es_MPa=deck_mat.Es_MPa) for bar in deck_rebars) if deck_mat is not None else (),
     )

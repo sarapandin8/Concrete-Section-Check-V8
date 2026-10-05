@@ -130,7 +130,7 @@ def test_uls3_ui_source_contains_final_composite_calculation_and_guards():
     assert "construction_command_slot = st.empty()" in analysis_source
     assert "negative composite flexure" in analysis_source
     assert "Composite Deck Longitudinal Reinforcement" in section_source
-    assert "Credit deck longitudinal reinforcement in positive composite Mn" in section_source
+    assert "Include deck longitudinal reinforcement in ULS Final composite" in section_source
     assert "preliminary helper Be remains REVIEW for Final Composite ULS" in section_source
 
 

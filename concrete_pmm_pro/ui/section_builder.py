@@ -2653,8 +2653,8 @@ def _render_i_girder_deck_longitudinal_rebar_inputs(preset: dict[str, Any]) -> d
     preset_key = str(preset.get("key", "parametric_i_girder"))
     st.markdown("##### Composite Deck Longitudinal Reinforcement")
     st.markdown(
-        '<div class="cpmm-section-note">Used only by Bridge Precast I-Girder Final Composite longitudinal flexure. '
-        'The conservative default is to exclude deck longitudinal reinforcement from positive Mn. '
+        '<div class="cpmm-section-note">Used by ULS Final composite flexure and the longitudinal depth/strain/force sources for Shear + Torsion. '
+        'Define and verify each layer before accepting Final ULS. Existing projects retain their saved include/exclude selection. '
         'Transverse deck bars are not part of the girder longitudinal flexure model.</div>',
         unsafe_allow_html=True,
     )
@@ -2663,16 +2663,16 @@ def _render_i_girder_deck_longitudinal_rebar_inputs(preset: dict[str, Any]) -> d
     credit_default = _durable_bool_default(
         "deck_long_rebar_credit_positive_mn",
         preset_key,
-        bool(st.session_state.get(credit_key, False)),
+        bool(st.session_state.get(credit_key, True)),
     )
     st.session_state.setdefault(credit_key, credit_default)
     credit = bool(
         st.checkbox(
-            "Credit deck longitudinal reinforcement in positive composite Mn",
+            "Include deck longitudinal reinforcement in ULS Final composite",
             value=bool(st.session_state.get(credit_key, credit_default)),
             key=credit_key,
             help=(
-                "Default OFF is conservative for typical simply supported positive flexure. "
+                "Defined longitudinal layers contribute to ULS Final when included. "
                 "Enable only when the project deck longitudinal reinforcement is defined and intended to contribute to longitudinal girder strength."
             ),
         )
@@ -2684,7 +2684,7 @@ def _render_i_girder_deck_longitudinal_rebar_inputs(preset: dict[str, Any]) -> d
             name="deck_long_rebar_fy_MPa",
             label="Deck longitudinal rebar fy (MPa)",
             preset_key=preset_key,
-            default=400.0,
+            default=390.0,
             min_value=100.0,
             max_value=1000.0,
             step=10.0,
@@ -2773,10 +2773,56 @@ def _render_i_girder_deck_longitudinal_rebar_inputs(preset: dict[str, Any]) -> d
             help_text="Clear cover from deck bottom surface to bar surface.",
         )
 
+    extra = {}
+    grade_key = f"{preset_key}_deck_long_rebar_grade"
+    grade_default = str((st.session_state.get('section_parameters') or {}).get('deck_long_rebar_grade','User defined'))
+    grade_options = ['SD40', 'SD50', 'User defined']
+    grade = st.selectbox('Deck longitudinal reinforcement grade (top and bottom)', grade_options,
+        index=grade_options.index(grade_default) if grade_default in grade_options else 2, key=grade_key)
+    if grade != 'User defined':
+        fy = 390.0 if grade == 'SD40' else 490.0
+        st.caption(f'Adopted grade fy = {fy:g} MPa; this value overrides the custom fy field above.')
+    extra['deck_long_rebar_grade'] = grade
+    span_m = float((st.session_state.get('section_parameters') or {}).get('girder_length_mm',20000))/1000
+    for face in ('top','bottom'):
+        with st.expander(face.title()+' deck layer — cutoff / development / anchorage', expanded=False):
+            prefix = 'deck_long_rebar_'+face+'_'
+            layer_grade = st.selectbox(face.title()+' layer grade', ['Use common grade','SD40','SD50','User defined'],
+                index=['Use common grade','SD40','SD50','User defined'].index(str((st.session_state.get('section_parameters') or {}).get(prefix+'grade','Use common grade'))),
+                key=f'{preset_key}_{prefix}grade')
+            layer_fy = fy if layer_grade == 'Use common grade' else (390. if layer_grade == 'SD40' else 490.)
+            if layer_grade == 'User defined':
+                layer_fy = _render_metadata_number_input(name=prefix+'fy_MPa',label=face.title()+' layer fy (MPa)',preset_key=preset_key,
+                    default=fy,min_value=100.,max_value=1000.,step=10.,help_text='Verified specified yield strength for this layer.')
+            extra[prefix+'grade'] = layer_grade
+            extra[prefix+'fy_MPa'] = layer_fy
+            for name,label,default,maximum in (
+                ('start_m','Bar start x (m)',0.,max(span_m,1.)), ('end_m','Bar end x (m)',span_m,max(span_m,1.)),
+                ('ld_mm','Verified straight-bar ld (mm), 0 = code conservative Auto',0.,20000.)):
+                extra[prefix+name] = _render_metadata_number_input(name=prefix+name,label=label,preset_key=preset_key,
+                    default=default,min_value=0.,max_value=maximum,step=0.1 if name.endswith('_m') else 50.,
+                    help_text='Measured from physical deck bar cutoffs. Bearing offsets do not move these bar ends.')
+            for name,label in (('continuous_confirmed','Layer continuity and cutoffs verified from drawings'),
+                ('left_anchored','Full development at LEFT bar end verified'), ('right_anchored','Full development at RIGHT bar end verified')):
+                key=f'{preset_key}_{prefix}{name}'
+                extra[prefix+name]=st.checkbox(label,key=key,value=_durable_bool_default(prefix+name,preset_key,False))
+            st.caption('Auto ld uses actual bar diameter and deck concrete. End anchorage confirmations require verified detailing; a girder anchor declaration cannot anchor deck bars.')
+    with st.expander('General shear — below-minimum crack spacing source',expanded=False):
+        for name,label,default,maximum in (
+            ('shear_max_aggregate_mm','Maximum aggregate size ag (mm)',20.,100.),
+            ('shear_verified_sx_mm','Verified sx (mm), 0 = conservative dv',0.,5000.)):
+            extra[name]=_render_metadata_number_input(name=name,label=label,preset_key=preset_key,default=default,
+                min_value=0.,max_value=maximum,step=1.,help_text='Used for AASHTO 5.7.3.4.2-7 only when transverse reinforcement is below minimum.')
+        for name,label in (('shear_aggregate_confirmed','Maximum aggregate size verified'),
+            ('shear_sx_layers_verified','Reduced sx layer areas >= 0.003 bv sx verified')):
+            extra[name]=st.checkbox(label,key=f'{preset_key}_{name}',value=_durable_bool_default(name,preset_key,False))
+        st.caption('Providing ag/sx enables the numerical Eq.-2 strength audit; it does not turn insufficient stirrups into a detailing PASS.')
+    st.caption('Transverse slab bars are outside girder longitudinal resistance and do not enlarge the closed torsion hoop. Verify transverse deck bending, interface anchorage and torsional force flow separately.')
+
     st.markdown(
         _kv_panel_html(
             [
-                ("Positive Mn deck-rebar credit", "Included" if credit else "Excluded — conservative default"),
+                ("ULS Final deck-rebar credit", "Included" if credit else "Excluded by project selection"),
                 ("Top longitudinal layer", f"DB{top_dia:g} @ {top_spacing:g} mm" if top_dia > 0 else "Not defined"),
                 ("Bottom longitudinal layer", f"DB{bottom_dia:g} @ {bottom_spacing:g} mm" if bottom_dia > 0 else "Not defined"),
                 ("Material", f"fy {fy:g} MPa · Es {es:g} MPa"),
@@ -2785,6 +2831,7 @@ def _render_i_girder_deck_longitudinal_rebar_inputs(preset: dict[str, Any]) -> d
         unsafe_allow_html=True,
     )
     return {
+        **extra,
         "deck_long_rebar_credit_positive_mn": credit,
         "deck_long_rebar_fy_MPa": fy,
         "deck_long_rebar_Es_MPa": es,

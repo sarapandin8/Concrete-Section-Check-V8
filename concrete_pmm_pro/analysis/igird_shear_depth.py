@@ -14,12 +14,12 @@ from concrete_pmm_pro.analysis.igird_flexure_development import (
 )
 from concrete_pmm_pro.analysis.igird_combined_vt import ordinary_development_factor
 
-RESULT_VERSION = "IGIRDER.SHEARCOMP1.developed-composite-depth"
+RESULT_VERSION = "IGIRDER.DECKULS1.developed-composite-depth"
 
 
 def developed_shear_depth(context: SectionEquilibrium, families: tuple, *,
         reference: Mapping, x_m: float, span_m: float, nu_n: float,
-        precast_depth_mm: float, ordinary_settings: Mapping) -> dict:
+        precast_depth_mm: float, ordinary_settings: Mapping, bar_factors=None, bar_source_ready=True) -> dict:
     caps, transfer, trace = [], [], []
     for i, family in enumerate(families):
         element = family.element
@@ -32,7 +32,7 @@ def developed_shear_depth(context: SectionEquilibrium, families: tuple, *,
         trace.append({"Family": family.name, "bonded_distance_mm": family.bonded_distance_mm(x_m),
             "Count": element.count, **limit})
     ordinary = ordinary_development_factor(ordinary_settings, x_m=x_m, span_m=span_m) if context.bars else 1.0
-    factors = [ordinary or 0.0] * len(context.bars)
+    factors = list(bar_factors) if bar_factors is not None else [ordinary or 0.0] * len(context.bars)
     result = context.solve(nu_n, strand_caps=caps, transfer_factors=transfer, bar_factors=factors)
     forces = context.force_resultants(result, bar_factors=factors)
     lower = max(0.9 * forces["de_mm"], 0.72 * context.h)
@@ -43,4 +43,4 @@ def developed_shear_depth(context: SectionEquilibrium, families: tuple, *,
         "c_mm": result["c_mm"], "a_mm": result["a_mm"], "Mn_Nmm": result["Mn_Nmm"],
         "Pn_N": result["Pn_N"], "residual_N": result["residual_N"],
         "fps_MPa": result["fps_MPa"], "strand_development_trace": trace,
-        "ordinary_factor": ordinary, **forces}
+        "ordinary_factor": ordinary, "bar_source_ready":bar_source_ready, **forces}

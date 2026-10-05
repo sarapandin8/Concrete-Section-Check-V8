@@ -20,7 +20,8 @@ def native_csi_diagram_rows(active_df: pd.DataFrame, *, member_length_m: float |
     from concrete_pmm_pro.io.girder_csi_import import VERSION, SOURCE_TAG, source_info
     frame = active_df.copy(deep=True)
     context = source_context_df if isinstance(source_context_df, pd.DataFrame) else active_df
-    source_fields = ('schema', 'sheet', 'case', 'step', 'distance_column', 'kind')
+    required_fields = ('schema', 'sheet', 'case', 'step', 'distance_column', 'kind')
+    source_fields = required_fields + ('source_file','step_number','control')
 
     def info(row):
         if not isinstance(row.get('Note'), str) or SOURCE_TAG not in row['Note']:
@@ -28,9 +29,9 @@ def native_csi_diagram_rows(active_df: pd.DataFrame, *, member_length_m: float |
         metadata = source_info(row)
         if not isinstance(metadata, dict):
             return None
-        if (metadata.get('schema') != VERSION or metadata.get('kind') != 'ENVELOPE'
+        if (metadata.get('schema') not in {VERSION,'IGIRDER.CSIIMPORT2.auto-detect-v2'} or metadata.get('kind') != 'ENVELOPE'
                 or metadata.get('step') not in {'Max', 'Min'}
-                or any(not metadata.get(key) for key in source_fields)
+                or any(not metadata.get(key) for key in required_fields)
                 or not isinstance(metadata.get('row'), int)):
             return None
         return metadata
@@ -58,7 +59,7 @@ def native_csi_diagram_rows(active_df: pd.DataFrame, *, member_length_m: float |
         metadata = [info(row) for _, row in group.iterrows()]
         if any(item is None for item in metadata):
             continue
-        families = {tuple(item[key] for key in source_fields) for item in metadata}
+        families = {tuple(item.get(key,'') for key in source_fields) for item in metadata}
         if len(families) != 1:
             continue
         family = next(iter(families))
@@ -69,7 +70,7 @@ def native_csi_diagram_rows(active_df: pd.DataFrame, *, member_length_m: float |
                 continue
             candidates = []
             for row, item in source_rows:
-                if item is None or tuple(item[key] for key in source_fields) != family:
+                if item is None or tuple(item.get(key,'') for key in source_fields) != family:
                     continue
                 try:
                     at_end = abs(float(row['Station x (m)']) - x) <= 1e-8

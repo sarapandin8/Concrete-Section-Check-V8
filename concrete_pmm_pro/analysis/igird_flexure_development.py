@@ -30,7 +30,7 @@ from concrete_pmm_pro.serviceability.girder_prestress_station import (
     active_girder_strand_rows, debonded_strand_numbers_for_row,
 )
 
-RESULT_VERSION = "IGIRDER.FLEXDEP1.aashto-developed-flexure.CSI-sign1"
+RESULT_VERSION = "IGIRDER.DECKULS1.aashto-developed-flexure"
 SETTINGS_KEY = "igird_flexure_development_settings"
 MPA_PER_KSI = 6.894757293168
 
@@ -367,11 +367,23 @@ def ordinary_bar_limits(context: SectionEquilibrium, *, x_m: float, span_m: floa
         mat = context.materials.get(bar.material_name, context.default)
         db = bar.diameter_mm
         fc = girder_fc_mpa
-        if bar.material_name == "Composite deck longitudinal rebar":
+        if bar.material_name.startswith("Composite deck longitudinal rebar"):
             prefix = "top" if str(bar.label).startswith("Top") else "bottom"
             db = float(params.get(f"deck_long_rebar_{prefix}_diameter_mm", 0.0))
             fc = float(params.get("deck_fc_MPa", 0.0))
-        ld = float(settings.get("bar_ld_mm", 0.0))
+        bar_settings = settings
+        bar_distance = distance
+        deck_confirmed = True
+        if bar.material_name.startswith("Composite deck longitudinal rebar"):
+            from concrete_pmm_pro.analysis.igird_deck_development import deck_layer_settings
+            bar_settings = deck_layer_settings(params, bar, span_m=span_m)
+            deck_confirmed = bar_settings['bars_continuous_confirmed']
+            if not bar_settings['start_m'] <= x_m <= bar_settings['end_m']:
+                bar_distance = 0.0
+            else:
+                bar_distance = 1000.0 * min(float('inf') if bar_settings['left_bar_anchored'] else x_m-bar_settings['start_m'],
+                    float('inf') if bar_settings['right_bar_anchored'] else bar_settings['end_m']-x_m)
+        ld = float(bar_settings.get("bar_ld_mm", 0.0))
         if ld > 0:
             if ld < 304.8:
                 raise ValueError("Verified straight-bar ld cannot be below the AASHTO 12-in minimum.")
@@ -381,13 +393,13 @@ def ordinary_bar_limits(context: SectionEquilibrium, *, x_m: float, span_m: floa
                 raise ValueError("Automatic ordinary-bar ld is outside its normal-weight <=10 ksi, <=No.11, fy<=75 ksi scope; enter a verified governing ld.")
             ld = max(304.8, 2.4 * db * (mat.fy_MPa / MPA_PER_KSI) / math.sqrt(fc / MPA_PER_KSI) * 1.7)
             basis = "5.10.8.2.1a--c: location/coating=1.7; confinement=excess=density=1"
-        factor = 0.0 if distance < 304.8 else min(1.0, distance / ld)
+        factor = 0.0 if bar_distance < 304.8 else min(1.0, bar_distance / ld)
         factors.append(factor)
         trace.append({"Bar": bar.label or bar.material_name, "db_mm": db, "fy_MPa": mat.fy_MPa,
             "material_name": bar.material_name, "Es_MPa": mat.Es_MPa,
             "material_source": "Project material" if bar.material_name in context.materials else
                 f"Existing solver fallback: {mat.name}; resolve missing project material before PASS",
-            "bonded_distance_mm": distance if math.isfinite(distance) else None, "ld_full_yield_mm": ld,
+            "bonded_distance_mm": bar_distance if math.isfinite(bar_distance) else None, "continuity_confirmed":deck_confirmed, "ld_full_yield_mm": ld,
             "stress_limit_MPa": factor * mat.fy_MPa, "factor": factor, "basis": basis})
     return factors, trace
 
@@ -423,8 +435,11 @@ def solve_developed_station(context: SectionEquilibrium, families: tuple[StrandF
     result.update(strand_trace=traces, bar_trace=bar_trace,
         reference_Mn_kNm=reference["Mn_Nmm"] / 1e6, reference_phiMn_kNm=reference["phiMn_Nmm"] / 1e6,
         reference_c_mm=reference["c_mm"],
-        source_status="PASS" if not context.bars or settings.get("bars_continuous_confirmed") else "REVIEW",
-        source_note="Ordinary-bar full-span continuity/cutoff and entered anchorage/ld require drawing confirmation." if context.bars and not settings.get("bars_continuous_confirmed") else "Current bar continuity declaration recorded; strand development limits included.")
+        source_status="PASS" if not any(not b.material_name.startswith("Composite deck longitudinal rebar") for b in context.bars) or settings.get("bars_continuous_confirmed") else "REVIEW",
+        source_note="Ordinary-bar full-span continuity/cutoff and entered anchorage/ld require drawing confirmation." if any(not b.material_name.startswith("Composite deck longitudinal rebar") for b in context.bars) and not settings.get("bars_continuous_confirmed") else "Current bar continuity declaration recorded; strand development limits included.")
+    if any(not t.get('continuity_confirmed', True) for t in bar_trace):
+        result['source_status'] = 'REVIEW'
+        result['source_note'] += ' Deck-layer continuity/cutoff/anchorage is unconfirmed; numerical layer screening is not final acceptance.'
     if context.unresolved_bar_materials:
         result["source_status"] = "REVIEW"
         result["source_note"] += " Missing ordinary-bar material definitions: " + ", ".join(context.unresolved_bar_materials) + "; existing fallback fy/Es is shown in the bar trace and cannot authorize PASS."

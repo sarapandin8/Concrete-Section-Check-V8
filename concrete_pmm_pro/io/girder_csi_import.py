@@ -7,7 +7,7 @@ import math
 import re
 import pandas as pd
 
-VERSION = 'IGIRDER.CSIIMPORT2.auto-detect-v2'
+VERSION = 'IGIRDER.MULTICASE1.source-vectors-v1'
 SOURCE_TAG = 'CSP_CSI_SOURCE='
 CSI_COLUMNS = ['Layout Line Distance','Girder Distance','ItemType','P','V2','V3','T','M2','M3']
 APP_COLUMNS = ['Active','Station x (m)','Case Name','Mux','Vuy','Tu','Muy','Vux','Nu','Note']
@@ -65,7 +65,8 @@ class CsiImport:
     audit: pd.DataFrame
     counts: dict
 
-def prepare_csi_table(frame, *, sheet_name, case_name='ENV_ULS'):
+def prepare_csi_table(frame, *, sheet_name, case_name='ENV_ULS', source_name='',
+                      source_mode='unverified', concurrency_confirmed=False, evidence=''):
     lookup={_key(c):c for c in frame.columns}
     if len(lookup) != len(frame.columns):
         return CsiImport(pd.DataFrame(columns=APP_COLUMNS),['Duplicate column names in CSI table.'],pd.DataFrame(),{})
@@ -76,6 +77,8 @@ def prepare_csi_table(frame, *, sheet_name, case_name='ENV_ULS'):
         return CsiImport(pd.DataFrame(columns=APP_COLUMNS),['CSI table requires a distance column and P, V2, V3, T, M2, M3.'],pd.DataFrame(),{})
     step_column=lookup.get('itemtype') or lookup.get('steptype')
     output_column=lookup.get('outputcase') or lookup.get('casename')
+    step_number_column=lookup.get('stepnum') or lookup.get('stepnumber') or lookup.get('time')
+    control_column=lookup.get('correspondence') or lookup.get('controllingresponse')
     rows=[]; audit=[]; occurrences={}; counts={}; unit_factors={c:1.0 for c in required}
     length_factor=1.0
     data=frame.copy(deep=True)
@@ -117,15 +120,23 @@ def prepare_csi_table(frame, *, sheet_name, case_name='ENV_ULS'):
         if not base:
             errors.append(f'{sheet_name} row {excel_row}: enter the FEA case / envelope name.')
             continue
-        identity=(base,step,x)
+        step_number = str(raw.get(step_number_column)).strip() if step_number_column and not _blank(raw.get(step_number_column)) else ''
+        control = str(raw.get(control_column)).strip() if control_column and not _blank(raw.get(control_column)) else ''
+        identity=(base,step,step_number,control,x)
         occurrence=occurrences.get(identity,0)+1
         occurrences[identity]=occurrence
         # Distinguish repeated source rows without assuming Before/After labels.
         # A set is just occurrence order at each source station, not a FEA case.
-        case=f'{base} / {sheet_name} / {step} / set {occurrence}'
+        identity_label = ' / '.join(v for v in (source_name, base, sheet_name, step,
+            ('step '+step_number) if step_number else '', ('control '+control) if control else '') if v)
+        case=f'{identity_label} / set {occurrence}'
+        verified = bool(concurrency_confirmed and str(evidence).strip()) and (
+            source_mode == 'correspondence' or (source_mode == 'static' and step not in {'Max','Min'}))
         source={'schema':VERSION,'sheet':str(sheet_name),'row':excel_row,'case':base,
             'step':step,'occurrence':occurrence,'distance_column':str(distance),
-            'kind':'ENVELOPE' if step in {'Max','Min'} else 'UNVERIFIED',
+            'kind':'CONCURRENT' if verified else ('ENVELOPE' if step in {'Max','Min'} else 'UNVERIFIED'),
+            'source_file':source_name, 'source_mode':source_mode, 'concurrency_confirmed':verified,
+            'evidence':str(evidence).strip(), 'step_number':step_number, 'control':control,
             'layout_distance':None if 'layoutlinedistance' not in lookup or _blank(raw.get(lookup['layoutlinedistance'])) else str(raw.get(lookup['layoutlinedistance']))}
         note=SOURCE_TAG+json.dumps(source,ensure_ascii=False,separators=(',',':'))
         rows.append({'Active':True,'Station x (m)':x,'Case Name':case,
@@ -183,6 +194,11 @@ def apply_source_gate(result,source):
             for field in ('Mux','Vuy','Tu','Muy','Vux','Nu'):
                 unit='kN-m' if field in {'Mux','Tu','Muy'} else 'kN'
                 result.at[i,f'Source {field} {unit}']=float(exact_row.get(field))
+        result.at[i,'Source file']=info.get('source_file','')
+        if info.get('kind') == 'CONCURRENT' and info.get('concurrency_confirmed') and info.get('evidence'):
+            result.at[i,'Source coupling']='CONCURRENT — DECLARED'
+            result.at[i,'Concurrency basis']=info['evidence']
+            continue
         result.at[i,'Source coupling']='ENVELOPE — REVIEW' if info.get('kind')=='ENVELOPE' else 'UNVERIFIED — REVIEW'
         note=ENVELOPE_NOTE if info.get('kind')=='ENVELOPE' else 'CSI source concurrency is unverified; use corresponding concurrent FEA actions for final acceptance.'
         result.at[i,'Notes']=str(row.get('Notes') or '')+' '+note
@@ -210,3 +226,22 @@ def append_errors(current, imported, *, current_is_csi):
         if keys.duplicated(['Case Name','Station x (m)']).any():
             errors.append('Append would repeat a Case Name / station. Replace this import, or enter a distinct FEA case / envelope name.')
     return errors
+
+
+def tag_app_source(frame, *, source_name, sheet_name, source_mode='unverified',
+                   concurrency_confirmed=False, evidence=''):
+    """Keep legacy tags; untagged app-column uploads need a recorded vector basis."""
+    result=frame.copy(deep=True)
+    for i,row in result.iterrows():
+        existing=source_info(row)
+        if existing is not None:
+            continue  # Renaming an existing bound cannot promote its acceptance.
+        case=str(row.get('Case Name') or '')
+        bound=bool(re.search(r'(?:^|[/ _])(?:max|min)(?:$|[/ _])',case,re.I))
+        verified=bool(concurrency_confirmed and str(evidence).strip()) and (
+            source_mode=='correspondence' or (source_mode=='static' and not bound))
+        info={'schema':VERSION,'kind':'CONCURRENT' if verified else ('ENVELOPE' if bound else 'UNVERIFIED'),
+            'source_file':source_name,'sheet':sheet_name,'case':case,'step':'App',
+            'concurrency_confirmed':verified,'evidence':str(evidence).strip(),'row':int(i)+1}
+        result.at[i,'Note']=SOURCE_TAG+json.dumps(info,separators=(',',':'))+' '+str(row.get('Note') or '')
+    return result

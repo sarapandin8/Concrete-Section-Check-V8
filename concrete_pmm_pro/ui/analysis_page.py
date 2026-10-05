@@ -6498,6 +6498,8 @@ def _beam_uls_developed_igird_flexure_dataframe(
             "Tension face": _beam_uls_flexure_tension_face_label(sign),
             "Neutral axis θ deg": 90.0 if sign > 0 else 270.0,
             "Benchmark readiness": "Developed resistance; source/detailing/composite gates remain separate"}
+        row.update({'Section basis':'FINAL COMPOSITE' if '_igird_flexure_precast_depth_mm' in state else 'PRECAST I-GIRDER',
+            'Deck longitudinal included':bool(params.get('deck_long_rebar_credit_positive_mn',False)) if '_igird_flexure_precast_depth_mm' in state else False})
         try:
             if not all(math.isfinite(v) for v in (x, mu, nu)) or not 0 <= x <= span:
                 raise ValueError("Station/Mux/Nu must be finite, with x inside the station span.")
@@ -6523,9 +6525,17 @@ def _beam_uls_developed_igird_flexure_dataframe(
                 ai = ai.model_copy(update={"prestress_elements": [f.element for f in families]})
                 contexts[sign] = (IgirdFlexureSectionEquilibrium(ai, sign), families)
             context, families = contexts[sign]
-            reference_key = (sign, nu)
+            from concrete_pmm_pro.analysis.igird_deck_development import is_deck_bar, deck_layer_settings
+            reference_bars = []
+            for bar in context.bars:
+                if is_deck_bar(bar):
+                    layer = deck_layer_settings(params,bar,span_m=span)
+                    reference_bars.append(1.0 if layer['start_m'] <= x <= layer['end_m'] else 0.0)
+                else:
+                    reference_bars.append(1.0)
+            reference_key = (sign, nu, tuple(reference_bars))
             if reference_key not in references:
-                references[reference_key] = context.solve(nu * 1000.0)
+                references[reference_key] = context.solve(nu * 1000.0,bar_factors=reference_bars)
             result = solve_igird_developed_flexure_station(context, families,
                 reference=references[reference_key], x_m=x, span_m=span, nu_n=nu * 1000.0,
                 precast_depth_mm=float(state.get("_igird_flexure_precast_depth_mm", context.h)),
@@ -6543,7 +6553,8 @@ def _beam_uls_developed_igird_flexure_dataframe(
             if numerical_status == "PASS" and minimum_gate.startswith("REVIEW"):
                 status = "REVIEW"
             notes = f"Strand development included; {result['strain_condition']}; force residual={result['residual_N']:.6g} N. " + result["source_note"]
-            if sign < 0 and '_igird_flexure_precast_depth_mm' in state:
+            from concrete_pmm_pro.analysis.igird_deck_development import negative_composite_ready
+            if sign < 0 and '_igird_flexure_precast_depth_mm' in state and not negative_composite_ready(params):
                 notes += ' Negative-composite directional screening; continuity-region deck tension reinforcement and negative-flexure acceptance require separate review.'
                 if status == 'PASS':
                     status = 'REVIEW'
@@ -6595,7 +6606,7 @@ def _beam_uls_developed_igird_flexure_dataframe(
                 row["Status"] = "REVIEW"
     messages.insert(0, f"IGIRDER.FLEXDEP1: {len(rows)} original demand stations in {time.perf_counter() - started:.3f} s; "
         f"{len(references)} reference equilibrium state(s). Every station retains its Nu; no angular PMM sweep.")
-    if girder_csi_source_cases(active_df):
+    if any(info.get('kind') != 'CONCURRENT' for info in girder_csi_source_cases(active_df).values()):
         messages.append(GIRDER_CSI_ENVELOPE_NOTE)
     return girder_csi_source_gate(pd.DataFrame(rows), active_df), messages
 
@@ -7901,14 +7912,18 @@ def _beam_uls_igird_general_shear_epsilon(
     """
 
     from concrete_pmm_pro.analysis.igird_combined_vt import development_settings, ordinary_development_factor
+    from concrete_pmm_pro.analysis.igird_deck_development import station_bar_factors
     ordinary_factor = 1.0
     strain_input = analysis_input
     if analysis_input.rebars and not ordinary_development_applied:
         ordinary_factor = ordinary_development_factor(development_settings(state), x_m=x_m, span_m=span_length_m)
+        factors, bars_ready, deck_trace = station_bar_factors(state, analysis_input.rebars, analysis_input.rebar_materials,
+            x_m=x_m, span_m=span_length_m, girder_factor=ordinary_factor)
         strain_input = analysis_input.model_copy(update={"rebars": [
-            bar.model_copy(update={"diameter_mm": bar.diameter_mm * math.sqrt(ordinary_factor)})
-            for bar in analysis_input.rebars
-        ] if ordinary_factor is not None and ordinary_factor > 0.0 else []})
+            bar.model_copy(update={"diameter_mm":bar.diameter_mm*math.sqrt(factor)})
+            for bar,factor in zip(analysis_input.rebars,factors) if factor > 0]})
+        if not bars_ready:
+            ordinary_factor = None
     rebar_terms = _beam_uls_igird_rebar_strain_terms(strain_input, tension_face=tension_face)
     ps_terms = _beam_uls_igird_prestress_general_shear_terms(
         state,
@@ -8238,7 +8253,9 @@ def _beam_uls_shear_result_for_row(
         phi, phi_policy = aashto_prestressed_shear_phi(
             has_unbonded_or_debonded_strands=_beam_uls_igird_has_debonded_strands(state)
         )
-        if not has_minimum_transverse:
+        from concrete_pmm_pro.analysis.igird_crack_spacing import crack_spacing_source
+        crack = crack_spacing_source(state,dv_mm=depth_for_vs) if not has_minimum_transverse else {'ready':False}
+        if not has_minimum_transverse and not crack['ready']:
             # Article 5.7.3.4.2-2 requires sxe, which in turn requires sx and
             # maximum aggregate size ag. Concrete Section Pro does not currently
             # own a traceable ag source for this I-Girder workflow. Do not invent
@@ -8336,8 +8353,10 @@ def _beam_uls_shear_result_for_row(
             }
         params = aashto_general_shear_parameters(
             epsilon_s=float(epsilon_trace.get("epsilon_s_raw")),
-            has_minimum_transverse_reinforcement=True,
-        )
+            has_minimum_transverse_reinforcement=has_minimum_transverse,
+            sxe_mm=crack.get('sxe mm'))
+        if crack['ready']:
+            notes.append(crack['note'])
         beta = params.beta
         theta_deg = params.theta_deg
         cot_theta = 1.0 / math.tan(math.radians(theta_deg))
@@ -10517,7 +10536,10 @@ def _beam_uls_igird_torsion_result_for_row(
 
     avs = stirrup_area * legs / spacing
     avs_min = aashto_min_transverse_avs_mm2_per_mm(fc, _beam_uls_web_width_mm(analysis_input.section_geometry)[0] or 0.0, fy, lambda_concrete=1.0)
-    if avs + 1.0e-12 < avs_min:
+    from concrete_pmm_pro.analysis.igird_crack_spacing import crack_spacing_source
+    has_minimum = avs + 1.0e-12 >= avs_min
+    crack = crack_spacing_source(state,dv_mm=depth_for_gp) if not has_minimum else {'ready':False}
+    if not has_minimum and not crack['ready']:
         return {
             **common, "Status": "FAIL", "Transverse status": "REVIEW", "Longitudinal status": "COMBINED CHECK REQUIRED", "Detailing status": "FAIL",
             "Capacity": "General Procedure Eq. -2 source blocked", "Utilization": "-", "D/C value": float("nan"), "φTn kN-m": float("nan"),
@@ -10541,7 +10563,11 @@ def _beam_uls_igird_torsion_result_for_row(
             "Capacity": "General Procedure strain source not ready", "Utilization": "-", "D/C value": float("nan"), "φTn kN-m": float("nan"),
             "Ao mm2": ao, "ph mm": ph, "Veff kN": veff_n / 1000.0, "Notes": str(eps_trace.get("note") or "Torsion-modified epsilon_s is not ready."),
         }
-    params = aashto_general_shear_parameters(epsilon_s=float(eps_trace.get("epsilon_s_raw")), has_minimum_transverse_reinforcement=True)
+    params = aashto_general_shear_parameters(epsilon_s=float(eps_trace.get("epsilon_s_raw")),
+        has_minimum_transverse_reinforcement=has_minimum, sxe_mm=crack.get('sxe mm'))
+    if crack['ready']:
+        common.update({k:v for k,v in crack.items() if k != 'ready'})
+        notes.append(crack['note'])
     at_per_s = stirrup_area / spacing
     result = aashto_prestressed_torsion_general_result(
         fc_MPa=fc, Acp_mm2=acp, Pcp_mm=pcp, Ao_mm2=ao, ph_mm=ph, tu_Nmm=tu_nmm, vu_N=vu_n,
@@ -13148,7 +13174,7 @@ def _make_beam_uls_demand_figure(
                 )
             )
     fig.update_layout(
-        title={"text": f"{title}<br><sup>Demand only — capacity curves planned</sup>"},
+        title={"text": f"{title}<br><sup>Imported actions — selected case; capacities shown in the resistance workspace</sup>"},
         xaxis_title="Distance from left end of member (m)",
         yaxis_title=y_label,
         legend={"orientation": "h", "yanchor": "top", "y": -0.22, "xanchor": "center", "x": 0.5},
@@ -14435,6 +14461,7 @@ def _beam_uls_final_composite_preparation(
         return prep, None, deduplicate_warnings(messages)
 
     composite_state = dict(state)
+    composite_state["section_parameters"] = params
     composite_state["section_geometry"] = prep.geometry
     composite_state["concrete_material"] = prep.concrete_material
     composite_state["_igird_flexure_precast_depth_mm"] = _beam_uls_section_bounds(geometry)[3] - _beam_uls_section_bounds(geometry)[1]
@@ -14446,13 +14473,10 @@ def _beam_uls_final_composite_preparation(
     composite_state["rebars"] = existing_rebars
 
     existing_rebar_materials = list(_beam_uls_get_state_value(state, "rebar_materials", []) or [])
-    if prep.deck_rebar_material is not None:
-        existing_rebar_materials = [
-            item
-            for item in existing_rebar_materials
-            if str(getattr(item, "name", "")) != str(prep.deck_rebar_material.name)
-        ]
-        existing_rebar_materials.append(prep.deck_rebar_material)
+    deck_materials = list(prep.deck_rebar_materials) or ([prep.deck_rebar_material] if prep.deck_rebar_material is not None else [])
+    names = {m.name for m in deck_materials}
+    existing_rebar_materials = [item for item in existing_rebar_materials if str(getattr(item,'name','')) not in names]
+    existing_rebar_materials.extend({m.name:m for m in deck_materials}.values())
     composite_state["rebar_materials"] = existing_rebar_materials
     return prep, composite_state, deduplicate_warnings(messages)
 
@@ -14545,7 +14569,7 @@ def _render_beam_girder_final_composite_flexure_guard(
     st.markdown("#### Final Composite Flexure — imported FEA demand")
     st.caption(
         "Demand = imported Final ULS FEA resultants. Resistance = precast I-Girder + effective CIP deck. "
-        "Current solver scope is positive longitudinal flexure; composite-action interface shear remains a separate acceptance gate."
+        "Positive and negative longitudinal flexure use defined developed layers; composite-action interface shear remains a separate acceptance gate."
     )
     if active_df.empty:
         st.warning("No active Final Composite ULS station rows are available in Loads.")
@@ -14560,7 +14584,7 @@ def _render_beam_girder_final_composite_flexure_guard(
     native_csi_source = bool(girder_csi_source_cases(active_df))
     # Screen every imported bound in its actual direction. Positive-composite
     # certification scope and the source-concurrency gate remain separate.
-    supported_df = active_df.loc[finite_mask if native_csi_source else positive_mask | zero_mask].copy()
+    supported_df = active_df.loc[finite_mask].copy()
     positive_count = int(positive_mask.sum())
     negative_count = int(negative_mask.sum())
 
@@ -14574,7 +14598,7 @@ def _render_beam_girder_final_composite_flexure_guard(
     if not isinstance(section_params, Mapping):
         section_params = {}
     be_mode = str(section_params.get("Be_mode") or "Manual")
-    be_strength_verified = bool(section_params.get("Be_strength_verified", True if be_mode != "AASHTO helper" else False))
+    be_strength_verified = bool(section_params.get("Be_strength_verified", False))
 
     interface_source_df = _igird_interface_source_dataframe(active_df)
     member_length_m = _beam_uls_span_length_from_state(st.session_state, is_building=False)
@@ -14592,7 +14616,7 @@ def _render_beam_girder_final_composite_flexure_guard(
     elif interface_entry is None:
         interface_gate_status = "PENDING"
 
-    prep_ready = composite_state is not None and positive_count > 0
+    prep_ready = composite_state is not None and (positive_count + negative_count > 0)
     prep_cards = [
         {
             "title": "Composite section",
@@ -14627,12 +14651,12 @@ def _render_beam_girder_final_composite_flexure_guard(
         st.warning(str(warning))
 
     if negative_count:
-        st.warning(
-            f"{negative_count} active Final ULS row(s) have negative Mux. IGIRDER.ULS3 does not certify negative composite flexure; "
-            + ("these imported rows are retained in directional numerical screening; continuity-region deck tension reinforcement requires separate negative-flexure review."
-                if native_csi_source else "continuity-region deck longitudinal tension reinforcement is a separate future check. Positive/zero Mux rows are evaluated below.")
-        )
-    if positive_count <= 0 and not (native_csi_source and negative_count):
+        from concrete_pmm_pro.analysis.igird_deck_development import negative_composite_ready
+        if negative_composite_ready(section_params):
+            st.info(f"{negative_count} negative-Mux rows are calculated with the same composite polygon and defined deck layers; per-station development, minimum resistance, biaxial response and interface acceptance still govern.")
+        else:
+            st.warning(f"{negative_count} negative-Mux rows are retained for directional numerical screening. Define and verify deck tension layers before accepting negative composite flexure.")
+    if positive_count + negative_count <= 0:
         st.warning("No positive Final ULS Mux row is available for the current IGIRDER.ULS3 positive composite-flexure route.")
         return
     if composite_state is None:
@@ -14660,7 +14684,7 @@ def _render_beam_girder_final_composite_flexure_guard(
             use_container_width=True,
             disabled=not prep_ready,
             help=(
-                "Runs AASHTO Section 5 positive composite flexure using the effective CIP deck and Final effective prestress force. "
+                "Runs AASHTO Section 5 directional composite flexure using the effective CIP deck, deck layers and Final effective prestress force. "
                 "A passing section remains REVIEW until girder-deck interface shear is verified."
             ),
         )
@@ -14677,7 +14701,7 @@ def _render_beam_girder_final_composite_flexure_guard(
         )
         preview_messages = deduplicate_warnings(
             [
-                "IGIRDER.FLEXDEP1 Final Composite positive flexure includes AASHTO 5.9.4.3 strand development and strain-based phi.",
+                "IGIRDER.DECKULS1 Final Composite directional flexure includes AASHTO 5.9.4.3 strand development and strain-based phi.",
                 f"Composite concrete strength basis = {design_fc:g} MPa (lower of deck/girder f'c).",
                 *prep_messages,
                 *preview_messages,
@@ -14699,8 +14723,8 @@ def _render_beam_girder_final_composite_flexure_guard(
                 "deck_rebar_credit": deck_rebar_credit,
                 "Be_mode": be_mode,
                 "Be_strength_verified": be_strength_verified,
-                "negative_mux_rows_excluded": 0 if native_csi_source else negative_count,
-                "negative_mux_rows_screened": negative_count if native_csi_source else 0,
+                "negative_mux_rows_excluded": 0,
+                "negative_mux_rows_screened": negative_count,
                 "result_version": _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION,
             },
         )
@@ -15066,7 +15090,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
         render_axial_convention()
     active_df = _active_beam_uls_demand_dataframe_from_session(st.session_state)
 
-    if is_precast_composite_bridge and girder_csi_source_cases(active_df):
+    if is_precast_composite_bridge and any(info.get('kind') != 'CONCURRENT' for info in girder_csi_source_cases(active_df).values()):
         st.warning('Final Composite FEA source: '+GIRDER_CSI_ENVELOPE_NOTE)
 
     basis_cards = [
@@ -32264,7 +32288,7 @@ def _igird_composite_flexure_dashboard_state(session_state: Mapping[str, Any]) -
         positive_mask = finite_mask & (mux > _BEAM_ULS_DEMAND_TOL)
         zero_mask = finite_mask & (mux.abs() <= _BEAM_ULS_DEMAND_TOL)
         native_csi_source = bool(girder_csi_source_cases(active_df))
-        supported_df = active_df.loc[finite_mask if native_csi_source else positive_mask | zero_mask].copy()
+        supported_df = active_df.loc[finite_mask].copy()
         if int(positive_mask.sum()) <= 0 and not (native_csi_source and (mux < -_BEAM_ULS_DEMAND_TOL).any()):
             return "REVIEW", "Final Composite positive-flexure route has no positive Mux row", "warning"
 

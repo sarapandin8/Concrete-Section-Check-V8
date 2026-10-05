@@ -16,7 +16,7 @@ from concrete_pmm_pro.analysis.igird_combined_vt import development_settings
 from concrete_pmm_pro.analysis.igird_shear_depth import RESULT_VERSION, developed_shear_depth
 
 RUNTIME_KEY = "_igird_shearcomp_runtime"
-DEPTH_COLUMNS = ["Section basis", "Depth source status", "Composite action status", "h mm",
+DEPTH_COLUMNS = ["Section basis", "Deck development trace", "Depth source status", "Composite action status", "h mm",
     "Precast h mm", "Compression f'c MPa", "de mm", "C-T lever arm mm", "dv lower bound mm",
     "y C mm", "y T mm", "C kN", "T kN", "Depth Mn kN-m", "Depth c mm",
     "Depth force residual N", "Depth moment residual N-mm", "dv basis", "Depth note"]
@@ -60,11 +60,7 @@ def prepared_section(state):
             result = {"ready": False, "notes": notes, "basis": "FINAL COMPOSITE", "composite": True}
             cache["section"] = result
             return result
-        # V/T owns the existing precast longitudinal bars and their governing
-        # development declaration. Optional deck-bar development is not owned.
-        analysis_state = dict(analysis_state)
-        analysis_state["rebars"] = list(state.get("rebars") or [])
-        notes.append("Effective deck concrete participates in de/dv; deck longitudinal bars receive no V/T credit.")
+        notes.append("Deck concrete and defined longitudinal layers participate in ULS Final; each deck layer uses its own development/continuity source.")
     geometry = ap._beam_uls_get_state_value(state, "section_geometry")
     concrete = ap._beam_uls_get_state_value(state, "concrete_material")
     try:
@@ -172,21 +168,34 @@ def depth_values(state, *, row, strength_route, capacity_direction=None):
             context = SectionEquilibrium(ai, sign)
             cache[context_key] = context, families, ordinary, missing
         context, families, ordinary, missing = cache[context_key]
-        reference_key = ("reference", sign, nu)
+        from concrete_pmm_pro.analysis.igird_deck_development import station_bar_factors, is_deck_bar, deck_layer_settings
+        from concrete_pmm_pro.analysis.igird_combined_vt import ordinary_development_factor
+        bar_factors, bar_ready, deck_trace = station_bar_factors(prepared['state'], context.bars, list(context.materials.values()),
+            x_m=x, span_m=span, girder_factor=ordinary_development_factor(ordinary,x_m=x,span_m=span))
+        reference_factors = []
+        for bar in context.bars:
+            if is_deck_bar(bar):
+                cfg = deck_layer_settings(prepared['state'].get('section_parameters') or {},bar,span_m=span)
+                reference_factors.append(1.0 if cfg['bars_continuous_confirmed'] and cfg['start_m'] <= x <= cfg['end_m'] else 0.0)
+            else:
+                reference_factors.append(1.0 if ordinary.get('continuous_full_span_confirmed') else 0.0)
+        reference_key = ('reference',sign,nu,tuple(reference_factors))
         if reference_key not in cache:
-            confirmed = not context.bars or bool(ordinary.get("continuous_full_span_confirmed"))
-            cache[reference_key] = context.solve(nu, bar_factors=[1.0 if confirmed else 0.0] * len(context.bars))
+            cache[reference_key] = context.solve(nu,bar_factors=reference_factors)
         values = developed_shear_depth(context, families, reference=cache[reference_key],
-            x_m=x, span_m=span, nu_n=nu, precast_depth_mm=prepared["precast_depth_mm"], ordinary_settings=ordinary)
-        source_ready = not missing and values["ordinary_factor"] is not None
+            x_m=x, span_m=span, nu_n=nu, precast_depth_mm=prepared["precast_depth_mm"], ordinary_settings=ordinary, bar_factors=bar_factors, bar_source_ready=bar_ready)
+        source_ready = not missing and bar_ready
         notes = list(prepared["notes"])
         if missing:
             notes.append("Unresolved longitudinal material excluded from depth strength: " + ", ".join(missing))
-        if values["ordinary_factor"] is None:
+        if values["ordinary_factor"] is None and any(not b.material_name.startswith("Composite deck longitudinal rebar") for b in context.bars):
             notes.append("Unconfirmed ordinary-bar development receives zero strength credit in dv.")
         gate, gate_notes = composite_action_gate(state, strength_route=strength_route)
         notes.extend(gate_notes)
-        if sign < 0 and prepared.get("composite"):
+        if not bar_ready:
+            notes.append("One or more deck/girder layers lack confirmed development/continuity; unverified layers receive zero V/T credit.")
+        from concrete_pmm_pro.analysis.igird_deck_development import negative_composite_ready
+        if sign < 0 and prepared.get("composite") and not negative_composite_ready(state.get('section_parameters') or {}):
             source_ready = False
             notes.append("Negative composite flexure remains outside the certified positive-composite route; this depth is audit-only.")
         if abs(values["force_balance_N"]) > 1e-4 or abs(values["moment_balance_Nmm"]) > max(1e-3, abs(values["Mn_Nmm"]) * 1e-9):
@@ -207,7 +216,7 @@ def depth_values(state, *, row, strength_route, capacity_direction=None):
             "C-T lever arm mm": values["lever_arm_mm"], "dv lower bound mm": values["lower_bound_mm"],
             "y C mm": values["y_C_mm"], "y T mm": values["y_T_mm"],
             "C kN": values["C_N"] / 1000, "T kN": values["T_N"] / 1000,
-            "Depth Mn kN-m": values["Mn_Nmm"] / 1e6, "Depth c mm": values["c_mm"],
+            "Deck development trace":deck_trace, "Depth Mn kN-m": values["Mn_Nmm"] / 1e6, "Depth c mm": values["c_mm"],
             "Depth force residual N": values["force_balance_N"], "Depth moment residual N-mm": values["moment_balance_Nmm"],
             "dv basis": dv_note, "Depth note": "; ".join(notes), "force_trace": values}
     except (ValueError, TypeError, KeyError, AttributeError) as exc:

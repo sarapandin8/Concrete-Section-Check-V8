@@ -274,7 +274,7 @@ def test_stale_stage_result_version_is_rejected_even_when_input_hash_matches():
     state = {"section_preset_key":"parametric_i_girder"}
     for name in ("Flexure — Construction", "Flexure — Final Composite"):
         entry = a._beam_uls_store_manual_result(state,name,input_hash="same-input",result={"Status":"REVIEW"})
-        assert entry["result_version"].startswith("IGIRDER.FLEXDEP1.")
+        assert entry["result_version"].startswith("IGIRDER.DECKULS1.")
         assert a._beam_uls_current_cached_result(state,name,"same-input") is not None
         entry["result_version"] = "PREVIOUS_FULL_STRAND_STRENGTH"
         assert a._beam_uls_current_cached_result(state,name,"same-input") is None
