@@ -32424,6 +32424,11 @@ def _analysis_subpage_choice() -> str:
 
 
 def render_analysis_page() -> None:
+    from concrete_pmm_pro.io.girder_load_bank import ACTIVE_KEY, SELECTION_KEY
+    selection = pd.DataFrame(st.session_state.get(SELECTION_KEY, []))
+    member = st.session_state.get(ACTIVE_KEY) or (str(selection.iloc[0]['Girder']) if not selection.empty else '')
+    if member:
+        st.info(f'ULS imported girder: {member}. Calculate using the current section, reinforcement, prestress and support settings; results identify the source girder/case.')
     _sync_analysis_settings_code_to_project()
     sync_note = st.session_state.pop("analysis_runtime_code_sync_note", None)
     settings = _analysis_mode_from_session()

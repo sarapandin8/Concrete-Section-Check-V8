@@ -1,0 +1,1 @@
+480 rows, 2880 force values, 6 members; exact frame equality after member activation.

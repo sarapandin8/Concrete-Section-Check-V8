@@ -39,7 +39,7 @@ def render_import(*, state_key, editor_key, key_prefix, force_unit, moment_unit)
     )
 
     st.markdown('**ULS Excel / CSV import — automatic format detection**')
-    st.caption('IGIRDER.MULTICASE1 · Upload one or multiple workbooks/CSVs for the same physical girder. CSI force columns and existing app-column tables are detected automatically. Both Max/Min and every repeated station are retained.')
+    st.caption('IGIRDER.MULTIGIRDER2 · Upload multiple workbooks/CSVs and select multiple girder worksheets. All cases are retained separately for each girder. CSI force columns and existing app-column tables are detected automatically. Both Max/Min and every repeated station are retained.')
     st.dataframe(pd.DataFrame([
         ['Girder Distance', 'Station x (m)', 'm', 'Position'],
         ['M3', 'Mux', 'kN-m', 'Flexure'],
@@ -57,106 +57,9 @@ def render_import(*, state_key, editor_key, key_prefix, force_unit, moment_unit)
         help='Automatic detection: Girder Distance / ItemType / P V2 V3 T M2 M3, or Active / Station x (m) / Case Name / Mux Vuy Tu Muy Vux Nu.')
     if not uploaded:
         return
-    if isinstance(uploaded, list):
-        if len(uploaded) > 1:
-            return _render_batch(uploaded, state_key=state_key, editor_key=editor_key, key_prefix=key_prefix,
-                force_unit=force_unit, moment_unit=moment_unit)
-        uploaded = uploaded[0]
-    try:
-        tables = read_tables(uploaded.getvalue(), uploaded.name)
-    except Exception as exc:
-        st.error(f'Could not read ULS workbook: {exc}')
-        return
-    eligible = {name: table for name, table in tables.items() if is_csi_table(table) or is_app_table(table)}
-    if not eligible:
-        st.error('No supported ULS header found. CSI tables need a distance column and all six components P, V2, V3, T, M2, M3; app tables need Case Name, Station x (m) and force columns.')
-        return
-    ranking = girder_ranking(eligible)
-    if not ranking.empty:
-        st.markdown('**Individual girder demand comparison — uploaded worksheets**')
-        st.dataframe(ranking, use_container_width=True, hide_index=True)
-        best = str(ranking.iloc[0]['Girder'])
-        if len(ranking) > 1:
-            shear = ranking.loc[ranking['|V2| kN'].idxmax(), 'Girder']
-            torsion = ranking.loc[ranking['|T| kN-m'].idxmax(), 'Girder']
-            st.info(f'Default flexure demand: {best} (largest |M3|). Largest |V2|: {shear}; largest |T|: {torsion}. This ranks uploaded demands, not member capacity ratios.')
-        else:
-            st.caption('This workbook contains one individual girder; no comparison with unprovided girders is made.')
-    else:
-        best = next(iter(eligible))
-    sheets = list(eligible)
-    fingerprint = hashlib.sha256(uploaded.getvalue()).hexdigest()[:12]
-    selected = st.selectbox('CSiBridge worksheet / girder', sheets, index=sheets.index(best), key=key_prefix+'_csi_sheet_'+fingerprint)
-    raw = eligible[selected]
-    native = is_csi_table(raw)
-    st.info('Detected format: '+('CSiBridge native girder forces (P, V2, V3, T, M2, M3)' if native else 'App station-load columns (existing format)'))
-    errors = []
-    if native:
-        source_sheet = selected
-        if selected == 'CSV':
-            source_sheet = st.text_input('CSV girder / member name', value='Left Exterior Girder', key=key_prefix+'_csi_csv_member')
-        individual = ('girder' in selected.casefold() or (selected == 'CSV' and bool(source_sheet.strip())
-            and any(str(c).strip().casefold() == 'girder distance' for c in raw.columns)))
-        if not individual:
-            errors.append('Select an individual Girder worksheet. Entire Bridge Section, Beam-only and Slab-only forces cannot be applied as I-Girder section demand.')
-        base = st.text_input('FEA case / envelope name', value='ENV_ULS', key=key_prefix+'_csi_case',
-            help='If OutputCase is absent, this label identifies the factored FEA envelope. A row-set suffix preserves source occurrence order; it is not another load combination.')
-        mode, confirmed, evidence = _source_controls(key_prefix+'_source_'+fingerprint)
-        parsed = prepare_csi_table(raw, sheet_name=source_sheet, case_name=base,
-            source_mode=mode, concurrency_confirmed=confirmed, evidence=evidence)
-        imported = parsed.frame
-        errors.extend(parsed.errors)
-        st.markdown('**Source preview — all six force components**')
-        st.dataframe(parsed.audit, use_container_width=True, hide_index=True)
-        st.caption(f'{len(imported)} rows · Max {parsed.counts.get("Max", 0)} · Min {parsed.counts.get("Min", 0)}. Row sets retain repeated source occurrences; no Before/After face is inferred.')
-        if mode != 'unverified' and confirmed and evidence.strip():
-            st.caption('Concurrent vectors are accepted only under the recorded source declaration; Max/Min rows remain bounds unless CSI Correspondence is declared.')
-        else:
-            st.warning(ENVELOPE_NOTE+' Imported numerical PASS in coupled strength checks is REVIEW until corresponding FEA actions are available.')
-        st.caption('P, V2, T and M3 feed the current strength checks. M2 and V3 are retained as reference values. Raw P→Nu is preserved; the solver performs the CSI axial-sign conversion internally.')
-        if force_unit != 'kN' or moment_unit != 'kN-m':
-            errors.append('CSI import stores kN / kN-m. Select those Force unit and Moment unit values on Loads before applying.')
-    else:
-        # A saved app table may already contain source tags; retain them and
-        # the existing declared axial convention rather than inferring signs.
-        imported = prepare_imported_workflow_load_table(raw, APP_COLUMNS)
-        mode, confirmed, evidence = _source_controls(key_prefix+'_source_'+fingerprint)
-        from concrete_pmm_pro.io.girder_csi_import import tag_app_source
-        imported = tag_app_source(imported,source_name=uploaded.name,sheet_name=selected,
-            source_mode=mode,concurrency_confirmed=confirmed,evidence=evidence)
-        st.caption(f'{len(imported)} app station rows detected. Existing force values, source notes and Nu convention are retained.')
-    st.markdown('**Import Preview — values sent to Analysis**')
-    st.dataframe(imported, use_container_width=True, hide_index=True)
-    valid = _workflow_table_result(imported, table_name='Girder ULS import',
-        numeric_columns=['Station x (m)', 'Mux', 'Vuy', 'Tu', 'Muy', 'Vux', 'Nu'], unique_key_columns=['Case Name', 'Station x (m)'])
-    errors.extend(valid.errors)
-    for error in errors:
-        st.error(error)
-    disabled = bool(errors) or imported.empty
-    if not disabled:
-        st.success('Validation passed. Every source row and all six force components are retained.')
-    current = pd.DataFrame(st.session_state.get(state_key, []), columns=APP_COLUMNS)
-    current['Station x (m)'] = pd.to_numeric(current['Station x (m)'], errors='coerce')
-    append_issues = append_errors(current, imported, current_is_csi=(not native or axial_convention(st.session_state)['input_sign'] == CSI_TENSION_POSITIVE))
-    for issue in append_issues:
-        st.caption('Append unavailable: '+issue)
-    cols = st.columns(2)
-    with cols[0]:
-        replace = st.button('Replace current rows', type='primary', use_container_width=True, disabled=disabled, key=key_prefix+'_replace_import')
-    with cols[1]:
-        append = st.button('Append imported rows', use_container_width=True, disabled=disabled or bool(append_issues), key=key_prefix+'_append_import')
-    if replace or append:
-        st.session_state[state_key] = pd.concat([current, imported], ignore_index=True) if append else imported.copy(deep=True)
-        st.session_state.pop(editor_key, None)
-        if native:
-            cfg = {'input_sign': CSI_TENSION_POSITIVE}
-            st.session_state[SETTINGS_KEY] = cfg
-            metadata = dict(st.session_state.get('project_metadata') or {})
-            metadata[SETTINGS_KEY] = cfg
-            st.session_state['project_metadata'] = metadata
-            st.session_state.pop('igird_axial_input_sign', None)
-        _sync_workflow_load_tables_metadata()
-        st.rerun()
+    files = uploaded if isinstance(uploaded, list) else [uploaded]
+    return _render_batch(files, state_key=state_key, editor_key=editor_key, key_prefix=key_prefix,
+        force_unit=force_unit, moment_unit=moment_unit)
 
 
 def _source_controls(key):
@@ -175,8 +78,8 @@ def _render_batch(uploaded, *, state_key, editor_key, key_prefix, force_unit, mo
     from concrete_pmm_pro.ui.loads_page import (_sync_workflow_load_tables_metadata, _workflow_table_result,
         prepare_imported_workflow_load_table)
     frames, issues, identities = [], [], set()
-    st.info('Select the same physical girder in each file. Each case/step/vector is checked separately; components are never enveloped together by the importer. Inputs must already be factored ULS combinations.')
-    same_member = st.checkbox('All selected tables belong to the same physical girder and station origin', key=key_prefix+'_same_member')
+    st.info('Import a collection of girders and factored ULS cases. Assign the same physical girder name across files for the same member. Analysis uses only the selected girder and its complete case set.')
+    same_member = st.checkbox('I confirm member names identify physical girders consistently across files, with the same station origin for each member', key=key_prefix+'_same_member')
     for number, uploaded_file in enumerate(uploaded):
         payload = uploaded_file.getvalue()
         digest = hashlib.sha256(payload).hexdigest()
@@ -197,14 +100,17 @@ def _render_batch(uploaded, *, state_key, editor_key, key_prefix, force_unit, mo
                 continue
             choices = list(eligible)
             preferred = [n for n in choices if 'girder' in n.casefold()]
-            selected = st.multiselect('Worksheets to import', choices, default=preferred[:1] or choices[:1], key=key+'_sheets')
+            selected = st.multiselect('Worksheets to import', choices, default=preferred or choices[:1], key=key+'_sheets')
             base = st.text_input('Factored ULS combination name (if OutputCase is absent)', value=Path(uploaded_file.name).stem, key=key+'_case')
-            member = st.text_input('Physical girder / member name', value='Left Exterior Girder', key=key+'_member')
             mode, confirmed, evidence = _source_controls(key)
             if not selected:
                 issues.append(uploaded_file.name+': select at least one worksheet')
             for sheet in selected:
                 raw = eligible[sheet]
+                member = st.text_input('Physical girder / member name — '+sheet, value=sheet if sheet != 'CSV' else Path(uploaded_file.name).stem, key=key+'_member_'+sheet).strip()
+                if not member:
+                    issues.append(uploaded_file.name+': physical girder name is required')
+                    continue
                 source_name = uploaded_file.name+' ['+digest[:8]+']'
                 if is_csi_table(raw):
                     if sheet != 'CSV' and 'girder' not in sheet.casefold():
@@ -213,37 +119,68 @@ def _render_batch(uploaded, *, state_key, editor_key, key_prefix, force_unit, mo
                     parsed = prepare_csi_table(raw, sheet_name=member if sheet == 'CSV' else sheet, case_name=base,
                         source_name=source_name, source_mode=mode, concurrency_confirmed=confirmed, evidence=evidence)
                     issues.extend(parsed.errors)
-                    frames.append(parsed.frame)
+                    frame = parsed.frame.copy()
+                    frame['Case Name'] = member+' / '+frame['Case Name'].astype(str)
+                    frame['Girder'] = member
+                    frames.append(frame)
                 else:
                     frame = prepare_imported_workflow_load_table(raw, APP_COLUMNS)
                     from concrete_pmm_pro.io.girder_csi_import import tag_app_source
                     frame = tag_app_source(frame,source_name=source_name,sheet_name=sheet,
                         source_mode=mode,concurrency_confirmed=confirmed,evidence=evidence)
                     frame['Case Name'] = source_name+' / '+sheet+' / '+frame['Case Name'].astype(str)
+                    frame['Case Name'] = member+' / '+frame['Case Name'].astype(str)
+                    frame['Girder'] = member
                     frames.append(frame)
-    imported = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=APP_COLUMNS)
+    imported = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=['Girder', *APP_COLUMNS])
     if force_unit != 'kN' or moment_unit != 'kN-m':
         issues.append('Batch import requires kN / kN-m units.')
     # CSI raw-P convention is a batch contract, including app-column tables.
     sign_confirmed = st.checkbox('All tables use raw CSI P signs: tension positive, compression negative', key=key_prefix+'_batch_sign')
     valid = _workflow_table_result(imported, table_name='Multi-table ULS import',
-        numeric_columns=['Station x (m)','Mux','Vuy','Tu','Muy','Vux','Nu'], unique_key_columns=['Case Name','Station x (m)'])
+        numeric_columns=['Station x (m)','Mux','Vuy','Tu','Muy','Vux','Nu'], unique_key_columns=['Girder','Case Name','Station x (m)'])
     issues.extend(valid.errors)
     st.dataframe(imported, use_container_width=True, hide_index=True)
     st.caption(f'{len(uploaded)} files · {len(imported)} retained rows · {imported["Case Name"].nunique()} separate vector series')
     for issue in issues:
         st.error(issue)
-    current = pd.DataFrame(st.session_state.get(state_key, []), columns=APP_COLUMNS)
-    append_issues = append_errors(current, imported, current_is_csi=axial_convention(st.session_state)['input_sign'] == CSI_TENSION_POSITIVE)
+    from concrete_pmm_pro.io.girder_load_bank import BANK_KEY, merge_bank, save_active, activate_member
+    save_active(st.session_state)
+    current = pd.DataFrame(st.session_state.get(BANK_KEY, []))
+    if current.empty:
+        previous = pd.DataFrame(st.session_state.get(state_key, []), columns=APP_COLUMNS)
+        if not previous.empty:
+            from concrete_pmm_pro.io.girder_csi_import import source_info
+            source_members = {source_info(row).get('sheet') for _, row in previous.iterrows() if source_info(row)}
+            source_members.discard(None)
+            previous_member = st.text_input('Existing current table — girder name to retain when adding tables',
+                value=next(iter(source_members)) if len(source_members) == 1 else 'Existing girder', key=key_prefix+'_legacy_member').strip()
+            previous['Girder'] = previous_member
+            current = previous
+            st.caption('Add tables retains the existing current table under this member name. Replace entire girder collection discards it.')
+    append_issues = []
+    if not current.empty:
+        if current['Girder'].astype(str).str.strip().eq('').any():
+            append_issues.append('Assign a name to the existing current table.')
+        try:
+            merge_bank(current, imported, append=True)
+        except ValueError as exc:
+            append_issues.append(str(exc))
+        if axial_convention(st.session_state)['input_sign'] != CSI_TENSION_POSITIVE:
+            append_issues.append('Existing collection uses a different axial convention.')
+    for issue in append_issues:
+        st.caption('Append unavailable: '+issue)
     disabled = bool(issues) or imported.empty or not same_member or not sign_confirmed
     left, right = st.columns(2)
     with left:
-        replace = st.button('Replace current rows', type='primary', disabled=disabled, key=key_prefix+'_replace_import')
+        replace = st.button('Replace entire girder collection', type='primary', disabled=disabled, key=key_prefix+'_replace_import')
     with right:
-        append = st.button('Append imported rows', disabled=disabled or bool(append_issues), key=key_prefix+'_append_import')
+        append = st.button('Add tables to girder collection', disabled=disabled or bool(append_issues), key=key_prefix+'_append_import')
     if replace or append:
-        st.session_state[state_key] = pd.concat([current,imported],ignore_index=True) if append else imported.copy(deep=True)
-        st.session_state.pop(editor_key,None)
+        bank = merge_bank(current, imported, append=append)
+        st.session_state[BANK_KEY] = bank
+        activate_member(st.session_state, str(imported.iloc[0]['Girder']), state_key=state_key, editor_key=editor_key)
+        st.session_state.pop(key_prefix+'_active_girder_choice', None)
         cfg = {'input_sign':CSI_TENSION_POSITIVE}
         st.session_state[SETTINGS_KEY] = cfg
         metadata = dict(st.session_state.get('project_metadata') or {})
@@ -252,3 +189,27 @@ def _render_batch(uploaded, *, state_key, editor_key, key_prefix, force_unit, mo
         st.session_state.pop('igird_axial_input_sign',None)
         _sync_workflow_load_tables_metadata()
         st.rerun()
+
+
+def render_member_collection(*, state_key, editor_key, key_prefix):
+    from concrete_pmm_pro.io.girder_load_bank import BANK_KEY, ACTIVE_KEY, members, save_active, activate_member
+    from concrete_pmm_pro.ui.loads_page import _sync_workflow_load_tables_metadata
+    bank = pd.DataFrame(st.session_state.get(BANK_KEY, []))
+    names = members(bank)
+    if not names:
+        return
+    save_active(st.session_state, state_key=state_key)
+    active = st.session_state.get(ACTIVE_KEY)
+    if active not in names:
+        active = names[0]
+        activate_member(st.session_state, active, state_key=state_key, editor_key=editor_key)
+    st.markdown('#### Imported girder collection — select member for Analysis')
+    st.dataframe(bank.groupby('Girder', sort=False).agg(Rows=('Case Name','size'), Vector_series=('Case Name','nunique')).reset_index(), hide_index=True, use_container_width=True)
+    selected = st.selectbox('Girder to design', names, index=names.index(active), key=key_prefix+'_active_girder_choice')
+    if st.button('Use this girder — all imported load cases', key=key_prefix+'_activate_member'):
+        save_active(st.session_state, state_key=state_key)
+        activate_member(st.session_state, selected, state_key=state_key, editor_key=editor_key)
+        _sync_workflow_load_tables_metadata()
+        st.rerun()
+    st.info(f'Analysis member: {active}. All its active load cases are checked against the current section, reinforcement, prestress and support settings. Verify those settings for this member before calculating.')
+    st.caption('Replace entire girder collection replaces all stored girders. Add tables retains existing members/cases. Changing the member requires recalculation; previous results must be reviewed for their case names.')

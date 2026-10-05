@@ -242,6 +242,8 @@ CROSSBEAM_ULS_LOAD_TABLE_KEY = "crossbeam_uls_loads_table"
 CROSSBEAM_SLS_LOAD_TABLE_KEY = "crossbeam_sls_loads_table"
 
 WORKFLOW_LOAD_TABLE_METADATA_KEYS = (
+    "igird_uls_member_bank",
+    "igird_uls_member_selection",
     "column_uls_loads_table",
     "column_sls_loads_table",
     "beam_uls_loads_table",
@@ -386,6 +388,8 @@ def _crossbeam_input_metadata_from_session(session_state: Any) -> dict[str, Any]
 def _workflow_load_table_metadata_from_session(session_state: Any) -> dict[str, list[dict[str, Any]]]:
     """Serialize workflow-specific load tables without changing the solver LoadCase schema."""
 
+    from concrete_pmm_pro.io.girder_load_bank import save_active
+    save_active(session_state)
     tables: dict[str, list[dict[str, Any]]] = {}
     for key in WORKFLOW_LOAD_TABLE_METADATA_KEYS:
         table = _get_session_value(session_state, key, None)
@@ -1576,6 +1580,10 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
         )
 
     session_state["loads_table"] = _loads_to_table(project.loads)
+    session_state.pop("igird_active_member", None)
+    session_state.pop("bridge_beam_uls_station_loads_active_girder_choice", None)
+    session_state.pop("igird_uls_member_bank", None)
+    session_state.pop("igird_uls_member_selection", None)
     workflow_load_tables = project.metadata.get("workflow_load_tables")
     if isinstance(workflow_load_tables, dict):
         for key in WORKFLOW_LOAD_TABLE_METADATA_KEYS:

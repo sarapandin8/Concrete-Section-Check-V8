@@ -225,6 +225,8 @@ PRECAST_COMPOSITE_GIRDER_PRESET_KEYS = {
     "parametric_plank_girder_exterior",
 }
 WORKFLOW_LOAD_TABLE_KEYS = (
+    "igird_uls_member_bank",
+    "igird_uls_member_selection",
     "column_uls_loads_table",
     "column_sls_loads_table",
     "beam_uls_loads_table",
@@ -1210,6 +1212,8 @@ def _ensure_workflow_load_tables_initialized() -> None:
 
 
 def _sync_workflow_load_tables_metadata() -> None:
+    from concrete_pmm_pro.io.girder_load_bank import save_active
+    save_active(st.session_state)
     metadata = dict(st.session_state.get("project_metadata", {}) or {})
     workflow_tables: dict[str, list[dict[str, Any]]] = {}
     for key in WORKFLOW_LOAD_TABLE_KEYS:
@@ -2768,6 +2772,9 @@ def _render_beam_girder_load_tables(force_unit: str, moment_unit: str) -> None:
                 import_force_unit=force_unit,
                 import_moment_unit=moment_unit,
             )
+        if _active_is_precast_i_girder():
+            from concrete_pmm_pro.ui.girder_csi_import import render_member_collection
+            render_member_collection(state_key="beam_uls_loads_table", editor_key="beam_uls_loads_editor", key_prefix="bridge_beam_uls_station_loads")
         uls_df = _stringify_table(pd.DataFrame(st.session_state.get("beam_uls_loads_table")), BEAM_ULS_LOAD_COLUMNS)
         edited_uls = st.data_editor(
             uls_df,
