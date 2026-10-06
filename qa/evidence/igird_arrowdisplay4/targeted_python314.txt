@@ -1,0 +1,4 @@
+Python 3.14.7 / pandas 3.0.6 / Streamlit 1.61.0 / pyarrow 24.0.0
+Real Streamlit imported before pytest; compilation passed.
+105 passed, 1 PytestAssertRewriteWarning, in 30.18s
+Files: test_igird_arrowdisplay4.py, test_igird_membercharts3.py, test_igird_uls6_torsion_general_procedure.py, test_igird_vt_chart_display.py, test_igird_uls7_concurrent_vt.py

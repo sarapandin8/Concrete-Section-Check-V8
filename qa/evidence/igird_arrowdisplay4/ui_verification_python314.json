@@ -1,0 +1,38 @@
+{
+  "python": "3.14.7",
+  "pandas": "3.0.6",
+  "streamlit": "1.61.0",
+  "pyarrow": "24.0.0",
+  "baseline_error_reproduced": "('cannot mix list and non-list, non-null values', 'Conversion failed for column Deck development trace with type object')",
+  "checks": [
+    {
+      "check": "Flexure",
+      "named_girders": 2,
+      "arrow_exceptions": 0,
+      "redraw_solver_calls": 0,
+      "audit_tables_with_trace": 0
+    },
+    {
+      "check": "Shear",
+      "named_girders": 2,
+      "arrow_exceptions": 0,
+      "redraw_solver_calls": 0,
+      "audit_tables_with_trace": 2
+    },
+    {
+      "check": "Torsion",
+      "named_girders": 2,
+      "arrow_exceptions": 0,
+      "redraw_solver_calls": 0,
+      "audit_tables_with_trace": 2
+    },
+    {
+      "check": "Shear + Torsion",
+      "named_girders": 2,
+      "arrow_exceptions": 0,
+      "redraw_solver_calls": 0,
+      "audit_tables_with_trace": 4
+    }
+  ],
+  "stale_member_result_hidden": true
+}

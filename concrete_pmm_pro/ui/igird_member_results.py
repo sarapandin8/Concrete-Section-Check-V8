@@ -9,6 +9,7 @@ from html import escape
 import pandas as pd
 import streamlit as st
 from concrete_pmm_pro.io.girder_load_bank import BANK_KEY, ACTIVE_KEY, members, save_active
+from concrete_pmm_pro.ui.result_table_display import result_table_for_display
 
 CACHE_KEY = 'igird_member_uls_runtime_results'
 
@@ -163,10 +164,10 @@ def render_collection(*, check_name, route, code_label):
                 st.caption(f"{check_name}: {gov.get('Status','REVIEW')} · {gov.get('Case','-')} @ {gov.get('Governing x','-')}")
                 with st.expander('Calculation trace / Equations — '+check_name+' · '+n,expanded=False):
                     trace = ap._beam_uls_shear_calculation_trace_dataframe(gov) if check_name == 'Shear' else ap._beam_uls_torsion_calculation_trace_dataframe(gov)
-                    st.dataframe(trace,hide_index=True,use_container_width=True)
+                    st.dataframe(result_table_for_display(trace),hide_index=True,use_container_width=True)
                 with st.expander('Variable definitions / Engineering terms — '+n,expanded=False):
                     definitions = ap._beam_uls_shear_variable_definitions_dataframe() if check_name == 'Shear' else ap._beam_uls_torsion_variable_definitions_dataframe()
-                    st.dataframe(definitions,hide_index=True,use_container_width=True)
+                    st.dataframe(result_table_for_display(definitions),hide_index=True,use_container_width=True)
             vt.render_strength_chart(rows,frame,check_name=check_name,code_label=code_label,state=st.session_state,
                 boundary=result.get(kind+'_boundary_capacity_df'),critical=result.get('shear_critical_section_df'),
                 diagram=result.get(kind+'_diagram_capacity_df'),key_prefix='member_'+token,member_name=n)
@@ -180,6 +181,6 @@ def render_collection(*, check_name, route, code_label):
         frame_key = {'Flexure':'flexure_preview_df','Shear':'shear_check_df','Torsion':'torsion_check_df','Shear + Torsion':'combined_vt_df'}[check_name]
         with st.expander('Stored check rows / source audit — '+n,expanded=False):
             frame = result.get(frame_key)
-            if frame is not None:st.dataframe(frame,hide_index=True,use_container_width=True)
+            if frame is not None:st.dataframe(result_table_for_display(frame),hide_index=True,use_container_width=True)
     st.caption('Member results are stored for this session only. Save Project JSON retains the member input collection; calculate again after loading. Result Summary and Report/QA continue to summarize the selected member, not the complete collection.')
     return True

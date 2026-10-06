@@ -455,7 +455,8 @@ def render_workspace(df: pd.DataFrame | None, *, code_label: str, member_name: s
     with st.expander("Variable definitions / Engineering terms",expanded=False):
         st.dataframe(variable_definitions(),use_container_width=True,hide_index=True)
     with st.expander("Concurrent V+T — detailed engineering audit",expanded=False):
-        st.dataframe(df,use_container_width=True,hide_index=True)
+        from concrete_pmm_pro.ui.result_table_display import result_table_for_display
+        st.dataframe(result_table_for_display(df),use_container_width=True,hide_index=True)
     st.caption("Scope: uniaxial solid pretensioned I-Girder sectional V+T with concurrent imported actions. Nominal fps uses the calculated composite section; composite-action acceptance is shown separately; ordinary bars remain the same physical source used by Flexure. Vp=0 and λduct=1 for straight pretensioned strands. Negative composite requires defined developed deck layers; biaxial shear/flexure, fatigue, bearing/D-regions, hook/lap execution and shop-drawing verification remain separate. Missing continuity/development confirmation withholds PASS.")
 
 
