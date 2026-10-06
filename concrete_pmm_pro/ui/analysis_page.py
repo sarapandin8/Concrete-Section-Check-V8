@@ -13257,6 +13257,7 @@ def _make_beam_uls_flexure_preview_figure(
     code_label: str,
     governing_df: pd.DataFrame | None = None,
     member_length_m: float | None = None,
+    source_context_df: pd.DataFrame | None = None,
 ) -> go.Figure:
     fig = _make_beam_uls_demand_figure(
         active_df,
@@ -13265,6 +13266,7 @@ def _make_beam_uls_flexure_preview_figure(
         y_label="Moment (kN-m)",
         governing_df=governing_df,
         member_length_m=member_length_m,
+        source_context_df=source_context_df,
     )
     if flexure_preview_df is None or flexure_preview_df.empty:
         fig.update_layout(title={"text": f"Flexure Check — Strength ULS<br><sup>{code_label} · demand only — φMn not ready</sup>"})

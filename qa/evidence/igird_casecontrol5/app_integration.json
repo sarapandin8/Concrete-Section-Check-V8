@@ -1,0 +1,37 @@
+{
+  "release": "IGIRDER.CASECONTROL5",
+  "status": "PASS",
+  "entrypoint": "app.py",
+  "scope": "Hypothetical QA input; full Analysis page routing, not live deployment",
+  "streamlit_exceptions": 0,
+  "checks": [
+    {
+      "check": "Flexure",
+      "current_girders": 2,
+      "named_case_review_girders": 2,
+      "review_solver_calls": 0,
+      "design_member_preserved": true
+    },
+    {
+      "check": "Shear",
+      "current_girders": 2,
+      "named_case_review_girders": 2,
+      "review_solver_calls": 0,
+      "design_member_preserved": true
+    },
+    {
+      "check": "Torsion",
+      "current_girders": 2,
+      "named_case_review_girders": 2,
+      "review_solver_calls": 0,
+      "design_member_preserved": true
+    },
+    {
+      "check": "Shear + Torsion",
+      "current_girders": 2,
+      "named_case_review_girders": 2,
+      "review_solver_calls": 0,
+      "design_member_preserved": true
+    }
+  ]
+}

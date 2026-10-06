@@ -149,29 +149,29 @@ def utilization_envelope(frame: pd.DataFrame, components: Mapping[str, str]) -> 
 
 def make_overview_figure(active_df, frame, *, check_name, code_label, span_m, investigation=False):
     from concrete_pmm_pro.ui import analysis_page as ap
-    if check_name == "Shear":
-        frame = ap._beam_uls_shear_design_rows_for_governing(frame)
-        components = {"Strength": "Strength D/C value", "Detailing": "Detailing D/C value"}
-    elif check_name == "Torsion":
-        components = {"Transverse": "D/C value", "Detailing": "Detailing D/C value"}
-        if investigation:
-            frame = frame.copy()
-            demand = pd.to_numeric(frame.get("Abs demand kN-m"), errors="coerce")
-            threshold = pd.to_numeric(frame.get("Threshold kN-m"), errors="coerce")
-            frame["Investigation ratio"] = demand / threshold.where(threshold > 0)
-            components = {"Investigation": "Investigation ratio"}
+    from concrete_pmm_pro.ui.igird_case_review import eligible_rows, component_values
+    frame = eligible_rows(frame, check_name)
+    if check_name == "Torsion" and investigation:
+        demand = pd.to_numeric(frame.get("Abs demand kN-m"), errors="coerce")
+        threshold = pd.to_numeric(frame.get("Threshold kN-m"), errors="coerce")
+        frame["Investigation ratio"] = demand / threshold.where(threshold > 0)
+        components = {"Investigation": "Investigation ratio"}
     else:
-        components = {"Veff limit": "Stress D/C value", "Transverse": "Transverse D/C value",
-            "Longitudinal": "Longitudinal D/C value", "Spacing": "Spacing D/C"}
+        components = {}
+        for index, (label, values) in enumerate(component_values(frame, check_name)):
+            column = f"__review_component_{index}"
+            frame[column] = values
+            components[label] = column
     envelope = utilization_envelope(frame, components)
     subtitle = "investigation threshold — not torsion strength" if investigation else "maximum available D/C from original case/check pairs"
+    title = f"{check_name} — {'investigation' if investigation else 'utilization'}<br><sup>{code_label} · {subtitle}</sup>"
     fig = ap._make_beam_uls_demand_figure(active_df, column="Tu" if check_name == "Torsion" else "Vuy",
-        title=f"{check_name} — {'investigation' if investigation else 'utilization'}<br><sup>{code_label} · {subtitle}</sup>",
+        title=title,
         y_label="Investigation ratio" if investigation else "Demand / capacity, D/C")
     fig.data = ()
     # The demand template note refers to a single demand case; an overview
     # displays checked case/component ratios instead.
-    fig.update_layout(annotations=[])
+    fig.update_layout(title_text=title, annotations=[])
     if not envelope.empty:
         finite = [v for v in envelope["D/C"] if math.isfinite(v)]
         ceiling = max([1.0, *finite])*1.16
@@ -199,7 +199,7 @@ def make_overview_figure(active_df, frame, *, check_name, code_label, span_m, in
     return fig
 
 
-def render_strength_chart(active_df, frame, *, check_name, code_label, state, boundary=None, critical=None, diagram=None, key_prefix="", member_name=""):
+def render_strength_chart(active_df, frame, *, check_name, code_label, state, boundary=None, critical=None, diagram=None, key_prefix="", member_name="", selected_case=None, source_context_df=None):
     import streamlit as st
     from concrete_pmm_pro.ui import analysis_page as ap
     if frame is None or frame.empty:
@@ -208,12 +208,13 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
     span = ap._beam_uls_span_length_from_state(state, is_building=False)
     view = st.radio("Chart view", ["Overview — utilization", "Selected case — demand / capacity"],
         horizontal=True, key=f"{key_prefix}igird_vt_{check_name}_chart_view")
-    investigation = check_name == "Torsion" and not pd.to_numeric(frame.get("φTn kN-m"),errors="coerce").notna().any()
+    from concrete_pmm_pro.ui.igird_case_review import controlling_result
+    investigation = check_name == "Torsion" and controlling_result(frame,check_name)['basis'] == 'INVESTIGATION ONLY'
     if view == "Overview — utilization":
         fig = make_overview_figure(active_df,frame,check_name=check_name,code_label=code_label,span_m=span,investigation=investigation)
         st.caption("Blue: maximum original D/C at each station. Red: limit 1.0. Strength and demand always come from the same case. Connecting lines are visual interpolation.")
-        if any(math.isinf(_v) for _v in utilization_envelope(frame,
-                {"D/C": "D/C value"} if check_name == "Torsion" else {"Strength": "Strength D/C value", "Detailing": "Detailing D/C value"}).get("D/C", [])):
+        if any(trace.name == 'Max D/C' and any(row[2] == '∞' for row in trace.customdata)
+                for trace in fig.data):
             st.caption("An infinite ratio is labelled ∞ and drawn at the top of the chart; it has no finite plotted magnitude.")
         if investigation:
             st.caption("φTn is unavailable. This view shows |Tu|/(0.25φTcr); a ratio above 1 means torsion design is required, not that a φTn strength check has failed.")
@@ -221,7 +222,7 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
         cases = frame["Case"].dropna().drop_duplicates().tolist()
         gov = ap._beam_uls_governing_shear_row(frame) if check_name == "Shear" else ap._beam_uls_governing_torsion_row(frame)
         default = cases.index(gov["Case"]) if gov and gov.get("Case") in cases else 0
-        case = st.selectbox("Case for diagram", cases, index=default, key=f"{key_prefix}igird_vt_{check_name}_diagram_case")
+        case = selected_case if selected_case in cases else st.selectbox("Case for diagram", cases, index=default, key=f"{key_prefix}igird_vt_{check_name}_diagram_case")
         demands = active_df.loc[active_df["Case Name"].eq(case)]
         checked = frame.loc[frame["Case"].eq(case)]
         def pick(source):
@@ -230,12 +231,12 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
         if check_name == "Shear":
             fig = ap._make_beam_uls_shear_capacity_figure(demands,checked,code_label=code_label,
                 boundary_capacity_df=pick(boundary),critical_section_df=pick(critical),compact_csi_legend=True,
-                member_length_m=span,source_context_df=active_df,diagram_capacity_df=selected_diagram)
+                member_length_m=span,source_context_df=source_context_df if source_context_df is not None else active_df,diagram_capacity_df=selected_diagram)
             fig.data = tuple(t for t in fig.data if t.name not in {"φVc","Critical x"})
         else:
             fig = ap._make_beam_uls_torsion_capacity_figure(demands,checked,code_label=code_label,
                 boundary_capacity_df=pick(boundary),diagram_capacity_df=selected_diagram,
-                member_length_m=span,source_context_df=active_df)
+                member_length_m=span,source_context_df=source_context_df if source_context_df is not None else active_df)
             capacity_source = selected_diagram if selected_diagram is not None and not selected_diagram.empty else checked
             have_tn = pd.to_numeric(capacity_source.get("φTn kN-m"),errors="coerce").notna().any()
             hide = {"±φTcr","±0.25φTcr"} if have_tn else {"±φTcr"}
@@ -267,12 +268,12 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
                     hide_index=True,use_container_width=True)
     if member_name:
         from concrete_pmm_pro.ui.igird_member_results import titled_figure
-        fig = titled_figure(fig, member_name)
+        fig = titled_figure(fig, member_name,case_name=selected_case)
     ap._render_beam_uls_browser_plotly_figure(fig,interactive=True)
     st.caption("Incomplete input checks remain REVIEW. CSI Max/Min rows are numerical screening; final coupled acceptance needs verified concurrent actions.")
 
 
-def render_combined_chart(frame, *, code_label, member_name=""):
+def render_combined_chart(frame, *, code_label, member_name="", selected_case=None):
     import streamlit as st
     from concrete_pmm_pro.ui import analysis_page as ap
     # Stored rows supply the domain context; no importer or solver runs.
@@ -282,12 +283,15 @@ def render_combined_chart(frame, *, code_label, member_name=""):
     fig = make_overview_figure(active,frame,check_name="Shear + Torsion",code_label=code_label,span_m=span)
     if member_name:
         from concrete_pmm_pro.ui.igird_member_results import titled_figure
-        fig = titled_figure(fig,member_name)
+        fig = titled_figure(fig,member_name,case_name=selected_case)
     ap._render_beam_uls_browser_plotly_figure(fig,interactive=True)
     partial = int(frame.get("Calculation status",pd.Series(index=frame.index,dtype=object)).eq("PARTIAL").sum())
     st.caption(f"Blue: largest available original Veff/transverse/longitudinal/spacing D/C at each station. Red: limit 1.0. Partial rows: {partial}. Missing sub-checks are not a completed overall check.")
-    if frame[[c for c in ["Stress D/C value", "Transverse D/C value", "Longitudinal D/C value", "Spacing D/C"] if c in frame]].apply(lambda c: pd.to_numeric(c, errors="coerce").map(math.isinf)).any().any():
+    if any(trace.name == 'Max D/C' and any(row[2] == '∞' for row in trace.customdata) for trace in fig.data):
         st.caption("An infinite ratio is labelled ∞ and drawn at the top of the chart; it has no finite plotted magnitude.")
     with st.expander("Combined components / individual cases",expanded=False):
-        ap._render_beam_uls_browser_plotly_figure(ap._make_beam_uls_combined_vt_utilization_figure(frame,code_label=code_label,member_length_m=span),interactive=True)
+        components = ap._make_beam_uls_combined_vt_utilization_figure(frame,code_label=code_label,member_length_m=span)
+        if member_name:
+            components = titled_figure(components,member_name,case_name=selected_case)
+        ap._render_beam_uls_browser_plotly_figure(components,interactive=True)
         st.caption("The x-axis covers the physical span. Component D/C values are plotted only at evaluated design stations; support boundaries and unavailable source terms are not assigned a numeric D/C.")

@@ -119,8 +119,13 @@ def render_trace(frame: pd.DataFrame | None, *, stage: str) -> None:
         labels = [f"{r.get('Case', '-')} · x={r.get('Governing x', '-')}" for _, r in frame.iterrows()]
         util = pd.to_numeric(frame.get("Utilization value"), errors="coerce")
         default = int(util.argmax()) if util.notna().any() else 0
+        station_key = WIDGET_PREFIX + "trace_" + stage.replace(" ", "_")
+        # Filtering all cases down to one can shorten the stored station list.
+        # Reset a prior out-of-range selection before creating the widget.
+        if station_key in st.session_state and st.session_state[station_key] not in range(len(frame)):
+            st.session_state[station_key] = default
         position = st.selectbox("Stored station", list(range(len(frame))), index=default,
-            format_func=lambda i: labels[i], key=WIDGET_PREFIX + "trace_" + stage.replace(" ", "_"))
+            format_func=lambda i: labels[i], key=station_key)
         row = frame.iloc[position]
         st.caption("Source Muy/M2 and Source Vux/V3 are reference values. This flexure route checks signed primary-axis Mux/M3 with Nu.")
         st.caption("Nu input is the preserved Loads value. Nu kN is the compression-positive value used in equilibrium; CSI input uses Nu = −P. AASHTO tension-positive Nu is the opposite of solver Nu.")

@@ -81,15 +81,23 @@ mr.render_collection(check_name=check, route=_route(), code_label='AASHTO LRFD 9
         assert not at.exception
         assert at.session_state['qa_calls'] == calls
         if check in {'Shear', 'Torsion'}:
+            # CASECONTROL5 adds a unified case selector. Preserve this older
+            # test's all-case chart/diagram review before selecting a diagram.
+            for selector in at.selectbox:
+                if selector.label.startswith('Load case to review — '):
+                    selector.set_value('All load cases')
+            at.run()
+            assert not at.exception
             views = [r for r in at.radio if r.label == 'Chart view']
             assert len(views) == 2
             for view in views:
                 view.set_value('Selected case — demand / capacity')
             at.run()
             assert not at.exception
-            assert len(at.selectbox) == 2
+            diagram_selectors = [selector for selector in at.selectbox if selector.label == 'Case for diagram']
+            assert len(diagram_selectors) == 2
             assert at.session_state['qa_calls'] == calls
-            for selector in at.selectbox:
+            for selector in diagram_selectors:
                 selector.set_value(selector.options[-1])
             at.run()
             assert not at.exception
