@@ -103,23 +103,15 @@ def make_member_flexure_figure(state, rows, frame, *, member, code_label, case_n
 
 
 def render_collection(*, check_name, route, code_label):
-    """Return True when the collection view owns the current workspace."""
+    """Render the collection; yield to the existing detailed route on request."""
     from concrete_pmm_pro.ui import analysis_page as ap
-    from concrete_pmm_pro.ui import igird_vt_workspace as vt
     save_active(st.session_state)
     rows_by_member = member_inputs(st.session_state)
     if not rows_by_member:
         return False
-    view = st.radio('Girder results view', ['All imported girders — separate charts',
-        'Choose girder / load case — stored results', 'Selected girder — detailed checks'],
-        horizontal=True, key='igird_member_results_view')
-    if view == 'Selected girder — detailed checks':
-        return False
     st.markdown(f'#### {check_name} — separate results for each girder')
-    st.info('Each girder is calculated separately with all its active ULS cases. This command applies the current section, deck, reinforcement, prestress and support settings to every listed girder. If those details differ, use separate project models before accepting the results.')
+    st.caption('All imported girders — separate results. Calculate applies the current shared section, deck, reinforcement, prestress and support model to every girder. Different member details require separate project models.')
     names = list(rows_by_member)
-    st.dataframe(pd.DataFrame([{'Girder': n, 'Active rows': len(rows_by_member[n]),
-        'Vector series': rows_by_member[n]['Case Name'].nunique()} for n in names]),hide_index=True,use_container_width=True)
     fingerprints = {n: result_hash(st.session_state, rows_by_member[n], check_name=check_name, route=route) for n in names}
     cache = dict(st.session_state.get(CACHE_KEY, {}))
     if st.button(f'Calculate {check_name} — all {len(names)} girders (current model)', type='primary',
@@ -152,103 +144,125 @@ def render_collection(*, check_name, route, code_label):
             summaries.append({'Girder':n,'Result state':'ERROR' if result is not None else
                 ('STALE' if cache.get(n,{}).get(check_name) else 'NOT CALCULATED')})
     st.markdown('##### Controlling load cases — '+check_name)
-    st.dataframe(result_table_for_display(pd.DataFrame(summaries)),hide_index=True,use_container_width=True)
-    st.caption('Numerical control is the largest available stored D/C across the relevant strength and detailing checks. It can differ between checks. Ties are retained; the first tied case is shown automatically. Unresolved source/development gates remain separate from numerical control.')
-    shown_names = names
-    if view == 'Choose girder / load case — stored results':
-        key = 'igird_review_member_'+check_name
-        if st.session_state.get(key) not in names:
-            active = st.session_state.get(ACTIVE_KEY)
-            st.session_state[key] = active if active in names else names[0]
-        shown_names = [st.selectbox('Girder to review',names,key=key)]
-        st.caption('This selection changes the displayed results. The design member selected in Loads and the Result Summary / Report remain tied to that member.')
-    for n in shown_names:
-        result = results[n]
-        st.markdown('##### Girder: '+escape(n))
-        if result is None:
-            stale = bool(cache.get(n, {}).get(check_name))
-            st.warning(('STALE — inputs changed. ' if stale else 'NOT CALCULATED. ')+f'Calculate {check_name} for this collection before viewing {n}.')
-            continue
-        if result.get('error'):
-            st.error(str(result['error']))
-            for message in result.get('messages', []):st.caption(str(message))
-            continue
-        all_rows = rows_by_member[n]
-        full_frame = result.get(FRAME_KEYS[check_name])
-        if full_frame is None or full_frame.empty:
-            st.warning('No calculated stations are available for this girder.')
-            continue
-        control = controls[n]
-        source = control['row'] or {}
-        controlling_case = str(source.get('Case',''))
-        st.caption(f"Controlling case: {controlling_case or 'Unavailable'} · {control['component']} · {control['basis']} {ratio_text(control['ratio'])} · x={source.get('Governing x','-')} · stored status {source.get('Status','REVIEW')}")
-        if len(control['tied_cases']) > 1:
-            st.info('Equal controlling ratios: '+'; '.join(control['tied_cases']))
-        if control['failed_rows'] or control['review_rows']:
-            st.warning(f"All cases for {n}: {control['failed_rows']} failed row(s), {control['review_rows']} row(s) requiring review. Viewing a passing case does not clear these member-wide gates.")
-        if control['basis'] == 'INVESTIGATION ONLY':
-            st.info('Torsion control is |Tu|/(0.25φTcr) because strength D/C is unavailable. This is an investigation threshold, not a φTn strength acceptance.')
-        elif control['basis'] == 'NO NUMERIC D/C':
-            st.info('No numerical governing D/C is available. Automatic selection shows a stored source-review row; complete the required inputs before strength acceptance.')
-        cases = all_rows['Case Name'].dropna().astype(str).drop_duplicates().tolist()
-        cases += [c for c in full_frame['Case'].dropna().astype(str).drop_duplicates() if c not in cases]
-        token = hashlib.sha256(n.encode()).hexdigest()[:16]
-        case_key = 'igird_review_case_'+check_name+'_'+token
-        options = [AUTO_CASE,ALL_CASES,*cases]
-        if st.session_state.get(case_key) not in options:
-            st.session_state[case_key] = AUTO_CASE
-        choice = st.selectbox('Load case to review — '+n,options,key=case_key)
-        case = (controlling_case if controlling_case in cases else (cases[0] if cases else None)) if choice == AUTO_CASE else (None if choice == ALL_CASES else choice)
-        st.caption('Displayed load case: '+(case if case is not None else 'All load cases')+' · '+n)
-        with st.expander('Load-case ranking / controlling components — '+n,expanded=False):
-            st.dataframe(result_table_for_display(case_ranking(full_frame,check_name)),hide_index=True,use_container_width=True)
-            st.dataframe(result_table_for_display(component_controls(full_frame,check_name)),hide_index=True,use_container_width=True)
-        rows = filter_case(all_rows,case,column='Case Name')
-        selected = {key: filter_case(value,case) if isinstance(value,pd.DataFrame) else value
-                    for key,value in result.items()}
-        label = code_label+' · '+n
-        if check_name == 'Flexure':
-            frame = selected.get('flexure_preview_df')
-            if frame is None or frame.empty:
-                st.warning('No calculated flexure stations are available for this girder.')
-                continue
-            gov = ap._beam_uls_governing_flexure_preview_row(frame)
-            if gov:
-                st.caption(f"Section flexure: {gov.get('Status','REVIEW')} · D/C {gov.get('Utilization','-')} · {gov.get('Case','-')} @ {gov.get('Governing x','-')}")
-            st.caption('Final Composite sectional resistance. Overall composite acceptance additionally requires confirmed effective width, developed deck/girder steel, concurrent source actions and current girder–deck interface shear verification for this member.')
-            fig = make_member_flexure_figure(st.session_state,rows,frame,member=n,code_label=code_label,
-                case_name=case,source_context_df=all_rows)
-            ap._render_beam_uls_browser_plotly_figure(fig,interactive=True)
-            st.caption('Each demand series belongs only to this girder. C labels identify its case/vector series; full source names remain on hover and in the stored audit. Coincident resistance curves share one legend entry.')
-            from concrete_pmm_pro.ui.igird_flexure_development import render_failure_summary, render_trace
-            render_failure_summary(frame,stage='Final Composite · '+n)
-            render_trace(frame,stage='Final Composite · '+n)
-        elif check_name in {'Shear','Torsion'}:
-            kind = check_name.lower()
-            frame = selected.get(kind+'_check_df')
-            gov = ap._beam_uls_shear_decision_summary(frame).get('row') if check_name == 'Shear' else ap._beam_uls_governing_torsion_row(frame)
-            if gov:
-                st.caption(f"{check_name}: {gov.get('Status','REVIEW')} · {gov.get('Case','-')} @ {gov.get('Governing x','-')}")
-                with st.expander('Calculation trace / Equations — '+check_name+' · '+n,expanded=False):
-                    trace = ap._beam_uls_shear_calculation_trace_dataframe(gov) if check_name == 'Shear' else ap._beam_uls_torsion_calculation_trace_dataframe(gov)
-                    st.dataframe(result_table_for_display(trace),hide_index=True,use_container_width=True)
-                with st.expander('Variable definitions / Engineering terms — '+n,expanded=False):
-                    definitions = ap._beam_uls_shear_variable_definitions_dataframe() if check_name == 'Shear' else ap._beam_uls_torsion_variable_definitions_dataframe()
-                    st.dataframe(result_table_for_display(definitions),hide_index=True,use_container_width=True)
-            vt.render_strength_chart(rows,frame,check_name=check_name,code_label=code_label,state=st.session_state,
-                boundary=selected.get(kind+'_boundary_capacity_df'),critical=selected.get('shear_critical_section_df'),
-                diagram=selected.get(kind+'_diagram_capacity_df'),key_prefix='member_'+token,member_name=n,
-                selected_case=case,source_context_df=all_rows)
-        else:
-            frame = selected.get('combined_vt_df')
-            if frame is None or frame.empty:
-                st.warning('No calculated combined stations are available for this girder.')
-                continue
-            from concrete_pmm_pro.ui.igird_combined_vt import render_workspace
-            render_workspace(frame,code_label=label,member_name=n,selected_case=case)
-        frame_key = {'Flexure':'flexure_preview_df','Shear':'shear_check_df','Torsion':'torsion_check_df','Shear + Torsion':'combined_vt_df'}[check_name]
-        with st.expander('Stored check rows / source audit — '+n,expanded=False):
-            frame = selected.get(frame_key)
-            if frame is not None:st.dataframe(result_table_for_display(frame),hide_index=True,use_container_width=True)
+    summary = pd.DataFrame(summaries)
+    compact_columns = [column for column in ('Girder','Result state','Controlling load case',
+        'Station','D/C or ratio','Basis','Failed rows','Rows requiring review') if column in summary]
+    st.dataframe(result_table_for_display(summary[compact_columns]),hide_index=True,use_container_width=True)
+    st.caption('Numerical control uses the largest available stored strength/detailing D/C. Ties retain every case. Source/development review remains separate. Open a girder below to select its load case, chart and calculation trace.')
+    issues = [f"{n}: {control['failed_rows']} failed, {control['review_rows']} requiring review"
+        for n,control in controls.items() if control['failed_rows'] or control['review_rows']]
+    if issues:
+        st.warning('All load cases — '+'; '.join(issues)+'. Viewing a passing case does not clear these member-wide gates.')
+    pending = [row['Girder']+' ('+row['Result state']+')' for row in summaries if row['Result state'] != 'CURRENT']
+    if pending:
+        st.warning('Results unavailable — '+'; '.join(pending)+'. Calculate the collection before reviewing those members.')
+    with st.expander('Imported girders / controlling source audit',expanded=False):
+        st.dataframe(pd.DataFrame([{'Girder':n,'Active rows':len(rows_by_member[n]),
+            'Vector series':rows_by_member[n]['Case Name'].nunique()} for n in names]),hide_index=True,use_container_width=True)
+        st.dataframe(result_table_for_display(summary),hide_index=True,use_container_width=True)
+    st.caption('Review selections change displayed results. Loads, Result Summary and Report / QA continue to use the design member selected in Loads.')
+    for n in names:
+        with st.expander('Girder: '+n,expanded=False):
+            _render_member_result(member=n,result=results[n],all_rows=rows_by_member[n],
+                control=controls.get(n),cache=cache,check_name=check_name,code_label=code_label)
+    show_details = False
+    design_member = st.session_state.get(ACTIVE_KEY)
+    if design_member in names:
+        with st.expander('Detailed checks — design member',expanded=False):
+            st.caption('Design member selected in Loads: '+design_member+'. Detailed checks use all its active cases and appear below.')
+            if check_name == 'Flexure':
+                st.caption('Includes Girder–Deck Interface Shear and the full composite section/development audit.')
+            show_details = st.toggle('Show detailed check workspace below',
+                key='igird_compact_details_'+check_name,value=False)
     st.caption('Member results are stored for this session only. Save Project JSON retains the member input collection; calculate again after loading. Result Summary and Report/QA continue to summarize the selected member, not the complete collection.')
-    return True
+    return not show_details
+
+
+def _render_member_result(*, member, result, all_rows, control, cache, check_name, code_label):
+    """Render one girder's complete stored review inside its collapsible panel."""
+    from concrete_pmm_pro.ui import analysis_page as ap
+    from concrete_pmm_pro.ui import igird_vt_workspace as vt
+    n = member
+    if result is None:
+        stale = bool(cache.get(n, {}).get(check_name))
+        st.warning(('STALE — inputs changed. ' if stale else 'NOT CALCULATED. ')+f'Calculate {check_name} for this collection before viewing {n}.')
+        return
+    if result.get('error'):
+        st.error(str(result['error']))
+        for message in result.get('messages', []):st.caption(str(message))
+        return
+    full_frame = result.get(FRAME_KEYS[check_name])
+    if full_frame is None or full_frame.empty:
+        st.warning('No calculated stations are available for this girder.')
+        return
+    source = control['row'] or {}
+    controlling_case = str(source.get('Case',''))
+    st.caption(f"Controlling case: {controlling_case or 'Unavailable'} · {control['component']} · {control['basis']} {ratio_text(control['ratio'])} · x={source.get('Governing x','-')} · stored status {source.get('Status','REVIEW')}")
+    if len(control['tied_cases']) > 1:
+        st.info('Equal controlling ratios: '+'; '.join(control['tied_cases']))
+    if control['failed_rows'] or control['review_rows']:
+        st.warning(f"All cases for {n}: {control['failed_rows']} failed row(s), {control['review_rows']} row(s) requiring review. Viewing a passing case does not clear these member-wide gates.")
+    if control['basis'] == 'INVESTIGATION ONLY':
+        st.info('Torsion control is |Tu|/(0.25φTcr) because strength D/C is unavailable. This is an investigation threshold, not a φTn strength acceptance.')
+    elif control['basis'] == 'NO NUMERIC D/C':
+        st.info('No numerical governing D/C is available. Automatic selection shows a stored source-review row; complete the required inputs before strength acceptance.')
+    cases = all_rows['Case Name'].dropna().astype(str).drop_duplicates().tolist()
+    cases += [c for c in full_frame['Case'].dropna().astype(str).drop_duplicates() if c not in cases]
+    token = hashlib.sha256(n.encode()).hexdigest()[:16]
+    case_key = 'igird_review_case_'+check_name+'_'+token
+    options = [AUTO_CASE,ALL_CASES,*cases]
+    if st.session_state.get(case_key) not in options:
+        st.session_state[case_key] = AUTO_CASE
+    choice = st.selectbox('Load case to review — '+n,options,key=case_key)
+    case = (controlling_case if controlling_case in cases else (cases[0] if cases else None)) if choice == AUTO_CASE else (None if choice == ALL_CASES else choice)
+    st.caption('Displayed load case: '+(case if case is not None else 'All load cases')+' · '+n)
+    with st.expander('Load-case ranking / controlling components — '+n,expanded=False):
+        st.dataframe(result_table_for_display(case_ranking(full_frame,check_name)),hide_index=True,use_container_width=True)
+        st.dataframe(result_table_for_display(component_controls(full_frame,check_name)),hide_index=True,use_container_width=True)
+    rows = filter_case(all_rows,case,column='Case Name')
+    selected = {key: filter_case(value,case) if isinstance(value,pd.DataFrame) else value
+                for key,value in result.items()}
+    label = code_label+' · '+n
+    if check_name == 'Flexure':
+        frame = selected.get('flexure_preview_df')
+        if frame is None or frame.empty:
+            st.warning('No calculated flexure stations are available for this girder.')
+            return
+        gov = ap._beam_uls_governing_flexure_preview_row(frame)
+        if gov:
+            st.caption(f"Section flexure: {gov.get('Status','REVIEW')} · D/C {gov.get('Utilization','-')} · {gov.get('Case','-')} @ {gov.get('Governing x','-')}")
+        st.caption('Final Composite sectional resistance. Overall composite acceptance additionally requires confirmed effective width, developed deck/girder steel, concurrent source actions and current girder–deck interface shear verification for this member.')
+        fig = make_member_flexure_figure(st.session_state,rows,frame,member=n,code_label=code_label,
+            case_name=case,source_context_df=all_rows)
+        ap._render_beam_uls_browser_plotly_figure(fig,interactive=True)
+        st.caption('Each demand series belongs only to this girder. C labels identify its case/vector series; full source names remain on hover and in the stored audit. Coincident resistance curves share one legend entry.')
+        from concrete_pmm_pro.ui.igird_flexure_development import render_failure_summary, render_trace
+        render_failure_summary(frame,stage='Final Composite · '+n)
+        render_trace(frame,stage='Final Composite · '+n)
+    elif check_name in {'Shear','Torsion'}:
+        kind = check_name.lower()
+        frame = selected.get(kind+'_check_df')
+        gov = ap._beam_uls_shear_decision_summary(frame).get('row') if check_name == 'Shear' else ap._beam_uls_governing_torsion_row(frame)
+        if gov:
+            st.caption(f"{check_name}: {gov.get('Status','REVIEW')} · {gov.get('Case','-')} @ {gov.get('Governing x','-')}")
+            with st.expander('Calculation trace / Equations — '+check_name+' · '+n,expanded=False):
+                trace = ap._beam_uls_shear_calculation_trace_dataframe(gov) if check_name == 'Shear' else ap._beam_uls_torsion_calculation_trace_dataframe(gov)
+                st.dataframe(result_table_for_display(trace),hide_index=True,use_container_width=True)
+            with st.expander('Variable definitions / Engineering terms — '+n,expanded=False):
+                definitions = ap._beam_uls_shear_variable_definitions_dataframe() if check_name == 'Shear' else ap._beam_uls_torsion_variable_definitions_dataframe()
+                st.dataframe(result_table_for_display(definitions),hide_index=True,use_container_width=True)
+        vt.render_strength_chart(rows,frame,check_name=check_name,code_label=code_label,state=st.session_state,
+            boundary=selected.get(kind+'_boundary_capacity_df'),critical=selected.get('shear_critical_section_df'),
+            diagram=selected.get(kind+'_diagram_capacity_df'),key_prefix='member_'+token,member_name=n,
+            selected_case=case,source_context_df=all_rows)
+    else:
+        frame = selected.get('combined_vt_df')
+        if frame is None or frame.empty:
+            st.warning('No calculated combined stations are available for this girder.')
+            return
+        from concrete_pmm_pro.ui.igird_combined_vt import render_workspace
+        render_workspace(frame,code_label=label,member_name=n,selected_case=case)
+    frame_key = {'Flexure':'flexure_preview_df','Shear':'shear_check_df','Torsion':'torsion_check_df','Shear + Torsion':'combined_vt_df'}[check_name]
+    with st.expander('Stored check rows / source audit — '+n,expanded=False):
+        frame = selected.get(frame_key)
+        if frame is not None:st.dataframe(result_table_for_display(frame),hide_index=True,use_container_width=True)

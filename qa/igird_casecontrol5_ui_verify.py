@@ -24,7 +24,7 @@ from concrete_pmm_pro.ui import analysis_page as ap, igird_member_results as mr
 from concrete_pmm_pro.ui.igird_case_review import FRAME_KEYS, AUTO_CASE, ALL_CASES, controlling_result
 from concrete_pmm_pro.ui.result_table_display import result_table_for_display
 
-OUT = Path('qa/evidence/igird_casecontrol5')
+OUT = Path('qa/evidence/igird_compact6')
 OUT.mkdir(parents=True, exist_ok=True)
 logging.getLogger('streamlit').setLevel(logging.ERROR)
 
@@ -111,7 +111,6 @@ with patch.object(mr, 'calculate_member', counted), patch.object(ap, '_render_be
     loads_before = deepcopy(at.session_state['beam_uls_loads_table'])
     for check in FRAME_KEYS:
         at.radio(key='qa_check').set_value(check)
-        element(at.radio, 'Girder results view').set_value('All imported girders — separate charts')
         rerun(at)
         figures.clear()
         next(button for button in at.button if button.label.startswith('Calculate ' + check + ' — all')).click().run()
@@ -159,16 +158,20 @@ with patch.object(mr, 'calculate_member', counted), patch.object(ap, '_render_be
                 rerun(at)
                 check_display(at, check, names, {member: member + ' / ULS2' for member in names})
                 assert all(selector.value in range(3) for selector in at.selectbox if selector.label == 'Stored station')
-            # A review member selection is distinct from the design member in Loads.
-            element(at.radio, 'Girder results view').set_value('Choose girder / load case — stored results')
-            rerun(at)
+            # Every girder remains available in a collapsed member panel.
+            assert not any(radio.label == 'Girder results view' for radio in at.radio)
+            assert not any(selector.label == 'Girder to review' for selector in at.selectbox)
             for member in names:
-                element(at.selectbox, 'Girder to review').set_value(member)
-                rerun(at)
-                element(at.selectbox, 'Load case to review — ' + member).set_value(AUTO_CASE)
-                rerun(at)
-                check_display(at, check, [member], auto)
-                assert at.session_state[ACTIVE_KEY] == active_before
+                panel = element(at.expander,'Girder: '+member)
+                assert not panel.proto.expanded
+                assert len(panel.get('plotly_chart')) >= 1
+                element(at.selectbox,'Load case to review — '+member).set_value(AUTO_CASE)
+            rerun(at)
+            check_display(at,check,names,auto)
+            assert at.session_state[ACTIVE_KEY] == active_before
+            # The legacy route is now explicit and defaults to off per check.
+            details = at.toggle(key='igird_compact_details_'+check)
+            assert not details.value
             assert at.session_state['qa_calls'] == calls
             for member in names:
                 for key, frame in cache_before[member][check]['result'].items():
@@ -178,15 +181,19 @@ with patch.object(mr, 'calculate_member', counted), patch.object(ap, '_render_be
             pd.testing.assert_frame_equal(at.session_state[BANK_KEY], bank_before, check_exact=True)
             pd.testing.assert_frame_equal(at.session_state['beam_uls_loads_table'], loads_before, check_exact=True)
         records.append({'check': check, 'automatic_case_by_girder': auto, 'named_cases_per_girder': 2,
-                        'all_case_review': True, 'choose_girder_review': True,
+                        'all_case_review': True, 'all_girder_panels_collapsed': True,
                         'review_solver_calls': 0, 'stored_results_and_loads_unchanged': True})
+    # Old three-mode widget state must not bypass the unified collection.
+    at.session_state['igird_member_results_view'] = 'Selected girder — detailed checks'
+    rerun(at)
+    assert len([expander for expander in at.expander if expander.label.startswith('Girder: ')]) == 2
+    assert not at.toggle(key='igird_compact_details_Shear + Torsion').value
     # Changing one member's forces invalidates only that member's displayed results.
     with ExitStack() as stack:
         readonly_guards(stack)
         bank = deepcopy(at.session_state[BANK_KEY])
         bank.loc[bank['Girder'].eq('Interior Girder 2'), 'Mux'] = 999.
         at.session_state[BANK_KEY] = bank
-        element(at.radio, 'Girder results view').set_value('All imported girders — separate charts')
         rerun(at)
         assert any('STALE' in warning.value and 'Interior Girder 2' in warning.value for warning in at.warning)
         summary = next(frame.value for frame in at.dataframe if 'Result state' in frame.value)
@@ -195,7 +202,7 @@ with patch.object(mr, 'calculate_member', counted), patch.object(ap, '_render_be
         assert all('Girder: Interior Girder 2<br>' not in fig.layout.title.text for fig in figures)
         assert at.session_state['qa_calls'] == calls
 
-evidence = {'release': 'IGIRDER.CASECONTROL5', 'status': 'PASS', 'python': sys.version.split()[0],
+evidence = {'release': 'IGIRDER.COMPACT6', 'status': 'PASS', 'python': sys.version.split()[0],
             'pandas': pd.__version__, 'streamlit': st.__version__, 'pyarrow': pa.__version__,
             'checks': records, 'stale_member_summary_has_no_old_ratio': True,
             'streamlit_exceptions': 0, 'scope': 'Real Streamlit collection workspace with controlled QA fixture; not live deployment'}

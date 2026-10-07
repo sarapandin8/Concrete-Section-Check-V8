@@ -55,21 +55,28 @@ with patch.object(mr, 'calculate_member', counted):
             for function in ('_beam_uls_calculate_selected_check', '_beam_uls_flexure_preview_dataframe',
                              '_beam_uls_igird_torsion_diagram_capacity_dataframe'):
                 stack.enter_context(patch.object(ap, function, side_effect=AssertionError('Review must not run a solver')))
-            element(at.radio, 'Girder results view').set_value('Choose girder / load case — stored results').run(); ok()
             for member in ('Exterior Girder', 'Interior Girder 2'):
-                element(at.selectbox, 'Girder to review').set_value(member).run(); ok()
                 element(at.selectbox, 'Load case to review — ' + member).set_value(member + ' / ULS2').run(); ok()
                 expander = element(at.expander, 'Stored check rows / source audit — ' + member)
                 assert expander.dataframe[0].value['Case'].eq(member + ' / ULS2').all()
                 assert at.session_state[ACTIVE_KEY] == 'Exterior Girder'
             assert at.session_state['qa_app_calculations'] == before
-            element(at.radio, 'Girder results view').set_value('All imported girders — separate charts').run(); ok()
+            at.toggle(key='igird_compact_details_'+check).set_value(True).run(); ok()
+            assert not any(radio.label == 'Girder results view' for radio in at.radio)
+            assert any(button.label == ('Calculate Final Composite Flexure' if check == 'Flexure' else 'Calculate '+check)
+                       for button in at.button)
+            if check == 'Flexure':
+                assert element(at.button,'Calculate Interface Shear')
+                element(at.button,'Calculate Interface Shear').click().run(); ok()
+                assert ap._IGIRDER_INTERFACE_SHEAR_CHECK_NAME in at.session_state[ap._BEAM_ULS_MANUAL_CALC_CACHE_KEY]
+            assert at.session_state['qa_app_calculations'] == before
+            at.toggle(key='igird_compact_details_'+check).set_value(False).run(); ok()
         records.append({'check': check, 'current_girders': 2, 'named_case_review_girders': 2,
-                        'review_solver_calls': 0, 'design_member_preserved': True})
+                        'review_solver_calls': 0, 'design_member_preserved': True, 'detailed_route_preserved': True})
 
-result = {'release': 'IGIRDER.CASECONTROL5', 'status': 'PASS', 'entrypoint': 'app.py',
+result = {'release': 'IGIRDER.COMPACT6', 'status': 'PASS', 'entrypoint': 'app.py',
           'scope': 'Hypothetical QA input; full Analysis page routing, not live deployment',
           'streamlit_exceptions': 0, 'checks': records}
-out = Path('qa/evidence/igird_casecontrol5/app_integration.json')
+out = Path('qa/evidence/igird_compact6/app_integration.json')
 out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
 print(json.dumps(result, ensure_ascii=False), flush=True)

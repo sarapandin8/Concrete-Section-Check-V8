@@ -1,0 +1,8 @@
+{
+  "release": "IGIRDER.COMPACT6",
+  "chart_review": "Reviewed exported Flexure, Shear, Torsion and Shear + Torsion charts; inherited chart styles preserved.",
+  "compact_ui_layout": "AppTest confirms no redundant result-view radio, collapsed per-girder panels, full case selectors and opt-in detailed route.",
+  "browser_ui_screenshot": "UNAVAILABLE — local Streamlit connection refused in workspace browser after restart.",
+  "live_deployment_verified": false,
+  "scope": "Controlled hypothetical QA inputs; not a project design acceptance."
+}
