@@ -1,0 +1,219 @@
+{
+  "release": "IGIRDER.REPORTCHARTS8",
+  "date": "2026-10-07",
+  "baseline": "IGIRDER.GAPAUDIT7",
+  "baseline_sha256": "3e5fe7a1f3b653e1f89ec78be328f2f879628615651be8a0c5ad672ece053810",
+  "final_scoped_regression": {
+    "modules": 59,
+    "passed": 741,
+    "seconds": 124.39,
+    "full_repository_suite": false,
+    "python": "3.14.7",
+    "new_tests": 20
+  },
+  "final_targeted_regression": {
+    "passed": 42,
+    "seconds": 13.85,
+    "modules": [
+      "test_igird_reportcharts8.py",
+      "test_igird_gapaudit7.py"
+    ]
+  },
+  "initial_python312_regression": {
+    "modules": 59,
+    "passed": 740,
+    "seconds": 112.61,
+    "before_final_legend_and_missing_resistance_note_polish": true
+  },
+  "compile": "PASS",
+  "runtime": {
+    "python": "3.14.7",
+    "streamlit": "1.61.0",
+    "pandas": "3.0.6",
+    "pyarrow": "24.0.0",
+    "plotly": "5.24.1",
+    "kaleido": "0.2.1"
+  },
+  "actual_app_qa": {
+    "release": "IGIRDER.REPORTCHARTS8",
+    "status": "PASS",
+    "entrypoint": "app.py",
+    "scope": "Hypothetical QA input; full Analysis page routing, not live deployment",
+    "streamlit_exceptions": 0,
+    "checks": [
+      {
+        "check": "Flexure",
+        "current_girders": 2,
+        "named_case_review_girders": 2,
+        "review_solver_calls": 0,
+        "design_member_preserved": true,
+        "detailed_route_preserved": true
+      },
+      {
+        "check": "Shear",
+        "current_girders": 2,
+        "named_case_review_girders": 2,
+        "review_solver_calls": 0,
+        "design_member_preserved": true,
+        "detailed_route_preserved": true
+      },
+      {
+        "check": "Torsion",
+        "current_girders": 2,
+        "named_case_review_girders": 2,
+        "review_solver_calls": 0,
+        "design_member_preserved": true,
+        "detailed_route_preserved": true
+      },
+      {
+        "check": "Shear + Torsion",
+        "current_girders": 2,
+        "named_case_review_girders": 2,
+        "review_solver_calls": 0,
+        "design_member_preserved": true,
+        "detailed_route_preserved": true
+      }
+    ],
+    "report_qa_charts": [
+      {
+        "check": "Flexure",
+        "current_girders": 2,
+        "named_case_charts": 4,
+        "automatic_control": true,
+        "png_creation_and_download_widget": true,
+        "selected_csv_download_widget": true,
+        "review_solver_calls": 0
+      },
+      {
+        "check": "Shear",
+        "current_girders": 2,
+        "named_case_charts": 4,
+        "automatic_control": true,
+        "png_creation_and_download_widget": true,
+        "selected_csv_download_widget": true,
+        "review_solver_calls": 0
+      },
+      {
+        "check": "Torsion",
+        "current_girders": 2,
+        "named_case_charts": 4,
+        "automatic_control": true,
+        "png_creation_and_download_widget": true,
+        "selected_csv_download_widget": true,
+        "review_solver_calls": 0
+      },
+      {
+        "check": "Shear + Torsion",
+        "current_girders": 2,
+        "named_case_charts": 4,
+        "automatic_control": true,
+        "png_creation_and_download_widget": true,
+        "selected_csv_download_widget": true,
+        "review_solver_calls": 0
+      }
+    ],
+    "report_state_preserved": true,
+    "pending_and_stale_members_hidden": true
+  },
+  "collection_ui_qa": {
+    "release": "IGIRDER.REPORTCHARTS8",
+    "status": "PASS",
+    "python": "3.14.7",
+    "pandas": "3.0.6",
+    "streamlit": "1.61.0",
+    "pyarrow": "24.0.0",
+    "checks": [
+      {
+        "check": "Flexure",
+        "automatic_case_by_girder": {
+          "Interior Girder 2": "Interior Girder 2 / ULS1",
+          "Exterior Girder": "Exterior Girder / ULS1"
+        },
+        "named_cases_per_girder": 2,
+        "all_case_review": true,
+        "all_girder_panels_collapsed": true,
+        "gap_audit_present": false,
+        "default_report_diagram": false,
+        "review_solver_calls": 0,
+        "stored_results_and_loads_unchanged": true
+      },
+      {
+        "check": "Shear",
+        "automatic_case_by_girder": {
+          "Interior Girder 2": "Interior Girder 2 / ULS2",
+          "Exterior Girder": "Exterior Girder / ULS1"
+        },
+        "named_cases_per_girder": 2,
+        "all_case_review": true,
+        "all_girder_panels_collapsed": true,
+        "gap_audit_present": false,
+        "default_report_diagram": false,
+        "review_solver_calls": 0,
+        "stored_results_and_loads_unchanged": true
+      },
+      {
+        "check": "Torsion",
+        "automatic_case_by_girder": {
+          "Interior Girder 2": "Interior Girder 2 / ULS1",
+          "Exterior Girder": "Exterior Girder / ULS1"
+        },
+        "named_cases_per_girder": 2,
+        "all_case_review": true,
+        "all_girder_panels_collapsed": true,
+        "gap_audit_present": true,
+        "default_report_diagram": true,
+        "review_solver_calls": 0,
+        "stored_results_and_loads_unchanged": true
+      },
+      {
+        "check": "Shear + Torsion",
+        "automatic_case_by_girder": {
+          "Interior Girder 2": "Interior Girder 2 / ULS1",
+          "Exterior Girder": "Exterior Girder / ULS1"
+        },
+        "named_cases_per_girder": 2,
+        "all_case_review": true,
+        "all_girder_panels_collapsed": true,
+        "gap_audit_present": false,
+        "default_report_diagram": false,
+        "review_solver_calls": 0,
+        "stored_results_and_loads_unchanged": true
+      }
+    ],
+    "stale_member_summary_has_no_old_ratio": true,
+    "streamlit_exceptions": 0,
+    "scope": "Real Streamlit collection workspace with controlled QA fixture; not live deployment"
+  },
+  "python312_actual_app_qa": "PASS before final presentation polish",
+  "png_export": {
+    "verified_dimensions": [
+      2880,
+      1120
+    ],
+    "file": "qa/evidence/igird_reportcharts8/python314/torsion_selected_case_export_2880.png",
+    "source": "final AppTest figure spec; hypothetical QA input"
+  },
+  "manual_visual_review": {
+    "status": "PASS",
+    "checks": [
+      "Flexure",
+      "Shear",
+      "Torsion",
+      "Shear + Torsion"
+    ],
+    "source": "actual Plotly image exports, hypothetical QA model",
+    "observations": "Girder/case/code/units visible; selected-case and all-case gates retained; generic shear legend no longer overlaps; title/axis/legend/footer separated."
+  },
+  "engineering_equations_uls_sls_project_json_dependencies_changed": false,
+  "design_member_and_result_caches_preserved": true,
+  "review_solver_calls": 0,
+  "live_deployment_tested": false,
+  "push_or_deploy_performed": false,
+  "full_page_browser_screenshot": false,
+  "limits": [
+    "Shared current section/deck/reinforcement model per all-girder calculation",
+    "Project JSON remains input-only; results session-only",
+    "Readiness and summary cards still follow the design member in Loads",
+    "Inherited Arrow automatic-fix/deprecation log messages outside the new source-audit panel remain possible; no fatal Streamlit exception in completed QA"
+  ]
+}

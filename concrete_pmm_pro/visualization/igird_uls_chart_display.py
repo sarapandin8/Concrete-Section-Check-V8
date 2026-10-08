@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 import re
+from html import escape
 
 import pandas as pd
 
@@ -118,6 +119,49 @@ def mark_unavailable_capacity(fig, frame: pd.DataFrame, *, metric: str,
     meta = dict(fig.layout.meta or {})
     meta['unavailable_capacity'] = rows
     fig.update_layout(meta=meta)
+
+
+def mark_overview_gap_status(fig, audit: pd.DataFrame) -> None:
+    """Use shared chart-foot status markers, independent of the numeric y-axis."""
+    stations = []
+    if audit is not None and not audit.empty:
+        for x, group in audit.loc[audit['Curve gap']].groupby('Station x (m)', sort=True):
+            kinds = set(group['Classification'])
+            kind = ('UNAVAILABLE' if 'UNAVAILABLE' in kinds else
+                    next(iter(kinds)) if len(kinds) == 1 else 'NOT REQUIRED')
+            cases = list(dict.fromkeys(group['Case']))
+            statuses = list(dict.fromkeys(group['Stored row status']))
+            reasons = list(dict.fromkeys(group['Explanation']))
+            stations.append({'x_m': float(x), 'classification': kind,
+                'cases': cases, 'stored_statuses': statuses, 'reasons': reasons})
+            detail = '<br>'.join(escape(str(value)) for value in [*cases, *statuses, *reasons])
+            fig.add_annotation(x=float(x), y=0.025, xref='x', yref='paper',
+                text='×' if kind == 'UNAVAILABLE' else '○', showarrow=False,
+                font={'size': 17, 'color': '#64748b' if kind == 'UNAVAILABLE' else '#16a34a'},
+                hovertext=f'{kind} at x={float(x):.3f} m<br>Status marker only; no numerical D/C is plotted.<br>'+detail)
+    meta = dict(fig.layout.meta or {})
+    meta['overview_gap_stations'] = stations
+    fig.update_layout(meta=meta)
+
+
+def add_igird_report_note(fig, lines) -> None:
+    """Keep explanatory text inside the exported image, outside numeric axes."""
+    lines = list(lines)
+    fig.add_annotation(name='igird_report_note', x=.5, y=-.47,
+        xref='paper', yref='paper', xanchor='center', yanchor='top',
+        text='<br>'.join(escape(str(line)) for line in lines), showarrow=False,
+        align='center', font={'size':12, 'color':'#475569'})
+    fig.update_layout(meta={**dict(fig.layout.meta or {}), 'igird_report_note':lines})
+    apply_igird_report_layout(fig)
+
+
+def apply_igird_report_layout(fig) -> None:
+    """Preserve room for report notes after browser/static style application."""
+    lines = (fig.layout.meta or {}).get('igird_report_note')
+    if lines:
+        fig.update_layout(margin={'t':max(int(fig.layout.margin.t or 0),140),
+                                  'b':max(int(fig.layout.margin.b or 0),176)},
+                          legend={'y':-.27})
 
 
 def interface_station_envelope(result_df: pd.DataFrame) -> pd.DataFrame:

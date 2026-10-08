@@ -15,10 +15,14 @@ from concrete_pmm_pro.io.project_io import apply_project_to_session_state, proje
 from concrete_pmm_pro.io.girder_load_bank import activate_member, ACTIVE_KEY
 from concrete_pmm_pro.ui import analysis_page as ap, igird_member_results as mr
 from test_igird_casecontrol5 import review_model
+from concrete_pmm_pro.ui import igird_uls_report as report
+from concrete_pmm_pro.ui.igird_case_review import AUTO_CASE, FRAME_KEYS
+import hashlib
+import pickle
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--output-dir', default='qa/evidence/igird_compact6')
-parser.add_argument('--release', default='IGIRDER.COMPACT6')
+parser.add_argument('--output-dir', default='qa/evidence/igird_reportcharts8')
+parser.add_argument('--release', default='IGIRDER.REPORTCHARTS8')
 args = parser.parse_args()
 
 state = {}
@@ -83,39 +87,77 @@ with patch.object(mr, 'calculate_member', counted):
     report_figures=[]
     original_render=ap._render_beam_uls_browser_plotly_figure
     def capture_report(fig,**kwargs):
-        report_figures.append(fig)
+        if (fig.layout.meta or {}).get('igird_report_check'):
+            report_figures.append(fig)
         original_render(fig,**kwargs)
+    snapshot_keys=(ACTIVE_KEY,'igird_uls_member_bank','beam_uls_loads_table',mr.CACHE_KEY,ap._BEAM_ULS_MANUAL_CALC_CACHE_KEY)
+    snapshots={key:pickle.dumps(at.session_state[key]) for key in snapshot_keys}
+    chart_records=[]
+    outdir=Path(args.output_dir)
+    outdir.mkdir(parents=True,exist_ok=True)
     with ExitStack() as stack:
         for function in ('_beam_uls_calculate_selected_check','_beam_uls_flexure_preview_dataframe',
                          '_beam_uls_igird_torsion_diagram_capacity_dataframe'):
             stack.enter_context(patch.object(ap,function,side_effect=AssertionError('Report must not solve')))
+        stack.enter_context(patch.object(mr,'calculate_member',side_effect=AssertionError('Report must not calculate members')))
         stack.enter_context(patch.object(ap,'_render_beam_uls_browser_plotly_figure',capture_report))
         at.session_state['_nav_active_workspace']='Report / QA'
         at.run(); ok()
-        if not any(item.label=='Torsion report chart — stored results' for item in at.expander):
-            assert element(at.expander,'I-girder ULS report charts — stored results')
-            element(at.selectbox,'ULS check for report chart').set_value('Torsion').run(); ok()
-        else:
-            assert element(at.expander,'Torsion report chart — stored results')
-        assert set(element(at.selectbox,'Girder for report chart').options)=={'Exterior Girder','Interior Girder 2'}
-        for member in ('Exterior Girder','Interior Girder 2'):
-            element(at.selectbox,'Girder for report chart').set_value(member).run(); ok()
-            element(at.selectbox,'Load case for report chart').set_value(member+' / ULS2').run(); ok()
-            assert report_figures[-1].layout.meta['review_case']==member+' / ULS2'
-            assert report_figures[-1].layout.meta['igird_report_note']
-        element(at.button,'Create report chart PNG').click().run(); ok()
-        assert len(at.get('download_button'))>=1
-        assert any(item.proto.label=='Download report chart PNG' for item in at.get('download_button'))
+        assert element(at.expander,'I-girder ULS report charts — stored results')
+        assert not any(item.label=='Torsion report chart — stored results' for item in at.expander)
+        for check,label in report.CHECK_LABELS.items():
+            element(at.selectbox,'ULS check for report chart').set_value(label).run(); ok()
+            assert set(element(at.selectbox,'Girder for report chart').options)=={'Exterior Girder','Interior Girder 2'}
+            for index,member in enumerate(('Exterior Girder','Interior Girder 2')):
+                element(at.selectbox,'Girder for report chart').set_value(member).run(); ok()
+                element(at.selectbox,'Load case for report chart').set_value(AUTO_CASE).run(); ok()
+                auto=report_figures[-1].layout.meta
+                assert auto['igird_report_case']==auto['igird_report_member_control']['Controlling load case']
+                for suffix in ('ULS1','ULS2'):
+                    case=member+' / '+suffix
+                    element(at.selectbox,'Load case for report chart').set_value(case).run(); ok()
+                    fig=report_figures[-1]
+                    assert fig.layout.meta['igird_report_case']==case
+                    assert fig.layout.meta['igird_report_check']==check
+                    assert fig.layout.meta['igird_report_member']==member
+                    assert len(fig.layout.meta['igird_report_note'])==3
+                    stored=element(at.expander,'Report chart — load-case ranking / source audit').dataframe[-1].value
+                    assert stored['Case'].eq(case).all()
+                    name=check.lower().replace(' + ','_').replace(' ','_')+'_'+str(index)+'_'+suffix.lower()
+                    fig.write_json(outdir/(name+'.plotly.json'))
+                    fig.write_image(outdir/(name+'.png'),width=1440,height=560,scale=1)
+            element(at.button,'Create report chart PNG').click().run(); ok()
+            downloads=at.get('download_button')
+            assert any(item.proto.label=='Download report chart PNG' for item in downloads)
+            assert any(item.proto.label=='Download selected stored check rows (CSV)' for item in downloads)
+            chart_records.append({'check':check,'current_girders':2,'named_case_charts':4,
+                'automatic_control':True,'png_creation_and_download_widget':True,
+                'selected_csv_download_widget':True,'review_solver_calls':0})
         assert at.session_state['qa_app_calculations']==before
-        report_output=Path(args.output_dir)
-        report_output.mkdir(parents=True,exist_ok=True)
-        report_figures[-1].write_json(report_output/'report_qa_torsion.plotly.json')
-        report_figures[-1].write_image(report_output/'report_qa_torsion.png',width=1440,height=560,scale=1)
+        for key,value in snapshots.items():
+            assert pickle.dumps(at.session_state[key])==value,key+' changed during report review'
+        # A pending member is named explicitly rather than silently represented
+        # by another member's current chart.
+        bank=deepcopy(at.session_state['igird_uls_member_bank'])
+        changed=bank['Girder'].eq('Interior Girder 2')
+        bank.loc[changed,'Mux']*=1.5
+        at.session_state['igird_uls_member_bank']=bank
+        element(at.selectbox,'ULS check for report chart').set_value('Flexure — Final Composite').run(); ok()
+        assert element(at.selectbox,'Girder for report chart').options==['Exterior Girder']
+        assert any('Interior Girder 2' in item.value and 'No current' in item.value for item in at.warning)
+        bank.loc[~changed,'Mux']*=1.5
+        at.session_state['igird_uls_member_bank']=bank
+        active=deepcopy(at.session_state['beam_uls_loads_table'])
+        active.loc[:,'Mux']*=1.5
+        at.session_state['beam_uls_loads_table']=active
+        at.run(); ok()
+        assert not any(item.label=='Create report chart PNG' for item in at.button)
+        assert at.session_state[ACTIVE_KEY]=='Exterior Girder'
 
 result = {'release': args.release, 'status': 'PASS', 'entrypoint': 'app.py',
           'scope': 'Hypothetical QA input; full Analysis page routing, not live deployment',
           'streamlit_exceptions': 0, 'checks': records,
-          'report_qa_torsion': {'current_girders':2,'case_selection':True,'png_creation_and_download_widget':True,'review_solver_calls':0}}
+          'report_qa_charts': chart_records,'report_state_preserved':True,'pending_and_stale_members_hidden':True}
 out = Path(args.output_dir) / 'app_integration.json'
 out.parent.mkdir(parents=True, exist_ok=True)
 out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')

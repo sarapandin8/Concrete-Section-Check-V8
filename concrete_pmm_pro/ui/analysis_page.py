@@ -11263,6 +11263,8 @@ def _render_beam_uls_browser_plotly_figure(fig: go.Figure, *, caption: str | Non
         "staticPlot": True,
         "responsive": True,
     }
+    from concrete_pmm_pro.visualization.igird_uls_chart_display import apply_igird_report_layout
+    apply_igird_report_layout(fig)
     if interactive:
         config["staticPlot"] = False
         fig.update_layout(dragmode=False)

@@ -4666,6 +4666,11 @@ def _results_add_line_if_available(fig: go.Figure, df: pd.DataFrame, x_values: p
 
 
 def _results_beam_uls_cached_figure(state: object, check_name: str) -> go.Figure | None:
+    if check_name in {'Flexure', 'Shear', 'Torsion', 'Shear + Torsion'} and state.get('section_preset_key') == 'parametric_i_girder':
+        from concrete_pmm_pro.io.girder_load_bank import ACTIVE_KEY
+        from concrete_pmm_pro.ui.igird_uls_report import make_current_report_figure
+        return make_current_report_figure(state,check_name=check_name,member=state.get(ACTIVE_KEY),
+            code_label=_results_design_code_label(state))
     df = _results_beam_uls_cached_df(state, check_name)
     if df is None or df.empty:
         return None
@@ -4732,6 +4737,8 @@ def _render_results_static_plotly_figure(fig: go.Figure, *, caption: str | None 
         fig.update_yaxes(tickfont=dict(size=10), title_font=dict(size=12))
         if isinstance(fig.layout.meta, dict) and fig.layout.meta.get("igird_concurrent_vt") == _IGIRDER_COMBINED_VT_RESULT_VERSION:
             fig.update_layout(legend={"itemwidth": 30, "entrywidth": 185, "entrywidthmode": "pixels"})
+        from concrete_pmm_pro.visualization.igird_uls_chart_display import apply_igird_report_layout
+        apply_igird_report_layout(fig)
         image_bytes = fig.to_image(
             format="png",
             width=_RESULTS_STATIC_FIG_WIDTH,
@@ -5131,6 +5138,8 @@ def render_report_qa_workspace() -> None:
     else:
         _render_report_qa_result_summary_alignment(st.session_state)
         _render_report_qa_igird_shear_equation_trace(st.session_state)
+        from concrete_pmm_pro.ui.igird_uls_report import render_uls_report_charts
+        render_uls_report_charts(st.session_state,code_label=_results_design_code_label(st.session_state))
         _render_report_qa_igird_torsion_equation_trace(st.session_state)
         _render_report_qa_igird_combined_vt_equation_trace(st.session_state)
         render_section_bar(

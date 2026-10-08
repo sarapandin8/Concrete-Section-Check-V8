@@ -163,6 +163,9 @@ def make_overview_figure(active_df, frame, *, check_name, code_label, span_m, in
             frame[column] = values
             components[label] = column
     envelope = utilization_envelope(frame, components)
+    from concrete_pmm_pro.ui.igird_overview_gaps import missing_ratio_audit
+    audit = missing_ratio_audit(frame, envelope, components, check_name=check_name,
+        active_df=active_df, demand_tolerance=ap._BEAM_ULS_DEMAND_TOL)
     subtitle = "investigation threshold — not torsion strength" if investigation else "maximum available D/C from original case/check pairs"
     title = f"{check_name} — {'investigation' if investigation else 'utilization'}<br><sup>{code_label} · {subtitle}</sup>"
     fig = ap._make_beam_uls_demand_figure(active_df, column="Tu" if check_name == "Torsion" else "Vuy",
@@ -196,6 +199,96 @@ def make_overview_figure(active_df, frame, *, check_name, code_label, span_m, in
     fig.add_trace(go.Scatter(x=[0.0,span_m],y=[1.0,1.0],mode="lines",name="Limit = 1.0",
         line=dict(ap._BEAM_ULS_CHECK_LINE_STYLE),hovertemplate="Limit = 1.0<extra></extra>"))
     fig.update_xaxes(range=[0.0,span_m])
+    from concrete_pmm_pro.visualization.igird_uls_chart_display import mark_overview_gap_status
+    mark_overview_gap_status(fig, audit)
+    fig.update_layout(meta={**dict(fig.layout.meta or {}),
+        'overview_missing_ratio_audit': audit.astype(object).where(audit.notna(), None).to_dict('records') if not audit.empty else []})
+    if not audit.empty:
+        from concrete_pmm_pro.visualization.igird_uls_chart_display import add_igird_report_note
+        add_igird_report_note(fig, [
+            '○ = below threshold / verified zero Tu; × = numerical check unavailable. Status markers are not D/C=0.',
+            'Original case/check D/C and acceptance decisions are retained. See the station audit for omitted ratios.'])
+    return fig
+
+
+def make_torsion_case_figure(active_df, frame, *, case, code_label, span_m,
+                            diagram=None, boundary=None, source_context_df=None,
+                            member_name=''):
+    """One cached case, shared by Analysis and Report; never solve or fill NaN."""
+    from concrete_pmm_pro.ui import analysis_page as ap
+    from concrete_pmm_pro.visualization.igird_uls_chart_display import add_igird_report_note
+    demands = active_df.loc[active_df['Case Name'].eq(case)].copy()
+    checked = frame.loc[frame['Case'].eq(case)].copy()
+    def pick(source):
+        return source.loc[source['Case'].eq(case)].copy() if isinstance(source,pd.DataFrame) and not source.empty else None
+    selected_diagram = pick(diagram)
+    fig = ap._make_beam_uls_torsion_capacity_figure(demands, checked,
+        code_label=code_label, boundary_capacity_df=pick(boundary),
+        diagram_capacity_df=selected_diagram, member_length_m=span_m,
+        source_context_df=source_context_df if source_context_df is not None else active_df)
+    capacity_source = selected_diagram if selected_diagram is not None and not selected_diagram.empty else checked
+    have_tn = pd.to_numeric(capacity_source.get('φTn kN-m',pd.Series(dtype=float)),errors='coerce').notna().any()
+    hide = {'±φTcr','±0.25φTcr'} if have_tn else {'±φTcr'}
+    fig.data = tuple(t for t in fig.data if t.name not in hide)
+    subtitle = 'stored Tu / ±φTn — same girder and load case' if have_tn else 'threshold screen — φTn not ready'
+    fig.update_layout(title_text=f'Torsion — demand / capacity<br><sup>{code_label} · {subtitle}</sup>')
+    for trace in fig.data:
+        if str(trace.name).startswith('Gov.'):
+            trace.showlegend = False
+        if trace.name in {'Gov. Tu','Gov. torsion'}:
+            # Keep marker coordinates; the stored control is printed below
+            # the chart so it cannot collide with a line/title or an end axis.
+            trace.mode = 'markers'
+            trace.text = None
+    from concrete_pmm_pro.ui.igird_case_review import eligible_rows, review_counts, controlling_result, ratio_text
+    design_rows = eligible_rows(checked,'Torsion')
+    failed, review = review_counts(design_rows)
+    control = controlling_result(design_rows,'Torsion')
+    location = (control.get('row') or {}).get('Governing x','—')
+    below = int(design_rows.get('Threshold status',pd.Series(dtype=object)).eq('BELOW THRESHOLD').sum())
+    unavailable = len((fig.layout.meta or {}).get('unavailable_capacity',[]))
+    add_igird_report_note(fig, [
+        'Blue: signed Tu. Red: ±φTn from stored station calculations, including qualified below-threshold / zero-Tu stations.',
+        f"Stored control ({control['basis']}): {ratio_text(control['ratio'])} @ {location}; {failed} FAIL, {review} REVIEW, {below} below threshold. ×: {unavailable} unavailable resistance stations.",
+        'Diagram resistance does not imply overall acceptance. Original threshold, detailing and source decisions remain in force.'])
+    fig.update_xaxes(range=[0.,span_m])
+    fig.update_layout(meta={**dict(fig.layout.meta or {}),'torsion_report_case':case})
+    if member_name:
+        from concrete_pmm_pro.ui.igird_member_results import titled_figure
+        fig = titled_figure(fig,member_name,case_name=case)
+    return fig
+
+
+def make_shear_case_figure(active_df, frame, *, case, code_label, span_m,
+                           diagram=None, boundary=None, critical=None,
+                           source_context_df=None, member_name=''):
+    """The same stored shear case/diagram in Analysis and report review."""
+    from concrete_pmm_pro.ui import analysis_page as ap
+    from concrete_pmm_pro.ui.igird_case_review import filter_case
+    fig = ap._make_beam_uls_shear_capacity_figure(
+        filter_case(active_df, case, column='Case Name'), filter_case(frame, case),
+        code_label=code_label, boundary_capacity_df=filter_case(boundary, case),
+        critical_section_df=filter_case(critical, case), compact_csi_legend=True,
+        member_length_m=span_m,
+        source_context_df=source_context_df if source_context_df is not None else active_df,
+        diagram_capacity_df=filter_case(diagram, case))
+    fig.data = tuple(t for t in fig.data if t.name not in {'φVc', 'Critical x'})
+    demands = [t for t in fig.data if str(t.name).startswith('Demand Vuy')]
+    original_labels = {}
+    for number, trace in enumerate(demands, 1):
+        original = trace.name
+        trace.name = 'Vu demand' if len(demands) == 1 else f'Vu C{number}'
+        original_labels[trace.name] = original
+    if original_labels:
+        fig.update_layout(meta={**dict(fig.layout.meta or {}),
+                               'shear_case_legend': original_labels})
+    for trace in fig.data:
+        if str(trace.name).startswith('Gov.'):
+            trace.showlegend = False
+    fig.update_xaxes(range=[0., span_m])
+    if member_name:
+        from concrete_pmm_pro.ui.igird_member_results import titled_figure
+        fig = titled_figure(fig, member_name, case_name=case)
     return fig
 
 
@@ -207,6 +300,7 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
         return
     span = ap._beam_uls_span_length_from_state(state, is_building=False)
     view = st.radio("Chart view", ["Overview — utilization", "Selected case — demand / capacity"],
+        index=1 if check_name == 'Torsion' else 0,
         horizontal=True, key=f"{key_prefix}igird_vt_{check_name}_chart_view")
     from concrete_pmm_pro.ui.igird_case_review import controlling_result
     investigation = check_name == "Torsion" and controlling_result(frame,check_name)['basis'] == 'INVESTIGATION ONLY'
@@ -229,18 +323,12 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
             return source.loc[source["Case"].eq(case)] if source is not None and not source.empty else None
         selected_diagram = pick(diagram)
         if check_name == "Shear":
-            fig = ap._make_beam_uls_shear_capacity_figure(demands,checked,code_label=code_label,
-                boundary_capacity_df=pick(boundary),critical_section_df=pick(critical),compact_csi_legend=True,
-                member_length_m=span,source_context_df=source_context_df if source_context_df is not None else active_df,diagram_capacity_df=selected_diagram)
-            fig.data = tuple(t for t in fig.data if t.name not in {"φVc","Critical x"})
+            fig = make_shear_case_figure(active_df,frame,case=case,code_label=code_label,
+                span_m=span,diagram=diagram,boundary=boundary,critical=critical,
+                source_context_df=source_context_df)
         else:
-            fig = ap._make_beam_uls_torsion_capacity_figure(demands,checked,code_label=code_label,
-                boundary_capacity_df=pick(boundary),diagram_capacity_df=selected_diagram,
-                member_length_m=span,source_context_df=source_context_df if source_context_df is not None else active_df)
-            capacity_source = selected_diagram if selected_diagram is not None and not selected_diagram.empty else checked
-            have_tn = pd.to_numeric(capacity_source.get("φTn kN-m"),errors="coerce").notna().any()
-            hide = {"±φTcr","±0.25φTcr"} if have_tn else {"±φTcr"}
-            fig.data = tuple(t for t in fig.data if t.name not in hide)
+            fig = make_torsion_case_figure(active_df,frame,case=case,code_label=code_label,
+                span_m=span,diagram=diagram,boundary=boundary,source_context_df=source_context_df)
         for trace in fig.data:
             if str(trace.name).startswith("Gov."):
                 trace.showlegend = False
@@ -256,7 +344,8 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
                     "Threshold status","Source decision status","Diagram evaluation status","εs raw","θ deg",
                     "Ao mm2","At/s mm2/mm","fy MPa","φ","Diagram source case","Diagram source sheet",
                     "Diagram source row","Diagram source type","Notes") if column in selected_diagram]
-                st.dataframe(selected_diagram[columns],hide_index=True,use_container_width=True)
+                from concrete_pmm_pro.ui.result_table_display import result_table_for_display
+                st.dataframe(result_table_for_display(selected_diagram[columns]),hide_index=True,use_container_width=True)
         if check_name == "Shear" and diagram is not None and not diagram.empty:
             st.caption("φVn at shared physical endpoints uses their actual Excel forces. Zero-force synthetic boundary capacities are not used in this case diagram. The original support/critical-section design decisions are unchanged.")
         missing = (fig.layout.meta or {}).get("unavailable_capacity", [])
@@ -270,6 +359,9 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
         from concrete_pmm_pro.ui.igird_member_results import titled_figure
         fig = titled_figure(fig, member_name,case_name=selected_case)
     ap._render_beam_uls_browser_plotly_figure(fig,interactive=True)
+    if view == "Overview — utilization":
+        from concrete_pmm_pro.ui.igird_overview_gaps import render_gap_audit
+        render_gap_audit(fig, check_name=check_name, key_prefix=key_prefix)
     st.caption("Incomplete input checks remain REVIEW. CSI Max/Min rows are numerical screening; final coupled acceptance needs verified concurrent actions.")
 
 
@@ -285,6 +377,8 @@ def render_combined_chart(frame, *, code_label, member_name="", selected_case=No
         from concrete_pmm_pro.ui.igird_member_results import titled_figure
         fig = titled_figure(fig,member_name,case_name=selected_case)
     ap._render_beam_uls_browser_plotly_figure(fig,interactive=True)
+    from concrete_pmm_pro.ui.igird_overview_gaps import render_gap_audit
+    render_gap_audit(fig, check_name='Shear + Torsion', key_prefix=member_name)
     partial = int(frame.get("Calculation status",pd.Series(index=frame.index,dtype=object)).eq("PARTIAL").sum())
     st.caption(f"Blue: largest available original Veff/transverse/longitudinal/spacing D/C at each station. Red: limit 1.0. Partial rows: {partial}. Missing sub-checks are not a completed overall check.")
     if any(trace.name == 'Max D/C' and any(row[2] == '∞' for row in trace.customdata) for trace in fig.data):

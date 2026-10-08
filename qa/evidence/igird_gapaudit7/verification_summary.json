@@ -1,0 +1,55 @@
+{
+  "release": "IGIRDER.GAPAUDIT7",
+  "date": "2026-10-07",
+  "baseline": "IGIRDER.COMPACT6",
+  "baseline_sha256": "fb78ca10119c2a89ef03adefff5734abbd6d786db5ebc6d33e1bfe8bfd6a4a0d",
+  "scoped_regression": {
+    "modules": 58,
+    "passed": 721,
+    "seconds": 64.11,
+    "new_tests_included": 22,
+    "full_repository_suite": false
+  },
+  "compile": "PASS",
+  "collection_apptest": "PASS: four checks, two girders, two cases per girder; AUTO/named/ALL; stale hiding; gap audit/export widgets",
+  "app_py_apptest": "PASS: four Analysis/detailed routes; Calculate Interface Shear; Report/QA member and case selection; explicit PNG creation/download widget",
+  "review_solver_calls": 0,
+  "stored_frames_load_bank_and_design_member_preserved": true,
+  "manual_visual_review": {
+    "status": "PASS",
+    "files": [
+      "torsion_auto_0.png",
+      "torsion_auto_1.png",
+      "torsion_report_auto_0.png",
+      "torsion_report_auto_1.png",
+      "report_qa_torsion.png",
+      "torsion_report_full_span_qa.png",
+      "torsion_gap_status_sample.png"
+    ],
+    "observations": "Original coordinates retained; qualified stored phiTn continuous through threshold/zero-Tu stations; same-case/girder titles, stored control and decisions visible in image; missing resistance remains NaN. Axis title, legend and report notes are separated; control labels do not overlap lines/header/end axes.",
+    "data_scope": "Controlled hypothetical QA inputs, not a reanalysis of the user project"
+  },
+  "browser": {
+    "local_server_health": "200 ok",
+    "cloud_tab": "ERR_CONNECTION_REFUSED for localhost:8501",
+    "full_page_browser_screenshot": false
+  },
+  "user_pdf_finding": {
+    "file_name": "Torsion result(7).pdf",
+    "sha256": "abf3d0327fea109159bf135e00a4ba40ccfd9123e3b95ee8bfaa64e53fce88fb",
+    "confirmed": "Interior Girder 2 x=5 m: Tu=1.58 kN-m, threshold=27.72 kN-m, BELOW THRESHOLD, transverse/longitudinal NOT REQUIRED, overall row REVIEW",
+    "limitation": "PDF table bitmaps show only their printed viewport; Exterior x=12-14 m cannot be confirmed from the visible stored-row table"
+  },
+  "engineering_equations_uls_sls_logic_project_json_dependencies_changed": false,
+  "live_deployment_tested": false,
+  "push_or_deploy_performed": false,
+  "final_targeted_check": "22 passed after the final single-table/manual-cache preservation and chart spacing changes; AppTest rerun for final Analysis and Report/QA layout",
+  "report_chart": {
+    "shared_with_analysis": true,
+    "uses_stored_station_diagram": true,
+    "explicit_png_export": "2880x1120",
+    "source_solver_on_review": false,
+    "stale_and_old_results_hidden": true,
+    "single_table_manual_cache_preserved": true
+  }
+}

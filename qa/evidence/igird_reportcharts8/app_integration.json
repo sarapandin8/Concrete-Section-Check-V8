@@ -1,0 +1,81 @@
+{
+  "release": "IGIRDER.REPORTCHARTS8",
+  "status": "PASS",
+  "entrypoint": "app.py",
+  "scope": "Hypothetical QA input; full Analysis page routing, not live deployment",
+  "streamlit_exceptions": 0,
+  "checks": [
+    {
+      "check": "Flexure",
+      "current_girders": 2,
+      "named_case_review_girders": 2,
+      "review_solver_calls": 0,
+      "design_member_preserved": true,
+      "detailed_route_preserved": true
+    },
+    {
+      "check": "Shear",
+      "current_girders": 2,
+      "named_case_review_girders": 2,
+      "review_solver_calls": 0,
+      "design_member_preserved": true,
+      "detailed_route_preserved": true
+    },
+    {
+      "check": "Torsion",
+      "current_girders": 2,
+      "named_case_review_girders": 2,
+      "review_solver_calls": 0,
+      "design_member_preserved": true,
+      "detailed_route_preserved": true
+    },
+    {
+      "check": "Shear + Torsion",
+      "current_girders": 2,
+      "named_case_review_girders": 2,
+      "review_solver_calls": 0,
+      "design_member_preserved": true,
+      "detailed_route_preserved": true
+    }
+  ],
+  "report_qa_charts": [
+    {
+      "check": "Flexure",
+      "current_girders": 2,
+      "named_case_charts": 4,
+      "automatic_control": true,
+      "png_creation_and_download_widget": true,
+      "selected_csv_download_widget": true,
+      "review_solver_calls": 0
+    },
+    {
+      "check": "Shear",
+      "current_girders": 2,
+      "named_case_charts": 4,
+      "automatic_control": true,
+      "png_creation_and_download_widget": true,
+      "selected_csv_download_widget": true,
+      "review_solver_calls": 0
+    },
+    {
+      "check": "Torsion",
+      "current_girders": 2,
+      "named_case_charts": 4,
+      "automatic_control": true,
+      "png_creation_and_download_widget": true,
+      "selected_csv_download_widget": true,
+      "review_solver_calls": 0
+    },
+    {
+      "check": "Shear + Torsion",
+      "current_girders": 2,
+      "named_case_charts": 4,
+      "automatic_control": true,
+      "png_creation_and_download_widget": true,
+      "selected_csv_download_widget": true,
+      "review_solver_calls": 0
+    }
+  ],
+  "report_state_preserved": true,
+  "pending_and_stale_members_hidden": true
+}

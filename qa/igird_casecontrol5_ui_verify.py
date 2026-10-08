@@ -5,6 +5,7 @@ The hypothetical two-girder fixture is QA data, not a design approval.
 """
 from contextlib import ExitStack
 from copy import deepcopy
+import argparse
 import json
 import logging
 from pathlib import Path
@@ -24,7 +25,11 @@ from concrete_pmm_pro.ui import analysis_page as ap, igird_member_results as mr
 from concrete_pmm_pro.ui.igird_case_review import FRAME_KEYS, AUTO_CASE, ALL_CASES, controlling_result
 from concrete_pmm_pro.ui.result_table_display import result_table_for_display
 
-OUT = Path('qa/evidence/igird_compact6')
+parser = argparse.ArgumentParser()
+parser.add_argument('--output-dir', default='qa/evidence/igird_compact6')
+parser.add_argument('--release', default='IGIRDER.COMPACT6')
+args = parser.parse_args()
+OUT = Path(args.output_dir)
 OUT.mkdir(parents=True, exist_ok=True)
 logging.getLogger('streamlit').setLevel(logging.ERROR)
 
@@ -121,11 +126,33 @@ with patch.object(mr, 'calculate_member', counted), patch.object(ap, '_render_be
         auto = {member: controlling_result(cache_before[member][check]['result'][FRAME_KEYS[check]], check)['row']['Case']
                 for member in names}
         check_display(at, check, names, auto)
+        if check == 'Torsion':
+            assert all(view.value == 'Selected case — demand / capacity' for view in at.radio if view.label == 'Chart view')
+            for i,fig in enumerate(figures):
+                assert fig.layout.meta['torsion_report_case'] in auto.values()
+                assert fig.layout.meta['igird_report_note']
+                cap = next(t for t in fig.data if t.name == '±φTn')
+                assert all(pd.notna(y) for x,y in zip(cap.x,cap.y) if x in (10.,18.))
+                fig.write_json(str(OUT / f'torsion_report_auto_{i}.plotly.json'))
+                fig.write_image(str(OUT / f'torsion_report_auto_{i}.png'),width=1440,height=560,scale=1)
+            for view in [radio for radio in at.radio if radio.label == 'Chart view']:
+                view.set_value('Overview — utilization')
+            rerun(at)
+            for fig in figures:
+                audit_rows = fig.layout.meta['overview_missing_ratio_audit']
+                assert {'BELOW THRESHOLD', 'NO DEMAND'}.issubset({row['Classification'] for row in audit_rows})
+                assert all(row['Curve gap'] for row in audit_rows)
+                assert all(annotation.yref == 'paper' for annotation in fig.layout.annotations)
+            assert len([item for item in at.expander if item.label == 'Missing-ratio stations / gap reasons']) == len(names)
+            assert len(at.get('download_button')) == len(names)
         # Capture the real review figures, including girder and selected case identity.
         for i, fig in enumerate(figures):
             stem = check.lower().replace(' + ', '_').replace(' ', '_') + '_auto_' + str(i)
             fig.write_json(str(OUT / (stem + '.plotly.json')))
             fig.write_image(str(OUT / (stem + '.png')), width=1440, height=560, scale=1)
+            gap_audit = (fig.layout.meta or {}).get('overview_missing_ratio_audit', [])
+            if gap_audit:
+                pd.DataFrame(gap_audit).to_csv(OUT / (stem + '.gap_audit.csv'), index=False)
         with ExitStack() as stack:
             readonly_guards(stack)
             # Each member's named case must change both tables and all figures.
@@ -182,6 +209,8 @@ with patch.object(mr, 'calculate_member', counted), patch.object(ap, '_render_be
             pd.testing.assert_frame_equal(at.session_state['beam_uls_loads_table'], loads_before, check_exact=True)
         records.append({'check': check, 'automatic_case_by_girder': auto, 'named_cases_per_girder': 2,
                         'all_case_review': True, 'all_girder_panels_collapsed': True,
+                        'gap_audit_present': check == 'Torsion',
+                        'default_report_diagram': check == 'Torsion',
                         'review_solver_calls': 0, 'stored_results_and_loads_unchanged': True})
     # Old three-mode widget state must not bypass the unified collection.
     at.session_state['igird_member_results_view'] = 'Selected girder — detailed checks'
@@ -202,7 +231,7 @@ with patch.object(mr, 'calculate_member', counted), patch.object(ap, '_render_be
         assert all('Girder: Interior Girder 2<br>' not in fig.layout.title.text for fig in figures)
         assert at.session_state['qa_calls'] == calls
 
-evidence = {'release': 'IGIRDER.COMPACT6', 'status': 'PASS', 'python': sys.version.split()[0],
+evidence = {'release': args.release, 'status': 'PASS', 'python': sys.version.split()[0],
             'pandas': pd.__version__, 'streamlit': st.__version__, 'pyarrow': pa.__version__,
             'checks': records, 'stale_member_summary_has_no_old_ratio': True,
             'streamlit_exceptions': 0, 'scope': 'Real Streamlit collection workspace with controlled QA fixture; not live deployment'}
