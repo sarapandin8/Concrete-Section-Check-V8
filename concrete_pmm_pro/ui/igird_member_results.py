@@ -161,6 +161,12 @@ def render_collection(*, check_name, route, code_label):
             'Vector series':rows_by_member[n]['Case Name'].nunique()} for n in names]),hide_index=True,use_container_width=True)
         st.dataframe(result_table_for_display(summary),hide_index=True,use_container_width=True)
     st.caption('Review selections change displayed results. Loads, Result Summary and Report / QA continue to use the design member selected in Loads.')
+    if check_name in {'Torsion', 'Shear + Torsion'}:
+        from concrete_pmm_pro.ui import igird_rebar_advisor
+        packages = igird_rebar_advisor.current_packages(st.session_state, rows_by_member,
+            route=route, selected_results=results, selected_check=check_name)
+        igird_rebar_advisor.render_advisor(st.session_state, rows_by_member, packages,
+            route=route, key_prefix='collection')
     for n in names:
         with st.expander('Girder: '+n,expanded=False):
             _render_member_result(member=n,result=results[n],all_rows=rows_by_member[n],

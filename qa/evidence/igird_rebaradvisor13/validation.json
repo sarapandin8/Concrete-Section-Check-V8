@@ -1,0 +1,37 @@
+{
+  "milestone": "IGIRDER.REBARADVISOR13",
+  "baseline_zip_sha256": "00d3b3ee7cf6d5013f945f5363ee8f2cc62038a9e487ea0c0149f971900edb82",
+  "compile": "PASS: app.py; existing analysis_page/member_results; both advisor modules; four QA scripts",
+  "scoped_tests": [
+    {
+      "modules": [
+        "test_igird_rebaradvisor13.py",
+        "test_igird_torsion_audit12.py",
+        "test_igird_maxmin10.py"
+      ],
+      "passed": 75,
+      "seconds": 72.12
+    },
+    {
+      "modules": [
+        "test_igird_uls7_concurrent_vt.py",
+        "test_igird_uls6d_torsion_auto_ph.py",
+        "test_igird_multigirder2.py",
+        "test_igird_casecontrol5.py",
+        "test_igird_reportcharts8.py",
+        "test_project_io.py"
+      ],
+      "passed": 116,
+      "seconds": 16.52
+    }
+  ],
+  "advisor_rerun_after_ui_edits": {
+    "passed": 16,
+    "seconds": 1.02
+  },
+  "app_test": "PASS: actual app.py, original project, explicit isolated trial, all-case/stale/read-only guards",
+  "browser_visual": "PASS: actual Chromium, 1680px and 1280px, explicit trial button, screenshots inspected",
+  "entire_repository_suite_rerun": false,
+  "production_solver_equation_changes": false,
+  "json_persistence_changes": false
+}

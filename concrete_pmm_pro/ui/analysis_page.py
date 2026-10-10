@@ -15393,6 +15393,18 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             st.dataframe(_beam_uls_audit_dataframe(active_df), use_container_width=True, hide_index=True)
         return
 
+    if is_precast_composite_bridge and selected_check in {"Torsion", "Shear + Torsion"}:
+        from concrete_pmm_pro.io.girder_load_bank import BANK_KEY
+        if pd.DataFrame(st.session_state.get(BANK_KEY, [])).empty:
+            from concrete_pmm_pro.ui import igird_rebar_advisor
+            member = str(st.session_state.get("beam_uls_member_label") or "Design girder")
+            rows_by_member = {member: active_df}
+            packages = {member: {key: frame for key, frame in {
+                "shear_check_df": shear_check_df, "torsion_check_df": torsion_check_df,
+                "combined_vt_df": combined_vt_df}.items() if isinstance(frame, pd.DataFrame)}}
+            igird_rebar_advisor.render_advisor(st.session_state, rows_by_member, packages,
+                route=strength_route, key_prefix='design')
+
     if selected_check == "Flexure":
         flexure = _beam_uls_governing_action(active_df, "Mux")
         flex_preview = _beam_uls_governing_flexure_preview_row(flexure_preview_df)

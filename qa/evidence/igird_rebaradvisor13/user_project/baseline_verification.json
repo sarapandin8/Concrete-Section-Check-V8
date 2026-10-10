@@ -1,0 +1,56 @@
+{
+  "project_sha256": "12b43739fa137984c5f8ddc1f618e414a67893187d7bb57b29b3ab1de8bfb88d",
+  "scope": "original Project JSON; fresh production Shear + Torsion for both girders; diagnostic results not published",
+  "summaries": [
+    {
+      "Girder": "Left Exterior Girder",
+      "Source rows": 320,
+      "Seconds": 15.17,
+      "shear_check_df": {
+        "rows": 320,
+        "statuses": {
+          "REVIEW": 320
+        }
+      },
+      "torsion_check_df": {
+        "rows": 320,
+        "statuses": {
+          "REVIEW": 302,
+          "FAIL": 18
+        }
+      },
+      "combined_vt_df": {
+        "rows": 320,
+        "statuses": {
+          "REVIEW": 241,
+          "FAIL": 79
+        }
+      }
+    },
+    {
+      "Girder": "Interior Girder 2",
+      "Source rows": 320,
+      "Seconds": 15.59,
+      "shear_check_df": {
+        "rows": 320,
+        "statuses": {
+          "REVIEW": 320
+        }
+      },
+      "torsion_check_df": {
+        "rows": 320,
+        "statuses": {
+          "REVIEW": 295,
+          "FAIL": 25
+        }
+      },
+      "combined_vt_df": {
+        "rows": 320,
+        "statuses": {
+          "REVIEW": 210,
+          "FAIL": 110
+        }
+      }
+    }
+  ]
+}

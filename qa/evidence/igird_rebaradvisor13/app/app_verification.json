@@ -1,0 +1,26 @@
+{
+  "actual_app_py": true,
+  "original_project": true,
+  "trial_solver_calls": [
+    {
+      "rows": 320,
+      "check": "Shear + Torsion"
+    },
+    {
+      "rows": 320,
+      "check": "Shear + Torsion"
+    }
+  ],
+  "all_case_shared_recommendations": true,
+  "display_case_does_not_narrow_plan": true,
+  "production_inputs_and_caches_unchanged": true,
+  "detailed_view_single_advisor": true,
+  "stale_options_and_inputs_hidden": true,
+  "summary_report_hidden_solver_calls": 0,
+  "trial_results_not_published": true,
+  "transverse_numeric_meets_zones": 10,
+  "overall_status_retained": {
+    "FAIL": 8,
+    "REVIEW": 2
+  }
+}

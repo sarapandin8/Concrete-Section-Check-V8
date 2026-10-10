@@ -1,0 +1,15 @@
+{
+  "browser": "134.0.6998.35",
+  "actual_app": true,
+  "viewport_widths": [
+    1680,
+    1280
+  ],
+  "screenshots": [
+    "advisor_trial_1680.png",
+    "trial_results_1680.png",
+    "advisor_1280.png"
+  ],
+  "single_trial_button": true,
+  "explicit_real_trial_button_clicked": true
+}

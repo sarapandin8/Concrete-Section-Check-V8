@@ -1,0 +1,6 @@
+﻿Active,Zone,x_start_m,x_end_m,Bar Size,Diameter_mm,Legs,Spacing_mm,fy_MPa,Note
+True,Left support,0.0,1.5,DB12,12.0,2,50.0,390.0,Template zone — verify support shear demand before activating.
+True,Left transition,1.5,4.5,DB12,12.0,2,80.0,390.0,Template zone — adjust spacing after shear design.
+True,Midspan,4.5,15.5,DB12,12.0,2,80.0,390.0,Template zone — usually governed by minimum transverse reinforcement.
+True,Right transition,15.5,18.5,DB12,12.0,2,50.0,390.0,Template zone — adjust spacing after shear design.
+True,Right support,18.5,20.0,DB16,16.0,2,70.0,390.0,Template zone — verify support shear demand before activating.
