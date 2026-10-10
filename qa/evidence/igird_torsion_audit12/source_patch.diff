@@ -1,0 +1,231 @@
+--- MAXMIN10/concrete-section-pro/concrete_pmm_pro/analysis/igird_combined_vt.py
++++ TORSIONAUDIT12/concrete-section-pro/concrete_pmm_pro/analysis/igird_combined_vt.py
+@@ -17,7 +17,7 @@
+ )
+ from concrete_pmm_pro.analysis.prestress_stress import prestress_stress_mpa
+ 
+-RESULT_VERSION = "IGIRDER.VTQA1.concurrent-vt-partial-results"
++RESULT_VERSION = "IGIRDER.TORSIONAUDIT12.direct-strain-separate-veff-review"
+ DEVELOPMENT_KEY = "igird_longitudinal_development_settings"
+ 
+ 
+@@ -199,9 +199,13 @@
+     rhs = max(0.0, rhs_raw)
+     resistance = aps_fps_N + as_fy_N
+     veff = math.hypot(vu, 0.9 * ph_mm * tu / (2.0 * Ao_mm2)) if tu > 0 else vu
+-    # Additional conservative Veff compression limit; explicitly a guard,
+-    # not the former ACI Aoh/ph stress expression.
+-    strut_dc = veff / (phi * (0.25 * fc_MPa * bv_mm * dv_mm + vp_N))
++    # Eq. 5.7.3.3-2 limits the actual shear resistance. Eq. 5.7.3.4.2-5
++    # substitutes Veff in the strain equation, not in this shear limit.
++    compression_capacity = phi * (0.25 * fc_MPa * bv_mm * dv_mm + vp_N)
++    strut_dc = vu / compression_capacity
++    # Retain the former extra screen as a separately reported review item.
++    # It must not masquerade as a code equation or inflate code-component D/C.
++    veff_guard_dc = veff / compression_capacity
+     transverse_dc = required / avs_provided if avs_provided > 0 else float("inf")
+     long_dc = rhs / resistance if resistance > 0 else (0.0 if rhs == 0 else float("inf"))
+     return {"shear_required": shear_req, "combined_required": required,
+@@ -211,4 +215,4 @@
+         "diagonal_term_N": diagonal_term, "longitudinal_rhs_raw_N": rhs_raw,
+         "longitudinal_required_N": rhs, "longitudinal_resistance_N": resistance,
+         "transverse_dc": transverse_dc, "longitudinal_dc": long_dc,
+-        "strut_dc": strut_dc, "veff_N": veff}
++        "strut_dc": strut_dc, "veff_guard_dc": veff_guard_dc, "veff_N": veff}
+--- MAXMIN10/concrete-section-pro/concrete_pmm_pro/ui/analysis_page.py
++++ TORSIONAUDIT12/concrete-section-pro/concrete_pmm_pro/ui/analysis_page.py
+@@ -7942,7 +7942,11 @@
+     mu_nmm = abs(float(mux_kNm)) * 1.0e6 if math.isfinite(float(mux_kNm)) else 0.0
+     # Vp is zero until a vertical prestress component is explicitly source-owned.
+     vp_n = 0.0
+-    mu_min_nmm = max(vu_n - vp_n, 0.0) * float(dv_mm)
++    # Printed pp. 5-71--5-72 retain actual Vu in the Mu lower bound.
++    # Only Vu in Eq. 5.7.3.4.2-4 is replaced by Veff. Using Veff here as
++    # well silently invents an additional flexural demand due to torsion.
++    vu_actual_n = abs(float(vu_kN)) * 1000.0
++    mu_min_nmm = abs(vu_actual_n - vp_n) * float(dv_mm)
+     mu_used_nmm = max(mu_nmm, mu_min_nmm)
+     # App Loads convention is compression-positive; AASHTO Eq. 5.7.3.4.2-4
+     # requires Nu tension-positive / compression-negative.
+@@ -7968,6 +7972,8 @@
+         "denominator_N": denominator_n,
+         "Nu_AASHTO_N": nu_aashto_n,
+         "Mu_used_Nmm": mu_used_nmm,
++        "Mu_min_Nmm": mu_min_nmm,
++        "Mu floor basis": "Actual |Vu-Vp|dv; Veff replaces only the shear term in Eq. 5.7.3.4.2-4",
+         "Vp_N": vp_n,
+         "Vu input kN": float(vu_kN),
+         "Veff used kN": abs(vu_for_epsilon_kN) if effective_shear_kN is not None else float("nan"),
+@@ -9685,6 +9691,13 @@
+             "Result": f"Veff = {n(veff,2)} kN",
+             "Code basis": "AASHTO LRFD 5.7.3.4.2-5 for solid sections",
+         })
++    if math.isfinite(f("Mu strain used kN-m")):
++        rows.append({
++            "Step": "5a · Moment used in longitudinal strain",
++            "Equation / substitution": f"Mu,strain = max(|Mu|, |Vu−Vp|dv); minimum = {n(f('Mu strain minimum kN-m'),2)} kN-m using actual Vu",
++            "Result": f"Mu,strain = {n(f('Mu strain used kN-m'),2)} kN-m",
++            "Code basis": "AASHTO LRFD 5.7.3.4.2, Mu definition / p. 5-72; Veff replaces only the shear term in Eq. -4",
++        })
+     if all(math.isfinite(v) for v in [eps_raw, eps_used]):
+         rows.append({
+             "Step": "6 · Longitudinal strain εs",
+@@ -10619,6 +10632,9 @@
+         "Vuy kN": vu_kN, "Veff kN": result.veff_N / 1000.0, "Torsion equivalent shear N": torsion_equiv_n,
+         "d mm": d_eff, "dv mm": depth_for_gp, "Tension face": tension_face,
+         "εs raw": float(eps_trace.get("epsilon_s_raw")), "εs used": params.epsilon_s_used, "εs numerator N": eps_trace.get("numerator_N", float("nan")), "εs denominator N": eps_trace.get("denominator_N", float("nan")),
++        "Mu strain used kN-m": eps_trace.get("Mu_used_Nmm", float("nan")) / 1.0e6,
++        "Mu strain minimum kN-m": eps_trace.get("Mu_min_Nmm", float("nan")) / 1.0e6,
++        "Mu floor basis": eps_trace.get("Mu floor basis", ""),
+         "β": params.beta, "θ deg": params.theta_deg, "cotθ": result.cot_theta, "General Procedure branch": params.basis,
+         "Aps raw tension mm2": eps_trace.get("Aps_raw_mm2", float("nan")), "Aps developed tension mm2": eps_trace.get("Aps_developed_mm2", float("nan")),
+         "Aps development factor min": eps_trace.get("min_development_factor", float("nan")), "fpo transfer factor min": eps_trace.get("min_transfer_factor", float("nan")),
+@@ -10917,6 +10933,7 @@
+         "Al req mm2", "Al provided mm2", "Al utilization",
+         "Vuy kN", "Veff kN", "Torsion equivalent shear N", "d mm", "dv mm", "Tension face",
+         "εs raw", "εs used", "εs numerator N", "εs denominator N", "β", "General Procedure branch",
++        "Mu strain used kN-m", "Mu strain minimum kN-m", "Mu floor basis",
+         "Aps raw tension mm2", "Aps developed tension mm2", "Aps development factor min", "fpo transfer factor min", "fpo full MPa", "Pe effective N",
+         "Closed loop confirmed", "135° hook confirmed", "Torsion zone source", "Longitudinal perimeter confirmed", "Corner longitudinal confirmed",
+         "Coverage status", "Hoop detailing status", "Corner longitudinal status",
+@@ -14009,7 +14026,7 @@
+ _IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION = IGIRD_FLEXURE_DEVELOPMENT_VERSION + ".construction"
+ _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION = IGIRD_FLEXURE_DEVELOPMENT_VERSION + ".final-composite"
+ _IGIRDER_SHEAR_RESULT_VERSION = igird_shear_section.RESULT_VERSION + ".shear.chart3"
+-_IGIRDER_TORSION_RESULT_VERSION = igird_shear_section.RESULT_VERSION + ".torsion.chart3"
++_IGIRDER_TORSION_RESULT_VERSION = igird_shear_section.RESULT_VERSION + ".torsion.audit12"
+ _IGIRDER_COMBINED_VT_RESULT_VERSION = IGIRD_CONCURRENT_VT_VERSION
+ 
+ 
+--- MAXMIN10/concrete-section-pro/concrete_pmm_pro/ui/igird_combined_vt.py
++++ TORSIONAUDIT12/concrete-section-pro/concrete_pmm_pro/ui/igird_combined_vt.py
+@@ -81,7 +81,7 @@
+         known_failure = any(result.get(key) == "FAIL" for key in ("Stress status", "Transverse status", "Detailing status"))
+         partial = any(math.isfinite(_number(result.get(key))) for key in ("Stress D/C value", "Transverse D/C value"))
+         failures = []
+-        for label, key, dc_key in (("Compression/Veff", "Stress status", "Stress D/C value"),
++        for label, key, dc_key in (("Shear compression limit", "Stress status", "Stress D/C value"),
+                 ("Transverse reinforcement", "Transverse status", "Transverse D/C value"),
+                 ("Transverse detailing", "Detailing status", "Spacing D/C")):
+             if result.get(key) == "FAIL":
+@@ -157,16 +157,22 @@
+     if needs_t and not all(math.isfinite(v) and v > 0 for v in [ao, ph]):
+         return blocked("AASHTO solid shear-flow Ao / derived hoop ph is unavailable.", status="DATA REQUIRED")
+     veff = math.hypot(abs(vu)*1000.0, 0.9*ph*abs(tu)*1e6/(2*ao)) if needs_t else abs(vu)*1000.0
+-    # This compression guard is independent of the longitudinal material/fps
+-    # source. Retain it even if a later longitudinal input is unavailable.
+-    strut_dc = veff / (phi * 0.25 * fc * bv * dv)
++    # The code shear limit and the extra conservative Veff screen are distinct.
++    # Both are available even if a later longitudinal source is unavailable.
++    strut_dc = abs(vu)*1000.0 / (phi * 0.25 * fc * bv * dv)
++    veff_guard_dc = veff / (phi * 0.25 * fc * bv * dv)
+     detail = ap._beam_uls_shear_detailing_guard(strength_route=strength_route, fc_MPa=fc,
+         bw_mm=bv, d_eff_mm=d, dv_mm=dv, spacing_mm=spacing, avs_mm2_per_mm=provided,
+         fy_MPa=fy, vu_N=veff, phi=phi)
+     result.update({"Stress D/C value": strut_dc, "Stress status": "PASS" if strut_dc <= 1+1e-9 else "FAIL",
++        "Stress basis": "Actual |Vu| / [φ(0.25 f'c bv dv + Vp)], Eq. 5.7.3.3-2",
++        "Conservative Veff guard D/C": veff_guard_dc,
++        "Conservative Veff guard status": "REVIEW" if veff_guard_dc > 1+1e-9 else "PASS",
+         "Veff kN": veff/1000.0, "Ao mm2": ao, "ph mm": ph,
+         "Detailing status": detail.get("Detailing status"), "Spacing D/C": detail.get("Spacing D/C"),
+         "s max mm": detail.get("s max mm")})
++    if veff_guard_dc > 1+1e-9:
++        notes.append("Additional conservative Veff compression screen exceeds 1.0; engineering review is retained. This screen is not Eq. 5.7.3.3-2 and is excluded from code-component D/C.")
+     dev_settings = development_settings(state)
+     dev_factor = ordinary_development_factor(dev_settings, x_m=x, span_m=span) if inp.rebars else 1.0
+     result.update({"Ordinary development factor": dev_factor if dev_factor is not None else float("nan"),
+@@ -204,6 +210,9 @@
+         "Vc kN": vc/1000.0, "Vs allocated kN": partial_values["vs_nominal_N"]/1000.0,
+         "Vs used kN": partial_values["vs_used_N"]/1000.0, "β": params.beta, "θ deg": theta, "θ cot": cot,
+         "εs raw": eps["epsilon_s_raw"], "εs used": params.epsilon_s_used,
++        "Mu strain used kN-m": eps["Mu_used_Nmm"]/1e6,
++        "Mu strain minimum kN-m": eps["Mu_min_Nmm"]/1e6,
++        "Mu floor basis": eps["Mu floor basis"],
+         "εs numerator N": eps.get("numerator_N"), "εs denominator N": eps.get("denominator_N"),
+         "Av shear req mm2/mm": partial_values["shear_required"], "At torsion req mm2/mm": at_req,
+         "Governing transverse req mm2/mm": partial_values["combined_required"],
+@@ -264,6 +273,8 @@
+         "Perimeter longitudinal status": "CONFIRMED" if perimeter else ("REQUIRED" if needs_t else "NOT REQUIRED"),
+         "Prestress dominance status": "PASS" if ps_dominance else "FAIL",
+         "Stress D/C value": values["strut_dc"], "Transverse D/C value": values["transverse_dc"],
++        "Conservative Veff guard D/C": values["veff_guard_dc"],
++        "Conservative Veff guard status": "REVIEW" if values["veff_guard_dc"] > 1+1e-9 else "PASS",
+         "Longitudinal D/C value": values["longitudinal_dc"],
+         "Overall D/C value": max(values["strut_dc"],values["transverse_dc"],values["longitudinal_dc"],_number(detail.get("Detailing D/C value"))),
+         "Vc kN": vc/1000, "Vs allocated kN": values["vs_nominal_N"]/1000,
+@@ -289,11 +300,11 @@
+         "Shear term kN": values["shear_term_N"]/1000, "Torsion term kN": values["torsion_term_N"]/1000,
+         "Diagonal term kN": values["diagonal_term_N"]/1000,
+         "Spacing D/C": detail.get("Spacing D/C"), "s max mm": detail.get("s max mm"),
+-        "Interaction form": "Veff / compression limit (conservative guard)",
++        "Interaction form": "Concurrent transverse sum and longitudinal force; separate actual-shear compression limit",
+         "Capacity": f"Long. R = {values['longitudinal_resistance_N']/1000:,.2f} kN",
+         "Demand": f"Long. F = {values['longitudinal_required_N']/1000:,.2f} kN"})
+     failures = [result[k] for k in ["Stress status","Transverse status","Longitudinal status","Detailing status"]]
+-    review = not bars_ready or bool(notes) or (needs_t and (not corner or not perimeter)) or (mu < -1e-9 and not negative_composite_ready(state.get("section_parameters") or {})) or depths.get("Depth source status") != "PASS" or depths.get("Composite action status") not in {"PASS", "NOT APPLICABLE"}
++    review = values["veff_guard_dc"] > 1+1e-9 or not bars_ready or bool(notes) or (needs_t and (not corner or not perimeter)) or (mu < -1e-9 and not negative_composite_ready(state.get("section_parameters") or {})) or depths.get("Depth source status") != "PASS" or depths.get("Composite action status") not in {"PASS", "NOT APPLICABLE"}
+     result["Status"] = "FAIL" if "FAIL" in failures or depths.get("Composite action status") == "FAIL" else ("REVIEW" if review else "PASS")
+     from concrete_pmm_pro.analysis.igird_shear_support import station_region
+     region = station_region(state,x_m=x,span_m=span,h_mm=depths.get('h mm',prepared['precast_depth_mm']))
+@@ -318,7 +329,7 @@
+         "Vs relief uses residual hoop area after torsion allocation and is capped at Vu/phi per 5.7.3.5.",
+         "Straight pretensioned strands: Vp=0, lambda_duct=1. No tendon slope or duct is inferred.",
+         "Nominal fps equilibrium uses the same station-developed girder/deck longitudinal bars as the strain and force checks.",
+-        "Veff compression cap is an additional conservative guard; no ACI Aoh/ph stress shortcut is used.",
++        "Veff compression screen is an additional conservative REVIEW item, excluded from code-component D/C; no ACI Aoh/ph stress shortcut is used.",
+         str(eps.get("note") or ""),str(fps_trace.get("note") or ""),str(dev_settings.get("note") or ""), str(depths.get("Depth note") or "")])
+     result["Notes"] = "; ".join(n for n in notes if n)
+     return result
+@@ -333,6 +344,9 @@
+     rows = [
+         ("Concurrent actions", "Mu, Nu, Vu, Tu from one physical row/case", f"Mu={n('Mu kN-m')} kN-m; Nu(app)={n('Nu app kN')} kN; Vu={n('Vu kN')} kN; Tu={n('Tu kN-m')} kN-m", "Same row; Nu(AASHTO)=-Nu(app)", "5.7.3.6.1 / 5.7.3.6.3"),
+         ("General Procedure", "Veff=sqrt[Vu²+(0.9phTu/(2Ao))²] → εs → β, θ", f"Veff={n('Veff kN')} kN; εs raw={n('εs raw')}; adopted={n('εs used')}; β={n('β')}; θ={n('θ deg')} deg", str(row.get('General Procedure branch') or '-'), "5.7.3.4.2-1/-3/-4/-5"),
++        ("Strain moment minimum", "Mu,strain=max(|Mu|, |Vu−Vp|dv); actual Vu in lower bound", f"minimum={n('Mu strain minimum kN-m')} kN-m; adopted={n('Mu strain used kN-m')} kN-m", str(row.get('Mu floor basis') or '-'), "5.7.3.4.2: Mu definition / p. 5-72"),
++        ("Shear compression limit", "|Vu| ≤ φ(0.25 f'c bv dv + Vp)", f"D/C={n('Stress D/C value')}", str(row.get('Stress status') or '-'), "5.7.3.3-2"),
++        ("Additional Veff screen", "Veff / [φ(0.25 f'c bv dv + Vp)]", f"D/C={n('Conservative Veff guard D/C')}", str(row.get('Conservative Veff guard status') or '-'), "Additional conservative review; excluded from code-component D/C"),
+         ("Physical transverse sum", "Required=max(Av/s shear, Av/s minimum)+2At/s torsion ≤ Av/s physical", f"max({n('Av shear req mm2/mm')},{n('Minimum transverse req mm2/mm')})+2×{n('At torsion req mm2/mm')}={n('Governing transverse req mm2/mm')} mm²/mm; provided={n('Provided transverse mm2/mm')}", f"D/C={n('Transverse D/C value')} · {row.get('Transverse status','-')}", "5.7.3.6.1 / 5.7.2.5"),
+         ("Vs relief", "Av/s available=max(0, Av/s physical−2At/s required); Vs_used=min(Vs allocated, |Vu|/φ)", f"Available={n('Av available for shear mm2/mm')} mm²/mm; Vs allocated={n('Vs allocated kN')} kN; Vs used={n('Vs used kN')} kN", "One hoop counted once", "5.7.3.3-4 / 5.7.3.5"),
+         ("Nominal fps source", "Pn(c)=Nu(app)/φ; fps=min tension-side nominal strand stresses", f"c={n('fps c mm')} mm; residual={n('fps equilibrium residual N')} N; fps={n('fps nominal min MPa')} MPa", "AASHTO block + bonded-strand strain compatibility", "5.6.2 / 5.7.3.6.3-1"),
+@@ -417,6 +431,8 @@
+         {"title":"Development","value":str(gov.get('Development status','REVIEW')),"detail":f"As factor {value('Ordinary development factor')} · Aps factor {value('Aps development factor min')}","status":"info" if gov.get('Development status') == 'PASS' else 'warning'},
+     ]
+     ap._render_analysis_summary_strip(cards[:3], columns=3)
++    if str(gov.get("Conservative Veff guard status")) == "REVIEW":
++        st.warning("Additional conservative Veff compression screen requires review. Its ratio is shown separately in Calculation trace and is excluded from code-component D/C; member acceptance remains REVIEW.")
+     dc_columns = [c for c in ("Stress D/C value", "Transverse D/C value", "Longitudinal D/C value") if c in df]
+     finite_rows = df[dc_columns].apply(lambda column: pd.to_numeric(column, errors="coerce").map(lambda v: pd.notna(v) and math.isfinite(float(v)))).any(axis=1) if dc_columns else pd.Series(False, index=df.index)
+     st.caption(f"Calculation completed: {len(df)} concurrent check rows; {int(finite_rows.sum())} rows with finite D/C. Original source rows and acceptance gates are retained.")
+@@ -448,7 +464,8 @@
+         st.warning("Concurrent V+T needs review. " + str(gov.get("Review reason") or "Complete the sources and confirmations before final sectional acceptance."))
+     compact = [c for c in ["Governing x","Case","Section basis","Composite action status","Source coupling","Support region","Support region status","h mm","dv mm","Tension face","Status","Calculation status","Transverse status","Longitudinal status",
+         "Coverage status","Development status","Detailing status","Corner longitudinal status","Perimeter longitudinal status","Prestress dominance status",
+-        "Transverse D/C value","Longitudinal required kN","Longitudinal resistance kN","Longitudinal D/C value","Review reason"] if c in df]
++        "Stress D/C value","Transverse D/C value","Longitudinal required kN","Longitudinal resistance kN","Longitudinal D/C value",
++        "Conservative Veff guard D/C","Conservative Veff guard status","Review reason"] if c in df]
+     with st.expander("Station results / source status", expanded=False):
+         st.dataframe(df[compact],use_container_width=True,hide_index=True)
+     with st.expander("Calculation trace / Equations — governing concurrent V+T station",expanded=False):
+--- MAXMIN10/concrete-section-pro/tests/test_igird_uls6_torsion_general_procedure.py
++++ TORSIONAUDIT12/concrete-section-pro/tests/test_igird_uls6_torsion_general_procedure.py
+@@ -620,7 +620,7 @@
+ 
+ def test_vtqa1_versions_invalidate_all_vt_development_sources():
+     assert _IGIRDER_TORSION_RESULT_VERSION.startswith("IGIRDER.DECKULS1.")
+-    assert _IGIRDER_COMBINED_VT_RESULT_VERSION.startswith("IGIRDER.VTQA1.")
++    assert _IGIRDER_COMBINED_VT_RESULT_VERSION.startswith("IGIRDER.TORSIONAUDIT12.")
+     assert _IGIRDER_SHEAR_RESULT_VERSION.startswith("IGIRDER.DECKULS1.")
+ 
+ 
+--- MAXMIN10/concrete-section-pro/tests/test_igird_uls7_concurrent_vt.py
++++ TORSIONAUDIT12/concrete-section-pro/tests/test_igird_uls7_concurrent_vt.py
+@@ -183,7 +183,9 @@
+ 
+ 
+ def test_insufficient_transverse_or_longitudinal_strength_fails():
+-    transverse=physical(check(tu=1000.0))
++    # Direct-code moment minimum now leaves the old 1000 kN-m fixture below
++    # transverse resistance. Use a independently confirmed actual failure.
++    transverse=physical(check(tu=1500.0))
+     assert transverse["Transverse status"] == "FAIL"
+     assert transverse["Status"] == "FAIL"
+     longitudinal=physical(check(mux=10000.0))

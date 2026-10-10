@@ -1,0 +1,6 @@
+{
+  "status": "PASS",
+  "scalar_comparisons": 80,
+  "max_relative_error": 5.2805900542526015e-14,
+  "scope": "8 hypothetical midspan cases; analytic I/hoop inset; direct US-unit equations with developed dv and nominal fps held fixed"
+}

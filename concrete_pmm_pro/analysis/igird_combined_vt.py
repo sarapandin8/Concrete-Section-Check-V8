@@ -17,7 +17,7 @@ from concrete_pmm_pro.analysis.strain_compatibility import (
 )
 from concrete_pmm_pro.analysis.prestress_stress import prestress_stress_mpa
 
-RESULT_VERSION = "IGIRDER.VTQA1.concurrent-vt-partial-results"
+RESULT_VERSION = "IGIRDER.TORSIONAUDIT12.direct-strain-separate-veff-review"
 DEVELOPMENT_KEY = "igird_longitudinal_development_settings"
 
 
@@ -199,9 +199,13 @@ def concurrent_vt_si(
     rhs = max(0.0, rhs_raw)
     resistance = aps_fps_N + as_fy_N
     veff = math.hypot(vu, 0.9 * ph_mm * tu / (2.0 * Ao_mm2)) if tu > 0 else vu
-    # Additional conservative Veff compression limit; explicitly a guard,
-    # not the former ACI Aoh/ph stress expression.
-    strut_dc = veff / (phi * (0.25 * fc_MPa * bv_mm * dv_mm + vp_N))
+    # Eq. 5.7.3.3-2 limits the actual shear resistance. Eq. 5.7.3.4.2-5
+    # substitutes Veff in the strain equation, not in this shear limit.
+    compression_capacity = phi * (0.25 * fc_MPa * bv_mm * dv_mm + vp_N)
+    strut_dc = vu / compression_capacity
+    # Retain the former extra screen as a separately reported review item.
+    # It must not masquerade as a code equation or inflate code-component D/C.
+    veff_guard_dc = veff / compression_capacity
     transverse_dc = required / avs_provided if avs_provided > 0 else float("inf")
     long_dc = rhs / resistance if resistance > 0 else (0.0 if rhs == 0 else float("inf"))
     return {"shear_required": shear_req, "combined_required": required,
@@ -211,4 +215,4 @@ def concurrent_vt_si(
         "diagonal_term_N": diagonal_term, "longitudinal_rhs_raw_N": rhs_raw,
         "longitudinal_required_N": rhs, "longitudinal_resistance_N": resistance,
         "transverse_dc": transverse_dc, "longitudinal_dc": long_dc,
-        "strut_dc": strut_dc, "veff_N": veff}
+        "strut_dc": strut_dc, "veff_guard_dc": veff_guard_dc, "veff_N": veff}

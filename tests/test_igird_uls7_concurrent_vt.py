@@ -183,7 +183,9 @@ def test_unverified_composite_width_withholds_pass():
 
 
 def test_insufficient_transverse_or_longitudinal_strength_fails():
-    transverse=physical(check(tu=1000.0))
+    # Direct-code moment minimum now leaves the old 1000 kN-m fixture below
+    # transverse resistance. Use a independently confirmed actual failure.
+    transverse=physical(check(tu=1500.0))
     assert transverse["Transverse status"] == "FAIL"
     assert transverse["Status"] == "FAIL"
     longitudinal=physical(check(mux=10000.0))

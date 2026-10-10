@@ -7942,7 +7942,11 @@ def _beam_uls_igird_general_shear_epsilon(
     mu_nmm = abs(float(mux_kNm)) * 1.0e6 if math.isfinite(float(mux_kNm)) else 0.0
     # Vp is zero until a vertical prestress component is explicitly source-owned.
     vp_n = 0.0
-    mu_min_nmm = max(vu_n - vp_n, 0.0) * float(dv_mm)
+    # Printed pp. 5-71--5-72 retain actual Vu in the Mu lower bound.
+    # Only Vu in Eq. 5.7.3.4.2-4 is replaced by Veff. Using Veff here as
+    # well silently invents an additional flexural demand due to torsion.
+    vu_actual_n = abs(float(vu_kN)) * 1000.0
+    mu_min_nmm = abs(vu_actual_n - vp_n) * float(dv_mm)
     mu_used_nmm = max(mu_nmm, mu_min_nmm)
     # App Loads convention is compression-positive; AASHTO Eq. 5.7.3.4.2-4
     # requires Nu tension-positive / compression-negative.
@@ -7968,6 +7972,8 @@ def _beam_uls_igird_general_shear_epsilon(
         "denominator_N": denominator_n,
         "Nu_AASHTO_N": nu_aashto_n,
         "Mu_used_Nmm": mu_used_nmm,
+        "Mu_min_Nmm": mu_min_nmm,
+        "Mu floor basis": "Actual |Vu-Vp|dv; Veff replaces only the shear term in Eq. 5.7.3.4.2-4",
         "Vp_N": vp_n,
         "Vu input kN": float(vu_kN),
         "Veff used kN": abs(vu_for_epsilon_kN) if effective_shear_kN is not None else float("nan"),
@@ -9685,6 +9691,13 @@ def _beam_uls_torsion_calculation_trace_dataframe(row: Mapping[str, object] | No
             "Result": f"Veff = {n(veff,2)} kN",
             "Code basis": "AASHTO LRFD 5.7.3.4.2-5 for solid sections",
         })
+    if math.isfinite(f("Mu strain used kN-m")):
+        rows.append({
+            "Step": "5a · Moment used in longitudinal strain",
+            "Equation / substitution": f"Mu,strain = max(|Mu|, |Vu−Vp|dv); minimum = {n(f('Mu strain minimum kN-m'),2)} kN-m using actual Vu",
+            "Result": f"Mu,strain = {n(f('Mu strain used kN-m'),2)} kN-m",
+            "Code basis": "AASHTO LRFD 5.7.3.4.2, Mu definition / p. 5-72; Veff replaces only the shear term in Eq. -4",
+        })
     if all(math.isfinite(v) for v in [eps_raw, eps_used]):
         rows.append({
             "Step": "6 · Longitudinal strain εs",
@@ -10619,6 +10632,9 @@ def _beam_uls_igird_torsion_result_for_row(
         "Vuy kN": vu_kN, "Veff kN": result.veff_N / 1000.0, "Torsion equivalent shear N": torsion_equiv_n,
         "d mm": d_eff, "dv mm": depth_for_gp, "Tension face": tension_face,
         "εs raw": float(eps_trace.get("epsilon_s_raw")), "εs used": params.epsilon_s_used, "εs numerator N": eps_trace.get("numerator_N", float("nan")), "εs denominator N": eps_trace.get("denominator_N", float("nan")),
+        "Mu strain used kN-m": eps_trace.get("Mu_used_Nmm", float("nan")) / 1.0e6,
+        "Mu strain minimum kN-m": eps_trace.get("Mu_min_Nmm", float("nan")) / 1.0e6,
+        "Mu floor basis": eps_trace.get("Mu floor basis", ""),
         "β": params.beta, "θ deg": params.theta_deg, "cotθ": result.cot_theta, "General Procedure branch": params.basis,
         "Aps raw tension mm2": eps_trace.get("Aps_raw_mm2", float("nan")), "Aps developed tension mm2": eps_trace.get("Aps_developed_mm2", float("nan")),
         "Aps development factor min": eps_trace.get("min_development_factor", float("nan")), "fpo transfer factor min": eps_trace.get("min_transfer_factor", float("nan")),
@@ -10917,6 +10933,7 @@ def _beam_uls_torsion_check_dataframe(
         "Al req mm2", "Al provided mm2", "Al utilization",
         "Vuy kN", "Veff kN", "Torsion equivalent shear N", "d mm", "dv mm", "Tension face",
         "εs raw", "εs used", "εs numerator N", "εs denominator N", "β", "General Procedure branch",
+        "Mu strain used kN-m", "Mu strain minimum kN-m", "Mu floor basis",
         "Aps raw tension mm2", "Aps developed tension mm2", "Aps development factor min", "fpo transfer factor min", "fpo full MPa", "Pe effective N",
         "Closed loop confirmed", "135° hook confirmed", "Torsion zone source", "Longitudinal perimeter confirmed", "Corner longitudinal confirmed",
         "Coverage status", "Hoop detailing status", "Corner longitudinal status",
@@ -14009,7 +14026,7 @@ def _beam_uls_construction_demand_from_state(
 _IGIRDER_CONSTRUCTION_FLEXURE_RESULT_VERSION = IGIRD_FLEXURE_DEVELOPMENT_VERSION + ".construction"
 _IGIRDER_FINAL_COMPOSITE_FLEXURE_RESULT_VERSION = IGIRD_FLEXURE_DEVELOPMENT_VERSION + ".final-composite"
 _IGIRDER_SHEAR_RESULT_VERSION = igird_shear_section.RESULT_VERSION + ".shear.chart3"
-_IGIRDER_TORSION_RESULT_VERSION = igird_shear_section.RESULT_VERSION + ".torsion.chart3"
+_IGIRDER_TORSION_RESULT_VERSION = igird_shear_section.RESULT_VERSION + ".torsion.audit12"
 _IGIRDER_COMBINED_VT_RESULT_VERSION = IGIRD_CONCURRENT_VT_VERSION
 
 

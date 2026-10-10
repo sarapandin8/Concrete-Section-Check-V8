@@ -1,0 +1,18 @@
+{
+  "release": "IGIRDER.TORSIONAUDIT12",
+  "date": "2026-10-10",
+  "original_zip_sha256": "fc8f1757c9bdc5962cc2203c8d4efa392a6ec514c70b2c85257b74f0caa44695",
+  "changed_original_files": [
+    "concrete-section-pro/concrete_pmm_pro/analysis/igird_combined_vt.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/analysis_page.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_combined_vt.py",
+    "concrete-section-pro/tests/test_igird_uls6_torsion_general_procedure.py",
+    "concrete-section-pro/tests/test_igird_uls7_concurrent_vt.py"
+  ],
+  "original_files_missing": [],
+  "dependencies_changed": false,
+  "composite_geometry_retained": true,
+  "deck_Ao_expansion": false,
+  "live_deployment": false,
+  "scope": "direct strain moment floor; separate additional Veff REVIEW screen"
+}

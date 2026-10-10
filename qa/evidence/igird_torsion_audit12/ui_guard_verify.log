@@ -1,0 +1,86 @@
+2026-10-10 09:00:06.345 WARNING streamlit.runtime.scriptrunner_utils.script_run_context: Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.
+2026-10-10 09:00:06.590 WARNING streamlit.config: 
+Warning: the config option 'server.enableCORS=false' is not compatible with
+'server.enableXsrfProtection=true'.
+As a result, 'server.enableCORS' is being overridden to 'true'.
+
+More information:
+In order to protect against CSRF attacks, we send a cookie with each request.
+To do so, we must specify allowable origins, which places a restriction on
+cross-origin resource sharing.
+
+If cross origin resource sharing is required, please disable server.enableXsrfProtection.
+            
+2026-10-10 09:00:06.591 DEBUG   streamlit.runtime.scriptrunner.script_runner: Running script
+2026-10-10 09:00:06.591 DEBUG   streamlit.runtime.media_file_manager: Disconnecting files for session with ID test session id
+2026-10-10 09:00:06.591 DEBUG   streamlit.runtime.media_file_manager: Sessions still active: dict_keys([])
+2026-10-10 09:00:06.591 DEBUG   streamlit.runtime.media_file_manager: Files: 0; Sessions with files: 0
+2026-10-10 09:00:06.686 WARNING streamlit.deprecation_util: Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-10 09:00:06.689 WARNING streamlit.deprecation_util: Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-10 09:00:06.691 WARNING streamlit.deprecation_util: Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-10 09:00:06.693 WARNING streamlit.deprecation_util: Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-10 09:00:06.694 WARNING streamlit.deprecation_util: Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-10 09:00:06.697 WARNING streamlit.deprecation_util: Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-10 09:00:06.703 DEBUG   streamlit.runtime.media_file_manager: Removing orphaned files...
+2026-10-10 09:00:06.703 DEBUG   streamlit.runtime.media_file_manager: Removing orphaned deferred callables...
+2026-10-10 09:00:06.917 WARNING streamlit.runtime.scriptrunner_utils.script_run_context: Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.
+2026-10-10 09:00:07.052 DEBUG   streamlit.components.v2.manifest_scanner: Filtered 140 packages down to 2 candidates for component scanning
+2026-10-10 09:00:07.052 DEBUG   streamlit.components.v2.manifest_scanner: Scanning 2 candidate packages for component manifests using 2 worker threads
+2026-10-10 09:00:07.114 DEBUG   streamlit.components.v2.manifest_scanner: Found 0 component manifests total
+2026-10-10 09:00:07.115 DEBUG   streamlit.runtime.scriptrunner.script_runner: Beginning script thread
+2026-10-10 09:00:07.115 DEBUG   streamlit.runtime.scriptrunner.script_runner: Running script
+2026-10-10 09:00:07.115 DEBUG   streamlit.runtime.media_file_manager: Disconnecting files for session with ID test session id
+2026-10-10 09:00:07.115 DEBUG   streamlit.runtime.media_file_manager: Sessions still active: dict_keys([])
+2026-10-10 09:00:07.115 DEBUG   streamlit.runtime.media_file_manager: Files: 0; Sessions with files: 0
+2026-10-10 09:00:07.125 WARNING streamlit.deprecation_util: Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-10 09:00:07.129 WARNING streamlit.deprecation_util: Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-10 09:00:07.131 WARNING streamlit.deprecation_util: Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-10 09:00:07.133 WARNING streamlit.deprecation_util: Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-10 09:00:07.136 WARNING streamlit.deprecation_util: Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-10 09:00:07.140 DEBUG   streamlit.runtime.media_file_manager: Removing orphaned files...
+2026-10-10 09:00:07.141 DEBUG   streamlit.runtime.media_file_manager: Removing orphaned deferred callables...
+[{"Tu": 450, "status": "REVIEW", "exceptions": 0, "scope": "physical midspan load station only; not member acceptance", "full_member_status_counts": {"FAIL": 2, "REVIEW": 1}, "additional_screen_warning": true, "code_failure_error": false}, {"Tu": 500, "status": "FAIL", "exceptions": 0, "scope": "physical midspan load station only; not member acceptance", "full_member_status_counts": {"FAIL": 3}, "additional_screen_warning": true, "code_failure_error": true}]

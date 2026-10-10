@@ -620,7 +620,7 @@ def test_igird_uls6e_rebar_ui_uses_not_confirmed_for_corner_detail_and_does_not_
 
 def test_vtqa1_versions_invalidate_all_vt_development_sources():
     assert _IGIRDER_TORSION_RESULT_VERSION.startswith("IGIRDER.DECKULS1.")
-    assert _IGIRDER_COMBINED_VT_RESULT_VERSION.startswith("IGIRDER.VTQA1.")
+    assert _IGIRDER_COMBINED_VT_RESULT_VERSION.startswith("IGIRDER.TORSIONAUDIT12.")
     assert _IGIRDER_SHEAR_RESULT_VERSION.startswith("IGIRDER.DECKULS1.")
 
 

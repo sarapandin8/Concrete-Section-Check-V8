@@ -1,0 +1,109 @@
+{
+  "release": "IGIRDER.TORSIONAUDIT12",
+  "status": "PASS",
+  "entrypoint": "app.py",
+  "scope": "Archived CSI force vectors and hypothetical section / alternative LC; not user-project approval or live deployment",
+  "streamlit_exceptions": 0,
+  "calculate_member_calls": 8,
+  "review_solver_calls": 0,
+  "collection": [
+    {
+      "check": "Flexure",
+      "collection_default_separate_max_min": true
+    },
+    {
+      "check": "Shear",
+      "collection_default_separate_max_min": true
+    },
+    {
+      "check": "Torsion",
+      "collection_default_separate_max_min": true
+    },
+    {
+      "check": "Shear + Torsion",
+      "collection_default_separate_max_min": true
+    }
+  ],
+  "report": [
+    {
+      "check": "Flexure",
+      "members": 2,
+      "LC_per_member": 2,
+      "separate_bound_charts": 8,
+      "paired_check_csv": true,
+      "two_PNG_download_widgets": true,
+      "review_solver_calls": 0
+    },
+    {
+      "check": "Shear",
+      "members": 2,
+      "LC_per_member": 2,
+      "separate_bound_charts": 8,
+      "paired_check_csv": true,
+      "two_PNG_download_widgets": true,
+      "review_solver_calls": 0
+    },
+    {
+      "check": "Torsion",
+      "members": 2,
+      "LC_per_member": 2,
+      "separate_bound_charts": 8,
+      "paired_check_csv": true,
+      "two_PNG_download_widgets": true,
+      "review_solver_calls": 0
+    },
+    {
+      "check": "Shear + Torsion",
+      "members": 2,
+      "LC_per_member": 2,
+      "separate_bound_charts": 8,
+      "paired_check_csv": true,
+      "two_PNG_download_widgets": true,
+      "review_solver_calls": 0
+    }
+  ],
+  "input_cache_design_member_preserved": true,
+  "stale_members_hidden": true,
+  "PNG_size_px": [
+    2880,
+    1120
+  ],
+  "PNG_files": [
+    "qa/evidence/igird_torsion_audit12/app/flexure_0_u2a_max.png",
+    "qa/evidence/igird_torsion_audit12/app/flexure_0_u2a_min.png",
+    "qa/evidence/igird_torsion_audit12/app/flexure_0_qa_lc2_max.png",
+    "qa/evidence/igird_torsion_audit12/app/flexure_0_qa_lc2_min.png",
+    "qa/evidence/igird_torsion_audit12/app/flexure_1_u2a_max.png",
+    "qa/evidence/igird_torsion_audit12/app/flexure_1_u2a_min.png",
+    "qa/evidence/igird_torsion_audit12/app/flexure_1_qa_lc2_max.png",
+    "qa/evidence/igird_torsion_audit12/app/flexure_1_qa_lc2_min.png",
+    "qa/evidence/igird_torsion_audit12/app/shear_0_u2a_max.png",
+    "qa/evidence/igird_torsion_audit12/app/shear_0_u2a_min.png",
+    "qa/evidence/igird_torsion_audit12/app/shear_0_qa_lc2_max.png",
+    "qa/evidence/igird_torsion_audit12/app/shear_0_qa_lc2_min.png",
+    "qa/evidence/igird_torsion_audit12/app/shear_1_u2a_max.png",
+    "qa/evidence/igird_torsion_audit12/app/shear_1_u2a_min.png",
+    "qa/evidence/igird_torsion_audit12/app/shear_1_qa_lc2_max.png",
+    "qa/evidence/igird_torsion_audit12/app/shear_1_qa_lc2_min.png",
+    "qa/evidence/igird_torsion_audit12/app/torsion_0_u2a_max.png",
+    "qa/evidence/igird_torsion_audit12/app/torsion_0_u2a_min.png",
+    "qa/evidence/igird_torsion_audit12/app/torsion_0_qa_lc2_max.png",
+    "qa/evidence/igird_torsion_audit12/app/torsion_0_qa_lc2_min.png",
+    "qa/evidence/igird_torsion_audit12/app/torsion_0_qa_lc2_max_utilization.png",
+    "qa/evidence/igird_torsion_audit12/app/torsion_0_qa_lc2_min_utilization.png",
+    "qa/evidence/igird_torsion_audit12/app/torsion_1_u2a_max.png",
+    "qa/evidence/igird_torsion_audit12/app/torsion_1_u2a_min.png",
+    "qa/evidence/igird_torsion_audit12/app/torsion_1_qa_lc2_max.png",
+    "qa/evidence/igird_torsion_audit12/app/torsion_1_qa_lc2_min.png",
+    "qa/evidence/igird_torsion_audit12/app/torsion_1_qa_lc2_max_utilization.png",
+    "qa/evidence/igird_torsion_audit12/app/torsion_1_qa_lc2_min_utilization.png",
+    "qa/evidence/igird_torsion_audit12/app/shear_torsion_0_u2a_max.png",
+    "qa/evidence/igird_torsion_audit12/app/shear_torsion_0_u2a_min.png",
+    "qa/evidence/igird_torsion_audit12/app/shear_torsion_0_qa_lc2_max.png",
+    "qa/evidence/igird_torsion_audit12/app/shear_torsion_0_qa_lc2_min.png",
+    "qa/evidence/igird_torsion_audit12/app/shear_torsion_1_u2a_max.png",
+    "qa/evidence/igird_torsion_audit12/app/shear_torsion_1_u2a_min.png",
+    "qa/evidence/igird_torsion_audit12/app/shear_torsion_1_qa_lc2_max.png",
+    "qa/evidence/igird_torsion_audit12/app/shear_torsion_1_qa_lc2_min.png"
+  ]
+}

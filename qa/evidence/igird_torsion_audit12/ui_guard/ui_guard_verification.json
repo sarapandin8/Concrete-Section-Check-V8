@@ -1,0 +1,28 @@
+{
+  "status": "PASS",
+  "cases": [
+    {
+      "Tu": 450,
+      "status": "REVIEW",
+      "exceptions": 0,
+      "scope": "physical midspan load station only; not member acceptance",
+      "full_member_status_counts": {
+        "FAIL": 2,
+        "REVIEW": 1
+      },
+      "additional_screen_warning": true,
+      "code_failure_error": false
+    },
+    {
+      "Tu": 500,
+      "status": "FAIL",
+      "exceptions": 0,
+      "scope": "physical midspan load station only; not member acceptance",
+      "full_member_status_counts": {
+        "FAIL": 3
+      },
+      "additional_screen_warning": true,
+      "code_failure_error": true
+    }
+  ]
+}

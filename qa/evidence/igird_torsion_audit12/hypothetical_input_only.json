@@ -1,0 +1,370 @@
+{
+  "project_name": "Untitled Project",
+  "designer": null,
+  "description": null,
+  "unit_system": "mm-MPa-N",
+  "code": "AASHTO LRFD",
+  "code_edition": "AASHTO LRFD 9th Edition",
+  "version": "PS.DB1.2",
+  "section_preset_key": "parametric_i_girder",
+  "section_preset_name": "Precast I-Girder",
+  "section_parameters": {
+    "composite_enabled": true,
+    "B1_mm": 800.0,
+    "Be_mm": 2400.0,
+    "Tslab_mm": 220.0,
+    "deck_fc_MPa": 35.0,
+    "Be_mode": "Manual",
+    "Be_strength_verified": true
+  },
+  "section_geometry": {
+    "name": "Hypothetical haunched I",
+    "outer_polygon": [
+      {
+        "x": -250.0,
+        "y": 0.0
+      },
+      {
+        "x": 250.0,
+        "y": 0.0
+      },
+      {
+        "x": 250.0,
+        "y": 200.0
+      },
+      {
+        "x": 100.0,
+        "y": 300.0
+      },
+      {
+        "x": 100.0,
+        "y": 1300.0
+      },
+      {
+        "x": 400.0,
+        "y": 1400.0
+      },
+      {
+        "x": 400.0,
+        "y": 1600.0
+      },
+      {
+        "x": -400.0,
+        "y": 1600.0
+      },
+      {
+        "x": -400.0,
+        "y": 1400.0
+      },
+      {
+        "x": -100.0,
+        "y": 1300.0
+      },
+      {
+        "x": -100.0,
+        "y": 300.0
+      },
+      {
+        "x": -250.0,
+        "y": 200.0
+      }
+    ],
+    "holes": [],
+    "metadata": {}
+  },
+  "concrete_material": {
+    "name": "Girder",
+    "fc_MPa": 45.0,
+    "ecu": 0.003,
+    "density_kg_m3": 2400.0,
+    "beta1": null,
+    "Ec_MPa": null,
+    "Ec_method": "ACI auto",
+    "note": null
+  },
+  "concrete_materials": [
+    {
+      "name": "Girder",
+      "fc_MPa": 45.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": null
+    },
+    {
+      "name": "C45_PRECAST",
+      "fc_MPa": 45.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Precast prestressed girder / beam concrete"
+    },
+    {
+      "name": "C35_TOPPING",
+      "fc_MPa": 35.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Cast-in-place deck / topping concrete"
+    },
+    {
+      "name": "C28",
+      "fc_MPa": 28.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Normal-weight concrete, f'c = 28 MPa"
+    },
+    {
+      "name": "C30",
+      "fc_MPa": 30.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Normal-weight concrete, f'c = 30 MPa"
+    },
+    {
+      "name": "C35",
+      "fc_MPa": 35.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Normal-weight concrete, f'c = 35 MPa"
+    },
+    {
+      "name": "C40",
+      "fc_MPa": 40.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Normal-weight concrete, f'c = 40 MPa"
+    },
+    {
+      "name": "C45",
+      "fc_MPa": 45.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Normal-weight concrete, f'c = 45 MPa"
+    },
+    {
+      "name": "C50",
+      "fc_MPa": 50.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Normal-weight concrete, f'c = 50 MPa"
+    },
+    {
+      "name": "C55",
+      "fc_MPa": 55.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Normal-weight concrete, f'c = 55 MPa"
+    },
+    {
+      "name": "C60",
+      "fc_MPa": 60.0,
+      "ecu": 0.003,
+      "density_kg_m3": 2400.0,
+      "beta1": null,
+      "Ec_MPa": null,
+      "Ec_method": "ACI auto",
+      "note": "Normal-weight concrete, f'c = 60 MPa"
+    }
+  ],
+  "active_concrete_material_name": "Girder",
+  "deck_topping_material_name": "C35_TOPPING",
+  "rebar_materials": [
+    {
+      "name": "SD40",
+      "fy_MPa": 390.0,
+      "Es_MPa": 200000.0,
+      "note": null
+    }
+  ],
+  "prestress_materials": [],
+  "active_rebar_material_name": null,
+  "active_prestress_material_name": null,
+  "loads": [],
+  "rebars": [
+    {
+      "x_mm": -150.0,
+      "y_mm": 100.0,
+      "diameter_mm": 20.0,
+      "material_name": "SD40",
+      "label": null
+    },
+    {
+      "x_mm": 150.0,
+      "y_mm": 100.0,
+      "diameter_mm": 20.0,
+      "material_name": "SD40",
+      "label": null
+    },
+    {
+      "x_mm": -150.0,
+      "y_mm": 1500.0,
+      "diameter_mm": 20.0,
+      "material_name": "SD40",
+      "label": null
+    },
+    {
+      "x_mm": 150.0,
+      "y_mm": 1500.0,
+      "diameter_mm": 20.0,
+      "material_name": "SD40",
+      "label": null
+    }
+  ],
+  "prestress_elements": [],
+  "analysis_mode_settings": {
+    "member_type": "beam_girder",
+    "analysis_workflow": "bridge_beam_girder",
+    "description": null,
+    "allow_pmm_workflow": false,
+    "allow_sls_workflow": true,
+    "allow_beam_girder_placeholder": true,
+    "note": null
+  },
+  "analysis_settings": {
+    "code": "ACI 318",
+    "analysis_type": "PMM Surface",
+    "strength_load_type": "ULS",
+    "include_rebars": true,
+    "include_prestress": true,
+    "use_phi_factor": true,
+    "transverse_reinforcement": "tied",
+    "prestress_stress_model": "bilinear",
+    "subtract_rebar_displaced_concrete": true,
+    "neutral_axis_angle_steps": 72,
+    "neutral_axis_depth_steps": 120,
+    "compression_positive": true,
+    "note": null
+  },
+  "serviceability_settings": {
+    "enabled": false,
+    "stress_sign_convention": "compression_negative",
+    "section_basis": "gross",
+    "check_load_type": "SLS",
+    "concrete_compression_limit_ratio": 0.45,
+    "concrete_tension_limit_mode": "user_defined",
+    "concrete_tension_limit_MPa": 0.0,
+    "concrete_tension_sqrt_fc_ratio": 0.5,
+    "allow_tension": true,
+    "no_tension_check": false,
+    "decompression_check": false,
+    "stress_zero_tolerance_MPa": 1e-6,
+    "critical_point_filter": "all",
+    "include_prestress_effective_force": false,
+    "use_transformed_section": false,
+    "concrete_Ec_MPa": null,
+    "Ec_method": "aci_normal_weight",
+    "transformed_include_rebar": true,
+    "transformed_include_prestress": true,
+    "transformed_area_convention": "net_steel",
+    "note": null
+  },
+  "custom_stress_check_points": [],
+  "include_default_stress_check_points": true,
+  "metadata": {
+    "beam_girder_torsion_settings": {
+      "closed_loop_confirmed": true,
+      "ph_mm": 4300.0,
+      "hoop_centerline_offset_mm": 50.0,
+      "clear_cover_mm": 40.0,
+      "hoop_centerline_offset_override_enabled": false,
+      "hoop_centerline_offset_override_mm": null,
+      "longitudinal_perimeter_distribution_confirmed": true,
+      "corner_longitudinal_reinforcement_confirmed": true,
+      "note": "QA torsion cage"
+    },
+    "igird_longitudinal_development_settings": {
+      "continuous_full_span_confirmed": true,
+      "left_end_anchored_confirmed": true,
+      "right_end_anchored_confirmed": true,
+      "development_length_mm": 1000.0,
+      "note": "QA verified full-span bars"
+    },
+    "igird_shear_support_settings": {
+      "locations_confirmed": true,
+      "offset_reference": "inside_face",
+      "left_offset_m": 0.0,
+      "right_offset_m": 0.0,
+      "left_bearing_length_mm": 0.0,
+      "right_bearing_length_mm": 0.0,
+      "note": ""
+    },
+    "beam_girder_torsion_zone_settings": [
+      {
+        "Zone": "Full span",
+        "Use for Torsion": true,
+        "Closed Loop": true,
+        "135° Hook": true
+      }
+    ],
+    "rebars_valid_for_analysis": true,
+    "section_has_ordinary_rebar": true,
+    "section_has_prestressing_steel": true,
+    "beam_girder_shear_reinforcement_table": [
+      {
+        "Active": true,
+        "Zone": "Full span",
+        "x_start_m": 0.0,
+        "x_end_m": 20.0,
+        "Bar Size": "DB16",
+        "Diameter_mm": 16.0,
+        "Legs": 2.0,
+        "Spacing_mm": 100.0,
+        "fy_MPa": 390.0,
+        "Note": "provided closed hoop"
+      }
+    ],
+    "girder_strand_layout_table": [
+      {
+        "Active": true,
+        "Group ID": "Bottom",
+        "Strand Size": "15.2 mm low-relaxation strand",
+        "No. Strands": 20,
+        "Area/Strand_mm2": 140.0,
+        "Total Aps_mm2": 2800.0,
+        "y_mm_from_bottom": 120.0,
+        "Pe_transfer/strand_kN": 150.0,
+        "Pe_construction/strand_kN": 140.0,
+        "Pe_eff_final/strand_kN": 120.0,
+        "Left debond m": 0.0,
+        "Right debond m": 0.0
+      }
+    ],
+    "beam_girder_system_settings": {
+      "span_length_m": 20.0,
+      "girder_spacing_m": 1.0,
+      "number_of_girders": 6,
+      "concrete_unit_weight_kN_m3": 24.0,
+      "use_girder_spacing_as_tributary_width": false,
+      "lifting_point_ratio": 0.2,
+      "lifting_impact_factor": 1.1
+    }
+  }
+}
