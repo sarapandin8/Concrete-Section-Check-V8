@@ -1,0 +1,21 @@
+{
+  "release": "IGIRDER.MAXMIN10",
+  "status": "PASS",
+  "baseline_sha256": "8ac24c149fb8f4a73c9ed04213e33cde7947898325fabf49838ae5987245539e",
+  "baseline_original_files": 1662,
+  "baseline_existing_files_removed": 0,
+  "changed_existing_files": [
+    "concrete_pmm_pro/ui/analysis_page.py",
+    "concrete_pmm_pro/ui/igird_combined_vt.py",
+    "concrete_pmm_pro/ui/igird_member_results.py",
+    "concrete_pmm_pro/ui/igird_uls_report.py",
+    "concrete_pmm_pro/ui/igird_vt_workspace.py"
+  ],
+  "analysis_page_changed_functions": [
+    "_render_beam_girder_final_composite_flexure_guard",
+    "_render_beam_girder_uls_workspace"
+  ],
+  "analysis_calculation_functions_identical": true,
+  "historical_QA_files_unchanged": 646,
+  "dependencies_engine_core_IO_files_unchanged": true
+}

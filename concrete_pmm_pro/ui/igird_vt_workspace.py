@@ -292,12 +292,20 @@ def make_shear_case_figure(active_df, frame, *, case, code_label, span_m,
     return fig
 
 
-def render_strength_chart(active_df, frame, *, check_name, code_label, state, boundary=None, critical=None, diagram=None, key_prefix="", member_name="", selected_case=None, source_context_df=None):
+def render_strength_chart(active_df, frame, *, check_name, code_label, state, boundary=None, critical=None, diagram=None, key_prefix="", member_name="", selected_case=None, source_context_df=None, allow_maxmin=True):
     import streamlit as st
     from concrete_pmm_pro.ui import analysis_page as ap
     if frame is None or frame.empty:
         st.info("Calculate this check to display its stored results.")
         return
+    if allow_maxmin:
+        from concrete_pmm_pro.ui.igird_maxmin_charts import render_native_workspace
+        kind = check_name.lower()
+        package = {kind+'_check_df':frame, kind+'_boundary_capacity_df':boundary,
+                   kind+'_diagram_capacity_df':diagram, 'shear_critical_section_df':critical}
+        if render_native_workspace(state, active_df, package, check_name=check_name,
+                code_label=code_label, key_prefix=key_prefix+'detail_', member=member_name):
+            return
     span = ap._beam_uls_span_length_from_state(state, is_building=False)
     view = st.radio("Chart view", ["Overview — utilization", "Selected case — demand / capacity"],
         index=1 if check_name == 'Torsion' else 0,

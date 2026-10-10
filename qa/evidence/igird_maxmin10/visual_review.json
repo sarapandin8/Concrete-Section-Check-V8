@@ -1,0 +1,26 @@
+{
+  "release": "IGIRDER.MAXMIN10",
+  "status": "PASS",
+  "method": "Manual inspection of final Plotly PNG exports",
+  "files": [
+    "flexure_0_u2a_max.png",
+    "flexure_0_u2a_min.png",
+    "shear_0_u2a_max.png",
+    "shear_0_u2a_min.png",
+    "torsion_0_u2a_max.png",
+    "torsion_0_u2a_min.png",
+    "torsion_1_u2a_min.png",
+    "torsion_0_qa_lc2_min_utilization.png",
+    "shear_torsion_0_u2a_max.png",
+    "shear_torsion_0_u2a_min.png"
+  ],
+  "checked": [
+    "Separate Max/Min headings with girder/LC",
+    "Units, axes and readable legends",
+    "Signed forces and both occurrence labels",
+    "Original component-control station diamond and footer agree",
+    "No clipped chart footer/title; no overlapping control text",
+    "Report notes distinguish mirrored capacity from Min demand"
+  ],
+  "scope": "Hypothetical QA model; not live deployment"
+}

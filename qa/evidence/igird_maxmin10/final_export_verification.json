@@ -1,0 +1,553 @@
+{
+  "release": "IGIRDER.MAXMIN10",
+  "status": "PASS",
+  "export_solver_calls": 0,
+  "input_cache_design_member_preserved": true,
+  "PNG_size_px": [
+    2880,
+    1120
+  ],
+  "images": [
+    {
+      "file": "flexure_0_u2a_max.png",
+      "check": "Flexure",
+      "member": "Left Exterior Girder",
+      "LC": "U2A",
+      "ItemType": "Max",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / U2A / Left Exterior Girder / Max / set 1",
+        "x_m": 0.0,
+        "Component": "Flexure",
+        "Basis": "D/C",
+        "Ratio": "∞"
+      }
+    },
+    {
+      "file": "flexure_0_u2a_min.png",
+      "check": "Flexure",
+      "member": "Left Exterior Girder",
+      "LC": "U2A",
+      "ItemType": "Min",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / U2A / Left Exterior Girder / Min / set 1",
+        "x_m": 10.0,
+        "Component": "Flexure",
+        "Basis": "D/C",
+        "Ratio": "0.289"
+      }
+    },
+    {
+      "file": "flexure_0_qa_lc2_max.png",
+      "check": "Flexure",
+      "member": "Left Exterior Girder",
+      "LC": "QA_LC2",
+      "ItemType": "Max",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Left Exterior Girder / Max / set 1",
+        "x_m": 0.0,
+        "Component": "Flexure",
+        "Basis": "D/C",
+        "Ratio": "7.052"
+      }
+    },
+    {
+      "file": "flexure_0_qa_lc2_min.png",
+      "check": "Flexure",
+      "member": "Left Exterior Girder",
+      "LC": "QA_LC2",
+      "ItemType": "Min",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Left Exterior Girder / Min / set 1",
+        "x_m": 10.0,
+        "Component": "Flexure",
+        "Basis": "D/C",
+        "Ratio": "0.190"
+      }
+    },
+    {
+      "file": "flexure_1_u2a_max.png",
+      "check": "Flexure",
+      "member": "Interior Girder 2",
+      "LC": "U2A",
+      "ItemType": "Max",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / U2A / Interior Girder 2 / Max / set 1",
+        "x_m": 0.0,
+        "Component": "Flexure",
+        "Basis": "D/C",
+        "Ratio": "1.050"
+      }
+    },
+    {
+      "file": "flexure_1_u2a_min.png",
+      "check": "Flexure",
+      "member": "Interior Girder 2",
+      "LC": "U2A",
+      "ItemType": "Min",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / U2A / Interior Girder 2 / Min / set 2",
+        "x_m": 10.0,
+        "Component": "Flexure",
+        "Basis": "D/C",
+        "Ratio": "0.228"
+      }
+    },
+    {
+      "file": "flexure_1_qa_lc2_max.png",
+      "check": "Flexure",
+      "member": "Interior Girder 2",
+      "LC": "QA_LC2",
+      "ItemType": "Max",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Interior Girder 2 / Max / set 1",
+        "x_m": 10.0,
+        "Component": "Flexure",
+        "Basis": "D/C",
+        "Ratio": "0.371"
+      }
+    },
+    {
+      "file": "flexure_1_qa_lc2_min.png",
+      "check": "Flexure",
+      "member": "Interior Girder 2",
+      "LC": "QA_LC2",
+      "ItemType": "Min",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Interior Girder 2 / Min / set 2",
+        "x_m": 10.0,
+        "Component": "Flexure",
+        "Basis": "D/C",
+        "Ratio": "0.151"
+      }
+    },
+    {
+      "file": "shear_0_u2a_max.png",
+      "check": "Shear",
+      "member": "Left Exterior Girder",
+      "LC": "U2A",
+      "ItemType": "Max",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / U2A / Left Exterior Girder / Max / set 1",
+        "x_m": 20.0,
+        "Component": "Shear strength",
+        "Basis": "D/C",
+        "Ratio": "0.514"
+      }
+    },
+    {
+      "file": "shear_0_u2a_min.png",
+      "check": "Shear",
+      "member": "Left Exterior Girder",
+      "LC": "U2A",
+      "ItemType": "Min",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / U2A / Left Exterior Girder / Min / set 1",
+        "x_m": 3.0,
+        "Component": "Vn upper limit",
+        "Basis": "D/C",
+        "Ratio": "0.552"
+      }
+    },
+    {
+      "file": "shear_0_qa_lc2_max.png",
+      "check": "Shear",
+      "member": "Left Exterior Girder",
+      "LC": "QA_LC2",
+      "ItemType": "Max",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Left Exterior Girder / Max / set 2",
+        "x_m": 11.0,
+        "Component": "Vn upper limit",
+        "Basis": "D/C",
+        "Ratio": "0.552"
+      }
+    },
+    {
+      "file": "shear_0_qa_lc2_min.png",
+      "check": "Shear",
+      "member": "Left Exterior Girder",
+      "LC": "QA_LC2",
+      "ItemType": "Min",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Left Exterior Girder / Min / set 2",
+        "x_m": 12.0,
+        "Component": "Vn upper limit",
+        "Basis": "D/C",
+        "Ratio": "0.552"
+      }
+    },
+    {
+      "file": "shear_1_u2a_max.png",
+      "check": "Shear",
+      "member": "Interior Girder 2",
+      "LC": "U2A",
+      "ItemType": "Max",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / U2A / Interior Girder 2 / Max / set 1",
+        "x_m": 5.0,
+        "Component": "Vn upper limit",
+        "Basis": "D/C",
+        "Ratio": "0.552"
+      }
+    },
+    {
+      "file": "shear_1_u2a_min.png",
+      "check": "Shear",
+      "member": "Interior Girder 2",
+      "LC": "U2A",
+      "ItemType": "Min",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / U2A / Interior Girder 2 / Min / set 1",
+        "x_m": 4.0,
+        "Component": "Vn upper limit",
+        "Basis": "D/C",
+        "Ratio": "0.552"
+      }
+    },
+    {
+      "file": "shear_1_qa_lc2_max.png",
+      "check": "Shear",
+      "member": "Interior Girder 2",
+      "LC": "QA_LC2",
+      "ItemType": "Max",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Interior Girder 2 / Max / set 1",
+        "x_m": 3.0,
+        "Component": "Vn upper limit",
+        "Basis": "D/C",
+        "Ratio": "0.552"
+      }
+    },
+    {
+      "file": "shear_1_qa_lc2_min.png",
+      "check": "Shear",
+      "member": "Interior Girder 2",
+      "LC": "QA_LC2",
+      "ItemType": "Min",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Interior Girder 2 / Min / set 1",
+        "x_m": 3.0,
+        "Component": "Vn upper limit",
+        "Basis": "D/C",
+        "Ratio": "0.552"
+      }
+    },
+    {
+      "file": "torsion_0_u2a_max.png",
+      "check": "Torsion",
+      "member": "Left Exterior Girder",
+      "LC": "U2A",
+      "ItemType": "Max",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / U2A / Left Exterior Girder / Max / set 1",
+        "x_m": 2.0,
+        "Component": "Torsion transverse strength",
+        "Basis": "D/C",
+        "Ratio": "0.165"
+      }
+    },
+    {
+      "file": "torsion_0_u2a_min.png",
+      "check": "Torsion",
+      "member": "Left Exterior Girder",
+      "LC": "U2A",
+      "ItemType": "Min",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / U2A / Left Exterior Girder / Min / set 1",
+        "x_m": 16.0,
+        "Component": "Torsion detailing",
+        "Basis": "D/C",
+        "Ratio": "0.164"
+      }
+    },
+    {
+      "file": "torsion_0_qa_lc2_max.png",
+      "check": "Torsion",
+      "member": "Left Exterior Girder",
+      "LC": "QA_LC2",
+      "ItemType": "Max",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Left Exterior Girder / Max / set 1",
+        "x_m": 2.0,
+        "Component": "Torsion investigation",
+        "Basis": "INVESTIGATION ONLY",
+        "Ratio": "0.793"
+      }
+    },
+    {
+      "file": "torsion_0_qa_lc2_min.png",
+      "check": "Torsion",
+      "member": "Left Exterior Girder",
+      "LC": "QA_LC2",
+      "ItemType": "Min",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Left Exterior Girder / Min / set 2",
+        "x_m": 18.0,
+        "Component": "Torsion investigation",
+        "Basis": "INVESTIGATION ONLY",
+        "Ratio": "0.850"
+      }
+    },
+    {
+      "file": "torsion_0_qa_lc2_max_utilization.png",
+      "check": "Torsion",
+      "member": "Left Exterior Girder",
+      "LC": "QA_LC2",
+      "ItemType": "Max",
+      "view": "Max / Min — utilization",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Left Exterior Girder / Max / set 1",
+        "x_m": 2.0,
+        "Component": "Torsion investigation",
+        "Basis": "INVESTIGATION ONLY",
+        "Ratio": "0.793"
+      }
+    },
+    {
+      "file": "torsion_0_qa_lc2_min_utilization.png",
+      "check": "Torsion",
+      "member": "Left Exterior Girder",
+      "LC": "QA_LC2",
+      "ItemType": "Min",
+      "view": "Max / Min — utilization",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Left Exterior Girder / Min / set 2",
+        "x_m": 18.0,
+        "Component": "Torsion investigation",
+        "Basis": "INVESTIGATION ONLY",
+        "Ratio": "0.850"
+      }
+    },
+    {
+      "file": "torsion_1_u2a_max.png",
+      "check": "Torsion",
+      "member": "Interior Girder 2",
+      "LC": "U2A",
+      "ItemType": "Max",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / U2A / Interior Girder 2 / Max / set 1",
+        "x_m": 19.0,
+        "Component": "Torsion detailing",
+        "Basis": "D/C",
+        "Ratio": "0.246"
+      }
+    },
+    {
+      "file": "torsion_1_u2a_min.png",
+      "check": "Torsion",
+      "member": "Interior Girder 2",
+      "LC": "U2A",
+      "ItemType": "Min",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / U2A / Interior Girder 2 / Min / set 1",
+        "x_m": 1.0,
+        "Component": "Torsion detailing",
+        "Basis": "D/C",
+        "Ratio": "0.164"
+      }
+    },
+    {
+      "file": "torsion_1_qa_lc2_max.png",
+      "check": "Torsion",
+      "member": "Interior Girder 2",
+      "LC": "QA_LC2",
+      "ItemType": "Max",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Interior Girder 2 / Max / set 1",
+        "x_m": 15.0,
+        "Component": "Torsion detailing",
+        "Basis": "D/C",
+        "Ratio": "0.164"
+      }
+    },
+    {
+      "file": "torsion_1_qa_lc2_min.png",
+      "check": "Torsion",
+      "member": "Interior Girder 2",
+      "LC": "QA_LC2",
+      "ItemType": "Min",
+      "view": "Max / Min — demand / capacity",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Interior Girder 2 / Min / set 1",
+        "x_m": 2.0,
+        "Component": "Torsion investigation",
+        "Basis": "INVESTIGATION ONLY",
+        "Ratio": "0.822"
+      }
+    },
+    {
+      "file": "torsion_1_qa_lc2_max_utilization.png",
+      "check": "Torsion",
+      "member": "Interior Girder 2",
+      "LC": "QA_LC2",
+      "ItemType": "Max",
+      "view": "Max / Min — utilization",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Interior Girder 2 / Max / set 1",
+        "x_m": 15.0,
+        "Component": "Torsion detailing",
+        "Basis": "D/C",
+        "Ratio": "0.164"
+      }
+    },
+    {
+      "file": "torsion_1_qa_lc2_min_utilization.png",
+      "check": "Torsion",
+      "member": "Interior Girder 2",
+      "LC": "QA_LC2",
+      "ItemType": "Min",
+      "view": "Max / Min — utilization",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Interior Girder 2 / Min / set 1",
+        "x_m": 2.0,
+        "Component": "Torsion investigation",
+        "Basis": "INVESTIGATION ONLY",
+        "Ratio": "0.822"
+      }
+    },
+    {
+      "file": "shear_torsion_0_u2a_max.png",
+      "check": "Shear + Torsion",
+      "member": "Left Exterior Girder",
+      "LC": "U2A",
+      "ItemType": "Max",
+      "view": "Max / Min — utilization",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / U2A / Left Exterior Girder / Max / set 2",
+        "x_m": 11.0,
+        "Component": "Combined longitudinal",
+        "Basis": "D/C",
+        "Ratio": "0.851"
+      }
+    },
+    {
+      "file": "shear_torsion_0_u2a_min.png",
+      "check": "Shear + Torsion",
+      "member": "Left Exterior Girder",
+      "LC": "U2A",
+      "ItemType": "Min",
+      "view": "Max / Min — utilization",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / U2A / Left Exterior Girder / Min / set 1",
+        "x_m": 2.0,
+        "Component": "Combined longitudinal",
+        "Basis": "D/C",
+        "Ratio": "0.470"
+      }
+    },
+    {
+      "file": "shear_torsion_0_qa_lc2_max.png",
+      "check": "Shear + Torsion",
+      "member": "Left Exterior Girder",
+      "LC": "QA_LC2",
+      "ItemType": "Max",
+      "view": "Max / Min — utilization",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Left Exterior Girder / Max / set 2",
+        "x_m": 18.0,
+        "Component": "Combined longitudinal",
+        "Basis": "D/C",
+        "Ratio": "0.564"
+      }
+    },
+    {
+      "file": "shear_torsion_0_qa_lc2_min.png",
+      "check": "Shear + Torsion",
+      "member": "Left Exterior Girder",
+      "LC": "QA_LC2",
+      "ItemType": "Min",
+      "view": "Max / Min — utilization",
+      "control_marker": {
+        "Case": "Left Exterior Girder / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Left Exterior Girder / Min / set 1",
+        "x_m": 1.31,
+        "Component": "Combined longitudinal",
+        "Basis": "D/C",
+        "Ratio": "0.327"
+      }
+    },
+    {
+      "file": "shear_torsion_1_u2a_max.png",
+      "check": "Shear + Torsion",
+      "member": "Interior Girder 2",
+      "LC": "U2A",
+      "ItemType": "Max",
+      "view": "Max / Min — utilization",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / U2A / Interior Girder 2 / Max / set 1",
+        "x_m": 18.0,
+        "Component": "Combined longitudinal",
+        "Basis": "D/C",
+        "Ratio": "0.808"
+      }
+    },
+    {
+      "file": "shear_torsion_1_u2a_min.png",
+      "check": "Shear + Torsion",
+      "member": "Interior Girder 2",
+      "LC": "U2A",
+      "ItemType": "Min",
+      "view": "Max / Min — utilization",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / U2A / Interior Girder 2 / Min / set 1",
+        "x_m": 1.0,
+        "Component": "Combined longitudinal",
+        "Basis": "D/C",
+        "Ratio": "0.458"
+      }
+    },
+    {
+      "file": "shear_torsion_1_qa_lc2_max.png",
+      "check": "Shear + Torsion",
+      "member": "Interior Girder 2",
+      "LC": "QA_LC2",
+      "ItemType": "Max",
+      "view": "Max / Min — utilization",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Interior Girder 2 / Max / set 1",
+        "x_m": 18.0,
+        "Component": "Combined longitudinal",
+        "Basis": "D/C",
+        "Ratio": "0.556"
+      }
+    },
+    {
+      "file": "shear_torsion_1_qa_lc2_min.png",
+      "check": "Shear + Torsion",
+      "member": "Interior Girder 2",
+      "LC": "QA_LC2",
+      "ItemType": "Min",
+      "view": "Max / Min — utilization",
+      "control_marker": {
+        "Case": "Interior Girder 2 / CSiBridge_ULS_Girder_Max_Min.xlsx [archived QA fixture] / QA_LC2 / Interior Girder 2 / Min / set 1",
+        "x_m": 1.0,
+        "Component": "Combined longitudinal",
+        "Basis": "D/C",
+        "Ratio": "0.307"
+      }
+    }
+  ],
+  "scope": "Stored hypothetical QA model; not user-project approval"
+}

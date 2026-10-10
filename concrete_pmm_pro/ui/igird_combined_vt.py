@@ -393,7 +393,7 @@ def render_development_inputs(*, expanded: bool = False) -> None:
             st.caption("Straight unanchored ends receive zero strength below 304.8 mm bonded length, then min(available length/ld, 1). Cut-off bars or mixed anchorage require separate review; each end declaration must justify the actual x=0/L cut-end station.")
 
 
-def render_workspace(df: pd.DataFrame | None, *, code_label: str, member_name: str = "", selected_case: str | None = None) -> None:
+def render_workspace(df: pd.DataFrame | None, *, code_label: str, member_name: str = "", selected_case: str | None = None, show_chart: bool = True) -> None:
     import streamlit as st
     from concrete_pmm_pro.ui import analysis_page as ap
     if df is None or df.empty:
@@ -428,11 +428,12 @@ def render_workspace(df: pd.DataFrame | None, *, code_label: str, member_name: s
     if not readiness.empty:
         with st.expander("Required inputs / source review", expanded=False):
             st.dataframe(readiness, use_container_width=True, hide_index=True)
-    if ap._beam_uls_combined_vt_has_finite_utilization(df):
-        from concrete_pmm_pro.ui.igird_vt_workspace import render_combined_chart
-        render_combined_chart(df, code_label=code_label, member_name=member_name,selected_case=selected_case)
-    else:
-        st.info("Calculation completed, but no finite D/C can be drawn yet. Complete the required inputs listed above, then press Calculate Shear + Torsion again.")
+    if show_chart:
+        if ap._beam_uls_combined_vt_has_finite_utilization(df):
+            from concrete_pmm_pro.ui.igird_vt_workspace import render_combined_chart
+            render_combined_chart(df, code_label=code_label, member_name=member_name,selected_case=selected_case)
+        else:
+            st.info("Calculation completed, but no finite D/C can be drawn yet. Complete the required inputs listed above, then press Calculate Shear + Torsion again.")
     missing = df.loc[df["Status"].isin(["REVIEW","DATA REQUIRED"]) | df.get("Calculation status",pd.Series(index=df.index,dtype=object)).eq("PARTIAL")]
     uncovered = df.loc[df.get("Coverage status",pd.Series(index=df.index,dtype=object)).eq("REQUIRED")]
     if not uncovered.empty:

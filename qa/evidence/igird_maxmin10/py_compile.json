@@ -1,0 +1,17 @@
+{
+  "release": "IGIRDER.MAXMIN10",
+  "status": "PASS",
+  "files": [
+    "app.py",
+    "concrete_pmm_pro/ui/analysis_page.py",
+    "concrete_pmm_pro/ui/igird_member_results.py",
+    "concrete_pmm_pro/ui/igird_vt_workspace.py",
+    "concrete_pmm_pro/ui/igird_uls_report.py",
+    "concrete_pmm_pro/ui/igird_combined_vt.py",
+    "concrete_pmm_pro/ui/igird_maxmin_charts.py",
+    "qa/igird_maxmin10_model.py",
+    "qa/igird_maxmin10_app_verify.py",
+    "qa/igird_maxmin10_export_verify.py",
+    "tests/test_igird_maxmin10.py"
+  ]
+}

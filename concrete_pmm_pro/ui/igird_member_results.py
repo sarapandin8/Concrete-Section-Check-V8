@@ -182,6 +182,7 @@ def _render_member_result(*, member, result, all_rows, control, cache, check_nam
     """Render one girder's complete stored review inside its collapsible panel."""
     from concrete_pmm_pro.ui import analysis_page as ap
     from concrete_pmm_pro.ui import igird_vt_workspace as vt
+    from concrete_pmm_pro.ui import igird_maxmin_charts as mm
     n = member
     if result is None:
         stale = bool(cache.get(n, {}).get(check_name))
@@ -210,19 +211,45 @@ def _render_member_result(*, member, result, all_rows, control, cache, check_nam
     cases += [c for c in full_frame['Case'].dropna().astype(str).drop_duplicates() if c not in cases]
     token = hashlib.sha256(n.encode()).hexdigest()[:16]
     case_key = 'igird_review_case_'+check_name+'_'+token
-    options = [AUTO_CASE,ALL_CASES,*cases]
+    families, case_choices = mm.review_choices(all_rows, cases)
+    options = [AUTO_CASE,ALL_CASES,*case_choices]
     if st.session_state.get(case_key) not in options:
-        st.session_state[case_key] = AUTO_CASE
-    choice = st.selectbox('Load case to review — '+n,options,key=case_key)
-    case = (controlling_case if controlling_case in cases else (cases[0] if cases else None)) if choice == AUTO_CASE else (None if choice == ALL_CASES else choice)
-    st.caption('Displayed load case: '+(case if case is not None else 'All load cases')+' · '+n)
+        old_family = mm.family_for_case(families, st.session_state.get(case_key))
+        st.session_state[case_key] = old_family.option if old_family else AUTO_CASE
+    choice = st.selectbox('Load case to review — '+n,options,key=case_key,
+                          format_func=lambda value: mm.choice_label(value, families))
+    selected_family = next((f for f in families if f.option == choice), None)
+    case = ((controlling_case if controlling_case in cases else (cases[0] if cases else None))
+            if choice == AUTO_CASE else (None if choice == ALL_CASES else
+                (mm.anchor_case(selected_family, full_frame, check_name) if selected_family else choice)))
+    family = mm.family_for_case(families, case)
+    paired = False
+    view = None
+    if family:
+        view = mm.chart_view(family, check_name=check_name, key_prefix='member_'+token,
+                             state=st.session_state)
+        paired = view != mm.SOURCE_VIEW
+        if not paired:
+            source_key = 'igird_maxmin_source_'+check_name+'_'+token
+            if st.session_state.get(source_key) not in family.cases:
+                st.session_state[source_key] = case
+            case = st.selectbox('Source vector to review — '+n, family.cases,
+                key=source_key)
+    display = (str(family.source['case'])+' · Max / Min' if paired else
+               (case if case is not None else 'All load cases'))
+    st.caption('Displayed load case: '+display+' · '+n)
     with st.expander('Load-case ranking / controlling components — '+n,expanded=False):
         st.dataframe(result_table_for_display(case_ranking(full_frame,check_name)),hide_index=True,use_container_width=True)
         st.dataframe(result_table_for_display(component_controls(full_frame,check_name)),hide_index=True,use_container_width=True)
-    rows = filter_case(all_rows,case,column='Case Name')
-    selected = {key: filter_case(value,case) if isinstance(value,pd.DataFrame) else value
-                for key,value in result.items()}
+    rows = (mm.select_cases(all_rows, family.cases, column='Case Name') if paired
+            else filter_case(all_rows,case,column='Case Name'))
+    selected = {key: (mm.select_cases(value, family.cases) if paired else filter_case(value,case))
+                if isinstance(value,pd.DataFrame) else value for key,value in result.items()}
     label = code_label+' · '+n
+    if paired:
+        figures = mm.make_bound_figures(st.session_state, {'rows':all_rows,'result':result},
+            family=family, member=n, check_name=check_name, code_label=code_label, view=view)
+        mm.render_bound_figures(figures, family=family, key_prefix='member_'+token+'_'+check_name)
     if check_name == 'Flexure':
         frame = selected.get('flexure_preview_df')
         if frame is None or frame.empty:
@@ -232,10 +259,11 @@ def _render_member_result(*, member, result, all_rows, control, cache, check_nam
         if gov:
             st.caption(f"Section flexure: {gov.get('Status','REVIEW')} · D/C {gov.get('Utilization','-')} · {gov.get('Case','-')} @ {gov.get('Governing x','-')}")
         st.caption('Final Composite sectional resistance. Overall composite acceptance additionally requires confirmed effective width, developed deck/girder steel, concurrent source actions and current girder–deck interface shear verification for this member.')
-        fig = make_member_flexure_figure(st.session_state,rows,frame,member=n,code_label=code_label,
-            case_name=case,source_context_df=all_rows)
-        ap._render_beam_uls_browser_plotly_figure(fig,interactive=True)
-        st.caption('Each demand series belongs only to this girder. C labels identify its case/vector series; full source names remain on hover and in the stored audit. Coincident resistance curves share one legend entry.')
+        if not paired:
+            fig = make_member_flexure_figure(st.session_state,rows,frame,member=n,code_label=code_label,
+                case_name=case,source_context_df=all_rows)
+            ap._render_beam_uls_browser_plotly_figure(fig,interactive=True)
+            st.caption('Each demand series belongs only to this girder. C labels identify its case/vector series; full source names remain on hover and in the stored audit. Coincident resistance curves share one legend entry.')
         from concrete_pmm_pro.ui.igird_flexure_development import render_failure_summary, render_trace
         render_failure_summary(frame,stage='Final Composite · '+n)
         render_trace(frame,stage='Final Composite · '+n)
@@ -251,17 +279,18 @@ def _render_member_result(*, member, result, all_rows, control, cache, check_nam
             with st.expander('Variable definitions / Engineering terms — '+n,expanded=False):
                 definitions = ap._beam_uls_shear_variable_definitions_dataframe() if check_name == 'Shear' else ap._beam_uls_torsion_variable_definitions_dataframe()
                 st.dataframe(result_table_for_display(definitions),hide_index=True,use_container_width=True)
-        vt.render_strength_chart(rows,frame,check_name=check_name,code_label=code_label,state=st.session_state,
-            boundary=selected.get(kind+'_boundary_capacity_df'),critical=selected.get('shear_critical_section_df'),
-            diagram=selected.get(kind+'_diagram_capacity_df'),key_prefix='member_'+token,member_name=n,
-            selected_case=case,source_context_df=all_rows)
+        if not paired:
+            vt.render_strength_chart(rows,frame,check_name=check_name,code_label=code_label,state=st.session_state,
+                boundary=selected.get(kind+'_boundary_capacity_df'),critical=selected.get('shear_critical_section_df'),
+                diagram=selected.get(kind+'_diagram_capacity_df'),key_prefix='member_'+token,member_name=n,
+                selected_case=case,source_context_df=all_rows, allow_maxmin=False)
     else:
         frame = selected.get('combined_vt_df')
         if frame is None or frame.empty:
             st.warning('No calculated combined stations are available for this girder.')
             return
         from concrete_pmm_pro.ui.igird_combined_vt import render_workspace
-        render_workspace(frame,code_label=label,member_name=n,selected_case=case)
+        render_workspace(frame,code_label=label,member_name=n,selected_case=case,show_chart=not paired)
     frame_key = {'Flexure':'flexure_preview_df','Shear':'shear_check_df','Torsion':'torsion_check_df','Shear + Torsion':'combined_vt_df'}[check_name]
     with st.expander('Stored check rows / source audit — '+n,expanded=False):
         frame = selected.get(frame_key)

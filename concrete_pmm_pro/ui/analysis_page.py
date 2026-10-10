@@ -15008,23 +15008,26 @@ def _render_beam_girder_final_composite_flexure_guard(
             caption="Final Composite demand is ready; calculate the section to add the composite φMn capacity curve.",
         )
     else:
-        _render_beam_uls_browser_plotly_figure(
-            _polish_igird_uls_flexure_legend(
-                _make_beam_uls_flexure_preview_figure(
-                    active_df,
-                    preview_df,
-                    code_label=f"{code_label} · Final composite +M",
-                    governing_df=supported_df,
-                    member_length_m=member_length_m,
-                )
-            ),
-            caption=(
-                "Mux Max/Min 1/2 identifies the imported bound and repeated source row set; full case names are available on hover and in the audit. Coincident φMn paths share one curve and one legend entry; distinct resistance paths and missing-equilibrium gaps remain visible. "
-                "Available section flexure capacity includes strand transfer/development, ordinary-bar development, and the effective CIP deck. "
-                "A section PASS does not certify composite action until girder-deck interface shear is verified."
-            ),
-            interactive=True,
-        )
+        from concrete_pmm_pro.ui.igird_maxmin_charts import render_native_workspace
+        if not render_native_workspace(st.session_state, active_df, {'flexure_preview_df':preview_df},
+                check_name='Flexure', code_label=code_label, key_prefix='final_composite_'):
+            _render_beam_uls_browser_plotly_figure(
+                _polish_igird_uls_flexure_legend(
+                    _make_beam_uls_flexure_preview_figure(
+                        active_df,
+                        preview_df,
+                        code_label=f"{code_label} · Final composite +M",
+                        governing_df=supported_df,
+                        member_length_m=member_length_m,
+                    )
+                ),
+                caption=(
+                    "Mux Max/Min 1/2 identifies the imported bound and repeated source row set; full case names are available on hover and in the audit. Coincident φMn paths share one curve and one legend entry; distinct resistance paths and missing-equilibrium gaps remain visible. "
+                    "Available section flexure capacity includes strand transfer/development, ordinary-bar development, and the effective CIP deck. "
+                    "A section PASS does not certify composite action until girder-deck interface shear is verified."
+                ),
+                interactive=True,
+            )
         with st.expander("Final Composite flexure strength audit / benchmark output", expanded=False):
             audit_df = _beam_uls_flexure_audit_dataframe(preview_df)
             st.dataframe(audit_df, use_container_width=True, hide_index=True)
@@ -15721,7 +15724,10 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
     if selected_check == "Shear + Torsion":
         if is_precast_composite_bridge:
             from concrete_pmm_pro.ui.igird_combined_vt import render_workspace
-            render_workspace(combined_vt_df, code_label=code_label)
+            from concrete_pmm_pro.ui.igird_maxmin_charts import render_native_workspace
+            paired_charts = render_native_workspace(st.session_state, active_df, {'combined_vt_df':combined_vt_df},
+                check_name='Shear + Torsion', code_label=code_label, key_prefix='combined_detail_')
+            render_workspace(combined_vt_df, code_label=code_label, show_chart=not paired_charts)
             with st.expander("ULS demand table — audit / source data", expanded=False):
                 st.dataframe(_beam_uls_audit_dataframe(active_df), use_container_width=True, hide_index=True)
             return

@@ -167,6 +167,7 @@ def render_uls_report_charts(state, *, code_label):
     import streamlit as st
     from concrete_pmm_pro.io.girder_load_bank import ACTIVE_KEY
     from concrete_pmm_pro.ui import analysis_page as ap, igird_member_results as mr
+    from concrete_pmm_pro.ui import igird_maxmin_charts as mm
     from concrete_pmm_pro.ui.result_table_display import result_table_for_display
     if state.get('section_preset_key') != 'parametric_i_girder':
         return
@@ -195,11 +196,16 @@ def render_uls_report_charts(state, *, code_label):
         controlling_case = str((control['row'] or {}).get('Case', ''))
         cases = frame['Case'].dropna().astype(str).drop_duplicates().tolist()
         case_key = 'igird_uls_report_case_' + hashlib.sha256((check+'\0'+member).encode()).hexdigest()[:16]
-        options = [AUTO_CASE, *cases]
+        families, case_choices = mm.review_choices(package['rows'], cases)
+        options = [AUTO_CASE, *case_choices]
         if state.get(case_key) not in options:
-            state[case_key] = AUTO_CASE
-        choice = st.selectbox('Load case for report chart', options, key=case_key)
-        case = controlling_case if choice == AUTO_CASE else choice
+            old_family = mm.family_for_case(families, state.get(case_key))
+            state[case_key] = old_family.option if old_family else AUTO_CASE
+        choice = st.selectbox('Load case for report chart', options, key=case_key,
+                             format_func=lambda value: mm.choice_label(value, families))
+        selected_family = next((f for f in families if f.option == choice), None)
+        case = (controlling_case if choice == AUTO_CASE else
+                (mm.anchor_case(selected_family, frame, check) if selected_family else choice))
         if case not in cases:
             case = cases[0]
         st.caption(f"Controlling stored load case: {controlling_case or 'Unavailable'} · {control['component']} · {control['basis']} {ratio_text(control['ratio'])} @ {(control['row'] or {}).get('Governing x', '—')}. Displayed: {case}.")
@@ -209,34 +215,56 @@ def render_uls_report_charts(state, *, code_label):
             st.warning(f"All cases for {member}: {control['failed_rows']} failed row(s), {control['review_rows']} row(s) requiring review. Selecting another case does not clear these member-wide gates.")
         st.caption('Chart selectors review stored results. Result Summary and report-readiness cards follow the design member selected in Loads. Calculate all uses the current shared section/deck/reinforcement model for every girder; different member details require separate project models.')
         chart_view = 'Selected case — demand / capacity'
-        if check == 'Torsion':
+        family = mm.family_for_case(families, case)
+        paired = False
+        if family:
+            chart_view = mm.chart_view(family, check_name=check,
+                                       key_prefix='report_'+case_key, state=state)
+            paired = chart_view != mm.SOURCE_VIEW
+            if not paired:
+                source_key = 'igird_uls_report_source_'+case_key
+                if state.get(source_key) not in family.cases:
+                    state[source_key] = case
+                case = st.selectbox('Source vector for report chart', family.cases, key=source_key)
+        elif check == 'Torsion':
             chart_view = st.radio('Torsion report chart view',
                 ['Selected case — demand / capacity', 'Overview — utilization'],
                 horizontal=True, key='igird_uls_report_torsion_view')
-        fig = make_package_figure(state, package, member=member, check_name=check,
-                                  code_label=code_label, case=case, chart_view=chart_view)
-        ap._render_beam_uls_browser_plotly_figure(fig, interactive=True)
+        if paired:
+            figures = mm.make_bound_figures(state, package, family=family, member=member,
+                check_name=check, code_label=code_label, view=chart_view)
+            mm.render_bound_figures(figures, family=family, key_prefix='report_'+case_key)
+            st.caption('Displayed LC: '+str(family.source['case'])+' · separate Max and Min, all occurrence sets.')
+        else:
+            fig = make_package_figure(state, package, member=member, check_name=check,
+                                      code_label=code_label, case=case, chart_view=chart_view)
+            ap._render_beam_uls_browser_plotly_figure(fig, interactive=True)
+            figures = {'':fig}
         st.caption('The PNG includes girder, case, units, selected-case control and all-case member gates. Missing resistance/ratios retain their stored gaps and status markers; connecting lines are visual interpolation.')
         with st.expander('Report chart — load-case ranking / source audit', expanded=False):
             st.dataframe(result_table_for_display(case_ranking(frame, check)), hide_index=True, use_container_width=True)
             st.dataframe(result_table_for_display(component_controls(frame, check)), hide_index=True, use_container_width=True)
-            checked = filter_case(frame, case)
+            checked = mm.select_cases(frame, family.cases) if paired else filter_case(frame, case)
             st.dataframe(result_table_for_display(checked), hide_index=True, use_container_width=True)
-            name = re.sub(r'[^A-Za-z0-9_-]+', '_', check+'_'+member+'_'+case).strip('_')
+            name = (mm.export_name(check, member, family) if paired else
+                    re.sub(r'[^A-Za-z0-9_-]+', '_', check+'_'+member+'_'+case).strip('_'))
             st.download_button('Download selected stored check rows (CSV)',
                 data=checked.to_csv(index=False).encode('utf-8-sig'),
                 file_name=name+'.csv', mime='text/csv', on_click='ignore',
                 key='igird_uls_report_csv_'+case_key)
-        if check == 'Shear + Torsion':
+        if check == 'Shear + Torsion' and not paired:
             from concrete_pmm_pro.ui.igird_overview_gaps import render_gap_audit
             render_gap_audit(fig, check_name=check, key_prefix='report_'+case_key)
-        if check == 'Torsion' and chart_view == 'Overview — utilization':
+        if check == 'Torsion' and chart_view == 'Overview — utilization' and not paired:
             from concrete_pmm_pro.ui.igird_torsion_utilization import render_utilization_audit
             render_utilization_audit(fig, key_prefix='report_'+case_key)
         if st.button('Create report chart PNG', key='igird_uls_report_prepare'):
             with st.spinner('Creating report chart image…'):
-                image = fig.to_image(format='png', width=1440, height=560, scale=2)
-            name = re.sub(r'[^A-Za-z0-9_-]+', '_', check+'_'+member+'_'+case).strip('_')
-            st.download_button('Download report chart PNG', data=image,
-                file_name=name+'.png', mime='image/png', on_click='ignore',
-                key='igird_uls_report_download')
+                images = {step:figure.to_image(format='png', width=1440, height=560, scale=2)
+                          for step,figure in figures.items() if figure is not None}
+            for step,image in images.items():
+                name = (mm.export_name(check, member, family, step) if paired else
+                        re.sub(r'[^A-Za-z0-9_-]+', '_', check+'_'+member+'_'+case).strip('_'))
+                st.download_button('Download '+(step+' ' if step else '')+'report chart PNG', data=image,
+                    file_name=name+'.png', mime='image/png', on_click='ignore',
+                    key='igird_uls_report_download'+('_'+step if step else ''))
