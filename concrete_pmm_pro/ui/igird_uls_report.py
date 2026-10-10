@@ -77,7 +77,8 @@ def _short(value, limit=55):
     return value if len(value) <= limit else value[:limit-1] + '…'
 
 
-def make_package_figure(state, package, *, member, check_name, code_label, case=None):
+def make_package_figure(state, package, *, member, check_name, code_label, case=None,
+                        chart_view='Selected case — demand / capacity'):
     """Render one original girder/case through the accepted Analysis builders."""
     from concrete_pmm_pro.ui import analysis_page as ap, igird_member_results as mr
     from concrete_pmm_pro.ui import igird_vt_workspace as vt
@@ -106,14 +107,22 @@ def make_package_figure(state, package, *, member, check_name, code_label, case=
             critical=result.get('shear_critical_section_df'))
         meaning = 'Blue: signed Vu. Red: ±φVn from stored station calculations. Strength, detailing and source gates retain their original decisions.'
     elif check_name == 'Torsion':
-        fig = vt.make_torsion_case_figure(package['rows'], frame, case=case,
-            code_label=code_label, span_m=span, member_name=member,
-            diagram=result.get('torsion_diagram_capacity_df'),
-            boundary=result.get('torsion_boundary_capacity_df'))
-        meaning = 'Blue: signed Tu. Red: stored ±φTn, including qualified below-threshold / zero-Tu stations. Diagram resistance is not overall acceptance.'
-        if not any(t.name == '±φTn' and any(math.isfinite(float(v)) for v in t.y)
-                   for t in fig.data):
-            meaning = 'Blue: signed Tu. Purple: stored 0.25φTcr investigation threshold; φTn is unavailable. This is not torsion strength acceptance.'
+        if chart_view == 'Overview — utilization':
+            from concrete_pmm_pro.ui.igird_torsion_utilization import make_torsion_utilization_figure
+            fig = make_torsion_utilization_figure(rows, checked,
+                diagram=filter_case(result.get('torsion_diagram_capacity_df'), case),
+                code_label=code_label, span_m=span, source_context_df=package['rows'],
+                member_name=member, case=case)
+            meaning = 'Blue: stored |Tu|/φTn, including qualified below-threshold / zero-Tu stations. Open markers: original maximum design/check D/C; gates remain unchanged.'
+        else:
+            fig = vt.make_torsion_case_figure(package['rows'], frame, case=case,
+                code_label=code_label, span_m=span, member_name=member,
+                diagram=result.get('torsion_diagram_capacity_df'),
+                boundary=result.get('torsion_boundary_capacity_df'))
+            meaning = 'Blue: signed Tu. Red: stored ±φTn, including qualified below-threshold / zero-Tu stations. Diagram resistance is not overall acceptance.'
+            if not any(t.name == '±φTn' and any(math.isfinite(float(v)) for v in t.y)
+                       for t in fig.data):
+                meaning = 'Blue: signed Tu. Purple: stored 0.25φTcr investigation threshold; φTn is unavailable. This is not torsion strength acceptance.'
     else:
         fig = vt.make_overview_figure(rows, checked, check_name=check_name,
             code_label=code_label, span_m=span)
@@ -139,6 +148,7 @@ def make_package_figure(state, package, *, member, check_name, code_label, case=
     fig.update_xaxes(range=[0., span])
     fig.update_layout(meta={**dict(fig.layout.meta or {}), 'igird_report_check': check_name,
         'igird_report_member': member, 'igird_report_case': case,
+        'igird_report_view': chart_view,
         'igird_report_selected_control': summary_record(selected_control),
         'igird_report_member_control': summary_record(member_control)})
     return fig
@@ -198,8 +208,13 @@ def render_uls_report_charts(state, *, code_label):
         if control['failed_rows'] or control['review_rows']:
             st.warning(f"All cases for {member}: {control['failed_rows']} failed row(s), {control['review_rows']} row(s) requiring review. Selecting another case does not clear these member-wide gates.")
         st.caption('Chart selectors review stored results. Result Summary and report-readiness cards follow the design member selected in Loads. Calculate all uses the current shared section/deck/reinforcement model for every girder; different member details require separate project models.')
+        chart_view = 'Selected case — demand / capacity'
+        if check == 'Torsion':
+            chart_view = st.radio('Torsion report chart view',
+                ['Selected case — demand / capacity', 'Overview — utilization'],
+                horizontal=True, key='igird_uls_report_torsion_view')
         fig = make_package_figure(state, package, member=member, check_name=check,
-                                  code_label=code_label, case=case)
+                                  code_label=code_label, case=case, chart_view=chart_view)
         ap._render_beam_uls_browser_plotly_figure(fig, interactive=True)
         st.caption('The PNG includes girder, case, units, selected-case control and all-case member gates. Missing resistance/ratios retain their stored gaps and status markers; connecting lines are visual interpolation.')
         with st.expander('Report chart — load-case ranking / source audit', expanded=False):
@@ -215,6 +230,9 @@ def render_uls_report_charts(state, *, code_label):
         if check == 'Shear + Torsion':
             from concrete_pmm_pro.ui.igird_overview_gaps import render_gap_audit
             render_gap_audit(fig, check_name=check, key_prefix='report_'+case_key)
+        if check == 'Torsion' and chart_view == 'Overview — utilization':
+            from concrete_pmm_pro.ui.igird_torsion_utilization import render_utilization_audit
+            render_utilization_audit(fig, key_prefix='report_'+case_key)
         if st.button('Create report chart PNG', key='igird_uls_report_prepare'):
             with st.spinner('Creating report chart image…'):
                 image = fig.to_image(format='png', width=1440, height=560, scale=2)

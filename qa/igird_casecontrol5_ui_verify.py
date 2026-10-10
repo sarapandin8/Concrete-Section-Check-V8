@@ -139,11 +139,15 @@ with patch.object(mr, 'calculate_member', counted), patch.object(ap, '_render_be
                 view.set_value('Overview — utilization')
             rerun(at)
             for fig in figures:
-                audit_rows = fig.layout.meta['overview_missing_ratio_audit']
-                assert {'BELOW THRESHOLD', 'NO DEMAND'}.issubset({row['Classification'] for row in audit_rows})
-                assert all(row['Curve gap'] for row in audit_rows)
+                audit_rows = fig.layout.meta['torsion_utilization_audit']
+                assert any(row['Threshold status'] == 'BELOW THRESHOLD' for row in audit_rows)
+                assert any(row['Tu kN-m'] == 0. and row['Strength utilization |Tu|/phiTn'] == 0. for row in audit_rows)
+                assert not any(row['Curve gap'] for row in audit_rows)
+                assert all(row['Availability'] == 'AVAILABLE' for row in audit_rows)
+                blue = next(trace for trace in fig.data if trace.name == 'Strength |Tu|/φTn')
+                assert all(pd.notna(y) for y in blue.y) and blue.connectgaps is False
                 assert all(annotation.yref == 'paper' for annotation in fig.layout.annotations)
-            assert len([item for item in at.expander if item.label == 'Missing-ratio stations / gap reasons']) == len(names)
+            assert len([item for item in at.expander if item.label == 'Torsion utilization — stored station ratios / original decisions']) == len(names)
             assert len(at.get('download_button')) == len(names)
         # Capture the real review figures, including girder and selected case identity.
         for i, fig in enumerate(figures):
@@ -153,6 +157,9 @@ with patch.object(mr, 'calculate_member', counted), patch.object(ap, '_render_be
             gap_audit = (fig.layout.meta or {}).get('overview_missing_ratio_audit', [])
             if gap_audit:
                 pd.DataFrame(gap_audit).to_csv(OUT / (stem + '.gap_audit.csv'), index=False)
+            strength_audit = (fig.layout.meta or {}).get('torsion_utilization_audit', [])
+            if strength_audit:
+                pd.DataFrame(strength_audit).to_csv(OUT / (stem + '.utilization_audit.csv'), index=False)
         with ExitStack() as stack:
             readonly_guards(stack)
             # Each member's named case must change both tables and all figures.

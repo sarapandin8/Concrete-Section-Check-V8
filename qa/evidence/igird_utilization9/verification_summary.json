@@ -1,0 +1,30 @@
+{
+  "release": "IGIRDER.UTILIZATION9",
+  "status": "PASS",
+  "runtime": {
+    "python": "3.14.7",
+    "streamlit": "1.61.0",
+    "pandas": "3.0.6",
+    "pyarrow": "24.0.0",
+    "plotly": "5.24.1"
+  },
+  "scoped_regression": {
+    "modules": 60,
+    "passed": 762,
+    "seconds": 58.1,
+    "stage": "Behavior complete; before final title/marker presentation polish"
+  },
+  "final_targeted_regression": {
+    "modules": 3,
+    "passed": 63,
+    "seconds": 12.68
+  },
+  "new_behavior_tests": 21,
+  "final_collection_qa": "PASS",
+  "final_app_report_export_qa": "PASS",
+  "final_station_pattern_qa": "PASS",
+  "review_solver_calls": 0,
+  "original_results_and_design_member_preserved": true,
+  "source_equations_dependencies_project_persistence_unchanged": true,
+  "scope": "Hypothetical QA inputs; user PDF inspected, user project not recalculated; no live deployment"
+}

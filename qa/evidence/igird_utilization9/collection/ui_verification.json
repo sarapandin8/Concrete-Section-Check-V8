@@ -1,0 +1,69 @@
+{
+  "release": "IGIRDER.UTILIZATION9",
+  "status": "PASS",
+  "python": "3.14.7",
+  "pandas": "3.0.6",
+  "streamlit": "1.61.0",
+  "pyarrow": "24.0.0",
+  "checks": [
+    {
+      "check": "Flexure",
+      "automatic_case_by_girder": {
+        "Interior Girder 2": "Interior Girder 2 / ULS1",
+        "Exterior Girder": "Exterior Girder / ULS1"
+      },
+      "named_cases_per_girder": 2,
+      "all_case_review": true,
+      "all_girder_panels_collapsed": true,
+      "gap_audit_present": false,
+      "default_report_diagram": false,
+      "review_solver_calls": 0,
+      "stored_results_and_loads_unchanged": true
+    },
+    {
+      "check": "Shear",
+      "automatic_case_by_girder": {
+        "Interior Girder 2": "Interior Girder 2 / ULS2",
+        "Exterior Girder": "Exterior Girder / ULS1"
+      },
+      "named_cases_per_girder": 2,
+      "all_case_review": true,
+      "all_girder_panels_collapsed": true,
+      "gap_audit_present": false,
+      "default_report_diagram": false,
+      "review_solver_calls": 0,
+      "stored_results_and_loads_unchanged": true
+    },
+    {
+      "check": "Torsion",
+      "automatic_case_by_girder": {
+        "Interior Girder 2": "Interior Girder 2 / ULS1",
+        "Exterior Girder": "Exterior Girder / ULS1"
+      },
+      "named_cases_per_girder": 2,
+      "all_case_review": true,
+      "all_girder_panels_collapsed": true,
+      "gap_audit_present": true,
+      "default_report_diagram": true,
+      "review_solver_calls": 0,
+      "stored_results_and_loads_unchanged": true
+    },
+    {
+      "check": "Shear + Torsion",
+      "automatic_case_by_girder": {
+        "Interior Girder 2": "Interior Girder 2 / ULS1",
+        "Exterior Girder": "Exterior Girder / ULS1"
+      },
+      "named_cases_per_girder": 2,
+      "all_case_review": true,
+      "all_girder_panels_collapsed": true,
+      "gap_audit_present": false,
+      "default_report_diagram": false,
+      "review_solver_calls": 0,
+      "stored_results_and_loads_unchanged": true
+    }
+  ],
+  "stale_member_summary_has_no_old_ratio": true,
+  "streamlit_exceptions": 0,
+  "scope": "Real Streamlit collection workspace with controlled QA fixture; not live deployment"
+}

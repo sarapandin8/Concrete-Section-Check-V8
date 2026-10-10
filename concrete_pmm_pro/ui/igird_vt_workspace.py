@@ -1,7 +1,7 @@
 """Stored-result V/T overview and one place to complete missing inputs.
 
-The overview ranks each original case's D/C. It never pairs an envelope of
-Vu/Tu with an unrelated envelope of resistance. No solver is called here.
+Overviews retain original check D/C; Torsion additionally shows the paired
+stored station strength ratio as a separate line. No solver is called here.
 """
 from __future__ import annotations
 
@@ -305,13 +305,19 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
     from concrete_pmm_pro.ui.igird_case_review import controlling_result
     investigation = check_name == "Torsion" and controlling_result(frame,check_name)['basis'] == 'INVESTIGATION ONLY'
     if view == "Overview — utilization":
-        fig = make_overview_figure(active_df,frame,check_name=check_name,code_label=code_label,span_m=span,investigation=investigation)
-        st.caption("Blue: maximum original D/C at each station. Red: limit 1.0. Strength and demand always come from the same case. Connecting lines are visual interpolation.")
-        if any(trace.name == 'Max D/C' and any(row[2] == '∞' for row in trace.customdata)
+        if check_name == 'Torsion':
+            from concrete_pmm_pro.ui.igird_torsion_utilization import make_torsion_utilization_figure
+            fig = make_torsion_utilization_figure(active_df, frame, diagram=diagram,
+                code_label=code_label, span_m=span, source_context_df=source_context_df)
+            st.caption("Blue: actual same-case/station |Tu| / stored phiTn, including qualified below-threshold / zero-Tu stations. Open markers: original maximum design/check D/C. Original control and acceptance gates remain unchanged; connecting lines are visual interpolation.")
+        else:
+            fig = make_overview_figure(active_df,frame,check_name=check_name,code_label=code_label,span_m=span,investigation=investigation)
+            st.caption("Blue: maximum original D/C at each station. Red: limit 1.0. Strength and demand always come from the same case. Connecting lines are visual interpolation.")
+        if any(trace.name in {'Max D/C', 'Original max check D/C'} and any(row[2] == '∞' for row in trace.customdata)
                 for trace in fig.data):
             st.caption("An infinite ratio is labelled ∞ and drawn at the top of the chart; it has no finite plotted magnitude.")
         if investigation:
-            st.caption("φTn is unavailable. This view shows |Tu|/(0.25φTcr); a ratio above 1 means torsion design is required, not that a φTn strength check has failed.")
+            st.caption("Original design control is investigation-only: |Tu|/(0.25phiTcr), not a torsion strength check. The blue strength curve uses only available stored phiTn; unavailable strength pairs retain gaps.")
     else:
         cases = frame["Case"].dropna().drop_duplicates().tolist()
         gov = ap._beam_uls_governing_shear_row(frame) if check_name == "Shear" else ap._beam_uls_governing_torsion_row(frame)
@@ -360,8 +366,12 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
         fig = titled_figure(fig, member_name,case_name=selected_case)
     ap._render_beam_uls_browser_plotly_figure(fig,interactive=True)
     if view == "Overview — utilization":
-        from concrete_pmm_pro.ui.igird_overview_gaps import render_gap_audit
-        render_gap_audit(fig, check_name=check_name, key_prefix=key_prefix)
+        if check_name == 'Torsion':
+            from concrete_pmm_pro.ui.igird_torsion_utilization import render_utilization_audit
+            render_utilization_audit(fig, key_prefix=key_prefix)
+        else:
+            from concrete_pmm_pro.ui.igird_overview_gaps import render_gap_audit
+            render_gap_audit(fig, check_name=check_name, key_prefix=key_prefix)
     st.caption("Incomplete input checks remain REVIEW. CSI Max/Min rows are numerical screening; final coupled acceptance needs verified concurrent actions.")
 
 

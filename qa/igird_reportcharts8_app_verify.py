@@ -126,6 +126,23 @@ with patch.object(mr, 'calculate_member', counted):
                     name=check.lower().replace(' + ','_').replace(' ','_')+'_'+str(index)+'_'+suffix.lower()
                     fig.write_json(outdir/(name+'.plotly.json'))
                     fig.write_image(outdir/(name+'.png'),width=1440,height=560,scale=1)
+                    if check == 'Torsion':
+                        element(at.radio,'Torsion report chart view').set_value('Overview — utilization').run(); ok()
+                        utilization=report_figures[-1]
+                        audit=utilization.layout.meta['torsion_utilization_audit']
+                        assert all(row['Case']==case and row['Availability']=='AVAILABLE' for row in audit)
+                        assert not any(row['Curve gap'] for row in audit)
+                        assert any(row['Threshold status']=='BELOW THRESHOLD' for row in audit)
+                        assert any(row['Tu kN-m']==0. and row['Strength utilization |Tu|/phiTn']==0. for row in audit)
+                        assert utilization.layout.meta['igird_report_selected_control']==fig.layout.meta['igird_report_selected_control']
+                        utilization.write_json(outdir/(name+'_utilization.plotly.json'))
+                        utilization.write_image(outdir/(name+'_utilization.png'),width=1440,height=560,scale=1)
+                        import pandas as pd
+                        pd.DataFrame(audit).to_csv(outdir/(name+'_utilization_audit.csv'),index=False)
+                        element(at.button,'Create report chart PNG').click().run(); ok()
+                        assert any(item.proto.label=='Download torsion utilization station audit (CSV)' for item in at.get('download_button'))
+                        assert any(item.proto.label=='Download report chart PNG' for item in at.get('download_button'))
+                        element(at.radio,'Torsion report chart view').set_value('Selected case — demand / capacity').run(); ok()
             element(at.button,'Create report chart PNG').click().run(); ok()
             downloads=at.get('download_button')
             assert any(item.proto.label=='Download report chart PNG' for item in downloads)
@@ -133,6 +150,9 @@ with patch.object(mr, 'calculate_member', counted):
             chart_records.append({'check':check,'current_girders':2,'named_case_charts':4,
                 'automatic_control':True,'png_creation_and_download_widget':True,
                 'selected_csv_download_widget':True,'review_solver_calls':0})
+            if check=='Torsion':
+                chart_records[-1]['utilization_cases_verified']=4
+                chart_records[-1]['utilization_png_and_audit_csv_widgets']=True
         assert at.session_state['qa_app_calculations']==before
         for key,value in snapshots.items():
             assert pickle.dumps(at.session_state[key])==value,key+' changed during report review'
