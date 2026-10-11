@@ -1,0 +1,151 @@
+{
+  "milestone": "IGIRDER.ALLCASE15",
+  "release_date": "2026-10-11",
+  "baseline": {
+    "name": "concrete-section-pro_IGIRDER-CSIIMPORT14.zip",
+    "sha256": "671adf5fd163d5185ed0ff9b7b640b5fd410217c455c1a2f0036b83d147a7cfb",
+    "entries_retained": 1966,
+    "missing_entries": 0
+  },
+  "changed_production_files": {
+    "concrete_pmm_pro/ui/igird_member_results.py": "c34aaa943a785f1a7a07e6eb82a011ff4bd677485adf8d292278e62ea476470e",
+    "concrete_pmm_pro/ui/igird_vt_workspace.py": "8113efc4f75b37998e2bfb0f23079ed4e0796479b21416e166de5367e0aa0c68",
+    "concrete_pmm_pro/visualization/igird_uls_chart_display.py": "4fe099fde41ba3f0c3062e2e0eb4a0388646107202bb5a709e78fd07ef837190",
+    "concrete_pmm_pro/visualization/plot_readability.py": "2f215a2e8aeee5d5d51ba245c56871d6be7e0431ae5ac1e011d977c374fc5031"
+  },
+  "source_fixture_sha256": "d29e5af119bc94d3ce74acf6ee51978cd0ccb9b012a649ee26b32d1b0521a2c2",
+  "source_fixture_unchanged": true,
+  "compile": {
+    "status": "PASS",
+    "files": 10
+  },
+  "scoped_regression": {
+    "tests": 243,
+    "errors": 0,
+    "failures": 0
+  },
+  "layout_follow_up_regression": {
+    "tests": 29,
+    "errors": 0,
+    "failures": 0
+  },
+  "actual_app": {
+    "milestone": "IGIRDER.ALLCASE15",
+    "scope": "Byte-exact native force fixture with a hypothetical QA section; no user design acceptance.",
+    "manual_calculator_calls": 4,
+    "checks": [
+      {
+        "check": "Shear",
+        "members": 2,
+        "all_case_traces_per_member": 16,
+        "all_case_second_selector": false,
+        "family_and_single_source_review": true,
+        "overview_toggle": true,
+        "review_solver_calls": 0,
+        "input_and_result_cache_unchanged": true
+      },
+      {
+        "check": "Torsion",
+        "members": 2,
+        "all_case_traces_per_member": 16,
+        "all_case_second_selector": false,
+        "family_and_single_source_review": true,
+        "overview_toggle": true,
+        "review_solver_calls": 0,
+        "input_and_result_cache_unchanged": true
+      }
+    ]
+  },
+  "browser": {
+    "browser": "Chrome Headless Shell 134",
+    "javascript_errors": [],
+    "records": [
+      {
+        "check": "Torsion",
+        "charts": [
+          {
+            "title": "<b><b>Girder: BOBJ1 / Interior Girder 2<br><sup>Load case: All load cases</sup><br>Torsion — all load cases<br><sup>AASHTO LRFD 9th Edition · 16 vector series · signed demand / stored resistance</sup></b></b>",
+            "cases": 16,
+            "demandTraces": 16,
+            "hiddenDemands": 0,
+            "domain": [
+              0,
+              20
+            ]
+          },
+          {
+            "title": "<b><b>Girder: BOBJ1 / Left Exterior Girder<br><sup>Load case: All load cases</sup><br>Torsion — all load cases<br><sup>AASHTO LRFD 9th Edition · 16 vector series · signed demand / stored resistance</sup></b></b>",
+            "cases": 16,
+            "demandTraces": 16,
+            "hiddenDemands": 0,
+            "domain": [
+              0,
+              20
+            ]
+          }
+        ],
+        "redundant_case_selector": false,
+        "legend_note_clearance_verified": true
+      },
+      {
+        "check": "Shear",
+        "charts": [
+          {
+            "title": "<b><b>Girder: BOBJ1 / Interior Girder 2<br><sup>Load case: All load cases</sup><br>Shear — all load cases<br><sup>AASHTO LRFD 9th Edition · 16 vector series · signed demand / stored resistance</sup></b></b>",
+            "cases": 16,
+            "demandTraces": 16,
+            "hiddenDemands": 0,
+            "domain": [
+              0,
+              20
+            ]
+          },
+          {
+            "title": "<b><b>Girder: BOBJ1 / Left Exterior Girder<br><sup>Load case: All load cases</sup><br>Shear — all load cases<br><sup>AASHTO LRFD 9th Edition · 16 vector series · signed demand / stored resistance</sup></b></b>",
+            "cases": 16,
+            "demandTraces": 16,
+            "hiddenDemands": 0,
+            "domain": [
+              0,
+              20
+            ]
+          }
+        ],
+        "redundant_case_selector": false,
+        "legend_note_clearance_verified": true
+      }
+    ],
+    "viewports": [
+      [
+        1440,
+        1280
+      ],
+      [
+        1100,
+        1150
+      ]
+    ]
+  },
+  "visual_review": {
+    "1440_px": "PASS",
+    "1100_px": "PASS",
+    "internal_browser_screenshots_excluded": true
+  },
+  "unchanged": [
+    "app.py",
+    "requirements.txt",
+    "Vn/Tn equations and coefficients",
+    "ULS/SLS solvers",
+    "composite/development/source gates",
+    "Rebar Advisor 13",
+    "CSIIMPORT14 import and source fidelity",
+    "Project JSON input-only persistence",
+    "runtime cached engineering results during chart review"
+  ],
+  "calculation_scope": "Source/plot QA with hypothetical section; no user design acceptance.",
+  "archived_evidence_retained": [
+    "qa/evidence/igird_chart3/baseline_frames.pkl"
+  ],
+  "new_runtime_checkpoints_in_package": false,
+  "repo_summary": "Fix Shear and Torsion All load cases charts to plot every source series with its stored case-specific resistance."
+}

@@ -1,0 +1,27 @@
+{
+  "milestone": "IGIRDER.ALLCASE15",
+  "scope": "Byte-exact native force fixture with a hypothetical QA section; no user design acceptance.",
+  "manual_calculator_calls": 4,
+  "checks": [
+    {
+      "check": "Shear",
+      "members": 2,
+      "all_case_traces_per_member": 16,
+      "all_case_second_selector": false,
+      "family_and_single_source_review": true,
+      "overview_toggle": true,
+      "review_solver_calls": 0,
+      "input_and_result_cache_unchanged": true
+    },
+    {
+      "check": "Torsion",
+      "members": 2,
+      "all_case_traces_per_member": 16,
+      "all_case_second_selector": false,
+      "family_and_single_source_review": true,
+      "overview_toggle": true,
+      "review_solver_calls": 0,
+      "input_and_result_cache_unchanged": true
+    }
+  ]
+}

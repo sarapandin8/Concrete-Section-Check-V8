@@ -289,7 +289,8 @@ def _render_member_result(*, member, result, all_rows, control, cache, check_nam
             vt.render_strength_chart(rows,frame,check_name=check_name,code_label=code_label,state=st.session_state,
                 boundary=selected.get(kind+'_boundary_capacity_df'),critical=selected.get('shear_critical_section_df'),
                 diagram=selected.get(kind+'_diagram_capacity_df'),key_prefix='member_'+token,member_name=n,
-                selected_case=case,source_context_df=all_rows, allow_maxmin=False)
+                selected_case=case,source_context_df=all_rows, allow_maxmin=False,
+                all_cases=choice == ALL_CASES)
     else:
         frame = selected.get('combined_vt_df')
         if frame is None or frame.empty:

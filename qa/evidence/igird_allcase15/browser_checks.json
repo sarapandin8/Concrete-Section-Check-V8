@@ -1,0 +1,70 @@
+{
+  "browser": "Chrome Headless Shell 134",
+  "javascript_errors": [],
+  "records": [
+    {
+      "check": "Torsion",
+      "charts": [
+        {
+          "title": "<b><b>Girder: BOBJ1 / Interior Girder 2<br><sup>Load case: All load cases</sup><br>Torsion \u2014 all load cases<br><sup>AASHTO LRFD 9th Edition \u00b7 16 vector series \u00b7 signed demand / stored resistance</sup></b></b>",
+          "cases": 16,
+          "demandTraces": 16,
+          "hiddenDemands": 0,
+          "domain": [
+            0,
+            20
+          ]
+        },
+        {
+          "title": "<b><b>Girder: BOBJ1 / Left Exterior Girder<br><sup>Load case: All load cases</sup><br>Torsion \u2014 all load cases<br><sup>AASHTO LRFD 9th Edition \u00b7 16 vector series \u00b7 signed demand / stored resistance</sup></b></b>",
+          "cases": 16,
+          "demandTraces": 16,
+          "hiddenDemands": 0,
+          "domain": [
+            0,
+            20
+          ]
+        }
+      ],
+      "redundant_case_selector": false,
+      "legend_note_clearance_verified": true
+    },
+    {
+      "check": "Shear",
+      "charts": [
+        {
+          "title": "<b><b>Girder: BOBJ1 / Interior Girder 2<br><sup>Load case: All load cases</sup><br>Shear \u2014 all load cases<br><sup>AASHTO LRFD 9th Edition \u00b7 16 vector series \u00b7 signed demand / stored resistance</sup></b></b>",
+          "cases": 16,
+          "demandTraces": 16,
+          "hiddenDemands": 0,
+          "domain": [
+            0,
+            20
+          ]
+        },
+        {
+          "title": "<b><b>Girder: BOBJ1 / Left Exterior Girder<br><sup>Load case: All load cases</sup><br>Shear \u2014 all load cases<br><sup>AASHTO LRFD 9th Edition \u00b7 16 vector series \u00b7 signed demand / stored resistance</sup></b></b>",
+          "cases": 16,
+          "demandTraces": 16,
+          "hiddenDemands": 0,
+          "domain": [
+            0,
+            20
+          ]
+        }
+      ],
+      "redundant_case_selector": false,
+      "legend_note_clearance_verified": true
+    }
+  ],
+  "viewports": [
+    [
+      1440,
+      1280
+    ],
+    [
+      1100,
+      1150
+    ]
+  ]
+}

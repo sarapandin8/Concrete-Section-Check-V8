@@ -292,13 +292,77 @@ def make_shear_case_figure(active_df, frame, *, case, code_label, span_m,
     return fig
 
 
-def render_strength_chart(active_df, frame, *, check_name, code_label, state, boundary=None, critical=None, diagram=None, key_prefix="", member_name="", selected_case=None, source_context_df=None, allow_maxmin=True):
+def make_strength_all_cases_figure(active_df, frame, *, check_name, code_label,
+                                   span_m, diagram=None, boundary=None, critical=None,
+                                   source_context_df=None):
+    """Overlay every member case using its own stored resistance path.
+
+    The accepted builders already group both actions and resistance by Case.
+    Never select a governing source or envelope independent force components
+    merely because the collection reviewer requested all load cases.
+    """
+    from concrete_pmm_pro.ui import analysis_page as ap
+    from concrete_pmm_pro.ui.igird_case_review import controlling_result, ratio_text
+    from concrete_pmm_pro.visualization.igird_uls_chart_display import add_igird_report_note
+    cases = active_df['Case Name'].dropna().astype(str).drop_duplicates().tolist()
+    if check_name == 'Shear':
+        fig = ap._make_beam_uls_shear_capacity_figure(active_df, frame,
+            code_label=code_label, member_length_m=span_m, compact_csi_legend=True,
+            diagram_capacity_df=diagram, boundary_capacity_df=boundary,
+            critical_section_df=critical, source_context_df=source_context_df)
+        component, label, quantity = 'Vuy', 'Vu', '±φVn'
+        hidden = {'φVc', 'Critical x'}
+    elif check_name == 'Torsion':
+        fig = ap._make_beam_uls_torsion_capacity_figure(active_df, frame,
+            code_label=code_label, member_length_m=span_m,
+            diagram_capacity_df=diagram, boundary_capacity_df=boundary,
+            source_context_df=source_context_df)
+        component, label, quantity = 'Tu', 'Tu', '±φTn'
+        capacity = diagram if isinstance(diagram, pd.DataFrame) and not diagram.empty else frame
+        values = pd.to_numeric(capacity.get('φTn kN-m', pd.Series(index=capacity.index, dtype=float)), errors='coerce')
+        ready_cases = set(capacity.loc[values.map(lambda v: pd.notna(v) and math.isfinite(v)), 'Case'].astype(str))
+        # A case without stored strength keeps its investigation reference.
+        hidden = {'±φTcr'}
+        if set(cases).issubset(ready_cases):
+            hidden.add('±0.25φTcr')
+    else:
+        raise ValueError('All-case strength charts support Shear and Torsion.')
+    fig.data = tuple(t for t in fig.data if t.name not in hidden)
+    from concrete_pmm_pro.visualization.igird_uls_chart_display import compact_reference_paths
+    compact_reference_paths(fig, {quantity:quantity, '±0.25φTcr':'±0.25φTcr'})
+    legend = {}
+    for trace in fig.data:
+        name = str(trace.name or '')
+        if name.startswith(('Demand '+component, component+' ')):
+            case = str(trace.customdata[0][0])
+            trace.name = f'{label} C{len(legend)+1}'
+            trace.legendgroup = 'igird_demand_'+case
+            legend[trace.name] = case
+        elif name.startswith(('Gov.', 'Governing')):
+            trace.showlegend = False
+            trace.mode, trace.text = 'markers', None
+    control = controlling_result(frame, check_name)
+    location = (control['row'] or {}).get('Governing x', '—')
+    fig.layout.annotations = tuple(a for a in fig.layout.annotations if a.name != 'igird_report_note')
+    fig.update_layout(title_text=f'{check_name} — all load cases<br><sup>{code_label} · {len(legend)} vector series · signed demand / stored resistance</sup>',
+        meta={**dict(fig.layout.meta or {}), 'igird_allcase_version':'IGIRDER.ALLCASE15',
+              'igird_allcase_check':check_name, 'igird_allcase_cases':cases,
+              'member_case_legend':legend})
+    add_igird_report_note(fig, [
+        f'Blue: every signed {label} source series. Red: {quantity} from each original case/station.',
+        f"All-case control ({control['basis']}): {ratio_text(control['ratio'])} @ {location}; {control['failed_rows']} FAIL, {control['review_rows']} REVIEW.",
+        'Full cases: hover / source key. ×: unavailable resistance. Thresholds are not strength.'])
+    fig.update_xaxes(range=[0., span_m])
+    return fig
+
+
+def render_strength_chart(active_df, frame, *, check_name, code_label, state, boundary=None, critical=None, diagram=None, key_prefix="", member_name="", selected_case=None, source_context_df=None, allow_maxmin=True, all_cases=False):
     import streamlit as st
     from concrete_pmm_pro.ui import analysis_page as ap
     if frame is None or frame.empty:
         st.info("Calculate this check to display its stored results.")
         return
-    if allow_maxmin:
+    if allow_maxmin and not all_cases:
         from concrete_pmm_pro.ui.igird_maxmin_charts import render_native_workspace
         kind = check_name.lower()
         package = {kind+'_check_df':frame, kind+'_boundary_capacity_df':boundary,
@@ -307,9 +371,13 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
                 code_label=code_label, key_prefix=key_prefix+'detail_', member=member_name):
             return
     span = ap._beam_uls_span_length_from_state(state, is_building=False)
-    view = st.radio("Chart view", ["Overview — utilization", "Selected case — demand / capacity"],
-        index=1 if check_name == 'Torsion' else 0,
-        horizontal=True, key=f"{key_prefix}igird_vt_{check_name}_chart_view")
+    views = (["All cases — demand / capacity", "Overview — utilization"] if all_cases
+             else ["Overview — utilization", "Selected case — demand / capacity"])
+    view = st.radio("Chart view", views,
+        index=0 if all_cases else (1 if check_name == 'Torsion' else 0),
+        horizontal=True, key=f"{key_prefix}igird_vt_{check_name}_chart_view"+('_all' if all_cases else ''))
+    if all_cases:
+        st.caption(f"IGIRDER.ALLCASE15 · All load cases: {active_df['Case Name'].nunique()} vector series for this girder. The demand / capacity view plots every series; the overview shows the maximum paired utilization at each station.")
     from concrete_pmm_pro.ui.igird_case_review import controlling_result
     investigation = check_name == "Torsion" and controlling_result(frame,check_name)['basis'] == 'INVESTIGATION ONLY'
     if view == "Overview — utilization":
@@ -330,13 +398,21 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
         cases = frame["Case"].dropna().drop_duplicates().tolist()
         gov = ap._beam_uls_governing_shear_row(frame) if check_name == "Shear" else ap._beam_uls_governing_torsion_row(frame)
         default = cases.index(gov["Case"]) if gov and gov.get("Case") in cases else 0
-        case = selected_case if selected_case in cases else st.selectbox("Case for diagram", cases, index=default, key=f"{key_prefix}igird_vt_{check_name}_diagram_case")
-        demands = active_df.loc[active_df["Case Name"].eq(case)]
-        checked = frame.loc[frame["Case"].eq(case)]
+        case = (None if all_cases else selected_case if selected_case in cases else
+                st.selectbox("Case for diagram", cases, index=default, key=f"{key_prefix}igird_vt_{check_name}_diagram_case"))
         def pick(source):
-            return source.loc[source["Case"].eq(case)] if source is not None and not source.empty else None
+            from concrete_pmm_pro.ui.igird_case_review import filter_case
+            return filter_case(source, case) if source is not None and not source.empty else None
         selected_diagram = pick(diagram)
-        if check_name == "Shear":
+        if all_cases:
+            fig = make_strength_all_cases_figure(active_df, frame, check_name=check_name,
+                code_label=code_label, span_m=span, diagram=diagram, boundary=boundary,
+                critical=critical, source_context_df=source_context_df)
+            with st.expander('Chart source key — all load cases', expanded=False):
+                st.dataframe(pd.DataFrame([{'Series':label,'Load case / source vector':name}
+                    for label,name in fig.layout.meta['member_case_legend'].items()]),
+                    hide_index=True,use_container_width=True)
+        elif check_name == "Shear":
             fig = make_shear_case_figure(active_df,frame,case=case,code_label=code_label,
                 span_m=span,diagram=diagram,boundary=boundary,critical=critical,
                 source_context_df=source_context_df)
@@ -347,7 +423,7 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
             if str(trace.name).startswith("Gov."):
                 trace.showlegend = False
         fig.update_xaxes(range=[0.0,span])
-        st.caption(str(case) + ". Blue: original signed demand. Red: ±φVn or ±φTn for this case; the negative branch mirrors the resistance magnitude. Purple, if shown: investigation threshold.")
+        st.caption(("All load cases" if all_cases else str(case)) + ". Blue: original signed demand. Red: ±φVn or ±φTn from the same case/station; the negative branch mirrors the resistance magnitude. Purple, if shown: investigation threshold.")
         shared = (fig.layout.meta or {}).get("shared_csi_endpoints", [])
         if shared:
             st.caption("Shared physical endpoints at x=0/L use the unique original Excel row from the same girder, case and Max/Min family. They are diagram points only; hover shows the originating row. Stored import and design checks are unchanged.")
@@ -371,7 +447,7 @@ def render_strength_chart(active_df, frame, *, check_name, code_label, state, bo
                     hide_index=True,use_container_width=True)
     if member_name:
         from concrete_pmm_pro.ui.igird_member_results import titled_figure
-        fig = titled_figure(fig, member_name,case_name=selected_case)
+        fig = titled_figure(fig, member_name,case_name='All load cases' if all_cases else selected_case)
     ap._render_beam_uls_browser_plotly_figure(fig,interactive=True)
     if view == "Overview — utilization":
         if check_name == 'Torsion':

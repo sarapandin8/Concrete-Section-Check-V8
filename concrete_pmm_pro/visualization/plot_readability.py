@@ -155,6 +155,9 @@ def apply_global_plot_readability(fig: Any) -> Any:
         except Exception:
             continue
 
+    if isinstance(fig.layout.meta, dict) and fig.layout.meta.get('igird_allcase_version'):
+        from concrete_pmm_pro.visualization.igird_uls_chart_display import apply_igird_report_layout
+        apply_igird_report_layout(fig)
     return fig
 
 

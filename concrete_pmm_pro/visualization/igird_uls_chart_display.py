@@ -162,6 +162,17 @@ def apply_igird_report_layout(fig) -> None:
         fig.update_layout(margin={'t':max(int(fig.layout.margin.t or 0),140),
                                   'b':max(int(fig.layout.margin.b or 0),176)},
                           legend={'y':-.27})
+    if (fig.layout.meta or {}).get('igird_allcase_version'):
+        # Apply after the shared browser style too: its usual wide legend
+        # entries otherwise push many case labels through the report notes.
+        count = sum(t.showlegend is not False for t in fig.data)
+        rows = max(1, math.ceil(count / 4))
+        bottom = max(240, rows * 35 + 160)
+        fig.update_layout(height=410+bottom, margin={'t':170,'b':bottom},
+            legend={'y':-.22,'itemwidth':30,'entrywidth':80,'entrywidthmode':'pixels'})
+        for annotation in fig.layout.annotations:
+            if annotation.name == 'igird_report_note':
+                annotation.y = -(rows * 35 + 84) / 240
 
 
 def interface_station_envelope(result_df: pd.DataFrame) -> pd.DataFrame:
