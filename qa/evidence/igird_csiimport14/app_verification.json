@@ -1,0 +1,16 @@
+{
+  "milestone": "IGIRDER.CSIIMPORT14",
+  "source_sha256": "d29e5af119bc94d3ce74acf6ee51978cd0ccb9b012a649ee26b32d1b0521a2c2",
+  "section_model_scope": "Archived 20 m section used for QA; source forces unchanged; no user design acceptance.",
+  "import_replace_switch_project_json_duplicate_guard": "PASS",
+  "incomplete_native_header_blocks_apply_without_bank_change": "PASS",
+  "all_member_app_csv_reupload": "PASS",
+  "actual_app_calculation": {
+    "check": "Shear + Torsion",
+    "physical_members": 2,
+    "source_rows": 640,
+    "all_source_vectors_and_reference_components_exact": true,
+    "envelope_pass_blocked": true
+  },
+  "loads_and_review_do_not_calculate": true
+}

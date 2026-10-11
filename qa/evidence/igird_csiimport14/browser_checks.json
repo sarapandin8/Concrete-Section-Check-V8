@@ -1,0 +1,14 @@
+{
+  "browser": "Chrome Headless Shell 134",
+  "viewport": [
+    1440,
+    1180
+  ],
+  "native_upload": true,
+  "preview_rows": 640,
+  "source_members": 2,
+  "vector_series": 32,
+  "source_audit_visible": true,
+  "member_switch": "BOBJ1 / Interior Girder 2",
+  "javascript_errors": []
+}

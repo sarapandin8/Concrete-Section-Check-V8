@@ -1,0 +1,75 @@
+{
+  "milestone": "IGIRDER.CSIIMPORT14",
+  "release_date": "2026-10-11",
+  "baseline": {
+    "name": "concrete-section-pro_IGIRDER-REBARADVISOR13.zip",
+    "sha256": "0b197a00132d9ee8306e0e7377fd841ffbb4aeb2b1c318d3a4cdec4a914f6359",
+    "retained_entries": 1951,
+    "missing_entries": 0
+  },
+  "changed_production_files": {
+    "concrete_pmm_pro/io/girder_csi_import.py": "aac73b3c7ebcee30e6a2265a3ecf3eb66c95d732914551fa045db3084e5ec9b6",
+    "concrete_pmm_pro/ui/girder_csi_import.py": "d48aa0dac352f417a4f14eac0d3fdeaf71b2e0cac53e63ea35b0b38899c17951"
+  },
+  "source": {
+    "fixture": "qa/fixtures/CSiBridge_Bridge_Object_Girder_Forces_CSIIMPORT14.xlsx",
+    "sha256": "d29e5af119bc94d3ce74acf6ee51978cd0ccb9b012a649ee26b32d1b0521a2c2",
+    "data_rows": 640,
+    "physical_members": {
+      "BOBJ1 / Left Exterior Girder": 320,
+      "BOBJ1 / Interior Girder 2": 320
+    },
+    "all_original_cells_units_signs_and_excel_rows_preserved": true
+  },
+  "compile": "PASS",
+  "scoped_regression": {
+    "tests": 222,
+    "failures": 0,
+    "errors": 0
+  },
+  "legacy_multi_file_ui": "PASS: two files, two members, replace/add/switch/duplicate guard",
+  "actual_app": {
+    "milestone": "IGIRDER.CSIIMPORT14",
+    "source_sha256": "d29e5af119bc94d3ce74acf6ee51978cd0ccb9b012a649ee26b32d1b0521a2c2",
+    "section_model_scope": "Archived 20 m section used for QA; source forces unchanged; no user design acceptance.",
+    "import_replace_switch_project_json_duplicate_guard": "PASS",
+    "incomplete_native_header_blocks_apply_without_bank_change": "PASS",
+    "all_member_app_csv_reupload": "PASS",
+    "actual_app_calculation": {
+      "check": "Shear + Torsion",
+      "physical_members": 2,
+      "source_rows": 640,
+      "all_source_vectors_and_reference_components_exact": true,
+      "envelope_pass_blocked": true
+    },
+    "loads_and_review_do_not_calculate": true
+  },
+  "browser": {
+    "browser": "Chrome Headless Shell 134",
+    "viewport": [
+      1440,
+      1180
+    ],
+    "native_upload": true,
+    "preview_rows": 640,
+    "source_members": 2,
+    "vector_series": 32,
+    "source_audit_visible": true,
+    "member_switch": "BOBJ1 / Interior Girder 2",
+    "javascript_errors": []
+  },
+  "visual_review": {
+    "preview_summary_audit_member_controls": "PASS",
+    "internal_screenshots_excluded": true
+  },
+  "calculation_scope": "Source consumption verification using archived QA section; DATA REQUIRED/REVIEW and partial rows do not certify a user design.",
+  "unchanged_accepted_features": "Vn/Tn formulas, composite/development checks, Rebar Advisor 13, Project JSON input persistence; production changes restricted to import and source trace.",
+  "runtime": {
+    "python": "3.12.14",
+    "pandas": "2.2.3",
+    "numpy": "2.3.5",
+    "streamlit": "1.61.0",
+    "pytest": "9.1.1"
+  },
+  "repo_summary": "Preserve complete native CSiBridge ULS exports with per-girder imports, source traceability, and envelope review gates."
+}

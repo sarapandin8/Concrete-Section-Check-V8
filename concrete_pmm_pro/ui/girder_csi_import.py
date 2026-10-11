@@ -7,7 +7,7 @@ import streamlit as st
 
 from concrete_pmm_pro.io.girder_csi_import import (
     APP_COLUMNS, CSI_COLUMNS, ENVELOPE_NOTE, append_errors, girder_ranking,
-    is_app_table, is_csi_table, prepare_csi_table, read_tables,
+    is_app_table, is_csi_table, is_native_bridge_table, prepare_csi_table, read_tables, split_member_tables,
 )
 from concrete_pmm_pro.analysis.girder_axial_convention import (
     CSI_TENSION_POSITIVE, SETTINGS_KEY, axial_convention,
@@ -39,9 +39,9 @@ def render_import(*, state_key, editor_key, key_prefix, force_unit, moment_unit)
     )
 
     st.markdown('**ULS Excel / CSV import — automatic format detection**')
-    st.caption('IGIRDER.MULTIGIRDER2 · Upload multiple workbooks/CSVs and select multiple girder worksheets. All cases are retained separately for each girder. CSI force columns and existing app-column tables are detected automatically. Both Max/Min and every repeated station are retained.')
+    st.caption('IGIRDER.CSIIMPORT14 · Upload the original CSiBridge Bridge Object Girder Forces export, individual girder sheets, or app-column tables. A shared worksheet is split by BridgeObj + Girder. All cases, Max/Min, and Before/After rows are retained.')
     st.dataframe(pd.DataFrame([
-        ['Girder Distance', 'Station x (m)', 'm', 'Position'],
+        ['Distance / Girder Distance', 'Station x (m)', 'm', 'Physical member station'],
         ['M3', 'Mux', 'kN-m', 'Flexure'],
         ['V2', 'Vuy', 'kN', 'Shear'],
         ['T', 'Tu', 'kN-m', 'Torsion'],
@@ -50,11 +50,11 @@ def render_import(*, state_key, editor_key, key_prefix, force_unit, moment_unit)
         ['V3', 'Vux', 'kN', 'Reference only'],
     ], columns=['CSiBridge', 'App', 'Import units', 'Use']), use_container_width=True, hide_index=True)
     _downloads(key_prefix)
-    st.caption('The supplied Left Exterior workbook can be uploaded directly; no header changes, deleted units row or force-sign edits are required. Blank template force cells must be filled before importing a new template.')
+    st.caption('Keep the TABLE title, headers, units row, Girder, OutputCase, StepType and LocType in the original export. Station zero and distance must match the physical member model. Blank template force cells must be filled before importing a new template.')
     # Reuse the original app-column uploader key. A previous format-radio
     # selection can no longer route a native workbook to the wrong parser.
     uploaded = st.file_uploader(UPLOAD_LABEL, type=['xlsx', 'csv'], key=key_prefix+'_import_file', accept_multiple_files=True,
-        help='Automatic detection: Girder Distance / ItemType / P V2 V3 T M2 M3, or Active / Station x (m) / Case Name / Mux Vuy Tu Muy Vux Nu.')
+        help='Native BridgeObj / SectCutNum / Girder / Distance / LocType / OutputCase / CaseType / StepType / P V2 V3 T M2 M3, individual girder sheets, or app-column tables. All worksheets are inspected.')
     if not uploaded:
         return
     files = uploaded if isinstance(uploaded, list) else [uploaded]
@@ -77,7 +77,7 @@ def _source_controls(key):
 def _render_batch(uploaded, *, state_key, editor_key, key_prefix, force_unit, moment_unit):
     from concrete_pmm_pro.ui.loads_page import (_sync_workflow_load_tables_metadata, _workflow_table_result,
         prepare_imported_workflow_load_table)
-    frames, issues, identities = [], [], set()
+    frames, audits, issues, identities = [], [], [], set()
     st.info('Import a collection of girders and factored ULS cases. Assign the same physical girder name across files for the same member. Analysis uses only the selected girder and its complete case set.')
     same_member = st.checkbox('I confirm member names identify physical girders consistently across files, with the same station origin for each member', key=key_prefix+'_same_member')
     for number, uploaded_file in enumerate(uploaded):
@@ -94,7 +94,7 @@ def _render_batch(uploaded, *, state_key, editor_key, key_prefix, force_unit, mo
             except Exception as exc:
                 issues.append(uploaded_file.name+': '+str(exc))
                 continue
-            eligible = {n:t for n,t in tables.items() if is_csi_table(t) or is_app_table(t)}
+            eligible = {n:t for n,t in tables.items() if is_csi_table(t) or is_native_bridge_table(t) or is_app_table(t)}
             if not eligible:
                 issues.append(uploaded_file.name+': no supported table')
                 continue
@@ -105,33 +105,52 @@ def _render_batch(uploaded, *, state_key, editor_key, key_prefix, force_unit, mo
             mode, confirmed, evidence = _source_controls(key)
             if not selected:
                 issues.append(uploaded_file.name+': select at least one worksheet')
+            assigned_members = {}
             for sheet in selected:
-                raw = eligible[sheet]
-                member = st.text_input('Physical girder / member name — '+sheet, value=sheet if sheet != 'CSV' else Path(uploaded_file.name).stem, key=key+'_member_'+sheet).strip()
-                if not member:
-                    issues.append(uploaded_file.name+': physical girder name is required')
-                    continue
-                source_name = uploaded_file.name+' ['+digest[:8]+']'
-                if is_csi_table(raw):
-                    if sheet != 'CSV' and 'girder' not in sheet.casefold():
-                        issues.append(uploaded_file.name+': select an individual Girder worksheet')
+                groups = split_member_tables(eligible[sheet], sheet_name=sheet)
+                if not groups:
+                    issues.append(uploaded_file.name+': '+sheet+' has no physical member rows')
+                if len(groups) > 1:
+                    st.caption(f'{sheet}: {len(groups)} physical girders detected. Every source row is retained in its own member table.')
+                for group_number, group in enumerate(groups):
+                    raw = group.frame
+                    default_name = group.name if group.girder or sheet != 'CSV' else Path(uploaded_file.name).stem
+                    member = st.text_input('Physical girder / member name — '+group.name,
+                        value=default_name, key=key+'_member_'+sheet+'_'+str(group_number)).strip()
+                    if not member:
+                        issues.append(uploaded_file.name+': physical girder name is required')
                         continue
-                    parsed = prepare_csi_table(raw, sheet_name=member if sheet == 'CSV' else sheet, case_name=base,
-                        source_name=source_name, source_mode=mode, concurrency_confirmed=confirmed, evidence=evidence)
-                    issues.extend(parsed.errors)
-                    frame = parsed.frame.copy()
-                    frame['Case Name'] = member+' / '+frame['Case Name'].astype(str)
-                    frame['Girder'] = member
-                    frames.append(frame)
-                else:
-                    frame = prepare_imported_workflow_load_table(raw, APP_COLUMNS)
-                    from concrete_pmm_pro.io.girder_csi_import import tag_app_source
-                    frame = tag_app_source(frame,source_name=source_name,sheet_name=sheet,
-                        source_mode=mode,concurrency_confirmed=confirmed,evidence=evidence)
-                    frame['Case Name'] = source_name+' / '+sheet+' / '+frame['Case Name'].astype(str)
-                    frame['Case Name'] = member+' / '+frame['Case Name'].astype(str)
-                    frame['Girder'] = member
-                    frames.append(frame)
+                    identity = (sheet, group.bridge_object, group.girder)
+                    canonical_member = member.casefold()
+                    if canonical_member in assigned_members and assigned_members[canonical_member] != identity:
+                        issues.append(uploaded_file.name+': distinct source members cannot share the same physical member name: '+member)
+                    assigned_members[canonical_member] = identity
+                    source_name = uploaded_file.name+' ['+digest[:8]+']'
+                    if is_csi_table(raw) or is_native_bridge_table(raw):
+                        if not group.girder and sheet != 'CSV' and 'girder' not in sheet.casefold():
+                            issues.append(uploaded_file.name+': select an individual Girder worksheet or a table with a Girder column')
+                            continue
+                        parsed = prepare_csi_table(raw, sheet_name=sheet, case_name=base,
+                            source_name=source_name, source_mode=mode, concurrency_confirmed=confirmed, evidence=evidence)
+                        issues.extend(parsed.errors)
+                        frame = parsed.frame.copy()
+                        frame['Case Name'] = member+' / '+frame['Case Name'].astype(str)
+                        frame['Girder'] = member
+                        frames.append(frame)
+                        audit = parsed.audit.copy()
+                        if not audit.empty:
+                            audit['Physical member'] = member
+                            audit['Case Name'] = member+' / '+audit['Case Name'].astype(str)
+                            audits.append(audit)
+                    else:
+                        frame = prepare_imported_workflow_load_table(raw, APP_COLUMNS)
+                        from concrete_pmm_pro.io.girder_csi_import import tag_app_source
+                        frame = tag_app_source(frame,source_name=source_name,sheet_name=sheet,
+                            source_mode=mode,concurrency_confirmed=confirmed,evidence=evidence)
+                        frame['Case Name'] = source_name+' / '+sheet+' / '+frame['Case Name'].astype(str)
+                        frame['Case Name'] = member+' / '+frame['Case Name'].astype(str)
+                        frame['Girder'] = member
+                        frames.append(frame)
     imported = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=['Girder', *APP_COLUMNS])
     if force_unit != 'kN' or moment_unit != 'kN-m':
         issues.append('Batch import requires kN / kN-m units.')
@@ -140,8 +159,31 @@ def _render_batch(uploaded, *, state_key, editor_key, key_prefix, force_unit, mo
     valid = _workflow_table_result(imported, table_name='Multi-table ULS import',
         numeric_columns=['Station x (m)','Mux','Vuy','Tu','Muy','Vux','Nu'], unique_key_columns=['Girder','Case Name','Station x (m)'])
     issues.extend(valid.errors)
-    st.dataframe(imported, use_container_width=True, hide_index=True)
-    st.caption(f'{len(uploaded)} files · {len(imported)} retained rows · {imported["Case Name"].nunique()} separate vector series')
+    preview_columns = ['Girder','Station x (m)','Case Name','Mux','Vuy','Tu','Muy','Vux','Nu']
+    st.dataframe(imported[preview_columns], use_container_width=True, hide_index=True)
+    st.caption(f'{len(uploaded)} file{"s" if len(uploaded)!=1 else ""} · {len(imported)} retained rows · {imported["Case Name"].nunique()} separate vector series')
+    if not imported.empty:
+        st.dataframe(imported.groupby('Girder', sort=False).agg(
+            Rows=('Case Name','size'), Vector_series=('Case Name','nunique'),
+            Start_m=('Station x (m)','min'), End_m=('Station x (m)','max')).reset_index().rename(
+                columns={'Vector_series':'Vector series','Start_m':'Start (m)','End_m':'End (m)'}),
+            use_container_width=True, hide_index=True)
+    audit_frame = pd.concat(audits, ignore_index=True) if audits else pd.DataFrame()
+    if not audit_frame.empty:
+        with st.expander('Source rows / units — Before/After and original CSI fields'):
+            st.dataframe(audit_frame, use_container_width=True, hide_index=True)
+            st.caption('Original CSI columns and raw signs are retained alongside normalized m / kN / kN-m values. Max/Min bounds remain envelope screening unless concurrency is established from the source export.')
+    if not issues and not imported.empty:
+        downloads = st.columns(2)
+        with downloads[0]:
+            st.download_button('Download all-member app CSV', imported.to_csv(index=False).encode('utf-8-sig'),
+                file_name='CSiBridge_ULS_CSIIMPORT14_all_girders.csv', mime='text/csv',
+                use_container_width=True, key=key_prefix+'_normalized_csv')
+        if not audit_frame.empty:
+            with downloads[1]:
+                st.download_button('Download original-row audit CSV', audit_frame.to_csv(index=False).encode('utf-8-sig'),
+                    file_name='CSiBridge_ULS_CSIIMPORT14_source_audit.csv', mime='text/csv',
+                    use_container_width=True, key=key_prefix+'_source_audit_csv')
     for issue in issues:
         st.error(issue)
     from concrete_pmm_pro.io.girder_load_bank import BANK_KEY, merge_bank, save_active, activate_member
