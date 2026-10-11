@@ -12403,6 +12403,7 @@ def _beam_uls_combined_vt_plot_dataframe(vt_df: pd.DataFrame | None) -> pd.DataF
         # Concurrent rows at the same x are checked independently. The chart
         # shows the largest utilization at x; an unresolved physical row
         # keeps a real gap and is never filled from a neighbour.
+        trace_columns = [*trace_columns, "Spacing D/C"]
         assembled = []
         for (_, _), group in plot_df.groupby(["Case", "__x_m"], sort=False):
             chosen = group.iloc[0].copy()
@@ -12494,7 +12495,8 @@ def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *,
     ]
     is_uls7 = "Result version" in plot_df.columns and plot_df["Result version"].eq(IGIRD_CONCURRENT_VT_VERSION).all()
     if is_uls7:
-        traces = [("Veff limit D/C", "Stress D/C value"), ("Transverse D/C", "Transverse D/C value"), ("Longitudinal D/C", "Longitudinal D/C value")]
+        traces = [("Shear limit D/C", "Stress D/C value"), ("Transverse D/C", "Transverse D/C value"),
+                  ("Longitudinal D/C", "Longitudinal D/C value"), ("Spacing D/C", "Spacing D/C")]
     has_trace = False
     if not plot_df.empty:
         plot_df = plot_df.sort_values(["Case", "__x_m"], kind="stable")
@@ -12512,8 +12514,12 @@ def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *,
                             name=(trace_name if plot_df["Case"].nunique() == 1 else f"{trace_name} · C{case_index}") if is_uls7 else f"{trace_name} — {case_name}",
                             line=dict(_BEAM_ULS_UTIL_LINE_STYLE.get(column, {"width": 3})),
                             marker=dict(_BEAM_ULS_UTIL_MARKER_STYLE.get(column, {"size": 7})),
-                            customdata=[[str(case_name)] for _ in case_df["__x_m"]],
-                            hovertemplate=f"{trace_name}<br>x=%{{x:.3f}} m<br>D/C=%{{y:.3f}}<br>%{{customdata[0]}}<extra></extra>",
+                            customdata=[[str(case_name), str(row.get("Zone") or "-"),
+                                         _beam_uls_float(row.get("Spacing mm"))]
+                                        for _, row in case_df.iterrows()],
+                            hovertemplate=f"{trace_name}<br>x=%{{x:.3f}} m<br>D/C=%{{y:.3f}}<br>%{{customdata[0]}}"
+                                + ("<br>Zone=%{customdata[1]} · s=%{customdata[2]:.1f} mm" if is_uls7 else "")
+                                + "<extra></extra>",
                         )
                     )
                     has_trace = True
@@ -12576,7 +12582,8 @@ def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *,
         families = {}
         for trace in fig.data:
             name = str(trace.name or "")
-            for prefix, short in (("Veff limit D/C", "Veff D/C"), ("Transverse D/C", "Transverse D/C"), ("Longitudinal D/C", "Long. D/C")):
+            for prefix, short in (("Shear limit D/C", "Shear limit D/C"), ("Transverse D/C", "Transverse D/C"),
+                                  ("Longitudinal D/C", "Long. D/C"), ("Spacing D/C", "Spacing D/C")):
                 if name == prefix or name.startswith(prefix+" · C"):
                     families[name] = short
         compact_reference_paths(fig, families)
@@ -13125,11 +13132,13 @@ _BEAM_ULS_UTIL_MARKER_STYLE = {
     "Stress D/C value": {"size": 8, "symbol": "circle", "color": "#2563eb"},
     "Transverse D/C value": {"size": 8, "symbol": "square", "color": "#0f766e"},
     "Longitudinal D/C value": {"size": 9, "symbol": "triangle-up", "color": "#f59e0b"},
+    "Spacing D/C": {"size": 8, "symbol": "circle-open", "color": "#a855f7"},
 }
 _BEAM_ULS_UTIL_LINE_STYLE = {
     "Stress D/C value": _BEAM_ULS_UTIL_STRESS_LINE_STYLE,
     "Transverse D/C value": _BEAM_ULS_UTIL_TRANSVERSE_LINE_STYLE,
     "Longitudinal D/C value": _BEAM_ULS_UTIL_LONGITUDINAL_LINE_STYLE,
+    "Spacing D/C": dict(_BEAM_ULS_TORSION_INVESTIGATION_LINE_STYLE),
 }
 def _make_beam_uls_demand_figure(
     active_df: pd.DataFrame,

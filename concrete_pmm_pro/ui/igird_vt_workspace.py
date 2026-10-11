@@ -474,7 +474,7 @@ def render_combined_chart(frame, *, code_label, member_name="", selected_case=No
     from concrete_pmm_pro.ui.igird_overview_gaps import render_gap_audit
     render_gap_audit(fig, check_name='Shear + Torsion', key_prefix=member_name)
     partial = int(frame.get("Calculation status",pd.Series(index=frame.index,dtype=object)).eq("PARTIAL").sum())
-    st.caption(f"Blue: largest available original Veff/transverse/longitudinal/spacing D/C at each station. Red: limit 1.0. Partial rows: {partial}. Missing sub-checks are not a completed overall check.")
+    st.caption(f"Blue: largest available original shear-limit/transverse/longitudinal/spacing D/C at each station. Red: limit 1.0. Partial rows: {partial}. Missing sub-checks are not a completed overall check.")
     if any(trace.name == 'Max D/C' and any(row[2] == '∞' for row in trace.customdata) for trace in fig.data):
         st.caption("An infinite ratio is labelled ∞ and drawn at the top of the chart; it has no finite plotted magnitude.")
     with st.expander("Combined components / individual cases",expanded=False):
@@ -482,4 +482,5 @@ def render_combined_chart(frame, *, code_label, member_name="", selected_case=No
         if member_name:
             components = titled_figure(components,member_name,case_name=selected_case)
         ap._render_beam_uls_browser_plotly_figure(components,interactive=True)
-        st.caption("The x-axis covers the physical span. Component D/C values are plotted only at evaluated design stations; support boundaries and unavailable source terms are not assigned a numeric D/C.")
+        st.caption("Shear limit D/C uses actual |Vu| in Eq. 5.7.3.3-2. Spacing D/C = provided s / permitted smax. The additional Veff screen is a separate REVIEW item in Calculation trace, excluded from code-component D/C.")
+        st.caption("The x-axis covers the physical span. Curves use stored case/station checks, with their recorded transverse zone and spacing shown on hover. Missing values retain gaps; no endpoint D/C is extrapolated.")

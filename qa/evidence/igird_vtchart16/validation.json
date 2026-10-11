@@ -1,0 +1,185 @@
+{
+  "milestone": "IGIRDER.VTCHART16",
+  "baseline": {
+    "filename": "concrete-section-pro_IGIRDER-ALLCASE15.zip",
+    "sha256": "9d21d93e34961b98012cc7b22108ba50e6c89b96fd84a18c1867d35924661c79",
+    "entries_retained": 1977,
+    "missing_entries": 0
+  },
+  "changed_production_files": {
+    "concrete_pmm_pro/ui/analysis_page.py": "bb6578429935a5c8a9b7d23aab25248a087d3d3006ba945b5ed997846de8f4d7",
+    "concrete_pmm_pro/ui/igird_case_review.py": "e8e17c9cf8840c71add196bb95be79eacaa7aa600c213aa514a5239826b80954",
+    "concrete_pmm_pro/ui/igird_combined_vt.py": "2c20b0d7264171df5d78b0f17047f1c278563f8f3f832cf51718294ab6c4f249",
+    "concrete_pmm_pro/ui/igird_vt_workspace.py": "68b2b1617e9e3285215be5a34f746e1d5326a06e3634073da5a6fb286fffd15f"
+  },
+  "compile": {
+    "files": 9,
+    "status": "PASS"
+  },
+  "regression": {
+    "tests": 200,
+    "failures": 0,
+    "errors": 0
+  },
+  "actual_project_and_app": {
+    "source_sha256": "f6f2fec89ba4e7cdbe46da189b7b88582dd19789dc443ac95192b1724584db68",
+    "baseline_result_frames_exactly_equal": true,
+    "members": [
+      {
+        "member": "Left Exterior Girder",
+        "rows": 320,
+        "overview_points": 21,
+        "statuses": {
+          "REVIEW": 260,
+          "FAIL": 60
+        },
+        "governing": {
+          "Governing x": "14.000 m",
+          "Zone": "Midspan",
+          "Spacing mm": 200.0,
+          "Overall D/C value": 1.4201844272610102,
+          "Transverse D/C value": 1.4201844272610102,
+          "Longitudinal D/C value": 0.6913507200649636
+        },
+        "source_review_rows": 320
+      },
+      {
+        "member": "Interior Girder 2",
+        "rows": 320,
+        "overview_points": 21,
+        "statuses": {
+          "REVIEW": 224,
+          "FAIL": 96
+        },
+        "governing": {
+          "Governing x": "14.000 m",
+          "Zone": "Midspan",
+          "Spacing mm": 200.0,
+          "Overall D/C value": 2.3691270006257716,
+          "Transverse D/C value": 2.3691270006257716,
+          "Longitudinal D/C value": 1.0709111460184146
+        },
+        "source_review_rows": 320
+      }
+    ],
+    "arithmetic_comparisons": 7040,
+    "maximum_scaled_arithmetic_error": 2.667338336463014e-14,
+    "arithmetic_scope": "Independent substitution with stored geometry, strain and developed resistance; supplied zero-Vp project only.",
+    "app_review_modes": [
+      "automatic",
+      "all",
+      "single",
+      "all"
+    ],
+    "review_solver_calls": 0,
+    "inputs_and_result_caches_unchanged": true,
+    "source_json_unchanged": true
+  },
+  "browser": {
+    "browser": "Chrome Headless Shell 134",
+    "javascript_errors": [],
+    "records": [
+      {
+        "title": "<b><b>Girder: Left Exterior Girder<br>Combined Shear + Torsion Utilization — Strength ULS<br><sup>AASHTO LRFD 9th Edition · Left Exterior Girder</sup></b></b>",
+        "legend": [
+          "Shear limit D/C",
+          "Transverse D/C",
+          "Long. D/C",
+          "Spacing D/C",
+          "Limit = 1.0",
+          "Gov. V+T"
+        ],
+        "spacing": 14,
+        "shear": 16,
+        "xDomain": [
+          0,
+          20
+        ],
+        "legendBottom": 896.84814453125,
+        "chartBottom": 909.328125,
+        "width": 1440
+      },
+      {
+        "title": "<b><b>Girder: Interior Girder 2<br>Combined Shear + Torsion Utilization — Strength ULS<br><sup>AASHTO LRFD 9th Edition · Interior Girder 2</sup></b></b>",
+        "legend": [
+          "Shear limit D/C",
+          "Transverse D/C",
+          "Long. D/C",
+          "Spacing D/C",
+          "Limit = 1.0",
+          "Gov. V+T"
+        ],
+        "spacing": 8,
+        "shear": 16,
+        "xDomain": [
+          0,
+          20
+        ],
+        "legendBottom": 897.25439453125,
+        "chartBottom": 909.734375,
+        "width": 1440
+      },
+      {
+        "title": "<b><b>Girder: Left Exterior Girder<br>Combined Shear + Torsion Utilization — Strength ULS<br><sup>AASHTO LRFD 9th Edition · Left Exterior Girder</sup></b></b>",
+        "legend": [
+          "Shear limit D/C",
+          "Transverse D/C",
+          "Long. D/C",
+          "Spacing D/C",
+          "Limit = 1.0",
+          "Gov. V+T"
+        ],
+        "spacing": 14,
+        "shear": 16,
+        "xDomain": [
+          0,
+          20
+        ],
+        "legendBottom": 909.421875,
+        "chartBottom": 909.921875,
+        "width": 1100
+      },
+      {
+        "title": "<b><b>Girder: Interior Girder 2<br>Combined Shear + Torsion Utilization — Strength ULS<br><sup>AASHTO LRFD 9th Edition · Interior Girder 2</sup></b></b>",
+        "legend": [
+          "Shear limit D/C",
+          "Transverse D/C",
+          "Long. D/C",
+          "Spacing D/C",
+          "Limit = 1.0",
+          "Gov. V+T"
+        ],
+        "spacing": 8,
+        "shear": 16,
+        "xDomain": [
+          0,
+          20
+        ],
+        "legendBottom": 909.453125,
+        "chartBottom": 909.953125,
+        "width": 1100
+      }
+    ]
+  },
+  "visual_review": {
+    "1440_px": "PASS",
+    "1100_px": "PASS",
+    "screenshots_internal_only": true
+  },
+  "engineering_scope": "Display corrections with exact unchanged calculation frames; not final design acceptance.",
+  "unchanged": [
+    "calculation equations",
+    "source JSON and imported forces",
+    "zone selection at shared boundaries",
+    "composite/development/source gates",
+    "manual calculation ownership",
+    "Project JSON input-only persistence",
+    "app.py",
+    "requirements.txt",
+    "Rebar Advisor",
+    "CSI import"
+  ],
+  "new_runtime_checkpoints_in_package": false,
+  "historical_baseline_checkpoint_retained": "qa/evidence/igird_chart3/baseline_frames.pkl",
+  "repo_summary": "Correct combined shear–torsion chart labels, show spacing utilization and reinforcement sources, and verify unchanged calculations against the supplied project."
+}

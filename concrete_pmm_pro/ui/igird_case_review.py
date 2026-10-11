@@ -20,7 +20,7 @@ COMPONENTS = {
                 'Torsion longitudinal steel': ('Al utilization',),
                 'Torsion detailing': ('Detailing D/C value',),
                 'Torsion spacing': ('Spacing D/C',)},
-    'Shear + Torsion': {'Veff / concrete stress': ('Stress D/C value',),
+    'Shear + Torsion': {'Concrete shear limit': ('Stress D/C value',),
                         'Combined transverse': ('Transverse D/C value',),
                         'Combined longitudinal': ('Longitudinal D/C value',),
                         'Spacing': ('Spacing D/C',),

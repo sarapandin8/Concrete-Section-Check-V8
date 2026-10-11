@@ -431,6 +431,8 @@ def render_workspace(df: pd.DataFrame | None, *, code_label: str, member_name: s
         {"title":"Development","value":str(gov.get('Development status','REVIEW')),"detail":f"As factor {value('Ordinary development factor')} · Aps factor {value('Aps development factor min')}","status":"info" if gov.get('Development status') == 'PASS' else 'warning'},
     ]
     ap._render_analysis_summary_strip(cards[:3], columns=3)
+    if gov.get("Zone"):
+        st.caption(f"Governing transverse source: {gov['Zone']} · provided spacing {value('Spacing mm', 'mm')} · permitted spacing {value('s max mm', 'mm')}. At a shared zone boundary, this is the zone used by the stored check.")
     if str(gov.get("Conservative Veff guard status")) == "REVIEW":
         st.warning("Additional conservative Veff compression screen requires review. Its ratio is shown separately in Calculation trace and is excluded from code-component D/C; member acceptance remains REVIEW.")
     dc_columns = [c for c in ("Stress D/C value", "Transverse D/C value", "Longitudinal D/C value") if c in df]

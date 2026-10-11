@@ -1,0 +1,54 @@
+{
+  "source_sha256": "f6f2fec89ba4e7cdbe46da189b7b88582dd19789dc443ac95192b1724584db68",
+  "baseline_result_frames_exactly_equal": true,
+  "members": [
+    {
+      "member": "Left Exterior Girder",
+      "rows": 320,
+      "overview_points": 21,
+      "statuses": {
+        "REVIEW": 260,
+        "FAIL": 60
+      },
+      "governing": {
+        "Governing x": "14.000 m",
+        "Zone": "Midspan",
+        "Spacing mm": 200.0,
+        "Overall D/C value": 1.4201844272610102,
+        "Transverse D/C value": 1.4201844272610102,
+        "Longitudinal D/C value": 0.6913507200649636
+      },
+      "source_review_rows": 320
+    },
+    {
+      "member": "Interior Girder 2",
+      "rows": 320,
+      "overview_points": 21,
+      "statuses": {
+        "REVIEW": 224,
+        "FAIL": 96
+      },
+      "governing": {
+        "Governing x": "14.000 m",
+        "Zone": "Midspan",
+        "Spacing mm": 200.0,
+        "Overall D/C value": 2.3691270006257716,
+        "Transverse D/C value": 2.3691270006257716,
+        "Longitudinal D/C value": 1.0709111460184146
+      },
+      "source_review_rows": 320
+    }
+  ],
+  "arithmetic_comparisons": 7040,
+  "maximum_scaled_arithmetic_error": 2.667338336463014e-14,
+  "arithmetic_scope": "Independent substitution with stored geometry, strain and developed resistance; supplied zero-Vp project only.",
+  "app_review_modes": [
+    "automatic",
+    "all",
+    "single",
+    "all"
+  ],
+  "review_solver_calls": 0,
+  "inputs_and_result_caches_unchanged": true,
+  "source_json_unchanged": true
+}

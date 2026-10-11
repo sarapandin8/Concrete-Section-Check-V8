@@ -1,0 +1,86 @@
+{
+  "browser": "Chrome Headless Shell 134",
+  "javascript_errors": [],
+  "records": [
+    {
+      "title": "<b><b>Girder: Left Exterior Girder<br>Combined Shear + Torsion Utilization \u2014 Strength ULS<br><sup>AASHTO LRFD 9th Edition \u00b7 Left Exterior Girder</sup></b></b>",
+      "legend": [
+        "Shear limit D/C",
+        "Transverse D/C",
+        "Long. D/C",
+        "Spacing D/C",
+        "Limit = 1.0",
+        "Gov. V+T"
+      ],
+      "spacing": 14,
+      "shear": 16,
+      "xDomain": [
+        0,
+        20
+      ],
+      "legendBottom": 896.84814453125,
+      "chartBottom": 909.328125,
+      "width": 1440
+    },
+    {
+      "title": "<b><b>Girder: Interior Girder 2<br>Combined Shear + Torsion Utilization \u2014 Strength ULS<br><sup>AASHTO LRFD 9th Edition \u00b7 Interior Girder 2</sup></b></b>",
+      "legend": [
+        "Shear limit D/C",
+        "Transverse D/C",
+        "Long. D/C",
+        "Spacing D/C",
+        "Limit = 1.0",
+        "Gov. V+T"
+      ],
+      "spacing": 8,
+      "shear": 16,
+      "xDomain": [
+        0,
+        20
+      ],
+      "legendBottom": 897.25439453125,
+      "chartBottom": 909.734375,
+      "width": 1440
+    },
+    {
+      "title": "<b><b>Girder: Left Exterior Girder<br>Combined Shear + Torsion Utilization \u2014 Strength ULS<br><sup>AASHTO LRFD 9th Edition \u00b7 Left Exterior Girder</sup></b></b>",
+      "legend": [
+        "Shear limit D/C",
+        "Transverse D/C",
+        "Long. D/C",
+        "Spacing D/C",
+        "Limit = 1.0",
+        "Gov. V+T"
+      ],
+      "spacing": 14,
+      "shear": 16,
+      "xDomain": [
+        0,
+        20
+      ],
+      "legendBottom": 909.421875,
+      "chartBottom": 909.921875,
+      "width": 1100
+    },
+    {
+      "title": "<b><b>Girder: Interior Girder 2<br>Combined Shear + Torsion Utilization \u2014 Strength ULS<br><sup>AASHTO LRFD 9th Edition \u00b7 Interior Girder 2</sup></b></b>",
+      "legend": [
+        "Shear limit D/C",
+        "Transverse D/C",
+        "Long. D/C",
+        "Spacing D/C",
+        "Limit = 1.0",
+        "Gov. V+T"
+      ],
+      "spacing": 8,
+      "shear": 16,
+      "xDomain": [
+        0,
+        20
+      ],
+      "legendBottom": 909.453125,
+      "chartBottom": 909.953125,
+      "width": 1100
+    }
+  ]
+}
