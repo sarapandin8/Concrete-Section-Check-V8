@@ -1,0 +1,22 @@
+{
+  "records": [
+    {
+      "width": 1440,
+      "automatic_import": true,
+      "success_visible": true,
+      "apply_clicks": 0,
+      "member_assignment_clicks": 0,
+      "advanced_controls_hidden": true
+    },
+    {
+      "width": 1100,
+      "automatic_import": true,
+      "success_visible": true,
+      "apply_clicks": 0,
+      "member_assignment_clicks": 0,
+      "advanced_controls_hidden": true
+    }
+  ],
+  "javascript_errors": [],
+  "member_switch_verification": "Actual app.py AppTest; browser verification scoped to native upload and layout."
+}

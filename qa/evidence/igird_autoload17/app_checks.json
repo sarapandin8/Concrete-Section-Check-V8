@@ -1,0 +1,36 @@
+{
+  "automatic_import_no_apply_click": true,
+  "640_rows_two_girders_exact": true,
+  "all_six_force_components_and_raw_P_retained": true,
+  "old_uls_results_cleared": true,
+  "section_unchanged": true,
+  "same_upload_rerun_preserves_load_edits": true,
+  "member_switch_no_assignment_button": true,
+  "project_roundtrip_sources_retained": true,
+  "invalid_upload_preserves_previous_loads": true,
+  "new_valid_file_replaces_collection_automatically": true,
+  "removing_upload_keeps_stored_loads": true,
+  "production_calculations_use_own_girder_sources": [
+    {
+      "member": "BOBJ1 / Interior Girder 2",
+      "rows": 320,
+      "cases": 16,
+      "statuses": {
+        "REVIEW": 229,
+        "FAIL": 91
+      },
+      "maximum_numeric_dc": 1.7493303688189847
+    },
+    {
+      "member": "BOBJ1 / Left Exterior Girder",
+      "rows": 320,
+      "cases": 16,
+      "statuses": {
+        "REVIEW": 256,
+        "FAIL": 64
+      },
+      "maximum_numeric_dc": 1.3750591367708638
+    }
+  ],
+  "manual_calculator_calls": 2
+}

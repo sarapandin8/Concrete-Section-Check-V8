@@ -1,0 +1,101 @@
+{
+  "milestone": "IGIRDER.AUTOLOAD17",
+  "release_date": "2026-10-12",
+  "baseline": {
+    "filename": "concrete-section-pro_IGIRDER-VTCHART16.zip",
+    "sha256": "655ae5b2cea1654dfc8d7e7bbc84c56a0a099cb14e9bf40616f1bffd21a71f51",
+    "entries_retained": 1987,
+    "missing_entries": 0
+  },
+  "production_changes": {
+    "concrete_pmm_pro/ui/girder_csi_import.py": "eda11facdc33a4f5ed93fe156bf9f0eb63696f8560d4a60cbfd3eeda148a060c",
+    "concrete_pmm_pro/ui/loads_page.py": "2655a8d77621295d9a7e0eba237ce762f9a28210ec92d27052f0c88dc11a1869"
+  },
+  "source_fixture_sha256": "d29e5af119bc94d3ce74acf6ee51978cd0ccb9b012a649ee26b32d1b0521a2c2",
+  "compile": {
+    "status": "PASS",
+    "files": 7
+  },
+  "regression": {
+    "tests": 145,
+    "failures": 0,
+    "errors": 0
+  },
+  "actual_app": {
+    "automatic_import_no_apply_click": true,
+    "640_rows_two_girders_exact": true,
+    "all_six_force_components_and_raw_P_retained": true,
+    "old_uls_results_cleared": true,
+    "section_unchanged": true,
+    "same_upload_rerun_preserves_load_edits": true,
+    "member_switch_no_assignment_button": true,
+    "project_roundtrip_sources_retained": true,
+    "invalid_upload_preserves_previous_loads": true,
+    "new_valid_file_replaces_collection_automatically": true,
+    "removing_upload_keeps_stored_loads": true,
+    "production_calculations_use_own_girder_sources": [
+      {
+        "member": "BOBJ1 / Interior Girder 2",
+        "rows": 320,
+        "cases": 16,
+        "statuses": {
+          "REVIEW": 229,
+          "FAIL": 91
+        },
+        "maximum_numeric_dc": 1.7493303688189847
+      },
+      {
+        "member": "BOBJ1 / Left Exterior Girder",
+        "rows": 320,
+        "cases": 16,
+        "statuses": {
+          "REVIEW": 256,
+          "FAIL": 64
+        },
+        "maximum_numeric_dc": 1.3750591367708638
+      }
+    ],
+    "manual_calculator_calls": 2
+  },
+  "browser": {
+    "records": [
+      {
+        "width": 1440,
+        "automatic_import": true,
+        "success_visible": true,
+        "apply_clicks": 0,
+        "member_assignment_clicks": 0,
+        "advanced_controls_hidden": true
+      },
+      {
+        "width": 1100,
+        "automatic_import": true,
+        "success_visible": true,
+        "apply_clicks": 0,
+        "member_assignment_clicks": 0,
+        "advanced_controls_hidden": true
+      }
+    ],
+    "javascript_errors": [],
+    "member_switch_verification": "Actual app.py AppTest; browser verification scoped to native upload and layout."
+  },
+  "visual_review": {
+    "1440_px": "PASS",
+    "1100_px": "PASS"
+  },
+  "scope": "Automatic native load application and per-member routing, with unchanged engineering solvers.",
+  "unchanged": [
+    "app.py",
+    "requirements.txt",
+    "Vn/Tn/V+T equations",
+    "CSI parser and force mapping",
+    "concurrency and development gates",
+    "section/rebar/prestress/support inputs",
+    "VTCHART16 graph corrections",
+    "Project JSON input-only persistence"
+  ],
+  "screenshots_internal_only": true,
+  "new_runtime_checkpoints_in_package": false,
+  "historical_baseline_checkpoint_retained": "qa/evidence/igird_chart3/baseline_frames.pkl",
+  "repo_summary": "Automatically import native CSiBridge ULS files, assign each girder its own loads, and remove extra apply and member-assignment steps."
+}
