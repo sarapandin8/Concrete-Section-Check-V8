@@ -2756,7 +2756,7 @@ def _render_beam_girder_load_tables(force_unit: str, moment_unit: str) -> None:
             )
             from concrete_pmm_pro.ui.girder_axial_convention import render_axial_convention
             render_axial_convention()
-        with st.expander("Import Bridge Beam/Girder ULS station loads from Excel / CSV", expanded=False):
+        with st.expander("Import Bridge Beam/Girder ULS station loads from Excel / CSV", expanded=_active_is_precast_i_girder()):
             st.caption("Bridge ULS loads are station-based factored resultants. The same case name may repeat at different Station x values.")
             _render_workflow_import_tools(
                 title="Bridge Beam/Girder ULS station-load import",
