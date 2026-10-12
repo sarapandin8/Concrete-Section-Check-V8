@@ -359,8 +359,10 @@ def ordinary_bar_limits(context: SectionEquilibrium, *, x_m: float, span_m: floa
     The 12-in minimum also applies to partial straight-bar strength credit.
     """
     factors, trace = [], []
-    left = x_m + float(settings.get("left_extension_m", 0))
-    right = span_m + float(settings.get("right_extension_m", 0)) - x_m
+    from concrete_pmm_pro.analysis.igird_end_sections import cut_ends
+    left_end, right_end = cut_ends(params, span_m)
+    left = x_m - left_end + float(settings.get("left_extension_m", 0))
+    right = right_end + float(settings.get("right_extension_m", 0)) - x_m
     distance = 1000.0 * max(0.0, min(float("inf") if settings.get("left_bar_anchored") else left,
         float("inf") if settings.get("right_bar_anchored") else right))
     for bar in context.bars:

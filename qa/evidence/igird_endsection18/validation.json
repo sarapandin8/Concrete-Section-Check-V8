@@ -1,0 +1,72 @@
+{
+  "milestone": "IGIRDER.ENDSECTION18",
+  "date": "2026-10-12",
+  "baseline": "concrete-section-pro_IGIRDER-AUTOLOAD17.zip",
+  "baseline_sha256": "0c076f80e7630a1cc7f60b09cdad129bc0e4a9e0f00a2d4cb6267226398a6c92",
+  "compile": "PASS",
+  "final_regression": {
+    "passed": 722,
+    "deselected": 2,
+    "reason": "Outdated UI/README source-text assertions also fail in the unchanged AUTOLOAD17 baseline; separately reproduced."
+  },
+  "targeted_passed": 40,
+  "actual_app": {
+    "builder_inputs_preview_overlap_and_json_roundtrip": true,
+    "native_two_girders_640_rows_all_six_actions_preserved": true,
+    "member_results": [
+      {
+        "member": "BOBJ1 / Interior Girder 2",
+        "rows": 320,
+        "regions": {
+          "I SECTION": 272,
+          "LEFT SOLID END": 24,
+          "RIGHT SOLID END": 24
+        },
+        "maximum_numeric_dc": 1.7493303688189847,
+        "uniform_maximum_numeric_dc": 1.7493303688189847,
+        "statuses": {
+          "REVIEW": 229,
+          "FAIL": 91
+        },
+        "body_numerically_unchanged": true
+      },
+      {
+        "member": "BOBJ1 / Left Exterior Girder",
+        "rows": 320,
+        "regions": {
+          "I SECTION": 272,
+          "LEFT SOLID END": 24,
+          "RIGHT SOLID END": 24
+        },
+        "maximum_numeric_dc": 1.3750591367708638,
+        "uniform_maximum_numeric_dc": 1.3750591367708638,
+        "statuses": {
+          "REVIEW": 256,
+          "FAIL": 64
+        },
+        "body_numerically_unchanged": true
+      }
+    ],
+    "summary_report_do_not_recalculate": true,
+    "profile_edit_invalidates_results_without_auto_calculation": true,
+    "manual_ui_member_calculations": 2
+  },
+  "browser": {
+    "records": [
+      {
+        "width": 1440,
+        "inputs_and_section_preview_visible": true,
+        "panel_fits_viewport": true
+      },
+      {
+        "width": 1100,
+        "inputs_and_section_preview_visible": true,
+        "panel_fits_viewport": true
+      }
+    ],
+    "slider_changes_actual_polygon": true,
+    "javascript_errors": []
+  },
+  "reverified_after_environment_recovery": true,
+  "scope": "Variable precast geometry for ULS sectional checks; SLS/deflection and FE stiffness/self-weight retain the uniform-section model. Original CSI forces retained. End reinforcement/D-region/moment reference confirmations are not inferred."
+}

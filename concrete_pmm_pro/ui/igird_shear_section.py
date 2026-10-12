@@ -14,6 +14,8 @@ from concrete_pmm_pro.analysis.igird_flexure_development import (
 )
 from concrete_pmm_pro.analysis.igird_combined_vt import development_settings
 from concrete_pmm_pro.analysis.igird_shear_depth import RESULT_VERSION, developed_shear_depth
+from concrete_pmm_pro.analysis import igird_end_sections
+from concrete_pmm_pro.ui import igird_station_section
 
 RUNTIME_KEY = "_igird_shearcomp_runtime"
 DEPTH_COLUMNS = ["Section basis", "Deck development trace", "Depth source status", "Composite action status", "h mm",
@@ -61,7 +63,7 @@ def prepared_section(state):
             cache["section"] = result
             return result
         notes.append("Deck concrete and defined longitudinal layers participate in ULS Final; each deck layer uses its own development/continuity source.")
-    geometry = ap._beam_uls_get_state_value(state, "section_geometry")
+    geometry = state.get(igird_station_section.WEB_GEOMETRY, ap._beam_uls_get_state_value(state, "section_geometry"))
     concrete = ap._beam_uls_get_state_value(state, "concrete_material")
     try:
         if isinstance(geometry, Mapping):
@@ -86,6 +88,10 @@ def prepared_section(state):
 
 def analysis_input_for_station(state, *, row, strength_route, capacity_direction=None):
     from concrete_pmm_pro.ui import analysis_page as ap
+    try:
+        state = igird_station_section.at_station(state, row.get("Station x (m)"))
+    except (ValueError, TypeError, KeyError) as exc:
+        return None, [str(exc)]
     prepared = prepared_section(state)
     if not prepared["ready"]:
         return None, list(prepared["notes"])
@@ -112,9 +118,10 @@ def composite_action_gate(state, *, strength_route):
     if source is None:
         source = ap._active_beam_uls_demand_dataframe_from_session(state)
     supported = ap._igird_interface_source_dataframe(source)
-    signature = ap._igird_interface_shear_hash(state, supported,
-        settings=ap._igird_interface_shear_settings_from_state(state), strength_route=strength_route)
-    entry = ap._beam_uls_manual_cache(state).get(ap._IGIRDER_INTERFACE_SHEAR_CHECK_NAME)
+    project_state = state.get(igird_station_section.PROJECT_STATE, state)
+    signature = ap._igird_interface_shear_hash(project_state, supported,
+        settings=ap._igird_interface_shear_settings_from_state(project_state), strength_route=strength_route)
+    entry = ap._beam_uls_manual_cache(project_state).get(ap._IGIRDER_INTERFACE_SHEAR_CHECK_NAME)
     interface = "PENDING"
     if isinstance(entry, dict):
         if entry.get("input_hash") == signature and entry.get("result_version") == ap._IGIRDER_INTERFACE_SHEAR_RESULT_VERSION:
@@ -130,6 +137,11 @@ def composite_action_gate(state, *, strength_route):
 
 def depth_values(state, *, row, strength_route, capacity_direction=None):
     from concrete_pmm_pro.ui import analysis_page as ap
+    try:
+        state = igird_station_section.at_station(state, row.get("Station x (m)"))
+    except (ValueError, TypeError, KeyError) as exc:
+        return {"dv_mm": float("nan"), "d_mm": float("nan"), "Depth source status": "REVIEW",
+            "Section basis": "SECTION UNAVAILABLE", "dv_note": str(exc), "Depth note": str(exc)}
     cache = _runtime(state)
     prepared = prepared_section(state)
     sign = -1.0 if float(capacity_direction if capacity_direction is not None else (row.get("Mux") or 1.0)) < 0 else 1.0
@@ -148,7 +160,8 @@ def depth_values(state, *, row, strength_route, capacity_direction=None):
             raise ValueError("Physical station / span / external Nu is invalid for dv.")
         context_key = ("context", sign)
         if context_key not in cache:
-            ai, notes = analysis_input_for_station(state, row={**row, "Station x (m)": span / 2.0},
+            context_x = x if igird_end_sections.enabled(state) else span / 2.0
+            ai, notes = analysis_input_for_station(state, row={**row, "Station x (m)": context_x},
                 strength_route=strength_route, capacity_direction=sign)
             if ai is None:
                 raise ValueError("; ".join(notes))
@@ -158,7 +171,7 @@ def depth_values(state, *, row, strength_route, capacity_direction=None):
             # Stations are the physical strand cut ends. Do not silently add
             # fictitious bonded extensions from a flexure-only setting.
             settings = {**settings, "left_extension_m": 0.0, "right_extension_m": 0.0}
-            families = strand_families(state.get("girder_strand_layout_table"), y_min_mm=prepared["ymin_mm"],
+            families = igird_station_section.strand_families(state, state.get("girder_strand_layout_table"), y_min_mm=prepared["ymin_mm"],
                 span_m=span, stage="final", settings=settings)
             known = {m.name for m in ai.rebar_materials}
             missing = sorted({b.material_name for b in ai.rebars if b.material_name not in known})
@@ -170,8 +183,9 @@ def depth_values(state, *, row, strength_route, capacity_direction=None):
         context, families, ordinary, missing = cache[context_key]
         from concrete_pmm_pro.analysis.igird_deck_development import station_bar_factors, is_deck_bar, deck_layer_settings
         from concrete_pmm_pro.analysis.igird_combined_vt import ordinary_development_factor
+        bond_x, bond_span = igird_end_sections.development_coordinates(state, x, span)
         bar_factors, bar_ready, deck_trace = station_bar_factors(prepared['state'], context.bars, list(context.materials.values()),
-            x_m=x, span_m=span, girder_factor=ordinary_development_factor(ordinary,x_m=x,span_m=span))
+            x_m=x, span_m=span, girder_factor=ordinary_development_factor(ordinary,x_m=bond_x,span_m=bond_span))
         reference_factors = []
         for bar in context.bars:
             if is_deck_bar(bar):
@@ -183,7 +197,8 @@ def depth_values(state, *, row, strength_route, capacity_direction=None):
         if reference_key not in cache:
             cache[reference_key] = context.solve(nu,bar_factors=reference_factors)
         values = developed_shear_depth(context, families, reference=cache[reference_key],
-            x_m=x, span_m=span, nu_n=nu, precast_depth_mm=prepared["precast_depth_mm"], ordinary_settings=ordinary, bar_factors=bar_factors, bar_source_ready=bar_ready)
+            x_m=x, span_m=span, nu_n=nu, precast_depth_mm=prepared["precast_depth_mm"], ordinary_settings=ordinary, bar_factors=bar_factors, bar_source_ready=bar_ready,
+            ordinary_x_m=bond_x, ordinary_span_m=bond_span)
         source_ready = not missing and bar_ready
         notes = list(prepared["notes"])
         if missing:

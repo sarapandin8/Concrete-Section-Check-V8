@@ -1,3 +1,13 @@
+# Concrete Section Pro — IGIRDER.ENDSECTION18
+
+Based on the complete accepted AUTOLOAD17 ZIP. Section Builder → Solid End Sections defines independent left/right solid lengths, linear side tapers, end width/chamfer and physical cut-end coordinates on the existing Loads axis. The station preview displays the actual polygon and longitudinal zoning.
+
+ULS Flexure, Shear, Torsion, Shear + Torsion and interface checks use local geometry. Final-composite flexural/depth calculations retain the existing deck; web/torsion remain precast. Polygon/context caches are isolated within Calculate, and JSON persists inputs only. Vn/Tn capacity diagrams sample geometry changes using labeled same-case interpolated forces; these samples never become design PASS rows. Original CSI forces and girder assignment are preserved.
+
+Run `streamlit run app.py`. See `IGIRDER_ENDSECTION18_HANDOFF_TH.md` and `qa/evidence/igird_endsection18/`. Different girder details still require separate models. SLS stresses/deflection and FE stiffness/self-weight retain the existing uniform-section model. Bearing/D-region, end reinforcement and CSI moment-reference confirmations remain separate.
+
+## Previous milestone
+
 # Concrete Section Pro — IGIRDER.SHEARCOMP1
 
 Final-Composite V/T now uses developed flexural C/T resultants and force-weighted de for dv, with precast web properties retained. Stirrup spacing stress includes phi. Bearing centerlines/internal faces are distinct from physical strand cut ends; unknown bearing lengths do not create fictitious support faces or near-support exemptions.

@@ -106,7 +106,8 @@ from concrete_pmm_pro.analysis.result_models import (
     summarize_pmm_result,
 )
 from concrete_pmm_pro.analysis.igird_composite_flexure import prepare_aashto_composite_positive_flexure
-from concrete_pmm_pro.ui import igird_shear_section
+from concrete_pmm_pro.ui import igird_shear_section, igird_station_section
+from concrete_pmm_pro.analysis import igird_end_sections
 from concrete_pmm_pro.analysis.igird_flexure_development import (
     RESULT_VERSION as IGIRD_FLEXURE_DEVELOPMENT_VERSION,
     SETTINGS_KEY as IGIRD_FLEXURE_DEVELOPMENT_KEY,
@@ -5877,6 +5878,7 @@ def _beam_uls_girder_strand_elements_for_station(
         return []
     _, y_min, _, _ = _beam_uls_section_bounds(geometry)
     try:
+        x_m, span_length_m = igird_end_sections.development_coordinates(state, x_m, span_length_m)
         groups = active_strand_groups_at_station(table, x_m=float(x_m), span_length_m=float(span_length_m))
     except Exception:
         return []
@@ -5921,6 +5923,10 @@ def _beam_uls_flexure_analysis_input_for_station(
     prestress_force_stage: str = "final",
 ) -> tuple[AnalysisInput | None, list[str]]:
     messages: list[str] = []
+    try:
+        state = igird_station_section.at_station(state, row.get("Station x (m)", 0.0))
+    except (ValueError, TypeError, KeyError) as exc:
+        return None, [str(exc)]
     geometry = _beam_uls_get_state_value(state, "section_geometry")
     concrete = _beam_uls_get_state_value(state, "concrete_material")
     if isinstance(geometry, dict):
@@ -6500,16 +6506,19 @@ def _beam_uls_developed_igird_flexure_dataframe(
             "Benchmark readiness": "Developed resistance; source/detailing/composite gates remain separate"}
         row.update({'Section basis':'FINAL COMPOSITE' if '_igird_flexure_precast_depth_mm' in state else 'PRECAST I-GIRDER',
             'Deck longitudinal included':bool(params.get('deck_long_rebar_credit_positive_mn',False)) if '_igird_flexure_precast_depth_mm' in state else False})
+        local_state = state
         try:
             if not all(math.isfinite(v) for v in (x, mu, nu)) or not 0 <= x <= span:
                 raise ValueError("Station/Mux/Nu must be finite, with x inside the station span.")
-            if sign not in contexts:
+            local_state = igird_station_section.at_station(state, x)
+            context_key = (sign, str(igird_shear_section.geometry_signature(local_state))) if igird_end_sections.enabled(state) else sign
+            if context_key not in contexts:
                 # The middle-station bridge creates the validated base input.
                 # Replace its sleeve-filtered rows with all physical families
                 # for the reference solve; actual strength is limited below.
                 middle_row = dict(demand_row)
-                middle_row["Station x (m)"] = 0.5 * span
-                ai, notes = _beam_uls_flexure_analysis_input_for_station(state,
+                middle_row["Station x (m)"] = x if igird_end_sections.enabled(state) else 0.5 * span
+                ai, notes = _beam_uls_flexure_analysis_input_for_station(local_state,
                     row=middle_row, strength_route=strength_route,
                     capacity_direction=sign, prestress_force_stage=prestress_force_stage)
                 if ai is None:
@@ -6517,14 +6526,14 @@ def _beam_uls_developed_igird_flexure_dataframe(
                 generic_ps = _beam_uls_get_state_value(state, "prestress_elements", []) or []
                 if ai.settings.include_prestress and generic_ps:
                     raise ValueError("Generic prestress rows have no physical bond-end mapping; use the dedicated I-Girder strand layout for this route.")
-                families = igird_flexure_strand_families(table,
+                families = igird_station_section.strand_families(local_state, table,
                     y_min_mm=_beam_uls_section_bounds(ai.section_geometry)[1],
                     span_m=span, stage=prestress_force_stage, settings=settings)
                 if not ai.settings.include_prestress:
                     raise ValueError("Prestressing steel is disabled; developed pretensioned I-Girder route requires it.")
                 ai = ai.model_copy(update={"prestress_elements": [f.element for f in families]})
-                contexts[sign] = (IgirdFlexureSectionEquilibrium(ai, sign), families)
-            context, families = contexts[sign]
+                contexts[context_key] = (IgirdFlexureSectionEquilibrium(ai, sign), families)
+            context, families = contexts[context_key]
             from concrete_pmm_pro.analysis.igird_deck_development import is_deck_bar, deck_layer_settings
             reference_bars = []
             for bar in context.bars:
@@ -6533,7 +6542,7 @@ def _beam_uls_developed_igird_flexure_dataframe(
                     reference_bars.append(1.0 if layer['start_m'] <= x <= layer['end_m'] else 0.0)
                 else:
                     reference_bars.append(1.0)
-            reference_key = (sign, nu, tuple(reference_bars))
+            reference_key = (context_key, nu, tuple(reference_bars))
             if reference_key not in references:
                 references[reference_key] = context.solve(nu * 1000.0,bar_factors=reference_bars)
             result = solve_igird_developed_flexure_station(context, families,
@@ -6598,7 +6607,7 @@ def _beam_uls_developed_igird_flexure_dataframe(
             if hasattr(exc, "strand_trace"):
                 row["Strand development trace"] = exc.strand_trace
                 row["Ordinary bar development trace"] = exc.bar_trace
-        rows.append(row)
+        rows.append(igird_station_section.annotate(row, local_state, check_name="Flexure"))
     if any(not math.isfinite(_beam_uls_float(r.get("Capacity kN-m"))) for r in rows):
         messages.append("Full-span strength coverage is incomplete: resolve blocked source station(s); no final flexure PASS is issued.")
         for row in rows:
@@ -7035,6 +7044,16 @@ def _beam_uls_flexure_preview_dataframe(
             f"Concrete/rebar base sweeps: {section_cache.build_count}; reused: {section_cache.hit_count}. "
             "Each station retains its own Nu and moment check; neutral-axis resolution and equations are unchanged."
         )
+    if igird_end_sections.enabled(state):
+        annotated = []
+        for result in rows:
+            try:
+                x = float(str(result.get("Governing x")).replace(" m", ""))
+                local = igird_station_section.at_station(state, x)
+                annotated.append(igird_station_section.annotate(result, local, check_name="Flexure"))
+            except (ValueError, TypeError, KeyError):
+                annotated.append(result)
+        return pd.DataFrame(annotated), deduplicate_warnings(messages)
     return pd.DataFrame(rows, columns=columns), deduplicate_warnings(messages)
 
 
@@ -7555,6 +7574,7 @@ def _beam_uls_igird_prestress_general_shear_terms(
     if h_mm <= 0.0 or not math.isfinite(h_mm):
         return {"ready": False, "note": "Invalid section depth for strand development evaluation."}
     top = str(tension_face).strip().lower().startswith("top")
+    x_m, span_length_m = igird_end_sections.development_coordinates(state, x_m, span_length_m)
     x = min(max(float(x_m), 0.0), float(span_length_m))
     fpo_full_mpa = 0.70 * _GIRDER_STRAND_FPU_MPA_DEFAULT
     aps_developed = 0.0
@@ -7916,7 +7936,8 @@ def _beam_uls_igird_general_shear_epsilon(
     ordinary_factor = 1.0
     strain_input = analysis_input
     if analysis_input.rebars and not ordinary_development_applied:
-        ordinary_factor = ordinary_development_factor(development_settings(state), x_m=x_m, span_m=span_length_m)
+        bond_x, bond_span = igird_end_sections.development_coordinates(state, x_m, span_length_m)
+        ordinary_factor = ordinary_development_factor(development_settings(state), x_m=bond_x, span_m=bond_span)
         factors, bars_ready, deck_trace = station_bar_factors(state, analysis_input.rebars, analysis_input.rebar_materials,
             x_m=x_m, span_m=span_length_m, girder_factor=ordinary_factor)
         strain_input = analysis_input.model_copy(update={"rebars": [
@@ -8084,6 +8105,7 @@ def _beam_uls_shear_detailing_guard(
     }
 
 
+@igird_station_section.station_check("Shear")
 def _beam_uls_shear_result_for_row(
     state: Mapping[str, object],
     row: Mapping[str, object],
@@ -8570,6 +8592,8 @@ def _beam_uls_shear_check_dataframe(
         "Mu used kN-m", "Nu AASHTO kN", "Vp kN", "Aps fpo kN",
         "Code basis", "φ policy", "Method", "Notes", "fy input MPa", "fy policy", "Shear stress MPa", "Shear stress / fc",
     ] + igird_shear_section.DEPTH_COLUMNS
+    if igird_end_sections.enabled(state):
+        columns += igird_station_section.TRACE_COLUMNS
     if active_df.empty:
         return pd.DataFrame(columns=columns)
     rows = []
@@ -9113,6 +9137,7 @@ def _beam_uls_igird_station_capacity_diagram_dataframe(
     from concrete_pmm_pro.visualization.igird_uls_chart_display import native_csi_diagram_rows
     span = _beam_uls_span_length_from_state(state, is_building=False)
     demands = native_csi_diagram_rows(active_df, member_length_m=span)
+    demands = igird_station_section.geometry_diagram_demands(state, demands)
     existing = {(str(row.get("Case")), _beam_uls_shear_row_x_m(row)): row.to_dict()
         for _, row in check_df.iterrows() if row.get("Station type") not in {"DIAGRAM BOUNDARY", "CRITICAL SHEAR SECTION"}}
     metric = "φVn kN" if check_name == "Shear" else "φTn kN-m"
@@ -9127,7 +9152,8 @@ def _beam_uls_igird_station_capacity_diagram_dataframe(
             demand["__Capacity diagram"] = True
             result = evaluate(state, demand, strength_route=strength_route)
         note = "Capacity diagram only; the original threshold/design decision is unchanged."
-        source_type = "Shared physical endpoint — diagram only" if source.get("__Shared CSI endpoint") else "Original station actions — capacity diagram only"
+        source_type = ("Interpolated actions at geometry change — diagram only" if source.get("__Geometry sample", False) == True else
+            "Shared physical endpoint — diagram only" if source.get("__Shared CSI endpoint") else "Original station actions — capacity diagram only")
         rows.append({**result, "Case": key[0], "Governing x": _format_beam_uls_x(key[1]),
             "Station type": "CAPACITY DIAGRAM", "Status": "DIAGRAM ONLY", "D/C value": float("nan"),
             "Utilization": "-", "Diagram only": True,
@@ -9481,6 +9507,11 @@ def _beam_uls_shear_calculation_trace_dataframe(row: Mapping[str, object] | None
 
     rows: list[dict[str, str]] = []
     de = _beam_uls_float(row.get("de mm"))
+    if "Section region" in row:
+        rows.append({"Step": "0 · Local precast geometry", "Equation / substitution":
+            f"x={row.get('Governing x')}; {row.get('Section region')}; solid fill={row.get('Solid fill fraction')}; bv={n(bw,1)} mm",
+            "Result": str(row.get("End section acceptance", "REVIEW")),
+            "Code basis": "ENDSECTION18 station geometry; end/taper D-region verification remains separate"})
     lever = _beam_uls_float(row.get("C-T lever arm mm"))
     h = _beam_uls_float(row.get("h mm"))
     if all(math.isfinite(v) for v in [de, lever, h, dv]):
@@ -9646,6 +9677,11 @@ def _beam_uls_torsion_calculation_trace_dataframe(row: Mapping[str, object] | No
 
     rows: list[dict[str, str]] = []
     if all(math.isfinite(v) for v in [fc, fpc, k_factor, k_max, acp, pcp, tcr]):
+        if "Section region" in row:
+            rows.append({"Step": "0 · Local precast geometry", "Equation / substitution":
+                f"x={row.get('Governing x')}; {row.get('Section region')}; solid fill={row.get('Solid fill fraction')}; Acp={n(acp,1)} mm²; Pcp={n(pcp,1)} mm",
+                "Result": str(row.get("End section acceptance", "REVIEW")),
+                "Code basis": "ENDSECTION18 station geometry; C5.7.3.6.2; end/taper detailing remains separate"})
         rows.append({
             "Step": "1 · Prestress / axial adjustment and K gate",
             "Equation / substitution": (
@@ -10008,6 +10044,14 @@ def _beam_uls_igird_torsion_zone_source(
         }
     legacy = _beam_uls_igird_torsion_settings(state)
     legacy_ph = _beam_uls_float(legacy.get("ph_mm"))
+    if igird_end_sections.enabled(state) and bool(legacy.get("closed_loop_confirmed")):
+        geometry = _beam_uls_get_state_value(state, "section_geometry")
+        if isinstance(geometry, Mapping):
+            geometry = SectionGeometry.model_validate(geometry)
+        diameter = _beam_uls_float(zone.get("Diameter_mm"))
+        derived = derive_closed_hoop_centerline(geometry, clear_cover_mm=float(legacy["clear_cover_mm"]),
+            bar_diameter_mm=diameter, centerline_offset_override_mm=legacy.get("hoop_centerline_offset_override_mm"))
+        legacy_ph = float(derived.ph_mm) if derived.ready and derived.ph_mm is not None else float("nan")
     if bool(legacy.get("closed_loop_confirmed", False)) and math.isfinite(legacy_ph) and legacy_ph > 0.0:
         return {
             "ready": True, "zone": zone, "zone_name": zone_name, "use_for_torsion": True,
@@ -10285,6 +10329,7 @@ def _beam_uls_torsion_detailing_gate(
         "notes": "; ".join(notes),
     }
 
+@igird_station_section.station_check("Torsion")
 def _beam_uls_igird_torsion_result_for_row(
     state: Mapping[str, object],
     row: Mapping[str, object],
@@ -10966,6 +11011,8 @@ def _beam_uls_torsion_check_dataframe(
                 else "-",
             )
         rows.append(result)
+    if igird_end_sections.enabled(state):
+        columns += igird_station_section.TRACE_COLUMNS
     df = pd.DataFrame(rows, columns=columns)
     if df.empty:
         return df
@@ -12465,6 +12512,7 @@ def _beam_uls_combined_vt_should_plot_trace(plot_df: pd.DataFrame, column: str) 
             return False
     return True
 
+@igird_station_section.station_figure("vt_df")
 def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *, code_label: str, member_length_m: float | None = None) -> go.Figure:
     fig = go.Figure()
     if vt_df is None or vt_df.empty:
@@ -12516,9 +12564,11 @@ def _make_beam_uls_combined_vt_utilization_figure(vt_df: pd.DataFrame | None, *,
                             marker=dict(_BEAM_ULS_UTIL_MARKER_STYLE.get(column, {"size": 7})),
                             customdata=[[str(case_name), str(row.get("Zone") or "-"),
                                          _beam_uls_float(row.get("Spacing mm"))]
+                                        + ([str(row.get("Section region") or "-")] if "Section region" in case_df.columns else [])
                                         for _, row in case_df.iterrows()],
                             hovertemplate=f"{trace_name}<br>x=%{{x:.3f}} m<br>D/C=%{{y:.3f}}<br>%{{customdata[0]}}"
                                 + ("<br>Zone=%{customdata[1]} · s=%{customdata[2]:.1f} mm" if is_uls7 else "")
+                                + ("<br>Section=%{customdata[3]}" if "Section region" in case_df.columns else "")
                                 + "<extra></extra>",
                         )
                     )
@@ -13278,6 +13328,7 @@ def _polish_igird_uls_flexure_legend(fig: go.Figure) -> go.Figure:
     return fig
 
 
+@igird_station_section.station_figure("flexure_preview_df")
 def _make_beam_uls_flexure_preview_figure(
     active_df: pd.DataFrame,
     flexure_preview_df: pd.DataFrame | None,
@@ -13385,6 +13436,7 @@ def _make_beam_uls_flexure_preview_figure(
     return fig
 
 
+@igird_station_section.station_figure("shear_check_df")
 def _make_beam_uls_shear_capacity_figure(
     active_df: pd.DataFrame,
     shear_check_df: pd.DataFrame | None,
@@ -13787,6 +13839,7 @@ def _polish_igird_uls_torsion_legend(fig: go.Figure) -> go.Figure:
     return fig
 
 
+@igird_station_section.station_figure("torsion_check_df")
 def _make_beam_uls_torsion_capacity_figure(
     active_df: pd.DataFrame,
     torsion_check_df: pd.DataFrame | None,
@@ -14108,6 +14161,11 @@ def _igird_interface_bvi_mm(state: Mapping[str, object], settings: Mapping[str, 
     if str(settings.get("width_mode")) == _IGIRDER_INTERFACE_WIDTH_MANUAL:
         value = _beam_uls_float(settings.get("bvi_override_mm"))
         return (float(value), "Manual project override") if math.isfinite(value) and value > 0.0 else (float("nan"), "Manual override is not defined")
+    if igird_station_section.WEB_GEOMETRY in state:
+        polygon = to_shapely_polygon(state[igird_station_section.WEB_GEOMETRY])
+        minx, _, maxx, ymax = polygon.bounds
+        contact = polygon.intersection(LineString([(minx-1,ymax),(maxx+1,ymax)]))
+        return float(contact.length), "Auto from local precast/deck contact width"
     b1 = _beam_uls_float(params.get("B1_mm"))
     return (float(b1), "Auto from I-Girder top flange B1") if math.isfinite(b1) and b1 > 0.0 else (float("nan"), "I-Girder top flange B1 is unavailable")
 
@@ -14224,6 +14282,15 @@ def _igird_interface_shear_dataframe(
     for _, source_row in supported_df.iterrows():
         row = source_row.to_dict()
         x_m = _beam_uls_float(row.get("Station x (m)"))
+        local_state = state
+        local_error = None
+        if igird_end_sections.enabled(state):
+            try:
+                local_state = igird_station_section.at_station(state, x_m)
+                bvi_mm, bvi_basis = _igird_interface_bvi_mm(local_state, settings)
+            except (ValueError, TypeError, KeyError) as exc:
+                local_error = str(exc)
+                bvi_mm, bvi_basis = float("nan"), str(exc)
         vu_kN = abs(_beam_uls_float(row.get("Vuy")))
         case = str(row.get("Case Name") or "ULS")
         analysis_input, input_messages = _beam_uls_flexure_analysis_input_for_station(
@@ -14290,9 +14357,9 @@ def _igird_interface_shear_dataframe(
             and anchored
             and zone is not None
         )
-        if analysis_input is None or not math.isfinite(dv_mm) or dv_mm <= 0.0:
+        if local_error or analysis_input is None or not math.isfinite(dv_mm) or dv_mm <= 0.0:
             status = "REVIEW"
-            reason = "Tension-steel centroid / dv unavailable"
+            reason = local_error or "Tension-steel centroid / dv unavailable"
         elif zone is None:
             status = "REVIEW"
             reason = "No active stirrup zone covers this station"
@@ -14315,7 +14382,7 @@ def _igird_interface_shear_dataframe(
             status = "PASS"
             reason = "Strength and minimum interface-reinforcement gates pass"
         rows.append(
-            {
+            igird_station_section.annotate({
                 "Station x (m)": x_m,
                 "Case": case,
                 "Status": status,
@@ -14352,7 +14419,7 @@ def _igird_interface_shear_dataframe(
                 "Density basis": density_note,
                 "Reason": reason,
                 "Notes": " | ".join(input_messages[:2]),
-            }
+            }, local_state, check_name="Interface Shear")
         )
     if not anchored:
         messages.append("Interface stirrup strength credit is withheld until the user confirms the stirrups cross the interface and are fully developed/anchored in the CIP deck.")
@@ -14494,6 +14561,8 @@ def _beam_uls_final_composite_preparation(
     composite_state["section_parameters"] = params
     composite_state["section_geometry"] = prep.geometry
     composite_state["concrete_material"] = prep.concrete_material
+    if igird_end_sections.enabled(state):
+        composite_state[igird_station_section.BASE_GEOMETRY] = state.get(igird_station_section.BASE_GEOMETRY, geometry)
     composite_state["_igird_flexure_precast_depth_mm"] = _beam_uls_section_bounds(geometry)[3] - _beam_uls_section_bounds(geometry)[1]
     composite_state["_igird_flexure_precast_fc_MPa"] = float(concrete.fc_MPa)
 

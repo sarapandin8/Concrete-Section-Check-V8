@@ -1,0 +1,16 @@
+{
+  "records": [
+    {
+      "width": 1440,
+      "inputs_and_section_preview_visible": true,
+      "panel_fits_viewport": true
+    },
+    {
+      "width": 1100,
+      "inputs_and_section_preview_visible": true,
+      "panel_fits_viewport": true
+    }
+  ],
+  "slider_changes_actual_polygon": true,
+  "javascript_errors": []
+}

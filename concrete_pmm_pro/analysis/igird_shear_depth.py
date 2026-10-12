@@ -19,7 +19,8 @@ RESULT_VERSION = "IGIRDER.DECKULS1.developed-composite-depth"
 
 def developed_shear_depth(context: SectionEquilibrium, families: tuple, *,
         reference: Mapping, x_m: float, span_m: float, nu_n: float,
-        precast_depth_mm: float, ordinary_settings: Mapping, bar_factors=None, bar_source_ready=True) -> dict:
+        precast_depth_mm: float, ordinary_settings: Mapping, bar_factors=None, bar_source_ready=True,
+        ordinary_x_m: float | None = None, ordinary_span_m: float | None = None) -> dict:
     caps, transfer, trace = [], [], []
     for i, family in enumerate(families):
         element = family.element
@@ -31,7 +32,8 @@ def developed_shear_depth(context: SectionEquilibrium, families: tuple, *,
         transfer.append(limit["transfer_factor"])
         trace.append({"Family": family.name, "bonded_distance_mm": family.bonded_distance_mm(x_m),
             "Count": element.count, **limit})
-    ordinary = ordinary_development_factor(ordinary_settings, x_m=x_m, span_m=span_m) if context.bars else 1.0
+    ordinary = ordinary_development_factor(ordinary_settings, x_m=x_m if ordinary_x_m is None else ordinary_x_m,
+        span_m=span_m if ordinary_span_m is None else ordinary_span_m) if context.bars else 1.0
     factors = list(bar_factors) if bar_factors is not None else [ordinary or 0.0] * len(context.bars)
     result = context.solve(nu_n, strand_caps=caps, transfer_factors=transfer, bar_factors=factors)
     forces = context.force_resultants(result, bar_factors=factors)

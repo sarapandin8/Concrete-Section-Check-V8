@@ -3740,6 +3740,10 @@ def render_section_builder() -> None:
         label_mode, params = _render_geometry_parameters_workspace(preset, material_assignment)
 
     geometry, dimensions, validation = _build_geometry(preset, params)
+    if (geometry is not None and validation.is_valid and _is_parametric_i_girder(preset)
+            and is_bridge_beam_girder_workflow(settings)):
+        from concrete_pmm_pro.ui.igird_end_sections import render_inputs
+        render_inputs(params, geometry)
 
     if geometry is not None and validation.is_valid:
         _store_valid_section_state(preset, params, geometry, dimensions)

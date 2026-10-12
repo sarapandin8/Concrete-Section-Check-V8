@@ -16,7 +16,8 @@ from concrete_pmm_pro.code_checks.aashto_lrfd import (
     aashto_general_shear_parameters, aashto_min_transverse_avs_mm2_per_mm,
     aashto_prestressed_shear_phi, aashto_torsion_transverse_design_fy_mpa, aashto_shear_transverse_design_fy_mpa,
 )
-from concrete_pmm_pro.ui import igird_shear_section
+from concrete_pmm_pro.ui import igird_shear_section, igird_station_section
+from concrete_pmm_pro.analysis import igird_end_sections
 from concrete_pmm_pro.core.aashto_units import aashto_sqrt_fc_stress_mpa, ksi_to_mpa
 
 
@@ -60,6 +61,7 @@ def check_dataframe(state, active_df, *, strength_route) -> pd.DataFrame:
     return apply_source_gate(pd.DataFrame(rows), active_df)
 
 
+@igird_station_section.station_check("Shear + Torsion")
 def _check_row(state, row, *, strength_route, face, source_index, nominal_cache, ambiguous_case):
     from concrete_pmm_pro.ui import analysis_page as ap
     from concrete_pmm_pro.analysis.girder_axial_convention import axial_trace
@@ -174,7 +176,8 @@ def _check_row(state, row, *, strength_route, face, source_index, nominal_cache,
     if veff_guard_dc > 1+1e-9:
         notes.append("Additional conservative Veff compression screen exceeds 1.0; engineering review is retained. This screen is not Eq. 5.7.3.3-2 and is excluded from code-component D/C.")
     dev_settings = development_settings(state)
-    dev_factor = ordinary_development_factor(dev_settings, x_m=x, span_m=span) if inp.rebars else 1.0
+    bond_x, bond_span = igird_end_sections.development_coordinates(state, x, span)
+    dev_factor = ordinary_development_factor(dev_settings, x_m=bond_x, span_m=bond_span) if inp.rebars else 1.0
     result.update({"Ordinary development factor": dev_factor if dev_factor is not None else float("nan"),
         "Ordinary ld mm": dev_settings["development_length_mm"],
         "Development status": "PASS" if dev_factor is not None else "REVIEW"})
@@ -355,6 +358,10 @@ def calculation_trace(row: Mapping | None) -> pd.DataFrame:
         ("Pretensioned steel condition", "Aps_developed fps > ΣAs_developed fy", f"{n('Aps fps kN')} > {n('As fy kN')} kN", str(row.get('Prestress dominance status') or '-'), "5.7.3.5"),
         ("Coverage and detailing", "Physical zone; closed hoop/hooks; s≤smax; corner and perimeter longitudinal confirmation", f"Zone={row.get('Zone','-')}; s={n('Spacing mm')} mm; smax={n('s max mm')} mm", f"Coverage={row.get('Coverage status','-')}; detailing={row.get('Detailing status','-')}; corner={row.get('Corner longitudinal status','-')}", "5.7.2.5/.6 / 5.7.3.6.3"),
     ]
+    if "Section region" in row:
+        rows.insert(0, ("Local precast geometry", "I / filled solid end / linear side taper at the imported station",
+            f"x={row.get('Governing x')}; {row.get('Section region')}; bv={n('bw mm')} mm; Ao={n('Ao mm2')} mm²; ph={n('ph mm')} mm",
+            str(row.get("End section acceptance", "REVIEW")), "ENDSECTION18; C5.7.3.6.2; D-region/detailing verification remains separate"))
     return pd.DataFrame(rows, columns=["Step","Equation / route","Substitution / units","Result / branch","Code basis"])
 
 

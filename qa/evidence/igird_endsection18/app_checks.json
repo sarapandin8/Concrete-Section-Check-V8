@@ -1,0 +1,41 @@
+{
+  "builder_inputs_preview_overlap_and_json_roundtrip": true,
+  "native_two_girders_640_rows_all_six_actions_preserved": true,
+  "member_results": [
+    {
+      "member": "BOBJ1 / Interior Girder 2",
+      "rows": 320,
+      "regions": {
+        "I SECTION": 272,
+        "LEFT SOLID END": 24,
+        "RIGHT SOLID END": 24
+      },
+      "maximum_numeric_dc": 1.7493303688189847,
+      "uniform_maximum_numeric_dc": 1.7493303688189847,
+      "statuses": {
+        "REVIEW": 229,
+        "FAIL": 91
+      },
+      "body_numerically_unchanged": true
+    },
+    {
+      "member": "BOBJ1 / Left Exterior Girder",
+      "rows": 320,
+      "regions": {
+        "I SECTION": 272,
+        "LEFT SOLID END": 24,
+        "RIGHT SOLID END": 24
+      },
+      "maximum_numeric_dc": 1.3750591367708638,
+      "uniform_maximum_numeric_dc": 1.3750591367708638,
+      "statuses": {
+        "REVIEW": 256,
+        "FAIL": 64
+      },
+      "body_numerically_unchanged": true
+    }
+  ],
+  "summary_report_do_not_recalculate": true,
+  "profile_edit_invalidates_results_without_auto_calculation": true,
+  "manual_ui_member_calculations": 2
+}
