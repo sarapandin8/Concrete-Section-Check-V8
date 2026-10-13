@@ -55,6 +55,7 @@ def render_import(*, state_key, editor_key, key_prefix, force_unit, moment_unit)
     if receipt:
         st.success('Last successful import: '+receipt)
         st.caption('Analysis calculates every imported girder separately. Use Calculate to update results. Section and reinforcement settings remain the current shared model.')
+    _render_saved_source_readiness()
     with st.expander('Templates and column mapping', expanded=False):
         st.dataframe(pd.DataFrame([
             ['Distance','Station x (m)'],['M3','Mux'],['V2','Vuy'],['T','Tu'],
@@ -67,6 +68,65 @@ def render_import(*, state_key, editor_key, key_prefix, force_unit, moment_unit)
 def _upload_signature(files):
     identity = sorted((f.name,hashlib.sha256(f.getvalue()).hexdigest()) for f in files)
     return hashlib.sha256(json.dumps(identity,separators=(',',':')).encode()).hexdigest()
+
+
+def _native_source_identity(row):
+    """Identify an original file row without treating its force sign as proof."""
+    from concrete_pmm_pro.io.girder_csi_import import source_info
+    info = source_info(row) or {}
+    digest = info.get('source_sha256')
+    if not digest:
+        return None
+    return (digest, info.get('source_file'), info.get('sheet'), info.get('row'),
+            info.get('bridge_object'), info.get('girder'), info.get('case'),
+            info.get('step'), info.get('location_type'), info.get('occurrence'))
+
+
+def _native_upload_already_stored(imported, bank):
+    """A reread of the same file must preserve the committed source contract.
+
+    Row identities come from the actual saved load bank, so this also works
+    after loading a Project JSON without the session-only upload signature.
+    No contract is transferred to a new file or a missing source row.
+    """
+    if imported.empty or bank.empty:
+        return False
+    expected = [_native_source_identity(row) for _, row in imported.iterrows()]
+    saved = {_native_source_identity(row) for _, row in bank.iterrows()}
+    return all(identity is not None and identity in saved for identity in expected)
+
+
+def saved_source_readiness(bank):
+    """Expose what Analysis will actually consume, not uncommitted controls."""
+    from concrete_pmm_pro.io.girder_csi_import import source_info
+    from concrete_pmm_pro.ui.igird_combined_vt import concurrent_source_allowed
+    records = []
+    if bank.empty or 'Girder' not in bank:
+        return pd.DataFrame()
+    for member, rows in bank.groupby('Girder', sort=False):
+        allowed = rows.apply(lambda row: concurrent_source_allowed(source_info(row)), axis=1)
+        records.append({'Girder': member, 'Saved rows': len(rows),
+            'Concurrent rows ready for V+T': int(allowed.sum()),
+            'Source-blocked rows': int((~allowed).sum())})
+    return pd.DataFrame(records)
+
+
+def _render_saved_source_readiness():
+    from concrete_pmm_pro.io.girder_load_bank import BANK_KEY
+    readiness = saved_source_readiness(pd.DataFrame(st.session_state.get(BANK_KEY, [])))
+    if readiness.empty:
+        return
+    st.markdown('**Saved force-vector source — used by Analysis**')
+    st.dataframe(readiness, hide_index=True, use_container_width=True)
+    blocked = int(readiness['Source-blocked rows'].sum())
+    if blocked:
+        st.warning(f'{blocked} saved row(s) remain source-blocked for V+T. '
+            'In Advanced import settings, choose the actual source type, confirm simultaneous '
+            'factored actions and enter the source basis, then press Replace entire girder collection. '
+            'Selecting controls alone does not change the saved loads.')
+    else:
+        st.success('The saved source contract is concurrent for every row. Go to Analysis and '
+            'Calculate Shear + Torsion; section and reinforcement checks are reviewed separately.')
 
 
 def _native_preview(files):
@@ -141,11 +201,16 @@ def _apply_native_upload(staged, files, *, state_key, editor_key, key_prefix, fo
         for issue in issues: st.error(issue)
         return
     signature = _upload_signature(files)
-    if signature != st.session_state.get(key_prefix+'_auto_import_signature'):
+    bank = pd.DataFrame(st.session_state.get(BANK_KEY, []))
+    already_stored = _native_upload_already_stored(imported, bank)
+    if signature != st.session_state.get(key_prefix+'_auto_import_signature') and not already_stored:
         _commit_import(imported,current=pd.DataFrame(st.session_state.get(BANK_KEY,[])),append=False,
             state_key=state_key,editor_key=editor_key,key_prefix=key_prefix,file_names=[f.name for f in files])
         st.session_state[key_prefix+'_auto_import_signature'] = signature
         st.rerun()
+    # Advanced import, project loading and widget cleanup must never reapply an
+    # unverified preview over the saved correspondence rows for this file.
+    st.session_state[key_prefix+'_auto_import_signature'] = signature
     st.markdown('**Loads assigned by Girder**')
     summaries = []
     for member,frame in imported.groupby('Girder',sort=False):
@@ -201,6 +266,9 @@ def _render_batch(uploaded, *, state_key, editor_key, key_prefix, force_unit, mo
             selected = st.multiselect('Worksheets to import', choices, default=preferred or choices[:1], key=key+'_sheets')
             base = st.text_input('Factored ULS combination name (if OutputCase is absent)', value=Path(uploaded_file.name).stem, key=key+'_case')
             mode, confirmed, evidence = _source_controls(key)
+            if mode != 'unverified' and (not confirmed or not str(evidence).strip()):
+                issues.append(uploaded_file.name+': confirm simultaneous factored actions and '
+                    'enter the source basis before applying this source type.')
             if not selected:
                 issues.append(uploaded_file.name+': select at least one worksheet')
             assigned_members = {}
@@ -319,6 +387,7 @@ def _render_batch(uploaded, *, state_key, editor_key, key_prefix, force_unit, mo
     if replace or append:
         _commit_import(imported,current=current,append=append,state_key=state_key,editor_key=editor_key,
             key_prefix=key_prefix,file_names=[f.name for f in uploaded])
+        st.session_state[key_prefix+'_auto_import_signature'] = _upload_signature(uploaded)
         st.rerun()
 
 
