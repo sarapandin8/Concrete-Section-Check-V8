@@ -20,6 +20,10 @@ def calculated_state():
     state = {}
     apply_project_to_session_state(project_from_json(Path('qa/evidence/igird_vtqa1/hypothetical_verified_input_qa.json').read_text()), state)
     state.update(review_model())
+    from concrete_pmm_pro.io.girder_csi_import import tag_app_source
+    state['igird_uls_member_bank'] = tag_app_source(state['igird_uls_member_bank'],
+        source_name='Hypothetical static report QA', sheet_name='QA', source_mode='static',
+        concurrency_confirmed=True, evidence='Prescribed simultaneous static QA vectors')
     activate_member(state, 'Exterior Girder')
     route = ap._beam_uls_strength_route_from_state(state, is_bridge=True, is_building=False)
     state[mr.CACHE_KEY] = {}

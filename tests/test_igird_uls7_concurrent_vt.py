@@ -45,6 +45,11 @@ def check(state=None, **actions):
     state = state or ready_state()
     demand = _demand(x=actions.pop("x",10.0), mux=actions.pop("mux",1000.0),
                 vu=actions.pop("vu",200.0),tu=actions.pop("tu",200.0), **actions)
+    # This fixture defines simultaneous static actions, not CSI envelope results.
+    from concrete_pmm_pro.io.girder_csi_import import tag_app_source
+    demand = tag_app_source(demand, source_name="ULS7 hypothetical static QA", sheet_name="QA",
+        source_mode="static", concurrency_confirmed=True,
+        evidence="Analytically specified simultaneous static action vector")
     # Explicitly verified hypothetical interface detailing for this ready QA
     # model. Compute its actual independent check; never fabricate a PASS.
     state[ap._IGIRDER_INTERFACE_SHEAR_SETTINGS_KEY] = {"stirrups_cross_and_anchored":True}

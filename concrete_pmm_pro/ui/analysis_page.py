@@ -5597,7 +5597,7 @@ def _column_pier_combined_vt_ranked_dataframe(vt_df: pd.DataFrame | None) -> pd.
     df["__dc"] = pd.to_numeric(df.get("Overall D/C value"), errors="coerce")
     df["__tu"] = pd.to_numeric(df.get("Tu kN-m"), errors="coerce").abs()
     df["__vu"] = pd.to_numeric(df.get("Vu kN"), errors="coerce").abs()
-    status_priority = {"FAIL": 5, "DATA REQUIRED": 4, "REVIEW": 3, "PASS": 2}
+    status_priority = {"FAIL": 5, "SOURCE BLOCKED": 4.5, "DATA REQUIRED": 4, "REVIEW": 3, "PASS": 2}
     df["__status_priority"] = df.get("Status", pd.Series(index=df.index, dtype=object)).map(lambda value: status_priority.get(str(value), 1))
     return df.sort_values(["__status_priority", "__dc", "__tu", "__vu"], ascending=[False, False, False, False], kind="stable")
 
@@ -12270,7 +12270,7 @@ def _beam_uls_governing_combined_vt_row(vt_df: pd.DataFrame | None) -> dict[str,
         df["__dc"] = df["__dc"].fillna(available_dc)
     tu_source = df["Tu kN-m"] if "Tu kN-m" in df.columns else pd.Series([float("nan")] * len(df), index=df.index)
     df["__tu"] = pd.to_numeric(tu_source, errors="coerce").abs()
-    status_priority = {"FAIL": 5, "DATA REQUIRED": 4, "REVIEW": 3, "PASS": 2, "PASS — REVIEW": 2, "BOUNDARY SKIPPED": 0, "NOT APPLICABLE": 0, "NO DEMAND": 0}
+    status_priority = {"FAIL": 5, "SOURCE BLOCKED": 4.5, "DATA REQUIRED": 4, "REVIEW": 3, "PASS": 2, "PASS — REVIEW": 2, "BOUNDARY SKIPPED": 0, "NOT APPLICABLE": 0, "NO DEMAND": 0}
     df["__status_priority"] = df.get("Status", pd.Series(index=df.index, dtype=object)).map(lambda value: status_priority.get(str(value), 1))
     idx = df.sort_values(["__status_priority", "__dc", "__tu"], ascending=[False, False, False]).index[0]
     return vt_df.loc[idx].drop(labels=["__dc", "__tu", "__status_priority"], errors="ignore").to_dict()

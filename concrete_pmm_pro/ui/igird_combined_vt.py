@@ -28,23 +28,66 @@ def _number(v) -> float:
         return float("nan")
 
 
+def concurrent_source_allowed(info) -> bool:
+    """A case name or a Max/Min row is not evidence of simultaneous actions."""
+    if not isinstance(info, Mapping):
+        return False
+    return (info.get("kind") == "CONCURRENT"
+            and info.get("concurrency_confirmed") is True
+            and bool(str(info.get("evidence") or "").strip())
+            and (info.get("source_mode") == "correspondence"
+                 or (info.get("source_mode") == "static"
+                     and str(info.get("step") or "").lower() not in {"max", "min"})))
+
+
+def blocked_source_row(row, source_index):
+    from concrete_pmm_pro.io.girder_csi_import import source_info
+    info = source_info(row) or {}
+    reason = ("V+T not calculated: simultaneous Mu/Nu/Vu/Tu is unverified. "
+              "Import corresponding actions for the same girder, section face and loading state; "
+              "a shared case name or Max/Min envelope is insufficient.")
+    result = {"Check": "Shear + Torsion", "Status": "SOURCE BLOCKED",
+              "Calculation status": "NOT CALCULATED", "Station type": "LOAD STATION",
+              "Governing x": f"{_number(row.get('Station x (m)')):.3f} m",
+              "Case": str(row.get("Case Name") or "-"), "Source row": source_index,
+              "Source coupling": str(info.get("kind") or "UNVERIFIED") + " — BLOCKED",
+              "Source file": info.get("source_file", ""), "Source Excel row": info.get("row"),
+              "Source OutputCase": info.get("case", ""), "Source StepType": info.get("step", ""),
+              "Source Girder": info.get("girder", ""), "Source LocType": info.get("location_type", ""),
+              "Review reason": reason, "Notes": reason, "Result version": RESULT_VERSION}
+    for key in ("Overall D/C value", "Stress D/C value", "Transverse D/C value",
+                "Longitudinal D/C value", "Spacing D/C"):
+        result[key] = float("nan")
+    for key in ("Stress status", "Transverse status", "Longitudinal status", "Development status"):
+        result[key] = "NOT CALCULATED"
+    # Retain raw actions as source evidence only, never computed demands/capacities.
+    for field in ("Mux", "Nu", "Vuy", "Tu", "Muy", "Vux"):
+        unit = "kN-m" if field in {"Mux", "Tu", "Muy"} else "kN"
+        result[f"Source {field} {unit}"] = _number(row.get(field))
+    return result
+
+
 def check_dataframe(state, active_df, *, strength_route) -> pd.DataFrame:
     from concrete_pmm_pro.ui import analysis_page as ap
     if active_df.empty:
         return pd.DataFrame()
+    # Gate original physical rows BEFORE geometry, interpolation or any solver.
+    # Correspondence at adjacent stations need not use the same vehicle placement.
+    from concrete_pmm_pro.io.girder_csi_import import source_info
+    allowed = active_df.apply(lambda row: concurrent_source_allowed(source_info(row)), axis=1)
+    blocked_rows = [blocked_source_row(row, i) for i, row in active_df.loc[~allowed].iterrows()]
+    prepared = active_df.loc[allowed].copy()
+    if prepared.empty:
+        return pd.DataFrame(blocked_rows)
     if igird_shear_section.RUNTIME_KEY not in state:
-        state = {**state, igird_shear_section.RUNTIME_KEY: {"active_df": active_df}}
-    # Keep every physical concurrent row (including both support faces).
-    # Supplemental critical rows are only interpolated when each case has
-    # unambiguous action vectors at every source x; no separate envelopes.
-    prepared = ap._beam_uls_combined_vt_demand_rows(active_df, state, strength_route=strength_route)
+        state = {**state, igird_shear_section.RUNTIME_KEY: {"active_df": prepared}}
     ambiguous_cases = set()
     for case, group in active_df.groupby("Case Name", sort=False):
         for _, same_x in group.groupby("Station x (m)", sort=False):
             if len(same_x[["Mux", "Nu", "Vuy", "Tu"]].drop_duplicates()) > 1:
                 ambiguous_cases.add(str(case))
     nominal_cache = {}
-    rows = []
+    rows = list(blocked_rows)
     for i, source in prepared.iterrows():
         kind = str(source.get("__VT station type") or "LOAD STATION")
         if kind == "DIAGRAM BOUNDARY":
@@ -65,6 +108,9 @@ def check_dataframe(state, active_df, *, strength_route) -> pd.DataFrame:
 def _check_row(state, row, *, strength_route, face, source_index, nominal_cache, ambiguous_case):
     from concrete_pmm_pro.ui import analysis_page as ap
     from concrete_pmm_pro.analysis.girder_axial_convention import axial_trace
+    from concrete_pmm_pro.io.girder_csi_import import source_info
+    if not concurrent_source_allowed(source_info(row)):
+        return blocked_source_row(row, source_index)
     x, mu, _raw_nu, vu, tu = [_number(row.get(k)) for k in ["Station x (m)", "Mux", "Nu", "Vuy", "Tu"]]
     nu_trace = axial_trace(row, state)
     nu = nu_trace["Nu kN"]
@@ -444,7 +490,7 @@ def render_workspace(df: pd.DataFrame | None, *, code_label: str, member_name: s
         st.warning("Additional conservative Veff compression screen requires review. Its ratio is shown separately in Calculation trace and is excluded from code-component D/C; member acceptance remains REVIEW.")
     dc_columns = [c for c in ("Stress D/C value", "Transverse D/C value", "Longitudinal D/C value") if c in df]
     finite_rows = df[dc_columns].apply(lambda column: pd.to_numeric(column, errors="coerce").map(lambda v: pd.notna(v) and math.isfinite(float(v)))).any(axis=1) if dc_columns else pd.Series(False, index=df.index)
-    st.caption(f"Calculation completed: {len(df)} concurrent check rows; {int(finite_rows.sum())} rows with finite D/C. Original source rows and acceptance gates are retained.")
+    st.caption(f"Source rows reviewed: {len(df)}; {int(df['Status'].eq('SOURCE BLOCKED').sum())} blocked before calculation; {int(finite_rows.sum())} rows with finite D/C.")
     st.dataframe(pd.DataFrame([{ 'Section basis':gov.get('Section basis','SOURCE REQUIRED'),
         'Composite action':gov.get('Composite action status','REVIEW'), 'Source vectors':gov.get('Source coupling','USER TABLE — VERIFY'),
         'h (mm)':gov.get('h mm'), 'dv (mm)':gov.get('dv mm'), 'Region':gov.get('Support region','REVIEW')}]),
@@ -459,7 +505,7 @@ def render_workspace(df: pd.DataFrame | None, *, code_label: str, member_name: s
             render_combined_chart(df, code_label=code_label, member_name=member_name,selected_case=selected_case)
         else:
             st.info("Calculation completed, but no finite D/C can be drawn yet. Complete the required inputs listed above, then press Calculate Shear + Torsion again.")
-    missing = df.loc[df["Status"].isin(["REVIEW","DATA REQUIRED"]) | df.get("Calculation status",pd.Series(index=df.index,dtype=object)).eq("PARTIAL")]
+    missing = df.loc[df["Status"].isin(["REVIEW","DATA REQUIRED","SOURCE BLOCKED"]) | df.get("Calculation status",pd.Series(index=df.index,dtype=object)).eq("PARTIAL")]
     uncovered = df.loc[df.get("Coverage status",pd.Series(index=df.index,dtype=object)).eq("REQUIRED")]
     if not uncovered.empty:
         st.warning(f"Transverse coverage is incomplete at {len(uncovered)} check row(s), even if another covered station governs a strength failure.")
@@ -484,6 +530,7 @@ def render_workspace(df: pd.DataFrame | None, *, code_label: str, member_name: s
     with st.expander("Concurrent V+T — detailed engineering audit",expanded=False):
         from concrete_pmm_pro.ui.result_table_display import result_table_for_display
         st.dataframe(result_table_for_display(df),use_container_width=True,hide_index=True)
+    st.caption("V+T uses imported physical stations only. Export verified concurrent vectors at critical shear sections; correspondence vectors at adjacent stations are not interpolated.")
     st.caption("Scope: uniaxial solid pretensioned I-Girder sectional V+T with concurrent imported actions. Nominal fps uses the calculated composite section; composite-action acceptance is shown separately; ordinary bars remain the same physical source used by Flexure. Vp=0 and λduct=1 for straight pretensioned strands. Negative composite requires defined developed deck layers; biaxial shear/flexure, fatigue, bearing/D-regions, hook/lap execution and shop-drawing verification remain separate. Missing continuity/development confirmation withholds PASS.")
 
 
@@ -493,7 +540,7 @@ def source_readiness_dataframe(df: pd.DataFrame | None) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame(columns=columns)
     partial = df.get("Calculation status", pd.Series(index=df.index, dtype=object)).eq("PARTIAL")
-    unresolved = df.loc[df["Status"].isin(["DATA REQUIRED", "REVIEW"]) | partial].copy(deep=True)
+    unresolved = df.loc[df["Status"].isin(["DATA REQUIRED", "REVIEW", "SOURCE BLOCKED"]) | partial].copy(deep=True)
     groups = {}
     for _, row in unresolved.iterrows():
         reason = str(row.get("Review reason") or "").strip()
@@ -529,7 +576,7 @@ def source_readiness_dataframe(df: pd.DataFrame | None) -> pd.DataFrame:
             action = "Verify and confirm the actual corner bars/strands and longitudinal perimeter distribution."
         elif "concurren" in lower or "envelope" in lower:
             location = "Loads → Final ULS"
-            action = "Use corresponding concurrent FEA action rows for final coupled acceptance; Max/Min bounds retain numerical screening only."
+            action = "Import verified corresponding FEA actions. Envelope/unverified rows are blocked before V+T calculation; no design D/C is produced."
         stations = sorted(group["stations"], key=lambda s: _number(s.replace(" m", "")))
         station_text = ", ".join(stations[:6]) + (f" … ({len(stations)} positions)" if len(stations) > 6 else "")
         rows.append({"Required source / review":issue, "Check rows":group["count"], "Stations":station_text,

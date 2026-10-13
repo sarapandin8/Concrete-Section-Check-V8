@@ -3776,6 +3776,8 @@ def _results_beam_uls_capacity(check_name: str, row: Mapping[str, object]) -> st
 def _results_beam_uls_action(check_name: str, status: str, row: Mapping[str, object] | None = None) -> str:
     label = status.upper()
     row_map: Mapping[str, object] = row or {}
+    if check_name == "Shear + Torsion" and row_map.get("Calculation status") == "NOT CALCULATED" and "BLOCKED" in label:
+        return str(row_map.get("Review reason") or "Import verified concurrent actions before calculating V+T.")
     if check_name == "Shear + Torsion" and ("SOURCE BLOCKED" in label or "BLOCKED" in label):
         return "Resolve source Shear/Torsion FAIL before accepting V+T interaction. Interaction D/C is informational until source gates pass."
     if check_name == "Shear + Torsion" and "DATA REQUIRED" in label:
@@ -3929,9 +3931,12 @@ def _results_igird_uls_summary_rows(state: object, cache: dict[str, dict[str, ob
     required_rows = list(rows)
     calculated = [row for row in required_rows if bool(row.get("__calculated"))]
     statuses = [str(row.get("Status") or "").upper() for row in required_rows]
-    if any("FAIL" in status or "SOURCE BLOCKED" in status for status in statuses):
+    if any("FAIL" in status for status in statuses):
         overall = "FAIL"
-        action = "Resolve failing/source-blocked I-Girder ULS checks before report handoff."
+        action = "Resolve failing I-Girder ULS checks before report handoff."
+    elif any("SOURCE BLOCKED" in status for status in statuses):
+        overall = "SOURCE BLOCKED"
+        action = "Provide verified concurrent V+T actions and resolve source gates before report handoff."
     elif len(calculated) < len(required_rows):
         overall = "INCOMPLETE"
         action = "Run all required stage-specific I-Girder ULS checks in Analysis."

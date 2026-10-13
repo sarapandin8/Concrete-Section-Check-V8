@@ -142,7 +142,8 @@ def test_real_strength_producers_apply_source_gate_to_original_and_supplemental_
     source=left.frame.iloc[2:4].copy(deep=True) # Max and Min, x=1
     frame=producer(state,source,strength_route=_route())
     assert not frame.empty and set(source['Case Name'])<=set(frame['Case'])
-    assert all(frame['Source coupling']=='ENVELOPE — REVIEW')
+    expected = 'ENVELOPE — BLOCKED' if producer is ap._beam_uls_combined_vt_check_dataframe else 'ENVELOPE — REVIEW'
+    assert all(frame['Source coupling']==expected)
     assert 'PASS' not in set(frame['Status'])
 
 def test_contract_change_invalidates_cached_acceptance(left,monkeypatch):

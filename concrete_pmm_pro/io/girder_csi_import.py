@@ -430,7 +430,7 @@ def tag_app_source(frame, *, source_name, sheet_name, source_mode='unverified',
         verified=bool(concurrency_confirmed and str(evidence).strip()) and (
             source_mode=='correspondence' or (source_mode=='static' and not bound))
         info={'schema':VERSION,'kind':'CONCURRENT' if verified else ('ENVELOPE' if bound else 'UNVERIFIED'),
-            'source_file':source_name,'sheet':sheet_name,'case':case,'step':'App',
+            'source_file':source_name,'sheet':sheet_name,'case':case,'step':'App','source_mode':source_mode,
             'concurrency_confirmed':verified,'evidence':str(evidence).strip(),'row':int(i)+1}
         result.at[i,'Note']=SOURCE_TAG+json.dumps(info,separators=(',',':'))+' '+str(row.get('Note') or '')
     return result
