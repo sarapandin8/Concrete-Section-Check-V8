@@ -16,6 +16,8 @@ from concrete_pmm_pro.analysis.girder_axial_convention import (
 
 TEMPLATE_PATH = Path(__file__).resolve().parents[2] / 'assets/templates/Bridge_Beam_ULS_CSiBridge_Template.xlsx'
 UPLOAD_LABEL = 'Upload Bridge Beam/Girder ULS station-load import'
+SOURCE_LABELS = ['CSI Correspondence', 'Static case / explicit step', 'Envelope / unverified']
+SOURCE_MODES = ['correspondence', 'static', 'unverified']
 
 
 def _downloads(key_prefix):
@@ -35,28 +37,36 @@ def _downloads(key_prefix):
 
 
 def render_import(*, state_key, editor_key, key_prefix, force_unit, moment_unit):
-    st.markdown('**Upload ULS loads — assigned to each girder automatically**')
-    st.caption('A valid CSiBridge Bridge Object Girder Forces file replaces the previous ULS load collection immediately. Every girder receives its own rows. No Apply button is needed.')
+    st.markdown('**Import ULS loads**')
+    st.caption('File → Force source → Import loads. Girders and load cases are assigned automatically.')
     uploaded = st.file_uploader(UPLOAD_LABEL, type=['xlsx', 'csv'], key=key_prefix+'_import_file', accept_multiple_files=True,
         help='Native BridgeObj / SectCutNum / Girder / Distance / LocType / OutputCase / CaseType / StepType / P V2 V3 T M2 M3, individual girder sheets, or app-column tables. All worksheets are inspected.')
-    advanced = st.checkbox('Advanced import settings', key=key_prefix+'_advanced_import',
-        help='Choose worksheets, rename members, append loads or document verified Correspondence. Original native exports need none of these settings.')
+    files = uploaded if isinstance(uploaded, list) else ([uploaded] if uploaded else [])
+    source_contract = None
+    if files:
+        signature = _upload_signature(files)
+        source_contract = _source_controls(key_prefix+'_source_'+signature[:12],
+            default_mode=_saved_source_mode(files))
+    with st.expander('More import options', expanded=False):
+        advanced = st.checkbox('Advanced import settings', key=key_prefix+'_advanced_import',
+            help='Optional worksheet/member mapping, append and downloads. The normal import needs none of these settings.')
     if uploaded:
-        files = uploaded if isinstance(uploaded, list) else [uploaded]
-        staged = None if advanced else _native_preview(files)
+        mode, confirmed, evidence = source_contract
+        staged = None if advanced else _native_preview(files, source_mode=mode,
+            concurrency_confirmed=confirmed, evidence=evidence)
         if staged is not None:
-            _apply_native_upload(staged, files, state_key=state_key, editor_key=editor_key,
+            _render_simple_native_import(staged, files, state_key=state_key, editor_key=editor_key,
                 key_prefix=key_prefix, force_unit=force_unit, moment_unit=moment_unit)
         else:
-            st.caption('This format uses explicit import settings. Native Bridge Object Girder Forces exports are applied automatically.')
+            if not advanced:
+                st.info('This file needs worksheet/member mapping. Check the detected names below, then import.')
             _render_batch(files, state_key=state_key, editor_key=editor_key, key_prefix=key_prefix,
-                force_unit=force_unit, moment_unit=moment_unit)
+                force_unit=force_unit, moment_unit=moment_unit, source_contract=source_contract)
     receipt = st.session_state.get(key_prefix+'_import_receipt')
-    if receipt:
-        st.success('Last successful import: '+receipt)
-        st.caption('Analysis calculates every imported girder separately. Use Calculate to update results. Section and reinforcement settings remain the current shared model.')
     _render_saved_source_readiness()
     with st.expander('Templates and column mapping', expanded=False):
+        if receipt:
+            st.caption('Last successful import: '+receipt)
         st.dataframe(pd.DataFrame([
             ['Distance','Station x (m)'],['M3','Mux'],['V2','Vuy'],['T','Tu'],
             ['P','Nu (raw CSI P)'],['M2','Muy'],['V3','Vux'],
@@ -68,6 +78,64 @@ def render_import(*, state_key, editor_key, key_prefix, force_unit, moment_unit)
 def _upload_signature(files):
     identity = sorted((f.name,hashlib.sha256(f.getvalue()).hexdigest()) for f in files)
     return hashlib.sha256(json.dumps(identity,separators=(',',':')).encode()).hexdigest()
+
+
+def _source_declaration(mode):
+    """Record the engineer's explicit source choice without required free text."""
+    if mode not in {'correspondence', 'static'}:
+        return mode, False, ''
+    basis = ('CSI Correspondence' if mode == 'correspondence' else 'Static case / explicit step')
+    return mode, True, ('Engineer declaration through force-source selection and Import loads: '
+        + basis + '; each row contains simultaneous factored ULS actions for its girder '
+        'and section face. Raw CSI P signs are retained. This is an engineer declaration, '
+        'not automatic verification of the CSI export.')
+
+
+def _saved_source_mode(files):
+    """Restore a choice only for the same saved source file, never for new bytes."""
+    from concrete_pmm_pro.io.girder_load_bank import BANK_KEY
+    from concrete_pmm_pro.io.girder_csi_import import source_info
+    from concrete_pmm_pro.ui.igird_combined_vt import concurrent_source_allowed
+    bank = pd.DataFrame(st.session_state.get(BANK_KEY, []))
+    if bank.empty:
+        return 'unverified'
+    choices = set()
+    for uploaded in files:
+        digest = hashlib.sha256(uploaded.getvalue()).hexdigest()
+        name = uploaded.name+' ['+digest[:8]+']'
+        matching = [source_info(row) for _, row in bank.iterrows()
+            if (source_info(row) or {}).get('source_file') == name]
+        if not matching or not all(concurrent_source_allowed(info) for info in matching):
+            return 'unverified'
+        choices.update(info['source_mode'] for info in matching)
+    return next(iter(choices)) if len(choices) == 1 else 'unverified'
+
+
+def _render_simple_native_import(staged, files, *, state_key, editor_key, key_prefix,
+                                 force_unit, moment_unit):
+    """One explicit commit; changing a dropdown or revisiting never changes loads."""
+    from concrete_pmm_pro.io.girder_load_bank import BANK_KEY
+    from concrete_pmm_pro.io.girder_csi_import import source_info
+    imported, parse_issues = staged
+    issues = list(parse_issues)
+    if force_unit != 'kN' or moment_unit != 'kN-m':
+        issues.append('Set load units to kN / kN-m before importing.')
+    if not imported.empty:
+        cases = {source_info(row).get('case') for _, row in imported.iterrows()}
+        st.caption(f'{len(imported)} rows · {imported.Girder.nunique()} girders · '
+            f'{len(cases)} load cases. Import loads replaces the current load collection.')
+    for issue in issues:
+        st.error(issue)
+    if st.button('Import loads', type='primary', disabled=bool(issues) or imported.empty,
+                 key=key_prefix+'_simple_import'):
+        _commit_import(imported, current=pd.DataFrame(st.session_state.get(BANK_KEY, [])),
+            append=False, state_key=state_key, editor_key=editor_key, key_prefix=key_prefix,
+            file_names=[f.name for f in files])
+        st.session_state[key_prefix+'_auto_import_signature'] = _upload_signature(files)
+        st.rerun()
+    with st.expander('Preview source rows', expanded=False):
+        st.dataframe(imported[['Girder','Station x (m)','Case Name','Mux','Vuy','Tu','Muy','Vux','Nu']],
+            hide_index=True, use_container_width=True)
 
 
 def _native_source_identity(row):
@@ -116,20 +184,19 @@ def _render_saved_source_readiness():
     readiness = saved_source_readiness(pd.DataFrame(st.session_state.get(BANK_KEY, [])))
     if readiness.empty:
         return
-    st.markdown('**Saved force-vector source — used by Analysis**')
-    st.dataframe(readiness, hide_index=True, use_container_width=True)
+    st.markdown('**Imported loads**')
+    st.dataframe(readiness.rename(columns={'Saved rows':'Rows',
+        'Concurrent rows ready for V+T':'Concurrent', 'Source-blocked rows':'Unverified'}),
+        hide_index=True, use_container_width=True)
     blocked = int(readiness['Source-blocked rows'].sum())
     if blocked:
-        st.warning(f'{blocked} saved row(s) remain source-blocked for V+T. '
-            'In Advanced import settings, choose the actual source type, confirm simultaneous '
-            'factored actions and enter the source basis, then press Replace entire girder collection. '
-            'Selecting controls alone does not change the saved loads.')
+        st.warning(f'{blocked} rows have unverified concurrency. For V+T, select the matching '
+            'Correspondence or Static source and press Import loads.')
     else:
-        st.success('The saved source contract is concurrent for every row. Go to Analysis and '
-            'Calculate Shear + Torsion; section and reinforcement checks are reviewed separately.')
+        st.success('Concurrent source saved. Go to Analysis → Calculate Shear + Torsion.')
 
 
-def _native_preview(files):
+def _native_preview(files, *, source_mode='unverified', concurrency_confirmed=False, evidence=''):
     """Validate all native files first; never publish a partial import."""
     from concrete_pmm_pro.ui.loads_page import _workflow_table_result
     frames, issues, seen = [], [], set()
@@ -154,7 +221,8 @@ def _native_preview(files):
                 issues.append(uploaded.name+': no physical member rows')
             for group in groups:
                 parsed = prepare_csi_table(group.frame,sheet_name=sheet,
-                    source_name=uploaded.name+' ['+digest[:8]+']')
+                    source_name=uploaded.name+' ['+digest[:8]+']', source_mode=source_mode,
+                    concurrency_confirmed=concurrency_confirmed, evidence=evidence)
                 issues.extend(parsed.errors)
                 frame = parsed.frame.copy()
                 frame['Case Name'] = group.name+' / '+frame['Case Name'].astype(str)
@@ -225,24 +293,26 @@ def _apply_native_upload(staged, files, *, state_key, editor_key, key_prefix, fo
         st.caption('This is the uploaded source. Subsequent load-table edits are retained; reviewing this file does not import it again.')
 
 
-def _source_controls(key):
-    label = st.selectbox('Force-vector source', ['Envelope / unverified', 'Static combination / explicit step', 'CSI Correspondence'], key=key+'_mode')
-    mode = {'Envelope / unverified':'unverified', 'Static combination / explicit step':'static', 'CSI Correspondence':'correspondence'}[label]
-    confirmed = False
-    evidence = ''
-    if mode != 'unverified':
-        confirmed = st.checkbox('I confirm each row contains simultaneous factored ULS actions for this girder', key=key+'_confirmed')
-        evidence = st.text_input('Source basis / export setting / combination definition', key=key+'_evidence',
-            help='Record the CSI combination/step or Correspondence export setting. A file name or Max/Min label alone is not proof.')
-    return mode, confirmed, evidence
+def _source_controls(key, *, default_mode='unverified'):
+    label = st.radio('Force source', SOURCE_LABELS, horizontal=True,
+        index=SOURCE_MODES.index(default_mode), key=key+'_mode',
+        help='Correspondence: simultaneous moving-load actions. Static: one explicit case/step. Envelope: simultaneous actions are not established.')
+    mode = SOURCE_MODES[SOURCE_LABELS.index(label)]
+    if mode == 'unverified':
+        st.caption('Envelope bounds can be reviewed; V+T needs simultaneous actions.')
+    else:
+        st.caption('Import loads records your declaration that each row contains simultaneous factored '
+            'actions for the same girder and section. Raw CSI P signs are kept.')
+    return _source_declaration(mode)
 
 
-def _render_batch(uploaded, *, state_key, editor_key, key_prefix, force_unit, moment_unit):
+def _render_batch(uploaded, *, state_key, editor_key, key_prefix, force_unit, moment_unit,
+                  source_contract=None):
     from concrete_pmm_pro.ui.loads_page import (_sync_workflow_load_tables_metadata, _workflow_table_result,
         prepare_imported_workflow_load_table)
     frames, audits, issues, identities = [], [], [], set()
-    st.info('Import a collection of girders and factored ULS cases. Assign the same physical girder name across files for the same member. Analysis uses only the selected girder and its complete case set.')
-    same_member = st.checkbox('I confirm member names identify physical girders consistently across files, with the same station origin for each member', key=key_prefix+'_same_member')
+    st.caption('Optional worksheet/member mapping. Keep the same name and station origin for the same physical girder across files.')
+    per_file = st.checkbox('Different force sources by file', key=key_prefix+'_per_file_sources')
     for number, uploaded_file in enumerate(uploaded):
         payload = uploaded_file.getvalue()
         digest = hashlib.sha256(payload).hexdigest()
@@ -265,10 +335,8 @@ def _render_batch(uploaded, *, state_key, editor_key, key_prefix, force_unit, mo
             preferred = [n for n in choices if 'girder' in n.casefold()]
             selected = st.multiselect('Worksheets to import', choices, default=preferred or choices[:1], key=key+'_sheets')
             base = st.text_input('Factored ULS combination name (if OutputCase is absent)', value=Path(uploaded_file.name).stem, key=key+'_case')
-            mode, confirmed, evidence = _source_controls(key)
-            if mode != 'unverified' and (not confirmed or not str(evidence).strip()):
-                issues.append(uploaded_file.name+': confirm simultaneous factored actions and '
-                    'enter the source basis before applying this source type.')
+            mode, confirmed, evidence = (_source_controls(key) if per_file or source_contract is None
+                else source_contract)
             if not selected:
                 issues.append(uploaded_file.name+': select at least one worksheet')
             assigned_members = {}
@@ -321,7 +389,7 @@ def _render_batch(uploaded, *, state_key, editor_key, key_prefix, force_unit, mo
     if force_unit != 'kN' or moment_unit != 'kN-m':
         issues.append('Batch import requires kN / kN-m units.')
     # CSI raw-P convention is a batch contract, including app-column tables.
-    sign_confirmed = st.checkbox('All tables use raw CSI P signs: tension positive, compression negative', key=key_prefix+'_batch_sign')
+    st.caption('Import keeps raw CSI P: positive tension, negative compression. App-column files must use the same sign convention.')
     valid = _workflow_table_result(imported, table_name='Multi-table ULS import',
         numeric_columns=['Station x (m)','Mux','Vuy','Tu','Muy','Vux','Nu'], unique_key_columns=['Girder','Case Name','Station x (m)'])
     issues.extend(valid.errors)
@@ -378,7 +446,7 @@ def _render_batch(uploaded, *, state_key, editor_key, key_prefix, force_unit, mo
             append_issues.append('Existing collection uses a different axial convention.')
     for issue in append_issues:
         st.caption('Append unavailable: '+issue)
-    disabled = bool(issues) or imported.empty or not same_member or not sign_confirmed
+    disabled = bool(issues) or imported.empty
     left, right = st.columns(2)
     with left:
         replace = st.button('Replace entire girder collection', type='primary', disabled=disabled, key=key_prefix+'_replace_import')
@@ -403,13 +471,10 @@ def render_member_collection(*, state_key, editor_key, key_prefix):
     if active not in names:
         active = names[0]
         activate_member(st.session_state, active, state_key=state_key, editor_key=editor_key)
-    st.markdown('#### Imported girders — loads stored separately')
-    st.dataframe(bank.groupby('Girder', sort=False).agg(Rows=('Case Name','size'), Vector_series=('Case Name','nunique')).reset_index(), hide_index=True, use_container_width=True)
     selected = st.selectbox('Girder shown in the load table', names, index=names.index(active), key=key_prefix+'_active_girder_choice')
     if selected != active:
         save_active(st.session_state, state_key=state_key)
         activate_member(st.session_state, selected, state_key=state_key, editor_key=editor_key)
         _sync_workflow_load_tables_metadata()
         st.rerun()
-    st.info(f'Load table and selected-member Summary / Report: {active}. Analysis can calculate all {len(names)} imported girders, each using only its own loads. No additional load assignment is required.')
-    st.caption('Each girder uses the current shared section, reinforcement, prestress and support model. Native uploads replace the ULS collection automatically. Append and verified-source settings are available under Advanced import settings.')
+    st.caption(f'Load table / Summary / Report: {active}. Analysis can calculate all {len(names)} girders separately. Section and reinforcement inputs are shared.')

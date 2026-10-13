@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "views": [
+    1440,
+    1100
+  ],
+  "flow": "Native upload -> CSI Correspondence -> Import loads",
+  "saved_source": "concurrent",
+  "javascript_errors": []
+}
