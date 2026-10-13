@@ -156,7 +156,7 @@ class CsiImport:
     counts: dict
 
 def prepare_csi_table(frame, *, sheet_name, case_name='ENV_ULS', source_name='',
-                      source_mode='unverified', concurrency_confirmed=False, evidence=''):
+                      source_mode='unverified', concurrency_confirmed=False, evidence='', allow_blank_step=False):
     lookup={_key(c):c for c in frame.columns}
     if len(lookup) != len(frame.columns):
         return CsiImport(pd.DataFrame(columns=APP_COLUMNS),['Duplicate column names in CSI table.'],pd.DataFrame(),{})
@@ -230,7 +230,7 @@ def prepare_csi_table(frame, *, sheet_name, case_name='ENV_ULS', source_name='',
         for field,col in [('BridgeObj',bridge_column),('Girder',girder_column),
                 ('LocType',location_column),('SectCutNum',section_cut_column),('CaseType',case_type_column),
                 ('StepType',lookup.get('steptype') if native_bridge_table else None)]:
-            if col is not None and _blank(raw.get(col)):
+            if col is not None and _blank(raw.get(col)) and not (field == 'StepType' and allow_blank_step):
                 errors.append(f'{sheet_name} row {excel_row}: missing {field} source identity.')
                 incomplete=True
         if girder_column is not None and output_column is not None and _blank(raw.get(output_column)):

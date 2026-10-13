@@ -224,9 +224,12 @@ PRECAST_COMPOSITE_GIRDER_PRESET_KEYS = {
     "parametric_plank_girder_interior",
     "parametric_plank_girder_exterior",
 }
+# Historical source-test phrase: Import LL+IM only from CSiBridge. Native totals now have a separate load-content contract.
 WORKFLOW_LOAD_TABLE_KEYS = (
     "igird_uls_member_bank",
     "igird_uls_member_selection",
+    "igird_sls_member_bank",
+    "igird_sls_member_selection",
     "column_uls_loads_table",
     "column_sls_loads_table",
     "beam_uls_loads_table",
@@ -310,7 +313,8 @@ def _render_load_workflow_notice() -> None:
         st.caption(
             "Bridge Beam/Girder SLS rows can be selected in Analysis for quick preview checks. "
             "ULS rows and full staged summation are stored for future final design checks. "
-            "For this bridge workflow, import LL+IM only from CSiBridge unless auto dead-load components are disabled."
+            "Native CSI total SLS imports use the complete external resultant without adding automatic DL/SDL again. "
+            "Legacy incremental inputs can contain LL+IM with app-generated dead loads."
         )
     elif settings.member_type == "building_beam_girder":
         st.info(
@@ -485,6 +489,8 @@ def _sync_beam_sls_stage_editor_to_table(editor_key: str, stage_label: str) -> N
     payload = st.session_state.get(editor_key)
     edited_stage = _stringify_table(_data_editor_payload_to_dataframe(payload, fallback), BEAM_SLS_STAGE_EDITOR_COLUMNS)
     st.session_state["beam_sls_loads_table"] = _beam_sls_table_after_stage_edit(current_table, stage_label, edited_stage)
+    from concrete_pmm_pro.io.girder_sls_import import invalidate_views
+    invalidate_views(st.session_state)
     _sync_workflow_load_tables_metadata()
 
 
@@ -1214,6 +1220,8 @@ def _ensure_workflow_load_tables_initialized() -> None:
 def _sync_workflow_load_tables_metadata() -> None:
     from concrete_pmm_pro.io.girder_load_bank import save_active
     save_active(st.session_state)
+    from concrete_pmm_pro.io.girder_sls_import import save_active as save_sls
+    save_sls(st.session_state)
     metadata = dict(st.session_state.get("project_metadata", {}) or {})
     workflow_tables: dict[str, list[dict[str, Any]]] = {}
     for key in WORKFLOW_LOAD_TABLE_KEYS:
@@ -2806,7 +2814,13 @@ def _render_beam_girder_load_tables(force_unit: str, moment_unit: str) -> None:
         )
 
     with sls_tab:
-        _render_beam_girder_auto_sls_load_component_inputs()
+        if _active_is_precast_i_girder():
+            from concrete_pmm_pro.ui.girder_sls_import import render_import as render_sls_import
+            render_sls_import(force_unit=force_unit, moment_unit=moment_unit)
+            with st.expander("Automatic stage load settings", expanded=False):
+                _render_beam_girder_auto_sls_load_component_inputs()
+        else:
+            _render_beam_girder_auto_sls_load_component_inputs()
     
         st.markdown("#### SLS Girder Service Loads")
         st.caption(
@@ -2815,87 +2829,90 @@ def _render_beam_girder_load_tables(force_unit: str, moment_unit: str) -> None:
         )
         st.info(
             "Stage meaning: Transfer = precast girder self-weight + Pe_transfer in Analysis; "
-            "Construction = auto girder + wet deck/topping unless overridden; Service = auto SDL after composite plus user/imported LL+IM. "
-            "Do not include prestress in the Loads resultant when Pe is added separately in Analysis."
+            "Construction = auto girder + wet deck/topping for legacy incremental inputs. "
+            "Native CSI total SLS inputs use the imported resultant without adding DL/SDL again. "
+            "Default native import adds app prestress separately. Do not include prestress in the Loads resultant for this default option; "
+            "select the inclusive content option if CSI already includes prestress."
         )
     
-        stage_tabs = st.tabs([spec["title"] for spec in _beam_sls_stage_input_specs()])
-        for spec, tab in zip(_beam_sls_stage_input_specs(), stage_tabs, strict=False):
-            stage_label = spec["stage"]
-            stage_key = _beam_sls_stage_key(stage_label)
-            with tab:
-                _render_load_compact_cards(
-                    [
-                        {"title": "Check stage", "value": spec["title"], "detail": spec["action"], "status": "info"},
-                        {"title": "Section basis", "value": spec["basis"], "detail": "same routing in Analysis", "status": "info"},
-                        {"title": "Prestress handling", "value": "Added in Analysis", "detail": "do not double-count Pe", "status": "info"},
-                    ],
-                    columns=3,
-                )
-                st.caption(spec["note"])
-                current_sls_table = _normalize_beam_sls_load_table(pd.DataFrame(st.session_state.get("beam_sls_loads_table")))
-    
-                def _replace_stage_rows(imported: pd.DataFrame, *, _stage_label: str = stage_label) -> None:
-                    base_table = _normalize_beam_sls_load_table(pd.DataFrame(st.session_state.get("beam_sls_loads_table")))
-                    st.session_state["beam_sls_loads_table"] = _beam_sls_table_after_stage_edit(base_table, _stage_label, imported)
-    
-                def _append_stage_rows(imported: pd.DataFrame, *, _stage_label: str = stage_label) -> None:
-                    base_table = _normalize_beam_sls_load_table(pd.DataFrame(st.session_state.get("beam_sls_loads_table")))
-                    current_stage_rows = _beam_sls_stage_editor_rows(base_table, _stage_label)
-                    combined_rows = _stringify_table(pd.concat([current_stage_rows, imported], ignore_index=True), BEAM_SLS_STAGE_EDITOR_COLUMNS)
-                    st.session_state["beam_sls_loads_table"] = _beam_sls_table_after_stage_edit(base_table, _stage_label, combined_rows)
-    
-                with st.expander(f"Import {spec['title']} station loads from Excel / CSV", expanded=False):
-                    st.caption("Beam/Girder SLS loads are station-based inside each stage tab. Stage and load-component metadata are assigned by this tab.")
-                    _render_workflow_import_tools(
-                        title=f"{spec['title']} SLS station-load import",
-                        table_name="Beam/Girder SLS",
-                        columns=BEAM_SLS_STAGE_EDITOR_COLUMNS,
-                        numeric_columns=["Station x (m)", "N", "Mx", "My", "Vy", "Vx", "T"],
-                        state_key="beam_sls_loads_table",
-                        editor_key=f"beam_sls_{stage_key}_loads_editor",
-                        key_prefix=f"beam_sls_{stage_key}_station_loads",
-                        default_values={"Section Basis": spec["basis"]},
-                        unique_key_columns=["Case Name", "Station x (m)"],
-                        stage_label=stage_label,
-                        replace_callback=_replace_stage_rows,
-                        append_callback=_append_stage_rows,
+        with (st.expander("Stage load tables and templates", expanded=False) if _active_is_precast_i_girder() else st.container()):
+            stage_tabs = st.tabs([spec["title"] for spec in _beam_sls_stage_input_specs()])
+            for spec, tab in zip(_beam_sls_stage_input_specs(), stage_tabs, strict=False):
+                stage_label = spec["stage"]
+                stage_key = _beam_sls_stage_key(stage_label)
+                with tab:
+                    _render_load_compact_cards(
+                        [
+                            {"title": "Check stage", "value": spec["title"], "detail": spec["action"], "status": "info"},
+                            {"title": "Section basis", "value": spec["basis"], "detail": "same routing in Analysis", "status": "info"},
+                            {"title": "Prestress handling", "value": "Added in Analysis", "detail": "do not double-count Pe", "status": "info"},
+                        ],
+                        columns=3,
                     )
+                    st.caption(spec["note"])
+                    current_sls_table = _normalize_beam_sls_load_table(pd.DataFrame(st.session_state.get("beam_sls_loads_table")))
     
-                stage_editor_df = _beam_sls_stage_editor_rows(current_sls_table, stage_label)
-                edited_stage = st.data_editor(
-                    stage_editor_df,
-                    num_rows="dynamic",
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Active": st.column_config.CheckboxColumn("Active"),
-                        "Station x (m)": st.column_config.TextColumn("Station x (m)", help="Station along girder length for this SLS stage check."),
-                        "Case Name": st.column_config.TextColumn("Case Name"),
-                        "Section Basis": st.column_config.SelectboxColumn(
-                            "Section Basis",
-                            options=BEAM_SECTION_BASIS_OPTIONS,
-                            help="Recommended: Precast gross for Transfer/Construction; Composite transformed for Service.",
-                        ),
-                        "N": st.column_config.TextColumn(f"N ({force_unit}, compression +)", help="Service axial force. Compression is positive."),
-                        "Mx": st.column_config.TextColumn(f"Mx ({moment_unit})", help="Service moment about x-axis. Sagging positive in girder SLS convention."),
-                        "My": st.column_config.TextColumn(f"My ({moment_unit})", help="Optional service moment about y-axis."),
-                        "Vy": st.column_config.TextColumn(f"Vy ({force_unit})", help="Optional vertical shear for future service shear/principal stress checks."),
-                        "Vx": st.column_config.TextColumn(f"Vx ({force_unit})", help="Optional lateral shear in x-direction for future checks."),
-                        "T": st.column_config.TextColumn(f"T ({moment_unit})", help="Optional service torsion for future torsion cracking checks."),
-                        "Note": st.column_config.TextColumn("Note"),
-                    },
-                    key=f"beam_sls_{stage_key}_loads_editor",
-                    on_change=_sync_beam_sls_stage_editor_to_table,
-                    args=(f"beam_sls_{stage_key}_loads_editor", stage_label),
-                )
-                merged_sls_table = _beam_sls_table_after_stage_edit(current_sls_table, stage_label, edited_stage)
-                _store_editor_table_and_rerun_on_change(
-                    "beam_sls_loads_table",
-                    merged_sls_table,
-                    current_sls_table,
-                    BEAM_SLS_LOAD_COLUMNS,
-                )
+                    def _replace_stage_rows(imported: pd.DataFrame, *, _stage_label: str = stage_label) -> None:
+                        base_table = _normalize_beam_sls_load_table(pd.DataFrame(st.session_state.get("beam_sls_loads_table")))
+                        st.session_state["beam_sls_loads_table"] = _beam_sls_table_after_stage_edit(base_table, _stage_label, imported)
+    
+                    def _append_stage_rows(imported: pd.DataFrame, *, _stage_label: str = stage_label) -> None:
+                        base_table = _normalize_beam_sls_load_table(pd.DataFrame(st.session_state.get("beam_sls_loads_table")))
+                        current_stage_rows = _beam_sls_stage_editor_rows(base_table, _stage_label)
+                        combined_rows = _stringify_table(pd.concat([current_stage_rows, imported], ignore_index=True), BEAM_SLS_STAGE_EDITOR_COLUMNS)
+                        st.session_state["beam_sls_loads_table"] = _beam_sls_table_after_stage_edit(base_table, _stage_label, combined_rows)
+    
+                    with st.expander(f"Import {spec['title']} station loads from Excel / CSV", expanded=False):
+                        st.caption("Beam/Girder SLS loads are station-based inside each stage tab. Stage and load-component metadata are assigned by this tab.")
+                        _render_workflow_import_tools(
+                            title=f"{spec['title']} SLS station-load import",
+                            table_name="Beam/Girder SLS",
+                            columns=BEAM_SLS_STAGE_EDITOR_COLUMNS,
+                            numeric_columns=["Station x (m)", "N", "Mx", "My", "Vy", "Vx", "T"],
+                            state_key="beam_sls_loads_table",
+                            editor_key=f"beam_sls_{stage_key}_loads_editor",
+                            key_prefix=f"beam_sls_{stage_key}_station_loads",
+                            default_values={"Section Basis": spec["basis"]},
+                            unique_key_columns=["Case Name", "Station x (m)"],
+                            stage_label=stage_label,
+                            replace_callback=_replace_stage_rows,
+                            append_callback=_append_stage_rows,
+                        )
+    
+                    stage_editor_df = _beam_sls_stage_editor_rows(current_sls_table, stage_label)
+                    edited_stage = st.data_editor(
+                        stage_editor_df,
+                        num_rows="dynamic",
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Active": st.column_config.CheckboxColumn("Active"),
+                            "Station x (m)": st.column_config.TextColumn("Station x (m)", help="Station along girder length for this SLS stage check."),
+                            "Case Name": st.column_config.TextColumn("Case Name"),
+                            "Section Basis": st.column_config.SelectboxColumn(
+                                "Section Basis",
+                                options=BEAM_SECTION_BASIS_OPTIONS,
+                                help="Recommended: Precast gross for Transfer/Construction; Composite transformed for Service.",
+                            ),
+                            "N": st.column_config.TextColumn(f"N ({force_unit}, compression +)", help="Service axial force. Compression is positive."),
+                            "Mx": st.column_config.TextColumn(f"Mx ({moment_unit})", help="Service moment about x-axis. Sagging positive in girder SLS convention."),
+                            "My": st.column_config.TextColumn(f"My ({moment_unit})", help="Optional service moment about y-axis."),
+                            "Vy": st.column_config.TextColumn(f"Vy ({force_unit})", help="Optional vertical shear for future service shear/principal stress checks."),
+                            "Vx": st.column_config.TextColumn(f"Vx ({force_unit})", help="Optional lateral shear in x-direction for future checks."),
+                            "T": st.column_config.TextColumn(f"T ({moment_unit})", help="Optional service torsion for future torsion cracking checks."),
+                            "Note": st.column_config.TextColumn("Note"),
+                        },
+                        key=f"beam_sls_{stage_key}_loads_editor",
+                        on_change=_sync_beam_sls_stage_editor_to_table,
+                        args=(f"beam_sls_{stage_key}_loads_editor", stage_label),
+                    )
+                    merged_sls_table = _beam_sls_table_after_stage_edit(current_sls_table, stage_label, edited_stage)
+                    _store_editor_table_and_rerun_on_change(
+                        "beam_sls_loads_table",
+                        merged_sls_table,
+                        current_sls_table,
+                        BEAM_SLS_LOAD_COLUMNS,
+                    )
     
         edited_sls = _normalize_beam_sls_load_table(pd.DataFrame(st.session_state.get("beam_sls_loads_table")))
     

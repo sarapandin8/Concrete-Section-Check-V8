@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "viewports": [
+    1440,
+    1100
+  ],
+  "flow": "Native XLSX -> Import SLS loads -> Open SLS analysis",
+  "confirmation_checkboxes": 0,
+  "service_stage_selected": true,
+  "javascript_errors": []
+}

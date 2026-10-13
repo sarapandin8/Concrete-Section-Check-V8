@@ -244,6 +244,8 @@ CROSSBEAM_SLS_LOAD_TABLE_KEY = "crossbeam_sls_loads_table"
 WORKFLOW_LOAD_TABLE_METADATA_KEYS = (
     "igird_uls_member_bank",
     "igird_uls_member_selection",
+    "igird_sls_member_bank",
+    "igird_sls_member_selection",
     "column_uls_loads_table",
     "column_sls_loads_table",
     "beam_uls_loads_table",
@@ -390,6 +392,8 @@ def _workflow_load_table_metadata_from_session(session_state: Any) -> dict[str, 
 
     from concrete_pmm_pro.io.girder_load_bank import save_active
     save_active(session_state)
+    from concrete_pmm_pro.io.girder_sls_import import save_active as save_sls
+    save_sls(session_state)
     tables: dict[str, list[dict[str, Any]]] = {}
     for key in WORKFLOW_LOAD_TABLE_METADATA_KEYS:
         table = _get_session_value(session_state, key, None)
@@ -1584,11 +1588,22 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
     session_state.pop("bridge_beam_uls_station_loads_active_girder_choice", None)
     session_state.pop("igird_uls_member_bank", None)
     session_state.pop("igird_uls_member_selection", None)
+    had_native_sls = "igird_sls_member_bank" in session_state
+    for key in ("igird_sls_member_bank", "igird_sls_member_selection", "igird_sls_active_member",
+                "loads_sls_girder", "analysis_sls_girder", "_igird_sls23_review_stage", "_igird_sls23_import_receipt"):
+        session_state.pop(key, None)
+    if had_native_sls:
+        session_state.pop("beam_sls_loads_table", None)
     workflow_load_tables = project.metadata.get("workflow_load_tables")
     if isinstance(workflow_load_tables, dict):
         for key in WORKFLOW_LOAD_TABLE_METADATA_KEYS:
             if key in workflow_load_tables:
                 session_state[key] = pd.DataFrame(workflow_load_tables.get(key) or [])
+
+    from concrete_pmm_pro.io.girder_sls_import import active_member as sls_member, activate_member as activate_sls
+    restored_sls_member = sls_member(session_state)
+    if restored_sls_member is not None:
+        activate_sls(session_state, restored_sls_member, save_previous=False)
 
     analysis_sources = project.metadata.get(ANALYSIS_SOURCES_METADATA_KEY)
     displacement_source = analysis_sources.get(CROSSBEAM_SLS_DISPLACEMENT_SOURCE_METADATA_KEY) if isinstance(analysis_sources, dict) else None

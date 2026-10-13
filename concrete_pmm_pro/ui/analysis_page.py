@@ -18691,6 +18691,9 @@ def _girder_sls_stage_rows_with_auto_station_grid(
     """
 
     rows = list(stage_rows or [])
+    from concrete_pmm_pro.io.girder_sls_import import contract as sls_import_contract
+    if any(sls_import_contract(row) for row in rows):
+        return rows  # Native cases keep their physical stations, including sparse cases.
     stage = _beam_sls_stage_label_for_analysis(stage_label) or stage_label
     case_names = sorted({str(row.get("Case Name") or "Unnamed") for row in rows})
     for case_name in case_names:
@@ -18863,7 +18866,11 @@ def _girder_full_length_sls_stage_rows(
     strand_table = st.session_state.get("girder_strand_layout_table")
     auto_breakdown = _girder_sls_auto_load_breakdown(stage_label)
     rows: list[dict[str, object]] = []
+    from concrete_pmm_pro.io.girder_sls_import import contract as sls_import_contract
     for raw_row in load_rows:
+        imported_source = sls_import_contract(raw_row)
+        force_content = imported_source.get("sls_force_content") if imported_source else "incremental"
+        imported_total = force_content in {"total_external", "total_with_prestress"}
         x_m = _analysis_float_or_zero(raw_row.get("Station x (m)"))
         basis_name = _beam_sls_load_basis_key(raw_row, basis_names) or _beam_sls_default_basis_for_stage(stage_label, basis_names)
         basis = basis_options.bases[basis_name]
@@ -18892,6 +18899,9 @@ def _girder_full_length_sls_stage_rows(
             auto_mx_kNm = simple_span_udl_moment_kNm(auto_breakdown.total_kN_m, x_m, span_length_m)
             auto_vy_kN = simple_span_udl_shear_kN(auto_breakdown.total_kN_m, x_m, span_length_m)
             component_note = auto_breakdown.component_label
+        if imported_total:
+            auto_mx_kNm = auto_vy_kN = 0.0
+            component_note = "CSI total SLS resultant; no additional automatic DL/SDL"
         total_mx_kNm = user_mx_kNm + auto_mx_kNm
         service = run_basic_girder_service_stress(
             basis,
@@ -18903,7 +18913,7 @@ def _girder_full_length_sls_stage_rows(
         ps_top = 0.0
         ps_bottom = 0.0
         active_groups = ""
-        if strand_table is not None:
+        if strand_table is not None and force_content != "total_with_prestress":
             try:
                 station = evaluate_girder_prestress_station(
                     strand_table,
@@ -18936,7 +18946,8 @@ def _girder_full_length_sls_stage_rows(
                 "Auto Mx (kN-m)": auto_mx_kNm,
                 "Mx (kN-m)": total_mx_kNm,
                 "Auto Vy (kN)": auto_vy_kN,
-                "Auto load w (kN/m)": auto_breakdown.total_kN_m,
+                "Auto load w (kN/m)": 0.0 if imported_total else auto_breakdown.total_kN_m,
+                "SLS force content": force_content,
                 "Auto load components": component_note,
                 "Pe stage (kN)": pe_kN,
                 "yps eff (mm)": yps,
@@ -20316,6 +20327,13 @@ def _render_girder_sls4b_combined_stage_result_table(
         st.session_state["result_summary_beam_girder_sls_demand_detail_df"] = pd.DataFrame()
         st.info("No valid full-length stage result could be summarized. Check section geometry, auto-load settings, station inputs, and section basis availability.")
         return
+    from concrete_pmm_pro.io.girder_sls_import import active_member as active_sls_member
+    sls_member = active_sls_member(st.session_state)
+    if sls_member is not None:
+        for row in summary_rows:
+            row.update({"Girder": sls_member, "Source scope": "Selected SLS girder and diagram case"})
+        for row in demand_detail_rows:
+            row["Girder"] = sls_member
     summary_df = pd.DataFrame(summary_rows)
     demand_detail_df = pd.DataFrame(demand_detail_rows)
     # RESULT.SUMMARY2: publish the staged Beam/Girder SLS stress dashboard rows
@@ -20837,7 +20855,7 @@ def _make_girder_full_length_sls_figure(df: pd.DataFrame, *, stage_label: str) -
             x=[x_min, x_max],
             y=[-compression_limit, -compression_limit],
             mode="lines",
-            name=compression_trace_name,  # legacy string: Compression preview limit
+            name="Compression limit",  # legacy string: Compression preview limit
             line={"dash": "dash", "width": 3.0, "color": _ENGINEERING_STRESS_PLOT_COLORS["compression_limit"]},  # legacy: line={"dash": "dash", "width": 2.6, "color": _ENGINEERING_STRESS_PLOT_COLORS["compression_limit"]}
             hovertemplate=f"Compression limit = -{compression_limit:.3f} MPa<br>{escape(profile_label)}<extra></extra>",
         )
@@ -20849,7 +20867,7 @@ def _make_girder_full_length_sls_figure(df: pd.DataFrame, *, stage_label: str) -
                 x=tension_x,
                 y=tension_y,
                 mode="lines",
-                name=tension_trace_name,  # legacy string: Tension preview limit
+                name="Tension limit",  # legacy string: Tension preview limit
                 line={"dash": "dash", "width": 3.0, "color": _ENGINEERING_STRESS_PLOT_COLORS["tension_limit"]},  # legacy: line={"dash": "dash", "width": 2.6, "color": _ENGINEERING_STRESS_PLOT_COLORS["tension_limit"]}
                 hovertemplate=(
                     "x=%{x:.3f} m<br>"
@@ -20985,7 +21003,8 @@ def _final_service_composite_split_rows(df: pd.DataFrame, basis_options: object)
         station = _analysis_float_or_zero(source.get("Station x (m)"))
         n_kN = _analysis_float_or_zero(source.get("N (kN)"))
         m_kNm = _analysis_float_or_zero(source.get("Mx (kN-m)"))
-        locked_m_kNm = simple_span_udl_moment_kNm(locked_w_kN_m, station, span)
+        imported_total = source.get("SLS force content") in {"total_external", "total_with_prestress"}
+        locked_m_kNm = 0.0 if imported_total else simple_span_udl_moment_kNm(locked_w_kN_m, station, span)
         pe_kN = _analysis_float_or_zero(source.get("Pe stage (kN)"))
         yps_raw = source.get("yps eff (mm)")
         try:
@@ -21039,11 +21058,12 @@ def _final_service_composite_split_rows(df: pd.DataFrame, basis_options: object)
                     "Composite Mx (kN-m)": m_kNm,
                     "Case Name": str(source.get("Case Name") or "Unnamed"),
                     "Basis note": (
+                        "CSI total on transformed service basis; loading history is not reconstructed" if imported_total else
                         "SERVICE.COMP2 staged basis: pre-composite locked-in dead load + final Pe on precast section, plus composite-stage increments"
                         if component == "Precast beam" else
                         "SERVICE.COMP2 staged basis: CIP/topping receives composite-stage increments only; stress scaled by n=Edeck/Ebeam"
                     ),
-                    "Locked-in components": locked_component_label,
+                    "Locked-in components": "Included in CSI total" if imported_total else locked_component_label,
                 }
             )
     return pd.DataFrame(rows).sort_values(["Concrete component", "Fiber", "Station x (m)"]).reset_index(drop=True)
@@ -21795,6 +21815,9 @@ def _deflection_action_hints(summary_df: pd.DataFrame) -> list[str]:
 
 def _render_girder_deflection_camber_workspace(*, basis_options: object) -> None:
     """Render DEFLECT.SLS1 short-term deflection / camber preview workspace."""
+    if "igird_sls_member_bank" in st.session_state:
+        st.info("Imported CSiBridge SLS cases feed the stress workspace. Deflection/camber here still uses the app's generated stage-load model.")
+
 
     st.markdown("### SLS Deflection / Camber")
     st.caption(
@@ -21945,6 +21968,20 @@ def _render_railway_u_girder_lifting_audit_panel(df: pd.DataFrame, *, span_lengt
         st.write("- Effective strands are evaluated station-by-station using the debonded-sleeve metadata shown on the Prestress page.")
         st.write("- Debonded strand force is treated as a step-function preview; transfer/development length, anchorage, and end-zone detailing remain separate engineering review items.")
 
+def _sls_import23_case_label(case, rows):
+    """Short labels only; source case identity and row coupling stay unchanged."""
+    from concrete_pmm_pro.io.girder_sls_import import contract
+    labels = {}
+    for row in rows:
+        source = contract(row)
+        if source:
+            name = str(row.get("Case Name"))
+            labels[name] = " · ".join(str(source.get(key)) for key in ("case", "step", "location_type") if source.get(key)) + f" · set {source.get('occurrence', 1)}"
+    label = labels.get(case, case)
+    matches = [name for name,value in labels.items() if value == label]
+    return f"{label} · series {matches.index(case)+1}" if len(matches)>1 else label
+
+
 def _render_girder_full_length_sls_diagram(
     *,
     stage_label: str,
@@ -21973,12 +22010,16 @@ def _render_girder_full_length_sls_diagram(
             f"{stage_label} diagram load case",
             case_names,
             key=_girder_sls4b_case_state_key(stage_label),
+            format_func=lambda case: _sls_import23_case_label(case, stage_rows),
             help="The diagram connects station rows with the same Case Name. Use one case per diagram to avoid mixing envelopes with single-case curves.",
         )
     else:
         selected_case = case_names[0]
         st.caption(f"Diagram load case: {selected_case}")
     selected_rows = [row for row in stage_rows if str(row.get("Case Name") or "Unnamed") == selected_case]
+    from concrete_pmm_pro.io.girder_sls_import import contract as sls_import_contract
+    if any(sls_import_contract(row) for row in selected_rows):
+        st.caption("CSI total service resultants are evaluated on the selected section basis. Separate staged loading history is not reconstructed from a total export.")
     df = _girder_full_length_sls_stage_rows(
         stage_label=stage_label,
         load_rows=selected_rows,
@@ -22181,7 +22222,13 @@ def _render_girder_sls_check_case_panel(
     has_service_action = abs(float(axial_n)) > 1.0e-9 or abs(float(moment_m)) > 1.0e-9
     stage_force_state_row = _girder_prestress_force_state_for_stage(stage_label)
     stage_force_state_ready = _girder_prestress_force_state_is_ready(stage_force_state_row)
+    from concrete_pmm_pro.io.girder_sls_import import contract as sls_import_contract
+    imported_source = sls_import_contract(selected_load_row or {})
+    csi_includes_prestress = bool(imported_source and imported_source.get("sls_force_content") == "total_with_prestress")
     include_prestress_key = f"girder_service_include_prestress_{case_key}"
+    if csi_includes_prestress:
+        st.session_state[include_prestress_key] = False
+        st.caption("Prestress is already included in the CSI resultant; the app adds no separate Pe stress effect.")
     if include_prestress_key not in st.session_state:
         st.session_state[include_prestress_key] = bool(stage_force_state_ready)
     include_prestress_default = bool(st.session_state.get(include_prestress_key, False))
@@ -22244,8 +22291,8 @@ def _render_girder_sls_check_case_panel(
                 section_basis_label=basis_options.labels.get(basis_name, basis_name),
                 load_stage=None if selected_load_row is None else str(selected_load_row.get("Stage") or stage_label),
                 load_component=None if selected_load_row is None else str(selected_load_row.get("Load Component") or ""),
-                stress_includes_prestress=False,
-                prestress_force_state_label=None,
+                stress_includes_prestress=csi_includes_prestress,
+                prestress_force_state_label="Included in CSI resultant" if csi_includes_prestress else None,
                 locked_stage_label=stage_label,
             )
     else:
@@ -22255,8 +22302,8 @@ def _render_girder_sls_check_case_panel(
             section_basis_label=basis_options.labels.get(basis_name, basis_name),
             load_stage=None if selected_load_row is None else str(selected_load_row.get("Stage") or stage_label),
             load_component=None if selected_load_row is None else str(selected_load_row.get("Load Component") or ""),
-            stress_includes_prestress=False,
-            prestress_force_state_label=None,
+            stress_includes_prestress=csi_includes_prestress,
+            prestress_force_state_label="Included in CSI resultant" if csi_includes_prestress else None,
             locked_stage_label=stage_label,
         )
 
@@ -22277,8 +22324,8 @@ def _render_girder_sls_check_case_panel(
             [
                 {
                     "title": "Prestress stress component",
-                    "value": "Not included",
-                    "detail": "Enable prestress only when the selected stage should include prestress stress effect",
+                    "value": "Included in CSI" if csi_includes_prestress else "Not included",
+                    "detail": "No separate Pe added" if csi_includes_prestress else "Enable prestress only when the selected stage should include prestress stress effect",
                     "status": "neutral",
                 }
             ],
@@ -22288,6 +22335,7 @@ def _render_girder_sls_check_case_panel(
         "Include prestress stress component for this stage",
         value=bool(st.session_state.get(include_prestress_key, False)),
         key=include_prestress_key,
+        disabled=csi_includes_prestress,
         help="Preview the stress contribution from the currently available effective prestress input. This does not change the Prestress or PMM solvers.",
     )
 
@@ -23949,6 +23997,12 @@ def _render_beam_girder_service_stress_preview() -> None:
     if st.session_state.get("girder_service_stress_basis_name") not in basis_names:
         st.session_state["girder_service_stress_basis_name"] = basis_names[0]
 
+    from concrete_pmm_pro.ui.loads_page import _active_is_precast_i_girder
+    if is_bridge_workflow and _active_is_precast_i_girder():
+        from concrete_pmm_pro.ui.girder_sls_import import render_member_collection as render_sls_members
+        render_sls_members(key_prefix="analysis")
+        if "igird_sls_member_bank" in st.session_state:
+            st.caption("Results below cover the selected SLS girder and selected case in each stage. Other imported cases remain available in the case selector.")
     beam_sls_rows = _beam_sls_load_rows_from_session_state()
 
     # ANALYSIS.SLS1: always show the three stage tabs immediately in the
@@ -23970,7 +24024,13 @@ def _render_beam_girder_service_stress_preview() -> None:
         basis_options=basis_options,
         basis_names=basis_names,
     )
-    stage_tabs = st.tabs([label for _, label, _ in _beam_sls_stage_tab_specs()])
+    stage_labels = [label for _, label, _ in _beam_sls_stage_tab_specs()]
+    default_stage = None
+    if "igird_sls_member_bank" in st.session_state:
+        default_stage = st.session_state.get("_igird_sls23_review_stage", "Service stage")
+        if default_stage not in stage_labels:
+            default_stage = stage_labels[0]
+    stage_tabs = st.tabs(stage_labels, default=default_stage)
     for tab, (stage_key, stage_label, stage_note) in zip(stage_tabs, _beam_sls_stage_tab_specs(), strict=False):
         with tab:
             stage_rows = _beam_sls_rows_for_stage(beam_sls_rows, stage_label)

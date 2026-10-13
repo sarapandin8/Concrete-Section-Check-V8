@@ -1,0 +1,16 @@
+{
+  "summary_report_read_only": true,
+  "uls_vectors_and_notes_unchanged": true,
+  "json_member_selection_and_all_rows_preserved": true,
+  "status": "PASS",
+  "native_xlsx_rows": 240,
+  "girders": 2,
+  "source_vectors_exact": true,
+  "production_adapter_rows": 240,
+  "automatic_dead_load_added": 0,
+  "loads_workspace_solver_runs": 0,
+  "confirmation_checkboxes_required": 0,
+  "streamlit_exceptions": 0,
+  "source_scope": "Selected SLS girder and diagram case; not a collection design approval",
+  "qa_inputs": "Hypothetical reinforcement input for software QA only"
+}
