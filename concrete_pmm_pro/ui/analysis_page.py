@@ -11652,6 +11652,10 @@ def _beam_uls_cache_input_hash(
         payload["axial_input"] = {"version": GIRDER_AXIAL_CONVENTION_VERSION,
             **girder_axial_convention(state)}
         payload["csi_import_source_contract"] = GIRDER_CSI_IMPORT_VERSION
+        if igird_end_sections.enabled(state):
+            # Automatic ends and source-axis validation depend on the current
+            # Loads span even before Section Builder refreshes stored coordinates.
+            payload["end_section_span_m"] = _beam_uls_span_length_from_state(state, is_building=False)
     return _beam_uls_hash_payload(payload)
 
 

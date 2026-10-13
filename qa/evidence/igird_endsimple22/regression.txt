@@ -1,0 +1,3 @@
+162 passed, 1 warning in 30.18s
+10 scoped modules with real Streamlit preloaded; no skipped tests.
+Warning: pytest anyio assertion rewrite notice after Streamlit preload.

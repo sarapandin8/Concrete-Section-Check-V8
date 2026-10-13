@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "views": [
+    1440,
+    1100
+  ],
+  "visible_dimension_inputs": 3,
+  "optional_coordinates_and_review": true,
+  "custom_and_auto_coordinates_switch": true,
+  "javascript_errors": []
+}

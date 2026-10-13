@@ -1,0 +1,1 @@
+PASS: actual app.py native import -> simple end dimensions -> manual V+T for 2 girders / 640 original rows; 608 finite ratios, 32 DATA REQUIRED retained. Unconfirmed engineering reviews preserved; inputs/source notes unchanged; Summary/Report do not rerun; size edits display STALE. Zero Streamlit exceptions.

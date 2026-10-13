@@ -1,0 +1,39 @@
+{
+  "importsimple21_preserved": true,
+  "simple_input_and_project_roundtrip": true,
+  "all_six_actions_and_original_source_notes_preserved": true,
+  "manual_calculation_without_review_checkbox": [
+    {
+      "member": "BOBJ1 / Interior Girder 2",
+      "rows": 320,
+      "regions": {
+        "I SECTION": 272,
+        "LEFT SOLID END": 24,
+        "RIGHT SOLID END": 24
+      },
+      "statuses": {
+        "REVIEW": 209,
+        "FAIL": 95,
+        "DATA REQUIRED": 16
+      },
+      "finite_ratios": 304
+    },
+    {
+      "member": "BOBJ1 / Left Exterior Girder",
+      "rows": 320,
+      "regions": {
+        "I SECTION": 272,
+        "LEFT SOLID END": 24,
+        "RIGHT SOLID END": 24
+      },
+      "statuses": {
+        "REVIEW": 221,
+        "FAIL": 83,
+        "DATA REQUIRED": 16
+      },
+      "finite_ratios": 304
+    }
+  ],
+  "summary_and_report_remain_read_only": true,
+  "dimension_edit_requires_explicit_recalculation": true
+}

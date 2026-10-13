@@ -21,8 +21,14 @@ def cut_ends(params: Mapping, span_m: float) -> tuple[float, float]:
     raw = params.get(SETTINGS_KEY) or {}
     if not isinstance(raw, Mapping) or not raw.get("enabled"):
         return 0.0, float(span_m)
-    left = float(raw.get("left_end_x_m", 0.0))
-    right = float(raw.get("right_end_x_m", span_m))
+    mode = raw.get("coordinate_mode", "custom")
+    if mode not in ("span", "custom"):
+        raise ValueError("Girder end coordinates must use Loads span or custom coordinates.")
+    if mode == "span":
+        left, right = 0.0, float(span_m)
+    else:
+        left = float(raw.get("left_end_x_m", 0.0))
+        right = float(raw.get("right_end_x_m", span_m))
     if not all(math.isfinite(v) for v in (left, right, span_m)) or not 0 <= left < right <= span_m:
         raise ValueError("Physical precast ends must satisfy 0 ≤ left x < right x ≤ Loads span.")
     return left, right

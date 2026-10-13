@@ -117,6 +117,10 @@ def test_saved_graph_region_and_boundaries_are_read_only():
     from unittest.mock import patch
     from concrete_pmm_pro.ui.igird_combined_vt import calculation_trace
     state=model();source=pd.DataFrame([demand(x) for x in (1.25,1.625,10)])
+    from concrete_pmm_pro.io.girder_csi_import import tag_app_source
+    source=tag_app_source(source,source_name='ENDSECTION18 hypothetical static QA',sheet_name='QA',
+        source_mode='static',concurrency_confirmed=True,
+        evidence='Analytically specified simultaneous static actions for the geometry-plot test')
     frame=ap._beam_uls_combined_vt_check_dataframe(state,source,strength_route=_route());before=frame.copy(deep=True)
     with patch.object(station,'at_station',side_effect=AssertionError('Drawing saved results must not solve')):
         fig=ap._make_beam_uls_combined_vt_utilization_figure(frame,code_label='AASHTO LRFD',member_length_m=20);trace=calculation_trace(frame.iloc[0].to_dict())
