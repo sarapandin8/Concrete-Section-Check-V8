@@ -25,10 +25,13 @@ DOWEL_COLUMNS = ["Zone", "x_start_m", "x_end_m", "Diameter_mm", "Legs", "Spacing
 
 def settings_fields(raw):
     raw = raw if isinstance(raw, Mapping) else {}
-    return {"connector_source": str(raw.get("connector_source", STIRRUPS)),
+    fields = {"connector_source": str(raw.get("connector_source", STIRRUPS)),
         "dowel_crossing_legs": raw.get("dowel_crossing_legs", 2),
         "connectors_cross_and_anchored": bool(raw.get("connectors_cross_and_anchored",raw.get("stirrups_cross_and_anchored",False))),
         "dowel_zones": deepcopy(raw.get("dowel_zones", []))}
+    if "dowel_connection" in raw:
+        fields["dowel_connection"] = deepcopy(raw["dowel_connection"])
+    return fields
 
 
 def _number(v):

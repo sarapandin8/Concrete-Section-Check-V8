@@ -1,0 +1,260 @@
+{
+  "version": "IGIRDER.INPUT30",
+  "project_json": "I_Girder_20m_INPUT30_DRAFT.json",
+  "baseline_sha256": "2e0a0be3f56af56045687375760d7d5a1fcb8dd527dcd4a66c82b08dbddc9f08",
+  "project_diff": "Only metadata.csi_component_force_sources added",
+  "loads_preserved": true,
+  "section_rebar_prestress_dowel_unknowns_preserved": true,
+  "actual_source_checks": [
+    {
+      "filename": "Load case DEAD (DL)_Bridge object_Girder_Beam_Slab-Forces CSiBridge.xlsx",
+      "source_sha256": "4c72007e498579e8881d5812a56718debe9657e75613b359395af91c90ad30ba",
+      "girder_load_rows": 276,
+      "girders": 6,
+      "component_input_rows": 828,
+      "auto_mapping": true,
+      "force_source_mode": "static"
+    },
+    {
+      "filename": "ULS Load case U2A_Bridge object_Girder_Beam_Slab-Forces CSiBridge.xlsx",
+      "source_sha256": "8ed82fb1cb3f69b02c68a555a3058a6f67aa569cfb5d783da976ce90f8956a34",
+      "girder_load_rows": 552,
+      "girders": 6,
+      "component_input_rows": 1656,
+      "auto_mapping": true,
+      "force_source_mode": "unverified"
+    }
+  ],
+  "component_inventory": [
+    {
+      "File": "Load case DEAD (DL)_Bridge object_Girder_Beam_Slab-Forces CSiBridge.xlsx",
+      "Bridge": "",
+      "Girder": "Left Exterior Girder",
+      "Case": "Load case DEAD (DL)_Bridge object_Girder_Beam_Slab-Forces CSiBridge",
+      "Components": "Girder / Beam / Slab",
+      "Rows": 138,
+      "Input state": "Single-state source",
+      "Complete components": true,
+      "Matches active Loads file": false,
+      "Use": "Source inputs only — origins / component cuts / external loads still require a model"
+    },
+    {
+      "File": "Load case DEAD (DL)_Bridge object_Girder_Beam_Slab-Forces CSiBridge.xlsx",
+      "Bridge": "",
+      "Girder": "Interior Girder 1",
+      "Case": "Load case DEAD (DL)_Bridge object_Girder_Beam_Slab-Forces CSiBridge",
+      "Components": "Girder / Beam / Slab",
+      "Rows": 138,
+      "Input state": "Single-state source",
+      "Complete components": true,
+      "Matches active Loads file": false,
+      "Use": "Source inputs only — origins / component cuts / external loads still require a model"
+    },
+    {
+      "File": "Load case DEAD (DL)_Bridge object_Girder_Beam_Slab-Forces CSiBridge.xlsx",
+      "Bridge": "",
+      "Girder": "Interior Girder 2",
+      "Case": "Load case DEAD (DL)_Bridge object_Girder_Beam_Slab-Forces CSiBridge",
+      "Components": "Girder / Beam / Slab",
+      "Rows": 138,
+      "Input state": "Single-state source",
+      "Complete components": true,
+      "Matches active Loads file": false,
+      "Use": "Source inputs only — origins / component cuts / external loads still require a model"
+    },
+    {
+      "File": "Load case DEAD (DL)_Bridge object_Girder_Beam_Slab-Forces CSiBridge.xlsx",
+      "Bridge": "",
+      "Girder": "Interior Girder 3",
+      "Case": "Load case DEAD (DL)_Bridge object_Girder_Beam_Slab-Forces CSiBridge",
+      "Components": "Girder / Beam / Slab",
+      "Rows": 138,
+      "Input state": "Single-state source",
+      "Complete components": true,
+      "Matches active Loads file": false,
+      "Use": "Source inputs only — origins / component cuts / external loads still require a model"
+    },
+    {
+      "File": "Load case DEAD (DL)_Bridge object_Girder_Beam_Slab-Forces CSiBridge.xlsx",
+      "Bridge": "",
+      "Girder": "Interior Girder 4",
+      "Case": "Load case DEAD (DL)_Bridge object_Girder_Beam_Slab-Forces CSiBridge",
+      "Components": "Girder / Beam / Slab",
+      "Rows": 138,
+      "Input state": "Single-state source",
+      "Complete components": true,
+      "Matches active Loads file": false,
+      "Use": "Source inputs only — origins / component cuts / external loads still require a model"
+    },
+    {
+      "File": "Load case DEAD (DL)_Bridge object_Girder_Beam_Slab-Forces CSiBridge.xlsx",
+      "Bridge": "",
+      "Girder": "Right Exterior Girder",
+      "Case": "Load case DEAD (DL)_Bridge object_Girder_Beam_Slab-Forces CSiBridge",
+      "Components": "Girder / Beam / Slab",
+      "Rows": 138,
+      "Input state": "Single-state source",
+      "Complete components": true,
+      "Matches active Loads file": false,
+      "Use": "Source inputs only — origins / component cuts / external loads still require a model"
+    },
+    {
+      "File": "ULS Load case U2A_Bridge object_Girder_Beam_Slab-Forces CSiBridge.xlsx",
+      "Bridge": "",
+      "Girder": "Left Exterior Girder",
+      "Case": "ULS Load case U2A_Bridge object_Girder_Beam_Slab-Forces CSiBridge",
+      "Components": "Girder / Beam / Slab",
+      "Rows": 276,
+      "Input state": "State pairing required",
+      "Complete components": true,
+      "Matches active Loads file": false,
+      "Use": "Source inputs only — origins / component cuts / external loads still require a model"
+    },
+    {
+      "File": "ULS Load case U2A_Bridge object_Girder_Beam_Slab-Forces CSiBridge.xlsx",
+      "Bridge": "",
+      "Girder": "Interior Girder 1",
+      "Case": "ULS Load case U2A_Bridge object_Girder_Beam_Slab-Forces CSiBridge",
+      "Components": "Girder / Beam / Slab",
+      "Rows": 276,
+      "Input state": "State pairing required",
+      "Complete components": true,
+      "Matches active Loads file": false,
+      "Use": "Source inputs only — origins / component cuts / external loads still require a model"
+    },
+    {
+      "File": "ULS Load case U2A_Bridge object_Girder_Beam_Slab-Forces CSiBridge.xlsx",
+      "Bridge": "",
+      "Girder": "Interior Girder 2",
+      "Case": "ULS Load case U2A_Bridge object_Girder_Beam_Slab-Forces CSiBridge",
+      "Components": "Girder / Beam / Slab",
+      "Rows": 276,
+      "Input state": "State pairing required",
+      "Complete components": true,
+      "Matches active Loads file": false,
+      "Use": "Source inputs only — origins / component cuts / external loads still require a model"
+    },
+    {
+      "File": "ULS Load case U2A_Bridge object_Girder_Beam_Slab-Forces CSiBridge.xlsx",
+      "Bridge": "",
+      "Girder": "Interior Girder 3",
+      "Case": "ULS Load case U2A_Bridge object_Girder_Beam_Slab-Forces CSiBridge",
+      "Components": "Girder / Beam / Slab",
+      "Rows": 276,
+      "Input state": "State pairing required",
+      "Complete components": true,
+      "Matches active Loads file": false,
+      "Use": "Source inputs only — origins / component cuts / external loads still require a model"
+    },
+    {
+      "File": "ULS Load case U2A_Bridge object_Girder_Beam_Slab-Forces CSiBridge.xlsx",
+      "Bridge": "",
+      "Girder": "Interior Girder 4",
+      "Case": "ULS Load case U2A_Bridge object_Girder_Beam_Slab-Forces CSiBridge",
+      "Components": "Girder / Beam / Slab",
+      "Rows": 276,
+      "Input state": "State pairing required",
+      "Complete components": true,
+      "Matches active Loads file": false,
+      "Use": "Source inputs only — origins / component cuts / external loads still require a model"
+    },
+    {
+      "File": "ULS Load case U2A_Bridge object_Girder_Beam_Slab-Forces CSiBridge.xlsx",
+      "Bridge": "",
+      "Girder": "Right Exterior Girder",
+      "Case": "ULS Load case U2A_Bridge object_Girder_Beam_Slab-Forces CSiBridge",
+      "Components": "Girder / Beam / Slab",
+      "Rows": 276,
+      "Input state": "State pairing required",
+      "Complete components": true,
+      "Matches active Loads file": false,
+      "Use": "Source inputs only — origins / component cuts / external loads still require a model"
+    }
+  ],
+  "missing_inputs": [
+    {
+      "Input": "U-leg centres a",
+      "Where": "Dowel detail",
+      "Why": "Required measured bar geometry (mm)"
+    },
+    {
+      "Input": "Interface to outside of top hook",
+      "Where": "Dowel detail",
+      "Why": "Required measured bar geometry (mm)"
+    },
+    {
+      "Input": "Straight tail after 90° bend",
+      "Where": "Dowel detail",
+      "Why": "Required measured bar geometry (mm)"
+    },
+    {
+      "Input": "Inside bend diameter",
+      "Where": "Dowel detail",
+      "Why": "Required measured bar geometry (mm)"
+    },
+    {
+      "Input": "Straight bonded leg below interface",
+      "Where": "Dowel detail",
+      "Why": "Required measured bar geometry (mm)"
+    },
+    {
+      "Input": "Dowel coating",
+      "Where": "Dowel detail",
+      "Why": "Select the actual coating; development requirements depend on it"
+    },
+    {
+      "Input": "Anchorage region",
+      "Where": "Dowel detail",
+      "Why": "Unknown / discontinuous-end anchorage needs a different detailing check"
+    },
+    {
+      "Input": "C–C — enter longitudinal range start / end",
+      "Where": "Dowel layout",
+      "Why": "Section labels do not define the longitudinal extent"
+    },
+    {
+      "Input": "D–D — enter longitudinal range start / end",
+      "Where": "Dowel layout",
+      "Why": "Section labels do not define the longitudinal extent"
+    },
+    {
+      "Input": "E–E — enter longitudinal range start / end",
+      "Where": "Dowel layout",
+      "Why": "Section labels do not define the longitudinal extent"
+    }
+  ],
+  "pending_model_steps": [
+    {
+      "Step": "Recover interface force state",
+      "Status": "MODEL DEVELOPMENT",
+      "Meaning": "Use paired component states, verified origins and external loading in a joint free-body; Girder Tu alone is insufficient. Manual forces are an optional advanced review."
+    },
+    {
+      "Step": "Full composite Tn / V–T resistance",
+      "Status": "NOT IMPLEMENTED",
+      "Meaning": "Coupled resistance and structural validation are required before production design acceptance."
+    }
+  ],
+  "full_composite_Tn_or_VT_implemented": false,
+  "engineering_equations_changed": false,
+  "browser_visual_QA": false,
+  "browser_visual_QA_reason": "No local browser executable; browser download did not return a usable archive",
+  "actual_import_AppTest": {
+    "normal_path_without_member_mapping": true,
+    "new_confirmation_checkboxes": 0,
+    "girder_load_rows": 276,
+    "component_input_rows": 828,
+    "source_tables_persist_in_project": true,
+    "view_does_not_reimport": true
+  },
+  "full_app_AppTest": {
+    "joint_calculate_calls": 1,
+    "no_implicit_solver_call": true,
+    "no_manual_joint_force_grid_by_default": true,
+    "no_production_ULS_mutation": true,
+    "raw_Loads_unchanged": true,
+    "source_inputs_survive_project_roundtrip": true,
+    "solver_results_not_saved": true,
+    "summary_report_no_rerun": true
+  }
+}

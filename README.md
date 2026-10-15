@@ -1,3 +1,19 @@
+# IGIRDER.INPUT30 — Simple composite inputs
+
+Named Girder worksheets now use the normal ULS import path. Beam/Slab worksheets from the same file are retained as source inputs in Project JSON and never imported as extra girders. Dowel details and optional manual joint forces are collapsed; existing section, reinforcement and Loads inputs are reused.
+
+Run `streamlit run app.py` and open `I_Girder_20m_INPUT30_DRAFT.json`. See `IGIRDER_INPUT30_HANDOFF_TH.md`. The draft adds DL/U2A component reference inputs only; active Loads and measured dowel unknowns are preserved.
+
+Selected tests: 271 passed (20 new INPUT30 cases); actual-file import and full-app Streamlit AppTest passed. Browser screenshot QA was unavailable. Resistance equations are unchanged: automatic interface-reaction recovery and full composite Tn/V–T resistance remain unimplemented.
+
+# Concrete Section Pro — IGIRDER.JOINT29
+
+Analysis now checks U-dowel tension-hook / straight development and actual bonded-leg cover through the local girder polygon. A separate cracked-joint equilibrium model screens simultaneous interface shear, opening and roll using one shared developed-steel supply, compression-only contact and zero-cohesion friction. Joint mx is entered from a free-body/interface source; Girder Tu is never substituted.
+
+Run `streamlit run app.py`, open `I_Girder_20m_JOINT29_DRAFT.json`, then Analysis → Final Composite → U-dowel torque transfer. Complete independent dowel ranges, measured anchorage, leg spacing, coating/region and actual joint actions before Calculate U-dowel Joint. Unknowns remain unknown. All mechanism results retain REVIEW for composite design and stay outside production ULS / Summary / Report-QA. Full composite V–T and biaxial resistance remain incomplete. See `IGIRDER_JOINT29_HANDOFF_TH.md`. 251 selected tests passed, including 40 new cases; full-app Streamlit AppTest passed. SciPy is now a runtime dependency.
+
+## Previous milestone
+
 # Concrete Section Pro — IGIRDER.DOWEL28
 
 Girder–deck interface checks now select the actual crossing reinforcement: extended girder stirrups, explicitly linked dowels, or an independent dowel layout. Independent dowels supply their own diameter, crossing-leg count, spacing, fy and longitudinal extents; missing ranges retain REVIEW without a stirrup fallback. Editing I-hoops cannot increase independent dowel Avf.

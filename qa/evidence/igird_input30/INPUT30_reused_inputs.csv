@@ -1,0 +1,7 @@
+﻿Input,Value,Source
+I-girder depth / top flange / web,1500 / 600 / 200 mm,Section Builder
+Assigned slab width / thickness,1200 / 350 mm,Section Builder
+Slab longitudinal top / bottom,DB16 @ 200 / DB16 @ 150,Existing reinforcement; no new entry
+Dowel bars / fy / spacing,Existing connector layout,Independent dowel data
+ULS force rows,640,Loads; original values retained
+Beam / Slab source files,2,Same CSiBridge uploader

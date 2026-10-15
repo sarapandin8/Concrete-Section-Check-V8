@@ -1,0 +1,20 @@
+{
+  "baseline_zip": "concrete-section-pro_IGIRDER-JOINT29.zip",
+  "baseline_sha256": "a281a917df728b69cb33b5f8b27c60d0d9739c02465b3c65f860588755764f7f",
+  "modified_files": [
+    "README.md",
+    "concrete_pmm_pro/ui/analysis_page.py",
+    "concrete_pmm_pro/ui/girder_csi_import.py",
+    "concrete_pmm_pro/ui/igird_dowel_joint.py",
+    "concrete_pmm_pro/ui/igird_interface_connectors.py"
+  ],
+  "new_source_files": [
+    "IGIRDER_INPUT30_HANDOFF_TH.md",
+    "concrete_pmm_pro/io/csi_component_sources.py",
+    "concrete_pmm_pro/ui/igird_composite_inputs.py",
+    "qa/igird_input30_actual_review.py",
+    "tests/test_igird_input30.py"
+  ],
+  "analysis_module_bytes_unchanged": true,
+  "release_scope": "UI and input-source capture only; no full composite resistance solver"
+}

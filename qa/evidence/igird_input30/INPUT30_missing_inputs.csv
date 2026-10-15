@@ -1,0 +1,11 @@
+﻿Input,Where,Why
+U-leg centres a,Dowel detail,Required measured bar geometry (mm)
+Interface to outside of top hook,Dowel detail,Required measured bar geometry (mm)
+Straight tail after 90° bend,Dowel detail,Required measured bar geometry (mm)
+Inside bend diameter,Dowel detail,Required measured bar geometry (mm)
+Straight bonded leg below interface,Dowel detail,Required measured bar geometry (mm)
+Dowel coating,Dowel detail,Select the actual coating; development requirements depend on it
+Anchorage region,Dowel detail,Unknown / discontinuous-end anchorage needs a different detailing check
+C–C — enter longitudinal range start / end,Dowel layout,Section labels do not define the longitudinal extent
+D–D — enter longitudinal range start / end,Dowel layout,Section labels do not define the longitudinal extent
+E–E — enter longitudinal range start / end,Dowel layout,Section labels do not define the longitudinal extent

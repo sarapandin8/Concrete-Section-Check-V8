@@ -1,0 +1,3 @@
+﻿Step,Status,Meaning
+Recover interface force state,MODEL DEVELOPMENT,"Use paired component states, verified origins and external loading in a joint free-body; Girder Tu alone is insufficient. Manual forces are an optional advanced review."
+Full composite Tn / V–T resistance,NOT IMPLEMENTED,Coupled resistance and structural validation are required before production design acceptance.

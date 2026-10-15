@@ -14142,6 +14142,10 @@ def _igird_store_interface_shear_settings(settings: Mapping[str, object]) -> Non
     normalized = dict(settings)
     previous = _igird_interface_shear_settings_from_state(st.session_state)
     if normalized != previous:
+        st.session_state.pop("igird_joint29_mechanism_review", None)
+    # Mechanism-preview inputs/results are separate from production acceptance.
+    production = lambda cfg: {k:v for k,v in cfg.items() if k != "dowel_connection"}
+    if production(normalized) != production(previous):
         # An interface-source edit invalidates composite-action acceptance.
         st.session_state.pop(_BEAM_ULS_MANUAL_CALC_CACHE_KEY, None)
         from concrete_pmm_pro.ui.igird_member_results import CACHE_KEY
@@ -14211,7 +14215,11 @@ def _igird_render_interface_shear_settings(state: Mapping[str, object]) -> dict[
     from concrete_pmm_pro.ui.igird_interface_connectors import render_source
     from concrete_pmm_pro.analysis.igird_interface_connectors import STIRRUPS
     connector_fields = render_source(current, _beam_uls_shear_reinforcement_dataframe_from_state(state))
-    cols = st.columns([1.7, 1.15, 1.55])
+    if connector_fields["connector_source"] != STIRRUPS:
+        from concrete_pmm_pro.ui.igird_dowel_joint import render_settings
+        connector_fields.update(render_settings({**current, **connector_fields},
+            section_params=_beam_uls_get_state_value(state, "section_parameters", {}) or {},state=state))
+    cols = st.columns([1.7, 1.15])
     with cols[0]:
         selected_label = st.selectbox(
             "Interface surface condition",
@@ -14222,6 +14230,10 @@ def _igird_render_interface_shear_settings(state: Mapping[str, object]) -> dict[
         )
         surface_key = keys[labels.index(selected_label)]
     with cols[1]:
+        current_bvi,current_bvi_basis=_igird_interface_bvi_mm(state,current)
+        st.markdown("**Interface contact width**")
+        st.caption(f"{current_bvi:,.0f} mm · {current_bvi_basis}" if math.isfinite(current_bvi) else current_bvi_basis)
+    with st.expander("Interface options — width / existing anchorage basis",expanded=False):
         width_mode = st.radio(
             "Interface width bvi",
             [_IGIRDER_INTERFACE_WIDTH_AUTO, _IGIRDER_INTERFACE_WIDTH_MANUAL],
@@ -14229,15 +14241,9 @@ def _igird_render_interface_shear_settings(state: Mapping[str, object]) -> dict[
             key="igird_interface_width_mode",
         )
         override_default = float(current.get("bvi_override_mm") or 0.0)
-        bvi_override = st.number_input(
-            "Manual bvi (mm)",
-            min_value=0.0,
-            value=override_default,
-            step=10.0,
-            disabled=width_mode != _IGIRDER_INTERFACE_WIDTH_MANUAL,
-            key="igird_interface_bvi_override_mm",
-        )
-    with cols[2]:
+        bvi_override = (st.number_input(
+            "Manual bvi (mm)", min_value=0.0, value=override_default, step=10.0,
+            key="igird_interface_bvi_override_mm") if width_mode == _IGIRDER_INTERFACE_WIDTH_MANUAL else override_default)
         anchored = st.checkbox(
             "Selected interface connector legs cross the joint and are fully developed/anchored on both sides",
             value=bool(current.get("connectors_cross_and_anchored", False)),
@@ -14269,7 +14275,7 @@ def _igird_interface_shear_hash(
         {
             "result_version": _IGIRDER_INTERFACE_SHEAR_RESULT_VERSION,
             "engineering_input_hash": _beam_uls_cache_input_hash(state, supported_df, strength_route=strength_route),
-            "interface_settings": dict(settings),
+            "interface_settings": {k:v for k,v in settings.items() if k != "dowel_connection"},
             "shear_reinforcement_table": _beam_uls_get_state_value(state, SHEAR_REINFORCEMENT_TABLE_KEY, []),
         }
     )
@@ -14470,6 +14476,60 @@ def _igird_interface_shear_dataframe(
     messages.append("The special low-stress roughened girder/slab minimum-reinforcement waiver is reported when potentially eligible but is not silently applied by IGIRDER.ULS4A.")
     messages.append(density_note)
     return pd.DataFrame(rows), deduplicate_warnings(messages)
+
+
+def _igird_dowel_joint_review(state: Mapping[str, object], settings: Mapping[str, object], *, code_label: str) -> dict:
+    """Explicit Analysis-only mechanism calculation, isolated from ULS results."""
+    from concrete_pmm_pro.analysis import igird_dowel_joint as joint
+    label=str(code_label).upper()
+    if "AASHTO" not in label or not any(token in label for token in ("2020","9TH","NINTH")):
+        return {"version":joint.VERSION,"scope":joint.SCOPE,"requirements":[],"traces":[],"missing_actions":True,
+            "rows":[{"Status":"REVIEW","Reason":"This anchorage/mechanism route requires the AASHTO LRFD 2020 code basis."}]}
+    prep, _, _ = _beam_uls_final_composite_preparation(state)
+    params = dict(_beam_uls_get_state_value(state,"section_parameters",{}) or {})
+    lightweight, density_note = _igird_interface_density_basis(state)
+    try:
+        span = _beam_uls_span_length_from_state(state,is_building=False)
+        start,end = igird_end_sections.cut_ends(params,span)
+    except (ValueError,TypeError) as exc:
+        return {"version":joint.VERSION,"scope":joint.SCOPE,"requirements":[],"traces":[],"missing_actions":True,
+            "rows":[{"Status":"REVIEW","Reason":"Physical member domain is unresolved: "+str(exc)}]}
+    girder_material=_beam_uls_get_state_value(state,"concrete_material")
+    girder_density=_beam_uls_float(girder_material.get("density_kg_m3") if isinstance(girder_material,Mapping)
+        else getattr(girder_material,"density_kg_m3",None))
+    deck_name=str(_beam_uls_get_state_value(state,"deck_topping_material_name","") or "")
+    deck_density=float("nan")
+    for material in list(_beam_uls_get_state_value(state,"concrete_materials",[]) or []):
+        name=material.get("name") if isinstance(material,Mapping) else getattr(material,"name",None)
+        if deck_name and name==deck_name:
+            deck_density=_beam_uls_float(material.get("density_kg_m3") if isinstance(material,Mapping)
+                else getattr(material,"density_kg_m3",None));break
+    base = {"fc_slab_MPa":_beam_uls_float(getattr(prep,"deck_fc_MPa",None)),
+        "fc_girder_MPa":_beam_uls_float(getattr(prep,"girder_fc_MPa",None)),
+        "slab_thickness_mm":_beam_uls_float(getattr(prep,"deck_thickness_mm",None)),
+        "normal_weight":not lightweight and all(math.isfinite(v) and v>=2200 for v in (girder_density,deck_density)),
+        "surface_key":settings.get("surface_key"),"start_m":start,"end_m":end}
+    def context(x):
+        if not math.isfinite(x):raise ValueError("Enter a finite joint-action station.")
+        local = igird_station_section.at_station(state,x) if igird_end_sections.enabled(state) else state
+        geometry = _beam_uls_get_state_value(local,"section_geometry")
+        if isinstance(geometry,Mapping):geometry=SectionGeometry.model_validate(geometry)
+        if not isinstance(geometry,SectionGeometry):raise ValueError("A valid local girder polygon is required for the U-leg anchorage path.")
+        _,ymin,_,ymax=_beam_uls_section_bounds(geometry)
+        width,width_basis=_igird_interface_bvi_mm(local,settings)
+        polygon=to_shapely_polygon(geometry)
+        minx,_,maxx,_=polygon.bounds
+        contact=polygon.intersection(LineString([(minx-1,ymax),(maxx+1,ymax)]))
+        if contact.geom_type!="LineString":raise ValueError("This joint model requires one continuous physical contact strip.")
+        if not math.isfinite(width) or width<=0 or width>contact.length+1e-7:
+            raise ValueError("Joint contact width must fit within the local physical girder/slab contact.")
+        return {**base,"girder_depth_mm":ymax-ymin,"width_mm":width,"width_basis":width_basis,
+            "girder_polygon":[list(pair) for pair in polygon.exterior.coords],
+            "girder_holes":[[list(pair) for pair in hole.coords] for hole in polygon.interiors],
+            "contact_center_x_mm":contact.centroid.x,"contact_top_y_mm":ymax,
+            "girder_zone":_beam_uls_active_shear_zone_for_station(state,x,require_coverage=True)}
+    zones=_beam_uls_shear_reinforcement_dataframe_from_state(state).to_dict("records")
+    return joint.build_review(settings,context_for_station=context,base_context=base,girder_zones=zones)
 
 
 def _igird_interface_governing_row(result_df: pd.DataFrame | None) -> dict[str, object] | None:
@@ -15029,7 +15089,7 @@ def _render_beam_girder_final_composite_flexure_guard(
         {"title": "Demand source", "value": "FINAL ULS Vuy", "detail": "AASHTO 5.7.4.5 · absolute verified FEA shear", "status": "info"},
         {"title": "Interface width bvi", "value": f"{bvi_value:,.0f} mm" if math.isfinite(bvi_value) else "REVIEW", "detail": bvi_basis, "status": "info" if math.isfinite(bvi_value) else "warning"},
         {"title": "Surface basis", "value": "ROUGHENED 6.35 mm" if surface_preset.key == SURFACE_ROUGHENED_GIRDER_SLAB else "NOT ROUGHENED", "detail": surface_preset.label, "status": "ready" if surface_preset.key == SURFACE_ROUGHENED_GIRDER_SLAB else "warning"},
-        {"title": "Crossing reinforcement", "value": "CONFIRMED" if interface_settings.get("stirrups_cross_and_anchored") else "REVIEW", "detail": "Active Sections → Rebar stirrup zones are Avf source", "status": "ready" if interface_settings.get("stirrups_cross_and_anchored") else "warning"},
+        {"title": "Crossing reinforcement", "value": "DECLARED" if interface_settings.get("connectors_cross_and_anchored") else "REVIEW", "detail": "Selected interface connector source; detailed anchorage remains separate", "status": "info" if interface_settings.get("connectors_cross_and_anchored") else "warning"},
     ]
     _render_analysis_summary_strip(input_cards, columns=4)
 
@@ -15089,7 +15149,7 @@ def _render_beam_girder_final_composite_flexure_guard(
             {"title": "Interface shear", "value": "NOT CALCULATED", "detail": "Run the current AASHTO 5.7.4 composite-action gate", "status": "warning", "strong": True},
             {"title": "Governing vui / D/C", "value": "-", "detail": "Final ULS Vuy → interface demand", "status": "info"},
             {"title": "φvni", "value": "-", "detail": "c + μAvffy with K1f'c and K2 caps", "status": "info"},
-            {"title": "Avf provided / minimum", "value": "-", "detail": "Active stirrup zone crossing the interface", "status": "info"},
+            {"title": "Avf provided / minimum", "value": "-", "detail": "Selected connector zone crossing the interface", "status": "info"},
         ]
     else:
         strength_dc = _beam_uls_float(interface_gov.get("Strength D/C"))
@@ -15116,7 +15176,7 @@ def _render_beam_girder_final_composite_flexure_guard(
                 "Blue vui max is the maximum interface demand across all Max/Min row sets at each station. "
                 "Red φvni is the minimum available resistance at that station. Governing D/C and acceptance use each original check row; all rows remain in the audit. "
                 "Demand follows AASHTO 5.7.4.5 using Final ULS Vuy and dv from the station tension-steel centroid to slab mid-thickness. "
-                "Resistance follows 5.7.4.3 with Pc = 0, weaker-side f'c, the 60-ksi fy cap, and active stirrup zones only when interface anchorage is confirmed."
+                "Resistance follows 5.7.4.3 with Pc = 0, weaker-side f'c, the 60-ksi fy cap, and the selected connector source with the existing crossing/anchorage declaration."
             ),
             interactive=True,
         )
@@ -15130,6 +15190,11 @@ def _render_beam_girder_final_composite_flexure_guard(
             )
     else:
         st.info("Calculate Interface Shear to close the Final Composite composite-action acceptance gate.")
+
+    from concrete_pmm_pro.ui.igird_dowel_joint import render_analysis as render_dowel_joint_analysis
+    render_dowel_joint_analysis(interface_settings, fingerprint=interface_hash,
+        calculate=lambda: _igird_dowel_joint_review(st.session_state,interface_settings,code_label=code_label),
+        render_cards=_render_analysis_summary_strip,state=st.session_state)
 
     if preview_df is None or preview_df.empty:
         _render_beam_uls_browser_plotly_figure(

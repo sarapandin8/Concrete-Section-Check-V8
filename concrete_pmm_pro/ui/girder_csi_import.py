@@ -70,6 +70,15 @@ def render_import(*, state_key, editor_key, key_prefix, force_unit, moment_unit)
         render_component_equilibrium(files, source_mode=mode, concurrency_confirmed=confirmed,
             evidence=evidence, key_prefix=key_prefix)
     _render_saved_source_readiness()
+    from concrete_pmm_pro.io.csi_component_sources import saved as saved_components
+    component_inputs=saved_components(st.session_state).get('sources',[])
+    if component_inputs:
+        st.caption(f"{len(component_inputs)} component source file(s) saved with the project. "
+            "Beam/Slab tables use the same upload; they are source inputs, not extra girders or calculated interface forces.")
+        for component_input in component_inputs:
+            if component_input.get('errors'):
+                st.warning(component_input['filename']+': component inputs are incomplete. '+
+                    '; '.join(component_input['errors'][:2]))
     with st.expander('Templates and column mapping', expanded=False):
         if receipt:
             st.caption('Last successful import: '+receipt)
@@ -136,7 +145,7 @@ def _render_simple_native_import(staged, files, *, state_key, editor_key, key_pr
                  key=key_prefix+'_simple_import'):
         _commit_import(imported, current=pd.DataFrame(st.session_state.get(BANK_KEY, [])),
             append=False, state_key=state_key, editor_key=editor_key, key_prefix=key_prefix,
-            file_names=[f.name for f in files])
+            file_names=[f.name for f in files], source_files=files)
         st.session_state[key_prefix+'_auto_import_signature'] = _upload_signature(files)
         st.rerun()
     with st.expander('Preview source rows', expanded=False):
@@ -203,8 +212,14 @@ def _render_saved_source_readiness():
 
 
 def _native_preview(files, *, source_mode='unverified', concurrency_confirmed=False, evidence=''):
-    """Validate all native files first; never publish a partial import."""
+    """Recognize native tables or named Girder sheets before one atomic import.
+
+    Beam/Slab sheets are source inputs, not additional physical girders. The
+    bridge-wide aggregate is not a single girder. Ambiguous sheet names still
+    use the existing explicit mapping route.
+    """
     from concrete_pmm_pro.ui.loads_page import _workflow_table_result
+    from concrete_pmm_pro.analysis.csi_component_equilibrium import _component
     frames, issues, seen = [], [], set()
     for uploaded in files:
         payload = uploaded.getvalue()
@@ -218,22 +233,37 @@ def _native_preview(files, *, source_mode='unverified', concurrency_confirmed=Fa
         except Exception as exc:
             issues.append(uploaded.name+': '+str(exc))
             continue
+        from concrete_pmm_pro.io.csi_component_sources import missing_named_tables
+        issues.extend(uploaded.name+': '+name+' — Girder force headers could not be identified'
+            for name,kind in missing_named_tables(payload,uploaded.name,tables) if kind=='girder')
         eligible = {n:t for n,t in tables.items() if is_native_bridge_table(t) or is_csi_table(t) or is_app_table(t)}
-        if not eligible or not all(is_native_bridge_table(t) for t in eligible.values()):
+        if not eligible or not all(is_csi_table(t) for t in eligible.values()):
             return None
+        file_frames=[]
         for sheet, table in eligible.items():
             groups = split_member_tables(table,sheet_name=sheet)
             if not groups:
                 issues.append(uploaded.name+': no physical member rows')
             for group in groups:
+                identity=_component(group.girder or sheet)
+                if identity is not None and identity[0] in {'beam','slab'}:
+                    continue
+                if str(sheet).strip().casefold() == 'entire bridge section':
+                    continue
+                if not is_native_bridge_table(table) and (identity is None or identity[0]!='girder'):
+                    return None
                 parsed = prepare_csi_table(group.frame,sheet_name=sheet,
+                    case_name=Path(uploaded.name).stem,
                     source_name=uploaded.name+' ['+digest[:8]+']', source_mode=source_mode,
                     concurrency_confirmed=concurrency_confirmed, evidence=evidence)
                 issues.extend(parsed.errors)
                 frame = parsed.frame.copy()
                 frame['Case Name'] = group.name+' / '+frame['Case Name'].astype(str)
                 frame['Girder'] = group.name
-                frames.append(frame)
+                file_frames.append(frame)
+        if not file_frames:
+            issues.append(uploaded.name+': no individual Girder source tables found')
+        frames.extend(file_frames)
     imported = pd.concat(frames,ignore_index=True) if frames else pd.DataFrame(columns=['Girder',*APP_COLUMNS])
     valid = _workflow_table_result(imported,table_name='ULS import',
         numeric_columns=['Station x (m)','Mux','Vuy','Tu','Muy','Vux','Nu'],
@@ -241,7 +271,30 @@ def _native_preview(files, *, source_mode='unverified', concurrency_confirmed=Fa
     return imported, [*issues,*valid.errors]
 
 
-def _commit_import(imported, *, current, append, state_key, editor_key, key_prefix, file_names):
+def _capture_component_inputs(files, imported, *, append):
+    """Retain input tables on explicit import; opening an uploader never writes."""
+    from concrete_pmm_pro.io import csi_component_sources as components
+    from concrete_pmm_pro.io.girder_csi_import import source_info
+    retained = components.saved(st.session_state).get('sources', []) if append else []
+    notes = [source_info(row) or {} for row in imported.to_dict('records')]
+    for uploaded in files:
+        payload=uploaded.getvalue()
+        digest=hashlib.sha256(payload).hexdigest()
+        matching=[info for info in notes if info.get('source_sha256') == digest]
+        contracts={(info.get('source_mode','unverified'),bool(info.get('concurrency_confirmed')),str(info.get('evidence','')))
+            for info in matching}
+        mode,confirmed,evidence=next(iter(contracts)) if len(contracts)==1 else ('unverified',False,'')
+        try:
+            source=components.capture(payload,uploaded.name,source_mode=mode,
+                concurrency_confirmed=confirmed,evidence=evidence)
+        except Exception as exc:
+            source={'filename':uploaded.name,'sha256':digest,'records':[],
+                'errors':['Component inputs could not be read: '+str(exc)]}
+        retained.append(source)
+    return components.collection(retained)
+
+
+def _commit_import(imported, *, current, append, state_key, editor_key, key_prefix, file_names, source_files=None):
     from concrete_pmm_pro.io.girder_load_bank import BANK_KEY, merge_bank, activate_member
     from concrete_pmm_pro.ui.loads_page import _sync_workflow_load_tables_metadata
     from concrete_pmm_pro.ui import analysis_page as ap, igird_member_results as mr
@@ -255,6 +308,10 @@ def _commit_import(imported, *, current, append, state_key, editor_key, key_pref
     st.session_state[SETTINGS_KEY] = cfg
     metadata = dict(st.session_state.get('project_metadata') or {})
     metadata[SETTINGS_KEY] = cfg
+    if source_files is not None:
+        from concrete_pmm_pro.io import csi_component_sources as components
+        metadata[components.KEY]=_capture_component_inputs(source_files,imported,append=append)
+        st.session_state.pop('igird_joint29_mechanism_review',None)
     st.session_state['project_metadata'] = metadata
     st.session_state.pop('igird_axial_input_sign',None)
     st.session_state.pop(mr.CACHE_KEY,None)
@@ -281,7 +338,7 @@ def _apply_native_upload(staged, files, *, state_key, editor_key, key_prefix, fo
     already_stored = _native_upload_already_stored(imported, bank)
     if signature != st.session_state.get(key_prefix+'_auto_import_signature') and not already_stored:
         _commit_import(imported,current=pd.DataFrame(st.session_state.get(BANK_KEY,[])),append=False,
-            state_key=state_key,editor_key=editor_key,key_prefix=key_prefix,file_names=[f.name for f in files])
+            state_key=state_key,editor_key=editor_key,key_prefix=key_prefix,file_names=[f.name for f in files],source_files=files)
         st.session_state[key_prefix+'_auto_import_signature'] = signature
         st.rerun()
     # Advanced import, project loading and widget cleanup must never reapply an
@@ -462,7 +519,7 @@ def _render_batch(uploaded, *, state_key, editor_key, key_prefix, force_unit, mo
         append = st.button('Add tables to girder collection', disabled=disabled or bool(append_issues), key=key_prefix+'_append_import')
     if replace or append:
         _commit_import(imported,current=current,append=append,state_key=state_key,editor_key=editor_key,
-            key_prefix=key_prefix,file_names=[f.name for f in uploaded])
+            key_prefix=key_prefix,file_names=[f.name for f in uploaded],source_files=uploaded)
         st.session_state[key_prefix+'_auto_import_signature'] = _upload_signature(uploaded)
         st.rerun()
 

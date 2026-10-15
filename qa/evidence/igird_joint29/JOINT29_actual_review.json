@@ -1,0 +1,122 @@
+{
+  "version": "IGIRDER.JOINT29",
+  "project_json": "I_Girder_20m_JOINT29_DRAFT.json",
+  "original_project_sha256": "67d94bb464a95d8f9111c6d21b85be077ca0bb103773fa29458d9dc4d970f6aa",
+  "all_other_project_inputs_unchanged": true,
+  "loads_unchanged": true,
+  "dowel_extents_inferred": false,
+  "interface_actions_inferred_from_girder": false,
+  "drawing_dimensions_used_as_verified_inputs": false,
+  "actual_anchorage_alternatives": [
+    {
+      "Dowel zone": "C–C — enter longitudinal range",
+      "db mm": 12.0,
+      "fy MPa": 390.0,
+      "Scope": "Length requirements only; no coverage/anchorage acceptance",
+      "Slab ldh uncoated mm": 190.80277454783032,
+      "Girder ld uncoated mm": 637.6631885238107,
+      "Slab ldh epoxy mm": 228.96332945739638,
+      "Girder ld epoxy mm": 956.4947827857161,
+      "Tail required mm": 144.0,
+      "Bend required mm": 72.0,
+      "Reason": "Coating is unknown: alternatives shown only; no steel credit."
+    },
+    {
+      "Dowel zone": "D–D — enter longitudinal range",
+      "db mm": 12.0,
+      "fy MPa": 390.0,
+      "Scope": "Length requirements only; no coverage/anchorage acceptance",
+      "Slab ldh uncoated mm": 190.80277454783032,
+      "Girder ld uncoated mm": 637.6631885238107,
+      "Slab ldh epoxy mm": 228.96332945739638,
+      "Girder ld epoxy mm": 956.4947827857161,
+      "Tail required mm": 144.0,
+      "Bend required mm": 72.0,
+      "Reason": "Coating is unknown: alternatives shown only; no steel credit."
+    },
+    {
+      "Dowel zone": "E–E — enter longitudinal range",
+      "db mm": 12.0,
+      "fy MPa": 390.0,
+      "Scope": "Length requirements only; no coverage/anchorage acceptance",
+      "Slab ldh uncoated mm": 190.80277454783032,
+      "Girder ld uncoated mm": 637.6631885238107,
+      "Slab ldh epoxy mm": 228.96332945739638,
+      "Girder ld epoxy mm": 956.4947827857161,
+      "Tail required mm": 144.0,
+      "Bend required mm": 72.0,
+      "Reason": "Coating is unknown: alternatives shown only; no steel credit."
+    }
+  ],
+  "pending_actual_row_status": [
+    "REVIEW"
+  ],
+  "pending_actual_row_has_no_mechanism_solution": true,
+  "browser_screenshots_verified": false,
+  "hypothetical_equation_checks": [
+    {
+      "Scope": "HYPOTHETICAL EQUATION QA — NOT PROJECT CAPACITY",
+      "Case": "pure shear",
+      "n_kN_per_m": 0.0,
+      "qx_kN_per_m": 100.0,
+      "capacity_factor": 5.2929553027680845,
+      "closed_form_factor": 5.2929553027680845,
+      "equilibrium_residual": 5.684341886080802e-14
+    },
+    {
+      "Scope": "HYPOTHETICAL EQUATION QA — NOT PROJECT CAPACITY",
+      "Case": "pure opening",
+      "n_kN_per_m": 100.0,
+      "qx_kN_per_m": 0.0,
+      "capacity_factor": 5.2929553027680845,
+      "closed_form_factor": 5.2929553027680845,
+      "equilibrium_residual": 0.0
+    },
+    {
+      "Scope": "HYPOTHETICAL EQUATION QA — NOT PROJECT CAPACITY",
+      "Case": "opening plus shear",
+      "n_kN_per_m": 100.0,
+      "qx_kN_per_m": 100.0,
+      "capacity_factor": 2.6464776513840422,
+      "closed_form_factor": 2.6464776513840422,
+      "equilibrium_residual": 0.0
+    }
+  ],
+  "hypothetical_roll_mesh_check": {
+    "continuous_pressure_block_limit_kNm_per_m": 152.06227832983706,
+    "meshes": [
+      {
+        "cells": 32,
+        "moment_limit_kNm_per_m": 151.22351135650732
+      },
+      {
+        "cells": 64,
+        "moment_limit_kNm_per_m": 151.87426188905485
+      },
+      {
+        "cells": 128,
+        "moment_limit_kNm_per_m": 152.00646718918733
+      }
+    ]
+  },
+  "hypothetical_actual_geometry_pipeline": {
+    "scope": "Synthetic inputs only; no project or production result write",
+    "status": "REVIEW",
+    "capacity_factor": 2.6464776513840422,
+    "bonded_leg_path_check": {
+      "available_mm": 60.0,
+      "required_mm": 56.0,
+      "dc": 0.9333333333333333,
+      "adequate": true
+    },
+    "draft_file_unchanged_after_probe": true
+  },
+  "full_app_apptest": {
+    "calculate_calls": 1,
+    "no_automatic_mechanism_solve": true,
+    "no_production_uls_result_mutation": true,
+    "no_persistent_solver_witness": true,
+    "loads_preserved_after_ui_project_roundtrip": true,
+    "summary_report_no_rerun": true
+  }
+}
