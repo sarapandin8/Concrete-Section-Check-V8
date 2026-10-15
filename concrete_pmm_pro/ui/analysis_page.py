@@ -14110,7 +14110,7 @@ _IGIRDER_COMBINED_VT_RESULT_VERSION = IGIRD_CONCURRENT_VT_VERSION
 
 _IGIRDER_INTERFACE_SHEAR_SETTINGS_KEY = "beam_girder_interface_shear_settings"
 _IGIRDER_INTERFACE_SHEAR_CHECK_NAME = "Interface Shear — Final Composite"
-_IGIRDER_INTERFACE_SHEAR_RESULT_VERSION = "IGIRDER.ULS4A.full-span-audit-clarity"
+_IGIRDER_INTERFACE_SHEAR_RESULT_VERSION = "IGIRDER.DOWEL28.explicit-interface-connectors"
 # Legacy ULS3 source-test/status token retained for backward compatibility: INTERFACE SHEAR PENDING
 _IGIRDER_INTERFACE_WIDTH_AUTO = "Auto — I-Girder top flange B1"
 _IGIRDER_INTERFACE_WIDTH_MANUAL = "Manual override"
@@ -14128,16 +14128,24 @@ def _igird_interface_shear_settings_from_state(state: Mapping[str, object]) -> d
     if width_mode not in {_IGIRDER_INTERFACE_WIDTH_AUTO, _IGIRDER_INTERFACE_WIDTH_MANUAL}:
         width_mode = _IGIRDER_INTERFACE_WIDTH_AUTO
     override = _beam_uls_float(raw.get("bvi_override_mm"))
+    from concrete_pmm_pro.analysis.igird_interface_connectors import settings_fields
     return {
         "surface_key": surface_key,
         "width_mode": width_mode,
         "bvi_override_mm": float(override) if math.isfinite(override) and override > 0.0 else None,
         "stirrups_cross_and_anchored": bool(raw.get("stirrups_cross_and_anchored", False)),
+        **settings_fields(raw),
     }
 
 
 def _igird_store_interface_shear_settings(settings: Mapping[str, object]) -> None:
     normalized = dict(settings)
+    previous = _igird_interface_shear_settings_from_state(st.session_state)
+    if normalized != previous:
+        # An interface-source edit invalidates composite-action acceptance.
+        st.session_state.pop(_BEAM_ULS_MANUAL_CALC_CACHE_KEY, None)
+        from concrete_pmm_pro.ui.igird_member_results import CACHE_KEY
+        st.session_state.pop(CACHE_KEY, None)
     st.session_state[_IGIRDER_INTERFACE_SHEAR_SETTINGS_KEY] = normalized
     metadata = dict(st.session_state.get("project_metadata", {}) or {})
     metadata[_IGIRDER_INTERFACE_SHEAR_SETTINGS_KEY] = normalized
@@ -14197,8 +14205,12 @@ def _igird_render_interface_shear_settings(state: Mapping[str, object]) -> dict[
         surface_index = 0
     st.markdown("##### Composite action — girder/deck interface inputs")
     st.caption(
-        "Only interface-specific detailing is entered here. Demand comes from verified Final ULS Vuy; girder geometry, concrete strengths, prestress/tension-steel centroid, and stirrup zones are reused from the existing project inputs."
+        "Demand comes from Final ULS Vuy. Girder geometry, concrete strengths and tension-steel centroid are reused; "
+        "the reinforcement crossing the interface has its own explicit source."
     )
+    from concrete_pmm_pro.ui.igird_interface_connectors import render_source
+    from concrete_pmm_pro.analysis.igird_interface_connectors import STIRRUPS
+    connector_fields = render_source(current, _beam_uls_shear_reinforcement_dataframe_from_state(state))
     cols = st.columns([1.7, 1.15, 1.55])
     with cols[0]:
         selected_label = st.selectbox(
@@ -14227,17 +14239,20 @@ def _igird_render_interface_shear_settings(state: Mapping[str, object]) -> dict[
         )
     with cols[2]:
         anchored = st.checkbox(
-            "Girder stirrups extend across the interface and are fully developed/anchored in the CIP deck",
-            value=bool(current.get("stirrups_cross_and_anchored", False)),
+            "Selected interface connector legs cross the joint and are fully developed/anchored on both sides",
+            value=bool(current.get("connectors_cross_and_anchored", False)),
             key="igird_interface_stirrups_anchored",
-            help="Only confirmed reinforcement crossing and developed on both sides of the interface receives Avf strength credit.",
+            help="The existing project anchorage declaration is reused for the selected connector source. Projection/hook dimensions alone are not an anchorage calculation.",
         )
         st.caption("Pc = 0 is used as the conservative default; no clamping-force credit is taken.")
     settings = {
         "surface_key": surface_key,
         "width_mode": width_mode,
         "bvi_override_mm": float(bvi_override) if width_mode == _IGIRDER_INTERFACE_WIDTH_MANUAL and float(bvi_override) > 0.0 else None,
-        "stirrups_cross_and_anchored": bool(anchored),
+        **connector_fields,
+        "connectors_cross_and_anchored": bool(anchored),
+        # Older apps must not mistake independent dowels for extended stirrups.
+        "stirrups_cross_and_anchored": bool(anchored) if connector_fields["connector_source"] == STIRRUPS else False,
     }
     _igird_store_interface_shear_settings(settings)
     return settings
@@ -14293,7 +14308,7 @@ def _igird_interface_shear_dataframe(
     lightweight, density_note = _igird_interface_density_basis(state)
     surface_key = str(settings.get("surface_key") or SURFACE_ROUGHENED_GIRDER_SLAB)
     surface_const = IGIRD_INTERFACE_SURFACE_PRESETS[surface_key].constants_si(lightweight=lightweight)
-    anchored = bool(settings.get("stirrups_cross_and_anchored", False))
+    anchored = bool(settings.get("connectors_cross_and_anchored", settings.get("stirrups_cross_and_anchored", False)))
     rows: list[dict[str, object]] = []
     for _, source_row in supported_df.iterrows():
         row = source_row.to_dict()
@@ -14319,12 +14334,15 @@ def _igird_interface_shear_dataframe(
         y_tension = _beam_uls_reinforcement_y_centroid_for_face(analysis_input, tension_face="bottom") if analysis_input is not None else None
         dv_mm = float(slab_mid_y) - float(y_tension) if y_tension is not None else float("nan")
         demand = interface_shear_demand_si(vu_kN=vu_kN, bvi_mm=bvi_mm, dv_mm=dv_mm)
-        zone = _beam_uls_active_shear_zone_for_station(state, x_m, require_coverage=True) if math.isfinite(x_m) else None
-        bar_area = _beam_uls_stirrup_area_mm2(zone or {})
+        girder_zone = _beam_uls_active_shear_zone_for_station(state, x_m, require_coverage=True) if math.isfinite(x_m) else None
+        from concrete_pmm_pro.analysis.igird_interface_connectors import at_station as interface_connector_at_station, STIRRUPS
+        connector = interface_connector_at_station(settings, x_m=x_m, girder_zone=girder_zone)
+        zone = connector["zone"]
+        bar_area = _beam_uls_float((zone or {}).get("area_mm2"))
         legs = _beam_uls_float((zone or {}).get("Legs"))
         spacing = _beam_uls_float((zone or {}).get("Spacing_mm"))
         fy = _beam_uls_float((zone or {}).get("fy_MPa"))
-        zone_valid = zone is not None and all(math.isfinite(value) and value > 0.0 for value in [bar_area, legs, spacing, fy])
+        zone_valid = connector["ready"]
         avf_provided = provided_interface_reinforcement_mm2_per_m(bar_area_mm2=bar_area, legs=legs, spacing_mm=spacing)
         avf_credit = avf_provided if anchored and zone_valid and math.isfinite(avf_provided) else 0.0
         fy_for_resistance = fy if zone_valid else 0.0
@@ -14368,6 +14386,7 @@ def _igird_interface_shear_dataframe(
             minimum_basis = "Minimum reinforcement basis unavailable"
         waiver_eligible = (
             surface_key == SURFACE_ROUGHENED_GIRDER_SLAB
+            and connector["source"] == STIRRUPS
             and math.isfinite(vui)
             and vui < IGIRD_INTERFACE_WAIVER_STRESS_MPA
             and anchored
@@ -14378,13 +14397,13 @@ def _igird_interface_shear_dataframe(
             reason = local_error or "Tension-steel centroid / dv unavailable"
         elif zone is None:
             status = "REVIEW"
-            reason = "No active stirrup zone covers this station"
+            reason = connector["reason"] or "No interface connector zone covers this station"
         elif not zone_valid:
             status = "REVIEW"
-            reason = "Active stirrup zone has incomplete bar/legs/spacing/fy data"
+            reason = connector["reason"] or "Interface connector data are incomplete"
         elif not anchored:
             status = "REVIEW"
-            reason = "Stirrup interface anchorage is not confirmed"
+            reason = "Interface connector anchorage is not confirmed"
         elif not math.isfinite(strength_dc):
             status = "REVIEW"
             reason = "Interface resistance is unavailable"
@@ -14416,8 +14435,16 @@ def _igird_interface_shear_dataframe(
                 "K1": _beam_uls_float(resistance.get("K1")),
                 "K2 (MPa)": _beam_uls_float(resistance.get("K2_MPa")),
                 "fc weak (MPa)": fc_weaker,
-                "Stirrup zone": str((zone or {}).get("Zone") or "-"),
-                "Stirrup": f"{str((zone or {}).get('Bar Size') or '-')} × {int(legs) if math.isfinite(legs) and legs > 0 else '-'} @ {spacing:.0f} mm" if math.isfinite(spacing) and spacing > 0.0 else "-",
+                "Connector source": connector["source_label"],
+                "Connector zone": str((zone or {}).get("Zone") or "-"),
+                "Connector": f"{str((zone or {}).get('Bar Size') or '-')} × {int(legs) if math.isfinite(legs) and legs > 0 else '-'} @ {spacing:.0f} mm" if math.isfinite(spacing) and spacing > 0.0 else "-",
+                "Connector db mm": _beam_uls_float((zone or {}).get("Diameter_mm")),
+                "Connector crossing legs": legs,
+                "Connector spacing mm": spacing,
+                "Avf source basis": connector.get("basis",connector.get("reason","")),
+                **({"Stirrup zone":str((zone or {}).get("Zone") or "-"),
+                    "Stirrup":f"{str((zone or {}).get('Bar Size') or '-')} × {int(legs) if math.isfinite(legs) and legs > 0 else '-'} @ {spacing:.0f} mm" if math.isfinite(spacing) and spacing > 0.0 else "-"}
+                    if connector["source"] == STIRRUPS else {}),
                 "Avf provided (mm2/m)": avf_provided,
                 "Avf credited (mm2/m)": avf_credit,
                 "fy input (MPa)": fy,
@@ -14438,7 +14465,7 @@ def _igird_interface_shear_dataframe(
             }, local_state, check_name="Interface Shear")
         )
     if not anchored:
-        messages.append("Interface stirrup strength credit is withheld until the user confirms the stirrups cross the interface and are fully developed/anchored in the CIP deck.")
+        messages.append("Interface connector strength credit is withheld until the existing project declaration establishes crossing and full development/anchorage on both sides.")
     messages.append("Pc = 0 is used conservatively; no permanent normal compression is credited.")
     messages.append("The special low-stress roughened girder/slab minimum-reinforcement waiver is reported when potentially eligible but is not silently applied by IGIRDER.ULS4A.")
     messages.append(density_note)
@@ -14471,9 +14498,9 @@ def _igird_interface_overall_status(result_df: pd.DataFrame | None) -> str:
 
 
 def _igird_interface_reinforcement_card_detail(governing_row: Mapping[str, object]) -> str:
-    stirrup = str(governing_row.get("Stirrup") or "-")
+    stirrup = str(governing_row.get("Connector") or governing_row.get("Stirrup") or "-")
     fy_used = _beam_uls_float(governing_row.get("fy used <=60 ksi (MPa)"))
-    parts = [stirrup]
+    parts = [str(governing_row.get("Connector source") or ""), stirrup]
     if math.isfinite(fy_used):
         parts.append(f"fy used = {fy_used:.1f} MPa · AASHTO cap = {IGIRD_INTERFACE_FY_CAP_MPA:.1f} MPa")
     avf_min = _beam_uls_float(governing_row.get("Avf min required (mm2/m)"))

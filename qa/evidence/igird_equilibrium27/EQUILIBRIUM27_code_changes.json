@@ -1,0 +1,11 @@
+{
+  "added_code": [
+    "concrete_pmm_pro/analysis/csi_component_equilibrium.py",
+    "concrete_pmm_pro/ui/csi_component_equilibrium.py",
+    "qa/igird_equilibrium27_actual_review.py",
+    "tests/test_igird_equilibrium27.py"
+  ],
+  "modified_code": [
+    "concrete_pmm_pro/ui/girder_csi_import.py"
+  ]
+}

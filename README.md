@@ -1,3 +1,19 @@
+# Concrete Section Pro — IGIRDER.DOWEL28
+
+Girder–deck interface checks now select the actual crossing reinforcement: extended girder stirrups, explicitly linked dowels, or an independent dowel layout. Independent dowels supply their own diameter, crossing-leg count, spacing, fy and longitudinal extents; missing ranges retain REVIEW without a stirrup fallback. Editing I-hoops cannot increase independent dowel Avf.
+
+Run `streamlit run app.py` and open `I_Girder_20m_DOWEL28_DRAFT.json`. In Analysis → Final Composite → Interface Shear → Dowel layout, enter actual start/end stations for C/D/E before calculating. The supplied DB12 @70/@150/@200 draft intentionally leaves those ranges unknown. Existing Loads and slab longitudinal inputs are preserved. See `IGIRDER_DOWEL28_HANDOFF_TH.md`. Selected tests: 211 passed, including 20 DOWEL28 test cases. Full composite shear–torsion and biaxial resistance remain incomplete; dowels do not enlarge the torsion cage automatically.
+
+## Previous milestone
+
+# Concrete Section Pro — IGIRDER.EQUILIBRIUM27
+
+The existing ULS uploader now provides an optional read-only Girder/Beam/Slab equilibrium audit. Declared static exports are matched by physical source identity, component offsets are identified from P/M2/M3, and torque is independently reconstructed and checked at held-out stations. Component envelopes are not treated as simultaneous vectors. Loads and strength/acceptance logic are unchanged.
+
+Use the CSIREF26 Project JSON and `streamlit run app.py`. See `IGIRDER_EQUILIBRIUM27_HANDOFF_TH.md`. Selected tests: 178 passed, including 15 new tests. The supplied DL file reconciles all six girders at 276 cuts. Full composite shear–torsion resistance remains incomplete.
+
+## Previous milestone
+
 # Concrete Section Pro — IGIRDER.CSIREF26
 
 CSI reporting origins are now saved with each native Loads source. Analysis transports moments to its station-specific resistance origin while retaining all raw Loads values and recording the mapping in Calculation trace. Use the supplied `I_Girder_20m_CSIREF26.json`, or configure the source reporting point in Loads → `CSI force output reference`, then recalculate Analysis.

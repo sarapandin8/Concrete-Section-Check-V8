@@ -1,0 +1,41 @@
+{
+  "version": "IGIRDER.EQUILIBRIUM27",
+  "datasets": {
+    "DL": {
+      "source_name": "Load case DEAD (DL)_Bridge object_Girder_Beam_Slab-Forces CSiBridge.xlsx",
+      "sha256": "4c72007e498579e8881d5812a56718debe9657e75613b359395af91c90ad30ba",
+      "summary_rows": 6,
+      "trace_rows": 276,
+      "statuses": {
+        "EQUILIBRIUM CONSISTENT": 6
+      },
+      "source_unchanged": true,
+      "max_force_residual_kN": 0.0010000000001184617,
+      "max_moment_residual_kNm": 0.0005691405783316839,
+      "max_holdout_moment_residual_kNm": 0.0007194662220566528,
+      "peak_interior2_torque": {
+        "Station x (m)": 18.76071,
+        "Occurrence": 2,
+        "Beam T at B kN-m": -0.8564,
+        "Slab T at S kN-m": 6.9475,
+        "Beam r2V3 kN-m": -1.3466162303249893,
+        "Slab r2V3 kN-m": 39.96496424219795,
+        "Beam -r3V2 kN-m": -0.00011543113711789148,
+        "Slab -r3V2 kN-m": -8.250909678736061,
+        "Rebuilt T": 36.45842290199978,
+        "Girder T": 36.4585,
+        "Residual T": 7.70980002187116e-05
+      }
+    },
+    "U2A": {
+      "source_name": "ULS Load case U2A_Bridge object_Girder_Beam_Slab-Forces CSiBridge.xlsx",
+      "sha256": "8ed82fb1cb3f69b02c68a555a3058a6f67aa569cfb5d783da976ce90f8956a34",
+      "summary_rows": 12,
+      "trace_rows": 0,
+      "statuses": {
+        "ENVELOPE — NO VECTOR SUM": 12
+      },
+      "source_unchanged": true
+    }
+  }
+}

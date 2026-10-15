@@ -1,0 +1,40 @@
+{
+  "version": "IGIRDER.DOWEL28",
+  "draft_file": "I_Girder_20m_DOWEL28_DRAFT.json",
+  "raw_loads_and_other_inputs_preserved": true,
+  "dowel_extents_inferred": false,
+  "draft_actual_DL_status": [
+    "REVIEW"
+  ],
+  "draft_credited_Avf_mm2_per_m": [
+    0.0
+  ],
+  "quantities_from_drawing": [
+    {
+      "label": "C–C — enter longitudinal range",
+      "db_mm": 12,
+      "crossing_legs": 2,
+      "spacing_mm": 70.0,
+      "Avf_mm2_per_m": 3231.352443692359
+    },
+    {
+      "label": "D–D — enter longitudinal range",
+      "db_mm": 12,
+      "crossing_legs": 2,
+      "spacing_mm": 150.0,
+      "Avf_mm2_per_m": 1507.9644737231008
+    },
+    {
+      "label": "E–E — enter longitudinal range",
+      "db_mm": 12,
+      "crossing_legs": 2,
+      "spacing_mm": 200.0,
+      "Avf_mm2_per_m": 1130.9733552923256
+    }
+  ],
+  "source_project_sha256": "86b209460ded5e3e52f91255df0a9f47b4576c332fbba070f17d96639da439bf",
+  "source_DL_sha256": "4c72007e498579e8881d5812a56718debe9657e75613b359395af91c90ad30ba",
+  "source_DL_unchanged": true,
+  "transition_spacing_in_original_I_table_mm": 100,
+  "dowel_DD_spacing_in_drawing_mm": 150
+}

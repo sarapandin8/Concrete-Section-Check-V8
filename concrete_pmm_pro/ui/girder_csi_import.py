@@ -65,6 +65,10 @@ def render_import(*, state_key, editor_key, key_prefix, force_unit, moment_unit)
             _render_batch(files, state_key=state_key, editor_key=editor_key, key_prefix=key_prefix,
                 force_unit=force_unit, moment_unit=moment_unit, source_contract=source_contract)
     receipt = st.session_state.get(key_prefix+'_import_receipt')
+    if files:
+        from concrete_pmm_pro.ui.csi_component_equilibrium import render_component_equilibrium
+        render_component_equilibrium(files, source_mode=mode, concurrency_confirmed=confirmed,
+            evidence=evidence, key_prefix=key_prefix)
     _render_saved_source_readiness()
     with st.expander('Templates and column mapping', expanded=False):
         if receipt:
