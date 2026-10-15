@@ -20,7 +20,10 @@ def _editor(frame, *, prefix, **kwargs):
 
 
 def render_settings(current, *, section_params, state=None):
-    from .igird_composite_inputs import SHORT_DIMENSIONS, effective_config, input_plan, positive
+    from .igird_composite_inputs import effective_config, input_plan, positive
+    from concrete_pmm_pro.visualization.igird_dowel_detail import (
+        DIMENSION_GUIDE, dimension_label, u_dowel_detail_svg,
+    )
     original=config(current)
     if original.get("mode")!=MODE:
         with st.expander("Additional U-dowel assessment",expanded=False):
@@ -34,22 +37,36 @@ def render_settings(current, *, section_params, state=None):
     with st.expander(f"Dowel detail — {missing} missing dimensions" if missing else "Dowel detail — saved dimensions",expanded=False):
         st.caption("Section dimensions, concrete strengths, slab reinforcement, bar sizes, fy and spacings are reused. "
             "Enter only the measured dowel dimensions below; saved values do not need re-entry.")
-        dims=[{"Dimension":SHORT_DIMENSIONS[k],"Value mm":cfg.get(k)} for k in DIMENSIONS]
+        figure=st.empty()
+        st.caption("Match A–F in the drawing to the inputs below. Not entered means unknown. "
+            "A is across the girder, not the longitudinal dowel spacing. All dimensions are in mm.")
+        dims=[{"Dimension":dimension_label(k),"Value mm":cfg.get(k)} for k in DIMENSIONS]
         frame=pd.DataFrame(dims)
         frame["Value mm"]=pd.to_numeric(frame["Value mm"],errors="coerce")
         edited=_editor(frame,prefix="input30_dimensions_",disabled=["Dimension"],num_rows="fixed",
-            column_config={"Value mm":st.column_config.NumberColumn("Value (mm)",min_value=0.)})
+            column_config={"Dimension":st.column_config.TextColumn("Dimension A–F",width="large"),
+                "Value mm":st.column_config.NumberColumn("Value (mm)",min_value=0.,
+                    help="Provided dimensions from the detail, matched to A–F above. E is required clear cover. Unknown values stay blank.")})
         for key,record in zip(DIMENSIONS,edited):
             value=number(record.get("Value mm"));cfg[key]=value if math.isfinite(value) and value>0 else None
+        # Render after reading the editor, into its earlier placeholder: labels
+        # show the current edit on this rerun, without a calculation or refresh.
+        # st.html uses an HTML-only sanitizer which removes SVG. This drawing
+        # contains fixed SVG markup and numeric labels only; flatten linebreaks
+        # so Markdown cannot interpret parts of the drawing as separate blocks.
+        figure.markdown(u_dowel_detail_svg(cfg,section_params=section_params).replace("\n",""),
+            unsafe_allow_html=True)
+        with st.expander("How to measure A–F",expanded=False):
+            st.dataframe(pd.DataFrame([{"Ref":ref,"Dimension":label,"Measure from / to":meaning}
+                for _,ref,label,meaning in DIMENSION_GUIDE]),hide_index=True,use_container_width=True)
         cols=st.columns(2)
         for col,key,label,values in [
             (cols[0],"coating","Dowel surface",["unknown","uncoated","epoxy"]),
             (cols[1],"anchorage_region","Anchorage region",["unknown","interior","discontinuous_end"])]:
             old=cfg.get(key,"unknown")
             with col:cfg[key]=st.selectbox(label,values,index=values.index(old) if old in values else 0)
-        st.caption("The cover starts from the existing slab cover when no joint-specific value was saved. "
-            "It remains editable because dowel cover can differ. ldh is measured from the interface to the outside of the hook bend; "
-            "the tail excludes the bend. The drawing's 250/220 mm are reference dimensions, not automatically verified development or leg spacing.")
+        st.caption("Cover starts from the existing slab cover and remains editable. Use the dimensions in the actual dowel detail. "
+            "The schematic does not establish geometric fit or anchorage; required development lengths remain in the calculation review.")
     with st.expander("Joint forces / advanced",expanded=False):
         selected=st.selectbox("Joint assessment model",["off",MODE],index=int(cfg.get("mode")==MODE),
             format_func=lambda v:"Not assessed" if v=="off" else "Cracked interface — equilibrium screening")

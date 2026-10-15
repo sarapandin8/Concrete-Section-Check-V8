@@ -1,0 +1,41 @@
+{
+  "version": "IGIRDER.DOWEL32",
+  "selected_tests": {
+    "passed": 315,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "warnings": 7
+  },
+  "py_compile": "PASS",
+  "input_edit_and_rerun_AppTest": "PASS",
+  "browser": {
+    "version": "IGIRDER.DOWEL32",
+    "browser": "130.0.6723.91",
+    "actual_app": true,
+    "input_only_bootstrap": true,
+    "guide_count": 1,
+    "six_matching_dimension_references": true,
+    "unknown_lengths_preserved": true,
+    "reused_cover_mm": 50,
+    "calculate_buttons": 1,
+    "viewports": [
+      {
+        "width": 1440,
+        "figure_width": 1059.625,
+        "legend_overlaps": []
+      },
+      {
+        "width": 1280,
+        "figure_width": 899.625,
+        "legend_overlaps": []
+      }
+    ],
+    "page_errors": [],
+    "streamlit_exceptions": 0,
+    "visual_inspection": "PASS \u2014 inspected both full SVG captures; complete headings, visible measurement arrows and no legend overlap"
+  },
+  "engineering_equations_changed": false,
+  "project_schema_changed": false,
+  "new_result_persistence": false
+}

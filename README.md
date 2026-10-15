@@ -1,3 +1,11 @@
+# IGIRDER.DOWEL32 — U-dowel dimension guide
+
+The existing **Dowel detail** form now includes a transverse U-dowel drawing and an enlarged 90° hook. A–F on the drawing match the input rows, and current values appear next to each reference. Open **How to measure A–F** for measurement endpoints. Unknown lengths stay blank; the drawing is schematic and does not infer or verify actual bar geometry.
+
+Use your existing Project JSON, including `I_Girder_20m_FLEXURE31_REVIEW.json`. In Analysis → ULS Strength → Flexure → Final — Composite, enable **Edit composite / dowel inputs** and expand **Dowel detail**. This is a presentation-only update; equations, raw CSI forces, input schema, and result persistence are unchanged. See `IGIRDER_DOWEL32_HANDOFF_TH.md` for validation and release details.
+
+## Previous milestone
+
 # IGIRDER.FLEXURE31 — One Final Flexure workspace
 
 Final Composite now has one **Calculate Flexure** command. It calculates sectional flexure and girder–deck interface shear for all imported girders or the design member. Optional U-dowel screening uses the same command and remains separate from production resistance acceptance. One girder and one Max/Min chart are displayed by default; Both is explicit. Chart, case, origin and zoom controls only read stored results.
