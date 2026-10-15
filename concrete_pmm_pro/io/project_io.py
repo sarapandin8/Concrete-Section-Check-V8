@@ -515,6 +515,10 @@ def _beam_uls_cache_metadata_from_session(session_state: Any) -> dict[str, Any]:
     preset_key = str(_get_session_value(session_state, "section_preset_key", "") or "").strip()
     result: dict[str, Any] = {}
     for check_name, entry in cache.items():
+        # FLEXURE31 publishes current session results to existing read-only
+        # dashboards, but its large solver tables are never Project inputs.
+        if isinstance(entry, dict) and entry.get("runtime_only") is True:
+            continue
         # IGIRDER.ULS1 replaces the legacy generic Flexure result for the
         # Bridge Precast I-Girder.  That old entry compared final imported FEA
         # demand with the precast-only capacity and is no longer a valid
@@ -1750,7 +1754,7 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
         if str(key).startswith("igird_support_widget_"):
             session_state.pop(key, None)
     for key in list(session_state):
-        if str(key).startswith("igird_flexdep_"):
+        if str(key).startswith(("igird_flexdep_", "igird_flexure31_")):
             session_state.pop(key, None)
     for key, expected_type in (("beam_girder_torsion_settings", dict), ("beam_girder_torsion_zone_settings", list)):
         raw = project.metadata.get(key)

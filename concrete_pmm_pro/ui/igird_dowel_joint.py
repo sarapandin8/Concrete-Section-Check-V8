@@ -92,21 +92,26 @@ def render_settings(current, *, section_params, state=None):
     return {KEY:cfg}
 
 
-def render_analysis(settings, *, fingerprint, calculate, render_cards=None, state=None):
+def result_fingerprint(settings, *, fingerprint, state=None):
+    from concrete_pmm_pro.io import csi_component_sources
+    source_hash=csi_component_sources.fingerprint(csi_component_sources.saved(state or {}))
+    return hashlib.sha256((UI_VERSION+VERSION+str(fingerprint)+source_hash+json.dumps(config(settings),sort_keys=True,default=str)).encode()).hexdigest()
+
+
+def render_analysis(settings, *, fingerprint, calculate, render_cards=None, state=None, allow_calculate=True):
     if config(settings).get("mode")!=MODE:return
     st.markdown("##### U-dowel joint — opening, roll and interface shear")
     st.warning(SCOPE)
     st.caption("Enter the dowel detail once; use Calculate to review anchorage and any saved joint force states. "
         "A complete form or feasible joint mechanism does not establish Girder Tn or composite V–T resistance.")
-    from concrete_pmm_pro.io import csi_component_sources
-    source_hash=csi_component_sources.fingerprint(csi_component_sources.saved(state or {}))
-    expected=hashlib.sha256((UI_VERSION+VERSION+str(fingerprint)+source_hash+json.dumps(config(settings),sort_keys=True,default=str)).encode()).hexdigest()
-    if st.button("Calculate U-dowel Joint",key="calculate_joint29",type="primary"):
+    expected=result_fingerprint(settings, fingerprint=fingerprint, state=state)
+    if allow_calculate and st.button("Calculate U-dowel Joint",key="calculate_joint29",type="primary"):
         result=calculate()
         st.session_state[CACHE_KEY]={"fingerprint":expected,"result":result}
     saved=st.session_state.get(CACHE_KEY,{})
     if saved.get("fingerprint")!=expected:
-        st.info("U-dowel joint is not calculated for the current inputs. Press Calculate U-dowel Joint.");return
+        st.info("U-dowel joint is not calculated for the current inputs. " +
+            ("Press Calculate U-dowel Joint." if allow_calculate else "Use the main Calculate Flexure command."));return
     result=saved["result"]
     rows=result["rows"]
     finite=[r for r in rows if math.isfinite(number(r.get("Mechanism D/C")))]

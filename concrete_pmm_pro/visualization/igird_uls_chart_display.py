@@ -122,6 +122,38 @@ def mark_unavailable_capacity(fig, frame: pd.DataFrame, *, metric: str,
     fig.update_layout(meta=meta)
 
 
+def mark_flexure_gap_segments(fig, frame: pd.DataFrame) -> None:
+    """Explain undefined line segments without filling or zeroing resistance.
+
+    Only stations where every stored resistance is unavailable shade a common
+    interval. A different finite curve at that station remains visible. These
+    intervals describe plotting coverage, not a code-defined end/D-region.
+    """
+    if frame.empty:
+        return
+    stations = []
+    for x, group in frame.groupby('__x_m', sort=True):
+        finite = pd.to_numeric(group['__capacity_kNm'], errors='coerce').map(
+            lambda v: pd.notna(v) and math.isfinite(float(v)))
+        stations.append((float(x), bool(finite.any())))
+    intervals = []
+    for i, (x, available) in enumerate(stations):
+        if available:
+            continue
+        left = stations[i - 1][0] if i else x
+        right = stations[i + 1][0] if i + 1 < len(stations) else x
+        intervals.append({'x_m': x, 'from_m': left, 'to_m': right})
+        if right > left:
+            fig.add_vrect(x0=left, x1=right, fillcolor='#94a3b8', opacity=.12,
+                line_width=0, layer='below')
+        fig.add_annotation(name='flexure_unavailable_label', x=x, y=.96,
+            xref='x', yref='paper', xanchor='left' if i == 0 else 'right' if i == len(stations)-1 else 'center',
+            text=f'φMn unavailable<br>x={x:.3f} m', showarrow=False,
+            bgcolor='rgba(248,250,252,.95)', borderpad=4,
+            font={'size':11, 'color':'#475569'})
+    fig.update_layout(meta={**dict(fig.layout.meta or {}), 'flexure_gap_intervals': intervals})
+
+
 def mark_overview_gap_status(fig, audit: pd.DataFrame) -> None:
     """Use shared chart-foot status markers, independent of the numeric y-axis."""
     stations = []

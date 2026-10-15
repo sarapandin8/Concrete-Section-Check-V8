@@ -13409,6 +13409,17 @@ def _make_beam_uls_flexure_preview_figure(
                 hovertemplate="x=%{x:.3f} m<br>φMn=%{y:.3f} kN-m<br>%{customdata[0]}<extra></extra>",
             )
         )
+        # A finite point separated by missing resistance has no line segment.
+        # Keep such real calculated points visible without joining a gap.
+        isolated = [i for i, value in enumerate(y_values) if math.isfinite(value)
+            and (i == 0 or not math.isfinite(y_values[i - 1]))
+            and (i == len(y_values) - 1 or not math.isfinite(y_values[i + 1]))]
+        if isolated and len(y_values) > 1:
+            fig.add_trace(go.Scatter(x=[x_values[i] for i in isolated],
+                y=[y_values[i] for i in isolated], mode="markers", name="φMn stored point",
+                showlegend=False, marker={"color": _BEAM_ULS_CHECK_LINE_STYLE["color"], "size": 6},
+                customdata=[[str(case_name)] for _ in isolated],
+                hovertemplate="x=%{x:.3f} m<br>Stored φMn=%{y:.3f} kN-m<br>%{customdata[0]}<extra></extra>"))
 
     governing_source = station_df if developed_route else capacity_df
     governing_candidates = governing_source[governing_source["__utilization"].notna()].copy()
@@ -13445,8 +13456,9 @@ def _make_beam_uls_flexure_preview_figure(
 
 
     if developed_route:
-        from concrete_pmm_pro.visualization.igird_uls_chart_display import mark_unavailable_capacity
+        from concrete_pmm_pro.visualization.igird_uls_chart_display import mark_unavailable_capacity, mark_flexure_gap_segments
         mark_unavailable_capacity(fig, station_df, metric="__capacity_kNm", label="φMn")
+        mark_flexure_gap_segments(fig, station_df)
     fig.update_layout(title={"text": f"Flexure Check — Strength ULS<br><sup>{code_label} · demand vs φMn</sup>"})
     return fig
 
@@ -15338,17 +15350,8 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             help="Construction uses the precast girder only and automatic construction demand. Final uses imported FEA Strength demand and requires composite section resistance.",
         )
         if flexure_stage == "Final — Composite":
-            from concrete_pmm_pro.ui.igird_member_results import render_collection
-            if render_collection(check_name="Flexure", route=strength_route, code_label=code_label):
-                return
-            _render_beam_girder_final_composite_flexure_guard(
-                active_df, code_label=code_label, strength_route=strength_route
-            )
-            with st.expander("Final Composite ULS demand table — audit / source data", expanded=False):
-                if active_df.empty:
-                    st.info("No active final FEA strength rows are available.")
-                else:
-                    st.dataframe(_beam_uls_audit_dataframe(active_df), use_container_width=True, hide_index=True)
+            from concrete_pmm_pro.ui.igird_flexure_workspace import render_workspace
+            render_workspace(active_df, route=strength_route, code_label=code_label)
             return
 
         assert construction_demand is not None

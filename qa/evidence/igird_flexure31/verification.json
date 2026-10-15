@@ -1,0 +1,79 @@
+{
+  "version": "IGIRDER.FLEXURE31",
+  "selected_tests": {
+    "tests": 311,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "pytest_warnings": 7,
+  "AppTest": {
+    "version": "IGIRDER.FLEXURE31",
+    "source_project_sha256": "43c17a487707441244d4a366b44009f2f94f2cae93ae097bc61472332e2d47db",
+    "real_section_calculations": 2,
+    "real_interface_calculations": 2,
+    "optional_joint_reviews": 1,
+    "calculate_buttons": 1,
+    "default_charts": 1,
+    "explicit_both_bound_charts": 2,
+    "input30_original_result_rows_identical": true,
+    "review_solver_calls": 0,
+    "raw_Loads_and_member_bank_preserved": true,
+    "summary_report_read_only": true,
+    "runtime_results_not_saved": true,
+    "assessment_policy_roundtrip": true,
+    "original_CSI_M3_exterior_endpoints_zero": true,
+    "member_span_summaries": [
+      {
+        "Girder": "BOBJ1 / Interior Girder 2",
+        "Result state": "CURRENT",
+        "Overall": "REVIEW",
+        "Section": "REVIEW",
+        "Cut ends": "SEPARATE REVIEW",
+        "Interface": "REVIEW",
+        "Max available D/C": "0.460",
+        "Strength exceeded": 0,
+        "Resistance unavailable": 0,
+        "Rows requiring review": 304
+      },
+      {
+        "Girder": "BOBJ1 / Left Exterior Girder",
+        "Result state": "CURRENT",
+        "Overall": "REVIEW",
+        "Section": "REVIEW",
+        "Cut ends": "SEPARATE REVIEW",
+        "Interface": "REVIEW",
+        "Max available D/C": "0.488",
+        "Strength exceeded": 0,
+        "Resistance unavailable": 0,
+        "Rows requiring review": 304
+      }
+    ],
+    "streamlit_exceptions": 0,
+    "browser_visual_QA": false,
+    "browser_visual_QA_reason": "This script runs AppTest. Browser checks are recorded separately in FLEXURE31_browser_review.json."
+  },
+  "browser_review": {
+    "version": "IGIRDER.FLEXURE31",
+    "browser": "130.0.6723.91",
+    "actual_Streamlit_app": true,
+    "input_only_bootstrap": true,
+    "real_calculate_click": true,
+    "calculate_buttons": 1,
+    "default_charts": 1,
+    "max_min_switch": true,
+    "source_M3_exterior_ends_zero": true,
+    "source_view_has_no_wrong_origin_capacity": true,
+    "gap_explanation_and_right_end_view": true,
+    "viewports": [
+      1440,
+      1280
+    ],
+    "separate_end_scope_retained_after_view_changes": true,
+    "page_errors": [],
+    "streamlit_exceptions": 0,
+    "visual_inspection": "PASS: chart labels, legends, gap shading and full/endpoint ranges inspected at 1440/1280 px; scope retained."
+  },
+  "screenshots_in_delivery": false,
+  "analysis_and_code_check_modules_unchanged": true
+}

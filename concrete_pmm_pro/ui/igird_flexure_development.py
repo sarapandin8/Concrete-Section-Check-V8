@@ -46,8 +46,11 @@ def render_failure_summary(frame: pd.DataFrame | None, *, stage: str) -> None:
             "D/C": f"{float(row.get('D/C value', float('nan'))):.3f}" if math.isfinite(capacity) else "Unavailable",
             "Cause": detail})
     stations = failures["Station x (m)"].nunique()
-    st.error(f"{stage}: {len(failures)} failed source row(s) at {stations} station coordinate(s) "
-        "under the entered development / anchorage assumptions.")
+    unavailable = ~pd.to_numeric(failures["φMn kN-m"], errors="coerce").map(
+        lambda v: pd.notna(v) and math.isfinite(float(v)))
+    st.error(f"{stage}: {int((~unavailable).sum())} numerical strength exceedance(s), "
+        f"{int(unavailable.sum())} resistance-unavailable row(s), at {stations} station coordinate(s). "
+        "Original solver statuses remain unchanged under the entered development / anchorage assumptions.")
     st.dataframe(pd.DataFrame(records), hide_index=True, use_container_width=True)
     st.caption("Nu input preserves the imported sign. Solver Nu is positive in compression. Unavailable φMn remains a gap; "
         "it is not zero resistance or an infinite applied moment. Verify the FEA cut/reference and real end anchorage / D-region force transfer.")

@@ -4860,6 +4860,8 @@ def render_results_workspace() -> None:
         key="_results_active_subpage",
     )
     governing_rows = _results_governing_rows(st.session_state)
+    from concrete_pmm_pro.ui.igird_flexure_workspace import render_stored_scope_review
+    render_stored_scope_review(st.session_state)
 
     if active_subpage == "Overview":
         render_metric_cards(_results_availability_cards(st.session_state))
@@ -5144,6 +5146,8 @@ def render_report_qa_workspace() -> None:
         accent="blue",
     )
     render_metric_cards(_report_qa_dashboard_cards(st.session_state))
+    from concrete_pmm_pro.ui.igird_flexure_workspace import render_stored_scope_review
+    render_stored_scope_review(st.session_state)
     if _results_is_crossbeam_workflow(st.session_state):
         _render_report_qa_crossbeam_workspace(st.session_state)
     else:

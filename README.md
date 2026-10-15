@@ -1,3 +1,15 @@
+# IGIRDER.FLEXURE31 — One Final Flexure workspace
+
+Final Composite now has one **Calculate Flexure** command. It calculates sectional flexure and girder–deck interface shear for all imported girders or the design member. Optional U-dowel screening uses the same command and remains separate from production resistance acceptance. One girder and one Max/Min chart are displayed by default; Both is explicit. Chart, case, origin and zoom controls only read stored results.
+
+Load `I_Girder_20m_FLEXURE31_REVIEW.json`, then Analysis → ULS Strength → Flexure → Final — Composite. The supplied JSON records the requested separate cut-end review at exact physical 0/L only. Span D/C does not certify end-region/anchorage acceptance: original end results and overall REVIEW remain visible in Analysis, Result Summary and Report / QA.
+
+`CSI source M3` shows original imported moments. `Demand / capacity` uses transported Mux at the resistance centroid. Missing φMn has a labelled grey gap; no endpoint force is zeroed and no resistance is interpolated. The end-reference audit explains P × eccentricity and retains raw values. Project JSON saves inputs and the scope choice; the new Final Flexure and interface result tables stay in the session.
+
+See `IGIRDER_FLEXURE31_HANDOFF_TH.md`. Resistance equations and raw CSI loads are unchanged. Full composite Tn/V–T resistance remains outside this UI milestone.
+
+## Previous milestone
+
 # IGIRDER.INPUT30 — Simple composite inputs
 
 Named Girder worksheets now use the normal ULS import path. Beam/Slab worksheets from the same file are retained as source inputs in Project JSON and never imported as extra girders. Dowel details and optional manual joint forces are collapsed; existing section, reinforcement and Loads inputs are reused.

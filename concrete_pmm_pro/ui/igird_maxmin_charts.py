@@ -167,7 +167,11 @@ def make_bound_figures(state, package, *, family, member, check_name, code_label
     from concrete_pmm_pro.visualization.igird_uls_chart_display import add_igird_report_note
     result, all_rows = package['result'], package['rows']
     full_frame = result[FRAME_KEYS[check_name]]
-    member_control = controlling_result(full_frame, check_name)
+    # Optional review scope changes control selection only. Demand/resistance
+    # still come from the complete original frame, never from corrected ends.
+    control_frame = package.get('control_frame', full_frame)
+    scope_label = package.get('scope_label', 'All LCs')
+    member_control = controlling_result(control_frame, check_name)
     span = ap._beam_uls_span_length_from_state(state, is_building=False)
     global_case = str((member_control['row'] or {}).get('Case', 'Unavailable'))
     global_family = family_for_case(csi_bound_families(all_rows), global_case)
@@ -226,7 +230,7 @@ def make_bound_figures(state, package, *, family, member, check_name, code_label
                              ({'±φTcr', '±0.25φTcr'} if have_tn else {'±φTcr'}))
             meaning = ('Blue: signed Tu. Red: stored ±φTn paired to each source/station. The negative resistance branch is not the Min demand.'
                        if have_tn else 'Blue: signed Tu. Purple: investigation threshold. Stored φTn is unavailable; this is not strength acceptance.')
-        selected_control = controlling_result(checked, check_name)
+        selected_control = controlling_result(select_cases(control_frame, cases), check_name)
         location = (selected_control['row'] or {}).get('Governing x', '—')
         # Legacy capacity builders prioritize their own status/strength row.
         # That may differ from the member review's largest component D/C.
@@ -250,7 +254,7 @@ def make_bound_figures(state, package, *, family, member, check_name, code_label
         fig.layout.annotations = tuple(a for a in fig.layout.annotations if a.name != 'igird_report_note')
         add_igird_report_note(fig, [meaning+' ◆ at foot: control station.',
             f"{step} control ({selected_control['basis']}): {ratio_text(selected_control['ratio'])} @ {location}; {selected_control['failed_rows']} FAIL, {selected_control['review_rows']} REVIEW; {len(checked)} stored rows.",
-            f"All LCs: {member_control['failed_rows']} FAIL, {member_control['review_rows']} REVIEW; control {global_label} [{member_control['basis']} {ratio_text(member_control['ratio'])}]. Original gates remain in force."])
+            f"{scope_label}: {member_control['failed_rows']} FAIL, {member_control['review_rows']} REVIEW; control {global_label} [{member_control['basis']} {ratio_text(member_control['ratio'])}]. Original gates remain in force."])
         title_check = 'Flexure — Final Composite' if check_name == 'Flexure' else check_name
         measure = 'utilization' if utilization else 'demand / capacity'
         fig.update_layout(title_text=f'Girder: {escape(member)}<br>{title_check} {step} — {measure}<br><sup>Load case: {escape(str(family.source["case"]))} · {escape(str(family.source["sheet"]))} · {escape(code_label)}</sup>',
@@ -261,6 +265,7 @@ def make_bound_figures(state, package, *, family, member, check_name, code_label
                   'igird_maxmin_view': view, 'igird_maxmin_stored_rows': len(checked),
                   'igird_maxmin_control_marker': marker,
                   'igird_maxmin_selected_control': summary_record(selected_control),
+                  'igird_maxmin_assessment_scope': scope_label,
                   'igird_maxmin_member_control': summary_record(member_control)})
         fig.update_xaxes(range=[0., span])
         figures[step] = fig

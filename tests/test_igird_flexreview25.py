@@ -86,7 +86,8 @@ def test_stored_summary_shows_cases_and_true_coordinate_count_without_solving(mo
          'Secondary-axis flexure gate':'REVIEW: biaxial flexure required','Muy demand kN-m':-1.9}])
     before = frame.copy(deep=True)
     ui.render_failure_summary(frame,stage='Final Composite')
-    assert '2 failed source row(s) at 1 station coordinate(s)' in errors[0]
+    assert '1 numerical strength exceedance(s)' in errors[0]
+    assert '1 resistance-unavailable row(s), at 1 station coordinate(s)' in errors[0]
     assert '1 displayed source row(s)' in warnings[0]
     assert frames[0]['Load case'].tolist() == ['U1A','U2B']
     assert frames[0]['Bound'].tolist() == ['Max','Min']

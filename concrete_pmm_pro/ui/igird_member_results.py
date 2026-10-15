@@ -41,7 +41,8 @@ def result_hash(state, rows, *, check_name, route):
 def calculate_member(state, rows, *, check_name, route):
     """Use the accepted solver independently for one member's actual vectors."""
     from concrete_pmm_pro.ui import analysis_page as ap
-    local = deepcopy({k: v for k, v in dict(state).items() if k not in {CACHE_KEY, BANK_KEY}})
+    local = deepcopy({k: v for k, v in dict(state).items() if k not in {
+        CACHE_KEY, BANK_KEY, 'igird_flexure31_runtime_results'}})
     local['beam_uls_loads_table'] = rows.copy(deep=True)
     if check_name != 'Flexure':
         return ap._beam_uls_calculate_selected_check(local, rows, selected_check=check_name, strength_route=route)
