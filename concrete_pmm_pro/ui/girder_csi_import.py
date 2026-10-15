@@ -38,6 +38,8 @@ def _downloads(key_prefix):
 
 def render_import(*, state_key, editor_key, key_prefix, force_unit, moment_unit):
     st.markdown('**Import ULS loads**')
+    from concrete_pmm_pro.ui.csi_force_reference import render_settings
+    render_settings(key_prefix=key_prefix + '_csi_reference')
     st.caption('File → Force source → Import loads. Girders and load cases are assigned automatically.')
     uploaded = st.file_uploader(UPLOAD_LABEL, type=['xlsx', 'csv'], key=key_prefix+'_import_file', accept_multiple_files=True,
         help='Native BridgeObj / SectCutNum / Girder / Distance / LocType / OutputCase / CaseType / StepType / P V2 V3 T M2 M3, individual girder sheets, or app-column tables. All worksheets are inspected.')
@@ -239,6 +241,8 @@ def _commit_import(imported, *, current, append, state_key, editor_key, key_pref
     from concrete_pmm_pro.io.girder_load_bank import BANK_KEY, merge_bank, activate_member
     from concrete_pmm_pro.ui.loads_page import _sync_workflow_load_tables_metadata
     from concrete_pmm_pro.ui import analysis_page as ap, igird_member_results as mr
+    from concrete_pmm_pro.io.csi_force_reference import bind_reference, configured_profile
+    imported = bind_reference(imported, configured_profile(st.session_state))
     bank = merge_bank(current,imported,append=append)
     st.session_state[BANK_KEY] = bank
     activate_member(st.session_state,str(imported.iloc[0]['Girder']),state_key=state_key,editor_key=editor_key)

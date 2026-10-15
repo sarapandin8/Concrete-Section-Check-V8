@@ -271,10 +271,11 @@ def test_confirmed_bar_layout_does_not_authorize_pass_with_missing_material():
 
 def test_stale_stage_result_version_is_rejected_even_when_input_hash_matches():
     from concrete_pmm_pro.ui import analysis_page as a
+    from concrete_pmm_pro.analysis.igird_flexure_development import RESULT_VERSION
     state = {"section_preset_key":"parametric_i_girder"}
     for name in ("Flexure — Construction", "Flexure — Final Composite"):
         entry = a._beam_uls_store_manual_result(state,name,input_hash="same-input",result={"Status":"REVIEW"})
-        assert entry["result_version"].startswith("IGIRDER.DECKULS1.")
+        assert entry["result_version"].startswith(RESULT_VERSION + ".")
         assert a._beam_uls_current_cached_result(state,name,"same-input") is not None
         entry["result_version"] = "PREVIOUS_FULL_STRAND_STRENGTH"
         assert a._beam_uls_current_cached_result(state,name,"same-input") is None

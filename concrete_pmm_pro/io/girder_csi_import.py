@@ -382,7 +382,15 @@ def apply_source_gate(result,source):
                 result.at[i,'Source SHA256']=exact['source_sha256']
             for field in ('Mux','Vuy','Tu','Muy','Vux','Nu'):
                 unit='kN-m' if field in {'Mux','Tu','Muy'} else 'kN'
-                result.at[i,f'Source {field} {unit}']=float(exact_row.get(field))
+                from concrete_pmm_pro.io.csi_force_reference import RUNTIME_KEY, ULS_MAP, trace_columns
+                reference = exact_row.get(RUNTIME_KEY)
+                raw_field = next(f for f, target in ULS_MAP.items() if target == field)
+                original = reference['original_actions'][raw_field] if isinstance(reference, dict) else exact_row.get(field)
+                result.at[i,f'Source {field} {unit}']=float(original)
+            for field, value in trace_columns(exact_row).items():
+                if field not in result:
+                    result[field] = None
+                result.at[i,field] = value
         result.at[i,'Source file']=info.get('source_file','')
         if info.get('kind') == 'CONCURRENT' and info.get('concurrency_confirmed') and info.get('evidence'):
             result.at[i,'Source coupling']='CONCURRENT — DECLARED'

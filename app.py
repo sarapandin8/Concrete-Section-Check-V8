@@ -1188,6 +1188,12 @@ section[data-testid="stSidebar"] .cpmm-sidebar-project-upload-card.invalid .cpmm
 /* Closed Streamlit expanders otherwise paginate as an almost-empty tail page
    in browser PDF exports. Open audit content remains printable. */
 @media print {
+  /* Keep each engineering figure together in browser PDF exports. */
+  div[data-testid="stElementContainer"]:has(div[data-testid="stPlotlyChart"]),
+  div[data-testid="stPlotlyChart"] {
+    break-inside: avoid-page !important;
+    page-break-inside: avoid !important;
+  }
   div[data-testid="stExpander"] details:not([open]) {
     display: none !important;
   }

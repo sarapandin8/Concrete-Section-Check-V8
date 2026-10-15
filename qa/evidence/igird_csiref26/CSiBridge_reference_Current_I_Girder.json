@@ -1,0 +1,14 @@
+{
+  "schema": "IGIRDER.CSIREF26",
+  "depth_below_deck_top_m": 0.6156000000000001,
+  "local3_offset_from_web_m": 0.0,
+  "force_kind": "GIRDER_COMPOSITE",
+  "vertical_location": "CG of Full Bridge Section",
+  "horizontal_location": "Center of Girder Web",
+  "axes": "CSI_GIRDER_LOCAL",
+  "basis": "User CSI screenshots 20261014-110711 and 110915; displayed Y values",
+  "section_name": "I-Girder",
+  "source_top_y_m": 1.85,
+  "source_cg_y_m": 1.2344,
+  "profile_sha256": "79d30358d6a6840344077e36ad00354f26285be6e9b103ee10d6a71f9d9beb70"
+}

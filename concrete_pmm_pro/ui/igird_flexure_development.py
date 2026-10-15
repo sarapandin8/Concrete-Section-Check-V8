@@ -11,28 +11,46 @@ WIDGET_PREFIX = "igird_flexdep_"
 
 
 def render_failure_summary(frame: pd.DataFrame | None, *, stage: str) -> None:
-    """Read stored station failures; no solve or demand alteration on reruns."""
+    """Read stored scope/failure evidence; never solve or alter demands."""
     if frame is None or frame.empty or "Numerical status" not in frame:
         return
+    if "Secondary-axis flexure gate" in frame:
+        secondary = frame[frame["Secondary-axis flexure gate"].astype(str).str.startswith("REVIEW")]
+        if not secondary.empty:
+            moments = pd.to_numeric(secondary["Muy demand kN-m"], errors="coerce").abs()
+            maximum = f"max |Muy/M2|={moments.max():,.3f} kN-m" if moments.notna().any() else "Muy source unavailable"
+            st.warning(f"Primary-axis flexure scope: {len(secondary)} displayed source row(s) require review ({maximum}). "
+                "This result checks Mux/M3 with Nu. Combined Nu/M3/M2 strength has not been calculated; "
+                "a passing M3 D/C does not clear this biaxial review.")
     failures = frame[frame["Numerical status"].isin(["FAIL", "NO EQUILIBRIUM"])].copy()
     if failures.empty:
         return
-    descriptions = []
-    for _,row in failures.head(5).iterrows():
+    records = []
+    for _,row in failures.iterrows():
         x = float(row["Station x (m)"])
         nu = float(row["Nu kN"])
         raw = float(row["Nu input kN"])
         capacity = float(row.get("φMn kN-m", float("nan")))
         demand = float(row["Demand kN-m"])
-        detail = (f"φMn={capacity:,.3f} < |Mu|={abs(demand):,.3f} kN-m" if math.isfinite(capacity)
-            else "NO EQUILIBRIUM; φMn unavailable")
-        strand = row.get("Strand development trace") or []
-        bars = row.get("Ordinary bar development trace") or []
-        if strand and all(float(t.get("fpx_limit_MPa",-1))==0 for t in strand) and all(float(t.get("factor",-1))==0 for t in bars):
-            detail += "; no developed strand / ordinary-bar force at this cut end"
-        descriptions.append(f"x={x:.3f} m: Nu input={raw:+.3f} kN → solver Nu={nu:+.3f} kN ({row.get('Nu action','—')}); {detail}.")
-    st.error(f"{stage}: {len(failures)} failing section station(s) under the entered development / anchorage assumptions.\n\n" + "\n\n".join(descriptions))
-    st.caption("Physical cut-end force transfer requires the real FEA force reference and end anchorage / D-region detailing. A beam-theory section result alone does not certify the end region; failed endpoints remain visible.")
+        detail = "Resistance below demand" if math.isfinite(capacity) else "No axial-flexural equilibrium"
+        strand = row.get("Strand development trace")
+        bars = row.get("Ordinary bar development trace")
+        strand = strand if isinstance(strand, list) else []
+        bars = bars if isinstance(bars, list) else []
+        if strand and all(float(t.get("fpx_limit_MPa", -1)) == 0 for t in strand) and all(float(t.get("factor", -1)) == 0 for t in bars):
+            detail += "; no developed steel at cut end"
+        records.append({"x (m)": x, "Load case": row.get("Source OutputCase") or row.get("Case", "—"),
+            "Bound": row.get("Source ItemType", "—"), "Face": row.get("Source LocType", "—"),
+            "Nu input (kN)": raw, "Solver Nu (kN)": nu, "Mu (kN-m)": demand,
+            "φMn (kN-m)": f"{capacity:,.3f}" if math.isfinite(capacity) else "Unavailable",
+            "D/C": f"{float(row.get('D/C value', float('nan'))):.3f}" if math.isfinite(capacity) else "Unavailable",
+            "Cause": detail})
+    stations = failures["Station x (m)"].nunique()
+    st.error(f"{stage}: {len(failures)} failed source row(s) at {stations} station coordinate(s) "
+        "under the entered development / anchorage assumptions.")
+    st.dataframe(pd.DataFrame(records), hide_index=True, use_container_width=True)
+    st.caption("Nu input preserves the imported sign. Solver Nu is positive in compression. Unavailable φMn remains a gap; "
+        "it is not zero resistance or an infinite applied moment. Verify the FEA cut/reference and real end anchorage / D-region force transfer.")
 
 
 def render_inputs() -> None:
@@ -80,6 +98,13 @@ def render_inputs() -> None:
         st.caption("Automatic ordinary-bar scope: normal-weight f'c≤10 ksi, fy≤75 ksi and bars≤No.11. No partial straight-bar credit below 12 in; hooked/mechanical anchorage requires confirmation. The single Longitudinal Rebar table remains the steel source.")
     if not continuous:
         st.warning("Ordinary-bar layout is treated as full-span straight bars for the numerical curve. Confirm actual continuity/cutoffs and anchorage before a flexure PASS; current numerical PASS rows remain REVIEW.")
+    other = st.session_state.get("igird_longitudinal_development_settings") or {}
+    if isinstance(other, dict) and any((
+            bool(other.get("continuous_full_span_confirmed")) and not continuous,
+            bool(other.get("left_end_anchored_confirmed")) and not left_anchor,
+            bool(other.get("right_end_anchored_confirmed")) and not right_anchor)):
+        st.caption("Shear/Torsion longitudinal declarations are stored separately from these Flexure development inputs. "
+            "Flexure currently uses the continuity and anchorage values displayed above. Deck top/bottom layers use their own Section Builder development inputs.")
     materials = st.session_state.get("rebar_materials", []) or []
     names = {m.get("name") if isinstance(m, dict) else m.name for m in materials}
     rebars = st.session_state.get("rebars", []) or []
@@ -129,7 +154,7 @@ def render_trace(frame: pd.DataFrame | None, *, stage: str) -> None:
         row = frame.iloc[position]
         st.caption("Source Muy/M2 and Source Vux/V3 are reference values. This flexure route checks signed primary-axis Mux/M3 with Nu.")
         st.caption("Nu input is the preserved Loads value. Nu kN is the compression-positive value used in equilibrium; CSI input uses Nu = −P. AASHTO tension-positive Nu is the opposite of solver Nu.")
-        fields = ["Source sheet", "Source Excel row", "Source ItemType", "Source row set", "Source coupling", "Source Mux kN-m", "Source Vuy kN", "Source Tu kN-m", "Source Muy kN-m", "Source Vux kN", "Source Nu kN", "Nu input kN", "Nu input convention", "Nu conversion factor", "Nu action", "Nu kN", "Nu AASHTO tension-positive kN", "Mn nominal kN-m", "φ value", "φMn kN-m", "Neutral axis c mm",
+        fields = ["Source sheet", "Source Excel row", "Source ItemType", "Source row set", "Source coupling", "Source Mux kN-m", "Source Vuy kN", "Source Tu kN-m", "Source Muy kN-m", "Muy demand kN-m", "Secondary-axis flexure gate", "Source Vux kN", "Source Nu kN", "Nu input kN", "Nu input convention", "Nu conversion factor", "Nu action", "Nu kN", "Nu AASHTO tension-positive kN", "Mn nominal kN-m", "φ value", "φMn kN-m", "Neutral axis c mm",
             "Stress block a mm", "α1", "β1", "Net tensile strain", "Strain condition", "Cc kN",
             "Ordinary steel force kN", "Strand force kN", "φPn kN", "Force residual N",
             "Moment reference y mm", "Full-development reference φMn kN-m", "Development source status", "Minimum flexure gate"]

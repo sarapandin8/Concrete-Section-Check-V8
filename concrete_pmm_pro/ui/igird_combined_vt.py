@@ -71,6 +71,8 @@ def check_dataframe(state, active_df, *, strength_route) -> pd.DataFrame:
     from concrete_pmm_pro.ui import analysis_page as ap
     if active_df.empty:
         return pd.DataFrame()
+    from concrete_pmm_pro.io.csi_force_reference import prepare_analysis_frame
+    active_df = prepare_analysis_frame(active_df)
     # Gate original physical rows BEFORE geometry, interpolation or any solver.
     # Correspondence at adjacent stations need not use the same vehicle placement.
     from concrete_pmm_pro.io.girder_csi_import import source_info
@@ -524,6 +526,8 @@ def render_workspace(df: pd.DataFrame | None, *, code_label: str, member_name: s
     with st.expander("Station results / source status", expanded=False):
         st.dataframe(df[compact],use_container_width=True,hide_index=True)
     with st.expander("Calculation trace / Equations — governing concurrent V+T station",expanded=False):
+        from concrete_pmm_pro.ui.csi_reference_analysis import render_trace
+        render_trace(gov)
         st.dataframe(calculation_trace(gov),use_container_width=True,hide_index=True)
     with st.expander("Variable definitions / Engineering terms",expanded=False):
         st.dataframe(variable_definitions(),use_container_width=True,hide_index=True)

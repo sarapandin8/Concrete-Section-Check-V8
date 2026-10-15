@@ -1,0 +1,51 @@
+{
+  "milestone": "IGIRDER.FLEXREVIEW25",
+  "tests": 429,
+  "modules": 27,
+  "test_failures": 0,
+  "test_errors": 0,
+  "test_skips": 0,
+  "app": {
+    "entrypoint": "app.py",
+    "actual_user_project": true,
+    "imported_force_rows": 640,
+    "numerical_values_and_development_traces_exactly_preserved": true,
+    "calculations": 2,
+    "review_solver_calls": 0,
+    "streamlit_exceptions": 0,
+    "collection_and_detail_charts": 6,
+    "report_charts": 2,
+    "duplicate_chart_ids": 0,
+    "unchanged_input_and_result_snapshots": true,
+    "secondary_bending_review_rows": {
+      "Interior": 316,
+      "Exterior": 304
+    }
+  },
+  "browser": {
+    "status": "PASS",
+    "actualProjectCheckpoint": true,
+    "records": [
+      {
+        "width": 1440,
+        "scopeWarning": true,
+        "failureSummary": true,
+        "charts": 6
+      },
+      {
+        "width": 1100,
+        "scopeWarning": true,
+        "failureSummary": true,
+        "charts": 6
+      }
+    ],
+    "javascriptErrors": [],
+    "streamlitExceptions": 0
+  },
+  "source": {
+    "project_sha256": "38685c15fc6a6ae8d7c4b2d61a57ded3f0d50dc10daf22f804c45046aba355c8",
+    "excel_sha256": "d9e396d46b54b5a32bce2e42ad18e69548e92ad803290b3c385b67cf9630d64a",
+    "source_row_count": 640,
+    "all_6_imported_components_match": true
+  }
+}

@@ -137,7 +137,8 @@ def activate_member(state, member, *, save_previous=True):
 
 def replace_stage(state, imported, *, stage):
     """Atomic replacement of the uploaded stage; retain other imported stages."""
-    incoming = pd.DataFrame(imported).copy(deep=True)
+    from concrete_pmm_pro.io.csi_force_reference import bind_reference, configured_profile
+    incoming = bind_reference(pd.DataFrame(imported), configured_profile(state))
     _validate_bank(incoming)
     if set(incoming['Stage'].astype(str)) != {stage}:
         raise ValueError('SLS stage does not match the import destination.')

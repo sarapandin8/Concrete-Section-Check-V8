@@ -241,10 +241,13 @@ def render_uls_report_charts(state, *, code_label):
             ap._render_beam_uls_browser_plotly_figure(fig, interactive=True)
             figures = {'':fig}
         st.caption('The PNG includes girder, case, units, selected-case control and all-case member gates. Missing resistance/ratios retain their stored gaps and status markers; connecting lines are visual interpolation.')
+        checked = mm.select_cases(frame, family.cases) if paired else filter_case(frame, case)
+        if check == 'Flexure':
+            from concrete_pmm_pro.ui.igird_flexure_development import render_failure_summary
+            render_failure_summary(checked, stage='Report / QA · Final Composite · '+member)
         with st.expander('Report chart — load-case ranking / source audit', expanded=False):
             st.dataframe(result_table_for_display(case_ranking(frame, check)), hide_index=True, use_container_width=True)
             st.dataframe(result_table_for_display(component_controls(frame, check)), hide_index=True, use_container_width=True)
-            checked = mm.select_cases(frame, family.cases) if paired else filter_case(frame, case)
             st.dataframe(result_table_for_display(checked), hide_index=True, use_container_width=True)
             name = (mm.export_name(check, member, family) if paired else
                     re.sub(r'[^A-Za-z0-9_-]+', '_', check+'_'+member+'_'+case).strip('_'))

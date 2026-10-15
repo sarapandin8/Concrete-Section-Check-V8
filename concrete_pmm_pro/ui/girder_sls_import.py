@@ -38,6 +38,8 @@ def render_member_collection(*, key_prefix='loads', show_open=False, stage='Serv
 
 def render_import(*, force_unit='kN', moment_unit='kN-m'):
     st.markdown('#### Import SLS loads')
+    from concrete_pmm_pro.ui.csi_force_reference import render_settings
+    render_settings(key_prefix='sls23_csi_reference')
     st.caption('Upload Bridge Object Girder Forces from CSiBridge, then press Import SLS loads. Each source row stays in its own case and station.')
     if BANK_KEY in st.session_state and st.session_state.get('_igird_sls23_import_receipt'):
         st.success(st.session_state['_igird_sls23_import_receipt'])

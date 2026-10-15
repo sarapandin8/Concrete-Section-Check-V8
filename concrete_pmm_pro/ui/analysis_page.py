@@ -15,6 +15,7 @@ from typing import Any
 
 import plotly.graph_objects as go
 import pandas as pd
+from concrete_pmm_pro.ui import csi_reference_analysis
 import streamlit as st
 from concrete_pmm_pro.visualization.plot_readability import apply_global_plot_readability
 from shapely.geometry import LineString
@@ -115,6 +116,7 @@ from concrete_pmm_pro.analysis.igird_flexure_development import (
     development_settings as igird_flexure_development_settings,
     strand_families as igird_flexure_strand_families,
     solve_developed_station as solve_igird_developed_flexure_station,
+    qualify_primary_axis_scope as igird_qualify_primary_axis_scope,
 )
 from concrete_pmm_pro.analysis.girder_axial_convention import (
     VERSION as GIRDER_AXIAL_CONVENTION_VERSION,
@@ -5944,6 +5946,10 @@ def _beam_uls_flexure_analysis_input_for_station(
     if not isinstance(concrete, ConcreteMaterial):
         return None, ["Concrete material is missing."]
 
+    try:
+        row = csi_reference_analysis.convert_for_check(state, row, check_name="Flexure", geometry=geometry)
+    except (ValueError, TypeError, KeyError) as exc:
+        return None, [str(exc)]
     settings = _beam_uls_analysis_settings_from_state(state, code_label=strength_route.solver_code_label)
     rebars = effective_rebars_for_analysis(list(_beam_uls_get_state_value(state, "rebars", []) or []), state, settings)
     prestress = effective_prestress_for_analysis(list(_beam_uls_get_state_value(state, "prestress_elements", []) or []), state, settings)
@@ -6607,6 +6613,7 @@ def _beam_uls_developed_igird_flexure_dataframe(
             if hasattr(exc, "strand_trace"):
                 row["Strand development trace"] = exc.strand_trace
                 row["Ordinary bar development trace"] = exc.bar_trace
+        row = igird_qualify_primary_axis_scope(row, _beam_uls_float(demand_row.get("Muy", 0.0)))
         rows.append(igird_station_section.annotate(row, local_state, check_name="Flexure"))
     if any(not math.isfinite(_beam_uls_float(r.get("Capacity kN-m"))) for r in rows):
         messages.append("Full-span strength coverage is incomplete: resolve blocked source station(s); no final flexure PASS is issued.")
@@ -6620,6 +6627,7 @@ def _beam_uls_developed_igird_flexure_dataframe(
     return girder_csi_source_gate(pd.DataFrame(rows), active_df), messages
 
 
+@csi_reference_analysis.dataframe_reader("Flexure")
 def _beam_uls_flexure_preview_dataframe(
     state: Mapping[str, object],
     active_df: pd.DataFrame,
@@ -8574,6 +8582,7 @@ def _beam_uls_shear_result_for_row(
     }
 
 
+@csi_reference_analysis.dataframe_reader("Shear")
 def _beam_uls_shear_check_dataframe(
     state: Mapping[str, object],
     active_df: pd.DataFrame,
@@ -10963,6 +10972,7 @@ def _beam_uls_torsion_result_for_row(
     }
 
 
+@csi_reference_analysis.dataframe_reader("Torsion")
 def _beam_uls_torsion_check_dataframe(
     state: Mapping[str, object],
     active_df: pd.DataFrame,
@@ -11290,7 +11300,7 @@ _BEAM_ULS_STATIC_FIG_WIDTH = 1440
 _BEAM_ULS_STATIC_FIG_HEIGHT = 560
 
 
-def _render_beam_uls_browser_plotly_figure(fig: go.Figure, *, caption: str | None = None, interactive: bool = False) -> None:
+def _render_beam_uls_browser_plotly_figure(fig: go.Figure, *, caption: str | None = None, interactive: bool = False, key: str | None = None) -> None:
     """Render a wide Beam/Girder ULS engineering figure in the browser.
 
     IGIRDER.ULS2P uses this route for the Construction Flexure workspace so a
@@ -11336,9 +11346,9 @@ def _render_beam_uls_browser_plotly_figure(fig: go.Figure, *, caption: str | Non
         # Prefer the current Streamlit stretch contract.  In print/PDF review
         # layouts the legacy use_container_width path can leave Plotly at its
         # pre-sidebar width and clip the right-hand member stations.
-        st.plotly_chart(fig, width="stretch", config=config)
+        st.plotly_chart(fig, width="stretch", config=config, key=key)
     except TypeError:  # compatibility with older Streamlit variants
-        st.plotly_chart(fig, use_container_width=True, config=config)
+        st.plotly_chart(fig, use_container_width=True, config=config, key=key)
     if caption:
         st.caption(caption)
     meta = dict(fig.layout.meta or {})
@@ -13342,6 +13352,7 @@ def _make_beam_uls_flexure_preview_figure(
     member_length_m: float | None = None,
     source_context_df: pd.DataFrame | None = None,
 ) -> go.Figure:
+    active_df = csi_reference_analysis.aligned_plot_source(active_df, flexure_preview_df, column="Mux")
     fig = _make_beam_uls_demand_figure(
         active_df,
         column="Mux",
@@ -13854,6 +13865,7 @@ def _make_beam_uls_torsion_capacity_figure(
     member_length_m: float | None = None,
     source_context_df: pd.DataFrame | None = None,
 ) -> go.Figure:
+    active_df = csi_reference_analysis.aligned_plot_source(active_df, torsion_check_df, column="Tu")
     fig = _make_beam_uls_demand_figure(
         active_df,
         column="Tu",
@@ -15506,6 +15518,9 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                 {"title": "Method", "value": "Strain compatibility", "detail": strength_route.flexure_engine_label, "status": "neutral"},
             ]
         _render_analysis_summary_strip(flex_cards, columns=4)
+        if flex_preview is not None and flex_preview.get("Reference version"):
+            with st.expander("CSI force reference / Equations — governing flexure station", expanded=False):
+                csi_reference_analysis.render_trace(flex_preview)
         _render_beam_uls_static_plotly_figure(
             _make_beam_uls_flexure_preview_figure(active_df, flexure_preview_df, code_label=code_label)
         )
@@ -15576,6 +15591,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                     "AASHTO source equations are evaluated with explicit SI-safe conversion where the specification coefficient is written in US customary units."
                 )
                 trace_df = _beam_uls_shear_calculation_trace_dataframe(shear_result)
+                csi_reference_analysis.render_trace(shear_result)
                 if trace_df.empty:
                     st.info("Calculation trace is not available until the governing shear row contains the required General Procedure inputs.")
                 else:
@@ -15786,6 +15802,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                     "AASHTO coefficients written in US customary units are evaluated through explicit SI-safe conversion."
                 )
                 trace_df = _beam_uls_torsion_calculation_trace_dataframe(torsion_result)
+                csi_reference_analysis.render_trace(torsion_result)
                 if trace_df.empty:
                     st.info("The stored governing Torsion row does not yet contain enough source fields for an equation trace.")
                 else:
@@ -18863,6 +18880,8 @@ def _girder_full_length_sls_stage_rows(
         )
 
     load_rows = _girder_sls_stage_rows_with_auto_station_grid(stage_label, load_rows, span_length_m)
+    from concrete_pmm_pro.io import csi_force_reference as csi_reference
+    load_rows = csi_reference.prepare_analysis_frame(pd.DataFrame(load_rows), sls=True).to_dict("records")
     strand_table = st.session_state.get("girder_strand_layout_table")
     auto_breakdown = _girder_sls_auto_load_breakdown(stage_label)
     rows: list[dict[str, object]] = []
@@ -18874,6 +18893,7 @@ def _girder_full_length_sls_stage_rows(
         x_m = _analysis_float_or_zero(raw_row.get("Station x (m)"))
         basis_name = _beam_sls_load_basis_key(raw_row, basis_names) or _beam_sls_default_basis_for_stage(stage_label, basis_names)
         basis = basis_options.bases[basis_name]
+        raw_row = csi_reference_analysis.sls_row(st.session_state, raw_row, basis)
         user_n_kN = _analysis_float_or_zero(raw_row.get("N"))
         user_mx_kNm = _analysis_float_or_zero(raw_row.get("Mx"))
         system_settings = _beam_girder_system_settings_for_analysis()
@@ -18960,6 +18980,7 @@ def _girder_full_length_sls_stage_rows(
                 "Max compression (MPa)": min(top_total, bottom_total),
                 "Max tension (MPa)": max(top_total, bottom_total),
                 "Active PS groups": active_groups,
+                **csi_reference_analysis.sls_trace(raw_row),
             }
         )
     if not rows:
@@ -19362,6 +19383,9 @@ def _girder_full_length_preview_status(df: pd.DataFrame, stage_label: str) -> tu
             tension_ok = False
             break
     if compression_ok and tension_ok:
+        reference_review = df.get("Reference review", pd.Series(index=df.index, dtype=str)).fillna("").astype(str)
+        if reference_review.str.strip().ne("").any():
+            return "REVIEW", reference_review[reference_review.str.strip().ne("")].iloc[0], "warning"
         return "Preview PASS", profile_label, "ready"
     return "Preview FAIL", f"{profile_label}; check compression/tension exceedance", "danger"
 
@@ -21003,6 +21027,13 @@ def _final_service_composite_split_rows(df: pd.DataFrame, basis_options: object)
         station = _analysis_float_or_zero(source.get("Station x (m)"))
         n_kN = _analysis_float_or_zero(source.get("N (kN)"))
         m_kNm = _analysis_float_or_zero(source.get("Mx (kN-m)"))
+        if source.get("Reference version") == "IGIRDER.CSIREF26":
+            _, section_bottom, _, _ = _beam_uls_section_bounds(st.session_state.get("section_geometry"))
+            target_y = section_bottom + float(composite_basis.centroid_y_from_bottom_mm)
+            raw_p = float(source["Original CSI P kN"])
+            raw_m3 = float(source["Original CSI M3 kN-m"])
+            m_kNm = raw_m3 - (float(source["CSI C y mm"]) - target_y) / 1000 * raw_p + float(source.get("Auto Mx (kN-m)", 0))
+            n_kN = -raw_p
         imported_total = source.get("SLS force content") in {"total_external", "total_with_prestress"}
         locked_m_kNm = 0.0 if imported_total else simple_span_udl_moment_kNm(locked_w_kN_m, station, span)
         pe_kN = _analysis_float_or_zero(source.get("Pe stage (kN)"))
@@ -21064,6 +21095,12 @@ def _final_service_composite_split_rows(df: pd.DataFrame, basis_options: object)
                         "SERVICE.COMP2 staged basis: CIP/topping receives composite-stage increments only; stress scaled by n=Edeck/Ebeam"
                     ),
                     "Locked-in components": "Included in CSI total" if imported_total else locked_component_label,
+                    **({key: value for key, value in source.items() if
+                        str(key).startswith(("Reference ", "Original CSI ", "CSI C ", "C-O "))
+                        or key == "CSI force kind"} if source.get("Reference version") else {}),
+                    **({"Resistance O y mm": target_y,
+                        "C-O local2 m": (float(source["CSI C y mm"]) - target_y) / 1000}
+                        if source.get("Reference version") == "IGIRDER.CSIREF26" else {}),
                 }
             )
     return pd.DataFrame(rows).sort_values(["Concrete component", "Fiber", "Station x (m)"]).reset_index(drop=True)
@@ -21095,12 +21132,13 @@ def _component_governing_cards(component_df: pd.DataFrame, component: str, *, be
         )
     except TypeError:
         fail = True
+    reference_review = component_df.get("Reference review", pd.Series(index=component_df.index, dtype=str)).fillna("").astype(str).str.strip().ne("").any()
     return [
         {
             "title": f"{component} stress check",
-            "value": "FAIL" if fail else "PASS",
+            "value": "FAIL" if fail else ("REVIEW" if reference_review else "PASS"),
             "detail": basis,
-            "status": "danger" if fail else "ready",
+            "status": "danger" if fail else ("warning" if reference_review else "ready"),
         },
         {
             "title": "Governing compression",
@@ -21154,11 +21192,13 @@ def _final_service_component_decision_rows(
             actual = float(component_df.loc[idx, "Total stress (MPa)"])
             util = _girder_sls_demand_utilization(actual, positive_limit, demand_type=demand_type)
             exceeds = util is not None and (not math.isfinite(float(util)) or float(util) > 1.0)
+            reference_review = component_df.get("Reference review", pd.Series(index=component_df.index, dtype=str)).fillna("").astype(str).str.strip().ne("").any()
             rows.append(
                 {
                     "Concrete component": component,
                     "Demand": demand,
-                    "Check status": "FAIL" if exceeds else "PASS",
+                    "Check status": "FAIL" if exceeds else ("REVIEW" if reference_review else "PASS"),
+                    "Reference review": " ".join(component_df.get("Reference review", pd.Series(dtype=str)).dropna().astype(str).unique()) if reference_review else "",
                     "Station x (m)": round(float(component_df.loc[idx, "Station x (m)"]), 3),
                     "Fiber": str(component_df.loc[idx, "Fiber"]),
                     "Actual stress (MPa)": round(actual, 3),

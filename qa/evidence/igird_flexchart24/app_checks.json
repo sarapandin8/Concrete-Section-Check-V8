@@ -1,0 +1,18 @@
+{
+  "milestone": "IGIRDER.FLEXCHART24",
+  "status": "PASS",
+  "entrypoint": "app.py",
+  "scope": "Archived CSI forces and hypothetical section; not current rev1 project approval",
+  "members": 2,
+  "member_max_min_charts": 4,
+  "member_plus_detail_charts": 6,
+  "demand_and_utilization_views": true,
+  "streamlit_exceptions": 0,
+  "review_solver_calls": 0,
+  "input_and_result_snapshots_unchanged": true,
+  "report_read_only": true,
+  "export_png_size_px": [
+    2880,
+    1120
+  ]
+}

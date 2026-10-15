@@ -1,0 +1,13 @@
+........................................................................ [ 16%]
+........................................................................ [ 33%]
+........................................................................ [ 50%]
+........................................................................ [ 67%]
+........................................................................ [ 83%]
+.....................................................................    [100%]
+=============================== warnings summary ===============================
+../../../../../../tmp/csp-flexure24-env/lib/python3.12/site-packages/_pytest/config/__init__.py:1345
+  /tmp/csp-flexure24-env/lib/python3.12/site-packages/_pytest/config/__init__.py:1345: PytestAssertRewriteWarning: Module already imported so cannot be rewritten; anyio
+    self._mark_plugins_for_rewrite(hook, disable_autoload)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+429 passed, 1 warning in 118.92s (0:01:58)

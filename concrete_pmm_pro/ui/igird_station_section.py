@@ -51,7 +51,7 @@ def strand_families(state,table,*,y_min_mm,span_m,stage,settings):
 def annotate(result,state,*,check_name):
     if TRACE_KEY not in state: return result
     result={**result,**state[TRACE_KEY]};cfg=state[PROFILE_KEY];reasons=[]
-    if not cfg.load_reference_confirmed:
+    if not cfg.load_reference_confirmed and result.get("Reference status") not in {"EXACT", "INTERVAL BOUND"}:
         reasons.append("Confirm imported Mux/Nu reference at the local section centroid; no automatic Nu×eccentricity conversion is applied.")
     if result["Solid fill fraction"]>0:
         if not cfg.d_region_confirmed:
@@ -70,8 +70,11 @@ def station_check(check_name):
     def decorate(fn):
         @wraps(fn)
         def wrapped(state,row,*args,**kwargs):
-            if not ends.enabled(state): return fn(state,row,*args,**kwargs)
-            try: local=at_station(state,row.get("Station x (m)"))
+            try:
+                local=at_station(state,row.get("Station x (m)")) if ends.enabled(state) else state
+                from concrete_pmm_pro.ui.csi_reference_analysis import convert_for_check
+                from concrete_pmm_pro.io.csi_force_reference import qualify_result
+                converted=convert_for_check(local,row,check_name=check_name)
             except (ValueError,TypeError,KeyError) as exc:
                 from concrete_pmm_pro.ui import analysis_page as ap
                 return {"Check":check_name,"Status":"REVIEW","Numerical status":"SECTION UNAVAILABLE",
@@ -80,7 +83,8 @@ def station_check(check_name):
                     "Station type":str(row.get("__VT station type") or "LOAD STATION"),"Section region":"UNAVAILABLE","End section acceptance":"REVIEW",
                     "φVn kN":float("nan"),"φTn kN-m":float("nan"),"Capacity kN":float("nan"),"Capacity kN-m":float("nan"),
                     "Utilization value":float("nan"),"D/C value":float("nan"),"Overall D/C value":float("nan"),"Notes":str(exc)}
-            return annotate(fn(local,row,*args,**kwargs),local,check_name=check_name)
+            result=qualify_result(fn(local,converted,*args,**kwargs),converted,check_name=check_name)
+            return annotate(result,local,check_name=check_name)
         return wrapped
     return decorate
 

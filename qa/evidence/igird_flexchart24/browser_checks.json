@@ -1,0 +1,61 @@
+{
+  "status": "PASS",
+  "scope": "Actual app.py with hypothetical QA checkpoint; not live deployment",
+  "records": [
+    {
+      "width": 1440,
+      "plotlyCharts": 6,
+      "chartFitsViewport": true,
+      "legendAndFooterFit": true
+    },
+    {
+      "width": 1100,
+      "plotlyCharts": 6,
+      "chartFitsViewport": true,
+      "legendAndFooterFit": true
+    }
+  ],
+  "javascriptErrors": [],
+  "streamlitExceptions": 0,
+  "printChartBreakInside": [
+    "avoid",
+    "avoid",
+    "avoid",
+    "avoid",
+    "avoid",
+    "avoid"
+  ],
+  "print_figures_verified": [
+    {
+      "page": 3,
+      "complete_figures": 2,
+      "axis_labels": 2,
+      "complete_footers": 2
+    },
+    {
+      "page": 4,
+      "complete_figures": 1,
+      "axis_labels": 1,
+      "complete_footers": 1
+    },
+    {
+      "page": 5,
+      "complete_figures": 1,
+      "axis_labels": 1,
+      "complete_footers": 1
+    },
+    {
+      "page": 7,
+      "complete_figures": 1,
+      "axis_labels": 1,
+      "complete_footers": 1
+    },
+    {
+      "page": 8,
+      "complete_figures": 1,
+      "axis_labels": 1,
+      "complete_footers": 1
+    }
+  ],
+  "complete_printed_figures": 6
+}

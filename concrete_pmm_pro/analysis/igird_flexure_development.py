@@ -30,9 +30,34 @@ from concrete_pmm_pro.serviceability.girder_prestress_station import (
     active_girder_strand_rows, debonded_strand_numbers_for_row,
 )
 
-RESULT_VERSION = "IGIRDER.DECKULS1.aashto-developed-flexure"
+RESULT_VERSION = "IGIRDER.FLEXREVIEW25.primary-axis-qualified"
 SETTINGS_KEY = "igird_flexure_development_settings"
 MPA_PER_KSI = 6.894757293168
+
+
+def qualify_primary_axis_scope(row: Mapping, muy_kNm: float) -> dict:
+    """Retain the Mux/Nu calculation without certifying an unchecked Muy.
+
+    This is a scope gate, not an interaction equation. It cannot turn a
+    numerical failure into REVIEW or alter resistance, forces, or D/C.
+    """
+    result = dict(row)
+    result["Muy demand kN-m"] = muy_kNm
+    if math.isfinite(muy_kNm) and abs(muy_kNm) <= 1e-9:
+        result["Secondary-axis flexure gate"] = "NOT REQUIRED: Muy = 0"
+        return result
+    if not math.isfinite(muy_kNm):
+        result["Secondary-axis flexure gate"] = "REVIEW: Muy unavailable"
+        note = "The secondary-axis moment source is unavailable; the Mux/Nu preview cannot certify biaxial flexure."
+    else:
+        result["Secondary-axis flexure gate"] = "REVIEW: biaxial flexure required"
+        note = (f"Primary-axis preview checks Mux with Nu only; imported Muy={muy_kNm:+.4f} kN-m is not included. "
+                "Review the FEA section/axis reference and corresponding actions, then check combined Nu/Mux/Muy "
+                "by strain compatibility (AASHTO 5.6.2.1, 5.6.3.2.4--5).")
+    if result.get("Status") in {"PASS", "SECTION PREVIEW"}:
+        result["Status"] = "REVIEW"
+    result["Notes"] = " ".join(filter(None, (str(result.get("Notes") or ""), note)))
+    return result
 
 
 class DevelopedEquilibriumError(ValueError):

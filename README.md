@@ -1,3 +1,11 @@
+# Concrete Section Pro — IGIRDER.CSIREF26
+
+CSI reporting origins are now saved with each native Loads source. Analysis transports moments to its station-specific resistance origin while retaining all raw Loads values and recording the mapping in Calculation trace. Use the supplied `I_Girder_20m_CSIREF26.json`, or configure the source reporting point in Loads → `CSI force output reference`, then recalculate Analysis.
+
+This is the force-reference integration milestone. Full composite shear–torsion and biaxial resistance remain incomplete; Girder resultants checked against the partial I-hoop mechanism retain REVIEW qualification. See `README_IGIRDER_CSIREF26.md` and `IGIRDER_CSIREF26_HANDOFF_TH.md` for setup, tests and scope.
+
+## Previous milestone
+
 # Concrete Section Pro — IGIRDER.ENDSECTION18
 
 Based on the complete accepted AUTOLOAD17 ZIP. Section Builder → Solid End Sections defines independent left/right solid lengths, linear side tapers, end width/chamfer and physical cut-end coordinates on the existing Loads axis. The station preview displays the actual polygon and longitudinal zoning.

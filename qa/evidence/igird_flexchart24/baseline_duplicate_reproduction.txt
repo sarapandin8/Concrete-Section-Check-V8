@@ -1,0 +1,91 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ test_identical_stored_bounds_render_in_collection_detail_and_report ______
+
+    def test_identical_stored_bounds_render_in_collection_detail_and_report():
+        app = AppTest.from_string(RENDER_APP, default_timeout=30).run()
+>       assert not app.exception, [item.message for item in app.exception]
+E       AssertionError: ['There are multiple `plotly_chart` elements with the same auto-generated ID. When this element is created, it is assi...eters will cause this error.
+E         
+E         To fix this error, please pass a unique `key` argument to the `plotly_chart` element.']
+E       assert not ElementList(_list=[Exception(message='There are multiple `plotly_chart` elements with the same auto-generated ID. When...lit/elements/lib/utils.py", line 146, in _register_element_id\n    raise StreamlitDuplicateElementId(element_type)'])])
+E        +  where ElementList(_list=[Exception(message='There are multiple `plotly_chart` elements with the same auto-generated ID. When...lit/elements/lib/utils.py", line 146, in _register_element_id\n    raise StreamlitDuplicateElementId(element_type)'])]) = AppTest(\n    _script_path='/tmp/tmp3z2vzyx_/02703701791db12b76524d8b1a59de75',\n    default_timeout=30,\n    session_sta...SpecialBlock(\n            type='sidebar'\n        ),\n        2: SpecialBlock(\n            type='event'\n        )\n    }\n).exception
+
+tests/test_igird_flexchart24.py:39: AssertionError
+----------------------------- Captured stderr call -----------------------------
+2026-10-13 09:48:57.493 WARNING streamlit.runtime.scriptrunner_utils.script_run_context: Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.
+2026-10-13 09:48:57.873 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2026-10-13 09:48:57.926 Uncaught app execution
+Traceback (most recent call last):
+  File "/tmp/csp-flexure24-env/lib/python3.12/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 136, in exec_func_with_error_handling
+    result = func()
+             ^^^^^^
+  File "/tmp/csp-flexure24-env/lib/python3.12/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 816, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/tmp3z2vzyx_/02703701791db12b76524d8b1a59de75", line 14, in <module>
+    render_bound_figures(deepcopy(figures),family=family,key_prefix=scope)
+  File "/workspace/scratch/29b4e7665f69/work/slsimport23/concrete-section-pro/concrete_pmm_pro/ui/igird_maxmin_charts.py", line 281, in render_bound_figures
+    ap._render_beam_uls_browser_plotly_figure(fig, interactive=True)
+  File "/workspace/scratch/29b4e7665f69/work/slsimport23/concrete-section-pro/concrete_pmm_pro/ui/analysis_page.py", line 11339, in _render_beam_uls_browser_plotly_figure
+    st.plotly_chart(fig, width="stretch", config=config)
+  File "/tmp/csp-flexure24-env/lib/python3.12/site-packages/streamlit/runtime/metrics_util.py", line 596, in wrapped_func
+    result = non_optional_func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/csp-flexure24-env/lib/python3.12/site-packages/streamlit/elements/plotly_chart.py", line 712, in plotly_chart
+    plotly_chart_proto.id = compute_and_register_element_id(
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/csp-flexure24-env/lib/python3.12/site-packages/streamlit/elements/lib/utils.py", line 261, in compute_and_register_element_id
+    _register_element_id(ctx, element_type, element_id)
+  File "/tmp/csp-flexure24-env/lib/python3.12/site-packages/streamlit/elements/lib/utils.py", line 146, in _register_element_id
+    raise StreamlitDuplicateElementId(element_type)
+streamlit.errors.StreamlitDuplicateElementId: There are multiple `plotly_chart` elements with the same auto-generated ID. When this element is created, it is assigned an internal ID based on the element type and provided parameters. Multiple elements with the same type and parameters will cause this error.
+
+To fix this error, please pass a unique `key` argument to the `plotly_chart` element.
+------------------------------ Captured log call -------------------------------
+WARNING  streamlit.runtime.scriptrunner_utils.script_run_context:script_run_context.py:448 Thread 'MainThread': missing ScriptRunContext! This warning can be ignored when running in bare mode.
+WARNING  streamlit.deprecation_util:deprecation_util.py:81 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+ERROR    streamlit.error_util:error_util.py:112 Uncaught app execution
+Traceback (most recent call last):
+  File "/tmp/csp-flexure24-env/lib/python3.12/site-packages/streamlit/runtime/scriptrunner/exec_code.py", line 136, in exec_func_with_error_handling
+    result = func()
+             ^^^^^^
+  File "/tmp/csp-flexure24-env/lib/python3.12/site-packages/streamlit/runtime/scriptrunner/script_runner.py", line 816, in code_to_exec
+    exec(code, module.__dict__)  # noqa: S102
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/tmp3z2vzyx_/02703701791db12b76524d8b1a59de75", line 14, in <module>
+    render_bound_figures(deepcopy(figures),family=family,key_prefix=scope)
+  File "/workspace/scratch/29b4e7665f69/work/slsimport23/concrete-section-pro/concrete_pmm_pro/ui/igird_maxmin_charts.py", line 281, in render_bound_figures
+    ap._render_beam_uls_browser_plotly_figure(fig, interactive=True)
+  File "/workspace/scratch/29b4e7665f69/work/slsimport23/concrete-section-pro/concrete_pmm_pro/ui/analysis_page.py", line 11339, in _render_beam_uls_browser_plotly_figure
+    st.plotly_chart(fig, width="stretch", config=config)
+  File "/tmp/csp-flexure24-env/lib/python3.12/site-packages/streamlit/runtime/metrics_util.py", line 596, in wrapped_func
+    result = non_optional_func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/csp-flexure24-env/lib/python3.12/site-packages/streamlit/elements/plotly_chart.py", line 712, in plotly_chart
+    plotly_chart_proto.id = compute_and_register_element_id(
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/csp-flexure24-env/lib/python3.12/site-packages/streamlit/elements/lib/utils.py", line 261, in compute_and_register_element_id
+    _register_element_id(ctx, element_type, element_id)
+  File "/tmp/csp-flexure24-env/lib/python3.12/site-packages/streamlit/elements/lib/utils.py", line 146, in _register_element_id
+    raise StreamlitDuplicateElementId(element_type)
+streamlit.errors.StreamlitDuplicateElementId: There are multiple `plotly_chart` elements with the same auto-generated ID. When this element is created, it is assigned an internal ID based on the element type and provided parameters. Multiple elements with the same type and parameters will cause this error.
+
+To fix this error, please pass a unique `key` argument to the `plotly_chart` element.
+=============================== warnings summary ===============================
+../../../../../../tmp/csp-flexure24-env/lib/python3.12/site-packages/_pytest/config/__init__.py:1345
+  /tmp/csp-flexure24-env/lib/python3.12/site-packages/_pytest/config/__init__.py:1345: PytestAssertRewriteWarning: Module already imported so cannot be rewritten; anyio
+    self._mark_plugins_for_rewrite(hook, disable_autoload)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_igird_flexchart24.py::test_identical_stored_bounds_render_in_collection_detail_and_report
+1 failed, 1 warning in 1.16s

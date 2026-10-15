@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 import re
+import textwrap
 from html import escape
 
 import pandas as pd
@@ -162,6 +163,19 @@ def apply_igird_report_layout(fig) -> None:
         fig.update_layout(margin={'t':max(int(fig.layout.margin.t or 0),140),
                                   'b':max(int(fig.layout.margin.b or 0),176)},
                           legend={'y':-.27})
+    if (fig.layout.meta or {}).get('igird_maxmin_check'):
+        # Three short legend entries fit a 1100-px workspace with its sidebar.
+        # Plotly annotations do not wrap automatically when a chart shrinks.
+        # Retain the exact report lines in meta and wrap their visible copy.
+        fig.update_layout(margin={'b':max(int(fig.layout.margin.b or 0),224)},
+            legend={'itemwidth':40,'entrywidth':135,'entrywidthmode':'pixels',
+                    'font':{'size':11},'y':-.27})
+        for annotation in fig.layout.annotations:
+            if annotation.name == 'igird_report_note':
+                wrapped = [part for line in lines or [] for part in
+                    textwrap.wrap(str(line), width=90, break_long_words=False,
+                                  break_on_hyphens=False)]
+                annotation.text = '<br>'.join(escape(part) for part in wrapped)
     if (fig.layout.meta or {}).get('igird_allcase_version'):
         # Apply after the shared browser style too: its usual wide legend
         # entries otherwise push many case labels through the report notes.
@@ -219,7 +233,9 @@ def compact_csi_demand_labels(fig, *, component: str, unit: str) -> None:
         if not name.startswith('Demand '+component) or '—' not in name:
             continue
         case = name.split('—', 1)[1].strip()
-        match = re.search(r'/\s*(Max|Min)\s*/\s*set\s+(\d+)\s*$', case)
+        # Native Bridge Object imports retain Before/After between ItemType
+        # and occurrence. Keep both source paths visible in the short legend.
+        match = re.search(r'/\s*(Max|Min)\s*/\s*(?:(?:Before|After)\s*/\s*)?set\s+(\d+)\s*$', case)
         if match:
             label = f'{component} {match.group(1)} {match.group(2)}'
             labels[label] = labels.get(label, 0) + 1

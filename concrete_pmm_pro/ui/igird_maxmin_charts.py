@@ -278,7 +278,11 @@ def render_bound_figures(figures, *, family, key_prefix):
             reason = 'No imported source rows' if not family.groups[step] else 'No stored utilization checks'
             st.warning(f'{step} unavailable — {reason} for this LC/source family. No values are inferred from the other bound.')
             continue
-        ap._render_beam_uls_browser_plotly_figure(fig, interactive=True)
+        # The member panel and detailed workspace can show identical stored
+        # figures in one Streamlit run. Scope their element identity to the
+        # renderer location and source bound, rather than figure content.
+        ap._render_beam_uls_browser_plotly_figure(fig, interactive=True,
+            key=f'{key_prefix}_plot_{family.token}_{step}')
         meta = dict(fig.layout.meta or {})
         controls.append({'ItemType': step, **meta['igird_maxmin_selected_control']})
         if not meta['igird_maxmin_stored_rows']:
