@@ -1,5 +1,4 @@
 """Source-specific interface inputs; reuses the existing anchorage declaration."""
-import hashlib
 import json
 import math
 import pandas as pd
@@ -28,7 +27,7 @@ def render_source(current, girder_zones):
         st.caption("Diameter, spacing, fy and longitudinal zoning follow the girder table by this explicit selection. "
             "The dowel crossing-leg count is separate from the I-girder stirrup leg count.")
     elif source == INDEPENDENT_DOWELS:
-        with st.expander("Dowel layout",expanded=False):
+        with st.expander("Dowel layout",expanded=False,key="igird_edit33_dowel_layout"):
             rows = cfg["dowel_zones"] if isinstance(cfg["dowel_zones"],list) else []
             with st.expander("Bar properties / other layout options",expanded=False):
                 show_properties=st.toggle("Edit bar diameter, legs and fy",value=False,key="input30_dowel_bar_properties")
@@ -36,9 +35,9 @@ def render_source(current, girder_zones):
                     rows = copy_girder_zoning(girder_zones.to_dict("records"),crossing_legs=2)
             frame = pd.DataFrame(rows,columns=DOWEL_COLUMNS)
             for col in DOWEL_COLUMNS[1:]: frame[col] = pd.to_numeric(frame[col],errors="coerce")
-            signature = hashlib.sha256(frame.to_json(orient="records").encode()).hexdigest()[:12]
-            edited = st.data_editor(frame,hide_index=True,num_rows="dynamic",use_container_width=True,
-                key="igird_interface_dowel_layout_"+signature,
+            from .igird_input_editor import input_editor
+            edited = input_editor(frame,prefix="igird_interface_dowel_layout_",
+                hide_index=True,num_rows="dynamic",use_container_width=True,
                 column_order=DOWEL_COLUMNS if show_properties else ["Zone","x_start_m","x_end_m","Spacing_mm"],
                 column_config={"Zone":st.column_config.TextColumn("Dowel zone"),
                     "x_start_m":st.column_config.NumberColumn("Start x (m)"),

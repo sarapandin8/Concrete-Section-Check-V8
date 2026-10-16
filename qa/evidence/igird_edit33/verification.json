@@ -1,0 +1,245 @@
+{
+  "version": "IGIRDER.EDIT33",
+  "baseline_version": "IGIRDER.DOWEL32",
+  "py_compile": "PASS",
+  "selected_tests": {
+    "passed": 321,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "warnings": 7
+  },
+  "browser_runs": [
+    {
+      "mode": "baseline_reproduction",
+      "actual_app": true,
+      "browser": "130.0.6723.91",
+      "commits": [
+        {
+          "dimension": "row_spacing_mm",
+          "entered": 120.0,
+          "saved": 120.0,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_3e09f529c6bf st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 2
+        },
+        {
+          "dimension": "slab_ldh_available_mm",
+          "entered": 180.0,
+          "saved": null,
+          "detail_open": false,
+          "scroll_change_px": -379,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_3e09f529c6bf st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 3
+        }
+      ],
+      "loads_unchanged": true,
+      "solver_calls": 0,
+      "page_errors": [],
+      "streamlit_exceptions": 0,
+      "visual_inspection": "PASS \u2014 inspected baseline collapsed panel and fixed retained values with open detail view"
+    },
+    {
+      "mode": "EDIT33",
+      "actual_app": true,
+      "browser": "130.0.6723.91",
+      "commits": [
+        {
+          "dimension": "row_spacing_mm",
+          "entered": 120.0,
+          "saved": 120.0,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 2
+        },
+        {
+          "dimension": "slab_ldh_available_mm",
+          "entered": 180.0,
+          "saved": 180.0,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 3
+        },
+        {
+          "dimension": "hook_tail_mm",
+          "entered": 200.0,
+          "saved": 200.0,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 4
+        },
+        {
+          "dimension": "hook_inside_bend_mm",
+          "entered": 72.0,
+          "saved": 72.0,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 5
+        },
+        {
+          "dimension": "cover_required_mm",
+          "entered": 55.0,
+          "saved": 55.0,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 6
+        },
+        {
+          "dimension": "girder_ld_available_mm",
+          "entered": 900.0,
+          "saved": 900.0,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 7
+        },
+        {
+          "dimension": "hook_tail_mm",
+          "entered": null,
+          "saved": null,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 8
+        },
+        {
+          "dimension": "hook_tail_mm",
+          "entered": 200.0,
+          "saved": 200.0,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 9
+        },
+        {
+          "dimension": "row_spacing_mm",
+          "entered": 125.0,
+          "saved": 125.0,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 10
+        }
+      ],
+      "loads_unchanged": true,
+      "solver_calls": 0,
+      "page_errors": [],
+      "streamlit_exceptions": 0,
+      "visual_inspection": "PASS \u2014 inspected baseline collapsed panel and fixed retained values with open detail view"
+    },
+    {
+      "mode": "EDIT33",
+      "actual_app": true,
+      "browser": "130.0.6723.91",
+      "viewport_width": 1280,
+      "commits": [
+        {
+          "dimension": "row_spacing_mm",
+          "entered": 120.0,
+          "saved": 120.0,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 2,
+          "commit_key": "Enter"
+        },
+        {
+          "dimension": "slab_ldh_available_mm",
+          "entered": 180.0,
+          "saved": 180.0,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 3,
+          "commit_key": "Enter"
+        },
+        {
+          "dimension": "hook_tail_mm",
+          "entered": 200.0,
+          "saved": 200.0,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 4,
+          "commit_key": "Enter"
+        },
+        {
+          "dimension": "hook_inside_bend_mm",
+          "entered": 72.0,
+          "saved": 72.0,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 5,
+          "commit_key": "Tab"
+        },
+        {
+          "dimension": "cover_required_mm",
+          "entered": 55.0,
+          "saved": 55.0,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 6,
+          "commit_key": "Enter"
+        },
+        {
+          "dimension": "girder_ld_available_mm",
+          "entered": 900.0,
+          "saved": 900.0,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 7,
+          "commit_key": "Enter"
+        },
+        {
+          "dimension": "hook_tail_mm",
+          "entered": null,
+          "saved": null,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 8,
+          "commit_key": "Enter"
+        },
+        {
+          "dimension": "hook_tail_mm",
+          "entered": 200.0,
+          "saved": 200.0,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 9,
+          "commit_key": "Enter"
+        },
+        {
+          "dimension": "row_spacing_mm",
+          "entered": 125.0,
+          "saved": 125.0,
+          "detail_open": true,
+          "scroll_change_px": 0,
+          "widget_class": "stElementContainer element-container st-key-input30_dimensions_edit33_1 st-emotion-cache-1vo6xi6 elzidro1",
+          "run": 10,
+          "commit_key": "Enter"
+        }
+      ],
+      "hide_reopen_preserves_inputs": true,
+      "loads_unchanged": true,
+      "solver_calls": 0,
+      "page_errors": [],
+      "streamlit_exceptions": 0,
+      "visual_inspection": "PASS \u2014 inspected baseline collapsed panel and fixed retained values with open detail view"
+    }
+  ],
+  "analysis_code_changes": false,
+  "raw_load_changes": false,
+  "project_schema_changes": false,
+  "new_solver_result_persistence": false
+}

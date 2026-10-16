@@ -14,8 +14,8 @@ UI_VERSION="IGIRDER.INPUT30"
 
 
 def _editor(frame, *, prefix, **kwargs):
-    signature=hashlib.sha256(frame.to_json(orient="records").encode()).hexdigest()[:12]
-    edited=st.data_editor(frame,key=prefix+signature,hide_index=True,use_container_width=True,**kwargs)
+    from .igird_input_editor import input_editor
+    edited=input_editor(frame,prefix=prefix,hide_index=True,use_container_width=True,**kwargs)
     return json.loads(edited.to_json(orient="records",double_precision=15))
 
 
@@ -34,7 +34,8 @@ def render_settings(current, *, section_params, state=None):
     cfg=effective_config(current,section_params)
     cfg["mode"]=MODE
     missing=sum(not positive(cfg.get(k)) for k in DIMENSIONS)
-    with st.expander(f"Dowel detail — {missing} missing dimensions" if missing else "Dowel detail — saved dimensions",expanded=False):
+    with st.expander(f"Dowel detail — {missing} missing dimensions" if missing else "Dowel detail — saved dimensions",
+            expanded=False,key="igird_edit33_dowel_detail"):
         st.caption("Section dimensions, concrete strengths, slab reinforcement, bar sizes, fy and spacings are reused. "
             "Enter only the measured dowel dimensions below; saved values do not need re-entry.")
         figure=st.empty()

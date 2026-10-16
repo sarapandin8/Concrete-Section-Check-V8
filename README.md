@@ -1,3 +1,11 @@
+# IGIRDER.EDIT33 — Continuous dowel input editing
+
+Committing a second cell no longer loses that value or collapses **Dowel detail**. The dimension, independent layout and optional joint-force editors keep a stable input seed while editing; the changing missing-dimension count retains the same expander. Leaving and reopening the input view reuses accepted values, and loading another Project JSON clears old editor deltas. Copy zoning deliberately replaces the editor seed.
+
+Use your latest saved Project JSON. This update changes UI session state only; engineering equations, raw CSiBridge loads and the Project JSON schema are unchanged. See `IGIRDER_EDIT33_HANDOFF_TH.md`.
+
+## Previous milestone
+
 # IGIRDER.DOWEL32 — U-dowel dimension guide
 
 The existing **Dowel detail** form now includes a transverse U-dowel drawing and an enlarged 90° hook. A–F on the drawing match the input rows, and current values appear next to each reference. Open **How to measure A–F** for measurement endpoints. Unknown lengths stay blank; the drawing is schematic and does not infer or verify actual bar geometry.

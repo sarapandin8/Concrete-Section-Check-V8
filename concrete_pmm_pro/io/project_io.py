@@ -1754,7 +1754,8 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
         if str(key).startswith("igird_support_widget_"):
             session_state.pop(key, None)
     for key in list(session_state):
-        if str(key).startswith(("igird_flexdep_", "igird_flexure31_")):
+        if str(key).startswith(("igird_flexdep_", "igird_flexure31_", "igird_edit33_",
+                "input30_dimensions_", "joint29_actions_", "igird_interface_dowel_layout_")):
             session_state.pop(key, None)
     for key, expected_type in (("beam_girder_torsion_settings", dict), ("beam_girder_torsion_zone_settings", list)):
         raw = project.metadata.get(key)
