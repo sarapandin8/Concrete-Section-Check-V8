@@ -1,0 +1,14 @@
+{
+  "milestone": "IGIRDER.DETAIL35",
+  "baseline_sha256": "f1acd7870085f7e5ca1eda1c2e3ddc718ac8470ae8eb2fa99c0c673bc49436d0",
+  "selected_tests_passed": 385,
+  "new_tests": 23,
+  "full_repository_suite_claimed": false,
+  "browser_qa": "PASS",
+  "real_app": true,
+  "production_full_composite_resistance": "WITHHELD",
+  "new_transverse_mesh_strength_credit": false,
+  "raw_csi_loads_changed": false,
+  "result_cache_persistence_added": false,
+  "JSON_change_scope": "Dowel detail only; actual E=170 and design bend automatic 6db, existing project cover requirements reused."
+}

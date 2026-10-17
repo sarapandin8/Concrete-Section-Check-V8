@@ -1,0 +1,84 @@
+{
+  "version": "IGIRDER.COUPLED34",
+  "baseline_zip_sha256": "3fdf9007243af31359f83f955b64d0a95b8ee6b7eea6f78666ed05edb28d6233",
+  "selected_test_gate": {
+    "tests": 362,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "new_tests": 41,
+  "prior_accepted_tests": 321,
+  "warnings": 7,
+  "analytical_benchmarks": [
+    {
+      "case": "Girder series tie",
+      "expected_model_Tn_kNm": 100.0,
+      "calculated_model_Tn_kNm": 100.0,
+      "equilibrium_relative": 6.7566719952957414e-15,
+      "duality_relative": 0.0
+    },
+    {
+      "case": "U-dowel series tie",
+      "expected_model_Tn_kNm": 100.0,
+      "calculated_model_Tn_kNm": 100.0,
+      "equilibrium_relative": 6.7566719952957414e-15,
+      "duality_relative": 0.0
+    },
+    {
+      "case": "Slab closure",
+      "expected_model_Tn_kNm": 100.0,
+      "calculated_model_Tn_kNm": 100.0,
+      "equilibrium_relative": 6.7566719952957414e-15,
+      "duality_relative": 0.0
+    },
+    {
+      "case": "Longitudinal reserve",
+      "expected_model_Tn_kNm": 29.62962962962963,
+      "calculated_model_Tn_kNm": 29.62962962962963,
+      "equilibrium_relative": 2.0019768874950345e-15,
+      "duality_relative": 0.0
+    },
+    {
+      "case": "Diagonal concrete assumption",
+      "expected_model_Tn_kNm": 40.0,
+      "calculated_model_Tn_kNm": 40.0,
+      "equilibrium_relative": 2.702668798118297e-15,
+      "duality_relative": 0.0
+    }
+  ],
+  "physical_composite_validation": "NOT COMPLETED",
+  "production_acceptance": "WITHHELD",
+  "browser": {
+    "version": "IGIRDER.COUPLED34",
+    "fixture": "SYNTHETIC U-detail/closure only; not actual project acceptance",
+    "main_calculate_clicks": 1,
+    "actual_member_calculations": {
+      "section": 2,
+      "interface": 2,
+      "coupled": 2
+    },
+    "default_charts": 1,
+    "cut_end_gap_20m_retained": true,
+    "end_development_reason_verified": true,
+    "research_model_numeric_rows": 640,
+    "production_acceptance": "WITHHELD",
+    "input_edits_retained": 3,
+    "edit_panel_stayed_open": true,
+    "review_solver_calls": 0,
+    "new_model_input_stales_only_research": true,
+    "raw_loads_unchanged": true,
+    "viewports": [
+      1440,
+      1280
+    ],
+    "browser_errors": []
+  },
+  "final_material_and_boundary_guards": {
+    "known_both_material_densities_required": true,
+    "weaker_boundary_zone_verified": true,
+    "overlap_blocked": true,
+    "beam_only_composite_demands_blocked": true,
+    "real_context_smoke_passed": true
+  }
+}

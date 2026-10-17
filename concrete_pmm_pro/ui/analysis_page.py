@@ -15946,6 +15946,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
 
     if selected_check == "Shear + Torsion":
         if is_precast_composite_bridge:
+            st.caption("Composite-system research model: Analysis → Flexure → Final — Composite → Edit composite / dowel inputs → Composite V–T research inputs. It uses the same Calculate Flexure command and cannot issue production full-composite acceptance.")
             from concrete_pmm_pro.ui.igird_combined_vt import render_workspace
             from concrete_pmm_pro.ui.igird_maxmin_charts import render_native_workspace
             paired_charts = render_native_workspace(st.session_state, active_df, {'combined_vt_df':combined_vt_df},

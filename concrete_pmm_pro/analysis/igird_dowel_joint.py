@@ -14,7 +14,7 @@ from collections.abc import Mapping
 
 from .igird_interface_shear import INTERFACE_FY_CAP_MPA, KSI_TO_MPA, SURFACE_PRESETS, surface_preset
 
-VERSION = "IGIRDER.JOINT29"
+VERSION = "IGIRDER.JOINT29.DETAIL35"
 MODE = "cracked_equilibrium"
 KEY = "dowel_connection"
 ACTION_COLUMNS = ["Case", "Station x (m)", "qx_kN_per_m", "qy_kN_per_m",
@@ -77,6 +77,8 @@ def development_requirements(*, db_mm, fy_MPa, fc_slab_MPa, fc_girder_MPa, coati
 
 def anchorage(cfg, zone, context):
     """Return measurable checks; the old anchorage declaration is not proof."""
+    from .igird_dowel_detail35 import resolve, covers
+    cfg = resolve(cfg, slab_thickness_mm=context.get("slab_thickness_mm"), db_mm=zone.get("Diameter_mm"))
     result = {"ready": False, "status": "REVIEW", "checks": {}, "reasons": []}
     try:
         if context.get("normal_weight") is not True:
@@ -99,16 +101,20 @@ def anchorage(cfg, zone, context):
             result["reasons"].append("Enter " + DIMENSIONS[key]); continue
         checks[key] = {"available_mm": available, "required_mm": limit,
                        "dc": limit/available, "adequate": available+1e-8 >= limit}
-    cover = number(cfg.get("cover_required_mm"))
+    cover, slab_cover = map(number, covers(cfg))
+    result["resolved_detail"] = {k:cfg.get(k) for k in ("detail_schema", "bend_mode", "hook_top_depth_mm", "slab_ldh_available_mm", "hook_inside_bend_mm")}
+    result["cover_basis"] = {"girder_required_mm":cover, "slab_required_mm":slab_cover}
     ts, h = number(context.get("slab_thickness_mm")), number(context.get("girder_depth_mm"))
     top, bottom = number(cfg.get("slab_ldh_available_mm")), number(cfg.get("girder_ld_available_mm"))
     db = number(zone.get("Diameter_mm"))
     if not math.isfinite(cover) or cover <= 0 or not all(math.isfinite(v) and v>0 for v in (ts, h)):
         result["reasons"].append("Known slab/girder depths and required clear cover are needed to check anchorage fit.")
     else:
-        if math.isfinite(top) and top>0:
-            checks["slab_hook_cover"] = {"available_mm": ts-top, "required_mm": cover,
-                "dc": cover/(ts-top) if ts>top else None, "adequate": ts-top+1e-8>=cover}
+        if math.isfinite(top) and top>0 and math.isfinite(slab_cover) and slab_cover>0:
+            checks["slab_hook_cover"] = {"available_mm": ts-top, "required_mm": slab_cover,
+                "dc": slab_cover/(ts-top) if ts>top else None, "adequate": ts-top+1e-8>=slab_cover}
+        elif not math.isfinite(slab_cover) or slab_cover<=0:
+            result["reasons"].append("Provide the required slab clear cover separately from the measured hook depth E.")
         if math.isfinite(bottom) and bottom>0:
             # Available straight length ends before the return bend, never on it.
             limit = h-cover-db/2
@@ -224,6 +230,8 @@ def evaluate(cfg, zone, context, actions, *, declared_anchored):
     out = {"status":"REVIEW","scope":SCOPE,"anchorage":{},"mechanism":{},"reasons":[]}
     if not zone:
         out["reasons"].append("No complete dowel zone covers this station; no I-stirrup fallback.");return out
+    from .igird_dowel_detail35 import resolve
+    cfg = resolve(cfg, slab_thickness_mm=context.get("slab_thickness_mm"), db_mm=zone.get("Diameter_mm"))
     anch = anchorage(cfg,zone,context);out["anchorage"]=anch
     out["reasons"].extend(anch["reasons"])
     if not declared_anchored:out["reasons"].append("The existing connector anchorage declaration is unresolved.")
@@ -286,6 +294,10 @@ def build_review(settings, *, context_for_station, base_context, girder_zones):
                 fc_slab_MPa=base_context.get("fc_slab_MPa"),fc_girder_MPa=base_context.get("fc_girder_MPa"),coating=cfg.get("coating"))
             r.update({"Slab ldh required mm":req["hook_required_mm"],"Girder ld required mm":req["straight_required_mm"],
                       "Tail required mm":req["tail_required_mm"],"Bend required mm":req["bend_required_mm"]})
+            from .igird_dowel_detail35 import resolve
+            detail = resolve(cfg, slab_thickness_mm=base_context.get("slab_thickness_mm"), db_mm=raw.get("Diameter_mm"))
+            r.update({"B provided mm":detail.get("slab_ldh_available_mm"), "D specified mm":detail.get("hook_inside_bend_mm"),
+                      "Bend source":detail.get("bend_mode", "Legacy provided dimension")})
         except ValueError as exc:r["Reason"]=str(exc)
         requirements.append(r)
     rows=[];traces=[]

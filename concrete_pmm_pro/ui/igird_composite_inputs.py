@@ -39,10 +39,17 @@ def input_plan(settings, *, params, state=None):
     state = state or {}
     cfg = effective_config(settings, params)
     missing, pending = [], []
-    for name in DIMENSIONS:
+    from concrete_pmm_pro.analysis.igird_dowel_detail35 import SCHEMA
+    current_detail = cfg.get("detail_schema") == SCHEMA
+    names = {"row_spacing_mm":"U-leg centres A", "hook_tail_mm":"Hook tail C",
+        "hook_top_depth_mm":"Top surface to outside hook E", "girder_ld_available_mm":"Straight bonded leg F",
+        "girder_clear_cover_required_mm":"Girder minimum clear cover", "slab_clear_cover_required_mm":"Slab minimum clear cover"} if current_detail else SHORT_DIMENSIONS
+    for name in names:
         if not positive(cfg.get(name)):
-            missing.append({"Input": SHORT_DIMENSIONS[name], "Where": "Dowel detail",
+            missing.append({"Input": names[name], "Where": "Dowel detail",
                 "Why": "Required measured bar geometry (mm)"})
+    if current_detail and cfg.get("bend_mode") != "auto_6db" and not positive(cfg.get("hook_inside_bend_mm")):
+        missing.append({"Input":"Provided bend D", "Where":"Dowel detail", "Why":"Enter provided D or use Automatic — 6.0db"})
     if cfg.get("coating") not in {"uncoated", "epoxy"}:
         missing.append({"Input": "Dowel coating", "Where": "Dowel detail",
             "Why": "Select the actual coating; development requirements depend on it"})
@@ -97,8 +104,11 @@ def input_plan(settings, *, params, state=None):
     if not valid_actions:
         pending.append({"Step": "Recover interface force state", "Status": "MODEL DEVELOPMENT",
             "Meaning": "Use paired component states, verified origins and external loading in a joint free-body; Girder Tu alone is insufficient. Manual forces are an optional advanced review."})
-    pending.append({"Step": "Full composite Tn / V–T resistance", "Status": "NOT IMPLEMENTED",
-        "Meaning": "Coupled resistance and structural validation are required before production design acceptance."})
+    pending.append({"Step": "Full composite Tn / V–T resistance", "Status": "COUPLED RESEARCH MODEL — PRODUCTION WITHHELD",
+        "Meaning": "COUPLED34 adds a shared-resource closed-cell/interface model. Enable under Composite V–T research inputs and use Calculate Flexure. Compatible crack/slip behaviour and independent structural validation are still required for production acceptance."})
+    if current_detail:
+        pending.append({"Step":"Slab transverse top / bottom mesh", "Status":"INPUT INVENTORY ONLY",
+            "Meaning":"Both directions are saved independently. Undefined transverse size/spacing/position stays unknown; a mesh does not establish a verified closed torsion path."})
     bank = state.get("igird_uls_member_bank")
     if bank is None:
         bank = state.get("beam_uls_loads_table", [])

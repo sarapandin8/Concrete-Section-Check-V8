@@ -1,0 +1,34 @@
+{
+  "version": "IGIRDER.STATION36",
+  "baseline_zip_sha256": "cfc84338914499f81ea912f74f7dbbdc1d67a917d3e8364d48a149c63550591c",
+  "project_sha256": "1cb6da5bb3024b2ed4ea9e3055e19e20be4294dde8ffe50c7f9edea4ffc345d9",
+  "selected_tests": 410,
+  "tests_not_full_repository": true,
+  "source_rows_reviewed": 640,
+  "members": 2,
+  "raw_loads_unchanged": true,
+  "production_composite_Tn_validated": false,
+  "scope": "Girder-core research truss and explicit U/slab detailing audit; no accepted composite resistance.",
+  "changed_existing_files": [
+    "concrete-section-pro/concrete_pmm_pro/io/project_io.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_flexure_workspace.py",
+    "concrete-section-pro/requirements.txt"
+  ],
+  "added_files_before_scope_manifest": [
+    "concrete-section-pro/IGIRDER_STATION36_HANDOFF_TH.md",
+    "concrete-section-pro/concrete_pmm_pro/analysis/igird_station36_recommendations.py",
+    "concrete-section-pro/concrete_pmm_pro/analysis/igird_station36_steel.py",
+    "concrete-section-pro/concrete_pmm_pro/analysis/igird_station36_truss.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_station36.py",
+    "concrete-section-pro/qa/evidence/igird_station36/browser_review.json",
+    "concrete-section-pro/qa/evidence/igird_station36/project_replay.json",
+    "concrete-section-pro/qa/evidence/igird_station36/selected_tests.xml",
+    "concrete-section-pro/qa/evidence/igird_station36/station_witnesses.json",
+    "concrete-section-pro/qa/igird_station36_browser_verify.py",
+    "concrete-section-pro/qa/igird_station36_verify.py",
+    "concrete-section-pro/tests/test_igird_station36.py"
+  ],
+  "removed_files": [],
+  "browser_scope": "One real selected cut per member; full 640-row bank preserved. Not a full-span browser solver run.",
+  "browser_screenshots_included": false
+}

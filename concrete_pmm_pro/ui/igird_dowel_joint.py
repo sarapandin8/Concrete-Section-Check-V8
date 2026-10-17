@@ -10,7 +10,7 @@ from concrete_pmm_pro.analysis.igird_dowel_joint import (
 )
 
 CACHE_KEY="igird_joint29_mechanism_review"
-UI_VERSION="IGIRDER.INPUT30"
+UI_VERSION="IGIRDER.DETAIL35"
 
 
 def _editor(frame, *, prefix, **kwargs):
@@ -33,41 +33,64 @@ def render_settings(current, *, section_params, state=None):
             return {KEY:{**original,"mode":"off"}} if original else {}
     cfg=effective_config(current,section_params)
     cfg["mode"]=MODE
-    missing=sum(not positive(cfg.get(k)) for k in DIMENSIONS)
+    from concrete_pmm_pro.analysis.igird_dowel_detail35 import migrate, resolve, diameter_values, value, SCHEMA
+    legacy = cfg.get("detail_schema") != SCHEMA
+    cfg = migrate(cfg, section_params)
+    input_names = {"row_spacing_mm":"A · U-leg centre spacing across girder",
+        "hook_tail_mm":"C · Straight tail after 90° bend",
+        "hook_top_depth_mm":"E · Top slab surface to OUTSIDE of hook",
+        "girder_ld_available_mm":"F · Straight bonded leg below interface"}
+    missing = sum(not positive(cfg.get(k)) for k in input_names)
+    raw_zones = (state or {}).get("beam_girder_shear_reinforcement_table", [])
+    zones = raw_zones.to_dict("records") if isinstance(raw_zones, pd.DataFrame) else raw_zones
+    dbs = diameter_values(current, zones if isinstance(zones, list) else [])
     with st.expander(f"Dowel detail — {missing} missing dimensions" if missing else "Dowel detail — saved dimensions",
             expanded=False,key="igird_edit33_dowel_detail"):
-        st.caption("Section dimensions, concrete strengths, slab reinforcement, bar sizes, fy and spacings are reused. "
-            "Enter only the measured dowel dimensions below; saved values do not need re-entry.")
-        figure=st.empty()
-        st.caption("Match A–F in the drawing to the inputs below. Not entered means unknown. "
-            "A is across the girder, not the longitudinal dowel spacing. All dimensions are in mm.")
-        dims=[{"Dimension":dimension_label(k),"Value mm":cfg.get(k)} for k in DIMENSIONS]
-        frame=pd.DataFrame(dims)
-        frame["Value mm"]=pd.to_numeric(frame["Value mm"],errors="coerce")
-        edited=_editor(frame,prefix="input30_dimensions_",disabled=["Dimension"],num_rows="fixed",
-            column_config={"Dimension":st.column_config.TextColumn("Dimension A–F",width="large"),
-                "Value mm":st.column_config.NumberColumn("Value (mm)",min_value=0.,
-                    help="Provided dimensions from the detail, matched to A–F above. E is required clear cover. Unknown values stay blank.")})
-        for key,record in zip(DIMENSIONS,edited):
-            value=number(record.get("Value mm"));cfg[key]=value if math.isfinite(value) and value>0 else None
-        # Render after reading the editor, into its earlier placeholder: labels
-        # show the current edit on this rerun, without a calculation or refresh.
-        # st.html uses an HTML-only sanitizer which removes SVG. This drawing
-        # contains fixed SVG markup and numeric labels only; flatten linebreaks
-        # so Markdown cannot interpret parts of the drawing as separate blocks.
-        figure.markdown(u_dowel_detail_svg(cfg,section_params=section_params).replace("\n",""),
-            unsafe_allow_html=True)
+        st.caption("Enter A, C, E and F once. B = slab thickness − E. D = 6.0db is the specified design bend, recalculated for each dowel zone. All dimensions are in mm.")
+        if legacy:
+            st.info("Earlier E meant required clear cover. Its value is preserved under Cover requirements below; the hook depth is derived only from the saved B. Earlier provided D is retained in legacy input history. The new default design bend is 6.0db.")
+        figure = st.empty()
+        frame = pd.DataFrame([{"Dimension":label, "Value mm":cfg.get(k)} for k,label in input_names.items()])
+        frame["Value mm"] = pd.to_numeric(frame["Value mm"],errors="coerce")
+        edited = _editor(frame, prefix="igird_detail35_dimensions_", disabled=["Dimension"], num_rows="fixed",
+            column_config={"Dimension":st.column_config.TextColumn("Measured dimension",width="large"),
+                "Value mm":st.column_config.NumberColumn("Value (mm)",min_value=0., help="E is measured from the slab top to the outside of the hook. Unknown values stay blank.")})
+        for key,record in zip(input_names,edited):
+            cfg[key] = value(record.get("Value mm"))
+        with st.expander("Cover requirements / provided bend override", expanded=False):
+            st.caption("Required minimum covers are separate from measured hook depth E. Girder cover is checked along the actual leg path, including the web.")
+            keys = ("girder_clear_cover_required_mm", "slab_clear_cover_required_mm")
+            cover_frame = pd.DataFrame({"Component":["Girder — side / bottom", "Slab — hook"], "Minimum clear cover mm":[cfg.get(k) for k in keys]})
+            cover_frame["Minimum clear cover mm"] = pd.to_numeric(cover_frame["Minimum clear cover mm"],errors="coerce")
+            covers = _editor(cover_frame, prefix="igird_detail35_covers_", disabled=["Component"], num_rows="fixed",
+                column_config={"Minimum clear cover mm":st.column_config.NumberColumn("Minimum clear cover (mm)",min_value=0.)})
+            for key,row in zip(keys,covers): cfg[key] = value(row.get("Minimum clear cover mm"))
+            modes = ["auto_6db", "provided"]
+            mode = cfg.get("bend_mode","auto_6db")
+            cfg["bend_mode"] = st.selectbox("D — bend specification", modes, index=modes.index(mode) if mode in modes else 0,
+                format_func=lambda v:"Automatic — 6.0db" if v=="auto_6db" else "Provided inside bend diameter", key="igird_detail35_bend_mode")
+            if cfg["bend_mode"] == "provided":
+                old = value(cfg.get("hook_inside_bend_mm"))
+                cfg["hook_inside_bend_mm"] = st.number_input("Provided D (mm)",value=old,min_value=0.,key="igird_detail35_provided_D")
+            cols=st.columns(2)
+            for col,key,label,values in [
+                (cols[0],"coating","Dowel surface",["unknown","uncoated","epoxy"]),
+                (cols[1],"anchorage_region","Anchorage region",["unknown","interior","discontinuous_end"])]:
+                old=cfg.get(key,"unknown")
+                with col:cfg[key]=st.selectbox(label,values,index=values.index(old) if old in values else 0)
+        cfg = resolve(cfg, slab_thickness_mm=section_params.get("Tslab_mm"), db_mm=dbs[0] if len(dbs)==1 else None)
+        b = value(cfg.get("slab_ldh_available_mm"))
+        st.caption(f"B = Tslab − E = {b:g} mm" if b is not None else "B = Tslab − E; enter the measured hook depth E.")
+        if cfg.get("bend_mode") == "auto_6db":
+            st.caption("D = 6.0db: " + (" · ".join(f"DB{d:g} → {6*d:g} mm" for d in dbs) if dbs else "dowel diameter is taken from the selected connector layout"))
+            st.caption("The specified bend is still checked against the applicable code minimum. Automatic sizing does not verify fabrication, anchorage or a closed torsion cage.")
+        from concrete_pmm_pro.visualization.igird_dowel_detail import detail_guide
+        figure.markdown(u_dowel_detail_svg(cfg,section_params=section_params).replace("\n",""),unsafe_allow_html=True)
         with st.expander("How to measure A–F",expanded=False):
             st.dataframe(pd.DataFrame([{"Ref":ref,"Dimension":label,"Measure from / to":meaning}
-                for _,ref,label,meaning in DIMENSION_GUIDE]),hide_index=True,use_container_width=True)
-        cols=st.columns(2)
-        for col,key,label,values in [
-            (cols[0],"coating","Dowel surface",["unknown","uncoated","epoxy"]),
-            (cols[1],"anchorage_region","Anchorage region",["unknown","interior","discontinuous_end"])]:
-            old=cfg.get(key,"unknown")
-            with col:cfg[key]=st.selectbox(label,values,index=values.index(old) if old in values else 0)
-        st.caption("Cover starts from the existing slab cover and remains editable. Use the dimensions in the actual dowel detail. "
-            "The schematic does not establish geometric fit or anchorage; required development lengths remain in the calculation review.")
+                for _,ref,label,meaning in detail_guide(cfg)]),hide_index=True,use_container_width=True)
+    from .igird_slab_mesh import render as render_mesh
+    cfg = render_mesh(cfg, section_params)
     with st.expander("Joint forces / advanced",expanded=False):
         selected=st.selectbox("Joint assessment model",["off",MODE],index=int(cfg.get("mode")==MODE),
             format_func=lambda v:"Not assessed" if v=="off" else "Cracked interface — equilibrium screening")
@@ -100,8 +123,8 @@ def render_settings(current, *, section_params, state=None):
             st.markdown("**Still needed — enter once**")
             st.dataframe(pd.DataFrame(plan["missing"]),hide_index=True,use_container_width=True)
         if plan["pending"]:
-            st.markdown("**Calculation steps still in development**")
-            st.caption("These are app development steps, not additional forces the normal workflow asks you to enter.")
+            st.markdown("**Model availability / validation status**")
+            st.caption("Research calculations and production acceptance have separate readiness requirements.")
             st.dataframe(pd.DataFrame(plan["pending"]),hide_index=True,use_container_width=True)
         if plan["components"]:
             st.markdown("**Saved CSiBridge component inputs**")

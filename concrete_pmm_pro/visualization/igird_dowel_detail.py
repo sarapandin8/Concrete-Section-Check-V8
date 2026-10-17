@@ -29,6 +29,17 @@ DIMENSION_GUIDE = (
 )
 
 
+
+def detail_guide(dimensions):
+    from concrete_pmm_pro.analysis.igird_dowel_detail35 import SCHEMA
+    if dimensions.get("detail_schema") != SCHEMA:
+        return DIMENSION_GUIDE
+    rows = list(DIMENSION_GUIDE)
+    rows[1] = ("slab_ldh_available_mm", "B", "Interface to outside top hook · calculated", "B = slab thickness minus measured E; to the OUTSIDE of the hook.")
+    rows[3] = ("hook_inside_bend_mm", "D", "Inside bend diameter · 6.0db" if dimensions.get("bend_mode")=="auto_6db" else "Inside bend diameter · provided", "Full diameter inside the bend. Auto mode specifies 6.0db for each dowel zone; not proof of fabrication.")
+    rows[4] = ("hook_top_depth_mm", "E", "Top slab surface to outside hook", "Measured hook depth below slab top to the OUTSIDE of the bar. Required minimum side/bottom cover is separate.")
+    return tuple(rows)
+
 def dimension_label(key: str) -> str:
     """A stable figure reference without altering any stored field name."""
     return next(f"{ref} · {label}" for field, ref, label, _ in DIMENSION_GUIDE if field == key)
@@ -47,16 +58,20 @@ def _value(value) -> str:
 def u_dowel_detail_svg(dimensions: dict, *, section_params: dict | None = None) -> str:
     """Return a self-contained accessible SVG; do not change the input mapping."""
     section_params = section_params or {}
-    values = {key: _value(dimensions.get(key)) for key, *_ in DIMENSION_GUIDE}
+    guide = detail_guide(dimensions)
+    values = {key: _value(dimensions.get(key)) for key, *_ in guide}
+    if dimensions.get("bend_mode")=="auto_6db" and dimensions.get("hook_inside_bend_mm") is None:
+        values["hook_inside_bend_mm"] = "6.0db · per zone"
     accessible = "; ".join(f"{ref}: {label}, {values[key]}. {meaning}"
-        for key, ref, label, meaning in DIMENSION_GUIDE)
+        for key, ref, label, meaning in guide)
     context = ("Current section: slab " + _value(section_params.get("Tslab_mm")) +
         " / girder " + _value(section_params.get("D1_mm")))
+    e_note = "E is measured hook depth; required covers are separate." if dimensions.get("detail_schema")=="IGIRDER.DETAIL35" else "E is required cover; actual cover is checked separately."
     rows = []
-    for i, (key, ref, label, meaning) in enumerate(DIMENSION_GUIDE):
+    for i, (key, ref, label, meaning) in enumerate(guide):
         y = 426 + i * 37
         display_label = {"B":"Interface → outside top hook",
-            "F":"Straight leg below interface"}.get(ref,label)
+            "F":"Straight leg below interface", "D":"Inside bend diameter", "E":"Top surface → outside hook" if dimensions.get("detail_schema")=="IGIRDER.DETAIL35" else label}.get(ref,label)
         # Figure references are fixed trusted text; all values remain numeric or
         # a fixed missing label, not user-supplied HTML.
         rows.append(f'''<g data-dimension="{key}"><title>{escape(meaning)}</title>
@@ -137,7 +152,7 @@ All dimensions in millimetres; not to scale. {escape(accessible)}</desc>
 {''.join(rows)}
 <line x1="32" y1="648" x2="1408" y2="648" class="ext"/>
 <text x="32" y="676" class="sub">Schematic · not to scale. Enter provided dimensions; the drawing does not verify fit or anchorage.</text>
-<text x="32" y="701" class="sub">{escape(context)}. E is required cover; actual cover is checked separately.</text>
+<text x="32" y="701" class="sub">{escape(context)}. {escape(e_note)}</text>
 </svg>'''
     # Inline attributes keep SVG styling local. A <style> with bare selectors
     # would also restyle Plotly figures elsewhere in the Streamlit document.

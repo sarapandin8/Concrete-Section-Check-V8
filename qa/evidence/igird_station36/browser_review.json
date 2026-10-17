@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "real_app": true,
+  "actual_calculate_command": true,
+  "one_primary_button": true,
+  "solver_calls": {
+    "section": 2,
+    "interface": 2,
+    "station": 2
+  },
+  "QA_scope": "One real selected cut per member; full 640-row bank preserved. Not a full-span browser solver run.",
+  "review_does_not_solve": true,
+  "member_switch_does_not_solve": true,
+  "raw_loads_unchanged": true,
+  "json_settings_persist": true,
+  "browser_errors": [],
+  "viewports": [
+    1440,
+    1280
+  ]
+}

@@ -56,16 +56,16 @@ def test_dimension_form_rerun_preserves_actual_unknowns_and_never_solves():
         assert saved[joint.KEY]['cover_required_mm'] == 50
         assert all(saved[joint.KEY][k] is None for k in joint.DIMENSIONS if k!='cover_required_mm')
         assert len([m for m in app.markdown if 'data-dowel-guide=' in m.value]) == 1
-        editor = next(node for node in app.dataframe if str(node.key).startswith('input30_dimensions_'))
-        assert editor.value['Dimension'].tolist() == [dimension_label(k) for k in joint.DIMENSIONS]
+        editor = next(node for node in app.dataframe if str(node.key).startswith('igird_detail35_dimensions_'))
+        assert [label.split(' · ')[0] for label in editor.value['Dimension']] == ['A','C','E','F']
         app.run()
         assert not app.exception and app.session_state['cfg'] == saved
 
 
 def test_edit_updates_figure_labels_immediately_without_filling_other_lengths():
     app = AppTest.from_string(SCRIPT,default_timeout=60).run()
-    editor = next(node for node in app.dataframe if str(node.key).startswith('input30_dimensions_'))
-    app.session_state[editor.key] = {'edited_rows':{0:{'Value mm':80.},1:{'Value mm':280.}},
+    editor = next(node for node in app.dataframe if str(node.key).startswith('igird_detail35_dimensions_'))
+    app.session_state[editor.key] = {'edited_rows':{0:{'Value mm':80.},2:{'Value mm':70.}},
         'added_rows':[],'deleted_rows':[]}
     app.run()
     assert not app.exception

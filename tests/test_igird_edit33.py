@@ -26,14 +26,16 @@ def commit(app,node,*,row,column,value):
 
 def test_second_and_later_dimension_commits_keep_values_key_and_live_labels():
     app=AppTest.from_string(SCRIPT,default_timeout=60).run()
-    node=editor(app,'input30_dimensions_');key=node.key
-    expected={k:None for k in DIMENSIONS};expected['cover_required_mm']=50.
-    for row,value in [(0,120.),(1,180.),(2,200.),(3,72.),(4,55.),(5,900.),(2,None),(2,200.)]:
+    node=editor(app,'igird_detail35_dimensions_');key=node.key
+    names=['row_spacing_mm','hook_tail_mm','hook_top_depth_mm','girder_ld_available_mm']
+    expected={k:None for k in names}
+    for row,value in [(0,120.),(1,200.),(2,170.),(3,900.),(1,None),(1,200.)]:
         commit(app,node,row=row,column='Value mm',value=value)
-        expected[list(DIMENSIONS)[row]]=value
-        assert editor(app,'input30_dimensions_').key==key
+        expected[names[row]]=value
+        assert editor(app,'igird_detail35_dimensions_').key==key
         cfg=app.session_state['cfg']['dowel_connection']
-        assert {k:cfg[k] for k in DIMENSIONS}==expected
+        assert {k:cfg[k] for k in names}==expected
+        assert cfg['slab_ldh_available_mm']==(350-expected['hook_top_depth_mm'] if expected['hook_top_depth_mm'] is not None else None)
         label='Not entered' if value is None else f'{value:g} mm'
         assert label in next(m.value for m in app.markdown if 'data-dowel-guide=' in m.value)
     snapshot=deepcopy(app.session_state['cfg'])
@@ -86,11 +88,11 @@ def test_copy_zoning_rebases_editor_and_discards_old_cell_deltas():
 
 def test_external_dimensions_replace_old_edits_instead_of_reapplying_them():
     app=AppTest.from_string(SCRIPT,default_timeout=60).run()
-    node=editor(app,'input30_dimensions_');commit(app,node,row=0,column='Value mm',value=120.)
+    node=editor(app,'igird_detail35_dimensions_');commit(app,node,row=0,column='Value mm',value=120.)
     cfg=deepcopy(app.session_state['cfg']);cfg['dowel_connection']['row_spacing_mm']=90.
     app.session_state['cfg']=cfg;app.run();assert not app.exception
     assert app.session_state['cfg']['dowel_connection']['row_spacing_mm']==90.
-    assert editor(app,'input30_dimensions_').key!=node.key
+    assert editor(app,'igird_detail35_dimensions_').key!=node.key
 
 
 def test_hiding_and_reopening_input_controls_reuses_accepted_values():
@@ -100,7 +102,7 @@ if st.toggle('Show controls',value=True,key='show_controls'):
         section_params={'Tslab_mm':350,'D1_mm':1500,'deck_long_rebar_top_cover_mm':50}))
 '''
     app=AppTest.from_string(script,default_timeout=60).run()
-    node=editor(app,'input30_dimensions_')
+    node=editor(app,'igird_detail35_dimensions_')
     commit(app,node,row=0,column='Value mm',value=120.)
     commit(app,node,row=1,column='Value mm',value=180.)
     saved=deepcopy(app.session_state['cfg'])

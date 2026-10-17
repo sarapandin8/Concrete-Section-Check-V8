@@ -1,0 +1,25 @@
+{
+  "version": "IGIRDER.COUPLED34",
+  "fixture": "SYNTHETIC U-detail/closure only; not actual project acceptance",
+  "main_calculate_clicks": 1,
+  "actual_member_calculations": {
+    "section": 2,
+    "interface": 2,
+    "coupled": 2
+  },
+  "default_charts": 1,
+  "cut_end_gap_20m_retained": true,
+  "end_development_reason_verified": true,
+  "research_model_numeric_rows": 640,
+  "production_acceptance": "WITHHELD",
+  "input_edits_retained": 3,
+  "edit_panel_stayed_open": true,
+  "review_solver_calls": 0,
+  "new_model_input_stales_only_research": true,
+  "raw_loads_unchanged": true,
+  "viewports": [
+    1440,
+    1280
+  ],
+  "browser_errors": []
+}

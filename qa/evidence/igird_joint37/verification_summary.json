@@ -1,0 +1,68 @@
+{
+  "milestone": "IGIRDER.JOINT37",
+  "baseline_sha256": "a4837989aebc2ccbb36bdb4252cbc5f55a5b7faaf1a499b736de622cb2211dca",
+  "selected_tests": 442,
+  "new_tests": 32,
+  "failures": 0,
+  "existing_warnings": 7,
+  "compiled": [
+    "app.py",
+    "analysis/igird_joint37_model.py",
+    "analysis/igird_joint37_solver.py",
+    "analysis/igird_joint37_detail.py",
+    "ui/igird_joint37.py",
+    "ui/igird_station36.py",
+    "ui/igird_flexure_workspace.py",
+    "qa/igird_joint37_verify.py",
+    "qa/igird_joint37_browser_verify.py"
+  ],
+  "QA_scope": "Related selected regression suite, two selected real sections from the 640-row bank, and real-browser Calculate on one real selected row per member. Not full-repository or full-span solver validation.",
+  "independent_mechanics": [
+    "two-leg roll/opening closed-form interaction",
+    "shared shear/friction clamping supply",
+    "elastic opening and sticking-slip springs",
+    "self-equilibrated post-loss Pe reference and external Nu",
+    "canonical nonconvex mesh/volume conservation",
+    "reflection and six-action force/moment reconstruction"
+  ],
+  "input_geometry_gate": {
+    "U_intersections_per_selected_section": 23,
+    "A_necessary_range_mm": [
+      84,
+      108
+    ],
+    "A_remaining_intervals_mm": [],
+    "capacity_LP_calls": 0,
+    "compatibility_QP_calls": 0
+  },
+  "structural_validation": "UNVALIDATED — REVIEW",
+  "accepted_phiTn_Nmm": null,
+  "accepted_VT_factor": null,
+  "full_composite_Tn_Nmm": null,
+  "raw_load_rows_preserved": 640,
+  "browser_viewports": [
+    1440,
+    1280
+  ],
+  "read_only_review_verified": true,
+  "changed_from_baseline": [
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_flexure_workspace.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_station36.py",
+    "concrete-section-pro/requirements.txt"
+  ],
+  "added_before_this_manifest": [
+    "concrete-section-pro/IGIRDER_JOINT37_HANDOFF_TH.md",
+    "concrete-section-pro/concrete_pmm_pro/analysis/igird_joint37_detail.py",
+    "concrete-section-pro/concrete_pmm_pro/analysis/igird_joint37_model.py",
+    "concrete-section-pro/concrete_pmm_pro/analysis/igird_joint37_solver.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_joint37.py",
+    "concrete-section-pro/qa/evidence/igird_joint37/browser_review.json",
+    "concrete-section-pro/qa/evidence/igird_joint37/joint_witnesses.json",
+    "concrete-section-pro/qa/evidence/igird_joint37/project_replay.json",
+    "concrete-section-pro/qa/evidence/igird_joint37/selected_regression.xml",
+    "concrete-section-pro/qa/igird_joint37_browser_verify.py",
+    "concrete-section-pro/qa/igird_joint37_verify.py",
+    "concrete-section-pro/tests/test_igird_joint37.py"
+  ],
+  "removed_from_baseline": []
+}

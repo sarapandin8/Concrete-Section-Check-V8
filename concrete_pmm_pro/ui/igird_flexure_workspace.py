@@ -75,7 +75,13 @@ def calculate_bundle(state, rows, *, route):
     width, basis = ap._igird_interface_bvi_mm(state, settings)
     lightweight, density_note = ap._igird_interface_density_basis(state)
     surface = ap.IGIRD_INTERFACE_SURFACE_PRESETS[settings["surface_key"]]
-    return {"section": section, "interface": {
+    from .igird_coupled_model import calculate as calculate_coupled_model
+    coupled = calculate_coupled_model(state,rows,route=route)
+    from .igird_station36 import calculate as calculate_station_review
+    station_review=calculate_station_review(state,rows,route=route)
+    from .igird_joint37 import calculate as calculate_joint_transfer
+    joint_transfer=calculate_joint_transfer(state,rows,route=route,station=station_review)
+    return {"section": section, "coupled_research":coupled, "station36_research":station_review, "joint37_research":joint_transfer, "interface": {
         "interface_shear_df": frame, "interface_shear_messages": list(notes),
         "interface_status": ap._igird_interface_overall_status(frame),
         "surface_key": surface.key, "surface_label": surface.label,
@@ -283,6 +289,8 @@ def _render_charts(state, rows, bundle, *, member, route, code_label, length, se
             unavailable = decision(checked)["unavailable"]
             if unavailable:
                 st.warning(f"{unavailable} source row(s) have unavailable φMn. Grey × and shaded segments show missing resistance, not zero capacity. Review end/reference evidence below.")
+                from .igird_flexure_gap_review import render_missing_capacity
+                render_missing_capacity(checked)
         if separate_ends:
             st.caption("Curves retain original stored end values and gaps. The control marker and span summary exclude exact 0/L cut ends; those sections remain a separate review, not PASS.")
     return checked
@@ -332,6 +340,10 @@ def render_workspace(active_rows, *, route, code_label):
     st.caption("One calculation runs section flexure and girder–deck interface shear. Review one girder and load case at a time; changes to the view do not run calculations.")
     if st.toggle("Edit composite / dowel inputs", key="igird_flexure31_edit_inputs", value=False):
         ap._igird_render_interface_shear_settings(st.session_state)
+        from .igird_coupled_model import render_inputs
+        render_inputs(st.session_state)
+        from .igird_station36 import render_inputs as render_station_inputs
+        render_station_inputs(st.session_state)
     else:
         settings = ap._igird_interface_shear_settings_from_state(st.session_state)
         zones = settings.get("dowel_zones", [])
@@ -441,4 +453,10 @@ def render_workspace(active_rows, *, route, code_label):
                 joint_ui.render_analysis(settings, fingerprint=hashes[name]["interface"],
                     calculate=None, render_cards=ap._render_analysis_summary_strip,
                     state=st.session_state, allow_calculate=False)
+    from .igird_coupled_model import render_result as render_coupled_result
+    render_coupled_result(st.session_state,rows_by_member[name],bundle.get("coupled_research"),route=route)
+    from .igird_station36 import render_result as render_station_result
+    render_station_result(st.session_state,rows_by_member[name],bundle.get("station36_research"),route=route,joint_review=bundle.get("joint37_research"))
+    from .igird_joint37 import render_result as render_joint_transfer
+    render_joint_transfer(st.session_state,rows_by_member[name],bundle.get("joint37_research"),route=route,station=bundle.get("station36_research"))
     st.caption("Session results only. Project JSON saves inputs; calculate after loading. Result Summary / Report use the design member selected in Loads: " + str(design) + ".")

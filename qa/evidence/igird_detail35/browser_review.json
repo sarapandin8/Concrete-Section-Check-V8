@@ -1,0 +1,20 @@
+{
+  "status": "PASS",
+  "real_app": true,
+  "input_only": true,
+  "QA_mesh_values_not_user_data": true,
+  "consecutive_edits": 4,
+  "input_panel_stays_open": true,
+  "loads_unchanged": true,
+  "json_matches_inputs": true,
+  "solver_calls": {
+    "section": 0,
+    "interface": 0,
+    "coupled": 0
+  },
+  "browser_errors": [],
+  "viewports": [
+    1440,
+    1280
+  ]
+}
