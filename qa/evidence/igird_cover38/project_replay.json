@@ -1,0 +1,271 @@
+{
+  "status": "PASS — INPUT / SOFTWARE VERIFICATION ONLY",
+  "rows_preserved": 640,
+  "members": [
+    {
+      "member": "BOBJ1 / Interior Girder 2",
+      "source_rows": 320,
+      "selected": {
+        "ordinal": 234,
+        "member": "BOBJ1 / Interior Girder 2",
+        "case": "U2A",
+        "app_case": "BOBJ1 / Interior Girder 2 / ULS_Girder Force uploaded to app-rev1.xlsx [d9e396d4] / BOBJ1 / Interior Girder 2 / U2A / Combination / Bridge Object Girder Forces / Max / Before / set 1",
+        "step": "Max",
+        "location_type": "Before",
+        "x_m": 19.0,
+        "info": {
+          "schema": "IGIRDER.CSIIMPORT14.source-vectors-v2",
+          "sheet": "Bridge Object Girder Forces",
+          "row": 558,
+          "case": "U2A",
+          "step": "Max",
+          "occurrence": 1,
+          "distance_column": "Distance",
+          "kind": "CONCURRENT",
+          "source_file": "ULS_Girder Force uploaded to app-rev1.xlsx [d9e396d4]",
+          "source_mode": "correspondence",
+          "concurrency_confirmed": true,
+          "evidence": "Engineer declaration through force-source selection and Import loads: CSI Correspondence; each row contains simultaneous factored ULS actions for its girder and section face. Raw CSI P signs are retained. This is an engineer declaration, not automatic verification of the CSI export.",
+          "step_number": "",
+          "control": "",
+          "layout_distance": null,
+          "bridge_object": "BOBJ1",
+          "girder": "Interior Girder 2",
+          "location_type": "Before",
+          "case_type": "Combination",
+          "section_cut": 38,
+          "raw_fields": {
+            "BridgeObj": "BOBJ1",
+            "SectCutNum": 38,
+            "Girder": "Interior Girder 2",
+            "Distance": 19,
+            "LocType": "Before",
+            "OutputCase": "U2A",
+            "CaseType": "Combination",
+            "StepType": "Max",
+            "P": -17.429,
+            "V2": 880.295,
+            "V3": 325.32,
+            "T": 271.8955,
+            "M2": 152.5732,
+            "M3": 953.1418
+          },
+          "units": {
+            "BridgeObj": "Text",
+            "SectCutNum": "Unitless",
+            "Girder": "Text",
+            "Distance": "m",
+            "LocType": "Text",
+            "OutputCase": "Text",
+            "CaseType": "Text",
+            "StepType": "Text",
+            "P": "KN",
+            "V2": "KN",
+            "V3": "KN",
+            "T": "KN-m",
+            "M2": "KN-m",
+            "M3": "KN-m"
+          },
+          "units_basis": "Declared CSI units row",
+          "length_factor_to_m": 1.0,
+          "force_factors_to_kN_kNm": {
+            "P": 1.0,
+            "V2": 1.0,
+            "V3": 1.0,
+            "T": 1.0,
+            "M2": 1.0,
+            "M3": 1.0
+          },
+          "source_sha256": "d9e396d46b54b5a32bce2e42ad18e69548e92ad803290b3c385b67cf9630d64a",
+          "table": "TABLE:  Bridge Object Girder Forces",
+          "header_row": 2,
+          "force_reference": {
+            "schema": "IGIRDER.CSIREF26",
+            "depth_below_deck_top_m": 0.6156000000000001,
+            "local3_offset_from_web_m": 0.0,
+            "force_kind": "GIRDER_COMPOSITE",
+            "vertical_location": "CG of Full Bridge Section",
+            "horizontal_location": "Center of Girder Web",
+            "axes": "CSI_GIRDER_LOCAL",
+            "basis": "User CSI screenshots 20261014-110711 and 110915; displayed Y values",
+            "section_name": "I-Girder",
+            "source_top_y_m": 1.85,
+            "source_cg_y_m": 1.2344,
+            "profile_sha256": "79d30358d6a6840344077e36ad00354f26285be6e9b103ee10d6a71f9d9beb70"
+          }
+        }
+      },
+      "longitudinal_centres_y_mm": [
+        1036.0,
+        814.0
+      ],
+      "transverse_centres_y_mm": [
+        1052.0,
+        798.0
+      ],
+      "source_actions": {
+        "P": -17.429,
+        "V2": 880.295,
+        "V3": 325.32,
+        "T": 271.8955,
+        "M2": 152.5732,
+        "M3": 953.1418
+      },
+      "transported_actions": {
+        "P": -17.429,
+        "V2": 880.295,
+        "V3": 325.32,
+        "T": 333.7329170909091,
+        "M2": 152.5732,
+        "M3": 956.4547360090909
+      },
+      "U_input_intersections": 23,
+      "new_LP_calls": 0,
+      "new_QP_calls": 0,
+      "production_composite_resistance": "WITHHELD"
+    },
+    {
+      "member": "BOBJ1 / Left Exterior Girder",
+      "source_rows": 320,
+      "selected": {
+        "ordinal": 233,
+        "member": "BOBJ1 / Left Exterior Girder",
+        "case": "U2A",
+        "app_case": "BOBJ1 / Left Exterior Girder / ULS_Girder Force uploaded to app-rev1.xlsx [d9e396d4] / BOBJ1 / Left Exterior Girder / U2A / Combination / Bridge Object Girder Forces / Min / After / set 1",
+        "step": "Min",
+        "location_type": "After",
+        "x_m": 18.0,
+        "info": {
+          "schema": "IGIRDER.CSIIMPORT14.source-vectors-v2",
+          "sheet": "Bridge Object Girder Forces",
+          "row": 237,
+          "case": "U2A",
+          "step": "Min",
+          "occurrence": 1,
+          "distance_column": "Distance",
+          "kind": "CONCURRENT",
+          "source_file": "ULS_Girder Force uploaded to app-rev1.xlsx [d9e396d4]",
+          "source_mode": "correspondence",
+          "concurrency_confirmed": true,
+          "evidence": "Engineer declaration through force-source selection and Import loads: CSI Correspondence; each row contains simultaneous factored ULS actions for its girder and section face. Raw CSI P signs are retained. This is an engineer declaration, not automatic verification of the CSI export.",
+          "step_number": "",
+          "control": "",
+          "layout_distance": null,
+          "bridge_object": "BOBJ1",
+          "girder": "Left Exterior Girder",
+          "location_type": "After",
+          "case_type": "Combination",
+          "section_cut": 37,
+          "raw_fields": {
+            "BridgeObj": "BOBJ1",
+            "SectCutNum": 37,
+            "Girder": "Left Exterior Girder",
+            "Distance": 18,
+            "LocType": "After",
+            "OutputCase": "U2A",
+            "CaseType": "Combination",
+            "StepType": "Min",
+            "P": -80.542,
+            "V2": 307.566,
+            "V3": -393.54,
+            "T": -190.3973,
+            "M2": -519.5684,
+            "M3": 695.0982
+          },
+          "units": {
+            "BridgeObj": "Text",
+            "SectCutNum": "Unitless",
+            "Girder": "Text",
+            "Distance": "m",
+            "LocType": "Text",
+            "OutputCase": "Text",
+            "CaseType": "Text",
+            "StepType": "Text",
+            "P": "KN",
+            "V2": "KN",
+            "V3": "KN",
+            "T": "KN-m",
+            "M2": "KN-m",
+            "M3": "KN-m"
+          },
+          "units_basis": "Declared CSI units row",
+          "length_factor_to_m": 1.0,
+          "force_factors_to_kN_kNm": {
+            "P": 1.0,
+            "V2": 1.0,
+            "V3": 1.0,
+            "T": 1.0,
+            "M2": 1.0,
+            "M3": 1.0
+          },
+          "source_sha256": "d9e396d46b54b5a32bce2e42ad18e69548e92ad803290b3c385b67cf9630d64a",
+          "table": "TABLE:  Bridge Object Girder Forces",
+          "header_row": 2,
+          "force_reference": {
+            "schema": "IGIRDER.CSIREF26",
+            "depth_below_deck_top_m": 0.6156000000000001,
+            "local3_offset_from_web_m": 0.0,
+            "force_kind": "GIRDER_COMPOSITE",
+            "vertical_location": "CG of Full Bridge Section",
+            "horizontal_location": "Center of Girder Web",
+            "axes": "CSI_GIRDER_LOCAL",
+            "basis": "User CSI screenshots 20261014-110711 and 110915; displayed Y values",
+            "section_name": "I-Girder",
+            "source_top_y_m": 1.85,
+            "source_cg_y_m": 1.2344,
+            "profile_sha256": "79d30358d6a6840344077e36ad00354f26285be6e9b103ee10d6a71f9d9beb70"
+          }
+        }
+      },
+      "longitudinal_centres_y_mm": [
+        1036.0,
+        814.0
+      ],
+      "transverse_centres_y_mm": [
+        1052.0,
+        798.0
+      ],
+      "source_actions": {
+        "P": -80.542,
+        "V2": 307.566,
+        "V3": -393.54,
+        "T": -190.3973,
+        "M2": -519.5684,
+        "M3": 695.0982
+      },
+      "transported_actions": {
+        "P": -80.542,
+        "V2": 307.566,
+        "V3": -393.54,
+        "T": -226.33336323404254,
+        "M2": -519.5684,
+        "M3": 702.4528841617022
+      },
+      "U_input_intersections": 23,
+      "new_LP_calls": 0,
+      "new_QP_calls": 0,
+      "production_composite_resistance": "WITHHELD"
+    }
+  ],
+  "layer_rule": "transverse_outer_longitudinal_inner",
+  "transverse_input": {
+    "top": {
+      "Diameter_mm": 16.0,
+      "Spacing_mm": 150.0,
+      "Clear_cover_mm": 40.0,
+      "fy_MPa": 390.0
+    },
+    "bottom": {
+      "Diameter_mm": 16.0,
+      "Spacing_mm": 150.0,
+      "Clear_cover_mm": 40.0,
+      "fy_MPa": 390.0
+    }
+  },
+  "longitudinal_cover_mm": [
+    56,
+    56
+  ],
+  "project_sha256": "0ae85f6de0b753062393a70717105953836a4a7722449edfbdc0e91ba8f99fcb",
+  "scope": "Two selected sections from a 640-row bank. Slab ordering corrected; existing U/girder input clashes and full composite structural validation remain unresolved."
+}

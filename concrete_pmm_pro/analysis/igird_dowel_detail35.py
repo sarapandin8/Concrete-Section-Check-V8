@@ -95,6 +95,8 @@ def mesh_rows(cfg, params):
 
 
 def mesh_inventory(cfg, params):
+    from .igird_slab_layers import resolve
+    params = resolve(params,cfg)['parameters']
     rows = []
     for layer in ("top", "bottom"):
         prefix = "deck_long_rebar_"+layer+"_"

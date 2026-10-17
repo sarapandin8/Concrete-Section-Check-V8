@@ -2702,8 +2702,8 @@ def _render_i_girder_deck_longitudinal_rebar_inputs(preset: dict[str, Any]) -> d
             help_text="Elastic modulus used for strain compatibility.",
         )
 
-    st.caption("Enter 0 mm bar diameter to leave a layer undefined. Cover is measured to the bar surface.")
-    top_cols = st.columns(3)
+    st.caption("Enter 0 mm bar diameter to leave a layer undefined. Longitudinal bars are inside the transverse mat; enter transverse cover below and longitudinal positions are calculated.")
+    top_cols = st.columns(2)
     with top_cols[0]:
         top_dia = _render_metadata_number_input(
             name="deck_long_rebar_top_diameter_mm",
@@ -2726,19 +2726,7 @@ def _render_i_girder_deck_longitudinal_rebar_inputs(preset: dict[str, Any]) -> d
             step=10.0,
             help_text="Spacing of bars running parallel to the girder, distributed across the effective deck width.",
         )
-    with top_cols[2]:
-        top_cover = _render_metadata_number_input(
-            name="deck_long_rebar_top_cover_mm",
-            label="Top cover (mm)",
-            preset_key=preset_key,
-            default=50.0,
-            min_value=0.0,
-            max_value=500.0,
-            step=5.0,
-            help_text="Clear cover from deck top surface to bar surface.",
-        )
-
-    bottom_cols = st.columns(3)
+    bottom_cols = st.columns(2)
     with bottom_cols[0]:
         bottom_dia = _render_metadata_number_input(
             name="deck_long_rebar_bottom_diameter_mm",
@@ -2761,19 +2749,21 @@ def _render_i_girder_deck_longitudinal_rebar_inputs(preset: dict[str, Any]) -> d
             step=10.0,
             help_text="Spacing of bars running parallel to the girder, distributed across the effective deck width.",
         )
-    with bottom_cols[2]:
-        bottom_cover = _render_metadata_number_input(
-            name="deck_long_rebar_bottom_cover_mm",
-            label="Bottom cover (mm)",
-            preset_key=preset_key,
-            default=50.0,
-            min_value=0.0,
-            max_value=500.0,
-            step=5.0,
-            help_text="Clear cover from deck bottom surface to bar surface.",
-        )
-
-    extra = {}
+    from concrete_pmm_pro.analysis.igird_slab_layers import detail_from_state,resolve,INTERFACE_KEY
+    from concrete_pmm_pro.ui.igird_slab_mesh import render as render_slab_mesh
+    layer_params={**dict(st.session_state.get('section_parameters') or {}),
+        'Tslab_mm':st.session_state.get(f'{preset_key}_Tslab_mm',(st.session_state.get('section_parameters') or {}).get('Tslab_mm')),
+        'deck_long_rebar_top_diameter_mm':top_dia,'deck_long_rebar_top_spacing_mm':top_spacing,
+        'deck_long_rebar_bottom_diameter_mm':bottom_dia,'deck_long_rebar_bottom_spacing_mm':bottom_spacing,
+        'deck_long_rebar_fy_MPa':fy}
+    mesh_cfg=render_slab_mesh(detail_from_state(st.session_state),layer_params)
+    interface=st.session_state.get(INTERFACE_KEY) or (st.session_state.get('project_metadata') or {}).get(INTERFACE_KEY,{})
+    interface={**dict(interface),'dowel_connection':mesh_cfg}
+    st.session_state[INTERFACE_KEY]=interface
+    st.session_state['project_metadata']={**dict(st.session_state.get('project_metadata') or {}),INTERFACE_KEY:interface}
+    layers=resolve(layer_params,mesh_cfg)['parameters']
+    top_cover=layers['deck_long_rebar_top_cover_mm'];bottom_cover=layers['deck_long_rebar_bottom_cover_mm']
+    extra={k:v for k,v in layers.items() if k.startswith('deck_mesh_') or k=='deck_slab_layer_order'}
     grade_key = f"{preset_key}_deck_long_rebar_grade"
     grade_default = str((st.session_state.get('section_parameters') or {}).get('deck_long_rebar_grade','User defined'))
     grade_options = ['SD40', 'SD50', 'User defined']

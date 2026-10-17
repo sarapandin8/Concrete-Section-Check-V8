@@ -76,7 +76,8 @@ def calculate_bundle(state, rows, *, route):
     lightweight, density_note = ap._igird_interface_density_basis(state)
     surface = ap.IGIRD_INTERFACE_SURFACE_PRESETS[settings["surface_key"]]
     from .igird_coupled_model import calculate as calculate_coupled_model
-    coupled = calculate_coupled_model(state,rows,route=route)
+    coupled = (calculate_coupled_model(state,rows,route=route) if state.get('igird_cover38_legacy_inputs',False) else
+        {'enabled':False,'status':'ARCHIVED LEGACY MODEL — DISABLED','accepted_phiTn_Nmm':None,'accepted_VT_factor':None})
     from .igird_station36 import calculate as calculate_station_review
     station_review=calculate_station_review(state,rows,route=route)
     from .igird_joint37 import calculate as calculate_joint_transfer
@@ -338,12 +339,22 @@ def render_workspace(active_rows, *, route, code_label):
     length = ap._beam_uls_span_length_from_state(st.session_state, is_building=False)
     st.markdown("#### Final Composite Flexure")
     st.caption("One calculation runs section flexure and girder–deck interface shear. Review one girder and load case at a time; changes to the view do not run calculations.")
+    st.caption("Composite reinforcement: transverse slab bars outside; longitudinal positions calculated inside. Full composite Vn / Tn / V–T resistance remains under structural validation; local model results do not constitute design acceptance.")
     if st.toggle("Edit composite / dowel inputs", key="igird_flexure31_edit_inputs", value=False):
         ap._igird_render_interface_shear_settings(st.session_state)
-        from .igird_coupled_model import render_inputs
-        render_inputs(st.session_state)
-        from .igird_station36 import render_inputs as render_station_inputs
-        render_station_inputs(st.session_state)
+        # The current six-action review is included automatically. Archived
+        # model choices and unknown interface-force entries are not required
+        # in the primary physical-input workflow.
+        from . import igird_station36 as station_review,igird_joint37 as joint_review
+        metadata=dict(st.session_state.get("project_metadata") or {})
+        metadata[station_review.KEY]={**station_review.settings(st.session_state),"enabled":True}
+        metadata[joint_review.KEY]={**joint_review.settings(st.session_state),"enabled":True}
+        st.session_state["project_metadata"]=metadata
+        with st.expander("Advanced — legacy research tools",expanded=False):
+            if st.toggle("Show legacy research inputs",value=False,key="igird_cover38_legacy_inputs"):
+                from .igird_coupled_model import render_inputs
+                render_inputs(st.session_state)
+                st.caption("Archived idealization. Manual interface actions are not required for the current local six-action review; unknown values must remain blank.")
     else:
         settings = ap._igird_interface_shear_settings_from_state(st.session_state)
         zones = settings.get("dowel_zones", [])
@@ -454,7 +465,8 @@ def render_workspace(active_rows, *, route, code_label):
                     calculate=None, render_cards=ap._render_analysis_summary_strip,
                     state=st.session_state, allow_calculate=False)
     from .igird_coupled_model import render_result as render_coupled_result
-    render_coupled_result(st.session_state,rows_by_member[name],bundle.get("coupled_research"),route=route)
+    with st.expander("Advanced — archived composite model results",expanded=False):
+        render_coupled_result(st.session_state,rows_by_member[name],bundle.get("coupled_research"),route=route)
     from .igird_station36 import render_result as render_station_result
     render_station_result(st.session_state,rows_by_member[name],bundle.get("station36_research"),route=route,joint_review=bundle.get("joint37_research"))
     from .igird_joint37 import render_result as render_joint_transfer

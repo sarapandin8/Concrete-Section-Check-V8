@@ -25,14 +25,11 @@ def render_settings(current, *, section_params, state=None):
         DIMENSION_GUIDE, dimension_label, u_dowel_detail_svg,
     )
     original=config(current)
-    if original.get("mode")!=MODE:
-        with st.expander("Additional U-dowel assessment",expanded=False):
-            selected=st.selectbox("U-dowel joint assessment",["off",MODE],index=0,
-                format_func=lambda v:"Not assessed" if v=="off" else "Cracked interface — equilibrium screening")
-        if selected=="off":
-            return {KEY:{**original,"mode":"off"}} if original else {}
     cfg=effective_config(current,section_params)
-    cfg["mode"]=MODE
+    # Geometry and slab mesh are normal composite inputs, independent of the
+    # optional legacy joint-force screening model. No model selector is needed
+    # before users can enter the reinforcement they know from their drawing.
+    cfg["mode"]=original.get("mode","off")
     from concrete_pmm_pro.analysis.igird_dowel_detail35 import migrate, resolve, diameter_values, value, SCHEMA
     legacy = cfg.get("detail_schema") != SCHEMA
     cfg = migrate(cfg, section_params)
@@ -72,12 +69,10 @@ def render_settings(current, *, section_params, state=None):
             if cfg["bend_mode"] == "provided":
                 old = value(cfg.get("hook_inside_bend_mm"))
                 cfg["hook_inside_bend_mm"] = st.number_input("Provided D (mm)",value=old,min_value=0.,key="igird_detail35_provided_D")
-            cols=st.columns(2)
-            for col,key,label,values in [
-                (cols[0],"coating","Dowel surface",["unknown","uncoated","epoxy"]),
-                (cols[1],"anchorage_region","Anchorage region",["unknown","interior","discontinuous_end"])]:
-                old=cfg.get(key,"unknown")
-                with col:cfg[key]=st.selectbox(label,values,index=values.index(old) if old in values else 0)
+            values=["unknown","uncoated","epoxy"];old=cfg.get("coating","unknown")
+            cfg["coating"]=st.selectbox("Known dowel surface (optional)",values,index=values.index(old) if old in values else 0,
+                help="Use the material specification if known. Unknown stays unknown; the model cannot claim verified development from a guessed coating.")
+            st.caption("Anchorage-region classification is a model check. Existing drawing evidence is retained; no manual interior/end selection is required in this input workflow.")
         cfg = resolve(cfg, slab_thickness_mm=section_params.get("Tslab_mm"), db_mm=dbs[0] if len(dbs)==1 else None)
         b = value(cfg.get("slab_ldh_available_mm"))
         st.caption(f"B = Tslab − E = {b:g} mm" if b is not None else "B = Tslab − E; enter the measured hook depth E.")
@@ -90,7 +85,7 @@ def render_settings(current, *, section_params, state=None):
             st.dataframe(pd.DataFrame([{"Ref":ref,"Dimension":label,"Measure from / to":meaning}
                 for _,ref,label,meaning in detail_guide(cfg)]),hide_index=True,use_container_width=True)
     from .igird_slab_mesh import render as render_mesh
-    cfg = render_mesh(cfg, section_params)
+    cfg = render_mesh(cfg, section_params, state=state)
     with st.expander("Joint forces / advanced",expanded=False):
         selected=st.selectbox("Joint assessment model",["off",MODE],index=int(cfg.get("mode")==MODE),
             format_func=lambda v:"Not assessed" if v=="off" else "Cracked interface — equilibrium screening")
@@ -130,6 +125,11 @@ def render_settings(current, *, section_params, state=None):
             st.markdown("**Saved CSiBridge component inputs**")
             st.dataframe(pd.DataFrame(plan["components"]),hide_index=True,use_container_width=True)
             st.caption("Available source tables are not recovered interface forces or accepted composite resistance.")
+    # Merely viewing an empty optional detail must not create phantom inputs.
+    physical=any(cfg.get(k) is not None for k in input_names)
+    physical=physical or any(row.get(k) is not None for row in cfg.get('slab_transverse_mesh',{}).values()
+        for k in ('Diameter_mm','Spacing_mm','Clear_cover_mm'))
+    if not original and cfg.get('mode')=='off' and not physical:return {}
     return {KEY:cfg}
 
 

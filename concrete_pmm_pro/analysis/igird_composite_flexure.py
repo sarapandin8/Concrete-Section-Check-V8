@@ -215,6 +215,9 @@ def prepare_aashto_composite_positive_flexure(
     """Prepare the analysis-only composite section used for final +Mux strength."""
 
     params: Mapping[str, object] = section_parameters if isinstance(section_parameters, Mapping) else {}
+    from .igird_slab_layers import resolve
+    slab_layers = resolve(params)
+    params = slab_layers['parameters']
     warnings: list[str] = []
     info: list[str] = []
     be = _float(params.get("Be_mm"), 0.0)
@@ -235,6 +238,9 @@ def prepare_aashto_composite_positive_flexure(
         warnings.append("Deck concrete f'c is missing; assign the Deck / topping concrete material in Section Builder.")
     if not _finite_positive(girder_fc):
         warnings.append("Girder concrete f'c is missing.")
+    if slab_layers['active']:
+        warnings.extend(slab_layers['issues'])
+        info.append('COVER38: transverse slab bars outside; longitudinal covers / positions calculated from the physical transverse diameter and cover.')
     if warnings:
         return CompositeFlexurePreparation(
             geometry=None,

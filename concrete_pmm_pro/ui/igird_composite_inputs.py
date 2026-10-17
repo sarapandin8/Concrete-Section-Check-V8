@@ -51,11 +51,11 @@ def input_plan(settings, *, params, state=None):
     if current_detail and cfg.get("bend_mode") != "auto_6db" and not positive(cfg.get("hook_inside_bend_mm")):
         missing.append({"Input":"Provided bend D", "Where":"Dowel detail", "Why":"Enter provided D or use Automatic — 6.0db"})
     if cfg.get("coating") not in {"uncoated", "epoxy"}:
-        missing.append({"Input": "Dowel coating", "Where": "Dowel detail",
-            "Why": "Select the actual coating; development requirements depend on it"})
+        pending.append({"Step":"Coating / development basis","Status":"UNVERIFIED MATERIAL BASIS",
+            "Meaning":"Known coating may be taken from the specification. Unknown is retained; the model must establish a valid development bound before resistance acceptance."})
     if cfg.get("anchorage_region") != "interior":
-        missing.append({"Input": "Anchorage region", "Where": "Dowel detail",
-            "Why": "Unknown / discontinuous-end anchorage needs a different detailing check"})
+        pending.append({"Step":"Anchorage-region evaluation","Status":"MODEL REVIEW REQUIRED",
+            "Meaning":"The model must establish the applicable interior/end anchorage route. No user guess or manual interior selection can establish strength."})
     source = settings.get("connector_source")
     if source == INDEPENDENT_DOWELS:
         raw = settings.get("dowel_zones", [])

@@ -5695,6 +5695,10 @@ def _format_beam_uls_ratio(value: object) -> str:
 
 
 def _beam_uls_get_state_value(state: Mapping[str, object], key: str, default: object = None) -> object:
+    if key == "section_parameters":
+        from concrete_pmm_pro.analysis.igird_slab_layers import parameters
+        raw = state.get(key, default) if hasattr(state, "get") else getattr(state, key, default)
+        return parameters(state, raw) if isinstance(raw, Mapping) else raw
     if hasattr(state, "get"):
         return state.get(key, default)
     return getattr(state, key, default)
@@ -11483,7 +11487,7 @@ def _beam_uls_state_values(
     result: dict[str, object] = {}
     for key in keys:
         if key in state:
-            value = state.get(key)
+            value = _beam_uls_get_state_value(state, key)
         elif key in defaults:
             value = []
         else:
@@ -14166,6 +14170,8 @@ def _igird_store_interface_shear_settings(settings: Mapping[str, object]) -> Non
     metadata = dict(st.session_state.get("project_metadata", {}) or {})
     metadata[_IGIRDER_INTERFACE_SHEAR_SETTINGS_KEY] = normalized
     st.session_state["project_metadata"] = metadata
+    from concrete_pmm_pro.analysis.igird_slab_layers import adopt
+    adopt(st.session_state, migrate=True)
 
 
 def _igird_interface_density_basis(state: Mapping[str, object]) -> tuple[bool, str]:
@@ -15330,7 +15336,8 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
 
     _beam_uls_sync_source_tables_for_analysis(st.session_state)
 
-    selected_check_raw = st.radio(
+    from concrete_pmm_pro.ui.igird_view_state import radio as remembered_radio
+    selected_check_raw = remembered_radio(
         "ULS check to calculate",
         BEAM_ULS_CHECK_TAB_LABELS,
         horizontal=True,
@@ -15342,7 +15349,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
     if is_precast_composite_bridge and selected_check == "Flexure":
         from concrete_pmm_pro.ui.igird_flexure_development import render_inputs as render_flexure_development_inputs
         render_flexure_development_inputs()
-        flexure_stage = st.radio(
+        flexure_stage = remembered_radio(
             "Flexure stage",
             ["Construction — Noncomposite", "Final — Composite"],
             horizontal=True,
@@ -32601,7 +32608,8 @@ def _igird_composite_flexure_dashboard_state(session_state: Mapping[str, Any]) -
         is_bridge=True,
         is_building=False,
     )
-    stage = str(session_state.get("beam_girder_composite_flexure_stage") or "Construction — Noncomposite")
+    from concrete_pmm_pro.ui.igird_view_state import selected
+    stage = str(selected(session_state,"beam_girder_composite_flexure_stage","Construction — Noncomposite") or "Construction — Noncomposite")
     cache = _beam_uls_manual_cache(session_state)
 
     if stage == "Final — Composite":

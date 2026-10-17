@@ -15,6 +15,9 @@ TRACE_COLUMNS=["Section region","Solid fill fraction","Physical girder x (m)","P
     "Section Acp mm2","Section Pcp mm","Section geometry version","End section acceptance","End section review","Section boundaries (m)"]
 
 def at_station(state,x_m):
+    from concrete_pmm_pro.analysis.igird_slab_layers import parameters
+    effective=parameters(state)
+    if effective != (state.get("section_parameters") or {}):state={**state,"section_parameters":effective}
     if not ends.enabled(state): return state
     x=float(x_m)
     if state.get(LOCAL_X)==x: return state

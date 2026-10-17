@@ -948,7 +948,13 @@ def _prestress_table_metadata_from_session(session_state: Any) -> list[dict[str,
 
 
 def project_from_session_state(session_state: Any) -> ProjectModel:
+    from concrete_pmm_pro.analysis.igird_slab_layers import parameters as slab_layer_parameters
     metadata = dict(_get_session_value(session_state, "project_metadata", {}) or {})
+    from concrete_pmm_pro.analysis.igird_slab_layers import INTERFACE_KEY
+    interface = _get_session_value(session_state, INTERFACE_KEY, None)
+    if isinstance(interface, dict):
+        from copy import deepcopy
+        metadata[INTERFACE_KEY] = deepcopy(interface)
     from concrete_pmm_pro.analysis.girder_axial_convention import SETTINGS_KEY as AXIAL_CONVENTION_KEY, axial_convention
     if _get_session_value(session_state, AXIAL_CONVENTION_KEY, None) is not None:
         metadata[AXIAL_CONVENTION_KEY] = {"input_sign": axial_convention(session_state)["input_sign"]}
@@ -1093,7 +1099,7 @@ def project_from_session_state(session_state: Any) -> ProjectModel:
         code_edition=project_code_edition_from_session(session_state),
         section_preset_key=_get_session_value(session_state, "section_preset_key", None),
         section_preset_name=_get_session_value(session_state, "section_preset_name", None),
-        section_parameters=dict(_get_session_value(session_state, "section_parameters", {}) or {}),
+        section_parameters=slab_layer_parameters(session_state),
         section_geometry=_get_session_value(session_state, "section_geometry", None),
         concrete_material=concrete_library.active_material,
         concrete_materials=concrete_library.materials,
@@ -1754,7 +1760,7 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
         if str(key).startswith("igird_support_widget_"):
             session_state.pop(key, None)
     for key in list(session_state):
-        if str(key).startswith(("igird_flexdep_", "igird_flexure31_", "igird_edit33_", "igird_coupled34_", "igird_detail35_", "igird_station36_",
+        if str(key).startswith(("igird_flexdep_", "igird_flexure31_", "igird_edit33_", "igird_coupled34_", "igird_detail35_", "igird_station36_", "igird_cover38_",
                 "input30_dimensions_", "joint29_actions_", "igird_interface_dowel_layout_")):
             session_state.pop(key, None)
     for key, expected_type in (("beam_girder_torsion_settings", dict), ("beam_girder_torsion_zone_settings", list)):
@@ -1766,6 +1772,8 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
                 "beam_girder_torsion_clear_cover_mm", "beam_girder_torsion_offset_override_enabled",
                 "beam_girder_torsion_offset_override_mm", "beam_girder_torsion_detailing_note"):
         session_state.pop(key, None)
+    from concrete_pmm_pro.analysis.igird_slab_layers import adopt
+    adopt(session_state, migrate=True)
     analysis_restored = _restore_analysis_results_metadata(project, session_state)
     _reset_loaded_project_dirty_state(session_state, analysis_restored=analysis_restored)
     session_state[CROSSBEAM_PROJECT_GEOMETRY_AUDIT_KEY] = (

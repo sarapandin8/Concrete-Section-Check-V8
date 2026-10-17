@@ -1,0 +1,74 @@
+{
+  "milestone": "IGIRDER.COVER38",
+  "baseline_sha256": "f5510651c359e6f37e58ea08895540710ad25c054c58327d356e8a8b0e84dac3",
+  "selected_tests": 464,
+  "new_tests": 22,
+  "failures": 0,
+  "warnings": 7,
+  "scope": "Physical slab layering and simpler input flow; full composite structural resistance not accepted.",
+  "compiled": [
+    "app.py",
+    "concrete-section-pro/concrete_pmm_pro/analysis/igird_slab_layers.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_view_state.py",
+    "concrete-section-pro/concrete_pmm_pro/visualization/igird_slab_layers.py",
+    "concrete-section-pro/qa/igird_cover38_browser_verify.py",
+    "concrete-section-pro/qa/igird_cover38_verify.py",
+    "concrete-section-pro/tests/test_igird_cover38.py",
+    "concrete-section-pro/concrete_pmm_pro/analysis/igird_composite_flexure.py",
+    "concrete-section-pro/concrete_pmm_pro/analysis/igird_dowel_detail35.py",
+    "concrete-section-pro/concrete_pmm_pro/io/project_io.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/analysis_page.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_composite_inputs.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_dowel_joint.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_flexure_workspace.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_slab_mesh.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_station_section.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/section_builder.py"
+  ],
+  "changed_from_baseline": [
+    "concrete-section-pro/concrete_pmm_pro/analysis/igird_composite_flexure.py",
+    "concrete-section-pro/concrete_pmm_pro/analysis/igird_dowel_detail35.py",
+    "concrete-section-pro/concrete_pmm_pro/io/project_io.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/analysis_page.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_composite_inputs.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_dowel_joint.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_flexure_workspace.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_slab_mesh.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_station_section.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/section_builder.py"
+  ],
+  "added_before_this_manifest": [
+    "concrete-section-pro/IGIRDER_COVER38_HANDOFF_TH.md",
+    "concrete-section-pro/concrete_pmm_pro/analysis/igird_slab_layers.py",
+    "concrete-section-pro/concrete_pmm_pro/ui/igird_view_state.py",
+    "concrete-section-pro/concrete_pmm_pro/visualization/igird_slab_layers.py",
+    "concrete-section-pro/qa/evidence/igird_cover38/browser_review.json",
+    "concrete-section-pro/qa/evidence/igird_cover38/geometry_witnesses.json",
+    "concrete-section-pro/qa/evidence/igird_cover38/project_replay.json",
+    "concrete-section-pro/qa/evidence/igird_cover38/selected_regression.xml",
+    "concrete-section-pro/qa/igird_cover38_browser_verify.py",
+    "concrete-section-pro/qa/igird_cover38_verify.py",
+    "concrete-section-pro/tests/test_igird_cover38.py"
+  ],
+  "removed_from_baseline": [],
+  "raw_load_rows_preserved": 640,
+  "transverse_clear_cover_mm": [
+    40,
+    40
+  ],
+  "derived_longitudinal_cover_mm": [
+    56,
+    56
+  ],
+  "longitudinal_depths_below_slab_top_mm": [
+    64,
+    286
+  ],
+  "browser_cover_edits": 4,
+  "viewports": [
+    1440,
+    1280
+  ],
+  "legacy_solver_calls_default": 0,
+  "production_composite_resistance": "WITHHELD"
+}
