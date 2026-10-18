@@ -7,7 +7,7 @@ import math
 
 import pandas as pd
 
-VIEW_VERSION = 'IGIRDER.FULLVT48.U-slab-concurrent-scan'
+VIEW_VERSION = 'IGIRDER.COMPOSITE51.anchorage-trace'
 MAIN_CHECKS = {'Shear', 'Torsion', 'Shear + Torsion'}
 REFERENCE_LABEL = 'Reference checks — I-girder hoop / code route'
 
@@ -73,6 +73,8 @@ def _heading(result):
         'คำนวณทุกแถวแรงร่วมภายในช่วงคาน และเลือก D/C ของ V–T สูงสุด โดยคง Max/Min และ Before/After แยกกัน')
     st.caption('Tu ใช้ค่าต้นทาง CSiBridge ณ จุดรายงานเดิม ไม่ย้ายไป centroid คาน I · '
         'Summary / Report / QA ยังคงใช้ผล code checks ที่แยกไว้ด้านล่าง')
+    st.caption('COMPOSITE50: รอยต่อรับ longitudinal shear จาก V รวมทั้ง girder ด้วย d interface แยกจาก dv web; '
+        'ผลที่ไม่มี U เป็นการถอด connector จากโมเดลประกอบเดิม ไม่ใช่กำลังของ I-girder เดี่ยว')
     for row in (result or {}).get('coverage',[]):
         text = (f"{row['Girder']} · interior rows {row['Calculated rows']}/{row['Interior source rows']} · "
             f"blocked/incomplete {row['Blocked / incomplete rows']} · physical end rows outside model {row['Physical end rows excluded']}")
@@ -146,6 +148,8 @@ def render(result):
             continue
         active = item['calculation'].get('T', {}).get('active_limits', [])
         st.caption(f"{item['Girder']} · x={item['x (m)']:g} m · Model Tn controls: "+', '.join(active))
+        from .igird_u_anchorage51 import render as render_anchorage
+        render_anchorage(item,member=item['Girder'])
     with st.expander('Same-model comparison — reinforcement contribution', expanded=False):
         records = []
         for item in result['rows']:
@@ -165,6 +169,7 @@ def render(result):
         if result.get('design_evidence'):
             st.json(result['design_evidence'])
         st.latex(r'V=V_I+V_U,\qquad T=2A_{o,I}q_I+2A_{o,U}q_U')
+        st.latex(r'\sum_j S_{x,j}=(V_I+V_U)/d_{\rm interface}')
         st.latex(r'F_{U,i}\geq\frac{|V_U|}{2d_{v,U}\cot\theta}+\frac{|q_U|}{\cot\theta},\quad F_{U,i}\leq\frac{A_{U,leg}f_{y,U}}{s_U}')
         st.caption('Ao: พื้นที่ภายในเส้นทาง shear flow (mm²) · q: shear flow (N/mm) · '
             'dv: effective shear depth (mm) · θ: มุม compression field · '

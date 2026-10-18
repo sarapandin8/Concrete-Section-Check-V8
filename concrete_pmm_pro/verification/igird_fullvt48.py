@@ -6,7 +6,7 @@ software verification of the declared model, NOT validation of its stress field.
 """
 import math
 
-VERSION = 'IGIRDER.FULLVT48.witness-audit'
+VERSION = 'IGIRDER.COMPOSITE50.whole-interface-witness-audit'
 
 
 def audit_witness(s, result, *, vu_N, tu_Nmm, mu_Nmm=0., nu_tension_N=0., tolerance=2e-7):
@@ -35,7 +35,9 @@ def audit_witness(s, result, *, vu_N, tu_Nmm, mu_Nmm=0., nu_tension_N=0., tolera
     balance('joint normal resultant',sum(c),sum(forces))
     balance('joint normal moment',s.u_leg_spacing_mm*(forces[1]-forces[0]),2*sum(a*b for a,b in zip(y,c)),
         [2*a*b for a,b in zip(y,c)])
-    balance('joint longitudinal shear',sum(q),vu/s.u_dv_mm,q)
+    interface_dv = getattr(s,'interface_dv_mm',None)
+    balance('joint longitudinal shear',sum(q),
+        (vi+vu)/interface_dv if interface_dv is not None else vu/s.u_dv_mm,q)
     balance('joint torque couple',-sum(a*b for a,b in zip(y,q)),s.u_leg_spacing_mm*qu,
         [a*b for a,b in zip(y,q)])
     bound('I leg V+T',vi/(2*s.core_dv_mm*cot)+qi/cot,s.core_leg_N_per_mm)

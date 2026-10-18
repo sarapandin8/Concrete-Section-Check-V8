@@ -7,7 +7,7 @@ utilization, not the largest imported torque. No design acceptance is inferred.
 from collections import Counter
 import math
 
-VERSION = "IGIRDER.FULLVT48.concurrent-source-scan"
+VERSION = "IGIRDER.COMPOSITE51.nodal-source-scan"
 SELECTION = ("Every eligible interior concurrent CSI source row is calculated; "
     "the maximum nominal V–T D/C governs each girder. Before/After and Max/Min "
     "vectors remain separate. Physical end rows are listed outside this model's scope.")
@@ -24,6 +24,7 @@ def compact(entry):
         "Model Vn (kN), M=N=0": calc.get("model_Vn_kN"),
         "Model Tn (kN-m), M=N=0": calc.get("model_Tn_kNm"),
         "V-only D/C, actual M/N": calc.get("model_V_only_actual_MN_DC"),
+        "V-only capacity (kN), actual M/N":calc.get("model_V_only_actual_MN_kN"),
         "T-only D/C, actual M/N": calc.get("model_T_only_actual_MN_DC"),
         "Model nominal V–T D/C": calc.get("model_VT_DC"),
         "Nominal capacity exhausted": bool(calc.get("VT", {}).get("capacity_exhausted")),
@@ -31,6 +32,14 @@ def compact(entry):
         "Actions used":entry.get("actions"),
         "Tu shift applied": (entry.get("torsion_reference") or {}).get("T shift applied"),
         "Baseline torsion threshold": (entry.get("baseline_code_check") or {}).get("Threshold status"),
+        "Interface total demand (kN/m)":(entry.get('interface_reference') or {}).get('q_total_kN_per_m'),
+        "Interface design resistance (kN/m)":(entry.get('interface_reference') or {}).get('q_design_kN_per_m'),
+        "Interface flexural-shear D/C":(entry.get('interface_reference') or {}).get('interface_DC'),
+        "Code shear series reference (kN)":(entry.get('interface_reference') or {}).get('reference_phiVn_series_kN'),
+        "Nodal anchorage status":(entry.get('nodal_anchorage') or {}).get('status'),
+        "Independent force audit":'PASS' if calc.get('force_audit') and all(
+            a.get('status')=='PASS' for a in calc['force_audit'].values()) else 'NOT AVAILABLE',
+        "Maximum independent force error":max((a.get('maximum_relative_error',0.) for a in calc.get('force_audit',{}).values()),default=None),
         "Maximum numerical residual": max((v for action in ("V", "T", "VT", "V_fixed_MN", "T_fixed_MN")
             for v in calc.get(action, {}).get("checks", {}).values()), default=None)}
 

@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "harness": "Stored full source-model snapshots rendered with the actual Shear view; no calculation calls",
+  "paper_checks": [
+    "A4 portrait",
+    "A3 landscape"
+  ],
+  "chart_restore_after_print": true,
+  "javascript_errors": [],
+  "streamlit_exceptions": 0,
+  "visual_review": "PASS: A4 portrait and A3 landscape charts/tables intact",
+  "paper_tests_used_fresh_page": true,
+  "native_svg_upscaling_prevented": true,
+  "full_app_A4_review": "Both full-span charts and all primary method/reference columns visible; six browser-print pages inspected selectively"
+}

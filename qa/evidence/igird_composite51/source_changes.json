@@ -1,0 +1,47 @@
+{
+  "modified": [
+    "README.md",
+    "concrete_pmm_pro/analysis/igird_combined_vt.py",
+    "concrete_pmm_pro/analysis/igird_composite_steel45.py",
+    "concrete_pmm_pro/ui/igird_combined_vt.py",
+    "concrete_pmm_pro/ui/igird_composite_scan48.py",
+    "concrete_pmm_pro/ui/igird_composite_steel45.py",
+    "concrete_pmm_pro/ui/igird_member_results.py",
+    "concrete_pmm_pro/ui/igird_modeltn47.py",
+    "concrete_pmm_pro/ui/igird_shear49.py"
+  ],
+  "added": [
+    "IGIRDER_COMPOSITE51_HANDOFF_TH.md",
+    "concrete_pmm_pro/analysis/igird_u_anchorage51.py",
+    "concrete_pmm_pro/ui/igird_u_anchorage51.py",
+    "qa/compare_composite51.py",
+    "qa/evidence/igird_composite51/baseline_comparison.json",
+    "qa/evidence/igird_composite51/browser_qa.json",
+    "qa/evidence/igird_composite51/composite51_project_ui_audit.json",
+    "qa/evidence/igird_composite51/node_view_qa.json",
+    "qa/evidence/igird_composite51/print_qa.json",
+    "qa/evidence/igird_composite51/selected_tests.xml",
+    "qa/evidence/igird_composite51/validation_summary.json",
+    "qa/validate_composite51_project.py",
+    "qa/validate_composite51_ui.py",
+    "tests/test_igird_composite51.py"
+  ],
+  "removed": [],
+  "compiled": [
+    "app.py",
+    "concrete_pmm_pro/analysis/igird_combined_vt.py",
+    "concrete_pmm_pro/analysis/igird_composite_steel45.py",
+    "concrete_pmm_pro/ui/igird_combined_vt.py",
+    "concrete_pmm_pro/ui/igird_composite_scan48.py",
+    "concrete_pmm_pro/ui/igird_composite_steel45.py",
+    "concrete_pmm_pro/ui/igird_member_results.py",
+    "concrete_pmm_pro/ui/igird_modeltn47.py",
+    "concrete_pmm_pro/ui/igird_shear49.py",
+    "concrete_pmm_pro/analysis/igird_u_anchorage51.py",
+    "concrete_pmm_pro/ui/igird_u_anchorage51.py",
+    "qa/compare_composite51.py",
+    "qa/validate_composite51_project.py",
+    "qa/validate_composite51_ui.py",
+    "tests/test_igird_composite51.py"
+  ]
+}

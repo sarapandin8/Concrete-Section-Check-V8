@@ -1,3 +1,33 @@
+# IGIRDER.COMPOSITE51
+
+U/slab anchorage-plane geometry, exact Calculate-only reuse, and removal of duplicate shear-model rendering. Same nominal Vn/Tn/V–T as COMPOSITE50; full-composite design validation remains incomplete.
+
+See [IGIRDER_COMPOSITE51_HANDOFF_TH.md](IGIRDER_COMPOSITE51_HANDOFF_TH.md) for measured geometry, verification and use.
+
+# IGIRDER.COMPOSITE50 — whole-girder interface shear
+
+แก้ longitudinal shear ที่รอยต่อให้ตรวจจากแรงเฉือนรวมของ girder แยก d interface จาก dv web ตรวจแรงขา U ร่วมกัน และเพิ่ม AASHTO shear/interface reference แบบต่ออนุกรม พร้อมแก้กราฟและตารางหน้า Shear ถูกตัดเมื่อพิมพ์ A4
+
+ผล JSON เดิม: 608/608 interior source vectors; nominal V-only governors 0.790 / 0.813 และ V–T governors 1.554 / 0.938 สำหรับ Interior 2 / Left Exterior ตามลำดับ ยังเป็น model review และยังไม่ใช่ full-composite production-design acceptance
+
+อ่าน [IGIRDER_COMPOSITE50_HANDOFF_TH.md](IGIRDER_COMPOSITE50_HANDOFF_TH.md) สำหรับสูตร ขอบเขต ผลทดสอบ วิธีใช้ และ Repo summary
+
+---
+
+# IGIRDER.VN49 — Shear workspace, strand-layer regression and calculation reuse
+
+Continue from the accepted COMPOSITE48 ZIP. The Shear page now shows its own V-only governor, Vu, nominal Vn with actual M3/N held, paired station chart, and I-hoop/U allocation. Torsion and combined results stay in their own views. A capacity-cap ratio below 1 no longer masks the demand utilization in source-case ranking; genuine cap violations remain visible.
+
+The pooled model does not use strand x coordinates. Missing/invalid transverse positions therefore remain **unknown** instead of blocking every pooled result or being inferred as x=0. Spatial 3D truss analysis retains its strict position requirement. Strand area, y level, sleeves and development remain in the calculation.
+
+Calculation reuse is bounded and session-only: exact geometry/steel responses and a hash-bound shared composite model are reused without rounding loads or interpolating capacities. In the supplied 640-row project, all 608 interior rows calculate even with strand x removed from the regression fixture. All five capacity/utilization measures match COMPOSITE48. A controlled 32-row Shear calculation improves from 8.39/7.29 to 3.42/3.35 seconds; the full nominal-model scan measures 48.96 seconds versus the previously recorded 369.62 seconds. These timings have different scopes.
+
+Verification: 294 selected tests pass; 148 accepted geometry/steel responses are reproduced. Actual app.py Calculate flows pass with missing-x input; Torsion/V–T reuse the model after Shear, and redraw adds no solver calls. Both new full-span charts were rasterized and visually checked. A full browser screenshot review was unavailable because browser download failed.
+
+**The resistance method remains a research nominal model**, using fixed theta, zero Vc and a shared concrete-flow ceiling. This release fixes the calculation blockage, runtime and presentation; it does not establish full-composite LRFD design acceptance. See `IGIRDER_VN49_HANDOFF_TH.md`.
+
+## Previous milestone
+
 # IGIRDER.COMPOSITE48 — Concurrent V/T source scan and hoop-source correction
 
 Continuing development baseline: accepted MODELTN47 ZIP. The joint nominal model includes the I-girder closed hoops, both independent U legs, and developed slab longitudinal steel. Shear, Torsion and Shear + Torsion reuse this model in Analysis. It now calculates every eligible **interior concurrent source vector** and selects the maximum nominal V–T D/C per girder. Individual V-only/T-only governors hold the actual M3/N; the displayed pure Model Vn/Tn intercepts retain M=N=0.

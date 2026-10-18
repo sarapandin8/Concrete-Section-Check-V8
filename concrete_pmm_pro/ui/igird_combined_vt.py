@@ -28,6 +28,17 @@ def _number(v) -> float:
         return float("nan")
 
 
+def nominal_fps_key(inp, *, moment_sign, axial_nominal_N, tension_y_mid_mm):
+    """Exact arguments consumed by nominal_tension_fps, without load labels.
+
+    In particular the passed axial target and tension-half boundary cannot be
+    taken from a load-case fingerprint or rounded. Cache lifetime is one call
+    to check_dataframe / explicit composite Calculate, never project storage.
+    """
+    return (inp.model_dump_json(exclude={'load_cases'}), float(moment_sign),
+            float(axial_nominal_N), float(tension_y_mid_mm))
+
+
 def concurrent_source_allowed(info) -> bool:
     """A case name or a Max/Min row is not evidence of simultaneous actions."""
     if not isinstance(info, Mapping):
@@ -107,7 +118,8 @@ def check_dataframe(state, active_df, *, strength_route) -> pd.DataFrame:
 
 
 @igird_station_section.station_check("Shear + Torsion")
-def _check_row(state, row, *, strength_route, face, source_index, nominal_cache, ambiguous_case):
+def _check_row(state, row, *, strength_route, face, source_index, nominal_cache, ambiguous_case,
+               torsion_result=None):
     from concrete_pmm_pro.ui import analysis_page as ap
     from concrete_pmm_pro.analysis.girder_axial_convention import axial_trace
     from concrete_pmm_pro.io.girder_csi_import import source_info
@@ -151,7 +163,8 @@ def _check_row(state, row, *, strength_route, face, source_index, nominal_cache,
         "Section basis": "PRECAST I-GIRDER", "Reference action policy": "M2 and V3 retained as reference only"})
     if ambiguous_case:
         notes.append("Multiple concurrent action vectors at the same case/x: all physical rows checked; supplemental dv interpolation is withheld.")
-    torsion = ap._beam_uls_igird_torsion_result_for_row(state, row, strength_route=strength_route) if abs(tu) > 1e-9 else {}
+    torsion = (torsion_result if torsion_result is not None else
+        ap._beam_uls_igird_torsion_result_for_row(state, row, strength_route=strength_route)) if abs(tu) > 1e-9 else {}
     threshold = str(torsion.get("Threshold status") or ("BELOW THRESHOLD" if abs(tu) <= 1e-9 else ""))
     result.update({"Threshold status": threshold, "Threshold kN-m": torsion.get("Threshold kN-m", float("nan"))})
     if not threshold:
@@ -291,9 +304,8 @@ def _check_row(state, row, *, strength_route, face, source_index, nominal_cache,
         # Optional deck bars remain a separate Flexure source: no unverified
         # deck-bar development is credited to the nominal fps equilibrium.
         nominal_inp = nominal_inp.model_copy(update={"rebars": eps_inp.rebars})
-        key = ap._beam_uls_flexure_capacity_state_key(nominal_inp, strength_route=strength_route,
-            demand_kNm=-1.0 if face == "top" else 1.0, capacity_direction=-1.0 if face == "top" else 1.0,
-            solver_engine="uls7_nominal_fps") + face
+        key = nominal_fps_key(nominal_inp, moment_sign=-1. if face == 'top' else 1.,
+            axial_nominal_N=nu*1000./phi, tension_y_mid_mm=ymid)
         if key not in nominal_cache:
             nominal_cache[key] = nominal_tension_fps(nominal_inp, moment_sign=-1.0 if face == "top" else 1.0,
                 axial_nominal_N=nu*1000.0/phi, tension_y_mid_mm=ymid)

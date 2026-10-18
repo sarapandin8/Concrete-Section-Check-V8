@@ -41,8 +41,10 @@ def result_hash(state, rows, *, check_name, route):
 def calculate_member(state, rows, *, check_name, route):
     """Use the accepted solver independently for one member's actual vectors."""
     from concrete_pmm_pro.ui import analysis_page as ap
+    from .igird_composite_steel45 import RUNTIME_KEY as model_runtime
     local = deepcopy({k: v for k, v in dict(state).items() if k not in {
-        CACHE_KEY, BANK_KEY, 'igird_flexure31_runtime_results'}})
+        CACHE_KEY, BANK_KEY, 'igird_flexure31_runtime_results',model_runtime}})
+    local[model_runtime]=state.get(model_runtime,{})
     local['beam_uls_loads_table'] = rows.copy(deep=True)
     if check_name != 'Flexure':
         return ap._beam_uls_calculate_selected_check(local, rows, selected_check=check_name, strength_route=route)
@@ -149,7 +151,11 @@ def render_collection(*, check_name, route, code_label):
     from concrete_pmm_pro.ui import igird_modeltn47 as model_view
     model_primary = check_name in model_view.MAIN_CHECKS
     if model_primary:
-        model_view.render_overview(model_view.collection_snapshot(st.session_state, fingerprints))
+        if check_name=='Shear':
+            from .igird_shear49 import render_overview
+            render_overview(st.session_state,fingerprints)
+        else:
+            model_view.render_overview(model_view.collection_snapshot(st.session_state, fingerprints))
     from contextlib import nullcontext
     reference_summary = st.expander('Reference summary — I-girder hoop / code route', expanded=False) if model_primary else nullcontext()
     with reference_summary:
@@ -200,9 +206,15 @@ def _render_member_result(*, member, result, all_rows, control, cache, check_nam
     if check_name in view.MAIN_CHECKS:
         from concrete_pmm_pro.ui.igird_composite_steel45 import render, current
         fingerprint = (result or {}).get('input_hash') or cache.get(member, {}).get(check_name, {}).get('input_hash')
-        render(current(st.session_state, fingerprint) if result is not None else None)
-        with st.expander(view.REFERENCE_LABEL, expanded=False):
-            st.caption('Reference I-hoop results retain their own resistance definition and code-check status. The primary composite values above are nominal MODEL REVIEW.')
+        saved=current(st.session_state, fingerprint) if result is not None else None
+        if check_name=='Shear':
+            from .igird_shear49 import render as render_shear
+            render_shear(saved,member=member)
+        else:render(saved)
+        label='Code shear — composite depth, I hoops' if check_name=='Shear' else view.REFERENCE_LABEL
+        with st.expander(label, expanded=False):
+            st.caption('AASHTO shear uses composite C–T/dv with the I-web concrete and I hoops; U resistance is in the nominal model above.' if check_name=='Shear' else
+                'Reference I-hoop results retain their own resistance definition and code-check status. The primary composite values above are nominal MODEL REVIEW.')
             _render_reference_member_result(member=member, result=result, all_rows=all_rows,
                 control=control, cache=cache, check_name=check_name, code_label=code_label)
         return
@@ -232,7 +244,7 @@ def _render_reference_member_result(*, member, result, all_rows, control, cache,
     controlling_case = str(source.get('Case',''))
     st.caption(f"Controlling case: {controlling_case or 'Unavailable'} · {control['component']} · {control['basis']} {ratio_text(control['ratio'])} · x={source.get('Governing x','-')} · stored status {source.get('Status','REVIEW')}")
     if len(control['tied_cases']) > 1:
-        st.info('Equal controlling ratios: '+'; '.join(control['tied_cases']))
+        st.caption(f"Equal controlling ratios: {len(control['tied_cases'])} source cases; full list in Load-case ranking below.")
     if control['failed_rows'] or control['review_rows']:
         st.warning(f"All cases for {n}: {control['failed_rows']} failed row(s), {control['review_rows']} row(s) requiring review. Viewing a passing case does not clear these member-wide gates.")
     if control['basis'] == 'INVESTIGATION ONLY':
@@ -324,10 +336,6 @@ def _render_reference_member_result(*, member, result, all_rows, control, cache,
             return
         from concrete_pmm_pro.ui.igird_combined_vt import render_workspace
         render_workspace(frame,code_label=label,member_name=n,selected_case=case,show_chart=not paired)
-    if check_name == 'Shear':
-        from concrete_pmm_pro.ui.igird_composite_steel45 import render as render_composite_steel45, current as current_composite_steel45
-        fingerprint = result.get('input_hash') or cache.get(n,{}).get(check_name,{}).get('input_hash')
-        render_composite_steel45(current_composite_steel45(st.session_state,fingerprint))
     frame_key = {'Flexure':'flexure_preview_df','Shear':'shear_check_df','Torsion':'torsion_check_df','Shear + Torsion':'combined_vt_df'}[check_name]
     with st.expander('Stored check rows / source audit — '+n,expanded=False):
         frame = selected.get(frame_key)

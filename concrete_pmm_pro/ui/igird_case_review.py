@@ -61,6 +61,10 @@ def component_values(rows, check_name):
         for column in columns:
             if column in rows:
                 values = values.fillna(pd.to_numeric(rows[column], errors='coerce'))
+        if check_name=='Shear' and component=='Vn upper limit':
+            # Vn/Vn,max is a capacity cap, not a demand utilization. Keep an
+            # actual violation, but a capped capacity must not mask Vu/phiVn.
+            values=values.where(values>1.+1e-9)
         yield component, values
 
 

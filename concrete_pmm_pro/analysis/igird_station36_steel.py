@@ -19,7 +19,7 @@ def positions(text, count):
     return values
 
 
-def strand_ties(table, *, x_m, span_m, y_min_mm, depth_mm, fy_tie_MPa, settings, left_cut_m=0., right_cut_m=None):
+def strand_ties(table, *, x_m, span_m, y_min_mm, depth_mm, fy_tie_MPa, settings, left_cut_m=0., right_cut_m=None, require_x_positions=True):
     """5.8.2.4 tie term Aps(fpe+fy), capped by fpy AND development.
 
     Ordinary-bar fy comes from the actual cage, not fpu or an invented grade.
@@ -35,7 +35,14 @@ def strand_ties(table, *, x_m, span_m, y_min_mm, depth_mm, fy_tie_MPa, settings,
     if not left<=x_m<=right:raise ValueError("Station lies outside the physical strand length.")
     result=[]
     for row in active_girder_strand_rows(table):
-        n=int(round(float(row['No. Strands'])));xs=positions(row.get('Strand x positions mm'),n)
+        n=int(round(float(row['No. Strands'])))
+        if require_x_positions:
+            xs=positions(row.get('Strand x positions mm'),n)
+        else:
+            # A y-layer force inventory does not use transverse coordinates.
+            # Keep known positions; never invent x=0 or a spatial distribution.
+            try: xs=positions(row.get('Strand x positions mm'),n)
+            except ValueError: xs=[None]*n
         token=re.search(r'\d+(?:\.\d+)?',str(row.get('Strand Size') or ''))
         if token is None:raise ValueError('Strand nominal diameter is missing.')
         db=float(token.group());area=float(row['Area/Strand_mm2']);pe=float(row['Pe_eff_final/strand_kN'])*1000
@@ -53,6 +60,7 @@ def strand_ties(table, *, x_m, span_m, y_min_mm, depth_mm, fy_tie_MPa, settings,
             limit=strand_stress_limit(distance_mm=distance,db_mm=db,fpe_mpa=fpe,fps_mpa=fpt,
                 depth_mm=depth_mm,debonded=debonded,service_condition=settings.get('debonded_service_condition','unknown'))
             result.append({'label':f"{row['Group ID']} / strand {number}",'kind':'prestress','x_mm':x,
+                'spatial_position_verified':x is not None,
                 'y_mm':y_min_mm+float(row['y_mm_from_bottom']),'area_mm2':area,'capacity_N':area*limit['fpx_limit_MPa'],
                 'fpe_MPa':fpe,'tie_stress_ceiling_MPa':fpt,'developed_stress_MPa':limit['fpx_limit_MPa'],
                 'bonded_distance_mm':distance,'debonded':debonded,'development':limit,

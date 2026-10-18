@@ -68,7 +68,14 @@ def payload(state, rows, *, route):
     if not route.is_bridge or str(state.get('section_preset_key') or '') != 'parametric_i_girder':
         return {}
     try:
-        return {KEY:calculate(state,rows,route=route)}
+        from . import analysis_page as ap
+        shared_hash=ap._beam_uls_check_input_hash(state,rows,strength_route=route,check_name='Shear + Torsion')
+        for saved in (state.get(RUNTIME_KEY) or {}).values():
+            if saved.get('model_input_hash')==shared_hash and saved.get('version')==engine.VERSION:
+                return {KEY:saved}
+        result=calculate(state,rows,route=route)
+        result['model_input_hash']=shared_hash
+        return {KEY:result}
     except (ValueError,TypeError,KeyError,AttributeError,ImportError) as exc:
         # A review model must never destroy a completed primary code check.
         return {KEY:{'version':engine.VERSION,'enabled':True,'rows':[],
@@ -98,6 +105,8 @@ def calculate(state, rows, *, route):
     state = dict(state)
     state.setdefault(igird_shear_section.RUNTIME_KEY, {'active_df':rows})
     candidates, entries, excluded = [], [], []
+    solve_cache = engine.SolveCache()
+    nominal_fps_cache = {}
     span = ap._beam_uls_span_length_from_state(state,is_building=False)
     for ordinal, (_, raw) in enumerate(ref.prepare_analysis_frame(rows).iterrows()):
         row = raw.to_dict(); info = source_info(row) or {}
@@ -155,10 +164,12 @@ def calculate(state, rows, *, route):
             left,right = cut_ends(params,span)
             ps = strand_ties(local.get('girder_strand_layout_table',[]),x_m=x,span_m=span,
                 y_min_mm=poly.bounds[1],depth_mm=poly.bounds[3]-poly.bounds[1],
-                fy_tie_MPa=min(m.fy_MPa for m in context.materials.values()),settings=dev,left_cut_m=left,right_cut_m=right)
+                fy_tie_MPa=min(m.fy_MPa for m in context.materials.values()),settings=dev,left_cut_m=left,right_cut_m=right,
+                require_x_positions=False)
             for record in ps:
                 steel.append({'label':record['label'],'component':'strand','y_mm':record['y_mm'],
-                    'area_mm2':record['area_mm2'],'force_N':record['capacity_N'],'factor':None,'development':record['development']})
+                    'area_mm2':record['area_mm2'],'force_N':record['capacity_N'],'factor':None,'development':record['development'],
+                    'spatial_position_verified':record['spatial_position_verified']})
             mid = .5*(poly.bounds[1]+poly.bounds[3]+float(prep.deck_thickness_mm))
             for bar in steel: bar['pool'] = 'bottom' if bar['y_mm'] <= mid else 'top'
             bottom = sum(b['force_N'] for b in steel if b['pool']=='bottom')
@@ -179,9 +190,17 @@ def calculate(state, rows, *, route):
             if not anchor['ready']: raise ValueError('U anchorage dimensions: '+ '; '.join(anchor.get('reasons',[])))
             torsion = ap._beam_uls_torsion_result_for_row(local,row,strength_route=route)
             shear = ap._beam_uls_shear_result_for_row(local,row,strength_route=route)
-            concurrent = ap._beam_uls_combined_vt_check_dataframe(local,pd.DataFrame([row]),strength_route=route)
-            if len(concurrent)!=1: raise ValueError('One exact concurrent section result is required.')
-            concurrent = concurrent.iloc[0].to_dict()
+            # All candidates were source-gated above. Reuse the SAME checked
+            # row function, including its gate, station/CSI conversion and
+            # detailing. A one-row dataframe used to reset nominal fps reuse
+            # and rerun the identical torsion check for every vector.
+            if abs(float(source['Mux'])) <= 1e-9:
+                raise ValueError('One exact concurrent tension-face result is required; zero M needs both faces.')
+            from .igird_combined_vt import _check_row
+            concurrent = _check_row(local,row,strength_route=route,
+                face='top' if float(source['Mux']) < 0 else 'bottom',
+                source_index=identity['Source input ordinal'], nominal_cache=nominal_fps_cache,
+                ambiguous_case=False, torsion_result=torsion)
             hoop = core_hoop_supply(local,x_m=x)
             db = float(dowel['Diameter_mm']); radius = .5*(float(detail['hook_inside_bend_mm'])+db)
             width = float(detail['row_spacing_mm'])
@@ -198,6 +217,15 @@ def calculate(state, rows, *, route):
             cot = float(concurrent['θ cot']); fc = min(prep.deck_fc_MPa,prep.girder_fc_MPa)
             contact,_ = ap._igird_interface_bvi_mm(local,interface)
             surface = surface_preset(interface['surface_key']); const = surface.constants_si(lightweight=False)
+            # Article 5.7.4.5 interface dv is NOT the web-shear dv above.
+            # Reuse the same bottom-steel centroid rule as Interface Shear.
+            tension_y = ap._beam_uls_reinforcement_y_centroid_for_face(inp,tension_face='bottom')
+            slab_mid_y = poly.bounds[3] + .5*float(prep.deck_thickness_mm)
+            interface_dv = slab_mid_y-float(tension_y) if tension_y is not None else float('nan')
+            if not math.isfinite(interface_dv) or interface_dv<=0:
+                raise ValueError('Whole-composite interface lever arm requires a known tension-steel centroid.')
+            if float(source['Mux']) < -1e-9:
+                raise ValueError('Whole-interface approximation currently covers positive bending; negative-moment slab tension needs a separately verified interface field.')
             # Separate physical paths. Ao of the existing I hoop is unchanged;
             # a*H describes the explicitly HYPOTHETICAL central U/mat cell.
             supply = engine.Supplies(core_ao_mm2=hoop['Ao mm2'],core_ph_mm=hoop['ph mm'],
@@ -209,28 +237,67 @@ def calculate(state, rows, *, route):
                 top_slab_longitudinal_N=sum(b['force_N'] for b in steel if b['pool']=='top' and b['component']=='slab'),
                 diagonal_q_N_per_mm=.25*prep.girder_fc_MPa*float(shear['bw mm'])/(2*(cot+1/cot)),
                 contact_width_mm=contact,u_leg_spacing_mm=width,contact_MPa=.85*fc,
-                interface_MPa=min(const['K1']*fc,const['K2_MPa']),mu=surface.mu,cot_theta=cot)
+                interface_MPa=min(const['K1']*fc,const['K2_MPa']),mu=surface.mu,cot_theta=cot,
+                interface_dv_mm=interface_dv)
             actions = {'vu_N':float(source['Vuy'])*1000,'tu_Nmm':float(source['Tu'])*1e6,
                 'mu_Nmm':float(source['Mux'])*1e6,'nu_tension_N':-ap.girder_axial_demand_kN(source,local)*1000}
-            calculated = engine.calculate(supply,**actions,held_action_intercepts=True)
+            calculated = engine.calculate(supply,**actions,held_action_intercepts=True,solve_cache=solve_cache)
+            # Reconstruct physical-unit balances independently of LP matrices.
+            # This verifies the declared model, not the real stress field.
+            from concrete_pmm_pro.verification.igird_fullvt48 import audit_witness
+            audit_actions={
+                'V':dict(vu_N=1000.,tu_Nmm=0.),'T':dict(vu_N=0.,tu_Nmm=1e6),
+                'VT':actions,
+                'V_fixed_MN':dict(vu_N=1000.,tu_Nmm=0.,mu_Nmm=actions['mu_Nmm'],nu_tension_N=actions['nu_tension_N']),
+                'T_fixed_MN':dict(vu_N=0.,tu_Nmm=1e6,mu_Nmm=actions['mu_Nmm'],nu_tension_N=actions['nu_tension_N'])}
+            calculated['force_audit']={name:audit_witness(supply,calculated[name],**force)
+                for name,force in audit_actions.items()}
+            if any(a['status']=='FAIL' for a in calculated['force_audit'].values()):
+                raise ValueError('Independent whole-interface force audit failed; capacity is not published.')
+            from concrete_pmm_pro.analysis.igird_u_anchorage51 import evaluate as nodal_anchorage
+            try:
+                node_trace = nodal_anchorage(detail=detail,params=params,
+                    slab_thickness_mm=prep.deck_thickness_mm,slab_bottom_y_mm=poly.bounds[3],
+                    db_mm=db,spacing_mm=dowel['Spacing_mm'],anchorage=anchor,
+                    inventory=steel,calculation=calculated)
+            except (ValueError,TypeError,KeyError) as exc:
+                node_trace = {'status':'NODAL GEOMETRY INCOMPLETE','reason':str(exc),
+                    'accepted_composite_capacity':None,'changes_nominal_resistance':False}
+            from concrete_pmm_pro.analysis.igird_interface50 import check as interface_reference
+            joint_reference = interface_reference(vu_kN=actions['vu_N']/1000,bvi_mm=contact,
+                dv_interface_mm=interface_dv,fc_weaker_MPa=fc,
+                avf_mm2_per_m=float(dowel['Avf_mm2_per_m']),fy_MPa=float(dowel['fy_MPa']),
+                surface_key=interface['surface_key'],anchor_dimensions_ready=anchor['ready'],
+                anchorage_declared=interface['connectors_cross_and_anchored'],
+                effective_width_verified=bool(params.get('Be_strength_verified',False)),shear_trace=shear)
             status = 'MODEL REVIEW' if all(calculated[k].get('ready') for k in ('V','T','VT','V_fixed_MN','T_fixed_MN')) else 'MODEL INCOMPLETE'
             entry.update({'Status':status,'calculation':calculated,
                 'torsion_reference':ref.trace_columns(source),
                 'inventory':steel,'anchorage':anchor,'U geometry':{'a_mm':width,'H_mm':height,'candidate_Ao_mm2':width*height},
+                'nodal_anchorage':node_trace,
                 'actions':actions,'source_CSI':{k:float(row[k]) for k in ('Nu','Vuy','Vux','Tu','Muy','Mux')},
                 'baseline_code_check':{'Vn_kN':shear.get('Vn kN'),'Tn_transverse_kNm':torsion.get('Tn kN-m'),
                     'Threshold status':torsion.get('Threshold status')}, 'physical_I_hoop':hoop,
+                'shear_trace':{k:shear.get(k) for k in ('Vc kN','Vs kN','Vn kN','φVn kN','φ','bw mm','dv mm','θ deg','β','Section basis','h mm','Precast h mm','de mm','C-T lever arm mm','Compression f\'c MPa')},
+                'section_definition':{'Be_mm':prep.effective_width_mm,'Tslab_mm':prep.deck_thickness_mm,
+                    'fc_I_MPa':prep.girder_fc_MPa,'fc_slab_MPa':prep.deck_fc_MPa,'h_I_mm':poly.bounds[3]-poly.bounds[1]},
                 'baseline_combined_DC':concurrent.get('Overall D/C value'),
                 'detail_status':'U-to-slab closed path and local anchorage nodes UNVERIFIED; 90-degree tension hook check only',
                 'continuity_flags_preserved':{face:params.get('deck_long_rebar_'+face+'_continuous_confirmed',False) for face in ('top','bottom')},
                 'girder_continuity_flag_preserved':dev.get('bars_continuous_confirmed',False),
                 'U force supply per leg N/mm':supply.u_leg_N_per_mm,
                 'slab_longitudinal_area_mm2':sum(b['area_mm2'] for b in steel if b['component']=='slab'),
-                'slab_longitudinal_force_N':sum(b['force_N'] for b in steel if b['component']=='slab')})
+                'slab_longitudinal_force_N':sum(b['force_N'] for b in steel if b['component']=='slab'),
+                'interface_reference':joint_reference,
+                'interface_geometry':{'tension_steel_y_mm':tension_y,'slab_mid_y_mm':slab_mid_y,
+                    'dv_interface_mm':interface_dv,'basis':'AASHTO 5.7.4.5: bottom tension-steel area centroid to slab mid-depth; positive bending only'}})
         except (ValueError,TypeError,KeyError,AttributeError) as exc:
             entry['Reason'] = str(exc)
         entries.append(entry)
     result.update(scan.summarize(entries,excluded))
+    result['calculate_reuse'] = {'LP':solve_cache.summary(),
+        'nominal_fps_unique_states':len(nominal_fps_cache),
+        'torsion_source_policy':'One exact station/force torsion result reused for the same row only'}
     # Expensive comparisons are needed for the retained governors only, not
     # for every scan row. Reuse a stored inventory; do not solve while rendering.
     comparisons = {}

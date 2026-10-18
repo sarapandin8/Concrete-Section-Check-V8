@@ -13,18 +13,19 @@ No result from this module may replace a production resistance or PASS.
 Units: N, mm, MPa. q and interface resultants are per mm along the girder.
 """
 from dataclasses import asdict, dataclass, replace
+from copy import deepcopy
 import math
 
 import numpy as np
 from scipy.optimize import linprog
 
-VERSION = "IGIRDER.STEEL45.two-path-review.CSITU46.FULLVT48"
+VERSION = "IGIRDER.COMPOSITE51.anchorage-trace.CSITU46"
 LIMITATIONS = [
     "Fixed-angle fully cracked truss, zero Vc/cohesion; not a calibrated MCFT or strain/slip-compatible section model.",
     "U-cell closure through the slab mats/anchorage zone is a hypothesis; 90-degree hooks and tied mesh do not establish a code-qualified closed torsion cage.",
     "Shared concrete-flow and top/bottom longitudinal bounds are declared model constraints, not experimental structural validation.",
     "V2 and reported CSI T are scaled; M3/N retain the bending-reader basis. Tu is not shifted to the I-centroid. M2/V3 full resistance and the source-point coupled resistance remain unvalidated.",
-    "Interface qx=VU/dvU belongs to the candidate U/slab branch; this load-path hypothesis is not recovered CSI Beam/Slab interface reactions.",
+    "The app uses qx=(VI+VU)/d_interface, with the separate girder/slab lever arm. This is a conservative flexural-shear approximation, not recovered CSI Beam/Slab reactions or a validated full torsion-interface field.",
     "Deck longitudinal credit is conditional on continuous bars within the entered start/end interval; existing unconfirmed drawing flags are preserved, not silently approved.",
 ]
 
@@ -51,12 +52,18 @@ class Supplies:
     interface_MPa: float
     mu: float
     cot_theta: float
+    # None retains the isolated legacy branch model for external callers and
+    # old unit fixtures. The application must supply an explicit interface
+    # lever arm; it must never silently fall back to the web shear depth.
+    interface_dv_mm: float | None = None
 
     def validate(self):
         zeros = {"core_leg_N_per_mm", "u_leg_N_per_mm", "slab_closing_N_per_mm",
             "bottom_longitudinal_N", "top_longitudinal_N", "top_girder_longitudinal_N",
             "top_slab_longitudinal_N", "diagonal_q_N_per_mm", "mu"}
         for key, value in asdict(self).items():
+            if key == "interface_dv_mm" and value is None:
+                continue
             if isinstance(value, bool) or not math.isfinite(value) or (value < 0 if key in zeros else value <= 0):
                 raise ValueError("Invalid composite supply: " + key)
         if self.u_leg_spacing_mm >= self.contact_width_mm:
@@ -101,10 +108,15 @@ def solve(s: Supplies, *, vu_N, tu_Nmm, mu_Nmm=0., nu_tension_N=0., cells=16):
     balance({4:1., 5:1., **{ci+j:-1. for j in range(cells)}})
     balance({4:-s.u_leg_spacing_mm/b, 5:s.u_leg_spacing_mm/b,
         **{ci+j:-2*y[j]/b for j in range(cells)}})
-    # Only the U/slab branch crosses this joint in the declared parallel-path
-    # model. A missing U therefore leaves a real I-core baseline, rather than
-    # falsely deleting all core shear resistance through an interface gate.
-    balance({**{si+j:1. for j in range(cells)}, 1:-1/s.u_dv_mm})
+    # Using the slab to establish composite flexural depth requires checking
+    # longitudinal shear transfer for the WHOLE V resultant, not just VU.
+    # AASHTO 5.7.4.5 defines its own lever arm to slab mid-depth. Keep the
+    # already declared U torsion couple; this is still a model hypothesis.
+    if s.interface_dv_mm is not None:
+        balance({**{si+j:1. for j in range(cells)},
+            0:-1/s.interface_dv_mm, 1:-1/s.interface_dv_mm})
+    else:
+        balance({**{si+j:1. for j in range(cells)}, 1:-1/s.u_dv_mm})
     # Opposing torsion-induced interface tractions retain a nonzero moment.
     balance({**{si+j:-y[j]/b for j in range(cells)}, 3:-s.u_leg_spacing_mm/b})
     ub, limits, labels = [], [], []
@@ -174,16 +186,53 @@ def solve(s: Supplies, *, vu_N, tu_Nmm, mu_Nmm=0., nu_tension_N=0., cells=16):
         "core_T_Nmm":float(2*s.core_ao_mm2*f[2]),"U_T_Nmm":float(2*s.u_ao_mm2*f[3]),
         "U_force_each_N_per_mm":f[4:6].tolist(),"contact_y_mm":y.tolist(),
         "contact_compression_N_per_mm":f[ci:si].tolist(),"contact_qx_N_per_mm":f[si:li].tolist(),
+        "interface_flow_basis":"WHOLE COMPOSITE V / d_interface" if s.interface_dv_mm is not None else "LEGACY U-BRANCH ONLY",
+        "interface_dv_mm":s.interface_dv_mm,
+        "interface_required_qx_N_per_mm":float((f[0]+f[1])/s.interface_dv_mm if s.interface_dv_mm is not None else f[1]/s.u_dv_mm),
         "checks":{"equilibrium_relative":eq_err,"resource_relative":ub_err,"bound_relative":bound_err,
             "duality_relative":gap,"dual_stationarity_relative":stationarity_err},
         "limitations":list(LIMITATIONS)}
 
 
-def calculate(s: Supplies, *, vu_N, tu_Nmm, mu_Nmm, nu_tension_N, held_action_intercepts=False):
+class SolveCache:
+    """Exact, bounded-lifetime reuse within ONE explicit Calculate operation.
+
+    No rounding of supplies/actions, cross-project state or persisted results.
+    Each caller receives a separate witness so later auditing cannot alter a
+    different source row. This class does not change the optimization problem.
+    """
+    def __init__(self):
+        self.values = {}
+        self.hits = 0
+        self.misses = 0
+
+    def solve(self, s, *, vu_N, tu_Nmm, mu_Nmm=0., nu_tension_N=0.):
+        s.validate()
+        actions = (vu_N, tu_Nmm, mu_Nmm, nu_tension_N)
+        if any(isinstance(v, bool) or not math.isfinite(v) for v in actions):
+            raise ValueError('Finite concurrent actions required; unknown is not zero.')
+        key = (VERSION, s, *actions, 16)
+        if key in self.values:
+            self.hits += 1
+            return deepcopy(self.values[key])
+        self.misses += 1
+        result = solve(s, vu_N=vu_N, tu_Nmm=tu_Nmm,
+                       mu_Nmm=mu_Nmm, nu_tension_N=nu_tension_N)
+        self.values[key] = deepcopy(result)
+        return result
+
+    def summary(self):
+        return {'hits':self.hits, 'misses':self.misses, 'entries':len(self.values),
+                'scope':'Exact supplies/actions; this Calculate only; no input rounding or persistence'}
+
+
+def calculate(s: Supplies, *, vu_N, tu_Nmm, mu_Nmm, nu_tension_N, held_action_intercepts=False,
+              solve_cache=None):
     """All three requested calculations use the SAME physical steel inventory."""
-    v = solve(s,vu_N=1000.,tu_Nmm=0.)
-    t = solve(s,vu_N=0.,tu_Nmm=1e6)
-    vt = solve(s,vu_N=vu_N,tu_Nmm=tu_Nmm,mu_Nmm=mu_Nmm,nu_tension_N=nu_tension_N)
+    run = solve_cache.solve if solve_cache is not None else solve
+    v = run(s,vu_N=1000.,tu_Nmm=0.)
+    t = run(s,vu_N=0.,tu_Nmm=1e6)
+    vt = run(s,vu_N=vu_N,tu_Nmm=tu_Nmm,mu_Nmm=mu_Nmm,nu_tension_N=nu_tension_N)
     result = {"version":VERSION,"production_status":"UNVALIDATED — REVIEW", "supplies":asdict(s),
         "model_Vn_kN":v.get("capacity_factor") if v.get("ready") else None,
         "model_Tn_kNm":t.get("capacity_factor") if t.get("ready") else None,
@@ -197,7 +246,7 @@ def calculate(s: Supplies, *, vu_N, tu_Nmm, mu_Nmm, nu_tension_N, held_action_in
         # held fixed. These are not the M=N=0 intercepts displayed as Model Vn/Tn.
         for action, v_unit, t_unit, demand in (("V",1000.,0.,abs(vu_N)/1000.),
                                                ("T",0.,1e6,abs(tu_Nmm)/1e6)):
-            witness = solve(s,vu_N=v_unit,tu_Nmm=t_unit,mu_Nmm=mu_Nmm,nu_tension_N=nu_tension_N)
+            witness = run(s,vu_N=v_unit,tu_Nmm=t_unit,mu_Nmm=mu_Nmm,nu_tension_N=nu_tension_N)
             capacity = witness.get("capacity_factor") if witness.get("ready") else None
             result[action+"_fixed_MN"] = witness
             result["model_"+action+"_only_actual_MN_"+("kN" if action=="V" else "kNm")] = capacity

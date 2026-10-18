@@ -1,0 +1,91 @@
+{
+  "status": "PASS",
+  "browser": "Chrome Headless Shell 133.0.6943.16",
+  "source": "Original project JSON, all 640 source rows; no injected analysis results",
+  "actual_Calculate_Shear_seconds": 63.3247912780007,
+  "viewport_checks": [
+    1600,
+    1280
+  ],
+  "javascript_errors": [],
+  "streamlit_exceptions": 0,
+  "chart_bounds": [
+    {
+      "width": 1206.4375,
+      "parent": 1219.625,
+      "xrange": [
+        0,
+        20
+      ],
+      "title": "<b><b>Composite shear — BOBJ1 / Interior Girder 2</b></b>"
+    },
+    {
+      "width": 1172.4375,
+      "parent": 1185.625,
+      "xrange": [
+        -250,
+        250
+      ],
+      "title": "<b><b>U / slab levels — node geometry unverified</b></b>"
+    },
+    {
+      "width": 1172.4375,
+      "parent": 1185.625,
+      "xrange": [
+        0,
+        20
+      ],
+      "title": "<b><b>Girder: BOBJ1 / Interior Girder 2<br>Shear Max — demand / capacity<br><sup>Load case: U2A · Bridge Object Girder Forces · AASHTO LRFD 9th Edition</sup></b></b>"
+    },
+    {
+      "width": 1172.4375,
+      "parent": 1185.625,
+      "xrange": [
+        0,
+        20
+      ],
+      "title": "<b><b>Girder: BOBJ1 / Interior Girder 2<br>Shear Min — demand / capacity<br><sup>Load case: U2A · Bridge Object Girder Forces · AASHTO LRFD 9th Edition</sup></b></b>"
+    },
+    {
+      "width": 1206.4375,
+      "parent": 1219.625,
+      "xrange": [
+        0,
+        20
+      ],
+      "title": "<b><b>Composite shear — BOBJ1 / Left Exterior Girder</b></b>"
+    },
+    {
+      "width": 1172.4375,
+      "parent": 1185.625,
+      "xrange": [
+        -250,
+        250
+      ],
+      "title": "<b><b>U / slab levels — node geometry unverified</b></b>"
+    },
+    {
+      "width": 1172.4375,
+      "parent": 1185.625,
+      "xrange": [
+        0,
+        20
+      ],
+      "title": "<b><b>Girder: BOBJ1 / Left Exterior Girder<br>Shear Max — demand / capacity<br><sup>Load case: U2A · Bridge Object Girder Forces · AASHTO LRFD 9th Edition</sup></b></b>"
+    },
+    {
+      "width": 1172.4375,
+      "parent": 1185.625,
+      "xrange": [
+        0,
+        20
+      ],
+      "title": "<b><b>Girder: BOBJ1 / Left Exterior Girder<br>Shear Min — demand / capacity<br><sup>Load case: U2A · Bridge Object Girder Forces · AASHTO LRFD 9th Edition</sup></b></b>"
+    }
+  ],
+  "screenshot_review": "PASS: 1600/1280 px; paired shear chart, conditional anchorage table and diagram readable",
+  "node_panel_opened": true,
+  "duplicated_model_in_shear_reference": false,
+  "print_QA": "A4/A3 regression inspected separately in print_qa.json; original Plotly interactivity restored",
+  "structural_design_acceptance": false
+}

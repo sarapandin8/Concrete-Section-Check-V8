@@ -17,7 +17,7 @@ from concrete_pmm_pro.analysis.strain_compatibility import (
 )
 from concrete_pmm_pro.analysis.prestress_stress import prestress_stress_mpa
 
-RESULT_VERSION = "IGIRDER.VTCONCURRENT19.source-gate-before-solver"
+RESULT_VERSION = "IGIRDER.COMPOSITE51.exact-nominal-fps-source"
 DEVELOPMENT_KEY = "igird_longitudinal_development_settings"
 
 

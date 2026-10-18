@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "scope": "Final stored node view; solver patched to reject any call",
+  "no_invented_slab_edge": true,
+  "viewport": 1280,
+  "javascript_errors": [],
+  "streamlit_exceptions": 0,
+  "visual_review": "PASS: final elevation guide readable; no invented slab edges or hook orientation",
+  "structural_validation": false
+}

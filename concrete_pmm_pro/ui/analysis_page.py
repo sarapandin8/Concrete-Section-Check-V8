@@ -15315,10 +15315,9 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
         construction_demand, construction_df, construction_notes = _beam_uls_construction_demand_from_state(st.session_state)
 
     st.markdown(_ANALYSIS_DASHBOARD_CSS, unsafe_allow_html=True)
-    st.markdown("### ULS Beam/Girder analysis")
-    st.caption(
-        "Check-specific Beam/Girder ULS workspace. Loads is the demand source of truth; global ULS aggregation is reserved for Result Summary."
-    )
+    if not is_precast_composite_bridge:
+        st.markdown("### ULS Beam/Girder analysis")
+        st.caption("Check-specific Beam/Girder ULS workspace. Loads is the demand source of truth; global ULS aggregation is reserved for Result Summary.")
     with st.expander("Beam/Girder ULS scope / engineering assumptions", expanded=False):
         st.markdown(
             "- Flexure uses the strain-compatibility section engine with workflow-specific code-compatible audit basis: Bridge → AASHTO LRFD-compatible strain compatibility; Building → ACI 318-compatible strain compatibility.\n"
@@ -15334,12 +15333,10 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             st.markdown(
                 "- Composite Torsion / V–T Analysis uses the U + slab nominal MODEL REVIEW as its primary view. "
                 "The I-hoop code checks remain in Reference checks and retain their separate Summary / Report / QA status. "
-                "The model shows one maximum-|CSI Tu| source row per girder, not a full-span governing V–T envelope."
+                "The model scans every eligible interior source vector, keeping separate V-only, T-only and V–T governors."
             )
-
-    if is_precast_composite_bridge:
-        from concrete_pmm_pro.ui.girder_axial_convention import render_axial_convention
-        render_axial_convention()
+            from concrete_pmm_pro.ui.girder_axial_convention import render_axial_convention
+            render_axial_convention()
     active_df = _active_beam_uls_demand_dataframe_from_session(st.session_state)
 
     if is_precast_composite_bridge and any(info.get('kind') != 'CONCURRENT' for info in girder_csi_source_cases(active_df).values()):
@@ -15350,7 +15347,8 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
         {"title": "Design code", "value": code_label, "detail": "Active ULS code route", "status": "info"},
         {"title": "ULS source", "value": "Auto Construction + Loads FEA" if is_precast_composite_bridge else "Loads page", "detail": "stage-separated demand" if is_precast_composite_bridge else source_label, "status": "info"},
     ]
-    _render_analysis_summary_strip(basis_cards, columns=3)
+    if not is_precast_composite_bridge:
+        _render_analysis_summary_strip(basis_cards, columns=3)
 
     if active_df.empty and not is_precast_composite_bridge:
         st.warning("No Active Beam/Girder ULS station demand rows are available. Define or import them in Loads before ULS review.")
@@ -15615,7 +15613,10 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
 
     if is_precast_composite_bridge and selected_check in {"Shear", "Torsion", "Shear + Torsion"}:
         from concrete_pmm_pro.ui.igird_composite_steel45 import render as render_composite_steel45, current as current_composite_steel45
-        render_composite_steel45(current_composite_steel45(st.session_state,uls_input_hash))
+        if selected_check=='Shear':
+            from concrete_pmm_pro.ui.igird_shear49 import render as render_shear49
+            render_shear49(current_composite_steel45(st.session_state,uls_input_hash),member=str(st.session_state.get('beam_uls_member_label') or 'Design girder'))
+        else:render_composite_steel45(current_composite_steel45(st.session_state,uls_input_hash))
         if selected_check in {"Shear", "Torsion", "Shear + Torsion"}:
             from concrete_pmm_pro.ui.igird_modeltn47 import render_reference
             render_reference(st.session_state, active_df, selected_entry,
@@ -32793,14 +32794,18 @@ def render_analysis_page() -> None:
     from concrete_pmm_pro.io.girder_load_bank import ACTIVE_KEY, SELECTION_KEY
     selection = pd.DataFrame(st.session_state.get(SELECTION_KEY, []))
     member = st.session_state.get(ACTIVE_KEY) or (str(selection.iloc[0]['Girder']) if not selection.empty else '')
+    compact_bridge=(is_beam_girder_future_workflow(_analysis_mode_from_session())
+        and _beam_uls_is_precast_composite_bridge(st.session_state,is_bridge=True)
+        and st.session_state.get('_nav_analysis_subpage','ULS Strength')=='ULS Strength')
     if member:
-        st.info(f'ULS imported girder: {member}. Calculate using the current section, reinforcement, prestress and support settings; results identify the source girder/case.')
+        if compact_bridge:st.caption('Design member: '+str(member)+' · current section / reinforcement / support inputs')
+        else:st.info(f'ULS imported girder: {member}. Calculate using the current section, reinforcement, prestress and support settings; results identify the source girder/case.')
     _sync_analysis_settings_code_to_project()
     sync_note = st.session_state.pop("analysis_runtime_code_sync_note", None)
     settings = _analysis_mode_from_session()
     if sync_note:
         st.info(str(sync_note))
-    render_page_header(
+    if not compact_bridge:render_page_header(
         "Analysis",
         "Run and review strength, serviceability, and deflection/camber workflows under the active engineering context.",
         icon="AN",
@@ -32809,8 +32814,9 @@ def render_analysis_page() -> None:
         accent="blue",
     )
     active_subpage = _analysis_subpage_choice()
-    render_metric_cards(_commercial_analysis_dashboard_cards(settings, active_subpage))
-    render_section_bar("Analysis workspace", "The selected analysis subpage controls what is evaluated on this rerun.", mark="A")
+    if not compact_bridge:
+        render_metric_cards(_commercial_analysis_dashboard_cards(settings, active_subpage))
+        render_section_bar("Analysis workspace", "The selected analysis subpage controls what is evaluated on this rerun.", mark="A")
     if active_subpage == "ULS Strength":
         render_analysis_uls_pmm()
     elif active_subpage == "SLS / Stress & Cracking":

@@ -1,0 +1,8 @@
+{
+  "baseline": "COMPOSITE48",
+  "new": "VN49",
+  "source_rows_compared": 608,
+  "capacities_and_utilizations_unchanged": true,
+  "baseline_model_scan_seconds": 369.616291852999,
+  "vn49_missing_x_scan_seconds": 48.95908002800002
+}

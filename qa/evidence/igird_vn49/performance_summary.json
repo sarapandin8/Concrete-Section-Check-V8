@@ -1,0 +1,17 @@
+{
+  "scope": "32 original rows; actual Calculate Shear including code checks and model; warm LP, fresh state, same current runtime",
+  "baseline_seconds": [
+    8.393781197999942,
+    7.288257240000121
+  ],
+  "vn49_seconds": [
+    3.419838475000006,
+    3.3514524889999393
+  ],
+  "median_speedup": 2.315959913903382,
+  "full_model_scan": {
+    "baseline_previously_recorded_seconds": 369.616291852999,
+    "vn49_seconds": 48.95908002800002,
+    "scope": "Nominal model only, 608 rows. Not total application runtime."
+  }
+}

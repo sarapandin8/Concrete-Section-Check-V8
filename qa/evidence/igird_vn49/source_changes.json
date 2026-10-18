@@ -1,0 +1,35 @@
+{
+  "modified": [
+    "README.md",
+    "concrete_pmm_pro/analysis/igird_composite_steel45.py",
+    "concrete_pmm_pro/analysis/igird_flexure_development.py",
+    "concrete_pmm_pro/analysis/igird_station36_steel.py",
+    "concrete_pmm_pro/ui/analysis_page.py",
+    "concrete_pmm_pro/ui/igird_case_review.py",
+    "concrete_pmm_pro/ui/igird_composite_scan48.py",
+    "concrete_pmm_pro/ui/igird_composite_steel45.py",
+    "concrete_pmm_pro/ui/igird_member_results.py",
+    "concrete_pmm_pro/ui/igird_modeltn47.py",
+    "concrete_pmm_pro/ui/igird_shear_section.py",
+    "tests/test_igird_uls5_shear_general_procedure.py"
+  ],
+  "added": [
+    "IGIRDER_VN49_HANDOFF_TH.md",
+    "concrete_pmm_pro/analysis/igird_equilibrium49.py",
+    "concrete_pmm_pro/ui/igird_shear49.py",
+    "qa/benchmark_vn49.py",
+    "qa/evidence/igird_vn49/baseline_comparison.json",
+    "qa/evidence/igird_vn49/benchmark_baseline48.json",
+    "qa/evidence/igird_vn49/benchmark_vn49.json",
+    "qa/evidence/igird_vn49/performance_summary.json",
+    "qa/evidence/igird_vn49/selected_tests.xml",
+    "qa/evidence/igird_vn49/targeted_tests.txt",
+    "qa/evidence/igird_vn49/validation_summary.json",
+    "qa/evidence/igird_vn49/vn49_project_ui_audit.json",
+    "qa/validate_vn49_project.py",
+    "qa/validate_vn49_ui.py",
+    "tests/data/igird_equilibrium49_reference.json",
+    "tests/test_igird_vn49.py"
+  ],
+  "removed": []
+}

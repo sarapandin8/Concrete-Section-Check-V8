@@ -186,6 +186,7 @@ class SectionEquilibrium:
         self.xmin, self.ymin, self.xmax, self.ymax = self.polygon.bounds
         self.h = self.ymax - self.ymin
         self.yref = self.polygon.centroid.y
+        self.xref = self.polygon.centroid.x
         self.fc = float(ai.concrete_material.fc_MPa)
         self.ecu = float(ai.concrete_material.ecu)
         if not 0 < self.ecu <= 0.003:
@@ -197,6 +198,7 @@ class SectionEquilibrium:
         self.materials = {m.name: m for m in ai.rebar_materials}
         self.default = ai.rebar_materials[0] if ai.rebar_materials else RebarMaterial(name="Default", fy_MPa=390, Es_MPa=200000)
         self.bars = list(ai.rebars) if ai.settings.include_rebars else []
+        self._bar_inside = [self.polygon.covers(Point(b.x_mm,b.y_mm)) for b in self.bars]
         self.unresolved_bar_materials = sorted({bar.material_name or "(unnamed)"
             for bar in self.bars if bar.material_name not in self.materials})
         self.elements = list(ai.prestress_elements) if ai.settings.include_prestress else []
@@ -214,9 +216,10 @@ class SectionEquilibrium:
         region = self.polygon.intersection(box(self.xmin - 1, self.ymax - a, self.xmax + 1, self.ymax + 1)
             if self.sign > 0 else box(self.xmin - 1, self.ymin - 1, self.xmax + 1, self.ymin + a))
         cc = self.alpha * self.fc * region.area
+        rc = region.centroid if cc>0 else None
         pn = cc
-        mn = cc * (region.centroid.y - self.yref) if cc > 0 else 0.0
-        mny = cc * (region.centroid.x - self.polygon.centroid.x) if cc > 0 else 0.0
+        mn = cc * (rc.y - self.yref) if cc > 0 else 0.0
+        mny = cc * (rc.x - self.xref) if cc > 0 else 0.0
         rebar_force = ps_force = 0.0
         eps_t = 0.0
         control_fy, control_es = 390.0, 200000.0
@@ -228,11 +231,12 @@ class SectionEquilibrium:
             # Both compression and tension credit use the longer conservative
             # tension ld; missing anchorage never receives full end strength.
             fs = max(-mat.fy_MPa * factor, min(mat.fy_MPa * factor, fs))
-            displaced = self.alpha * self.fc if self.ai.settings.subtract_rebar_displaced_concrete and region.covers(Point(bar.x_mm, bar.y_mm)) else 0.0
+            in_block = bar.y_mm >= self.ymax-a if self.sign>0 else bar.y_mm <= self.ymin+a
+            displaced = self.alpha * self.fc if self.ai.settings.subtract_rebar_displaced_concrete and self._bar_inside[i] and in_block else 0.0
             force = bar.area_mm2 * (fs - displaced)
             pn += force
             mn += force * (bar.y_mm - self.yref)
-            mny += force * (bar.x_mm - self.polygon.centroid.x)
+            mny += force * (bar.x_mm - self.xref)
             rebar_force += force
             if fs < 0 and -eps > eps_t:
                 eps_t, control_fy, control_es = -eps, mat.fy_MPa, mat.Es_MPa
@@ -248,7 +252,7 @@ class SectionEquilibrium:
             force = -e.total_area_mm2 * fps
             pn += force
             mn += force * (e.y_mm - self.yref)
-            mny += force * (e.x_mm - self.polygon.centroid.x)
+            mny += force * (e.x_mm - self.xref)
             ps_force += force
             fps_values.append(fps)
             # No tensile-strain credit for an unanchored zero-force family.

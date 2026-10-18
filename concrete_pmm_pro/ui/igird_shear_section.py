@@ -10,8 +10,9 @@ from collections.abc import Mapping
 import math
 
 from concrete_pmm_pro.analysis.igird_flexure_development import (
-    SectionEquilibrium, development_settings as flexure_settings, strand_families,
+    development_settings as flexure_settings, strand_families,
 )
+from concrete_pmm_pro.analysis.igird_equilibrium49 import CachedSectionEquilibrium as SectionEquilibrium
 from concrete_pmm_pro.analysis.igird_combined_vt import development_settings
 from concrete_pmm_pro.analysis.igird_shear_depth import RESULT_VERSION, developed_shear_depth
 from concrete_pmm_pro.analysis import igird_end_sections

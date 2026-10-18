@@ -226,7 +226,11 @@ def test_igird_debonding_changes_phi_and_reduces_end_zone_prestress_participatio
 def test_igird_combined_vt_with_missing_composite_fps_source_remains_review():
     state = _state()
     state["section_parameters"] = {"composite_enabled": True}
-    combined = _beam_uls_combined_vt_check_dataframe(state, _demand(tu_kNm=20.0), strength_route=_route())
+    from concrete_pmm_pro.io.girder_csi_import import tag_app_source
+    demand=tag_app_source(_demand(tu_kNm=20.0),source_name='ULS5 static QA',sheet_name='QA',
+        source_mode='static',concurrency_confirmed=True,
+        evidence='Analytically specified simultaneous static action vector')
+    combined = _beam_uls_combined_vt_check_dataframe(state, demand, strength_route=_route())
     assert not combined.empty
     decision = combined[combined["Status"] != "DIAGRAM BOUNDARY"]
     assert not decision.empty

@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "harness": "Stored full source-model snapshots rendered with the actual Shear view; no calculation calls",
+  "paper_checks": [
+    "A4 portrait",
+    "A3 landscape"
+  ],
+  "chart_restore_after_print": true,
+  "javascript_errors": [],
+  "streamlit_exceptions": 0,
+  "visual_review": "PASS: A4 portrait and A3 landscape charts/tables intact",
+  "layout_limit": "A3 landscape retains original chart height reservation and whitespace; pagination is not a bespoke report layout."
+}
