@@ -1,0 +1,31 @@
+{
+  "milestone": "IGIRDER.REFERENCE42",
+  "baseline_filename": "concrete-section-pro_IGIRDER-CLEAN39.zip",
+  "baseline_sha256": "9402f5b75c7e56e191dbc3d5b994856b605a2d24e1eac6ee5d149d72d56245e8",
+  "baseline_files_compared": 1853,
+  "baseline_files_changed": [],
+  "selected_software_tests": 516,
+  "test_failures": 0,
+  "test_errors": 0,
+  "new_reference_tests": 48,
+  "baseline_regression_tests": 468,
+  "pytest_warning_count": 7,
+  "compile_check": "app.py and new Python module, CLI and test module: passed",
+  "published_cases": 16,
+  "published_point_matches": 3,
+  "published_reproduction_status": "NOT_REPRODUCED",
+  "production_accepted": false,
+  "maximum_equilibrium_relative_residual": 5.121465975325038e-12,
+  "software_scope": "30 selected prior regression files plus test_igird_reference42.py; not the entire repository",
+  "browser_review": "Not run for this milestone; no UI files changed and the offline kernel is not dispatched by the app.",
+  "source_files_sha256": {
+    "concrete_pmm_pro/analysis/igird_reference42.py": "2c3b1c91c7e1f9af8e465e8469f277cc7130bc45ed78ab6949b66b414e8177da",
+    "tests/test_igird_reference42.py": "19f0b3f7f93e0c5955dd1b0acb81b973bebe2b48386823a75a49f13ff6e1400d",
+    "tools/run_igird_reference42.py": "21532ef1f3bc3dba0f0c1220ceb097480238c232c5fb0f4c4555d5bf232ee6f8",
+    "qa/benchmarks/igird_reference42_2015.json": "03aef5d4e6b1eb210780cf709fc4d5ba6062c4067901052309e7948df9b7f7a6"
+  },
+  "qa_environment": {
+    "python": "3.12",
+    "dependency_source": "Existing app requirements and prepared QA dependencies; no new requirement added."
+  }
+}

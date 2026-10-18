@@ -1,0 +1,37 @@
+{
+  "schema": "igird_reference42.published_benchmarks.v1",
+  "source_doi": "10.1617/s11527-014-0301-z",
+  "source_url": "https://cmadeubi.wordpress.com/wp-content/uploads/2015/10/materials-and-structures-published-online-15-may-2014-on-paper-2015.pdf",
+  "source_tables": "Table 2, pp.2184-2186; Table 3, p.2187",
+  "selection": "First 16 consecutive Table-2 specimens: B3-B10, C4-C6, G3-G5, G7-G8. Selection does not depend on agreement.",
+  "units": "mm, mm2, mm2/mm, MPa; target torque kNm; target twist degrees/m",
+  "material_profile": "2015_table1_continuous_solid_K1.45",
+  "reproduction_relative_tolerance": 0.01,
+  "tolerance_note": "1% is a code reproduction gate, not a statistical structural acceptance band. Failure remains visible. Experimental agreement is reported without an invented PASS criterion.",
+  "notes": [
+    "Original dimensions cm->mm; Al cm2->mm2; one-leg Ast/s cm2/m->mm2/mm.",
+    "rho_l and rho_t are derived from areas and actual hoop perimeter, not rounded printed ratios.",
+    "The C5 printed longitudinal percentage is inconsistent with its bar area; use bar area 1548 mm2.",
+    "Table-2 fctm is retained as source data, not substituted silently for the Table-1 continuous cracking stress.",
+    "Es=200 GPa, ultimate steel strain=0.010, surface concrete limit=0.0035 as described in section 6."
+  ],
+  "columns": ["id", "b", "h", "hoop_b", "hoop_h", "Al", "At_s", "fc", "fctm_table2", "fly", "fty", "eps0", "Tcr_theory_kNm", "Tu_theory_kNm", "theta_u_theory_deg_per_m", "Tu_measured_kNm"],
+  "cases": [
+    ["B3",254,381,216,343,1136,1.016,28.1,2.22,327.6,320.0,0.00197,21.19,44.61,2.677,37.48],
+    ["B4",254,381,216,343,1548,1.401,29.2,2.30,320.0,323.5,0.00199,21.55,52.14,2.425,47.30],
+    ["B5",254,381,216,343,2039,1.847,30.6,2.39,332.4,321.4,0.00202,22.08,58.89,2.246,56.11],
+    ["B6",254,381,216,343,2581,2.258,28.8,2.27,331.7,322.8,0.00198,21.05,59.09,2.047,61.64],
+    ["B7",254,381,216,343,516,1.016,26.0,2.06,320.0,318.6,0.00192,20.66,31.49,2.512,26.87],
+    ["B8",254,381,216,343,516,2.258,26.8,2.12,322.1,320.0,0.00194,20.55,32.27,1.755,32.51],
+    ["B9",254,381,216,343,1136,0.466,28.8,2.27,319.3,342.8,0.00198,19.91,31.52,2.676,29.80],
+    ["B10",254,381,216,343,2581,0.466,26.5,2.10,334.5,342.1,0.00193,19.62,29.77,1.766,34.32],
+    ["C4",254,254,216,216,1136,1.311,27.2,2.15,336.6,327.6,0.00195,11.69,28.97,2.646,25.29],
+    ["C5",254,254,216,216,1548,1.767,27.2,2.15,328.3,329.0,0.00195,11.61,31.37,2.451,29.69],
+    ["C6",254,254,216,216,2039,2.391,27.6,2.18,315.9,327.6,0.00196,11.33,33.30,2.263,34.21],
+    ["G3",254,508,216,470,1136,0.829,26.8,2.12,338.6,327.6,0.00194,29.60,54.85,2.657,49.56],
+    ["G4",254,508,216,470,1548,1.129,28.3,2.23,325.5,321.4,0.00197,30.98,66.20,2.437,64.80],
+    ["G5",254,508,216,470,2039,1.505,26.9,2.13,331.0,327.6,0.00194,30.12,72.67,2.126,71.91],
+    ["G7",254,508,216,470,1200,0.884,31.0,2.42,319.3,322.8,0.00203,32.06,58.12,2.612,52.61],
+    ["G8",254,508,216,470,1703,1.232,28.4,2.24,322.1,329.0,0.00197,31.06,69.44,2.360,73.38]
+  ]
+}

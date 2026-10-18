@@ -189,7 +189,13 @@ def test_igird_torsion_below_threshold_does_not_require_closed_loop():
 
 
 def test_igird_combined_guard_now_points_to_longitudinal_equation_not_fixed_theta():
-    combined = _beam_uls_combined_vt_check_dataframe(_state(), _demand(), strength_route=_route())
+    from concrete_pmm_pro.io.girder_csi_import import tag_app_source
+    # These analytically specified static actions are simultaneous. Declare
+    # that fixture contract; do not bypass the production concurrency gate.
+    demand=tag_app_source(_demand(),source_name='ULS6 static QA',sheet_name='QA',
+        source_mode='static',concurrency_confirmed=True,
+        evidence='Analytically specified simultaneous static action vector')
+    combined = _beam_uls_combined_vt_check_dataframe(_state(), demand, strength_route=_route())
     decision = combined[combined["Status"] != "DIAGRAM BOUNDARY"]
     assert not decision.empty
     assert set(decision["Status"]) <= {"REVIEW", "FAIL"}
@@ -619,9 +625,17 @@ def test_igird_uls6e_rebar_ui_uses_not_confirmed_for_corner_detail_and_does_not_
 
 
 def test_vtqa1_versions_invalidate_all_vt_development_sources():
+    from concrete_pmm_pro.analysis.igird_combined_vt import DEVELOPMENT_KEY
     assert _IGIRDER_TORSION_RESULT_VERSION.startswith("IGIRDER.DECKULS1.")
-    assert _IGIRDER_COMBINED_VT_RESULT_VERSION.startswith("IGIRDER.TORSIONAUDIT12.")
     assert _IGIRDER_SHEAR_RESULT_VERSION.startswith("IGIRDER.DECKULS1.")
+    # The combined version has advanced past TORSIONAUDIT12. Test actual stale
+    # input invalidation rather than requiring an obsolete release prefix.
+    from concrete_pmm_pro.ui import analysis_page as ap
+    state=_state();checks=('Shear','Torsion','Shear + Torsion')
+    before={c:ap._beam_uls_check_input_hash(state,_demand(),strength_route=_route(),check_name=c) for c in checks}
+    state[DEVELOPMENT_KEY]={'development_length_mm':1234.,'continuous_full_span_confirmed':True}
+    after={c:ap._beam_uls_check_input_hash(state,_demand(),strength_route=_route(),check_name=c) for c in checks}
+    assert all(before[c]!=after[c] for c in checks)
 
 
 def test_igird_uls6f_torsion_chart_coalesces_physical_end_with_threshold_only_boundary_without_phi_tn_gap():

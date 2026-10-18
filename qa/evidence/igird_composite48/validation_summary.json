@@ -1,0 +1,152 @@
+{
+  "release": "IGIRDER-COMPOSITE48",
+  "baseline": "MODELTN47",
+  "selected_tests_passed": 212,
+  "new_test_cases": 22,
+  "test_deselections": 0,
+  "full_repository_suite_run": false,
+  "original_inputs_unchanged": true,
+  "source_T_preserved_every_row": true,
+  "py_compile": "PASS",
+  "full_bank_replay": {
+    "release": "IGIRDER-FULLVT48",
+    "status": "PASS",
+    "verification_scope": "Software replay, not structural validation",
+    "source_sha256": "0ae85f6de0b753062393a70717105953836a4a7722449edfbdc0e91ba8f99fcb",
+    "raw_rows": 640,
+    "interior_rows": 608,
+    "physical_end_rows_excluded": 32,
+    "numeric_rows": 608,
+    "below_threshold_numeric_rows": 122,
+    "rows_exceeding_nominal_VT": 58,
+    "max_numerical_residual": 2.46925586756961e-14,
+    "source_T_preserved_every_row": true,
+    "original_inputs_unchanged": true,
+    "runtime_seconds": 369.616291852999
+  },
+  "baseline_comparison": {
+    "unchanged_previously_numeric_rows": 486,
+    "recovered_previously_blocked_rows": 122,
+    "recovered_all_below_threshold": true,
+    "numeric_differences": []
+  },
+  "independent_witness_audit": {
+    "status": "PASS",
+    "scope": "Independent physical-unit balances of retained governors only; not structural validation",
+    "unique_source_witnesses": 5,
+    "individual_witnesses": 25,
+    "maximum_relative_error": 3.7752583018906053e-16
+  },
+  "AppTest": {
+    "status": "PASS",
+    "release": "IGIRDER.FULLVT48.U-slab-concurrent-scan",
+    "source_file": "concrete_section_pro_project_31_COVER38.json",
+    "source_sha256": "0ae85f6de0b753062393a70717105953836a4a7722449edfbdc0e91ba8f99fcb",
+    "source_bank_rows": 640,
+    "UI_fixture_original_source_rows": 4,
+    "UI_fixture_selection": "Four original U2A vectors: Excel rows 491,556,167,237; full-bank replay verified separately",
+    "source_file_unchanged": true,
+    "section_and_interface_inputs_unchanged": true,
+    "model_controls_added": {
+      "buttons": 0,
+      "checkboxes": 0
+    },
+    "actual_app_Calculate": [
+      {
+        "check": "Shear",
+        "primary_table_rows": [
+          {
+            "Girder": "BOBJ1 / Left Exterior Girder",
+            "x (m)": 18.0,
+            "Case / step": "U2A / Min",
+            "Model Vn · U + slab (kN)": 1318.6799266208873,
+            "Model Tn · U + slab (kN-m)": 242.42663752937884,
+            "Model nominal V–T D/C": 0.9382797423910947,
+            "Nominal V–T state": "WITHIN NOMINAL",
+            "Status": "MODEL REVIEW"
+          },
+          {
+            "Girder": "BOBJ1 / Interior Girder 2",
+            "x (m)": 2.0,
+            "Case / step": "U2A / Min",
+            "Model Vn · U + slab (kN)": 1396.9085439621554,
+            "Model Tn · U + slab (kN-m)": 263.88290334163923,
+            "Model nominal V–T D/C": 1.5543380512524256,
+            "Nominal V–T state": "EXCEEDS NOMINAL",
+            "Status": "MODEL REVIEW"
+          }
+        ],
+        "model_calculation_calls": 2,
+        "render_rerun_added_solver_calls": 0,
+        "reference_panels": 2,
+        "exceptions": 0,
+        "primary_model_status": "MODEL REVIEW"
+      },
+      {
+        "check": "Torsion",
+        "primary_table_rows": [
+          {
+            "Girder": "BOBJ1 / Left Exterior Girder",
+            "x (m)": 18.0,
+            "Case / step": "U2A / Min",
+            "Model Vn · U + slab (kN)": 1318.6799266208873,
+            "Model Tn · U + slab (kN-m)": 242.42663752937884,
+            "Model nominal V–T D/C": 0.9382797423910947,
+            "Nominal V–T state": "WITHIN NOMINAL",
+            "Status": "MODEL REVIEW"
+          },
+          {
+            "Girder": "BOBJ1 / Interior Girder 2",
+            "x (m)": 2.0,
+            "Case / step": "U2A / Min",
+            "Model Vn · U + slab (kN)": 1396.9085439621554,
+            "Model Tn · U + slab (kN-m)": 263.88290334163923,
+            "Model nominal V–T D/C": 1.5543380512524256,
+            "Nominal V–T state": "EXCEEDS NOMINAL",
+            "Status": "MODEL REVIEW"
+          }
+        ],
+        "model_calculation_calls": 2,
+        "render_rerun_added_solver_calls": 0,
+        "reference_panels": 2,
+        "exceptions": 0,
+        "primary_model_status": "MODEL REVIEW"
+      },
+      {
+        "check": "Shear + Torsion",
+        "primary_table_rows": [
+          {
+            "Girder": "BOBJ1 / Left Exterior Girder",
+            "x (m)": 18.0,
+            "Case / step": "U2A / Min",
+            "Model Vn · U + slab (kN)": 1318.6799266208873,
+            "Model Tn · U + slab (kN-m)": 242.42663752937884,
+            "Model nominal V–T D/C": 0.9382797423910947,
+            "Nominal V–T state": "WITHIN NOMINAL",
+            "Status": "MODEL REVIEW"
+          },
+          {
+            "Girder": "BOBJ1 / Interior Girder 2",
+            "x (m)": 2.0,
+            "Case / step": "U2A / Min",
+            "Model Vn · U + slab (kN)": 1396.9085439621554,
+            "Model Tn · U + slab (kN-m)": 263.88290334163923,
+            "Model nominal V–T D/C": 1.5543380512524256,
+            "Nominal V–T state": "EXCEEDS NOMINAL",
+            "Status": "MODEL REVIEW"
+          }
+        ],
+        "model_calculation_calls": 2,
+        "render_rerun_added_solver_calls": 0,
+        "reference_panels": 2,
+        "exceptions": 0,
+        "primary_model_status": "MODEL REVIEW"
+      }
+    ],
+    "browser_screenshot_QA": "Not performed; no browser binary is installed",
+    "structural_validation": "Not established; review model equations and limits unchanged"
+  },
+  "browser_screenshot_QA": "Not performed; no browser binary available",
+  "production_design_status": "NOT ACCEPTED: method gaps remain",
+  "structural_validation": false
+}

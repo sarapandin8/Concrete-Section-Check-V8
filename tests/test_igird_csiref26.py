@@ -253,7 +253,7 @@ def test_composite_flexure_consumer_uses_transported_moment_once():
     assert ai.load_cases[0].Pu_N == pytest.approx(-RAW["P"]*1000)
 
 
-def test_vt_trace_declares_both_resistance_origins():
+def test_vt_trace_retains_csi_torque_and_declares_the_bending_origin():
     state=seed()
     state["section_geometry"]=I
     state["section_parameters"]={**state["section_parameters"],"Be_mm":1200.,
@@ -261,8 +261,10 @@ def test_vt_trace_declares_both_resistance_origins():
     out=adapter.convert_for_check(state,bound_row(),check_name="Shear + Torsion")
     cols=ref.trace_columns(out)
     assert cols["Resistance O y mm"] == pytest.approx(393.0851063829787)
-    assert cols["T resistance O y mm"] == pytest.approx(-36.53846153846154)
-    assert out["Tu"] == pytest.approx(RAW["T"]+(1.1-.6156+.03653846153846154)*RAW["V3"])
+    assert cols["T resistance O y mm"] == pytest.approx(484.4)
+    assert cols["T reference version"] == ref.SOURCE_TORSION_POLICY
+    assert cols["T shift applied"] is False
+    assert out["Tu"] == pytest.approx(RAW["T"])
     assert ref.qualify_result({"Status":"PASS"},out,check_name="Shear + Torsion")["Status"] == "REVIEW"
 
 

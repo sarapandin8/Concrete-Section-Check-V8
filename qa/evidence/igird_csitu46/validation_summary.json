@@ -1,0 +1,48 @@
+{
+  "release": "IGIRDER-CSITU46",
+  "software_tests_passed": 180,
+  "new_source_torque_tests": 12,
+  "full_repository_test_suite_run": false,
+  "test_batches": [
+    {
+      "passed": 128,
+      "deselected": 1,
+      "files": [
+        "test_igird_csitu46.py",
+        "test_igird_csiref26.py",
+        "test_igird_composite_steel45.py",
+        "test_igird_shearcomp1.py",
+        "test_igird_vtconcurrent19.py",
+        "test_igird_membercharts3.py",
+        "test_igird_uls7_concurrent_vt.py"
+      ]
+    },
+    {
+      "passed": 52,
+      "files": [
+        "test_igird_slsimport23.py",
+        "test_igird_equilibrium27.py",
+        "test_igird_vtchart16.py",
+        "test_igird_chart3_full_span.py"
+      ]
+    }
+  ],
+  "excluded_preexisting_test": "test_different_vectors_at_one_case_station_are_not_enveloped",
+  "exclusion_reason": "Fails identically in the unchanged REFERENCE43 baseline: fixture lacks the concurrent-source declaration and the source gate omits Mu. The source guard is preserved.",
+  "py_compile": "PASS: app.py and changed/new calculation, UI, QA and test modules",
+  "project_source_rows": 640,
+  "verified_torque_conversions": 1280,
+  "streamlit_apptest": {
+    "status": "PASS",
+    "exceptions": 0,
+    "dataframes": 4,
+    "new_buttons": 0,
+    "new_checkboxes": 0,
+    "CSI_torque_visible_kNm": 286.8371,
+    "source_torque_caption": true,
+    "comparison_rows": 6,
+    "scope": "Actual Streamlit AppTest rendering; no browser screenshot verification"
+  },
+  "structural_validation": "Not established by software tests",
+  "browser_screenshot_qa": "Not performed; no browser binary available"
+}

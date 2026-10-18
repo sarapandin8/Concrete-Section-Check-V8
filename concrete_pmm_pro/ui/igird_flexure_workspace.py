@@ -3,6 +3,8 @@
 FLEXURE31 changes orchestration and presentation only. Section and interface
 checks keep their own accepted engines, hashes, statuses and summary owners.
 No endpoint load correction, strength waiver or result persistence is added.
+CLEAN39 retires the duplicate legacy composite input / result UI and prevents
+old enable flags from dispatching its research solver.
 """
 from __future__ import annotations
 
@@ -16,7 +18,7 @@ from concrete_pmm_pro.ui import igird_member_results as members
 from concrete_pmm_pro.ui.igird_case_review import AUTO_CASE, controlling_result, ratio_text
 from concrete_pmm_pro.ui.result_table_display import result_table_for_display
 
-VERSION = "IGIRDER.FLEXURE31"
+VERSION = "IGIRDER.CLEAN39"
 CACHE_KEY = "igird_flexure31_runtime_results"
 DEMAND = "Demand / capacity"
 UTILIZATION = "Utilization"
@@ -75,9 +77,12 @@ def calculate_bundle(state, rows, *, route):
     width, basis = ap._igird_interface_bvi_mm(state, settings)
     lightweight, density_note = ap._igird_interface_density_basis(state)
     surface = ap.IGIRD_INTERFACE_SURFACE_PRESETS[settings["surface_key"]]
-    from .igird_coupled_model import calculate as calculate_coupled_model
-    coupled = (calculate_coupled_model(state,rows,route=route) if state.get('igird_cover38_legacy_inputs',False) else
-        {'enabled':False,'status':'ARCHIVED LEGACY MODEL — DISABLED','accepted_phiTn_Nmm':None,'accepted_VT_factor':None})
+    # The retired closed-cell hypothesis has no production entry point.
+    # Old project metadata or a surviving COVER38 widget flag must never
+    # re-enable it. Keep only a non-numerical runtime compatibility record;
+    # shared physical slab / U inputs remain owned by their existing editors.
+    coupled = {'enabled':False,'status':'RETIRED — NOT CALCULATED',
+        'accepted_phiTn_Nmm':None,'accepted_VT_factor':None}
     from .igird_station36 import calculate as calculate_station_review
     station_review=calculate_station_review(state,rows,route=route)
     from .igird_joint37 import calculate as calculate_joint_transfer
@@ -342,19 +347,13 @@ def render_workspace(active_rows, *, route, code_label):
     st.caption("Composite reinforcement: transverse slab bars outside; longitudinal positions calculated inside. Full composite Vn / Tn / V–T resistance remains under structural validation; local model results do not constitute design acceptance.")
     if st.toggle("Edit composite / dowel inputs", key="igird_flexure31_edit_inputs", value=False):
         ap._igird_render_interface_shear_settings(st.session_state)
-        # The current six-action review is included automatically. Archived
-        # model choices and unknown interface-force entries are not required
-        # in the primary physical-input workflow.
+        # The current six-action review is included automatically. Retired
+        # model choices and duplicate reinforcement inputs have no UI route.
         from . import igird_station36 as station_review,igird_joint37 as joint_review
         metadata=dict(st.session_state.get("project_metadata") or {})
         metadata[station_review.KEY]={**station_review.settings(st.session_state),"enabled":True}
         metadata[joint_review.KEY]={**joint_review.settings(st.session_state),"enabled":True}
         st.session_state["project_metadata"]=metadata
-        with st.expander("Advanced — legacy research tools",expanded=False):
-            if st.toggle("Show legacy research inputs",value=False,key="igird_cover38_legacy_inputs"):
-                from .igird_coupled_model import render_inputs
-                render_inputs(st.session_state)
-                st.caption("Archived idealization. Manual interface actions are not required for the current local six-action review; unknown values must remain blank.")
     else:
         settings = ap._igird_interface_shear_settings_from_state(st.session_state)
         zones = settings.get("dowel_zones", [])
@@ -464,9 +463,6 @@ def render_workspace(active_rows, *, route, code_label):
                 joint_ui.render_analysis(settings, fingerprint=hashes[name]["interface"],
                     calculate=None, render_cards=ap._render_analysis_summary_strip,
                     state=st.session_state, allow_calculate=False)
-    from .igird_coupled_model import render_result as render_coupled_result
-    with st.expander("Advanced — archived composite model results",expanded=False):
-        render_coupled_result(st.session_state,rows_by_member[name],bundle.get("coupled_research"),route=route)
     from .igird_station36 import render_result as render_station_result
     render_station_result(st.session_state,rows_by_member[name],bundle.get("station36_research"),route=route,joint_review=bundle.get("joint37_research"))
     from .igird_joint37 import render_result as render_joint_transfer

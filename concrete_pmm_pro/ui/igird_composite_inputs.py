@@ -104,8 +104,8 @@ def input_plan(settings, *, params, state=None):
     if not valid_actions:
         pending.append({"Step": "Recover interface force state", "Status": "MODEL DEVELOPMENT",
             "Meaning": "Use paired component states, verified origins and external loading in a joint free-body; Girder Tu alone is insufficient. Manual forces are an optional advanced review."})
-    pending.append({"Step": "Full composite Tn / V–T resistance", "Status": "COUPLED RESEARCH MODEL — PRODUCTION WITHHELD",
-        "Meaning": "COUPLED34 adds a shared-resource closed-cell/interface model. Enable under Composite V–T research inputs and use Calculate Flexure. Compatible crack/slip behaviour and independent structural validation are still required for production acceptance."})
+    pending.append({"Step": "Full composite Vn / Tn / V–T resistance", "Status": "MODEL DEVELOPMENT — DESIGN RESISTANCE UNAVAILABLE",
+        "Meaning": "The current detail review reuses the shared slab mesh and U-dowel inputs with Calculate Flexure. A verified code resistance path, nodal strength, tie anchorage and realistic load entry remain model-development work; no separate research input form is required."})
     if current_detail:
         pending.append({"Step":"Slab transverse top / bottom mesh", "Status":"INPUT INVENTORY ONLY",
             "Meaning":"Both directions are saved independently. Undefined transverse size/spacing/position stays unknown; a mesh does not establish a verified closed torsion path."})

@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="3" time="8.128" timestamp="2026-10-18T06:45:29.567655+02:00" hostname="22577a346fc5"><testcase classname="tests.test_igird_uls6_torsion_general_procedure" name="test_igird_combined_guard_now_points_to_longitudinal_equation_not_fixed_theta" time="0.038"><failure message="AssertionError: assert {'SOURCE BLOCKED'} &lt;= {'FAIL', 'REVIEW'}&#10;  &#10;  Extra items in the left set:&#10;  'SOURCE BLOCKED'">def test_igird_combined_guard_now_points_to_longitudinal_equation_not_fixed_theta():
+        combined = _beam_uls_combined_vt_check_dataframe(_state(), _demand(), strength_route=_route())
+        decision = combined[combined["Status"] != "DIAGRAM BOUNDARY"]
+        assert not decision.empty
+&gt;       assert set(decision["Status"]) &lt;= {"REVIEW", "FAIL"}
+E       AssertionError: assert {'SOURCE BLOCKED'} &lt;= {'FAIL', 'REVIEW'}
+E         
+E         Extra items in the left set:
+E         'SOURCE BLOCKED'
+
+tests/test_igird_uls6_torsion_general_procedure.py:195: AssertionError</failure></testcase><testcase classname="tests.test_igird_uls6_torsion_general_procedure" name="test_vtqa1_versions_invalidate_all_vt_development_sources" time="0.005"><failure message="AssertionError: assert False&#10; +  where False = &lt;built-in method startswith of str object at 0x7f51604ac630&gt;('IGIRDER.TORSIONAUDIT12.')&#10; +    where &lt;built-in method startswith of str object at 0x7f51604ac630&gt; = 'IGIRDER.VTCONCURRENT19.source-gate-before-solver'.startswith">def test_vtqa1_versions_invalidate_all_vt_development_sources():
+        assert _IGIRDER_TORSION_RESULT_VERSION.startswith("IGIRDER.DECKULS1.")
+&gt;       assert _IGIRDER_COMBINED_VT_RESULT_VERSION.startswith("IGIRDER.TORSIONAUDIT12.")
+E       AssertionError: assert False
+E        +  where False = &lt;built-in method startswith of str object at 0x7f51604ac630&gt;('IGIRDER.TORSIONAUDIT12.')
+E        +    where &lt;built-in method startswith of str object at 0x7f51604ac630&gt; = 'IGIRDER.VTCONCURRENT19.source-gate-before-solver'.startswith
+
+tests/test_igird_uls6_torsion_general_procedure.py:623: AssertionError</failure></testcase><testcase classname="tests.test_igird_uls7_concurrent_vt" name="test_different_vectors_at_one_case_station_are_not_enveloped" time="0.029"><failure message="KeyError: 'Mu kN-m'">self = Index(['Check', 'Status', 'Calculation status', 'Station type', 'Governing x',
+       'Case', 'Source row', 'Source co...', 'Source Nu kN',
+       'Source Vuy kN', 'Source Tu kN-m', 'Source Muy kN-m', 'Source Vux kN'],
+      dtype='object')
+key = 'Mu kN-m'
+
+    def get_loc(self, key):
+        """
+        Get integer location, slice or boolean mask for requested label.
+    
+        Parameters
+        ----------
+        key : label
+    
+        Returns
+        -------
+        int if unique index, slice if monotonic index, else mask
+    
+        Examples
+        --------
+        &gt;&gt;&gt; unique_index = pd.Index(list('abc'))
+        &gt;&gt;&gt; unique_index.get_loc('b')
+        1
+    
+        &gt;&gt;&gt; monotonic_index = pd.Index(list('abbc'))
+        &gt;&gt;&gt; monotonic_index.get_loc('b')
+        slice(1, 3, None)
+    
+        &gt;&gt;&gt; non_monotonic_index = pd.Index(list('abcb'))
+        &gt;&gt;&gt; non_monotonic_index.get_loc('b')
+        array([False,  True, False,  True])
+        """
+        casted_key = self._maybe_cast_indexer(key)
+        try:
+&gt;           return self._engine.get_loc(casted_key)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../../../../tmp/comparison44_deps/pandas/core/indexes/base.py:3812: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+pandas/_libs/index.pyx:167: in pandas._libs.index.IndexEngine.get_loc
+    ???
+pandas/_libs/index.pyx:196: in pandas._libs.index.IndexEngine.get_loc
+    ???
+pandas/_libs/hashtable_class_helper.pxi:7088: in pandas._libs.hashtable.PyObjectHashTable.get_item
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+&gt;   ???
+E   KeyError: 'Mu kN-m'
+
+pandas/_libs/hashtable_class_helper.pxi:7096: KeyError
+
+The above exception was the direct cause of the following exception:
+
+    def test_different_vectors_at_one_case_station_are_not_enveloped():
+        actions=pd.concat([_demand(x=10,mux=1000,vu=100,tu=100),_demand(x=10,mux=300,vu=400,tu=60)],ignore_index=True)
+        df=ap._beam_uls_combined_vt_check_dataframe(ready_state(),actions,strength_route=_route())
+        physical_rows=df.loc[df["Station type"].eq("LOAD STATION")]
+&gt;       assert set(zip(physical_rows["Mu kN-m"],physical_rows["Vu kN"],physical_rows["Tu kN-m"])) == {(1000.0,100.0,100.0),(300.0,400.0,60.0)}
+                       ^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_igird_uls7_concurrent_vt.py:233: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../../tmp/comparison44_deps/pandas/core/frame.py:4113: in __getitem__
+    indexer = self.columns.get_loc(key)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Index(['Check', 'Status', 'Calculation status', 'Station type', 'Governing x',
+       'Case', 'Source row', 'Source co...', 'Source Nu kN',
+       'Source Vuy kN', 'Source Tu kN-m', 'Source Muy kN-m', 'Source Vux kN'],
+      dtype='object')
+key = 'Mu kN-m'
+
+    def get_loc(self, key):
+        """
+        Get integer location, slice or boolean mask for requested label.
+    
+        Parameters
+        ----------
+        key : label
+    
+        Returns
+        -------
+        int if unique index, slice if monotonic index, else mask
+    
+        Examples
+        --------
+        &gt;&gt;&gt; unique_index = pd.Index(list('abc'))
+        &gt;&gt;&gt; unique_index.get_loc('b')
+        1
+    
+        &gt;&gt;&gt; monotonic_index = pd.Index(list('abbc'))
+        &gt;&gt;&gt; monotonic_index.get_loc('b')
+        slice(1, 3, None)
+    
+        &gt;&gt;&gt; non_monotonic_index = pd.Index(list('abcb'))
+        &gt;&gt;&gt; non_monotonic_index.get_loc('b')
+        array([False,  True, False,  True])
+        """
+        casted_key = self._maybe_cast_indexer(key)
+        try:
+            return self._engine.get_loc(casted_key)
+        except KeyError as err:
+            if isinstance(casted_key, slice) or (
+                isinstance(casted_key, abc.Iterable)
+                and any(isinstance(x, slice) for x in casted_key)
+            ):
+                raise InvalidIndexError(key)
+&gt;           raise KeyError(key) from err
+E           KeyError: 'Mu kN-m'
+
+../../../../tmp/comparison44_deps/pandas/core/indexes/base.py:3819: KeyError</failure></testcase></testsuite></testsuites>

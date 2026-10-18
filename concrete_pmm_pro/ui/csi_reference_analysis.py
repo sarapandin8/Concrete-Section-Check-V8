@@ -27,16 +27,11 @@ def convert_for_check(state, row, *, check_name, geometry=None):
     origin = ref.geometry_origin(geometry, deck_thickness_mm=params.get("Tslab_mm", 0),
         includes_deck=includes_deck)
     converted = ref.translate_row(row, origin=origin)
-    if check_name == "Shear + Torsion":
-        # Full composite flexural moments and the existing I-hoop torque use
-        # separate declared origins. This remains a partial resistance route.
-        web = state.get(station.WEB_GEOMETRY, state.get("section_geometry"))
-        web_origin = ref.geometry_origin(web, deck_thickness_mm=params.get("Tslab_mm", 0))
-        torque = ref.translate_row(row, origin=web_origin)
-        converted["Tu"] = torque["Tu"]
-        converted[ref.RUNTIME_KEY] = {**converted[ref.RUNTIME_KEY],
-            "torsion_reference": torque[ref.RUNTIME_KEY],
-            "transported_actions": {**converted[ref.RUNTIME_KEY]["transported_actions"], "T": torque[ref.RUNTIME_KEY]["transported_actions"]["T"]}}
+    if check_name in {"Torsion", "Shear + Torsion"}:
+        # CSITU46: the imported scalar torque stays at the CSI reporting point.
+        # Bending readers retain their existing origins; no resistance upgrade
+        # or equivalence of this mixed-reference screening vector is inferred.
+        converted = ref.retain_reported_torsion(converted)
     return converted
 
 
@@ -126,10 +121,14 @@ def render_trace(row):
     v2, v3 = float(row["Original CSI V2 kN"]), float(row["Original CSI V3 kN"])
     tr2, tr3 = float(row.get("T C-O local2 m", r2)), float(row.get("T C-O local3 m", r3))
     t, m2, m3 = [float(row[f"Original CSI {f} kN-m"]) for f in ("T","M2","M3")]
-    frame = pd.DataFrame([
+    direct_t = row.get("T reference version") == ref.SOURCE_TORSION_POLICY
+    torque_equation = ({"Action":"T", "Equation":"T_used = T_CSI (unchanged)",
+        "Substitution":f"{t:.6g}", "Result (kN-m)":t} if direct_t else
         {"Action":"T","Equation":"T_O=T_C+r2·V3−r3·V2",
             "Substitution":f"{t:.6g}+({tr2:.6g})×{v3:.6g}−({tr3:.6g})×{v2:.6g}",
-            "Result (kN-m)":t+tr2*v3-tr3*v2},
+            "Result (kN-m)":t+tr2*v3-tr3*v2})
+    frame = pd.DataFrame([
+        torque_equation,
         {"Action":"M2","Equation":"M2_O=M2_C−r3·P",
             "Substitution":f"{m2:.6g}−({r3:.6g})×{p:.6g}",
             "Result (kN-m)":m2-r3*p},
@@ -141,6 +140,9 @@ def render_trace(row):
     st.caption(f"C: y={float(row['CSI C y mm']):.3f} mm; "
         f"O: y={float(row['Resistance O y mm']):.3f} mm; "
         f"r2={r2:.6f} m, r3={r3:.6f} m · {row['Reference status']}")
+    if direct_t:
+        st.caption("Tu ใช้ค่าต้นทาง CSiBridge ณ จุดรายงานเดิม ไม่ย้ายไป centroid คาน I · "
+            "M2/M3 ใช้จุดอ้างอิงของการตรวจดัดตามเดิม")
     if row["Reference status"] == "EXACT":
         st.dataframe(frame, hide_index=True, use_container_width=True)
     else:

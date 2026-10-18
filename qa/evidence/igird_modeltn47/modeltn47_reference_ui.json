@@ -1,0 +1,18 @@
+{
+  "status": "PASS",
+  "scope": "Stored actual source result rendering of standalone design-member reference panels; no solver calls",
+  "checks": [
+    {
+      "check": "Torsion",
+      "exceptions": 0,
+      "plotly_figures": 1,
+      "read_only_rerender": "PASS"
+    },
+    {
+      "check": "Shear + Torsion",
+      "exceptions": 0,
+      "plotly_figures": 2,
+      "read_only_rerender": "PASS"
+    }
+  ]
+}

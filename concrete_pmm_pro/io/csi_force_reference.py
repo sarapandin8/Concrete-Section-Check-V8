@@ -22,6 +22,7 @@ from concrete_pmm_pro.geometry.summary import to_shapely_polygon
 from concrete_pmm_pro.core.models import SectionGeometry
 
 VERSION = "IGIRDER.CSIREF26"
+SOURCE_TORSION_POLICY = "IGIRDER.CSITU46.reported-torque"
 SETTINGS_KEY = "csi_girder_force_reference"
 SNAPSHOT_KEY = "force_reference"
 RUNTIME_KEY = "__csi_reference"
@@ -248,6 +249,31 @@ def translate_row(row, *, origin, sls=False):
     return result
 
 
+def retain_reported_torsion(row):
+    """Keep native CSI Tu at its reporting point, independently of bending.
+
+    CSITU46 is a demand policy, not a proof of reference-compatible resistance.
+    General vector transport remains available to bending, SLS and equilibrium
+    readers. Original source records and the input row are never modified.
+    """
+    result = dict(row)
+    previous = row.get(RUNTIME_KEY)
+    if not isinstance(previous, Mapping):
+        return result
+    trace = dict(previous)
+    torque = float(trace["original_actions"]["T"])
+    result[ULS_MAP["T"]] = torque
+    trace["transported_actions"] = {**trace["transported_actions"], "T": torque}
+    trace["torsion_reference"] = {
+        "policy": SOURCE_TORSION_POLICY,
+        "target_y_mm": trace["source_y_mm"],
+        "target_local3_mm": trace["source_local3_mm"],
+        "r2_m": 0.0, "r3_m": 0.0,
+    }
+    result[RUNTIME_KEY] = trace
+    return result
+
+
 def trace_columns(row):
     value = row.get(RUNTIME_KEY)
     if not isinstance(value, Mapping):
@@ -267,6 +293,17 @@ def trace_columns(row):
         result.update({"T resistance O y mm": torque["target_y_mm"],
             "T C-O local2 m": torque["r2_m"], "T C-O local3 m": torque["r3_m"],
             "Moment reference policy": "M2/M3 at composite centroid; T at I-section centroid; partial mechanism"})
+        if torque.get("policy") == SOURCE_TORSION_POLICY:
+            result.update({
+                "T reference version": SOURCE_TORSION_POLICY,
+                "T reference policy": "CSI reported Tu unchanged",
+                "T reference y mm": torque["target_y_mm"],
+                "T reference local3 mm": torque["target_local3_mm"],
+                "T used kN-m": value["original_actions"]["T"],
+                "T shift applied": False,
+                "Moment reference policy": "T at CSI reporting point; M2/M3 at bending analysis origin; resistance screening",
+                "Reference equation": "T_used=T_CSI; only M2/M3 use sectional moment transport",
+            })
     return result
 
 
@@ -280,6 +317,9 @@ def qualify_result(result, demand_row, *, check_name):
         reasons.append(trace.get("error") or "Transformed envelope bounds are screening only; concurrent actions are required.")
     if trace["force_kind"] == "GIRDER_COMPOSITE" and check_name in {"Torsion", "Shear + Torsion"}:
         reasons.append("Full Girder resultants include deck actions. This resistance route uses the I-girder hoop; composite torsion, slab and interface mechanisms are not certified by this check.")
+    if ((trace.get("torsion_reference") or {}).get("policy") == SOURCE_TORSION_POLICY
+            and check_name in {"Torsion", "Shear + Torsion"}):
+        reasons.append("CSI Tu is used unchanged at its reporting point. Resistance at this reporting point and full coupled shear-center compatibility are not established; numerical ratios are screening results.")
     if trace["force_kind"] == "GIRDER_COMPOSITE" and check_name == "Shear" and abs(float(demand_row.get("Vux", 0))) > 1e-9:
         reasons.append("V2 sectional shear is checked; concurrent V3/deck transverse shear remains a separate required check.")
     if reasons:

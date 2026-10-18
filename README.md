@@ -1,3 +1,23 @@
+# IGIRDER.COMPOSITE48 — Concurrent V/T source scan and hoop-source correction
+
+Continuing development baseline: accepted MODELTN47 ZIP. The joint nominal model includes the I-girder closed hoops, both independent U legs, and developed slab longitudinal steel. Shear, Torsion and Shear + Torsion reuse this model in Analysis. It now calculates every eligible **interior concurrent source vector** and selects the maximum nominal V–T D/C per girder. Individual V-only/T-only governors hold the actual M3/N; the displayed pure Model Vn/Tn intercepts retain M=N=0.
+
+Actual hoop geometry and steel are read independently of the code torsion threshold screen. Below-threshold Tu no longer erases an existing qualified hoop. Original CSI Tu is retained at its reporting point. Blocked rows and physical end exclusions remain visible. No new input fields or Calculate buttons were added.
+
+**This release does not establish full-composite resistance for production design.** The shared concrete-flow ceiling, U-to-slab stress field/nodal transfer and six-resultant resistance about the CSI origin remain unvalidated; no design phi or PASS is inferred. A complete justified code stress field/STM is an alternative to nonlinear strain/slip analysis, but the current LP is not such a verified field. See `IGIRDER_COMPOSITE48_HANDOFF_TH.md` for the exact method gaps and research references.
+
+Verification: 212 selected tests pass, including 22 new test cases; all 608 interior rows of the supplied 640-row JSON calculate, including 122 recovered below-threshold rows. All 486 previously numeric rows retain the same results. The 32 physical end rows require a separate end-region method. AppTest verifies the three actual Calculate flows and stored-only redraw; browser screenshot QA was unavailable. Project JSON continues to save inputs; model results remain separate from production Summary / Report / QA.
+
+## Previous milestone
+
+# IGIRDER.MODELTN47 — U + slab Model Tn in Analysis
+
+Composite I-girder Torsion and V–T now show the stored **Model Tn with both U legs and slab longitudinal steel** as the primary Analysis result. The same nominal model supplies Vn and concurrent V–T D/C. The I-hoop code route and its full-span charts remain under Reference checks. Existing inputs and Calculate buttons are reused.
+
+Model values remain nominal **MODEL REVIEW**, with no inferred phi or design PASS. The model selects one maximum-|reported CSI Tu| source row per girder, not a full-span governing V–T search. Result Summary / Report / QA retain the separate code-check results. No resistance equation, raw CSI force, or Project JSON persistence policy changed. See `IGIRDER_MODELTN47_HANDOFF_TH.md`.
+
+## Previous milestone
+
 # IGIRDER.EDIT33 — Continuous dowel input editing
 
 Committing a second cell no longer loses that value or collapses **Dowel detail**. The dimension, independent layout and optional joint-force editors keep a stable input seed while editing; the changing missing-dimension count retains the same expander. Leaving and reopening the input view reuses accepted values, and loading another Project JSON clears old editor deltas. Copy zoning deliberately replaces the editor seed.

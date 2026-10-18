@@ -11685,12 +11685,17 @@ def _beam_uls_check_input_hash(
     IGIRDER.ULS6E adds station-qualified torsion layout inputs (closed-loop confirmation and
     ph).  They must invalidate Torsion and dependent Shear+Torsion without
     staling accepted Shear/Flexure/Interface results.
+    FULLVT48 also invalidates composite Shear's attached nominal model when its
+    physical I-hoop source changes; non-composite Shear remains independent.
     """
 
     base = _beam_uls_cache_input_hash(state, active_df, strength_route=strength_route)
     is_igird = str(_beam_uls_get_state_value(state, "section_preset_key") or "").strip() == "parametric_i_girder"
     if is_igird and check_name in {"Shear", "Torsion", "Shear + Torsion"}:
         from concrete_pmm_pro.analysis.igird_shear_support import support_settings
+        from concrete_pmm_pro.analysis.igird_composite_steel45 import VERSION as composite_steel45_version
+        from concrete_pmm_pro.ui.igird_modeltn47 import VIEW_VERSION as composite_model_view_version
+        from concrete_pmm_pro.io.csi_force_reference import SOURCE_TORSION_POLICY
         interface_entry = _beam_uls_manual_cache(state).get(_IGIRDER_INTERFACE_SHEAR_CHECK_NAME, {})
         interface_entry = interface_entry if isinstance(interface_entry, Mapping) else {}
         base = _beam_uls_hash_payload({
@@ -11698,6 +11703,15 @@ def _beam_uls_check_input_hash(
             "longitudinal_development": igird_longitudinal_development_settings(state),
             "longitudinal_materials": _beam_uls_get_state_value(state, "rebar_materials", []),
             "physical_geometry": igird_shear_section.geometry_signature(state),
+            "composite_steel45": {"version":composite_steel45_version,
+                "interface_and_U_detail":_igird_interface_shear_settings_from_state(state),
+                "I_hoop_qualification":{
+                    "settings":_beam_uls_igird_torsion_settings(state),
+                    "zones":_beam_uls_get_state_value(state,_IGIRDER_TORSION_ZONE_SETTINGS_KEY,
+                        (_beam_uls_get_state_value(state,"project_metadata",{}) or {}).get(_IGIRDER_TORSION_ZONE_SETTINGS_KEY,[])),
+                } if bool((state.get("section_parameters") or {}).get("composite_enabled")) else None},
+            "composite_model_analysis_view": composite_model_view_version,
+            "CSI_torsion_demand_policy": SOURCE_TORSION_POLICY,
             "support_geometry": support_settings(state),
             "composite_interface_gate": {
                 "input_hash": interface_entry.get("input_hash"), "result_version": interface_entry.get("result_version"),
@@ -11776,7 +11790,8 @@ def _beam_uls_store_manual_result(
     result: dict[str, object],
 ) -> dict[str, object]:
     cache = dict(_beam_uls_manual_cache(state))
-    entry = dict(result)
+    from concrete_pmm_pro.ui.igird_composite_steel45 import detach_review
+    entry = detach_review(state,result,fingerprint=input_hash)
     entry["input_hash"] = str(input_hash)
     entry["input_hash_kind"] = _BEAM_ULS_INPUT_HASH_KIND
     entry["check"] = str(check_name)
@@ -11803,6 +11818,7 @@ def _beam_uls_calculate_selected_check(
     selected_check: str,
     strength_route: BeamGirderUlsStrengthRoute,
 ) -> dict[str, object]:
+    from concrete_pmm_pro.ui.igird_composite_steel45 import payload as composite_steel45_payload
     if selected_check in {"Shear", "Torsion", "Shear + Torsion"} and str(state.get("section_preset_key") or "") == "parametric_i_girder":
         state = {**state, igird_shear_section.RUNTIME_KEY: {"active_df": active_df}}
     if selected_check == "Flexure":
@@ -11834,6 +11850,7 @@ def _beam_uls_calculate_selected_check(
         )
         return {
             "shear_check_df": shear_check_df,
+            **composite_steel45_payload(state,active_df,route=strength_route),
             "shear_critical_section_df": shear_critical_section_df,
             "shear_boundary_capacity_df": shear_boundary_capacity_df,
             "shear_diagram_capacity_df": _beam_uls_igird_shear_diagram_capacity_dataframe(
@@ -11852,6 +11869,7 @@ def _beam_uls_calculate_selected_check(
         )
         return {
             "torsion_check_df": torsion_check_df,
+            **composite_steel45_payload(state,active_df,route=strength_route),
             "torsion_boundary_capacity_df": torsion_boundary_capacity_df,
             "torsion_diagram_capacity_df": _beam_uls_igird_torsion_diagram_capacity_dataframe(
                 state, active_df, torsion_check_df, strength_route=strength_route),
@@ -11905,6 +11923,7 @@ def _beam_uls_calculate_selected_check(
                 state, active_df, torsion_check_df, strength_route=strength_route),
             "torsion_coverage_summary": _beam_uls_torsion_coverage_summary(torsion_check_df),
             "combined_vt_df": combined_vt_df,
+            **composite_steel45_payload(state,active_df,route=strength_route),
             "interaction_status": _beam_uls_torsion_interaction_status(active_df),
         }
     return {}
@@ -15312,6 +15331,11 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                 "- Precast Composite Girder flexure is stage-separated: Construction = auto-generated noncomposite demand vs precast girder capacity; Final = imported FEA demand vs composite girder capacity. "
                 "Final positive composite φMn uses the AASHTO Section 5 conservative lower-f'c composite strength route; girder-deck interface shear remains a separate acceptance gate."
             )
+            st.markdown(
+                "- Composite Torsion / V–T Analysis uses the U + slab nominal MODEL REVIEW as its primary view. "
+                "The I-hoop code checks remain in Reference checks and retain their separate Summary / Report / QA status. "
+                "The model shows one maximum-|CSI Tu| source row per girder, not a full-span governing V–T envelope."
+            )
 
     if is_precast_composite_bridge:
         from concrete_pmm_pro.ui.girder_axial_convention import render_axial_convention
@@ -15588,6 +15612,15 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
             st.caption("Read-only normalized view of Active rows from Loads. Secondary actions Muy, Vux, and Nu are kept here for audit, not default decision display.")
             st.dataframe(_beam_uls_audit_dataframe(active_df), use_container_width=True, hide_index=True)
         return
+
+    if is_precast_composite_bridge and selected_check in {"Shear", "Torsion", "Shear + Torsion"}:
+        from concrete_pmm_pro.ui.igird_composite_steel45 import render as render_composite_steel45, current as current_composite_steel45
+        render_composite_steel45(current_composite_steel45(st.session_state,uls_input_hash))
+        if selected_check in {"Shear", "Torsion", "Shear + Torsion"}:
+            from concrete_pmm_pro.ui.igird_modeltn47 import render_reference
+            render_reference(st.session_state, active_df, selected_entry,
+                check_name=selected_check, code_label=code_label)
+            return
 
     if is_precast_composite_bridge and selected_check in {"Torsion", "Shear + Torsion"}:
         from concrete_pmm_pro.io.girder_load_bank import BANK_KEY
@@ -15953,7 +15986,7 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
 
     if selected_check == "Shear + Torsion":
         if is_precast_composite_bridge:
-            st.caption("Composite-system research model: Analysis → Flexure → Final — Composite → Edit composite / dowel inputs → Composite V–T research inputs. It uses the same Calculate Flexure command and cannot issue production full-composite acceptance.")
+            st.caption("Composite-system detail review: Analysis → Flexure → Final — Composite → Edit composite / dowel inputs. Reuses the shared slab mesh and U-dowel inputs with Calculate Flexure; full-system Vn / Tn / V–T design resistance is not yet available.")
             from concrete_pmm_pro.ui.igird_combined_vt import render_workspace
             from concrete_pmm_pro.ui.igird_maxmin_charts import render_native_workspace
             paired_charts = render_native_workspace(st.session_state, active_df, {'combined_vt_df':combined_vt_df},

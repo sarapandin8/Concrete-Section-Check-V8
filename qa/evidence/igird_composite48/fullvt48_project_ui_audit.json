@@ -1,0 +1,109 @@
+{
+  "status": "PASS",
+  "release": "IGIRDER.FULLVT48.U-slab-concurrent-scan",
+  "source_file": "concrete_section_pro_project_31_COVER38.json",
+  "source_sha256": "0ae85f6de0b753062393a70717105953836a4a7722449edfbdc0e91ba8f99fcb",
+  "source_bank_rows": 640,
+  "UI_fixture_original_source_rows": 4,
+  "UI_fixture_selection": "Four original U2A vectors: Excel rows 491,556,167,237; full-bank replay verified separately",
+  "source_file_unchanged": true,
+  "section_and_interface_inputs_unchanged": true,
+  "model_controls_added": {
+    "buttons": 0,
+    "checkboxes": 0
+  },
+  "actual_app_Calculate": [
+    {
+      "check": "Shear",
+      "primary_table_rows": [
+        {
+          "Girder": "BOBJ1 / Left Exterior Girder",
+          "x (m)": 18.0,
+          "Case / step": "U2A / Min",
+          "Model Vn · U + slab (kN)": 1318.6799266208873,
+          "Model Tn · U + slab (kN-m)": 242.42663752937884,
+          "Model nominal V–T D/C": 0.9382797423910947,
+          "Nominal V–T state": "WITHIN NOMINAL",
+          "Status": "MODEL REVIEW"
+        },
+        {
+          "Girder": "BOBJ1 / Interior Girder 2",
+          "x (m)": 2.0,
+          "Case / step": "U2A / Min",
+          "Model Vn · U + slab (kN)": 1396.9085439621554,
+          "Model Tn · U + slab (kN-m)": 263.88290334163923,
+          "Model nominal V–T D/C": 1.5543380512524256,
+          "Nominal V–T state": "EXCEEDS NOMINAL",
+          "Status": "MODEL REVIEW"
+        }
+      ],
+      "model_calculation_calls": 2,
+      "render_rerun_added_solver_calls": 0,
+      "reference_panels": 2,
+      "exceptions": 0,
+      "primary_model_status": "MODEL REVIEW"
+    },
+    {
+      "check": "Torsion",
+      "primary_table_rows": [
+        {
+          "Girder": "BOBJ1 / Left Exterior Girder",
+          "x (m)": 18.0,
+          "Case / step": "U2A / Min",
+          "Model Vn · U + slab (kN)": 1318.6799266208873,
+          "Model Tn · U + slab (kN-m)": 242.42663752937884,
+          "Model nominal V–T D/C": 0.9382797423910947,
+          "Nominal V–T state": "WITHIN NOMINAL",
+          "Status": "MODEL REVIEW"
+        },
+        {
+          "Girder": "BOBJ1 / Interior Girder 2",
+          "x (m)": 2.0,
+          "Case / step": "U2A / Min",
+          "Model Vn · U + slab (kN)": 1396.9085439621554,
+          "Model Tn · U + slab (kN-m)": 263.88290334163923,
+          "Model nominal V–T D/C": 1.5543380512524256,
+          "Nominal V–T state": "EXCEEDS NOMINAL",
+          "Status": "MODEL REVIEW"
+        }
+      ],
+      "model_calculation_calls": 2,
+      "render_rerun_added_solver_calls": 0,
+      "reference_panels": 2,
+      "exceptions": 0,
+      "primary_model_status": "MODEL REVIEW"
+    },
+    {
+      "check": "Shear + Torsion",
+      "primary_table_rows": [
+        {
+          "Girder": "BOBJ1 / Left Exterior Girder",
+          "x (m)": 18.0,
+          "Case / step": "U2A / Min",
+          "Model Vn · U + slab (kN)": 1318.6799266208873,
+          "Model Tn · U + slab (kN-m)": 242.42663752937884,
+          "Model nominal V–T D/C": 0.9382797423910947,
+          "Nominal V–T state": "WITHIN NOMINAL",
+          "Status": "MODEL REVIEW"
+        },
+        {
+          "Girder": "BOBJ1 / Interior Girder 2",
+          "x (m)": 2.0,
+          "Case / step": "U2A / Min",
+          "Model Vn · U + slab (kN)": 1396.9085439621554,
+          "Model Tn · U + slab (kN-m)": 263.88290334163923,
+          "Model nominal V–T D/C": 1.5543380512524256,
+          "Nominal V–T state": "EXCEEDS NOMINAL",
+          "Status": "MODEL REVIEW"
+        }
+      ],
+      "model_calculation_calls": 2,
+      "render_rerun_added_solver_calls": 0,
+      "reference_panels": 2,
+      "exceptions": 0,
+      "primary_model_status": "MODEL REVIEW"
+    }
+  ],
+  "browser_screenshot_QA": "Not performed; no browser binary is installed",
+  "structural_validation": "Not established; review model equations and limits unchanged"
+}

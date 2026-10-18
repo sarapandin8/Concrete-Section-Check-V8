@@ -1,0 +1,21 @@
+{
+  "modified": [
+    "IGIRDER_CSITU46_HANDOFF_TH.md",
+    "README.md",
+    "concrete_pmm_pro/ui/analysis_page.py",
+    "concrete_pmm_pro/ui/igird_composite_steel45.py",
+    "concrete_pmm_pro/ui/igird_member_results.py"
+  ],
+  "added": [
+    "IGIRDER_MODELTN47_HANDOFF_TH.md",
+    "concrete_pmm_pro/ui/igird_modeltn47.py",
+    "qa/evidence/igird_modeltn47/modeltn47_project_ui_audit.json",
+    "qa/evidence/igird_modeltn47/modeltn47_reference_ui.json",
+    "qa/evidence/igird_modeltn47/modeltn47_stored_snapshot.json",
+    "qa/evidence/igird_modeltn47/targeted_tests.txt",
+    "qa/evidence/igird_modeltn47/validation_summary.json",
+    "qa/validate_modeltn47_project.py",
+    "tests/test_igird_modeltn47.py"
+  ],
+  "removed": []
+}

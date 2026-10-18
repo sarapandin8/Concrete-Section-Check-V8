@@ -120,6 +120,8 @@ def render_collection(*, check_name, route, code_label):
         for n in names:
             with st.spinner(f'Calculating {check_name}: {n}'):
                 result = calculate_member(st.session_state, rows_by_member[n], check_name=check_name, route=route)
+            from concrete_pmm_pro.ui.igird_composite_steel45 import detach_review
+            result = detach_review(st.session_state,result,fingerprint=fingerprints[n])
             member_cache = dict(cache.get(n, {}))
             member_cache[check_name] = {'input_hash': fingerprints[n], 'result': result}
             cache[n] = member_cache
@@ -144,30 +146,37 @@ def render_collection(*, check_name, route, code_label):
         else:
             summaries.append({'Girder':n,'Result state':'ERROR' if result is not None else
                 ('STALE' if cache.get(n,{}).get(check_name) else 'NOT CALCULATED')})
-    st.markdown('##### Controlling load cases — '+check_name)
-    summary = pd.DataFrame(summaries)
-    compact_columns = [column for column in ('Girder','Result state','Controlling load case',
-        'Station','D/C or ratio','Basis','Failed rows','Rows requiring review') if column in summary]
-    st.dataframe(result_table_for_display(summary[compact_columns]),hide_index=True,use_container_width=True)
-    st.caption('Numerical control uses the largest available stored strength/detailing D/C. Ties retain every case. Source/development review remains separate. Open a girder below to select its load case, chart and calculation trace.')
-    issues = [f"{n}: {control['failed_rows']} failed, {control['review_rows']} requiring review"
-        for n,control in controls.items() if control['failed_rows'] or control['review_rows']]
-    if issues:
-        st.warning('All load cases — '+'; '.join(issues)+'. Viewing a passing case does not clear these member-wide gates.')
-    pending = [row['Girder']+' ('+row['Result state']+')' for row in summaries if row['Result state'] != 'CURRENT']
-    if pending:
-        st.warning('Results unavailable — '+'; '.join(pending)+'. Calculate the collection before reviewing those members.')
-    with st.expander('Imported girders / controlling source audit',expanded=False):
-        st.dataframe(pd.DataFrame([{'Girder':n,'Active rows':len(rows_by_member[n]),
-            'Vector series':rows_by_member[n]['Case Name'].nunique()} for n in names]),hide_index=True,use_container_width=True)
-        st.dataframe(result_table_for_display(summary),hide_index=True,use_container_width=True)
-    st.caption('Review selections change displayed results. Loads, Result Summary and Report / QA continue to use the design member selected in Loads.')
-    if check_name in {'Torsion', 'Shear + Torsion'}:
-        from concrete_pmm_pro.ui import igird_rebar_advisor
-        packages = igird_rebar_advisor.current_packages(st.session_state, rows_by_member,
-            route=route, selected_results=results, selected_check=check_name)
-        igird_rebar_advisor.render_advisor(st.session_state, rows_by_member, packages,
-            route=route, key_prefix='collection')
+    from concrete_pmm_pro.ui import igird_modeltn47 as model_view
+    model_primary = check_name in model_view.MAIN_CHECKS
+    if model_primary:
+        model_view.render_overview(model_view.collection_snapshot(st.session_state, fingerprints))
+    from contextlib import nullcontext
+    reference_summary = st.expander('Reference summary — I-girder hoop / code route', expanded=False) if model_primary else nullcontext()
+    with reference_summary:
+        st.markdown('##### Controlling load cases — '+check_name)
+        summary = pd.DataFrame(summaries)
+        compact_columns = [column for column in ('Girder','Result state','Controlling load case',
+            'Station','D/C or ratio','Basis','Failed rows','Rows requiring review') if column in summary]
+        st.dataframe(result_table_for_display(summary[compact_columns]),hide_index=True,use_container_width=True)
+        st.caption('Numerical control uses the largest available stored strength/detailing D/C. Ties retain every case. Source/development review remains separate. Open a girder below to select its load case, chart and calculation trace.')
+        issues = [f"{n}: {control['failed_rows']} failed, {control['review_rows']} requiring review"
+            for n,control in controls.items() if control['failed_rows'] or control['review_rows']]
+        if issues:
+            st.warning('All load cases — '+'; '.join(issues)+'. Viewing a passing case does not clear these member-wide gates.')
+        pending = [row['Girder']+' ('+row['Result state']+')' for row in summaries if row['Result state'] != 'CURRENT']
+        if pending:
+            st.warning('Results unavailable — '+'; '.join(pending)+'. Calculate the collection before reviewing those members.')
+        with st.expander('Imported girders / controlling source audit',expanded=False):
+            st.dataframe(pd.DataFrame([{'Girder':n,'Active rows':len(rows_by_member[n]),
+                'Vector series':rows_by_member[n]['Case Name'].nunique()} for n in names]),hide_index=True,use_container_width=True)
+            st.dataframe(result_table_for_display(summary),hide_index=True,use_container_width=True)
+        st.caption('Review selections change displayed results. Loads, Result Summary and Report / QA continue to use the design member selected in Loads.')
+        if check_name in {'Torsion', 'Shear + Torsion'}:
+            from concrete_pmm_pro.ui import igird_rebar_advisor
+            packages = igird_rebar_advisor.current_packages(st.session_state, rows_by_member,
+                route=route, selected_results=results, selected_check=check_name)
+            igird_rebar_advisor.render_advisor(st.session_state, rows_by_member, packages,
+                route=route, key_prefix='collection')
     for n in names:
         with st.expander('Girder: '+n,expanded=False):
             _render_member_result(member=n,result=results[n],all_rows=rows_by_member[n],
@@ -186,6 +195,22 @@ def render_collection(*, check_name, route, code_label):
 
 
 def _render_member_result(*, member, result, all_rows, control, cache, check_name, code_label):
+    """Use the composite nominal model first; retain the I-hoop route as reference."""
+    from concrete_pmm_pro.ui import igird_modeltn47 as view
+    if check_name in view.MAIN_CHECKS:
+        from concrete_pmm_pro.ui.igird_composite_steel45 import render, current
+        fingerprint = (result or {}).get('input_hash') or cache.get(member, {}).get(check_name, {}).get('input_hash')
+        render(current(st.session_state, fingerprint) if result is not None else None)
+        with st.expander(view.REFERENCE_LABEL, expanded=False):
+            st.caption('Reference I-hoop results retain their own resistance definition and code-check status. The primary composite values above are nominal MODEL REVIEW.')
+            _render_reference_member_result(member=member, result=result, all_rows=all_rows,
+                control=control, cache=cache, check_name=check_name, code_label=code_label)
+        return
+    _render_reference_member_result(member=member, result=result, all_rows=all_rows,
+        control=control, cache=cache, check_name=check_name, code_label=code_label)
+
+
+def _render_reference_member_result(*, member, result, all_rows, control, cache, check_name, code_label):
     """Render one girder's complete stored review inside its collapsible panel."""
     from concrete_pmm_pro.ui import analysis_page as ap
     from concrete_pmm_pro.ui import igird_vt_workspace as vt
@@ -299,6 +324,10 @@ def _render_member_result(*, member, result, all_rows, control, cache, check_nam
             return
         from concrete_pmm_pro.ui.igird_combined_vt import render_workspace
         render_workspace(frame,code_label=label,member_name=n,selected_case=case,show_chart=not paired)
+    if check_name == 'Shear':
+        from concrete_pmm_pro.ui.igird_composite_steel45 import render as render_composite_steel45, current as current_composite_steel45
+        fingerprint = result.get('input_hash') or cache.get(n,{}).get(check_name,{}).get('input_hash')
+        render_composite_steel45(current_composite_steel45(st.session_state,fingerprint))
     frame_key = {'Flexure':'flexure_preview_df','Shear':'shear_check_df','Torsion':'torsion_check_df','Shear + Torsion':'combined_vt_df'}[check_name]
     with st.expander('Stored check rows / source audit — '+n,expanded=False):
         frame = selected.get(frame_key)

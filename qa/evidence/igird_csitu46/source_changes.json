@@ -1,0 +1,22 @@
+{
+  "modified": [
+    "IGIRDER_STEEL45_HANDOFF_TH.md",
+    "README_IGIRDER_CSIREF26.md",
+    "concrete_pmm_pro/analysis/igird_composite_steel45.py",
+    "concrete_pmm_pro/io/csi_force_reference.py",
+    "concrete_pmm_pro/ui/analysis_page.py",
+    "concrete_pmm_pro/ui/csi_reference_analysis.py",
+    "concrete_pmm_pro/ui/igird_composite_steel45.py",
+    "tests/test_igird_csiref26.py"
+  ],
+  "added": [
+    "IGIRDER_CSITU46_HANDOFF_TH.md",
+    "qa/evidence/igird_csitu46/csitu46_project_audit.json",
+    "qa/evidence/igird_csitu46/csitu46_ui_verification.json",
+    "qa/evidence/igird_csitu46/source_changes.json",
+    "qa/evidence/igird_csitu46/validation_summary.json",
+    "qa/validate_csitu46_project.py",
+    "tests/test_igird_csitu46.py"
+  ],
+  "removed": []
+}

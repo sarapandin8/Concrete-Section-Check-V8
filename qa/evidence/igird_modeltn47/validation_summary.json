@@ -1,0 +1,108 @@
+{
+  "release": "IGIRDER-MODELTN47",
+  "selected_tests_passed": 157,
+  "new_model_view_tests": 8,
+  "full_repository_suite_run": false,
+  "preexisting_test_deselected": "test_different_vectors_at_one_case_station_are_not_enveloped",
+  "exclusion_reason": "Known baseline fixture does not declare concurrent source actions; source guard preserved.",
+  "py_compile": "PASS: app.py and all modified/new Python modules",
+  "actual_app_Calculate_and_redraw": {
+    "status": "PASS",
+    "release": "IGIRDER.MODELTN47.U-slab-primary",
+    "source_file": "concrete_section_pro_project_31_COVER38.json",
+    "source_sha256": "0ae85f6de0b753062393a70717105953836a4a7722449edfbdc0e91ba8f99fcb",
+    "source_bank_rows": 640,
+    "UI_fixture_original_source_rows": 2,
+    "UI_fixture_selection": "U2A x=18 m, original Excel rows 556 and 237; not a full bank search",
+    "source_file_unchanged": true,
+    "section_and_interface_inputs_unchanged": true,
+    "model_controls_added": {
+      "buttons": 0,
+      "checkboxes": 0
+    },
+    "actual_app_Calculate": [
+      {
+        "check": "Torsion",
+        "primary_table_rows": [
+          {
+            "Girder": "BOBJ1 / Left Exterior Girder",
+            "x (m)": 18.0,
+            "Case / step": "U2A / Min",
+            "Model Vn · U + slab (kN)": 1318.6799266208873,
+            "Model Tn · U + slab (kN-m)": 242.42663752937884,
+            "Model nominal V–T D/C": 0.9382797423910947,
+            "Nominal V–T state": "WITHIN NOMINAL",
+            "Status": "MODEL REVIEW"
+          },
+          {
+            "Girder": "BOBJ1 / Interior Girder 2",
+            "x (m)": 18.0,
+            "Case / step": "U2A / Max",
+            "Model Vn · U + slab (kN)": 1437.5926781999003,
+            "Model Tn · U + slab (kN-m)": 277.4754259740412,
+            "Model nominal V–T D/C": 1.5357706373802962,
+            "Nominal V–T state": "EXCEEDS NOMINAL",
+            "Status": "MODEL REVIEW"
+          }
+        ],
+        "model_calculation_calls": 2,
+        "render_rerun_added_solver_calls": 0,
+        "reference_panels": 2,
+        "exceptions": 0,
+        "primary_model_status": "MODEL REVIEW"
+      },
+      {
+        "check": "Shear + Torsion",
+        "primary_table_rows": [
+          {
+            "Girder": "BOBJ1 / Left Exterior Girder",
+            "x (m)": 18.0,
+            "Case / step": "U2A / Min",
+            "Model Vn · U + slab (kN)": 1318.6799266208873,
+            "Model Tn · U + slab (kN-m)": 242.42663752937884,
+            "Model nominal V–T D/C": 0.9382797423910947,
+            "Nominal V–T state": "WITHIN NOMINAL",
+            "Status": "MODEL REVIEW"
+          },
+          {
+            "Girder": "BOBJ1 / Interior Girder 2",
+            "x (m)": 18.0,
+            "Case / step": "U2A / Max",
+            "Model Vn · U + slab (kN)": 1437.5926781999003,
+            "Model Tn · U + slab (kN-m)": 277.4754259740412,
+            "Model nominal V–T D/C": 1.5357706373802962,
+            "Nominal V–T state": "EXCEEDS NOMINAL",
+            "Status": "MODEL REVIEW"
+          }
+        ],
+        "model_calculation_calls": 2,
+        "render_rerun_added_solver_calls": 0,
+        "reference_panels": 2,
+        "exceptions": 0,
+        "primary_model_status": "MODEL REVIEW"
+      }
+    ],
+    "browser_screenshot_QA": "Not performed; no browser binary is installed",
+    "structural_validation": "Not established; review model equations and limits unchanged"
+  },
+  "standalone_reference_render": {
+    "status": "PASS",
+    "scope": "Stored actual source result rendering of standalone design-member reference panels; no solver calls",
+    "checks": [
+      {
+        "check": "Torsion",
+        "exceptions": 0,
+        "plotly_figures": 1,
+        "read_only_rerender": "PASS"
+      },
+      {
+        "check": "Shear + Torsion",
+        "exceptions": 0,
+        "plotly_figures": 2,
+        "read_only_rerender": "PASS"
+      }
+    ]
+  },
+  "browser_screenshot_QA": "Not performed; no browser binary available",
+  "structural_validation": "Not established; resistance model and limits unchanged"
+}

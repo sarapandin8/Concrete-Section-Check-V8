@@ -1,0 +1,34 @@
+{
+  "milestone": "IGIRDER.REFERENCE43",
+  "primary_sources": [
+    {
+      "doi": "10.1016/j.engstruct.2012.04.036",
+      "source_pdf_sha256": "f7e9d33d238564c837a68b13aacdfc7a5054e36e3247ac2c6404b60cf8ae57a5",
+      "review": "Table 4 r03 states fcr=3.75 sqrt(fc[psi]); conversion and exponent domain audited."
+    },
+    {
+      "doi": "10.1617/s11527-014-0301-z",
+      "source_pdf_sha256": "0e8a924bc97d23c9af84571a4b22fd7a7bec3a30e461ce81b7079aa2337b0ad8",
+      "review": "Eqs22-23,39-40,56-63; Table1 and unchanged selected Table2/3 fixture."
+    },
+    {
+      "doi": "10.3390/app9132730",
+      "source_pdf_sha256": "0bc2ee851cf9b146766f1b97f4172bdca867885ec7aba61702bb7861ddfd569c",
+      "review": "Scope review only; independent closed cages do not establish actual U+mesh joint."
+    }
+  ],
+  "source_pdfs_redistributed": false,
+  "conclusion": "Source-defined steel parameter separation reduces mismatch but does not establish authors implementation or full composite system resistance.",
+  "prestress_scope_source": {
+    "doi": "10.1186/s40069-018-0285-0",
+    "url": "https://link.springer.com/article/10.1186/s40069-018-0285-0",
+    "scope": "Uniform longitudinal prestress; pure torsion; not staged eccentric PSC I-girder/slab interface validation."
+  },
+  "policy": {
+    "no_per_specimen_fitting": true,
+    "unchanged_fixture": true,
+    "reproduction_tolerance": 0.01,
+    "structural_acceptance_band_invented": false,
+    "production_accepted": false
+  }
+}

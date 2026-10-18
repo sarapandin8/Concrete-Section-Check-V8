@@ -1,0 +1,6 @@
+{
+  "unchanged_previously_numeric_rows": 486,
+  "recovered_previously_blocked_rows": 122,
+  "recovered_all_below_threshold": true,
+  "numeric_differences": []
+}

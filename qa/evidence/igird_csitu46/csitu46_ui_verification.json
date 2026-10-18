@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "exceptions": 0,
+  "dataframes": 4,
+  "new_buttons": 0,
+  "new_checkboxes": 0,
+  "CSI_torque_visible_kNm": 286.8371,
+  "source_torque_caption": true,
+  "comparison_rows": 6,
+  "scope": "Actual Streamlit AppTest rendering; no browser screenshot verification"
+}

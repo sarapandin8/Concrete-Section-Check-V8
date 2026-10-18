@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "source_file": "concrete_section_pro_project_31_COVER38.json",
+  "source_sha256": "0ae85f6de0b753062393a70717105953836a4a7722449edfbdc0e91ba8f99fcb",
+  "scope": "Software/source integration only; no structural design certification",
+  "checks": [
+    "BOBJ1 / Interior Girder 2: all three Calculate routes, physical supply bounds, current-only review cache and input-only JSON verified",
+    "BOBJ1 / Left Exterior Girder: all three Calculate routes, physical supply bounds, current-only review cache and input-only JSON verified"
+  ]
+}

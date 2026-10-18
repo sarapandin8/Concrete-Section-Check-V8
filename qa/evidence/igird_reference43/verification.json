@@ -1,0 +1,66 @@
+{
+  "milestone": "IGIRDER.REFERENCE43",
+  "baseline_filename": "concrete-section-pro_IGIRDER-REFERENCE42-DEV.zip",
+  "baseline_sha256": "bd489c3f79c260a06f663c60131481b6239e2868f21e4532af4886234282eda4",
+  "baseline_files_compared": 1865,
+  "baseline_files_changed": [],
+  "selected_software_tests": 552,
+  "test_failures": 0,
+  "test_errors": 0,
+  "test_skipped": 0,
+  "new_reference_tests": 36,
+  "prior_selected_tests": 516,
+  "pytest_warning_count": 7,
+  "software_scope": "32 selected test files, including 36 new REFERENCE43 tests; not the entire repository.",
+  "compile_check": "app.py, reference43 module, CLI and test module passed.",
+  "published_reference_cases_per_profile": 16,
+  "reproduction_relative_tolerance": 0.01,
+  "profiles": [
+    {
+      "profile": "legacy42_shared_torsion_fcr",
+      "numerically_solved_cases": 16,
+      "unsupported_cases": 0,
+      "declared_extension_cases": 0,
+      "published_point_matches": 3,
+      "maximum_absolute_torque_theory_difference": 0.26162649212687217,
+      "maximum_absolute_twist_theory_difference": 0.5181667641309602
+    },
+    {
+      "profile": "2012_steel_cracking_parameter_strict_exponent",
+      "numerically_solved_cases": 8,
+      "unsupported_cases": 8,
+      "declared_extension_cases": 0,
+      "published_point_matches": 0,
+      "maximum_absolute_torque_theory_difference": 0.04271656515199718,
+      "maximum_absolute_twist_theory_difference": 0.0639557966896882
+    },
+    {
+      "profile": "2012_steel_cracking_parameter_declared_positive_cap",
+      "numerically_solved_cases": 16,
+      "unsupported_cases": 0,
+      "declared_extension_cases": 8,
+      "published_point_matches": 5,
+      "maximum_absolute_torque_theory_difference": 0.04271656515199718,
+      "maximum_absolute_twist_theory_difference": 0.0639557966896882
+    }
+  ],
+  "maximum_stage_relative_equilibrium_residual": 2.1193825164150354e-12,
+  "published_reproduction_status": "NOT_REPRODUCED",
+  "production_accepted": false,
+  "new_user_inputs": false,
+  "production_code_changed": false,
+  "project_json_behavior_changed": false,
+  "result_cache_persistence_added": false,
+  "browser_review": "Not applicable: no UI changes or app dispatch of reference43.",
+  "source_files_sha256": {
+    "concrete_pmm_pro/analysis/igird_reference43.py": "a97cba258477fe8c0b1150a62549501e060aafda594fb5168b5f78ef468bc460",
+    "tools/run_igird_reference43.py": "e0ab62e277f61bdd9d4a3c603876ef5824437a597682a448a3f5a738fd4b68d7",
+    "tests/test_igird_reference43.py": "d437574ad805a865f6fde12d310bd674b78219b5adb30103d835f73b22a65a16",
+    "qa/benchmarks/igird_reference42_2015.json": "03aef5d4e6b1eb210780cf709fc4d5ba6062c4067901052309e7948df9b7f7a6"
+  },
+  "qa_environment": {
+    "python": "3.12",
+    "requirements_changed": false,
+    "dependency_source": "Existing requirements and prepared QA dependencies. Import real Streamlit before selected UI regression tests."
+  }
+}

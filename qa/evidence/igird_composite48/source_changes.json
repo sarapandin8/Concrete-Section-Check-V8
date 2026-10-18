@@ -1,0 +1,29 @@
+{
+  "modified": [
+    "README.md",
+    "concrete_pmm_pro/analysis/igird_composite_steel45.py",
+    "concrete_pmm_pro/ui/analysis_page.py",
+    "concrete_pmm_pro/ui/igird_composite_steel45.py",
+    "concrete_pmm_pro/ui/igird_modeltn47.py",
+    "tests/test_igird_uls6_torsion_general_procedure.py",
+    "tests/test_igird_uls7_concurrent_vt.py"
+  ],
+  "added": [
+    "IGIRDER_COMPOSITE48_HANDOFF_TH.md",
+    "concrete_pmm_pro/ui/igird_composite_scan48.py",
+    "concrete_pmm_pro/verification/igird_fullvt48.py",
+    "qa/evidence/igird_composite48/baseline_comparison.json",
+    "qa/evidence/igird_composite48/baseline_fixture_failures.xml",
+    "qa/evidence/igird_composite48/fullvt48_independent_witness_audit.json",
+    "qa/evidence/igird_composite48/fullvt48_project_replay.json",
+    "qa/evidence/igird_composite48/fullvt48_project_ui_audit.json",
+    "qa/evidence/igird_composite48/selected_tests.xml",
+    "qa/evidence/igird_composite48/targeted_tests.txt",
+    "qa/evidence/igird_composite48/validation_summary.json",
+    "qa/validate_fullvt48_project.py",
+    "qa/validate_fullvt48_ui.py",
+    "qa/verify_fullvt48_witnesses.py",
+    "tests/test_igird_fullvt48.py"
+  ],
+  "removed": []
+}

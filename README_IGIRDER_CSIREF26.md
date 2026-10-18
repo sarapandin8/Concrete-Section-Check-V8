@@ -1,3 +1,5 @@
+> Historical milestone: CSITU46 now uses reported CSI Tu unchanged for Torsion/V–T. See `IGIRDER_CSITU46_HANDOFF_TH.md`; centroid-torque values below describe the earlier release.
+
 # Concrete Section Pro — IGIRDER.CSIREF26
 
 This milestone binds CSI reporting origins to native Loads source records and transports analysis moments to the actual resistance origin at each station. Raw Loads remain unchanged. The current-project JSON records the CSI reporting point 0.615600 m below deck top, with horizontal output at each girder web center.

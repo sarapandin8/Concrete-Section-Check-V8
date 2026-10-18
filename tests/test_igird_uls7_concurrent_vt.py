@@ -228,6 +228,10 @@ def test_zone_gap_is_data_required_and_strength_curve_stays_gap():
 
 def test_different_vectors_at_one_case_station_are_not_enveloped():
     actions=pd.concat([_demand(x=10,mux=1000,vu=100,tu=100),_demand(x=10,mux=300,vu=400,tu=60)],ignore_index=True)
+    from concrete_pmm_pro.io.girder_csi_import import tag_app_source
+    actions=tag_app_source(actions,source_name='ULS7 distinct static vectors QA',sheet_name='QA',
+        source_mode='static',concurrency_confirmed=True,
+        evidence='Two analytically specified simultaneous static action vectors')
     df=ap._beam_uls_combined_vt_check_dataframe(ready_state(),actions,strength_route=_route())
     physical_rows=df.loc[df["Station type"].eq("LOAD STATION")]
     assert set(zip(physical_rows["Mu kN-m"],physical_rows["Vu kN"],physical_rows["Tu kN-m"])) == {(1000.0,100.0,100.0),(300.0,400.0,60.0)}
