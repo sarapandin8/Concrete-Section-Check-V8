@@ -160,6 +160,9 @@ def apply_global_plot_readability(fig: Any) -> Any:
     ):
         from concrete_pmm_pro.visualization.igird_uls_chart_display import apply_igird_report_layout
         apply_igird_report_layout(fig)
+    if isinstance(fig.layout.meta, dict) and fig.layout.meta.get('igird_sls_version') == 'IGIRDER.SLS53':
+        from concrete_pmm_pro.visualization.igird_sls53 import apply_sls_layout
+        apply_sls_layout(fig)
     return fig
 
 

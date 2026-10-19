@@ -31608,6 +31608,12 @@ def render_analysis_sls_stress() -> None:
         st.info("SLS / Stress & Cracking is not selected for Column/Pier/Wall/Pylon PMM workflow.")
         st.warning("Use the ULS Strength workspace for axial-biaxial strength review. Beam/Girder staged SLS checks remain hidden for this member family.")
         return
+    if (is_beam_girder_future_workflow(mode_settings)
+            and _active_section_preset_key_for_sls_material_routing().casefold() == "parametric_i_girder"):
+        from .igird_sls53_workspace import render as render_compact_sls
+        with st.container(key="igird_sls53_workspace"):
+            render_compact_sls()
+        return
     _render_project_design_code_guard(workflow="girder_sls")
     st.info("SLS stress convention: compression is negative and tension is positive.")
     _render_beam_girder_service_stress_preview()
@@ -32805,10 +32811,13 @@ def render_analysis_page() -> None:
     from concrete_pmm_pro.io.girder_load_bank import ACTIVE_KEY, SELECTION_KEY
     selection = pd.DataFrame(st.session_state.get(SELECTION_KEY, []))
     member = st.session_state.get(ACTIVE_KEY) or (str(selection.iloc[0]['Girder']) if not selection.empty else '')
-    compact_bridge=(is_beam_girder_future_workflow(_analysis_mode_from_session())
+    compact_sls=(is_beam_girder_future_workflow(_analysis_mode_from_session())
+        and _active_section_preset_key_for_sls_material_routing().casefold()=='parametric_i_girder'
+        and st.session_state.get('_nav_analysis_subpage')=='SLS / Stress & Cracking')
+    compact_bridge=compact_sls or (is_beam_girder_future_workflow(_analysis_mode_from_session())
         and _beam_uls_is_precast_composite_bridge(st.session_state,is_bridge=True)
         and st.session_state.get('_nav_analysis_subpage','ULS Strength')=='ULS Strength')
-    if member:
+    if member and not compact_sls:
         if compact_bridge:st.caption('Design member: '+str(member)+' · current section / reinforcement / support inputs')
         else:st.info(f'ULS imported girder: {member}. Calculate using the current section, reinforcement, prestress and support settings; results identify the source girder/case.')
     _sync_analysis_settings_code_to_project()
@@ -32824,7 +32833,11 @@ def render_analysis_page() -> None:
         badge="On-demand",
         accent="blue",
     )
-    active_subpage = _analysis_subpage_choice()
+    if compact_sls:
+        with st.container(key="igird_sls53_nav"):
+            active_subpage = _analysis_subpage_choice()
+    else:
+        active_subpage = _analysis_subpage_choice()
     if not compact_bridge:
         render_metric_cards(_commercial_analysis_dashboard_cards(settings, active_subpage))
         render_section_bar("Analysis workspace", "The selected analysis subpage controls what is evaluated on this rerun.", mark="A")

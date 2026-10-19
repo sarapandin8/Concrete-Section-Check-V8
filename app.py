@@ -2149,6 +2149,9 @@ def _results_beam_sls_stage_summary_df(state: object) -> pd.DataFrame | None:
     calculated.
     """
 
+    from concrete_pmm_pro.ui.igird_sls53_results import handoff_is_current
+    if not handoff_is_current(state):
+        return None
     for key in (
         "result_summary_beam_girder_sls_stage_summary_df",
         "beam_girder_sls_stage_summary_df",
@@ -5674,17 +5677,29 @@ def _render_report_qa_crossbeam_workspace(state: object) -> None:
     else:
         _render_report_qa_crossbeam_readiness(state, context)
 
+def _compact_igird_sls_chrome() -> bool:
+    """SLS retains sidebar navigation/context and gives the main area to plots."""
+    from concrete_pmm_pro.core.analysis_modes import is_beam_girder_future_workflow
+    from concrete_pmm_pro.ui.analysis_page import _active_section_preset_key_for_sls_material_routing
+    return (st.session_state.get('_nav_active_workspace') == 'Analysis'
+        and st.session_state.get('_nav_analysis_subpage') == 'SLS / Stress & Cracking'
+        and is_beam_girder_future_workflow(_analysis_mode_from_session_for_chrome())
+        and _active_section_preset_key_for_sls_material_routing().casefold() == 'parametric_i_girder')
+
+
 def main() -> None:
     st.set_page_config(page_title="Concrete Section Pro", layout="wide", initial_sidebar_state="expanded")
     _render_global_commercial_tab_styles()
     install_streamlit_plotly_readability_patch(st)
     # Keep the canonical Streamlit title call for brand continuity and tests;
     # the premium app shell below carries the visible commercial header.
-    st.title("Concrete Section Pro")
-    st.caption(
-        "Concrete section analysis and design-review workspace. "
-        "Internal units: mm, MPa, N, N-mm."
-    )
+    compact_sls = _compact_igird_sls_chrome()
+    if not compact_sls:
+        st.title("Concrete Section Pro")
+        st.caption(
+            "Concrete section analysis and design-review workspace. "
+            "Internal units: mm, MPa, N, N-mm."
+        )
 
     # CROSSBEAM.UI.NAV1: resolve the canonical workflow before Sidebar or main
     # Analysis navigation validates/resets its workflow-scoped subpage key.
@@ -5696,14 +5711,16 @@ def main() -> None:
     if st.session_state.get("_nav_active_workspace") not in WORKSPACE_NAVIGATION:
         st.session_state["_nav_active_workspace"] = "Setup"
     _render_commercial_sidebar(str(st.session_state.get("_nav_active_workspace", "Setup")))
-    _render_commercial_brand_header(str(st.session_state.get("_nav_active_workspace", "Setup")))
-
-    active_workspace = _safe_choice(
-        "Workspace",
-        list(WORKSPACE_NAVIGATION.keys()),
-        key="_nav_active_workspace",
-    )
-    _render_engineering_context_summary(active_workspace)
+    if compact_sls:
+        active_workspace = 'Analysis'
+    else:
+        _render_commercial_brand_header(str(st.session_state.get("_nav_active_workspace", "Setup")))
+        active_workspace = _safe_choice(
+            "Workspace",
+            list(WORKSPACE_NAVIGATION.keys()),
+            key="_nav_active_workspace",
+        )
+        _render_engineering_context_summary(active_workspace)
     if active_workspace == "Setup":
         render_setup_workspace()
     elif active_workspace == "Sections":

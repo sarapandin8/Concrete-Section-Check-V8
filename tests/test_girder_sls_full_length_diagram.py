@@ -244,7 +244,9 @@ def test_service_comp4_finalizes_service_stress_check_workflow_without_certified
     assert "SERVICE.COMP4" in SOURCE
     assert "Final Service Stress Check — Beam/CIP" in SOURCE
     assert "Final Service Stress Check decision summary" in SOURCE
-    assert '"Check status": "FAIL" if exceeds else "PASS"' in SOURCE
+    # CSIREF26 already added reference REVIEW in CODE52; never require the
+    # older expression that silently treated an unresolved origin as PASS.
+    assert '"Check status": "FAIL" if exceeds else ("REVIEW" if reference_review else "PASS")' in SOURCE
     assert "Final Service stress component audit" in SOURCE
     assert "Long-term redistribution, shrinkage compatibility, deflection, shear, detailing, and report output remain separate checks" in SOURCE
     assert "code-certified" not in SOURCE[SOURCE.find("def _render_final_service_beam_cip_concrete_split"):SOURCE.find("def _render_girder_full_length_sls_diagram")]

@@ -1,0 +1,681 @@
+{
+  "version": "IGIRDER.SLS53",
+  "status": "PASS",
+  "baseline": {
+    "file": "concrete-section-pro_IGIRDER-CODE52.zip",
+    "sha256": "1c19193938c0a1a0b43877bd21cc65154d2a8652372900744afc1c79f4f05368"
+  },
+  "project_sha256": "0ae85f6de0b753062393a70717105953836a4a7722449edfbdc0e91ba8f99fcb",
+  "source_scope": "One selected SLS girder; every calculated stage and case. Original project has no imported SLS bank; native CSI fixture is separate software QA.",
+  "native_engine_comparison": {
+    "raw_frames": 22,
+    "split_frames": 22,
+    "nonempty_split_frames": 13,
+    "all_columns_all_values_match": true,
+    "baseline_digests": [
+      {
+        "kind": "original_project_auto_loads",
+        "member": "Current girder",
+        "frame_digests": {
+          "Transfer stage": {
+            "SLS-TR": {
+              "raw": "e21e88baa1c72ee7212f7a6f64c66277339a951f81887012c1f64bef130c10c7",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Lifting stage": {
+            "AUTO-LIFT": {
+              "raw": "f172534d2499533652a19efe6950575aaf4ee3daa8a491763bea57c8046e8149",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Construction stage": {
+            "SLS-CONST": {
+              "raw": "5f6490894807fa457abfd1a5821303aec847c3db8b3bfe2ad410d9258a90b534",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Service stage": {
+            "SLS-SERV": {
+              "raw": "f2a8d94380f79624fec257d62c8a56f5de68f710c54ebe0cfe9220d51c1577b6",
+              "split": "5295995fb6a11688074fc2376b9375dbfaaf7529fe215a85da89b83df8e47489",
+              "stations": 21
+            }
+          }
+        }
+      },
+      {
+        "kind": "native_fixture",
+        "member": "BOBJ1 / Left Exterior Girder",
+        "frame_digests": {
+          "Transfer stage": {
+            "SLS-TR": {
+              "raw": "e21e88baa1c72ee7212f7a6f64c66277339a951f81887012c1f64bef130c10c7",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Lifting stage": {
+            "AUTO-LIFT": {
+              "raw": "f172534d2499533652a19efe6950575aaf4ee3daa8a491763bea57c8046e8149",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Construction stage": {
+            "SLS-CONST": {
+              "raw": "5f6490894807fa457abfd1a5821303aec847c3db8b3bfe2ad410d9258a90b534",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Service stage": {
+            "native_sls.csv / BOBJ1 / Left Exterior Girder / S1A / Combination / CSV / Max / After / set 1": {
+              "raw": "5b7d6dd9d0875a6f7e89823cb1e308e3f5fc36a92bb93aa5cb32881265fb59e9",
+              "split": "a5ece39af5a071fed64965ee8dc69105830173a80eb595fa5cda4fa80c4d135d",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Left Exterior Girder / S1A / Combination / CSV / Max / Before / set 1": {
+              "raw": "75535c837af5e6f63dfd04aa5185d534db950f663a6c47945e694a42bec99354",
+              "split": "e02513777a7b53543aabf05889ee9b0d67f155daf991a5518bba00a951d0dca3",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Left Exterior Girder / S1A / Combination / CSV / Min / After / set 1": {
+              "raw": "8e47c686351d2fef664f82a575e644d9ef49e55d75491b99a730e4fa633e968b",
+              "split": "a294890c2b8d2869834ac273f86b93934bd7017e7d9445c856748f4f54fb62db",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Left Exterior Girder / S1A / Combination / CSV / Min / Before / set 1": {
+              "raw": "cad6cc8dd444daf7fc3e151a384af08465f41b6c8c7fe3dc2eb7ec05923d4e9a",
+              "split": "cc7da41bd618ffb95fdb56045abf30e554e91ebdc59856e4a88bb27d9e4b5add",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Left Exterior Girder / S1C / Combination / CSV / Static / After / set 1": {
+              "raw": "e7653dfa443f34a92229696a533c8359fb3873fdbacf1c0698199b95708d8935",
+              "split": "6e79cdae70602ab956e878d59166220515b8fbd6ab0277e5dce37718daecdb7a",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Left Exterior Girder / S1C / Combination / CSV / Static / Before / set 1": {
+              "raw": "ecb7b2ec4baf82eeddaae4c30759859e9e20a0057b9320bc0f0190edc6930acb",
+              "split": "9d49c11f43c4dfbe3cdc1a318509722faef1cee5e69e7937d273b9bf92d7b828",
+              "stations": 20
+            }
+          }
+        }
+      },
+      {
+        "kind": "native_fixture",
+        "member": "BOBJ1 / Interior Girder 2",
+        "frame_digests": {
+          "Transfer stage": {
+            "SLS-TR": {
+              "raw": "e21e88baa1c72ee7212f7a6f64c66277339a951f81887012c1f64bef130c10c7",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Lifting stage": {
+            "AUTO-LIFT": {
+              "raw": "f172534d2499533652a19efe6950575aaf4ee3daa8a491763bea57c8046e8149",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Construction stage": {
+            "SLS-CONST": {
+              "raw": "5f6490894807fa457abfd1a5821303aec847c3db8b3bfe2ad410d9258a90b534",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Service stage": {
+            "native_sls.csv / BOBJ1 / Interior Girder 2 / S1A / Combination / CSV / Max / After / set 1": {
+              "raw": "962efb988e258b9a034658413474f837590d82f893770301f59fc61a761a5ecb",
+              "split": "98cdcc539757f5440c462fd7b43894753b86058c4f5e0e96008dc4c5ae0536e3",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Interior Girder 2 / S1A / Combination / CSV / Max / Before / set 1": {
+              "raw": "d3ea8d123819116ff70735587084f2102eb1e54717ced582441824e53c3851e8",
+              "split": "4db94fbf547899629d43c281d67dd421698f997f8872115aaecb5cb1a45012d6",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Interior Girder 2 / S1A / Combination / CSV / Min / After / set 1": {
+              "raw": "e2bcd2ba704339f1fa0e7e80e1fecfd0a4b1eb9e04cf21fbed6a94982045a96a",
+              "split": "1f9f2e32d3727b0f035ab6e0dca676b11748365116b01a8268adefdb1630c6ad",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Interior Girder 2 / S1A / Combination / CSV / Min / Before / set 1": {
+              "raw": "fb869e2f41c71eb1d7538a9a6a626b18429ca3395dd8c784b1446a3f3b1735ab",
+              "split": "7c55a7e57f7af4d08227888be160c5bdcb99de069eee4be4edba6e3e3e07b0ac",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Interior Girder 2 / S1C / Combination / CSV / Static / After / set 1": {
+              "raw": "81f3ad7ffbec2358f9339ccd03912e53a7bad12121af197f2528c76b02cc3ecb",
+              "split": "9b61ee9dd95227bd1a346b48938639a5657c267e14490b85dac4865b7394625f",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Interior Girder 2 / S1C / Combination / CSV / Static / Before / set 1": {
+              "raw": "4cab22c2c6acb6fc1d4f25dad22047d8a8ad5027269ac6e5dd412d576e323e2d",
+              "split": "684ab51791cef4a889a86c8ae3adf1d8e5f15d7a3acd0e142341055d801d991e",
+              "stations": 20
+            }
+          }
+        }
+      }
+    ]
+  },
+  "regression": {
+    "selected_tests_passed": 163,
+    "failed": 0,
+    "warnings": 7,
+    "warning_types": [
+      "Existing pytest anyio import-rewrite warning",
+      "Existing pandas empty/all-NA concat FutureWarning"
+    ]
+  },
+  "app": {
+    "version": "IGIRDER.SLS53",
+    "project_sha256": "0ae85f6de0b753062393a70717105953836a4a7722449edfbdc0e91ba8f99fcb",
+    "native_fixture_rows": 240,
+    "native_fixture_girders": 2,
+    "runs": [
+      {
+        "kind": "original_project_auto_loads",
+        "member": "Current girder",
+        "calculate_engine_calls": 4,
+        "review_extra_engine_calls": 0,
+        "initial_and_calculate_seconds": 0.982,
+        "summary": [
+          {
+            "Stage": "Transfer stage",
+            "Controls": "Tension",
+            "Demand": "Tension",
+            "Status": "Preview FAIL",
+            "Station x (m)": 0.0,
+            "Fiber": "Top",
+            "Actual stress (MPa)": 2.829948575597233,
+            "Limit stress (MPa)": 1.38,
+            "Utilization": 2.0506873736211833,
+            "Limit profile": "Temporary release — no bonded auxiliary tension reinforcement",
+            "Limit profile key": "aashto_transfer_no_aux",
+            "Limit profile source": "Conservative default — bonded auxiliary reinforcement not verified",
+            "Case Name": "SLS-TR",
+            "Basis": "Precast gross section",
+            "Cases checked": 1,
+            "Source scope": "Selected SLS girder · all calculated cases",
+            "Girder": "Current girder"
+          },
+          {
+            "Stage": "Lifting stage",
+            "Controls": "Tension",
+            "Demand": "Tension",
+            "Status": "Preview FAIL",
+            "Station x (m)": 5.0,
+            "Fiber": "Top",
+            "Actual stress (MPa)": 3.626448804627973,
+            "Limit stress (MPa)": 1.38,
+            "Utilization": 2.627861452628966,
+            "Limit profile": "Temporary release — no bonded auxiliary tension reinforcement",
+            "Limit profile key": "aashto_transfer_no_aux",
+            "Limit profile source": "Conservative default — bonded auxiliary reinforcement not verified",
+            "Case Name": "AUTO-LIFT",
+            "Basis": "Precast gross section",
+            "Cases checked": 1,
+            "Source scope": "Selected SLS girder · all calculated cases",
+            "Girder": "Current girder"
+          },
+          {
+            "Stage": "Construction stage",
+            "Controls": "Tension",
+            "Demand": "Tension",
+            "Status": "Preview FAIL",
+            "Station x (m)": 0.0,
+            "Fiber": "Top",
+            "Actual stress (MPa)": 2.829948575597233,
+            "Limit stress (MPa)": 1.38,
+            "Utilization": 2.0506873736211833,
+            "Limit profile": "Pre-composite construction stage — no bonded auxiliary reinforcement",
+            "Limit profile key": "aashto_deck_precomp_user",
+            "Limit profile source": "Conservative default — bonded auxiliary reinforcement not verified",
+            "Case Name": "SLS-CONST",
+            "Basis": "Precast gross section",
+            "Cases checked": 1,
+            "Source scope": "Selected SLS girder · all calculated cases",
+            "Girder": "Current girder"
+          },
+          {
+            "Concrete component": "Precast beam",
+            "Demand": "Tension",
+            "Check status": "PASS",
+            "Reference review": "",
+            "Station x (m)": 0.0,
+            "Fiber": "Top of beam",
+            "Actual stress (MPa)": 2.517275220041609,
+            "Limit stress (MPa)": 3.3541019662496847,
+            "Utilization": 0.7505064680118372,
+            "Limit basis": "Precast beam concrete: active Service-stage code limit profile selected above",
+            "Locked-in stress (MPa)": -0.0,
+            "Final Pe stress (MPa)": 2.517,
+            "Composite increment stress (MPa)": -0.0,
+            "Stage": "Service stage",
+            "Case Name": "SLS-SERV",
+            "Status": "Preview PASS",
+            "Controls": "Tension",
+            "Limit profile": "Precast beam concrete: active Service-stage code limit profile selected above",
+            "Limit profile key": "aashto_service_bonded_moderate_full",
+            "Limit profile source": "Precast beam concrete: active Service-stage code limit profile selected above",
+            "Basis": "Staged composite · material specific",
+            "Cases checked": 1,
+            "Source scope": "Selected SLS girder · all calculated cases",
+            "Girder": "Current girder"
+          }
+        ],
+        "frame_digests": {
+          "Transfer stage": {
+            "SLS-TR": {
+              "raw": "e21e88baa1c72ee7212f7a6f64c66277339a951f81887012c1f64bef130c10c7",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Lifting stage": {
+            "AUTO-LIFT": {
+              "raw": "f172534d2499533652a19efe6950575aaf4ee3daa8a491763bea57c8046e8149",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Construction stage": {
+            "SLS-CONST": {
+              "raw": "5f6490894807fa457abfd1a5821303aec847c3db8b3bfe2ad410d9258a90b534",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Service stage": {
+            "SLS-SERV": {
+              "raw": "f2a8d94380f79624fec257d62c8a56f5de68f710c54ebe0cfe9220d51c1577b6",
+              "split": "5295995fb6a11688074fc2376b9375dbfaaf7529fe215a85da89b83df8e47489",
+              "stations": 21
+            }
+          }
+        },
+        "widget_counts": {
+          "selectbox": 1,
+          "radio": 2,
+          "checkbox": 0,
+          "number_input": 0,
+          "expander": 4
+        },
+        "uls_unchanged": true,
+        "json_input_only": true,
+        "summary_report_read_only": true
+      },
+      {
+        "kind": "native_fixture",
+        "member": "BOBJ1 / Left Exterior Girder",
+        "calculate_engine_calls": 4,
+        "review_extra_engine_calls": 0,
+        "initial_and_calculate_seconds": 0.828,
+        "summary": [
+          {
+            "Stage": "Transfer stage",
+            "Controls": "Tension",
+            "Demand": "Tension",
+            "Status": "Preview FAIL",
+            "Station x (m)": 0.0,
+            "Fiber": "Top",
+            "Actual stress (MPa)": 2.829948575597233,
+            "Limit stress (MPa)": 1.38,
+            "Utilization": 2.0506873736211833,
+            "Limit profile": "Temporary release — no bonded auxiliary tension reinforcement",
+            "Limit profile key": "aashto_transfer_no_aux",
+            "Limit profile source": "Conservative default — bonded auxiliary reinforcement not verified",
+            "Case Name": "SLS-TR",
+            "Basis": "Precast gross section",
+            "Cases checked": 1,
+            "Source scope": "Selected SLS girder · all calculated cases",
+            "Girder": "BOBJ1 / Left Exterior Girder"
+          },
+          {
+            "Stage": "Lifting stage",
+            "Controls": "Tension",
+            "Demand": "Tension",
+            "Status": "Preview FAIL",
+            "Station x (m)": 5.0,
+            "Fiber": "Top",
+            "Actual stress (MPa)": 3.626448804627973,
+            "Limit stress (MPa)": 1.38,
+            "Utilization": 2.627861452628966,
+            "Limit profile": "Temporary release — no bonded auxiliary tension reinforcement",
+            "Limit profile key": "aashto_transfer_no_aux",
+            "Limit profile source": "Conservative default — bonded auxiliary reinforcement not verified",
+            "Case Name": "AUTO-LIFT",
+            "Basis": "Precast gross section",
+            "Cases checked": 1,
+            "Source scope": "Selected SLS girder · all calculated cases",
+            "Girder": "BOBJ1 / Left Exterior Girder"
+          },
+          {
+            "Stage": "Construction stage",
+            "Controls": "Tension",
+            "Demand": "Tension",
+            "Status": "Preview FAIL",
+            "Station x (m)": 0.0,
+            "Fiber": "Top",
+            "Actual stress (MPa)": 2.829948575597233,
+            "Limit stress (MPa)": 1.38,
+            "Utilization": 2.0506873736211833,
+            "Limit profile": "Pre-composite construction stage — no bonded auxiliary reinforcement",
+            "Limit profile key": "aashto_deck_precomp_user",
+            "Limit profile source": "Conservative default — bonded auxiliary reinforcement not verified",
+            "Case Name": "SLS-CONST",
+            "Basis": "Precast gross section",
+            "Cases checked": 1,
+            "Source scope": "Selected SLS girder · all calculated cases",
+            "Girder": "BOBJ1 / Left Exterior Girder"
+          },
+          {
+            "Concrete component": "Precast beam",
+            "Demand": "Tension",
+            "Check status": "REVIEW",
+            "Reference review": "Top/bottom SLS checks primary M3 only; M2 corner-fiber stress remains separate.",
+            "Station x (m)": 15.0,
+            "Fiber": "Top of beam",
+            "Actual stress (MPa)": 3.107553087915667,
+            "Limit stress (MPa)": 3.3541019662496847,
+            "Utilization": 0.9264933264358415,
+            "Limit basis": "Precast beam concrete: active Service-stage code limit profile selected above",
+            "Locked-in stress (MPa)": -0.0,
+            "Final Pe stress (MPa)": 4.471,
+            "Composite increment stress (MPa)": -1.363,
+            "Stage": "Service stage",
+            "Case Name": "native_sls.csv / BOBJ1 / Left Exterior Girder / S1C / Combination / CSV / Static / After / set 1",
+            "Status": "REVIEW",
+            "Controls": "Tension",
+            "Limit profile": "Precast beam concrete: active Service-stage code limit profile selected above",
+            "Limit profile key": "aashto_service_bonded_moderate_full",
+            "Limit profile source": "Precast beam concrete: active Service-stage code limit profile selected above",
+            "Basis": "Staged composite · material specific",
+            "Review notes": "Top/bottom SLS checks primary M3 only; M2 corner-fiber stress remains separate. Source stations do not cover both ends; graph values are not extrapolated.",
+            "Cases checked": 6,
+            "Source scope": "Selected SLS girder · all calculated cases",
+            "Girder": "BOBJ1 / Left Exterior Girder"
+          }
+        ],
+        "frame_digests": {
+          "Transfer stage": {
+            "SLS-TR": {
+              "raw": "e21e88baa1c72ee7212f7a6f64c66277339a951f81887012c1f64bef130c10c7",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Lifting stage": {
+            "AUTO-LIFT": {
+              "raw": "f172534d2499533652a19efe6950575aaf4ee3daa8a491763bea57c8046e8149",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Construction stage": {
+            "SLS-CONST": {
+              "raw": "5f6490894807fa457abfd1a5821303aec847c3db8b3bfe2ad410d9258a90b534",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Service stage": {
+            "native_sls.csv / BOBJ1 / Left Exterior Girder / S1A / Combination / CSV / Max / After / set 1": {
+              "raw": "5b7d6dd9d0875a6f7e89823cb1e308e3f5fc36a92bb93aa5cb32881265fb59e9",
+              "split": "a5ece39af5a071fed64965ee8dc69105830173a80eb595fa5cda4fa80c4d135d",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Left Exterior Girder / S1A / Combination / CSV / Max / Before / set 1": {
+              "raw": "75535c837af5e6f63dfd04aa5185d534db950f663a6c47945e694a42bec99354",
+              "split": "e02513777a7b53543aabf05889ee9b0d67f155daf991a5518bba00a951d0dca3",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Left Exterior Girder / S1A / Combination / CSV / Min / After / set 1": {
+              "raw": "8e47c686351d2fef664f82a575e644d9ef49e55d75491b99a730e4fa633e968b",
+              "split": "a294890c2b8d2869834ac273f86b93934bd7017e7d9445c856748f4f54fb62db",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Left Exterior Girder / S1A / Combination / CSV / Min / Before / set 1": {
+              "raw": "cad6cc8dd444daf7fc3e151a384af08465f41b6c8c7fe3dc2eb7ec05923d4e9a",
+              "split": "cc7da41bd618ffb95fdb56045abf30e554e91ebdc59856e4a88bb27d9e4b5add",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Left Exterior Girder / S1C / Combination / CSV / Static / After / set 1": {
+              "raw": "e7653dfa443f34a92229696a533c8359fb3873fdbacf1c0698199b95708d8935",
+              "split": "6e79cdae70602ab956e878d59166220515b8fbd6ab0277e5dce37718daecdb7a",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Left Exterior Girder / S1C / Combination / CSV / Static / Before / set 1": {
+              "raw": "ecb7b2ec4baf82eeddaae4c30759859e9e20a0057b9320bc0f0190edc6930acb",
+              "split": "9d49c11f43c4dfbe3cdc1a318509722faef1cee5e69e7937d273b9bf92d7b828",
+              "stations": 20
+            }
+          }
+        },
+        "widget_counts": {
+          "selectbox": 2,
+          "radio": 2,
+          "checkbox": 0,
+          "number_input": 0,
+          "expander": 4
+        },
+        "uls_unchanged": true,
+        "json_input_only": true,
+        "summary_report_read_only": true
+      },
+      {
+        "kind": "native_fixture",
+        "member": "BOBJ1 / Interior Girder 2",
+        "calculate_engine_calls": 4,
+        "review_extra_engine_calls": 0,
+        "initial_and_calculate_seconds": 0.797,
+        "summary": [
+          {
+            "Stage": "Transfer stage",
+            "Controls": "Tension",
+            "Demand": "Tension",
+            "Status": "Preview FAIL",
+            "Station x (m)": 0.0,
+            "Fiber": "Top",
+            "Actual stress (MPa)": 2.829948575597233,
+            "Limit stress (MPa)": 1.38,
+            "Utilization": 2.0506873736211833,
+            "Limit profile": "Temporary release — no bonded auxiliary tension reinforcement",
+            "Limit profile key": "aashto_transfer_no_aux",
+            "Limit profile source": "Conservative default — bonded auxiliary reinforcement not verified",
+            "Case Name": "SLS-TR",
+            "Basis": "Precast gross section",
+            "Cases checked": 1,
+            "Source scope": "Selected SLS girder · all calculated cases",
+            "Girder": "BOBJ1 / Interior Girder 2"
+          },
+          {
+            "Stage": "Lifting stage",
+            "Controls": "Tension",
+            "Demand": "Tension",
+            "Status": "Preview FAIL",
+            "Station x (m)": 5.0,
+            "Fiber": "Top",
+            "Actual stress (MPa)": 3.626448804627973,
+            "Limit stress (MPa)": 1.38,
+            "Utilization": 2.627861452628966,
+            "Limit profile": "Temporary release — no bonded auxiliary tension reinforcement",
+            "Limit profile key": "aashto_transfer_no_aux",
+            "Limit profile source": "Conservative default — bonded auxiliary reinforcement not verified",
+            "Case Name": "AUTO-LIFT",
+            "Basis": "Precast gross section",
+            "Cases checked": 1,
+            "Source scope": "Selected SLS girder · all calculated cases",
+            "Girder": "BOBJ1 / Interior Girder 2"
+          },
+          {
+            "Stage": "Construction stage",
+            "Controls": "Tension",
+            "Demand": "Tension",
+            "Status": "Preview FAIL",
+            "Station x (m)": 0.0,
+            "Fiber": "Top",
+            "Actual stress (MPa)": 2.829948575597233,
+            "Limit stress (MPa)": 1.38,
+            "Utilization": 2.0506873736211833,
+            "Limit profile": "Pre-composite construction stage — no bonded auxiliary reinforcement",
+            "Limit profile key": "aashto_deck_precomp_user",
+            "Limit profile source": "Conservative default — bonded auxiliary reinforcement not verified",
+            "Case Name": "SLS-CONST",
+            "Basis": "Precast gross section",
+            "Cases checked": 1,
+            "Source scope": "Selected SLS girder · all calculated cases",
+            "Girder": "BOBJ1 / Interior Girder 2"
+          },
+          {
+            "Concrete component": "Precast beam",
+            "Demand": "Tension",
+            "Check status": "REVIEW",
+            "Reference review": "Top/bottom SLS checks primary M3 only; M2 corner-fiber stress remains separate.",
+            "Station x (m)": 5.0,
+            "Fiber": "Top of beam",
+            "Actual stress (MPa)": 3.1491916239421944,
+            "Limit stress (MPa)": 3.3541019662496847,
+            "Utilization": 0.9389075393743601,
+            "Limit basis": "Precast beam concrete: active Service-stage code limit profile selected above",
+            "Locked-in stress (MPa)": -0.0,
+            "Final Pe stress (MPa)": 4.471,
+            "Composite increment stress (MPa)": -1.322,
+            "Stage": "Service stage",
+            "Case Name": "native_sls.csv / BOBJ1 / Interior Girder 2 / S1C / Combination / CSV / Static / Before / set 1",
+            "Status": "REVIEW",
+            "Controls": "Tension",
+            "Limit profile": "Precast beam concrete: active Service-stage code limit profile selected above",
+            "Limit profile key": "aashto_service_bonded_moderate_full",
+            "Limit profile source": "Precast beam concrete: active Service-stage code limit profile selected above",
+            "Basis": "Staged composite · material specific",
+            "Review notes": "Top/bottom SLS checks primary M3 only; M2 corner-fiber stress remains separate. Source stations do not cover both ends; graph values are not extrapolated.",
+            "Cases checked": 6,
+            "Source scope": "Selected SLS girder · all calculated cases",
+            "Girder": "BOBJ1 / Interior Girder 2"
+          }
+        ],
+        "frame_digests": {
+          "Transfer stage": {
+            "SLS-TR": {
+              "raw": "e21e88baa1c72ee7212f7a6f64c66277339a951f81887012c1f64bef130c10c7",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Lifting stage": {
+            "AUTO-LIFT": {
+              "raw": "f172534d2499533652a19efe6950575aaf4ee3daa8a491763bea57c8046e8149",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Construction stage": {
+            "SLS-CONST": {
+              "raw": "5f6490894807fa457abfd1a5821303aec847c3db8b3bfe2ad410d9258a90b534",
+              "split": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+              "stations": 21
+            }
+          },
+          "Service stage": {
+            "native_sls.csv / BOBJ1 / Interior Girder 2 / S1A / Combination / CSV / Max / After / set 1": {
+              "raw": "962efb988e258b9a034658413474f837590d82f893770301f59fc61a761a5ecb",
+              "split": "98cdcc539757f5440c462fd7b43894753b86058c4f5e0e96008dc4c5ae0536e3",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Interior Girder 2 / S1A / Combination / CSV / Max / Before / set 1": {
+              "raw": "d3ea8d123819116ff70735587084f2102eb1e54717ced582441824e53c3851e8",
+              "split": "4db94fbf547899629d43c281d67dd421698f997f8872115aaecb5cb1a45012d6",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Interior Girder 2 / S1A / Combination / CSV / Min / After / set 1": {
+              "raw": "e2bcd2ba704339f1fa0e7e80e1fecfd0a4b1eb9e04cf21fbed6a94982045a96a",
+              "split": "1f9f2e32d3727b0f035ab6e0dca676b11748365116b01a8268adefdb1630c6ad",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Interior Girder 2 / S1A / Combination / CSV / Min / Before / set 1": {
+              "raw": "fb869e2f41c71eb1d7538a9a6a626b18429ca3395dd8c784b1446a3f3b1735ab",
+              "split": "7c55a7e57f7af4d08227888be160c5bdcb99de069eee4be4edba6e3e3e07b0ac",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Interior Girder 2 / S1C / Combination / CSV / Static / After / set 1": {
+              "raw": "81f3ad7ffbec2358f9339ccd03912e53a7bad12121af197f2528c76b02cc3ecb",
+              "split": "9b61ee9dd95227bd1a346b48938639a5657c267e14490b85dac4865b7394625f",
+              "stations": 20
+            },
+            "native_sls.csv / BOBJ1 / Interior Girder 2 / S1C / Combination / CSV / Static / Before / set 1": {
+              "raw": "4cab22c2c6acb6fc1d4f25dad22047d8a8ad5027269ac6e5dd412d576e323e2d",
+              "split": "684ab51791cef4a889a86c8ae3adf1d8e5f15d7a3acd0e142341055d801d991e",
+              "stations": 20
+            }
+          }
+        },
+        "widget_counts": {
+          "selectbox": 2,
+          "radio": 2,
+          "checkbox": 0,
+          "number_input": 0,
+          "expander": 4
+        },
+        "uls_unchanged": true,
+        "json_input_only": true,
+        "summary_report_read_only": true
+      }
+    ]
+  },
+  "browser": {
+    "status": "PASS",
+    "main_page_js_errors": 0,
+    "viewports_px": [
+      1600,
+      1280,
+      390
+    ],
+    "reviewed_chart_views": 7,
+    "source_fixture_screen_reviewed": true,
+    "title_axes_legend_within_chart": true,
+    "title_axes_legend_no_overlap": true,
+    "span_m": [
+      0,
+      20
+    ],
+    "mobile_local_chart_scroll": {
+      "body": 390,
+      "viewport": 390,
+      "charts": [
+        {
+          "width": 344,
+          "scroll": 780
+        }
+      ]
+    },
+    "a4_pages": 1,
+    "a4_vector_chart_and_caption_reviewed": true
+  },
+  "changed_files": [
+    "README.md",
+    "app.py",
+    "concrete_pmm_pro/reporting/traceability.py",
+    "concrete_pmm_pro/ui/analysis_page.py",
+    "concrete_pmm_pro/visualization/plot_readability.py",
+    "tests/test_girder_sls_full_length_diagram.py"
+  ],
+  "added_files": [
+    "IGIRDER_SLS53_HANDOFF_TH.md",
+    "concrete_pmm_pro/ui/igird_sls53_results.py",
+    "concrete_pmm_pro/ui/igird_sls53_workspace.py",
+    "concrete_pmm_pro/visualization/igird_sls53.py",
+    "qa/igird_sls53_verify.py",
+    "tests/test_igird_sls53.py"
+  ],
+  "engineering_scope": "Existing elastic N–Mx stage stress-limit preview; no new crack-width or full-composite strength qualification."
+}

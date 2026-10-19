@@ -1,0 +1,24 @@
+........................................................................ [ 44%]
+........................................................................ [ 88%]
+...................                                                      [100%]
+=============================== warnings summary ===============================
+../../../../tmp/sls53_deps/_pytest/config/__init__.py:1345
+  [workspace]/tmp/sls53_deps/_pytest/config/__init__.py:1345: PytestAssertRewriteWarning: Module already imported so cannot be rewritten; anyio
+    self._mark_plugins_for_rewrite(hook, disable_autoload)
+
+tests/test_igird_slsimport23.py::test_invalid_or_duplicate_upload_cannot_mutate_saved_inputs
+tests/test_igird_slsimport23.py::test_member_edits_json_legacy_restore_and_uls_isolation
+tests/test_igird_slsimport23.py::test_importing_another_stage_retains_service_bank
+tests/test_igird_slsimport23.py::test_simple_ui_no_confirm_member_switch_and_open_analysis
+  [workspace]/work/sls53/repo/concrete-section-pro/concrete_pmm_pro/io/girder_sls_import.py:149: FutureWarning:
+  
+  The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
+
+tests/test_igird_slsimport23.py::test_importing_another_stage_retains_service_bank
+tests/test_igird_slsimport23.py::test_simple_ui_no_confirm_member_switch_and_open_analysis
+  [workspace]/work/sls53/repo/concrete-section-pro/concrete_pmm_pro/io/girder_sls_import.py:130: FutureWarning:
+  
+  The behavior of DataFrame concatenation with empty or all-NA entries is deprecated. In a future version, this will no longer exclude empty or all-NA columns when determining the result dtypes. To retain the old behavior, exclude the relevant entries before the concat operation.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+163 passed, 7 warnings in 7.64s

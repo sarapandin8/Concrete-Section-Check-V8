@@ -1,3 +1,11 @@
+# IGIRDER.SLS53 — compact SLS stress diagrams
+
+Analysis → **SLS / Stress & Cracking** now uses one **Calculate SLS Stress** action for every stage and load case of the selected I-girder. Review one graph at a time by stage, case and concrete component. Settings, equations and source tables are folded. All-case status stays independent of graph filters; Service uses the existing Beam/Slab material checks consistently. Stored results are input-bound and Summary / Report remain read-only.
+
+Full 0–L axes, readable legends, unclipped end markers, source context in chart exports, local horizontal scrolling on phones and A4 vector printing. Existing CODE52 ULS workspaces and stress equations are retained. See [IGIRDER_SLS53_HANDOFF_TH.md](IGIRDER_SLS53_HANDOFF_TH.md) for use, scope and verification.
+
+## Previous milestone
+
 # IGIRDER.CODE52 — compact code-based Shear / Torsion / V–T
 
 One primary Calculate action, two review selectors and one visible Max/Min chart. Calculate **Shear + Torsion** once to populate all three code views. Code checks are the main results; equations/source audit/settings are collapsed. The U-leg/slab LP is retained under **Case study — Composite model (LP)** and runs only on explicit request for the selected girder. It remains separate from production Summary / Report.

@@ -198,6 +198,9 @@ def _railway_u_girder_sls_decision_dataframe(session_state: Any) -> pd.DataFrame
 
 
 def _generic_stage_sls_available(session_state: Any) -> bool:
+    from concrete_pmm_pro.ui.igird_sls53_results import handoff_is_current
+    if not handoff_is_current(session_state):
+        return False
     for key in (
         "result_summary_beam_girder_sls_stage_summary_df",
         "generic_precast_lifting_governing_rows_df",
