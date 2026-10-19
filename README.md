@@ -1,3 +1,9 @@
+# IGIRDER.SLS54 — visible SLS page header
+
+Fix clipped compact SLS navigation by clearing Streamlit's top toolbar on screen. Preserve scroll position, calculation results, other workspace spacing and A4 printing. See [IGIRDER_SLS54_HANDOFF_TH.md](IGIRDER_SLS54_HANDOFF_TH.md).
+
+## Previous milestone
+
 # IGIRDER.SLS53 — compact SLS stress diagrams
 
 Analysis → **SLS / Stress & Cracking** now uses one **Calculate SLS Stress** action for every stage and load case of the selected I-girder. Review one graph at a time by stage, case and concrete component. Settings, equations and source tables are folded. All-case status stays independent of graph filters; Service uses the existing Beam/Slab material checks consistently. Stored results are input-bound and Summary / Report remain read-only.

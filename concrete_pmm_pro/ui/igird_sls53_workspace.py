@@ -98,6 +98,13 @@ def render():
     printed.install()
     st.markdown(ap._ANALYSIS_DASHBOARD_CSS, unsafe_allow_html=True)
     st.html('''<style>
+      /* SLS54: compact navigation is the first content on this page. Clear
+         Streamlit's 3.75rem toolbar instead of inheriting the global 1.55rem
+         landing-page inset. Scope to this workspace and to screen media so
+         other workspaces and the A4 print layout retain their spacing. */
+      @media screen{
+        [data-testid="stMainBlockContainer"]:has(.st-key-igird_sls53_nav){padding-top:4.75rem!important}
+      }
       .st-key-igird_sls53_workspace .cpmm-analysis-strip{min-height:96px;padding:.65rem .8rem;margin-bottom:.2rem}
       .st-key-igird_sls53_workspace .cpmm-analysis-value{font-size:1.15rem}
       @media print{

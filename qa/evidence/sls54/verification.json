@@ -1,0 +1,549 @@
+{
+  "version": "IGIRDER.SLS54",
+  "status": "PASS",
+  "baseline_sha256": "3820d17bf29febcf8ef05fd8ea335c452b5188e2a0018252d4d6065278049eb5",
+  "root_cause": {
+    "before": {
+      "header": {
+        "top": 0,
+        "bottom": 60,
+        "height": 60,
+        "scrollTop": 0,
+        "paddingTop": "0px",
+        "position": "absolute"
+      },
+      "main": {
+        "top": 0,
+        "bottom": 1000,
+        "height": 1000,
+        "scrollTop": 0,
+        "paddingTop": "0px",
+        "position": "static"
+      },
+      "block": {
+        "top": 0,
+        "bottom": 572.359375,
+        "height": 572.359375,
+        "scrollTop": 0,
+        "paddingTop": "24.8px",
+        "position": "static"
+      },
+      "nav": {
+        "top": 32.46875,
+        "bottom": 96.28125,
+        "height": 63.8125,
+        "scrollTop": 0,
+        "paddingTop": "0px",
+        "position": "static"
+      },
+      "navLabel": {
+        "top": 34.0625,
+        "bottom": 56.578125,
+        "height": 22.515625,
+        "scrollTop": 0,
+        "paddingTop": "0px",
+        "position": "static"
+      },
+      "navActive": {
+        "top": 57.1875,
+        "bottom": 87.90625,
+        "height": 30.71875,
+        "scrollTop": 0,
+        "paddingTop": "3.84px",
+        "position": "static"
+      },
+      "sidebar": {
+        "top": 0,
+        "bottom": 1000,
+        "height": 1000,
+        "scrollTop": 0,
+        "paddingTop": "16.8px",
+        "position": "relative"
+      },
+      "brand": {
+        "top": 92.796875,
+        "bottom": 178.671875,
+        "height": 85.875,
+        "scrollTop": 0,
+        "paddingTop": "11.2px",
+        "position": "static"
+      },
+      "scrollables": []
+    },
+    "after": {
+      "header": {
+        "top": 0,
+        "bottom": 60,
+        "height": 60,
+        "scrollTop": 0,
+        "paddingTop": "0px",
+        "position": "absolute"
+      },
+      "main": {
+        "top": 0,
+        "bottom": 1000,
+        "height": 1000,
+        "scrollTop": 0,
+        "paddingTop": "0px",
+        "position": "static"
+      },
+      "block": {
+        "top": 0,
+        "bottom": 1445.828125,
+        "height": 1445.828125,
+        "scrollTop": 0,
+        "paddingTop": "24.8px",
+        "position": "static"
+      },
+      "nav": {
+        "top": 32.46875,
+        "bottom": 96.28125,
+        "height": 63.8125,
+        "scrollTop": 0,
+        "paddingTop": "0px",
+        "position": "static"
+      },
+      "navLabel": {
+        "top": 34.0625,
+        "bottom": 56.578125,
+        "height": 22.515625,
+        "scrollTop": 0,
+        "paddingTop": "0px",
+        "position": "static"
+      },
+      "navActive": {
+        "top": 57.1875,
+        "bottom": 87.90625,
+        "height": 30.71875,
+        "scrollTop": 0,
+        "paddingTop": "3.84px",
+        "position": "static"
+      },
+      "sidebar": {
+        "top": 0,
+        "bottom": 1000,
+        "height": 1000,
+        "scrollTop": 0,
+        "paddingTop": "16.8px",
+        "position": "relative"
+      },
+      "brand": {
+        "top": 92.796875,
+        "bottom": 178.671875,
+        "height": 85.875,
+        "scrollTop": 0,
+        "paddingTop": "11.2px",
+        "position": "static"
+      },
+      "scrollables": []
+    }
+  },
+  "fixed_browser": {
+    "status": "PASS",
+    "records": [
+      {
+        "width": 1768,
+        "height": 1000,
+        "before": {
+          "header": {
+            "top": 0,
+            "bottom": 60,
+            "height": 60
+          },
+          "label": {
+            "top": 85.265625,
+            "bottom": 107.78125,
+            "height": 22.515625
+          },
+          "nav": {
+            "top": 83.671875,
+            "bottom": 147.484375,
+            "height": 63.8125
+          },
+          "active": {
+            "top": 108.390625,
+            "bottom": 139.109375,
+            "height": 30.71875
+          },
+          "mainScrollTop": 0,
+          "paddingTop": "76px"
+        },
+        "after": {
+          "header": {
+            "top": 0,
+            "bottom": 60,
+            "height": 60
+          },
+          "label": {
+            "top": 85.265625,
+            "bottom": 107.78125,
+            "height": 22.515625
+          },
+          "nav": {
+            "top": 83.671875,
+            "bottom": 147.484375,
+            "height": 63.8125
+          },
+          "active": {
+            "top": 108.390625,
+            "bottom": 139.109375,
+            "height": 30.71875
+          },
+          "mainScrollTop": 0,
+          "paddingTop": "76px"
+        },
+        "stage_checks": [
+          {
+            "stage": "Transfer",
+            "geometry": {
+              "header": {
+                "top": 0,
+                "bottom": 60,
+                "height": 60
+              },
+              "label": {
+                "top": 85.265625,
+                "bottom": 107.78125,
+                "height": 22.515625
+              },
+              "nav": {
+                "top": 83.671875,
+                "bottom": 147.484375,
+                "height": 63.8125
+              },
+              "active": {
+                "top": 108.390625,
+                "bottom": 139.109375,
+                "height": 30.71875
+              },
+              "mainScrollTop": 0,
+              "paddingTop": "76px"
+            }
+          },
+          {
+            "stage": "Lifting",
+            "geometry": {
+              "header": {
+                "top": 0,
+                "bottom": 60,
+                "height": 60
+              },
+              "label": {
+                "top": 85.265625,
+                "bottom": 107.78125,
+                "height": 22.515625
+              },
+              "nav": {
+                "top": 83.671875,
+                "bottom": 147.484375,
+                "height": 63.8125
+              },
+              "active": {
+                "top": 108.390625,
+                "bottom": 139.109375,
+                "height": 30.71875
+              },
+              "mainScrollTop": 0,
+              "paddingTop": "76px"
+            }
+          },
+          {
+            "stage": "Construction",
+            "geometry": {
+              "header": {
+                "top": 0,
+                "bottom": 60,
+                "height": 60
+              },
+              "label": {
+                "top": 85.265625,
+                "bottom": 107.78125,
+                "height": 22.515625
+              },
+              "nav": {
+                "top": 83.671875,
+                "bottom": 147.484375,
+                "height": 63.8125
+              },
+              "active": {
+                "top": 108.390625,
+                "bottom": 139.109375,
+                "height": 30.71875
+              },
+              "mainScrollTop": 0,
+              "paddingTop": "76px"
+            }
+          },
+          {
+            "stage": "Service",
+            "geometry": {
+              "header": {
+                "top": 0,
+                "bottom": 60,
+                "height": 60
+              },
+              "label": {
+                "top": 85.265625,
+                "bottom": 107.78125,
+                "height": 22.515625
+              },
+              "nav": {
+                "top": 83.671875,
+                "bottom": 147.484375,
+                "height": 63.8125
+              },
+              "active": {
+                "top": 108.390625,
+                "bottom": 139.109375,
+                "height": 30.71875
+              },
+              "mainScrollTop": 0,
+              "paddingTop": "76px"
+            }
+          }
+        ],
+        "other_workspace": null
+      },
+      {
+        "width": 1280,
+        "height": 900,
+        "before": {
+          "header": {
+            "top": 0,
+            "bottom": 60,
+            "height": 60
+          },
+          "label": {
+            "top": 85.265625,
+            "bottom": 107.78125,
+            "height": 22.515625
+          },
+          "nav": {
+            "top": 83.671875,
+            "bottom": 169.875,
+            "height": 86.203125
+          },
+          "active": {
+            "top": 108.390625,
+            "bottom": 139.109375,
+            "height": 30.71875
+          },
+          "mainScrollTop": 0,
+          "paddingTop": "76px"
+        },
+        "after": {
+          "header": {
+            "top": 0,
+            "bottom": 60,
+            "height": 60
+          },
+          "label": {
+            "top": 85.265625,
+            "bottom": 107.78125,
+            "height": 22.515625
+          },
+          "nav": {
+            "top": 83.671875,
+            "bottom": 169.875,
+            "height": 86.203125
+          },
+          "active": {
+            "top": 108.390625,
+            "bottom": 139.109375,
+            "height": 30.71875
+          },
+          "mainScrollTop": 0,
+          "paddingTop": "76px"
+        },
+        "stage_checks": [
+          {
+            "stage": "Transfer",
+            "geometry": {
+              "header": {
+                "top": 0,
+                "bottom": 60,
+                "height": 60
+              },
+              "label": {
+                "top": 85.265625,
+                "bottom": 107.78125,
+                "height": 22.515625
+              },
+              "nav": {
+                "top": 83.671875,
+                "bottom": 169.875,
+                "height": 86.203125
+              },
+              "active": {
+                "top": 108.390625,
+                "bottom": 139.109375,
+                "height": 30.71875
+              },
+              "mainScrollTop": 0,
+              "paddingTop": "76px"
+            }
+          },
+          {
+            "stage": "Lifting",
+            "geometry": {
+              "header": {
+                "top": 0,
+                "bottom": 60,
+                "height": 60
+              },
+              "label": {
+                "top": 85.265625,
+                "bottom": 107.78125,
+                "height": 22.515625
+              },
+              "nav": {
+                "top": 83.671875,
+                "bottom": 169.875,
+                "height": 86.203125
+              },
+              "active": {
+                "top": 108.390625,
+                "bottom": 139.109375,
+                "height": 30.71875
+              },
+              "mainScrollTop": 0,
+              "paddingTop": "76px"
+            }
+          },
+          {
+            "stage": "Construction",
+            "geometry": {
+              "header": {
+                "top": 0,
+                "bottom": 60,
+                "height": 60
+              },
+              "label": {
+                "top": 85.265625,
+                "bottom": 107.78125,
+                "height": 22.515625
+              },
+              "nav": {
+                "top": 83.671875,
+                "bottom": 169.875,
+                "height": 86.203125
+              },
+              "active": {
+                "top": 108.390625,
+                "bottom": 139.109375,
+                "height": 30.71875
+              },
+              "mainScrollTop": 0,
+              "paddingTop": "76px"
+            }
+          },
+          {
+            "stage": "Service",
+            "geometry": {
+              "header": {
+                "top": 0,
+                "bottom": 60,
+                "height": 60
+              },
+              "label": {
+                "top": 85.265625,
+                "bottom": 107.78125,
+                "height": 22.515625
+              },
+              "nav": {
+                "top": 83.671875,
+                "bottom": 169.875,
+                "height": 86.203125
+              },
+              "active": {
+                "top": 108.390625,
+                "bottom": 139.109375,
+                "height": 30.71875
+              },
+              "mainScrollTop": 0,
+              "paddingTop": "76px"
+            }
+          }
+        ],
+        "other_workspace": {
+          "header": {
+            "top": 0,
+            "bottom": 60,
+            "height": 60
+          },
+          "label": null,
+          "nav": null,
+          "active": null,
+          "mainScrollTop": 0,
+          "paddingTop": "24.8px"
+        }
+      },
+      {
+        "width": 390,
+        "height": 844,
+        "before": {
+          "header": {
+            "top": 0,
+            "bottom": 60,
+            "height": 60
+          },
+          "label": {
+            "top": 85.265625,
+            "bottom": 107.78125,
+            "height": 22.515625
+          },
+          "nav": {
+            "top": 83.671875,
+            "bottom": 241.625,
+            "height": 157.953125
+          },
+          "active": {
+            "top": 155.8125,
+            "bottom": 186.53125,
+            "height": 30.71875
+          },
+          "mainScrollTop": 0,
+          "paddingTop": "76px"
+        },
+        "after": {
+          "header": {
+            "top": 0,
+            "bottom": 60,
+            "height": 60
+          },
+          "label": {
+            "top": 85.265625,
+            "bottom": 107.78125,
+            "height": 22.515625
+          },
+          "nav": {
+            "top": 83.671875,
+            "bottom": 241.625,
+            "height": 157.953125
+          },
+          "active": {
+            "top": 155.8125,
+            "bottom": 186.53125,
+            "height": 30.71875
+          },
+          "mainScrollTop": 0,
+          "paddingTop": "76px"
+        },
+        "stage_checks": [],
+        "other_workspace": null
+      }
+    ],
+    "javascript_errors": []
+  },
+  "selected_tests_passed": 34,
+  "failed": 0,
+  "existing_import_warning": 1,
+  "print_pages": 1,
+  "modified_existing_files": [
+    "README.md",
+    "concrete_pmm_pro/ui/igird_sls53_workspace.py"
+  ],
+  "other_baseline_files_identical": true,
+  "calculation_changes": false,
+  "scope": "Screen-only top padding for compact I-girder SLS; no scroll commands."
+}
