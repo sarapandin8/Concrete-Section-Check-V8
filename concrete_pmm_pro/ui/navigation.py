@@ -20,6 +20,8 @@ from concrete_pmm_pro.core.analysis_modes import is_pmm_primary_workflow
 
 ANALYSIS_SUBPAGES = ("ULS Strength", "SLS / Stress & Cracking", "SLS Deflection / Camber")
 ANALYSIS_COLUMN_PIER_SUBPAGES = ("ULS Strength",)
+SLAB_ANALYSIS_SUBPAGE = "Slab Reinforcement"
+BRIDGE_LOAD_SUBPAGES = ("Girder Forces", "Slab Shell Results")
 
 _WORKFLOW_MEMBER_TYPES = {
     "column_pier_pmm",
@@ -84,7 +86,15 @@ def analysis_subpages_for_workflow(settings: AnalysisModeSettings) -> list[str]:
 
     if is_pmm_primary_workflow(settings):
         return list(ANALYSIS_COLUMN_PIER_SUBPAGES)
+    if settings.member_type == "beam_girder":
+        return [*ANALYSIS_SUBPAGES, SLAB_ANALYSIS_SUBPAGE]
     return list(ANALYSIS_SUBPAGES)
+
+
+def loads_subpages_for_session(session_state: Mapping[str, Any]) -> list[str]:
+    if resolve_analysis_mode_settings(session_state).member_type == "beam_girder":
+        return list(BRIDGE_LOAD_SUBPAGES)
+    return ["Loads"]
 
 
 def analysis_subpages_for_session(session_state: Mapping[str, Any]) -> list[str]:

@@ -1439,7 +1439,7 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
     # UI transport and must never survive from the previously open project.
     _clear_crossbeam_restore_widget_state(session_state)
     for key in list(session_state):
-        if str(key).startswith(('parametric_i_girder_deck_long_rebar_', 'parametric_i_girder_shear_aggregate',
+        if str(key).startswith(('slab_shell55_', 'parametric_i_girder_deck_long_rebar_', 'parametric_i_girder_shear_aggregate',
             'parametric_i_girder_shear_max_aggregate', 'parametric_i_girder_shear_verified_sx', 'parametric_i_girder_shear_sx_layers')):
             session_state.pop(key,None)
 

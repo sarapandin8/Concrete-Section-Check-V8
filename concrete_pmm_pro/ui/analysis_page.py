@@ -32808,6 +32808,15 @@ def _analysis_subpage_choice() -> str:
 
 
 def render_analysis_page() -> None:
+    # Input review is a separate route: it must not mark a girder solver current.
+    if (_analysis_mode_from_session().member_type == "beam_girder"
+            and st.session_state.get('_nav_analysis_subpage') == 'Slab Reinforcement'):
+        _sync_analysis_settings_code_to_project()
+        with st.container(key="slab_shell55_nav"):
+            _analysis_subpage_choice()
+        from concrete_pmm_pro.ui.slab_reinforcement import render_analysis_page as render_slab_analysis
+        render_slab_analysis()
+        return
     from concrete_pmm_pro.io.girder_load_bank import ACTIVE_KEY, SELECTION_KEY
     selection = pd.DataFrame(st.session_state.get(SELECTION_KEY, []))
     member = st.session_state.get(ACTIVE_KEY) or (str(selection.iloc[0]['Girder']) if not selection.empty else '')

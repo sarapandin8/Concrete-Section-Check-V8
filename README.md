@@ -1,3 +1,31 @@
+# SLAB.REVIEW57 — code bending references and governing-check explanations
+
+Continue from CHECK56 in **Analysis → Slab Reinforcement**. Calculate once, then review the existing plan map or the new **Code flexure reference / Minimum sufficient screen** views. **What controls / All-case check breakdown** identifies each mechanism's actual source record and counts unique exceeded/review elements. The trace separates N–M tie demand from conservative shear-tie additions, and CSV exports retain those source identities.
+
+The new conventional 1 m RC strip reference uses actual mat cover, AASHTO α1/β1 and a verified tension-controlled strain before using φ=0.90. It is an independent **N=0 bending reference**. Any nonzero membrane component keeps its result unavailable; the coupled N–M field remains the main result. Passing the stronger **1.33Mu** branch is a sufficient minimum-reinforcement screen. Exceeding it remains **REVIEW**, because the lesser Mcr branch has not been evaluated. No unknown steel ultimate strength is requested or invented.
+
+Existing coupled field resistance, As requirements and preview states are retained. This milestone does **not** establish full 3D N–M–V resistance or complete deck code acceptance. See [SLAB_REVIEW57_HANDOFF_TH.md](SLAB_REVIEW57_HANDOFF_TH.md), [SLAB_REVIEW57_METHOD.md](SLAB_REVIEW57_METHOD.md) and [SLAB_REVIEW57_VERIFICATION.json](SLAB_REVIEW57_VERIFICATION.json).
+
+## Previous milestone
+
+# SLAB.CHECK56 — slab reinforcement calculation and plan map
+
+Import the existing complete CSI Excel exports in **Loads → Slab Shell Results**, then open **Analysis → Slab Reinforcement** and press **Calculate Slab Reinforcement**. The calculator checks every imported Top Slab source record with the existing four reinforcement mats. One plan map shows the governing source corner for each element; view/case changes reuse the stored calculation.
+
+The new sandwich **N–M section preview** preserves simultaneous membrane/bending components, actual bar heights, local 200–350 mm corner thicknesses and CSI signs. It adds conservative shear screens, required/provided reinforcement, explicit REVIEW states, folded equations and source-preserving CSV export. AASHTO component limits are adopted; this is **not complete bridge-deck code acceptance or a validated full 3D N–M–V resistance model**. Anchorage, flexural minimum, local wheel/punching effects, fatigue and SLS remain separate.
+
+Verification: **99 selected tests passed**. Real-file browser QA checked **146,432 slab records** in **6.00 s of solver time** (10.02 s for the measured Calculate-to-render UI flow), one solver call through subsequent filters, full mesh rendering and a 4,576-element CSV. See [SLAB_CHECK56_HANDOFF_TH.md](SLAB_CHECK56_HANDOFF_TH.md), [SLAB_CHECK56_METHOD.md](SLAB_CHECK56_METHOD.md) and [SLAB_CHECK56_VERIFICATION.json](SLAB_CHECK56_VERIFICATION.json).
+
+## Previous milestone
+
+# SLAB.IMPORT55 — deck slab navigation and native CSI import
+
+Bridge workflow: import complete Excel exports in **Loads → Slab Shell Results** and review the shell package and existing four reinforcement groups in **Analysis → Slab Reinforcement**. Keep every worksheet; tables are detected automatically, even when the files are renamed or combined. The page lists the four supplied export sets, exact required tables and any missing data.
+
+This milestone validates input correspondence only. Slab resistance, required reinforcement, D/C and design PASS/FAIL are not calculated. Existing girder ULS/SLS equations and Project JSON schema are unchanged. See [SLAB_IMPORT55_HANDOFF_TH.md](SLAB_IMPORT55_HANDOFF_TH.md) and the downloadable in-app export checklist.
+
+## Previous milestone
+
 # IGIRDER.SLS54 — visible SLS page header
 
 Fix clipped compact SLS navigation by clearing Streamlit's top toolbar on screen. Preserve scroll position, calculation results, other workspace spacing and A4 printing. See [IGIRDER_SLS54_HANDOFF_TH.md](IGIRDER_SLS54_HANDOFF_TH.md).

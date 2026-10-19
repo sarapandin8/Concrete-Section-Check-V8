@@ -1,0 +1,35 @@
+# CSiBridge deck slab import — SLAB.REVIEW57
+
+Upload complete native .xlsx exports. Keep every worksheet, title, header and units row.
+Filenames are examples; tables are detected by column schema. The four sets may be combined in one workbook.
+Export in kN, m. Shell forces: kN/m; shell moments: kN-m/m; geometry and thickness: m.
+
+1. Element Forces - Area Shells.xlsx
+   Tables: Element Forces - Area Shells
+   Use: ULS: F11, F22, F12, M11, M22, M12, V13, V23 · all supplied cases and Max/Min rows
+
+2. TABLE Objects And Elements - Areas(1).xlsx
+   Tables: Objects And Elements - Areas; Objects And Elements - Joints
+   Use: Analysis mesh connectivity and coordinates, including generated ~ joints
+
+3. Area Assigment.xlsx
+   Tables: Area Bridge Object Flags; Area Overwrites - Thickness; Area Section Assignments; Area Local Axes Assignments 1 - Typical; Area Local Axes Assignments 2 - Advanced*
+   Use: Top Slab selection, bridge stations, corner thicknesses, section assignment and shell local axes
+
+4. Connectivity Data.xlsx
+   Tables: Connectivity - Area; Joint Coordinates
+   Use: Original Area corner order, original coordinates and axis reference joints
+
+* The Advanced axes table is required where AdvanceAxes = Yes; this applies to the supplied model.
+Keep U1A, U1B, U2A and U2B and every exported Max/Min row. Supplied force components in each row are taken as concurrent, per the project input basis.
+Keep generated ~ joints in Objects And Elements - Joints; original Joint Coordinates alone does not cover the analysis mesh.
+Keep Thick1..4 and original Joint1..4 order for variable-thickness areas.
+Keep BridgeObj, BOSpan, StartSta and EndSta in Area Bridge Object Flags; station progression defines the straight bridge reinforcement directions.
+Top Slab is selected from CompType; diaphragm results stay in the source package and are excluded from slab checks.
+Program Control, Frames, Links, Auto Mesh and Edge Constraints may stay; they are not used by this import route.
+The latest Objects And Elements export containing both Areas and Joints replaces the older Areas-only workbook.
+No stress workbook, load-combination definitions or moving-load recording-settings export is required for this workflow.
+Materials, code and four slab reinforcement groups are read from the current project inputs.
+Analysis > Slab Reinforcement calculates a coupled N-M stress-field preview and conservative shear screens. Complete deck design acceptance remains outside this section check.
+Code flexure and minimum sufficient screens are independent N=0 references; nonzero membrane demand remains coupled N-M review.
+Imported workbooks are session inputs. Re-upload them after opening a Project JSON or restarting the app.

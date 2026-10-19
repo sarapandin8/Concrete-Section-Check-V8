@@ -90,6 +90,7 @@ from concrete_pmm_pro.ui.prestress_page import render_prestress_page
 from concrete_pmm_pro.ui.project_page import render_project_page
 from concrete_pmm_pro.ui.navigation import (
     analysis_subpages_for_session,
+    loads_subpages_for_session,
     render_active_choice,
     resolve_analysis_mode_settings,
 )
@@ -144,6 +145,8 @@ def _workspace_subpages(workspace: str) -> list[str]:
         return _sections_navigation_options()
     if str(workspace) == "Analysis":
         return analysis_subpages_for_session(st.session_state)
+    if str(workspace) == "Loads":
+        return loads_subpages_for_session(st.session_state)
     return list(WORKSPACE_NAVIGATION.get(str(workspace), []))
 
 
@@ -1478,6 +1481,9 @@ def _commercial_subpage_icon(subpage: str) -> str:
         "ULS Strength": "ULS",
         "SLS / Stress & Cracking": "SLS",
         "SLS Deflection / Camber": "δ",
+        "Slab Reinforcement": "SL",
+        "Slab Shell Results": "SL",
+        "Girder Forces": "LD",
         "Report / QA": "QA",
     }.get(str(subpage), "•")
 
@@ -1781,6 +1787,7 @@ def _render_commercial_sidebar(active_workspace: str | None = None) -> None:
         subpage_key = {
             "Setup": "_nav_setup_subpage",
             "Sections": "_nav_sections_subpage",
+            "Loads": "_nav_loads_subpage",
             "Analysis": "_nav_analysis_subpage",
         }.get(active)
         if subpage_key:
@@ -1900,6 +1907,14 @@ def render_sections_workspace() -> None:
 
 
 def render_loads_workspace() -> None:
+    options = loads_subpages_for_session(st.session_state)
+    if len(options) > 1:
+        with st.container(key="slab_shell55_nav"):
+            active = _safe_choice("Loads workspace", options, key="_nav_loads_subpage")
+        if active == "Slab Shell Results":
+            from concrete_pmm_pro.ui.slab_reinforcement import render_import_page
+            render_import_page()
+            return
     render_loads_page()
 
 
@@ -5687,6 +5702,15 @@ def _compact_igird_sls_chrome() -> bool:
         and _active_section_preset_key_for_sls_material_routing().casefold() == 'parametric_i_girder')
 
 
+def _compact_slab_chrome() -> bool:
+    """Keep the shell workflow focused while sidebar navigation retains context."""
+    if _analysis_mode_from_session_for_chrome().member_type != "beam_girder":
+        return False
+    workspace = st.session_state.get("_nav_active_workspace")
+    return ((workspace == "Loads" and st.session_state.get("_nav_loads_subpage") == "Slab Shell Results")
+        or (workspace == "Analysis" and st.session_state.get("_nav_analysis_subpage") == "Slab Reinforcement"))
+
+
 def main() -> None:
     st.set_page_config(page_title="Concrete Section Pro", layout="wide", initial_sidebar_state="expanded")
     _render_global_commercial_tab_styles()
@@ -5694,7 +5718,8 @@ def main() -> None:
     # Keep the canonical Streamlit title call for brand continuity and tests;
     # the premium app shell below carries the visible commercial header.
     compact_sls = _compact_igird_sls_chrome()
-    if not compact_sls:
+    compact_slab = _compact_slab_chrome()
+    if not (compact_sls or compact_slab):
         st.title("Concrete Section Pro")
         st.caption(
             "Concrete section analysis and design-review workspace. "
@@ -5713,6 +5738,8 @@ def main() -> None:
     _render_commercial_sidebar(str(st.session_state.get("_nav_active_workspace", "Setup")))
     if compact_sls:
         active_workspace = 'Analysis'
+    elif compact_slab:
+        active_workspace = str(st.session_state['_nav_active_workspace'])
     else:
         _render_commercial_brand_header(str(st.session_state.get("_nav_active_workspace", "Setup")))
         active_workspace = _safe_choice(

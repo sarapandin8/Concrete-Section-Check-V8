@@ -1,0 +1,149 @@
+{
+  "release": "SLAB.CHECK56",
+  "date_utc": "2026-10-19",
+  "baseline": "SLAB.IMPORT55",
+  "qualification": "Scoped N-M section preview with separate conservative shear screens; not complete deck code acceptance or validated full 3D N-M-V resistance.",
+  "selected_tests": {
+    "passed": 99,
+    "failed": 0,
+    "warning": "One pytest assertion-rewrite warning for preloaded anyio; no test failure.",
+    "suites": [
+      "test_slab_shell55.py",
+      "test_slab_shell56.py",
+      "test_slab_shell56_ui.py",
+      "test_navigation_workspace.py",
+      "test_ui_active_tabs1_navigation.py",
+      "test_crossbeam_ui_nav1_workflow_navigation.py",
+      "test_igird_sls53.py",
+      "test_igird_cover38.py"
+    ]
+  },
+  "compile_changed_python": "PASS",
+  "real_data_basis": {
+    "shell_export_force_rows": 170240,
+    "selected_slab_rows": 146432,
+    "slab_elements": 4576,
+    "slab_areas": 276,
+    "excluded_non_slab_rows": 23808,
+    "thickness_mm": [
+      200,
+      350
+    ],
+    "reinforcement_fixture": "Available COVER38 example project inputs, not a claim about the user current unsaved project"
+  },
+  "browser_qa": {
+    "status": "PASS",
+    "browser_errors": [],
+    "blocked_external_requests": [],
+    "calculate_ui_seconds": 10.02,
+    "engine": {
+      "calls": 1,
+      "records": 146432,
+      "seconds": 5.997709980999389,
+      "counts": {
+        "Preview PASS": 88873,
+        "Preview FAIL": 41133,
+        "REVIEW": 16426
+      },
+      "max_equilibrium_residual": 8.526512829121202e-14,
+      "incomplete": false,
+      "governing_dc": 19.734376155721502,
+      "summary": [
+        {
+          "Reinforcement": "Top longitudinal",
+          "As provided (mm²/m)": 1005.3096491487337,
+          "As required (mm²/m)": 19818.478619899746,
+          "D/C": 19.713805230738057,
+          "Case": "U2A",
+          "Step": "Min",
+          "X (m)": 0.325,
+          "Y (m)": 2.5,
+          "AreaElem": "1365-2",
+          "Joint": "361",
+          "Status": "Preview FAIL"
+        },
+        {
+          "Reinforcement": "Bottom longitudinal",
+          "As provided (mm²/m)": 1340.412865531645,
+          "As required (mm²/m)": 26452.211692370027,
+          "D/C": 19.734376155721502,
+          "Case": "U2A",
+          "Step": "Max",
+          "X (m)": 19.675,
+          "Y (m)": -2.5,
+          "AreaElem": "1698-5",
+          "Joint": "826",
+          "Status": "Preview FAIL"
+        },
+        {
+          "Reinforcement": "Top transverse",
+          "As provided (mm²/m)": 1340.412865531645,
+          "As required (mm²/m)": 13876.552058403131,
+          "D/C": 10.352446186719721,
+          "Case": "U2A",
+          "Step": "Max",
+          "X (m)": 3.062e-16,
+          "Y (m)": 2.5,
+          "AreaElem": "1365-1",
+          "Joint": "5",
+          "Status": "Preview FAIL"
+        },
+        {
+          "Reinforcement": "Bottom transverse",
+          "As provided (mm²/m)": 1340.412865531645,
+          "As required (mm²/m)": 15357.234239631302,
+          "D/C": 11.457092538081687,
+          "Case": "U2A",
+          "Step": "Max",
+          "X (m)": 3.062e-16,
+          "Y (m)": 2.5,
+          "AreaElem": "1365-1",
+          "Joint": "5",
+          "Status": "Preview FAIL"
+        }
+      ]
+    },
+    "viewports": [
+      {
+        "width": 1768,
+        "bodyWidth": 1768,
+        "plotClient": 1422,
+        "plotScroll": 1422,
+        "graphWidth": 1408.4375
+      },
+      {
+        "width": 390,
+        "bodyWidth": 390,
+        "plotClient": 344,
+        "plotScroll": 860,
+        "graphWidth": 846.8125
+      }
+    ],
+    "export_rows": 4576
+  },
+  "changed_files_from_baseline": [
+    "CSiBridge_Deck_Slab_Export_Checklist.txt",
+    "README.md",
+    "REPO_SUMMARY_SLAB_CHECK56.md",
+    "SLAB_CHECK56_HANDOFF_TH.md",
+    "SLAB_CHECK56_METHOD.md",
+    "SLAB_CHECK56_VERIFICATION.json",
+    "concrete_pmm_pro/analysis/slab_shell56.py",
+    "concrete_pmm_pro/analysis/slab_shell56_geometry.py",
+    "concrete_pmm_pro/io/slab_shell_import.py",
+    "concrete_pmm_pro/ui/slab_reinforcement.py",
+    "concrete_pmm_pro/ui/slab_shell56_workspace.py",
+    "concrete_pmm_pro/visualization/slab_shell56.py",
+    "tests/test_slab_shell55.py",
+    "tests/test_slab_shell56.py",
+    "tests/test_slab_shell56_ui.py"
+  ],
+  "notes": [
+    "Browser screenshots were inspected locally and are not included in this release.",
+    "All source eight force components are retained in the element-envelope CSV.",
+    "Calculate-to-render time includes map rendering; engine time excludes Excel parsing.",
+    "Counts are source-record preview states, not unique failed elements or final-design approvals.",
+    "The all-case summary and preview status remain independent of map filters.",
+    "Input JSON schema and existing girder resistance equations are unchanged."
+  ]
+}
