@@ -102,7 +102,7 @@ def test_missing_current_model_is_visible_without_solver_or_reference_substituti
     assert not table.called
 
 
-def test_collection_member_primary_precedes_reference_and_reads_current_cache():
+def test_collection_member_code_primary_does_not_request_research_model():
     from concrete_pmm_pro.ui import igird_member_results as members
     saved = snapshot()
     state = {storage.RUNTIME_KEY: {'current': saved}}
@@ -116,5 +116,5 @@ def test_collection_member_primary_precedes_reference_and_reads_current_cache():
         reference.side_effect = lambda **kwargs: events.append(('reference', kwargs))
         members._render_member_result(member='Interior 2', result={}, all_rows=None, control={},
             cache={'Interior 2': {'Torsion': {'input_hash': 'current'}}}, check_name='Torsion', code_label='AASHTO')
-    assert events[0] == ('model', saved)
-    assert events[1][0] == 'reference'
+    assert len(events)==1 and events[0][0]=='reference'
+    assert not model.called

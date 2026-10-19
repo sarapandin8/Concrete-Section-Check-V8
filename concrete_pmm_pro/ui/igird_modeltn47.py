@@ -1,4 +1,4 @@
-"""Primary Analysis presentation of the stored U/slab nominal review model.
+"""Case-study presentation of the stored U/slab nominal review model.
 
 This module never calculates resistance or publishes an accepted design result.
 The source selection scans every eligible interior concurrent vector.
@@ -7,7 +7,7 @@ import math
 
 import pandas as pd
 
-VIEW_VERSION = 'IGIRDER.COMPOSITE51.anchorage-trace'
+VIEW_VERSION = 'IGIRDER.CODE52.case-study'
 MAIN_CHECKS = {'Shear', 'Torsion', 'Shear + Torsion'}
 REFERENCE_LABEL = 'Reference checks — I-girder hoop / code route'
 
@@ -64,7 +64,7 @@ def collection_snapshot(state, fingerprints):
 def _heading(result):
     import streamlit as st
     st.markdown('#### Composite resistance — U + slab steel')
-    st.warning('MODEL REVIEW — ผลหลักส่วนนี้ใช้ Model Tn รวม U สองขาและเหล็กยาวพื้น '
+    st.warning('CASE STUDY / MODEL REVIEW — Model Tn รวม U สองขาและเหล็กยาวพื้น '
         'เป็นกำลัง nominal ยังไม่มี φ และยังไม่ใช่ผล PASS สำหรับรับรองการออกแบบ full composite')
     st.caption('Model Vn/Tn: M=N=0 และ θ คงที่จากแถวต้นทางที่เลือก · '
         'Model V–T: คง M3/N ของแถวจริงและเพิ่ม V2/T ด้วยตัวคูณร่วม ใช้กำลังเหล็กร่วมกันครั้งเดียว · '
@@ -72,7 +72,7 @@ def _heading(result):
     st.caption((result or {}).get('selection') or
         'คำนวณทุกแถวแรงร่วมภายในช่วงคาน และเลือก D/C ของ V–T สูงสุด โดยคง Max/Min และ Before/After แยกกัน')
     st.caption('Tu ใช้ค่าต้นทาง CSiBridge ณ จุดรายงานเดิม ไม่ย้ายไป centroid คาน I · '
-        'Summary / Report / QA ยังคงใช้ผล code checks ที่แยกไว้ด้านล่าง')
+        'Summary / Report / QA ใช้ผล code checks แยกจากกรณีศึกษานี้')
     st.caption('COMPOSITE50: รอยต่อรับ longitudinal shear จาก V รวมทั้ง girder ด้วย d interface แยกจาก dv web; '
         'ผลที่ไม่มี U เป็นการถอด connector จากโมเดลประกอบเดิม ไม่ใช่กำลังของ I-girder เดี่ยว')
     for row in (result or {}).get('coverage',[]):
@@ -96,7 +96,7 @@ def render_overview(result):
 
 
 def render(result):
-    """Stored-results-only primary model workspace, with separate comparisons."""
+    """Stored-results-only case study, with separate reinforcement comparisons."""
     import streamlit as st
     if result is not None and not result.get('enabled'):
         return
@@ -104,7 +104,7 @@ def render(result):
     frame = primary_frame(result)
     if frame.empty:
         st.info((result or {}).get('reason') or
-            'Model Tn ยังไม่พร้อมสำหรับข้อมูลปัจจุบัน กด Calculate ปุ่มเดิมเพื่อคำนวณ ไม่มีการใช้ Tn ของปลอก I แทนอัตโนมัติ')
+            'Model Tn ยังไม่พร้อมสำหรับข้อมูลปัจจุบัน ใช้ Run case study ในแผงกรณีศึกษาเพื่อคำนวณ')
         return
     if len(frame) == 1:
         from .analysis_page import _render_analysis_summary_strip

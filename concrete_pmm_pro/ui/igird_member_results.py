@@ -112,8 +112,13 @@ def render_collection(*, check_name, route, code_label):
     rows_by_member = member_inputs(st.session_state)
     if not rows_by_member:
         return False
-    st.markdown(f'#### {check_name} — separate results for each girder')
-    st.caption('All imported girders — separate results. Calculate applies the current shared section, deck, reinforcement, prestress and support model to every girder. Different member details require separate project models.')
+    from concrete_pmm_pro.ui import igird_code52 as code_view
+    if check_name in code_view.CHECKS:
+        code_view.render_heading(check_name)
+        st.caption('Shared section/details for all girders. Calculate Shear + Torsion once to populate all three code checks.')
+    else:
+        st.markdown(f'#### {check_name} — separate results for each girder')
+        st.caption('All imported girders — separate results. Calculate applies the current shared section, deck, reinforcement, prestress and support model to every girder. Different member details require separate project models.')
     names = list(rows_by_member)
     fingerprints = {n: result_hash(st.session_state, rows_by_member[n], check_name=check_name, route=route) for n in names}
     cache = dict(st.session_state.get(CACHE_KEY, {}))
@@ -124,12 +129,28 @@ def render_collection(*, check_name, route, code_label):
                 result = calculate_member(st.session_state, rows_by_member[n], check_name=check_name, route=route)
             from concrete_pmm_pro.ui.igird_composite_steel45 import detach_review
             result = detach_review(st.session_state,result,fingerprint=fingerprints[n])
+            packages = {check_name: result}
+            if check_name == 'Shear + Torsion' and 'error' not in result:
+                # These are the exact independently completed code frames
+                # already returned by the combined calculation, not LP data
+                # or derived force envelopes. Match the single-member route.
+                for sub, keys in {
+                    'Shear': ('shear_check_df', 'shear_critical_section_df',
+                        'shear_boundary_capacity_df', 'shear_diagram_capacity_df'),
+                    'Torsion': ('torsion_check_df', 'torsion_boundary_capacity_df',
+                        'torsion_diagram_capacity_df', 'torsion_coverage_summary'),
+                }.items():
+                    if FRAME_KEYS[sub] in result:
+                        packages[sub] = {key: result[key] for key in keys if key in result}
             member_cache = dict(cache.get(n, {}))
-            member_cache[check_name] = {'input_hash': fingerprints[n], 'result': result}
+            for target, package in packages.items():
+                fingerprint = fingerprints[n] if target == check_name else result_hash(
+                    st.session_state, rows_by_member[n], check_name=target, route=route)
+                member_cache[target] = {'input_hash': fingerprint, 'result': package}
+                if n == st.session_state.get(ACTIVE_KEY) and 'error' not in package:
+                    owner = 'Flexure — Final Composite' if target == 'Flexure' else target
+                    ap._beam_uls_store_manual_result(st.session_state, owner, input_hash=fingerprint, result=package)
             cache[n] = member_cache
-            if n == st.session_state.get(ACTIVE_KEY) and 'error' not in result:
-                owner = 'Flexure — Final Composite' if check_name == 'Flexure' else check_name
-                ap._beam_uls_store_manual_result(st.session_state, owner, input_hash=fingerprints[n], result=result)
         st.session_state[CACHE_KEY] = cache
     results = {}
     controls = {}
@@ -148,22 +169,22 @@ def render_collection(*, check_name, route, code_label):
         else:
             summaries.append({'Girder':n,'Result state':'ERROR' if result is not None else
                 ('STALE' if cache.get(n,{}).get(check_name) else 'NOT CALCULATED')})
-    from concrete_pmm_pro.ui import igird_modeltn47 as model_view
-    model_primary = check_name in model_view.MAIN_CHECKS
-    if model_primary:
-        if check_name=='Shear':
-            from .igird_shear49 import render_overview
-            render_overview(st.session_state,fingerprints)
-        else:
-            model_view.render_overview(model_view.collection_snapshot(st.session_state, fingerprints))
-    from contextlib import nullcontext
-    reference_summary = st.expander('Reference summary — I-girder hoop / code route', expanded=False) if model_primary else nullcontext()
-    with reference_summary:
+    if check_name in code_view.CHECKS:
+        from .igird_code52_workspace import render
+        render(state=st.session_state, rows_by_member=rows_by_member, results=results,
+            controls=controls, summary=pd.DataFrame(summaries), check_name=check_name,
+            route=route, code_label=code_label)
+        return True
+    with st.container():
         st.markdown('##### Controlling load cases — '+check_name)
         summary = pd.DataFrame(summaries)
         compact_columns = [column for column in ('Girder','Result state','Controlling load case',
             'Station','D/C or ratio','Basis','Failed rows','Rows requiring review') if column in summary]
-        st.dataframe(result_table_for_display(summary[compact_columns]),hide_index=True,use_container_width=True)
+        if check_name in code_view.CHECKS:
+            from . import igird_print50 as printed
+            printed.table(result_table_for_display(summary[compact_columns]),member='code52_'+check_name,part='overview')
+        else:
+            st.dataframe(result_table_for_display(summary[compact_columns]),hide_index=True,use_container_width=True)
         st.caption('Numerical control uses the largest available stored strength/detailing D/C. Ties retain every case. Source/development review remains separate. Open a girder below to select its load case, chart and calculation trace.')
         issues = [f"{n}: {control['failed_rows']} failed, {control['review_rows']} requiring review"
             for n,control in controls.items() if control['failed_rows'] or control['review_rows']]
@@ -183,8 +204,9 @@ def render_collection(*, check_name, route, code_label):
                 route=route, selected_results=results, selected_check=check_name)
             igird_rebar_advisor.render_advisor(st.session_state, rows_by_member, packages,
                 route=route, key_prefix='collection')
+    visible_member = code_view.default_member(names,controls) if check_name in code_view.CHECKS else None
     for n in names:
-        with st.expander('Girder: '+n,expanded=False):
+        with st.expander('Girder: '+n,expanded=n==visible_member):
             _render_member_result(member=n,result=results[n],all_rows=rows_by_member[n],
                 control=controls.get(n),cache=cache,check_name=check_name,code_label=code_label)
     show_details = False
@@ -201,23 +223,7 @@ def render_collection(*, check_name, route, code_label):
 
 
 def _render_member_result(*, member, result, all_rows, control, cache, check_name, code_label):
-    """Use the composite nominal model first; retain the I-hoop route as reference."""
-    from concrete_pmm_pro.ui import igird_modeltn47 as view
-    if check_name in view.MAIN_CHECKS:
-        from concrete_pmm_pro.ui.igird_composite_steel45 import render, current
-        fingerprint = (result or {}).get('input_hash') or cache.get(member, {}).get(check_name, {}).get('input_hash')
-        saved=current(st.session_state, fingerprint) if result is not None else None
-        if check_name=='Shear':
-            from .igird_shear49 import render as render_shear
-            render_shear(saved,member=member)
-        else:render(saved)
-        label='Code shear — composite depth, I hoops' if check_name=='Shear' else view.REFERENCE_LABEL
-        with st.expander(label, expanded=False):
-            st.caption('AASHTO shear uses composite C–T/dv with the I-web concrete and I hoops; U resistance is in the nominal model above.' if check_name=='Shear' else
-                'Reference I-hoop results retain their own resistance definition and code-check status. The primary composite values above are nominal MODEL REVIEW.')
-            _render_reference_member_result(member=member, result=result, all_rows=all_rows,
-                control=control, cache=cache, check_name=check_name, code_label=code_label)
-        return
+    """Show the existing code route directly; no LP dependency or nested reference."""
     _render_reference_member_result(member=member, result=result, all_rows=all_rows,
         control=control, cache=cache, check_name=check_name, code_label=code_label)
 
@@ -240,6 +246,7 @@ def _render_reference_member_result(*, member, result, all_rows, control, cache,
     if full_frame is None or full_frame.empty:
         st.warning('No calculated stations are available for this girder.')
         return
+    control = control or controlling_result(full_frame,check_name)
     source = control['row'] or {}
     controlling_case = str(source.get('Case',''))
     st.caption(f"Controlling case: {controlling_case or 'Unavailable'} · {control['component']} · {control['basis']} {ratio_text(control['ratio'])} · x={source.get('Governing x','-')} · stored status {source.get('Status','REVIEW')}")

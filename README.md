@@ -1,3 +1,11 @@
+# IGIRDER.CODE52 — compact code-based Shear / Torsion / V–T
+
+One primary Calculate action, two review selectors and one visible Max/Min chart. Calculate **Shear + Torsion** once to populate all three code views. Code checks are the main results; equations/source audit/settings are collapsed. The U-leg/slab LP is retained under **Case study — Composite model (LP)** and runs only on explicit request for the selected girder. It remains separate from production Summary / Report.
+
+Existing code values, FAIL / REVIEW gates and original CSI Tu are retained. No full-composite design qualification is inferred. See [IGIRDER_CODE52_HANDOFF_TH.md](IGIRDER_CODE52_HANDOFF_TH.md) for use, scope and verification.
+
+## Previous milestone
+
 # IGIRDER.COMPOSITE51
 
 U/slab anchorage-plane geometry, exact Calculate-only reuse, and removal of duplicate shear-model rendering. Same nominal Vn/Tn/V–T as COMPOSITE50; full-composite design validation remains incomplete.

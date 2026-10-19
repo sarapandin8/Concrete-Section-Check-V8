@@ -320,6 +320,6 @@ def calculate(state, rows, *, route):
 
 
 def render(result):
-    """Show the with-U/slab nominal model as the primary Analysis result."""
+    """Read-only with-U/slab nominal model for the optional case-study panel."""
     from .igird_modeltn47 import render as render_primary
     render_primary(result)

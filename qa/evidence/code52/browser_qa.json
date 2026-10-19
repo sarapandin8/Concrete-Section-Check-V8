@@ -1,0 +1,71 @@
+{
+  "status": "PASS",
+  "browser": "Chrome Headless Shell 133",
+  "source": "Original project JSON, all 640 source rows; actual Calculate",
+  "checks": [
+    {
+      "width": 1240.4375,
+      "parent": 1253.625,
+      "xrange": [
+        0,
+        20
+      ],
+      "check": "Shear",
+      "member": "BOBJ1 / Left Exterior Girder",
+      "step": "Max",
+      "lc": "U2A",
+      "paths": 6,
+      "seconds_to_initial_graph": 27.11,
+      "code_calls": 2,
+      "review_solver_calls": 0,
+      "study_collapsed": true
+    },
+    {
+      "width": 1240.4375,
+      "parent": 1253.625,
+      "xrange": [
+        0,
+        20
+      ],
+      "check": "Torsion",
+      "member": "BOBJ1 / Interior Girder 2",
+      "step": "Max",
+      "lc": "U2A",
+      "paths": 6,
+      "seconds_to_initial_graph": 38.59,
+      "code_calls": 2,
+      "review_solver_calls": 0,
+      "study_collapsed": true
+    },
+    {
+      "width": 1240.4375,
+      "parent": 1253.625,
+      "xrange": [
+        0,
+        20
+      ],
+      "check": "Shear + Torsion",
+      "member": "BOBJ1 / Interior Girder 2",
+      "step": "Max",
+      "lc": "U2A",
+      "paths": 2,
+      "seconds_to_initial_graph": 74.61,
+      "code_calls": 2,
+      "review_solver_calls": 0,
+      "study_collapsed": true
+    }
+  ],
+  "viewports": [
+    1600,
+    1280,
+    390
+  ],
+  "javascript_errors": [],
+  "streamlit_exceptions": 0,
+  "automatic_LP_calls": 0,
+  "review_solver_calls": 0,
+  "screenshots": "Reviewed desktop plots for all three checks; full-span 0–20 m and source controls present. Final title alignment is verified separately by the release UI smoke test.",
+  "A4_print": "Reviewed A4 page 2: complete native vector plot, title, legend, notes and station 20 m; no right-hand clipping.",
+  "structural_design_acceptance": false,
+  "mobile_behavior": "780 px chart viewport scrolls inside the phone width; right endpoint remains accessible."
+}

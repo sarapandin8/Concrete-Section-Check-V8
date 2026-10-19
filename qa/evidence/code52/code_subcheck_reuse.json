@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "source_sha256": "0ae85f6de0b753062393a70717105953836a4a7722449edfbdc0e91ba8f99fcb",
+  "scope": "All standalone Shear/Torsion complete DataFrame digests equal the corresponding combined code frames for both full 320-row banks.",
+  "girders": [
+    "BOBJ1 / Interior Girder 2",
+    "BOBJ1 / Left Exterior Girder"
+  ],
+  "reused_code_frames": 14,
+  "additional_capacity_math": false,
+  "ui_fresh_cache_publication": "Confirmed separately by real app.py AppTest with previous subchecks removed."
+}

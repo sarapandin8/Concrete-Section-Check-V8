@@ -1,0 +1,54 @@
+{
+  "status": "PASS",
+  "baseline": "COMPOSITE51 production code frames; LP sidecar bypassed",
+  "current": "CODE52",
+  "source_sha256": "0ae85f6de0b753062393a70717105953836a4a7722449edfbdc0e91ba8f99fcb",
+  "matched_checks": [
+    {
+      "member": "BOBJ1 / Interior Girder 2",
+      "check": "Shear",
+      "primary_rows": 320,
+      "frames_compared": 4,
+      "all_code_values_and_statuses_unchanged": true
+    },
+    {
+      "member": "BOBJ1 / Interior Girder 2",
+      "check": "Torsion",
+      "primary_rows": 320,
+      "frames_compared": 3,
+      "all_code_values_and_statuses_unchanged": true
+    },
+    {
+      "member": "BOBJ1 / Interior Girder 2",
+      "check": "Shear + Torsion",
+      "primary_rows": 324,
+      "frames_compared": 8,
+      "all_code_values_and_statuses_unchanged": true
+    },
+    {
+      "member": "BOBJ1 / Left Exterior Girder",
+      "check": "Shear",
+      "primary_rows": 320,
+      "frames_compared": 4,
+      "all_code_values_and_statuses_unchanged": true
+    },
+    {
+      "member": "BOBJ1 / Left Exterior Girder",
+      "check": "Torsion",
+      "primary_rows": 320,
+      "frames_compared": 3,
+      "all_code_values_and_statuses_unchanged": true
+    },
+    {
+      "member": "BOBJ1 / Left Exterior Girder",
+      "check": "Shear + Torsion",
+      "primary_rows": 336,
+      "frames_compared": 8,
+      "all_code_values_and_statuses_unchanged": true
+    }
+  ],
+  "all_complete_frame_hashes_equal": true,
+  "original_Tu_policy_preserved": true,
+  "LP_calculation_calls": 0,
+  "structural_design_acceptance": false
+}

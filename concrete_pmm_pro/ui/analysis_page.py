@@ -5644,18 +5644,24 @@ def _column_pier_governing_combined_vt_row(vt_df: pd.DataFrame | None) -> dict[s
 def _beam_uls_governing_action(active_df: pd.DataFrame, column: str) -> dict[str, object] | None:
     if active_df.empty or column not in active_df.columns:
         return None
-    candidate = active_df[pd.to_numeric(active_df[column], errors="coerce").notna()].copy()
+    # JSON/CSV inputs can retain numeric text. Qualify and rank the converted
+    # numbers, without replacing the original load-table cells or using zero
+    # for missing/invalid values. Positional selection also permits duplicate
+    # dataframe indices; physical source-row identity remains in its columns.
+    numeric = pd.to_numeric(active_df[column], errors="coerce")
+    finite = numeric.notna() & numeric.map(math.isfinite)
+    finite &= ~active_df[column].map(lambda value:isinstance(value,bool))
+    candidate = active_df.loc[finite].copy()
     if candidate.empty:
         return None
-    candidate["__abs_demand"] = candidate[column].abs()
-    idx = candidate["__abs_demand"].idxmax()
-    row = candidate.loc[idx]
+    candidate["__abs_demand"] = numeric.loc[finite].abs()
+    row = candidate.iloc[int(candidate["__abs_demand"].argmax())]
     demand = float(row[column])
     if not math.isfinite(demand):
         return None
     return {
         "case": str(row.get("Case Name") or "-"),
-        "x_m": float(row.get("Station x (m)")) if math.isfinite(float(row.get("Station x (m)"))) else None,
+        "x_m": _beam_uls_float(row.get("Station x (m)")) if math.isfinite(_beam_uls_float(row.get("Station x (m)"))) else None,
         "demand": demand,
         "abs_demand": abs(demand),
         "note": str(row.get("Note") or ""),
@@ -11694,7 +11700,7 @@ def _beam_uls_check_input_hash(
     if is_igird and check_name in {"Shear", "Torsion", "Shear + Torsion"}:
         from concrete_pmm_pro.analysis.igird_shear_support import support_settings
         from concrete_pmm_pro.analysis.igird_composite_steel45 import VERSION as composite_steel45_version
-        from concrete_pmm_pro.ui.igird_modeltn47 import VIEW_VERSION as composite_model_view_version
+        from concrete_pmm_pro.ui.igird_code52 import VERSION as code_workspace_version
         from concrete_pmm_pro.io.csi_force_reference import SOURCE_TORSION_POLICY
         interface_entry = _beam_uls_manual_cache(state).get(_IGIRDER_INTERFACE_SHEAR_CHECK_NAME, {})
         interface_entry = interface_entry if isinstance(interface_entry, Mapping) else {}
@@ -11710,7 +11716,7 @@ def _beam_uls_check_input_hash(
                     "zones":_beam_uls_get_state_value(state,_IGIRDER_TORSION_ZONE_SETTINGS_KEY,
                         (_beam_uls_get_state_value(state,"project_metadata",{}) or {}).get(_IGIRDER_TORSION_ZONE_SETTINGS_KEY,[])),
                 } if bool((state.get("section_parameters") or {}).get("composite_enabled")) else None},
-            "composite_model_analysis_view": composite_model_view_version,
+            "strength_workspace": code_workspace_version,
             "CSI_torsion_demand_policy": SOURCE_TORSION_POLICY,
             "support_geometry": support_settings(state),
             "composite_interface_gate": {
@@ -11818,7 +11824,6 @@ def _beam_uls_calculate_selected_check(
     selected_check: str,
     strength_route: BeamGirderUlsStrengthRoute,
 ) -> dict[str, object]:
-    from concrete_pmm_pro.ui.igird_composite_steel45 import payload as composite_steel45_payload
     if selected_check in {"Shear", "Torsion", "Shear + Torsion"} and str(state.get("section_preset_key") or "") == "parametric_i_girder":
         state = {**state, igird_shear_section.RUNTIME_KEY: {"active_df": active_df}}
     if selected_check == "Flexure":
@@ -11850,7 +11855,6 @@ def _beam_uls_calculate_selected_check(
         )
         return {
             "shear_check_df": shear_check_df,
-            **composite_steel45_payload(state,active_df,route=strength_route),
             "shear_critical_section_df": shear_critical_section_df,
             "shear_boundary_capacity_df": shear_boundary_capacity_df,
             "shear_diagram_capacity_df": _beam_uls_igird_shear_diagram_capacity_dataframe(
@@ -11869,7 +11873,6 @@ def _beam_uls_calculate_selected_check(
         )
         return {
             "torsion_check_df": torsion_check_df,
-            **composite_steel45_payload(state,active_df,route=strength_route),
             "torsion_boundary_capacity_df": torsion_boundary_capacity_df,
             "torsion_diagram_capacity_df": _beam_uls_igird_torsion_diagram_capacity_dataframe(
                 state, active_df, torsion_check_df, strength_route=strength_route),
@@ -11923,7 +11926,6 @@ def _beam_uls_calculate_selected_check(
                 state, active_df, torsion_check_df, strength_route=strength_route),
             "torsion_coverage_summary": _beam_uls_torsion_coverage_summary(torsion_check_df),
             "combined_vt_df": combined_vt_df,
-            **composite_steel45_payload(state,active_df,route=strength_route),
             "interaction_status": _beam_uls_torsion_interaction_status(active_df),
         }
     return {}
@@ -15331,9 +15333,9 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                 "Final positive composite φMn uses the AASHTO Section 5 conservative lower-f'c composite strength route; girder-deck interface shear remains a separate acceptance gate."
             )
             st.markdown(
-                "- Composite Torsion / V–T Analysis uses the U + slab nominal MODEL REVIEW as its primary view. "
-                "The I-hoop code checks remain in Reference checks and retain their separate Summary / Report / QA status. "
-                "The model scans every eligible interior source vector, keeping separate V-only, T-only and V–T governors."
+                "- Shear / Torsion / V–T Analysis uses the code checks as its primary view, with the same Summary / Report / QA gates. "
+                "The U + slab nominal MODEL REVIEW is retained in a collapsed case-study panel and runs only on explicit request. "
+                "The optional model scans eligible interior source vectors, keeping separate V-only, T-only and V–T governors."
             )
             from concrete_pmm_pro.ui.girder_axial_convention import render_axial_convention
             render_axial_convention()
@@ -15491,7 +15493,8 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
 
     if is_precast_composite_bridge and selected_check in {"Shear", "Torsion", "Shear + Torsion"}:
         from concrete_pmm_pro.ui.igird_vt_workspace import render_input_checks
-        render_input_checks(st.session_state, check_name=selected_check)
+        with st.expander("Check settings / Section, support & development", expanded=False):
+            render_input_checks(st.session_state, check_name=selected_check)
 
     if is_precast_composite_bridge:
         from concrete_pmm_pro.ui.igird_member_results import render_collection
@@ -15577,6 +15580,22 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
                 )
     command_status_slot.markdown(_beam_uls_command_panel_html(selected_check, selected_entry), unsafe_allow_html=True)
 
+    if is_precast_composite_bridge and selected_check in {"Shear", "Torsion", "Shear + Torsion"}:
+        from concrete_pmm_pro.ui.igird_code52 import render_heading
+        from concrete_pmm_pro.ui.igird_code52_workspace import render as render_code_workspace
+        from concrete_pmm_pro.ui.igird_case_review import FRAME_KEYS, controlling_result, summary_record
+        render_heading(selected_check)
+        member = str(st.session_state.get("beam_uls_member_label") or "Design girder")
+        control = controlling_result(selected_entry.get(FRAME_KEYS[selected_check]), selected_check) if selected_entry else None
+        summary = {"Girder": member, "Result state": "CURRENT" if selected_entry else
+            ("STALE" if _beam_uls_manual_cache(st.session_state).get(selected_check) else "NOT CALCULATED")}
+        if control:
+            summary.update(summary_record(control))
+        render_code_workspace(state=st.session_state, rows_by_member={member: active_df},
+            results={member: selected_entry}, controls={member: control} if control else {},
+            summary=pd.DataFrame([summary]), check_name=selected_check, route=strength_route, code_label=code_label)
+        return
+
     status_text = _beam_uls_manual_result_badge(selected_entry)
     if selected_entry is None:
         st.markdown(_beam_uls_not_calculated_notice_html(selected_check), unsafe_allow_html=True)
@@ -15612,16 +15631,8 @@ def _render_beam_girder_uls_workspace(mode_settings: AnalysisModeSettings) -> No
         return
 
     if is_precast_composite_bridge and selected_check in {"Shear", "Torsion", "Shear + Torsion"}:
-        from concrete_pmm_pro.ui.igird_composite_steel45 import render as render_composite_steel45, current as current_composite_steel45
-        if selected_check=='Shear':
-            from concrete_pmm_pro.ui.igird_shear49 import render as render_shear49
-            render_shear49(current_composite_steel45(st.session_state,uls_input_hash),member=str(st.session_state.get('beam_uls_member_label') or 'Design girder'))
-        else:render_composite_steel45(current_composite_steel45(st.session_state,uls_input_hash))
-        if selected_check in {"Shear", "Torsion", "Shear + Torsion"}:
-            from concrete_pmm_pro.ui.igird_modeltn47 import render_reference
-            render_reference(st.session_state, active_df, selected_entry,
-                check_name=selected_check, code_label=code_label)
-            return
+        from concrete_pmm_pro.ui.igird_code52 import render_heading
+        render_heading(selected_check)
 
     if is_precast_composite_bridge and selected_check in {"Torsion", "Shear + Torsion"}:
         from concrete_pmm_pro.io.girder_load_bank import BANK_KEY

@@ -1,0 +1,61 @@
+{
+  "status": "PASS",
+  "release": "IGIRDER.CODE52",
+  "source_sha256": "0ae85f6de0b753062393a70717105953836a4a7722449edfbdc0e91ba8f99fcb",
+  "fixture_original_rows": 4,
+  "full_bank_replay": "Separate evidence",
+  "Calculate": [
+    {
+      "check": "Shear",
+      "code_calculation_calls": 2,
+      "real_code_figures": 2,
+      "girders_with_figures": 2,
+      "span_m": [
+        0,
+        20
+      ],
+      "default_visible_girder": true,
+      "details_and_study_collapsed": true,
+      "member_case_redraw_calculation_calls": 0,
+      "LP_calls": 0
+    },
+    {
+      "check": "Torsion",
+      "code_calculation_calls": 2,
+      "real_code_figures": 2,
+      "girders_with_figures": 2,
+      "span_m": [
+        0,
+        20
+      ],
+      "default_visible_girder": true,
+      "details_and_study_collapsed": true,
+      "member_case_redraw_calculation_calls": 0,
+      "LP_calls": 0
+    },
+    {
+      "check": "Shear + Torsion",
+      "code_calculation_calls": 2,
+      "real_code_figures": 2,
+      "girders_with_figures": 2,
+      "span_m": [
+        0,
+        20
+      ],
+      "default_visible_girder": true,
+      "details_and_study_collapsed": true,
+      "member_case_redraw_calculation_calls": 0,
+      "LP_calls": 0
+    }
+  ],
+  "Summary_Report_calculation_calls": 0,
+  "stale_input_hides_old_results_without_solving": true,
+  "original_inputs_preserved": true,
+  "automatic_LP_calls": 0,
+  "explicit_case_study_calls": 1,
+  "case_study_selected_member_only": true,
+  "case_study_production_cache_unchanged": true,
+  "combined_calculation_populates_all_three_code_views": true,
+  "single_member_all_three_checks": "PASS",
+  "structural_design_acceptance": false
+}

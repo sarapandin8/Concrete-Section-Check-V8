@@ -1,0 +1,10 @@
+........................................................................ [ 36%]
+........................................................................ [ 72%]
+.......................................................                  [100%]
+=============================== warnings summary ===============================
+../../../../tmp/comparison44_deps/_pytest/config/__init__.py:1290
+  /workspace/scratch/29b4e7665f69/tmp/comparison44_deps/_pytest/config/__init__.py:1290: PytestAssertRewriteWarning: Module already imported so cannot be rewritten; anyio
+    self._mark_plugins_for_rewrite(hook, disable_autoload)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+199 passed, 1 warning in 50.64s
