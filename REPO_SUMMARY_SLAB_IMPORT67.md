@@ -1,0 +1,1 @@
+Accept native CSiBridge static shell exports without a StepType column while preserving Max/Min imports, concurrent force vectors and duplicate-record checks. Improve missing-column diagnostics and update the import checklist. Verify the supplied workbook through the actual uploader, calculation and chart workflow.

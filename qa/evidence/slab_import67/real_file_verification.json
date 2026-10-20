@@ -1,0 +1,110 @@
+{
+  "milestone": "SLAB.IMPORT67",
+  "ready": true,
+  "errors": [],
+  "source_headers": [
+    "Area",
+    "AreaElem",
+    "ShellType",
+    "Joint",
+    "OutputCase",
+    "CaseType",
+    "F11",
+    "F22",
+    "F12",
+    "FMax",
+    "FMin",
+    "FAngle",
+    "FVM",
+    "M11",
+    "M22",
+    "M12",
+    "MMax",
+    "MMin",
+    "MAngle",
+    "V13",
+    "V23",
+    "VMax",
+    "VAngle"
+  ],
+  "StepType_header_exported": false,
+  "all_eight_actions_preserved_exactly": true,
+  "all_native_record_keys_preserved": true,
+  "native_records_checked": 127680,
+  "step_values": [
+    ""
+  ],
+  "summary": {
+    "force_rows": 127680,
+    "slab_force_rows": 109824,
+    "excluded_force_rows": 17856,
+    "slab_objects": 276,
+    "mesh_elements": 5320,
+    "slab_elements": 4576,
+    "analysis_joints": 5733,
+    "thickness_min_mm": 200.0,
+    "thickness_max_mm": 350.0,
+    "cases": [
+      "S1A",
+      "S1C",
+      "U1A",
+      "U1B",
+      "U2A",
+      "U2B"
+    ]
+  },
+  "case_rows": [
+    {
+      "OutputCase": "S1A",
+      "StepType": "",
+      "Rows": 18304
+    },
+    {
+      "OutputCase": "S1C",
+      "StepType": "",
+      "Rows": 18304
+    },
+    {
+      "OutputCase": "U1A",
+      "StepType": "",
+      "Rows": 18304
+    },
+    {
+      "OutputCase": "U1B",
+      "StepType": "",
+      "Rows": 18304
+    },
+    {
+      "OutputCase": "U2A",
+      "StepType": "",
+      "Rows": 18304
+    },
+    {
+      "OutputCase": "U2B",
+      "StepType": "",
+      "Rows": 18304
+    }
+  ],
+  "notes": [
+    "Element Forces - Area Shells(1).xlsx / Element Forces - Area Shells: StepType not exported; retained as blank. No Max/Min steps were created; duplicate case/corner records remain blocked."
+  ],
+  "source_hashes": {
+    "Element Forces - Area Shells(1).xlsx": "d1eb5d961f067b848953bb7b63a0c0f86e3376dc06c3b48a1830dd5f7b487a8d",
+    "TABLE Objects And Elements - Areas(1).xlsx": "75f06bb745ff4915f8f4558a4bd0558c04f453a4ccb5ff3b7df3fe0dffaba5cf",
+    "Area Assigment.xlsx": "98e92434eb70d3f93e92e3942ce370cd3af49ea3e21a578388dbaa420f64b93d",
+    "Connectivity Data.xlsx": "422cc75df02ca5999f25b5a65cff35183317bc94b021913fdd56021152711da2"
+  },
+  "force_multiplier": 1.0,
+  "full_deck_acceptance": false,
+  "downstream_calculation": {
+    "engine": "SLAB.DESIGN66",
+    "source_rows": 109824,
+    "design_rows": 84864,
+    "actions_preserved": true,
+    "source_cases_preserved": true,
+    "component_status": "FAIL",
+    "status": "FAIL"
+  },
+  "project_sha256": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+  "seconds": 39.58049920500025
+}

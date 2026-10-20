@@ -1,4 +1,4 @@
-# CSiBridge deck slab import — SLAB.REVIEW57
+# CSiBridge deck slab import — SLAB.IMPORT67
 
 Upload complete native .xlsx exports. Keep every worksheet, title, header and units row.
 Filenames are examples; tables are detected by column schema. The four sets may be combined in one workbook.
@@ -18,18 +18,22 @@ Export in kN, m. Shell forces: kN/m; shell moments: kN-m/m; geometry and thickne
 
 4. Connectivity Data.xlsx
    Tables: Connectivity - Area; Joint Coordinates
-   Use: Original Area corner order, original coordinates and axis reference joints
+   Use: Original Area corners and coordinates; Connectivity - Frame, when included, locates girder connections automatically
 
 * The Advanced axes table is required where AdvanceAxes = Yes; this applies to the supplied model.
-Keep U1A, U1B, U2A and U2B and every exported Max/Min row. Supplied force components in each row are taken as concurrent, per the project input basis.
+Keep all design cases (for example U1A, U1B, U2A, U2B), with every exported Max/Min or static-result row. New equivalent-train-load case names are accepted. Supplied force components in each row are taken as concurrent, per the project input basis.
+StepType is optional when CSI omits the column. The app retains an empty step identity, without creating Max/Min or changing any force. Repeated case/corner records still require distinct exported step identities.
 Keep generated ~ joints in Objects And Elements - Joints; original Joint Coordinates alone does not cover the analysis mesh.
 Keep Thick1..4 and original Joint1..4 order for variable-thickness areas.
 Keep BridgeObj, BOSpan, StartSta and EndSta in Area Bridge Object Flags; station progression defines the straight bridge reinforcement directions.
 Top Slab is selected from CompType; diaphragm results stay in the source package and are excluded from slab checks.
-Program Control, Frames, Links, Auto Mesh and Edge Constraints may stay; they are not used by this import route.
+Keep Connectivity - Frame in the complete Connectivity Data export: its frame endpoints locate the I-girder connection lines. No additional workbook is needed.
+Program Control, Links, Auto Mesh and Edge Constraints may stay; they are not used by this import route.
 The latest Objects And Elements export containing both Areas and Joints replaces the older Areas-only workbook.
 No stress workbook, load-combination definitions or moving-load recording-settings export is required for this workflow.
-Materials, code and four slab reinforcement groups are read from the current project inputs.
-Analysis > Slab Reinforcement calculates a coupled N-M stress-field preview and conservative shear screens. Complete deck design acceptance remains outside this section check.
-Code flexure and minimum sufficient screens are independent N=0 references; nonzero membrane demand remains coupled N-M review.
+For a new equivalent train UDL analysis, re-export the same four complete sets together. Actions are already factored CSI results: the app applies no further impact / load factor, force-reference shift or ballast redistribution. Record ballast and the actual UDL basis in Analysis > Slab Reinforcement > CSI load basis / Ballast.
+Materials, code and four slab reinforcement groups are read from the current project inputs. Punching additionally needs physical load-area X/Y/L/B; no load-area dimensions are inferred from shell-force peaks.
+Analysis > Slab Reinforcement calculates AASHTO LRFD 2020 directional N-M, shear and tension-side shear-tie component checks with the existing four physical reinforcement mats.
+Agreed girder/diaphragm lines, bearing end zones and the fixed REVIEW61 isolated-peak rule are excluded before resistance evaluation; original source actions remain in the audit.
+Four-mat temperature/spacing, sufficient flexural minimum and required development length are calculated. Girder and diaphragm face samples use the existing flange width / exported shell thickness, with no dv relaxation. Shell coupling, local support/load-path qualification, actual anchorage, fatigue and SLS remain separate. Punching has its own loaded-area normal-force check; existing Final Composite longitudinal interface results are linked read-only by current input hashes. Optional legacy research and zone averages are folded away.
 Imported workbooks are session inputs. Re-upload them after opening a Project JSON or restarting the app.

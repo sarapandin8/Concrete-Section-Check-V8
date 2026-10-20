@@ -20,7 +20,7 @@ def _compact_context() -> None:
 
 
 def export_guide() -> str:
-    lines = ["# CSiBridge deck slab import — SLAB.SHEAR64", "",
+    lines = ["# CSiBridge deck slab import — " + source.VERSION, "",
         "Upload complete native .xlsx exports. Keep every worksheet, title, header and units row.",
         "Filenames are examples; tables are detected by column schema. The four sets may be combined in one workbook.",
         "Export in kN, m. Shell forces: kN/m; shell moments: kN-m/m; geometry and thickness: m.", ""]
@@ -28,6 +28,7 @@ def export_guide() -> str:
         lines += [f"{i}. {row['File / export set']}", f"   Tables: {row['Required tables']}", f"   Use: {row['Use']}", ""]
     lines += ["* The Advanced axes table is required where AdvanceAxes = Yes; this applies to the supplied model.",
         "Keep all design cases (for example U1A, U1B, U2A, U2B), with every exported Max/Min or static-result row. New equivalent-train-load case names are accepted. Supplied force components in each row are taken as concurrent, per the project input basis.",
+        "StepType is optional when CSI omits the column. The app retains an empty step identity, without creating Max/Min or changing any force. Repeated case/corner records still require distinct exported step identities.",
         "Keep generated ~ joints in Objects And Elements - Joints; original Joint Coordinates alone does not cover the analysis mesh.",
         "Keep Thick1..4 and original Joint1..4 order for variable-thickness areas.",
         "Keep BridgeObj, BOSpan, StartSta and EndSta in Area Bridge Object Flags; station progression defines the straight bridge reinforcement directions.",
@@ -63,6 +64,7 @@ def _guide() -> None:
             st.caption(row["Use"])
         st.caption("* Advanced axes is required where AdvanceAxes = Yes, as in the supplied model. Sheet names may omit Assignments.")
         st.markdown("Export in **kN, m**. Keep all ULS cases and every Max/Min or static-result row. New equivalent-UDL case names are accepted.")
+        st.caption("StepType may be blank or absent in a native CSI export. It is retained as blank; do not add artificial Max/Min rows.")
         st.caption("After reanalysis with equivalent train loading, export the same four sets together. Imported strength forces are used directly, without multiplying impact / load factors or dispersing them through ballast again.")
         st.caption("Keep Connectivity - Frame for I-girder connection geometry, plus the other worksheets in the complete exports. The latest Areas + Joints export replaces the older Areas-only file.")
         st.download_button("Download export checklist", export_guide(),

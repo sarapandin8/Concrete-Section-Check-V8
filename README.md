@@ -1,3 +1,15 @@
+# SLAB.IMPORT67 — native static shell exports without StepType
+
+The same four CSI export sets now accept **Element Forces - Area Shells with the StepType header absent**, as in a static equivalent-train-load analysis. An omitted step is stored as blank; exported Max/Min and StepNum identities are retained. Force values, case names, units, native record order and duplicate-record safeguards are preserved. No spreadsheet editing or extra confirmation is required.
+
+Malformed known tables now identify the actual missing required headers. The download checklist and import guide explain the optional StepType field. The accepted DESIGN66 calculation, proposal, graph, Summary and Report routes remain the analysis baseline.
+
+Verified against the supplied static workbook: **127,680 native records**, including **109,824 Top Slab records** from S1A, S1C, U1A, U1B, U2A and U2B. Every one of the eight force/moment components and all native record keys matches the workbook exactly. Import readiness and successful chart calculation are software checks; the existing sectional design scope and review requirements still apply. Imported case names are preserved without automatic ULS/SLS classification.
+
+See [SLAB_IMPORT67_NOTES_TH.md](SLAB_IMPORT67_NOTES_TH.md), [SLAB_IMPORT67_VERIFICATION.json](SLAB_IMPORT67_VERIFICATION.json), [REPO_SUMMARY_SLAB_IMPORT67.md](REPO_SUMMARY_SLAB_IMPORT67.md), and [qa/slab_import67_real_inputs.py](qa/slab_import67_real_inputs.py).
+
+## Historical milestone — DESIGN66
+
 # SLAB.DESIGN66 — checked reinforcement spacing proposals
 
 Continue with the same four CSI exports and the existing reinforcement inputs. **Calculate Top slab** now also prepares a bounded bar-spacing proposal with the existing bar diameters and mat levels. Open **Suggested bar spacing · not applied** to review its four-mat checks and the one-way shear still requiring attention. No additional input table or calculation button is added.

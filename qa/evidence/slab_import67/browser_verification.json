@@ -1,0 +1,18 @@
+{
+  "milestone": "SLAB.IMPORT67",
+  "actual_file_upload": true,
+  "import_button_used": true,
+  "static_import_ready": true,
+  "optional_step_note_visible": true,
+  "analysis_navigation": true,
+  "calculation_button_count": 1,
+  "chart_count": 1,
+  "chart_meta": {
+    "slab_version": "SLAB.DESIGN66",
+    "aggregation": "maximum retained actual corner/case; no averaging",
+    "full_deck_acceptance": false
+  },
+  "page_errors": [],
+  "browser": "134.0.6998.35",
+  "full_deck_acceptance": false
+}

@@ -15,7 +15,7 @@ import numpy as np
 import openpyxl
 import pandas as pd
 
-VERSION = "SLAB.IMPORT59"
+VERSION = "SLAB.IMPORT67"
 BANK_KEY = "slab_shell55_package"
 PENDING_KEY = "slab_shell55_selected_signature"
 FORCES = ("F11", "F22", "F12", "M11", "M22", "M12", "V13", "V23")
@@ -28,11 +28,17 @@ class TableSpec:
     columns: tuple[str, ...]
     group: int
     conditional: bool = False
+    optional_columns: tuple[str, ...] = ()
+
+    @property
+    def required_columns(self) -> tuple[str, ...]:
+        return tuple(c for c in self.columns if c not in self.optional_columns)
 
 
 SPECS = (
     TableSpec("forces", "Element Forces - Area Shells",
-        ("Area", "AreaElem", "ShellType", "Joint", "OutputCase", "CaseType", "StepType", *FORCES), 1),
+        ("Area", "AreaElem", "ShellType", "Joint", "OutputCase", "CaseType", "StepType", *FORCES), 1,
+        optional_columns=("StepType",)),
     TableSpec("elements", "Objects And Elements - Areas",
         ("AreaElem", "AreaObject", "ElemJt1", "ElemJt2", "ElemJt3", "ElemJt4"), 2),
     TableSpec("nodes", "Objects And Elements - Joints", ("JointElem", "GlobalX", "GlobalY", "GlobalZ"), 2),
@@ -119,12 +125,14 @@ def _read_book(payload: bytes, name: str, package: ShellPackage) -> None:
             rows = sheet.iter_rows(values_only=True)
             spec = None
             columns: list[str] = []
+            scanned_headers: list[set[str]] = []
             first_title = sheet.title
             for index, row in enumerate(rows):
                 texts = [str(x or "").strip() for x in row]
+                scanned_headers.append(set(texts))
                 if texts and texts[0].upper().startswith("TABLE:"):
                     first_title = texts[0].split(":", 1)[1].strip()
-                candidates = [s for s in (*SPECS, *OPTIONAL_SPECS) if set(s.columns).issubset(texts)]
+                candidates = [s for s in (*SPECS, *OPTIONAL_SPECS) if set(s.required_columns).issubset(texts)]
                 if candidates:
                     spec = candidates[0]
                     # Ignore trailing empty columns while preserving all exported fields.
@@ -141,7 +149,9 @@ def _read_book(payload: bytes, name: str, package: ShellPackage) -> None:
                 known = next((s for s in (*SPECS, *OPTIONAL_SPECS) if _token(s.title) in aliases or
                     _token(s.title.replace(" Assignments", "")) in aliases), None)
                 if known:
-                    message = f"{name} / {sheet.title}: required columns: {', '.join(known.columns)}"
+                    best = max(scanned_headers, key=lambda h: len(h.intersection(known.required_columns)), default=set())
+                    missing = [c for c in known.required_columns if c not in best]
+                    message = f"{name} / {sheet.title}: missing required columns: {', '.join(missing)}"
                     if known in OPTIONAL_SPECS:
                         package.notes.append(message + '; optional connection geometry not used')
                     else:
@@ -156,6 +166,16 @@ def _read_book(payload: bytes, name: str, package: ShellPackage) -> None:
             records = [row[:len(columns)] for row in rows if any(v is not None for v in row)
                 and not str(row[0] or "").upper().startswith("END TABLE")]
             frame = pd.DataFrame(records, columns=columns)
+            if spec.key == "forces" and "StepType" not in frame:
+                # CSI omits this header when the export has no named step.
+                # Keep an empty identity; never invent Max/Min or merge rows.
+                frame.insert(frame.columns.get_loc("CaseType") + 1, "StepType", "")
+                units["StepType"] = "Text"
+                package.notes.append(f"{name} / {sheet.title}: StepType not exported; retained as blank. "
+                    "No Max/Min steps were created; duplicate case/corner records remain blocked.")
+            elif spec.key == "forces":
+                # Normalize blank exported cells before duplicate-table comparison.
+                frame["StepType"] = frame["StepType"].fillna("").astype(str).str.strip()
             if spec.key in package.tables:
                 previous = package.tables[spec.key]
                 if units == package.units[spec.key] and frame.equals(previous):
