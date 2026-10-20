@@ -1,0 +1,368 @@
+{
+  "version": "SLAB.CONNECTION59",
+  "code": "AASHTO LRFD 9th Edition",
+  "source_rows": 146432,
+  "design_rows": 125568,
+  "excluded_rows": 20864,
+  "excluded_nodes": 658,
+  "elements": 4576,
+  "seconds": 6.175245679,
+  "status": "Preview FAIL",
+  "counts": {
+    "REVIEW": 113507,
+    "Preview FAIL": 12061
+  },
+  "nm_peak": 2.0160648915948114,
+  "known_component_peak": 9.54817058250699,
+  "equilibrium_residual_max": 1.0608181000293371e-13,
+  "coverage": [
+    {
+      "OutputCase": "U1A",
+      "StepType": "Max",
+      "Imported records": 18304,
+      "Nominal design records": 15696,
+      "Excluded connection records": 2608,
+      "Expected corner records": 18304,
+      "Missing records": 0
+    },
+    {
+      "OutputCase": "U1A",
+      "StepType": "Min",
+      "Imported records": 18304,
+      "Nominal design records": 15696,
+      "Excluded connection records": 2608,
+      "Expected corner records": 18304,
+      "Missing records": 0
+    },
+    {
+      "OutputCase": "U1B",
+      "StepType": "Max",
+      "Imported records": 18304,
+      "Nominal design records": 15696,
+      "Excluded connection records": 2608,
+      "Expected corner records": 18304,
+      "Missing records": 0
+    },
+    {
+      "OutputCase": "U1B",
+      "StepType": "Min",
+      "Imported records": 18304,
+      "Nominal design records": 15696,
+      "Excluded connection records": 2608,
+      "Expected corner records": 18304,
+      "Missing records": 0
+    },
+    {
+      "OutputCase": "U2A",
+      "StepType": "Max",
+      "Imported records": 18304,
+      "Nominal design records": 15696,
+      "Excluded connection records": 2608,
+      "Expected corner records": 18304,
+      "Missing records": 0
+    },
+    {
+      "OutputCase": "U2A",
+      "StepType": "Min",
+      "Imported records": 18304,
+      "Nominal design records": 15696,
+      "Excluded connection records": 2608,
+      "Expected corner records": 18304,
+      "Missing records": 0
+    },
+    {
+      "OutputCase": "U2B",
+      "StepType": "Max",
+      "Imported records": 18304,
+      "Nominal design records": 15696,
+      "Excluded connection records": 2608,
+      "Expected corner records": 18304,
+      "Missing records": 0
+    },
+    {
+      "OutputCase": "U2B",
+      "StepType": "Min",
+      "Imported records": 18304,
+      "Nominal design records": 15696,
+      "Excluded connection records": 2608,
+      "Expected corner records": 18304,
+      "Missing records": 0
+    }
+  ],
+  "steel_summary": [
+    {
+      "Reinforcement": "Top longitudinal",
+      "As provided (mm²/m)": 1005.3096491487,
+      "As required (mm²/m)": 1421.0914722894,
+      "D/C": 1.4135858275,
+      "Case": "U2A",
+      "Step": "Min",
+      "X (m)": 19.8375,
+      "Y (m)": -2.3,
+      "AreaElem": "1698-6",
+      "Joint": "~5226",
+      "Status": "Preview FAIL"
+    },
+    {
+      "Reinforcement": "Bottom longitudinal",
+      "As provided (mm²/m)": 1340.4128655316,
+      "As required (mm²/m)": 2702.3593184403,
+      "D/C": 2.0160648916,
+      "Case": "U2A",
+      "Step": "Max",
+      "X (m)": 4.286e-16,
+      "Y (m)": 3.5,
+      "AreaElem": "1363-1",
+      "Joint": "~24",
+      "Status": "Preview FAIL"
+    },
+    {
+      "Reinforcement": "Top transverse",
+      "As provided (mm²/m)": 1340.4128655316,
+      "As required (mm²/m)": 1102.3245326677,
+      "D/C": 0.8223768669,
+      "Case": "U2A",
+      "Step": "Min",
+      "X (m)": 1.46339,
+      "Y (m)": 3.925,
+      "AreaElem": "1395-29",
+      "Joint": "~572",
+      "Status": "Preview PASS"
+    },
+    {
+      "Reinforcement": "Bottom transverse",
+      "As provided (mm²/m)": 1340.4128655316,
+      "As required (mm²/m)": 1890.5342441169,
+      "D/C": 1.4104118908,
+      "Case": "U2A",
+      "Step": "Max",
+      "X (m)": 17.84643,
+      "Y (m)": 2.7,
+      "AreaElem": "1645-12",
+      "Joint": "~4404",
+      "Status": "Preview FAIL"
+    }
+  ],
+  "check_summary": [
+    {
+      "Check": "Top longitudinal",
+      "Peak D/C": 1.4135858275,
+      "Status": "Preview FAIL",
+      "Exceeded elements": 18,
+      "Review elements": 0,
+      "Case": "U2A",
+      "Step": "Min",
+      "AreaElem": "1698-6",
+      "Joint": "~5226"
+    },
+    {
+      "Check": "Bottom longitudinal",
+      "Peak D/C": 2.0160648916,
+      "Status": "Preview FAIL",
+      "Exceeded elements": 109,
+      "Review elements": 0,
+      "Case": "U2A",
+      "Step": "Max",
+      "AreaElem": "1363-1",
+      "Joint": "~24"
+    },
+    {
+      "Check": "Top transverse",
+      "Peak D/C": 0.8223768669,
+      "Status": "Preview PASS",
+      "Exceeded elements": 0,
+      "Review elements": 0,
+      "Case": "U2A",
+      "Step": "Min",
+      "AreaElem": "1395-29",
+      "Joint": "~572"
+    },
+    {
+      "Check": "Bottom transverse",
+      "Peak D/C": 1.4104118908,
+      "Status": "Preview FAIL",
+      "Exceeded elements": 98,
+      "Review elements": 0,
+      "Case": "U2A",
+      "Step": "Max",
+      "AreaElem": "1645-12",
+      "Joint": "~4404"
+    },
+    {
+      "Check": "Concrete compression",
+      "Peak D/C": 1.9974050778,
+      "Status": "Preview FAIL",
+      "Exceeded elements": 128,
+      "Review elements": 0,
+      "Case": "U2A",
+      "Step": "Max",
+      "AreaElem": "1363-1",
+      "Joint": "~24"
+    },
+    {
+      "Check": "One-way shear",
+      "Peak D/C": 9.5481705825,
+      "Status": "Preview FAIL",
+      "Exceeded elements": 2169,
+      "Review elements": 2678,
+      "Case": "U2A",
+      "Step": "Min",
+      "AreaElem": "1698-6",
+      "Joint": "~5227"
+    },
+    {
+      "Check": "Shrinkage minimum",
+      "Peak D/C": 0.3333916203,
+      "Status": "Preview PASS",
+      "Exceeded elements": 0,
+      "Review elements": 0,
+      "Case": "U1A",
+      "Step": "Max",
+      "AreaElem": "1518-5",
+      "Joint": "~2258"
+    },
+    {
+      "Check": "Bar maximum spacing",
+      "Peak D/C": 0.6666666667,
+      "Status": "Preview PASS",
+      "Exceeded elements": 0,
+      "Review elements": 0,
+      "Case": "U1A",
+      "Step": "Max",
+      "AreaElem": "1381-1",
+      "Joint": "358"
+    }
+  ],
+  "connection_lines": [
+    {
+      "Connection": "Girder",
+      "ID": "601, 607, 613, 619, 625, 631, 637, 643, 649, 655, 661, 667, 673, 679, 685, 691, 697, 703, 709, 715, 721, 727, 733",
+      "X1 (m)": 4.531e-16,
+      "Y1 (m)": 3.7,
+      "X2 (m)": 20.0,
+      "Y2 (m)": 3.7
+    },
+    {
+      "Connection": "Girder",
+      "ID": "602, 608, 614, 620, 626, 632, 638, 644, 650, 656, 662, 668, 674, 680, 686, 692, 698, 704, 710, 716, 722, 728, 734",
+      "X1 (m)": 3.062e-16,
+      "Y1 (m)": 2.5,
+      "X2 (m)": 20.0,
+      "Y2 (m)": 2.5
+    },
+    {
+      "Connection": "Girder",
+      "ID": "603, 609, 615, 621, 627, 633, 639, 645, 651, 657, 663, 669, 675, 681, 687, 693, 699, 705, 711, 717, 723, 729, 735",
+      "X1 (m)": 1.592e-16,
+      "Y1 (m)": 1.3,
+      "X2 (m)": 20.0,
+      "Y2 (m)": 1.3
+    },
+    {
+      "Connection": "Girder",
+      "ID": "604, 610, 616, 622, 628, 634, 640, 646, 652, 658, 664, 670, 676, 682, 688, 694, 700, 706, 712, 718, 724, 730, 736",
+      "X1 (m)": -1.592e-16,
+      "Y1 (m)": -1.3,
+      "X2 (m)": 20.0,
+      "Y2 (m)": -1.3
+    },
+    {
+      "Connection": "Girder",
+      "ID": "605, 611, 617, 623, 629, 635, 641, 647, 653, 659, 665, 671, 677, 683, 689, 695, 701, 707, 713, 719, 725, 731, 737",
+      "X1 (m)": -3.062e-16,
+      "Y1 (m)": -2.5,
+      "X2 (m)": 20.0,
+      "Y2 (m)": -2.5
+    },
+    {
+      "Connection": "Girder",
+      "ID": "606, 612, 618, 624, 630, 636, 642, 648, 654, 660, 666, 672, 678, 684, 690, 696, 702, 708, 714, 720, 726, 732, 738",
+      "X1 (m)": -4.531e-16,
+      "Y1 (m)": -3.7,
+      "X2 (m)": 20.0,
+      "Y2 (m)": -3.7
+    },
+    {
+      "Connection": "Diaphragm",
+      "ID": "1379, 1378, 1377, 1376, 1375",
+      "X1 (m)": 0.325,
+      "Y1 (m)": -3.7,
+      "X2 (m)": 0.325,
+      "Y2 (m)": 3.7
+    },
+    {
+      "Connection": "Diaphragm",
+      "ID": "1482, 1481, 1480, 1479, 1478",
+      "X1 (m)": 6.7,
+      "Y1 (m)": -3.7,
+      "X2 (m)": 6.7,
+      "Y2 (m)": 3.7
+    },
+    {
+      "Connection": "Diaphragm",
+      "ID": "1585, 1584, 1583, 1582, 1581",
+      "X1 (m)": 13.275,
+      "Y1 (m)": -3.7,
+      "X2 (m)": 13.275,
+      "Y2 (m)": 3.7
+    },
+    {
+      "Connection": "Diaphragm",
+      "ID": "1688, 1687, 1686, 1685, 1684",
+      "X1 (m)": 19.675,
+      "Y1 (m)": -3.7,
+      "X2 (m)": 19.675,
+      "Y2 (m)": 3.7
+    }
+  ],
+  "negative_moment_offset_mm": 200.0,
+  "connection_notes": [],
+  "scope": "N-M sandwich field review using AASHTO component limits; not a complete code acceptance. One-way shear is a separate conservative section screen. No transverse-shear tie force is added to the N-M steel areas. Nonzero V keeps combined N-M-V resistance at REVIEW; passing separate components does not establish their interaction. An independent N=0 RC strip reference and sufficient 1.33Mu minimum screen do not replace the coupled field. Anchorage, cover/exposure, the Mcr minimum branch and combined-NM minimum qualification, fatigue, punching/local wheel effects and SLS remain separate.",
+  "input_hashes": {
+    "concrete_section_pro_project (32).json": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+    "Element Forces - Area Shells.xlsx": "5d0749e82960e22cc8d42073edc3e0221da38d20b4be9a5be6b9e7b88b94e081",
+    "TABLE Objects And Elements - Areas(1).xlsx": "75f06bb745ff4915f8f4558a4bd0558c04f453a4ccb5ff3b7df3fe0dffaba5cf",
+    "Area Assigment.xlsx": "98e92434eb70d3f93e92e3942ce370cd3af49ea3e21a578388dbaa420f64b93d",
+    "Connectivity Data.xlsx": "422cc75df02ca5999f25b5a65cff35183317bc94b021913fdd56021152711da2"
+  },
+  "verification": {
+    "focused_tests_passed": 85,
+    "full_repository_test_suite_run": false,
+    "py_compile_passed": true,
+    "full_input_streamlit_apptest": {
+      "solver_calls": 1,
+      "views_checked": [
+        "N–M field",
+        "Overall section",
+        "Top longitudinal",
+        "Bottom longitudinal",
+        "Top transverse",
+        "Bottom transverse",
+        "Concrete compression",
+        "One-way shear",
+        "Code flexure reference",
+        "Minimum sufficient screen"
+      ],
+      "source_records": 146432,
+      "nominal_records": 125568,
+      "excluded_records": 20864,
+      "excluded_nodes": 658,
+      "exceptions": 0,
+      "plotly_charts_per_view": 1,
+      "calculate_to_render_seconds": 9.809312387999853,
+      "solver_seconds": 7.480369203999544
+    },
+    "retained_row_equations_unchanged_from_audit58": true,
+    "excluded_records_receive_no_design_dc_or_capacity": true,
+    "portable_qa_matches_full_input_run": true,
+    "manual_plotly_export_review": [
+      "N–M field",
+      "Top transverse",
+      "One-way shear"
+    ],
+    "manual_full_workspace_browser_screenshot_review": false,
+    "browser_review_limitation": "Remote browser could not reach the local preview server; workspace logic was tested using Streamlit AppTest.",
+    "structural_nm_v_interaction_validation_established": false,
+    "baseline_zip_sha256": "6f0721c250a9fadfe0536a3fc043db392510d0e2a0d16e2d6e941179f69b1575"
+  }
+}

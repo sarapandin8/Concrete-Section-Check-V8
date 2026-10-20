@@ -1,0 +1,1 @@
+Exclude imported girder and diaphragm connection nodes from nominal slab calculations, maps and design summaries while retaining their original actions for audit. Read girder axes from the existing CSI connectivity export, distinguish flange edges from negative-moment design sections, and preserve all remaining source vectors and resistance equations.

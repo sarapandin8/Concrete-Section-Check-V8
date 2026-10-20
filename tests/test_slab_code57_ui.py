@@ -22,6 +22,8 @@ def test_code_views_review_existing_calculation_without_steel_change_or_rerun(me
     for key,value in state.items():app.session_state[key]=deepcopy(value)
     app.session_state['_nav_active_workspace']='Analysis'
     app.session_state['_nav_analysis_subpage']='Slab Reinforcement'
+    # Exercise the retained legacy reference UI through its opt-in entry.
+    app.session_state['slab_shell55_aashto62_research_open']=True
     def run():
         app.run(timeout=60)
         assert not app.exception,[x.message for x in app.exception]
@@ -37,4 +39,5 @@ def test_code_views_review_existing_calculation_without_steel_change_or_rerun(me
             pd.testing.assert_frame_equal(app.session_state[engine.RESULT_KEY]['summary'],original)
         assert any(e.label=='What controls / All-case check breakdown' for e in app.expander)
         assert any(e.label=='Code flexure / Minimum reinforcement reference' for e in app.expander)
-        assert any('Controlling check' in x.value for x in app.markdown)
+        assert any('N–M field max D/C' in x.value for x in app.markdown)
+        assert any('One-way shear screen D/C' in x.value for x in app.markdown)

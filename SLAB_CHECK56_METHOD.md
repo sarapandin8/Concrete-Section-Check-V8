@@ -99,3 +99,7 @@ No final-design acceptance is implied. Complete STM topology/nodes/anchorage, st
 - [CSI — Area Local Axes](https://docs.csiamerica.com/help-files/csibridge/Advanced_tab/Assign/Area/Area_Local_Axes.htm).
 - [P. B. Lourenço — Reinforced Concrete Design, contributed chapter](https://phoogenboom.nl/b14_chapt_16.pdf), discussion of sandwich layers, real lever arms and transverse shear.
 - [Autodesk — Wood and Armer moments](https://help.autodesk.com/cloudhelp/ENU/ASBD-InProdUS/files/structure/tech_info/ti_rft_moments/ASBD_InProdUS_structure_tech_info_ti_rft_moments_Wood_and_Armer_Moments_html.html).
+# Superseded by SLAB.AUDIT58
+
+The unconditional full shear-tie additions and coupled face/core screening described in this historical method are withdrawn. Use [SLAB_AUDIT58_FINDINGS_TH.md](SLAB_AUDIT58_FINDINGS_TH.md) for the current separate N–M steel / shear component scope and combined-interaction REVIEW gate.
+

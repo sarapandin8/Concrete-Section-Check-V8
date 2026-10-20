@@ -39,8 +39,10 @@ def test_plan_retains_full_mesh_true_governing_corner_and_peak_value():
     assert '32.500' in trace.name and trace.cliponaxis is False
     scale=next(t for t in fig.data if t.marker.showscale)
     assert float(scale.marker.color[-1])==np.log1p(32.5)
-    polygons=[t for t in fig.data if t.name=='Element envelope']
-    assert sum(np.isfinite(t.x).sum() for t in polygons)==10  # 2 closed quadrilaterals, five coordinates each
+    # Nonzero V now explicitly leaves interaction at REVIEW. Its grey polygon
+    # is still part of the complete mesh and must not be mistaken for a hole.
+    polygons=[t for t in fig.data if t.name in ('Element envelope','Review / missing')]
+    assert sum(np.isfinite(np.asarray(t.x,dtype=float)).sum() for t in polygons)==10  # 2 closed quadrilaterals, five coordinates each
 
 
 def test_partial_source_is_visible_as_partial_not_an_averaged_complete_map():
@@ -58,6 +60,8 @@ def test_actual_calculate_filters_stale_inputs_and_json_restore():
     for k,v in state.items():app.session_state[k]=deepcopy(v)
     app.session_state['_nav_active_workspace']='Analysis'
     app.session_state['_nav_analysis_subpage']='Slab Reinforcement'
+    # REVIEW61 is now an explicitly opened case-study workspace.
+    app.session_state['slab_shell55_aashto62_research_open']=True
     def run():
         app.run(timeout=60)
         assert not app.exception,[x.message for x in app.exception]

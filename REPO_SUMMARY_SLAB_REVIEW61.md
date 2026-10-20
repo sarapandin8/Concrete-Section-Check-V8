@@ -1,0 +1,1 @@
+Add traceable one-pass peak screening and area-weighted zone review for slab shell results. Preserve nominal checks and raw actions, with before/after comparisons and CSV audits kept separate from design acceptance.

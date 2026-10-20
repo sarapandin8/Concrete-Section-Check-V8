@@ -1,0 +1,1 @@
+Exclude full-width slab end zones through the existing bearing references, retain all six girder-centerline exclusions, and recompute governing checks from the remaining source records. Show excluded end strips on the plan map and retain original actions for audit without changing resistance equations.

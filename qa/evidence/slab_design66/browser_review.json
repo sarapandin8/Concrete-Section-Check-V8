@@ -1,0 +1,51 @@
+{
+  "live_browser": true,
+  "browser": "134.0.6998.35",
+  "viewport_widths": [
+    1440,
+    1280
+  ],
+  "page_errors": [],
+  "single_calculate_command": true,
+  "single_main_chart": true,
+  "primary_button_style": {
+    "kind": "primaryFormSubmit",
+    "testid": "stBaseButton-primaryFormSubmit",
+    "background": "linear-gradient(135deg, rgb(29, 111, 231), rgb(23, 92, 211))",
+    "color": "rgb(255, 255, 255)"
+  },
+  "native_case_filter": "U1A",
+  "plan": {
+    "title": "<b><b>Direct N\u2013M \u00b7 transverse \u00b7 all ULS cases</b></b>",
+    "meta": {
+      "slab_version": "SLAB.DESIGN66",
+      "aggregation": "maximum retained actual corner/case; no averaging",
+      "full_deck_acceptance": false
+    },
+    "traces": 16
+  },
+  "profile": {
+    "title": "<b><b>Direct N\u2013M \u00b7 transverse \u00b7 station envelope</b></b>",
+    "meta": {
+      "slab_version": "SLAB.DESIGN66",
+      "aggregation": "maximum at each actual station; no smoothing / averaging",
+      "scope_markers_use_secondary_axis": true,
+      "full_deck_acceptance": false
+    },
+    "range": [
+      0,
+      20
+    ],
+    "connectgaps": false
+  },
+  "title_box_at_scroll_top": {
+    "x": 402.578125,
+    "y": 274.671875,
+    "width": 708.078125,
+    "height": 23.34375
+  },
+  "document_overflow": {
+    "width": 1440,
+    "document": 1440
+  }
+}

@@ -9,11 +9,12 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.colors import sample_colorscale
 
-from concrete_pmm_pro.analysis.slab_shell56 import GROUPS
+from concrete_pmm_pro.analysis.slab_shell56 import GROUPS, VERSION
+from concrete_pmm_pro.analysis.slab_connections59 import INCLUDED
 from concrete_pmm_pro.analysis.slab_code57 import FLEXURE_VIEW, MINIMUM_VIEW, REFERENCE_VIEWS
 from concrete_pmm_pro.visualization.plot_readability import apply_global_plot_readability
 
-VIEWS = ["Overall section", *GROUPS, "Concrete compression", "One-way shear", FLEXURE_VIEW, MINIMUM_VIEW]
+VIEWS = ["N–M field", "Overall section", *GROUPS, "Concrete compression", "One-way shear", FLEXURE_VIEW, MINIMUM_VIEW]
 ALL_CASES = "All imported ULS cases"
 SAFE = "#176b9b"
 LIMIT = "#f4c95d"
@@ -26,6 +27,8 @@ def view_column(view):
         return REFERENCE_VIEWS[view]
     if view == "Overall section":
         return "Field D/C"
+    if view == "N–M field":
+        return "N–M field D/C"
     if view == "Concrete compression":
         return "Concrete D/C"
     if view == "One-way shear":
@@ -34,16 +37,17 @@ def view_column(view):
 
 
 def element_envelope(result, *, view="Overall section", case=ALL_CASES):
-    rows = result["rows"]
+    source = result["rows"]
     if case != ALL_CASES:
-        rows = rows.loc[rows["OutputCase"] == case]
-    if rows.empty:
+        source = source.loc[source["OutputCase"] == case]
+    if source.empty:
         return pd.DataFrame()
+    rows = source.loc[source[INCLUDED]] if INCLUDED in source else source
     column = view_column(view)
     working = rows.copy(deep=False).assign(_dc=rows[column])
-    step_cols = [c for c in ("OutputCase", "StepType", "StepNum") if c in rows]
-    expected = len(rows[step_cols].drop_duplicates())*4
-    sizes = rows.groupby("AreaElem").size()
+    step_cols = [c for c in ("OutputCase", "StepType", "StepNum") if c in source]
+    expected = len(source[step_cols].drop_duplicates())*result.get('samples_per_element',4)
+    sizes = source.groupby("AreaElem").size()
     # Known failures outrank unresolved records; unresolved records outrank
     # apparently passing ones. A numeric maximum cannot hide a missing check.
     review = working[column].isna()
@@ -52,7 +56,23 @@ def element_envelope(result, *, view="Overall section", case=ALL_CASES):
     working = working.assign(_priority=np.where(working[column]>1+1e-8, 2, np.where(review, 1, 0)), _review=review)
     working = working.sort_values(["_priority", "_dc"], ascending=[False,False], na_position="last")
     selected = working.drop_duplicates("AreaElem").set_index("AreaElem")
+    selected["Map excluded"] = False
+    # Keep the full mesh visible even when all its sampled corners lie on
+    # excluded lines. Such cells have no nominal D/C, never a zero/PASS.
+    absent = source.loc[~source['AreaElem'].isin(selected.index)].drop_duplicates('AreaElem').set_index('AreaElem')
+    if not absent.empty:
+        absent = absent.copy()
+        absent[column] = np.nan
+        absent['_review'] = True
+        absent['Map excluded'] = True
+        selected = pd.concat((selected, absent), axis=0)
+    excluded = source.loc[~source[INCLUDED]].groupby('AreaElem').size() if INCLUDED in source else pd.Series(dtype=int)
+    selected['Excluded connection records'] = excluded.reindex(selected.index, fill_value=0)
+    selected['Excluded records'] = selected['Excluded connection records']  # legacy alias retained for integrations
+    selected['Nominal design records'] = rows.groupby('AreaElem').size().reindex(selected.index, fill_value=0)
     selected["Map incomplete"] = sizes.reindex(selected.index).lt(expected)
+    if 'Source incomplete' in source:
+        selected['Map incomplete'] |= source.groupby('AreaElem')['Source incomplete'].any().reindex(selected.index,fill_value=True)
     selected["Map unresolved"] = selected["_review"] | selected["Map incomplete"]
     selected["Map D/C"] = selected[column]
     selected.loc[selected["Map unresolved"] & selected["Map D/C"].le(1+1e-8), "Map D/C"] = np.nan
@@ -95,6 +115,10 @@ def plan_figure(result, *, view="Overall section", case=ALL_CASES):
             unavailable.append(polygon)
         if row is not None:
             centres.append(points[:,:2].mean(axis=0))
+            if row.get('Map excluded', False):
+                hovers.append(f"{escape(elem)}<br>All sampled corners are excluded nodes.<br>No nominal slab D/C.")
+                values.append(math.nan)
+                continue
             detail = f"{escape(elem)} · {escape(str(row['OutputCase']))} / {escape(str(row['StepType']))}"
             detail += f"<br>Corner {escape(str(row['Joint']))}: X={row['X (m)']:.3f}, Y={row['Y (m)']:.3f} m"
             detail += f"<br>D/C = {row[view_column(view)]:.3f}" if pd.notna(row[view_column(view)]) else "<br>D/C unavailable: scope / source coverage requires review"
@@ -102,11 +126,14 @@ def plan_figure(result, *, view="Overall section", case=ALL_CASES):
                 detail += "<br>"+escape(str(row['Code reference reason']))
                 detail += "<br>Independent reference; coupled field results retained"
             else:
-                detail += "<br>Controlling field check: "+escape(str(row.get('Controlling check','')))
+                detail += "<br>Controlling known check: "+escape(str(row.get('Controlling check','')))
+                detail += "<br>Combined N–M–V: "+escape(str(row.get('Combined N–M–V status','REVIEW')))
             if view in GROUPS:
                 detail += f"<br>As required = {row[view+' As required (mm²/m)']:.1f} mm²/m"
             if row["Map incomplete"]:
                 detail += "<br>Incomplete corner/case coverage"
+            if row.get('Excluded connection records', 0):
+                detail += f"<br>{int(row['Excluded records'])} source records excluded; retained-corner envelope"
             hovers.append(detail)
             values.append(value)
     fig = go.Figure()
@@ -130,6 +157,21 @@ def plan_figure(result, *, view="Overall section", case=ALL_CASES):
         centres = np.array(centres)
         fig.add_trace(go.Scatter(x=centres[:,0],y=centres[:,1],mode="markers",marker={"size":9,"opacity":0},
             text=hovers,hovertemplate="%{text}<extra></extra>",showlegend=False,name="Source details"))
+    lines = result.get('connections', {}).get('lines', pd.DataFrame())
+    if not lines.empty:
+        xy = np.array([[r['X1 (m)'], r['Y1 (m)'], r['X2 (m)'], r['Y2 (m)']]
+                       for r in lines.to_dict('records')])
+        x = np.column_stack((xy[:, 0], xy[:, 2], np.full(len(xy), np.nan))).ravel()
+        y = np.column_stack((xy[:, 1], xy[:, 3], np.full(len(xy), np.nan))).ravel()
+        fig.add_trace(go.Scatter(x=x, y=y, mode='lines', line={'width':1.3, 'color':'#705333', 'dash':'dot'},
+            name='Excluded connections', hoverinfo='skip', connectgaps=False))
+    ends = result.get('connections', {}).get('end_zones', {})
+    if ends.get('active'):
+        polygons = [np.vstack((np.asarray(p), np.asarray(p)[0], [[np.nan,np.nan]])) for p in ends['polygons']]
+        xy = np.concatenate(polygons)
+        fig.add_trace(go.Scatter(x=xy[:,0],y=xy[:,1],mode='lines',fill='toself',
+            fillcolor=UNKNOWN,opacity=.90,line={'width':1,'color':'#64748b','dash':'dot'},
+            name='Excluded end zones',hoverinfo='skip',connectgaps=False))
     ticks = [v for v in (0,.5,1,2,5,10,20,50,100) if v<=maximum]
     if maximum>ticks[-1]*1.1:
         ticks.append(maximum)
@@ -152,7 +194,7 @@ def plan_figure(result, *, view="Overall section", case=ALL_CASES):
     title = escape(view)+" · "+escape("all cases" if case==ALL_CASES else case)
     fig.update_layout(template="plotly_white",height=575,title={"text":title,"x":.5,"xanchor":"center"},
         margin={"l":66,"r":90,"t":58,"b":82},font={"family":"Arial, sans-serif","size":13},
-        meta={"slab_version":"SLAB.REVIEW57","aggregation":"maximum source corner per element; no averaging"},
+        meta={"slab_version":VERSION,"aggregation":"maximum source corner per element; connection nodes and bearing end zones excluded; no averaging"},
         legend={"orientation":"h","x":.5,"xanchor":"center","y":-.15,"yanchor":"top"},
         hovermode="closest",xaxis={"title":"Global X (m)","range":[low[0]-pad[0],high[0]+pad[0]],"constrain":"domain","showgrid":False,"zeroline":False},
         yaxis={"title":"Global Y (m)","range":[low[1]-pad[1],high[1]+pad[1]],"scaleanchor":"x","scaleratio":1,

@@ -438,6 +438,8 @@ div[data-testid="stFormSubmitButton"] button {
 .stButton button[kind="primary"],
 .stDownloadButton button[kind="primary"],
 div[data-testid="stFormSubmitButton"] button[kind="primary"],
+button[kind="primaryFormSubmit"],
+button[data-testid="stBaseButton-primaryFormSubmit"],
 button[data-testid="stBaseButton-primary"] {
   background: linear-gradient(135deg, var(--cpmm-action-fill), var(--cpmm-action-fill-hover)) !important;
   color: #ffffff !important;
@@ -448,10 +450,14 @@ button[data-testid="stBaseButton-primary"] {
 .stButton button[kind="primary"] p,
 .stDownloadButton button[kind="primary"] p,
 div[data-testid="stFormSubmitButton"] button[kind="primary"] p,
+button[kind="primaryFormSubmit"] p,
+button[data-testid="stBaseButton-primaryFormSubmit"] p,
 button[data-testid="stBaseButton-primary"] p,
 .stButton button[kind="primary"] span,
 .stDownloadButton button[kind="primary"] span,
 div[data-testid="stFormSubmitButton"] button[kind="primary"] span,
+button[kind="primaryFormSubmit"] span,
+button[data-testid="stBaseButton-primaryFormSubmit"] span,
 button[data-testid="stBaseButton-primary"] span {
   color: #ffffff !important;
   font-weight: 850 !important;
@@ -466,6 +472,8 @@ div[data-testid="stFormSubmitButton"] button:hover {
 .stButton button[kind="primary"]:hover,
 .stDownloadButton button[kind="primary"]:hover,
 div[data-testid="stFormSubmitButton"] button[kind="primary"]:hover,
+button[kind="primaryFormSubmit"]:hover,
+button[data-testid="stBaseButton-primaryFormSubmit"]:hover,
 button[data-testid="stBaseButton-primary"]:hover {
   color: #ffffff !important;
   border-color: var(--cpmm-action-border-hover) !important;
@@ -475,6 +483,8 @@ button[data-testid="stBaseButton-primary"]:hover {
 .stButton button:disabled,
 .stDownloadButton button:disabled,
 div[data-testid="stFormSubmitButton"] button:disabled,
+button[kind="primaryFormSubmit"]:disabled,
+button[data-testid="stBaseButton-primaryFormSubmit"]:disabled,
 button[data-testid="stBaseButton-primary"]:disabled,
 button[data-testid="stBaseButton-secondary"]:disabled {
   background: var(--cpmm-action-disabled-fill) !important;
@@ -487,11 +497,15 @@ button[data-testid="stBaseButton-secondary"]:disabled {
 .stButton button:disabled p,
 .stDownloadButton button:disabled p,
 div[data-testid="stFormSubmitButton"] button:disabled p,
+button[kind="primaryFormSubmit"]:disabled p,
+button[data-testid="stBaseButton-primaryFormSubmit"]:disabled p,
 button[data-testid="stBaseButton-primary"]:disabled p,
 button[data-testid="stBaseButton-secondary"]:disabled p,
 .stButton button:disabled span,
 .stDownloadButton button:disabled span,
 div[data-testid="stFormSubmitButton"] button:disabled span,
+button[kind="primaryFormSubmit"]:disabled span,
+button[data-testid="stBaseButton-primaryFormSubmit"]:disabled span,
 button[data-testid="stBaseButton-primary"]:disabled span,
 button[data-testid="stBaseButton-secondary"]:disabled span {
   color: var(--cpmm-action-disabled-text) !important;
@@ -4464,6 +4478,9 @@ def _results_governing_rows(state: object) -> list[dict[str, object]]:
         _results_add_pmm_rows(state, rows)
         _results_add_column_pier_vt_rows(state, rows)
         _results_add_beam_uls_rows(state, rows)
+        if state.get('slab_shell55_package') is not None or state.get('slab_shell55_top65_result') is not None:
+            from concrete_pmm_pro.reporting.slab_top65 import summary_rows as slab_summary_rows
+            rows.extend(slab_summary_rows(state))
     _results_add_sls_rows(state, rows)
     return rows
 

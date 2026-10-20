@@ -1,0 +1,1 @@
+Add AASHTO LRFD 2020 directional slab N–M, shear and tension-side shear-tie checks using the existing reinforcement. Preserve agreed connection/end/peak exclusions, add source-level calculation traces, and fold legacy research into an optional workspace.

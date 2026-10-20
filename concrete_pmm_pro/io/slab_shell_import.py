@@ -15,7 +15,7 @@ import numpy as np
 import openpyxl
 import pandas as pd
 
-VERSION = "SLAB.IMPORT55"
+VERSION = "SLAB.IMPORT59"
 BANK_KEY = "slab_shell55_package"
 PENDING_KEY = "slab_shell55_selected_signature"
 FORCES = ("F11", "F22", "F12", "M11", "M22", "M12", "V13", "V23")
@@ -46,6 +46,12 @@ SPECS = (
     TableSpec("joints", "Joint Coordinates", ("Joint", "GlobalX", "GlobalY", "GlobalZ"), 4),
 )
 
+# Already present in the user's complete Connectivity Data export. Optional:
+# older imports remain readable, but cannot locate girder connection nodes.
+OPTIONAL_SPECS = (
+    TableSpec("frames", "Connectivity - Frame", ("Frame", "JointI", "JointJ", "IsCurved"), 4),
+)
+
 FILE_GUIDE = (
     {"File / export set": "Element Forces - Area Shells.xlsx", "Required tables": "Element Forces - Area Shells",
      "Use": "ULS: F11, F22, F12, M11, M22, M12, V13, V23 · all supplied cases and Max/Min rows"},
@@ -54,7 +60,7 @@ FILE_GUIDE = (
     {"File / export set": "Area Assigment.xlsx", "Required tables": "Area Bridge Object Flags; Area Overwrites - Thickness; Area Section Assignments; Area Local Axes Assignments 1 - Typical; Area Local Axes Assignments 2 - Advanced*",
      "Use": "Top Slab selection, bridge stations, corner thicknesses, section assignment and shell local axes"},
     {"File / export set": "Connectivity Data.xlsx", "Required tables": "Connectivity - Area; Joint Coordinates",
-     "Use": "Original Area corner order, original coordinates and axis reference joints"},
+     "Use": "Original Area corners and coordinates; Connectivity - Frame, when included, locates girder connections automatically"},
 )
 
 
@@ -118,7 +124,7 @@ def _read_book(payload: bytes, name: str, package: ShellPackage) -> None:
                 texts = [str(x or "").strip() for x in row]
                 if texts and texts[0].upper().startswith("TABLE:"):
                     first_title = texts[0].split(":", 1)[1].strip()
-                candidates = [s for s in SPECS if set(s.columns).issubset(texts)]
+                candidates = [s for s in (*SPECS, *OPTIONAL_SPECS) if set(s.columns).issubset(texts)]
                 if candidates:
                     spec = candidates[0]
                     # Ignore trailing empty columns while preserving all exported fields.
@@ -132,10 +138,14 @@ def _read_book(payload: bytes, name: str, package: ShellPackage) -> None:
             if spec is None:
                 # Extra CSI tables are permitted. A known but malformed table is actionable.
                 aliases = {_token(sheet.title), _token(first_title)}
-                known = next((s for s in SPECS if _token(s.title) in aliases or
+                known = next((s for s in (*SPECS, *OPTIONAL_SPECS) if _token(s.title) in aliases or
                     _token(s.title.replace(" Assignments", "")) in aliases), None)
                 if known:
-                    package.errors.append(f"{name} / {sheet.title}: required columns: {', '.join(known.columns)}")
+                    message = f"{name} / {sheet.title}: required columns: {', '.join(known.columns)}"
+                    if known in OPTIONAL_SPECS:
+                        package.notes.append(message + '; optional connection geometry not used')
+                    else:
+                        package.errors.append(message)
                 package.sources.append({"File": name, "Table": sheet.title, "Use": "Not used", "Rows": None})
                 continue
             unit_row = next(rows, ())
@@ -182,7 +192,7 @@ def parse_files(files) -> ShellPackage:
 def _validate(package: ShellPackage) -> None:
     tables = package.tables
     id_columns = ("Area", "AreaElem", "AreaObject", "Joint", "JointElem", "ElemJt1", "ElemJt2", "ElemJt3", "ElemJt4",
-        "Joint1", "Joint2", "Joint3", "Joint4", "PlVecJt1", "PlVecJt2")
+        "Joint1", "Joint2", "Joint3", "Joint4", "PlVecJt1", "PlVecJt2", "Frame", "JointI", "JointJ")
     for frame in tables.values():
         for col in set(frame.columns).intersection(id_columns):
             frame[col] = frame[col].map(identifier)

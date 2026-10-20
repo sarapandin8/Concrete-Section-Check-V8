@@ -24,14 +24,17 @@ from concrete_pmm_pro.analysis.igird_dowel_detail35 import mesh_inventory
 from concrete_pmm_pro.analysis.slab_shell56_geometry import recover, steel_axis_forces
 from concrete_pmm_pro.core.design_code import workflow_project_code_label_from_session
 from concrete_pmm_pro.io.slab_shell_import import current_package
+from concrete_pmm_pro.analysis.slab_connections59 import layout as connection_layout, annotate as annotate_connections, INCLUDED, REASON
+from concrete_pmm_pro.analysis.igird_shear_support import support_settings
 
-VERSION = "SLAB.REVIEW57"
+VERSION = "SLAB.ENDZONE60"
 RESULT_KEY = "slab_shell55_strength56_result"  # cleared by the existing Project JSON input transaction
 GROUPS = ("Top longitudinal", "Bottom longitudinal", "Top transverse", "Bottom transverse")
 PHI_TIE, PHI_CONCRETE, NU_CONCRETE, PHI_SHEAR = .9, .7, .45, .9
 ES = 200000.
-SCOPE = ("Sandwich section review using AASHTO component limits; not a complete code acceptance. "
-    "One-way shear is a separate conservative core-reserve screen, not a validated full 3D N-M-V interaction. "
+SCOPE = ("N-M sandwich field review using AASHTO component limits; not a complete code acceptance. "
+    "One-way shear is a separate conservative section screen. No transverse-shear tie force is added to the N-M steel areas. "
+    "Nonzero V keeps combined N-M-V resistance at REVIEW; passing separate components does not establish their interaction. "
     "An independent N=0 RC strip reference and sufficient 1.33Mu minimum screen do not replace the coupled field. "
     "Anchorage, cover/exposure, the Mcr minimum branch and combined-NM minimum qualification, fatigue, punching/local wheel effects and SLS remain separate.")
 
@@ -111,7 +114,9 @@ def fingerprint(state):
     assigned=params.get('deck_topping_material_name') or state.get('deck_topping_material_name')
     inputs = {"version": VERSION, "source": package.signature,
         "code": workflow_project_code_label_from_session(state),
-        "params": {k:v for k,v in params.items() if k.startswith("deck_long_rebar_") or k == "deck_fc_MPa"},
+        "params": {k:v for k,v in params.items() if k.startswith("deck_long_rebar_") or k in ("deck_fc_MPa", "B1_mm", "D1_mm")},
+        "preset": (state.get("section_preset_key"), state.get("section_preset_name")),
+        "bearing_end_exclusion": {k:v for k,v in support_settings(state).items() if k != 'note'},
         "mesh": detail.get("slab_transverse_mesh"), "order": RULE,
         "deck_name": assigned,
         "density_sources": [{"name": (m if isinstance(m,dict) else m.model_dump()).get('name'),
@@ -176,15 +181,16 @@ def principal_max(xx, yy, xy):
     return .5*(xx+yy)+np.hypot(.5*(xx-yy), xy)
 
 
-def _shear(h, a, demand, steel, max_m, max_n):
+def _shear(h, demand, steel, max_m, max_n):
     """Conservative one-way screen; no unreported shear reinforcement credit.
 
-    Core reserve replaces dv by a smaller available depth. Shallow sections
-    without principal axial tension use 5.7.3.4.1. Otherwise .006 strain is used
+    A geometric lower bound for section dv is used, independently of the N-M
+    face search. It is not a claim of available core reserve in that field.
+    Shallow sections without principal axial tension use 5.7.3.4.1. Otherwise .006 strain is used
     only when an intentionally conservative strain bound does not exceed it.
     No guessed aggregate size: dg=0 gives a conservative crack-spacing bound.
     """
-    dv = np.minimum(h-2*a, np.maximum(.9*(h-steel.centre.max()), .72*h))
+    dv = np.maximum(.9*(h-steel.centre.max()), .72*h)
     shallow = (h < 16*25.4) & (max_n <= 1e-9)
     # 1/2 min mat area bounds projected orthogonal steel stiffness. The factor
     # two also covers the fully tensile-face strain rule in 5.7.3.4.2.
@@ -229,19 +235,13 @@ def section_check(h, membrane, moment, transverse, steel):
     max_m = np.maximum(abs(principal_max(*moment.T)), abs(-principal_max(*(-moment).T)))
     max_n = principal_max(n1, n2, n12)
     v = np.linalg.norm(transverse, axis=1)
-    shallow = (h < 16*25.4) & (max_n <= 1e-9)
-    # Additional longitudinal shear-tie demand, 5.7.3.5. No Vs/Vp credit.
-    # Project the shear-direction tension field to orthogonal bars and include
-    # |Nxy| in both directions. Full (rather than half) flange force is checked
-    # at each face. theta=29° bounds cot(theta) for the tensile-strain route.
-    cot_theta = np.where(shallow, 1., 1/np.tan(np.deg2rad(29.)))
-    vxy = abs(transverse[:,0]*transverse[:,1])
-    extra_x = np.divide(transverse[:,0]**2+vxy, v, out=np.zeros(count), where=v>0)/PHI_SHEAR*cot_theta
-    extra_y = np.divide(transverse[:,1]**2+vxy, v, out=np.zeros(count), where=v>0)/PHI_SHEAR*cot_theta
-    extra = np.column_stack((extra_x, extra_x, extra_y, extra_y))
+    # This search equilibrates only N and M. The previous release appended an
+    # unconditional full shear-chord force to BOTH faces. That is neither the
+    # shell sandwich allocation nor a qualified application of 5.7.3.5. Do not
+    # silently replace it with a half-force: cracked-core resistance, the signed
+    # xy increment and core/cover compatibility would still be unverified.
     best = np.full(count, np.inf)
-    best_qualified = np.zeros(count, dtype=bool)
-    fields = np.full((count, 16), np.nan)
+    fields = np.full((count, 12), np.nan)
     # Fixed fractions plus demand-based exact roots for the uniaxial benchmarks.
     candidate_depths = [h*f for f in np.linspace(.025, .45, 13)]
     wa = wood_armer(moment)
@@ -264,47 +264,46 @@ def section_check(h, membrane, moment, transverse, steel):
         ct = principal_max(cx_t+dt, cy_t+dt, qt)
         cb = principal_max(cx_b+db, cy_b+db, qb)
         concrete_dc = np.maximum(ct, cb)/(fd*a)
-        steel_dc = np.maximum(np.maximum((sx_t/PHI_TIE+extra_x)/(capacities[0]/PHI_TIE),
-                                        (sx_b/PHI_TIE+extra_x)/(capacities[1]/PHI_TIE)),
-                             np.maximum((sy_t/PHI_TIE+extra_y)/(capacities[2]/PHI_TIE),
-                                        (sy_b/PHI_TIE+extra_y)/(capacities[3]/PHI_TIE)))
-        shear_dc, qualified, dv, beta, eps, shear_capacity = _shear(h, a, v, steel, max_m, max_n)
+        steel_dc = np.maximum(np.maximum(sx_t/capacities[0], sx_b/capacities[1]),
+                              np.maximum(sy_t/capacities[2], sy_b/capacities[3]))
         score = np.maximum.reduce([np.broadcast_to(steel_dc, concrete_dc.shape), concrete_dc,
             np.broadcast_to(min_dc, concrete_dc.shape), np.broadcast_to(spacing_dc, concrete_dc.shape)])
-        # An unresolved shear check is excluded from the numeric partial-field
-        # score, remains NaN in output, and forces REVIEW. It is never a zero
-        # shear demand or an inferred passing capacity.
-        score = np.where(qualified,np.maximum(score,shear_dc),score)
         score = np.where(vx & vy, score, np.inf)
         combinations = len(x[0])*len(y[0])
         choice = score.reshape(combinations, count).argmin(axis=0)
         row_score = score.reshape(combinations, count)[choice, np.arange(count)]
-        improved = ((qualified & ~best_qualified) | ((qualified == best_qualified) & (row_score < best))) & np.isfinite(row_score)
+        improved = (row_score < best) & np.isfinite(row_score)
         if not improved.any():
             continue
         xi, yi = choice//len(y[0]), choice%len(y[0])
         ix = np.arange(count)
         selected = np.column_stack((a, qt, qb, x[0][xi,ix], x[1][xi,ix], y[0][yi,ix], y[1][yi,ix],
             x[2][xi,ix], x[3][xi,ix], y[2][yi,ix], y[3][yi,ix],
-            concrete_dc.reshape(combinations,count)[choice,ix], shear_dc, dv, beta, eps))
+            concrete_dc.reshape(combinations,count)[choice,ix]))
         fields[improved] = selected[improved]
         best[improved] = row_score[improved]
-        best_qualified[improved] = qualified[improved]
     if not np.isfinite(best).all():
         raise ValueError("No finite equilibrated sandwich field found for one or more source rows")
-    output = {"Field D/C": best, "Shrinkage D/C": min_dc, "Spacing D/C": spacing_dc,
+    shear_dc, qualified, dv, beta, eps, shear_capacity = _shear(h, v, steel, max_m, max_n)
+    # The overall number is the maximum KNOWN component ratio. It is not an
+    # interaction ratio. Missing applicability stays NaN and never means zero.
+    known_dc = np.fmax(best, shear_dc)
+    output = {"Field D/C": known_dc, "N–M field D/C": best,
+        "N–M field status": np.where(best>1+1e-8, "Preview FAIL", "Preview PASS"),
+        "Combined N–M–V status": np.where(v>1e-12, "REVIEW", "Not required (V=0)"),
+        "Shrinkage D/C": min_dc, "Spacing D/C": spacing_dc,
         "Face depth (mm)": fields[:,0], "q top (N/mm)": fields[:,1], "q bottom (N/mm)": fields[:,2],
         "Cx top (N/mm)": fields[:,3], "Cx bottom (N/mm)": fields[:,4],
         "Cy top (N/mm)": fields[:,5], "Cy bottom (N/mm)": fields[:,6],
-        "Concrete D/C": fields[:,11], "Shear D/C": fields[:,12], "Shear dv (mm)": fields[:,13],
-        "Shear beta": fields[:,14], "Shear strain bound": fields[:,15],
-        "Shear tie angle (deg)": np.where(shallow, 45., 29.)}
+        "Concrete D/C": fields[:,11], "Shear D/C": shear_dc, "Shear dv (mm)": dv,
+        "Shear beta": beta, "Shear strain bound": eps,
+        "Shear status": np.where(~qualified, "REVIEW", np.where(shear_dc>1+1e-8, "Preview FAIL", "Preview PASS")),
+        "Shear phiVc (kN/m)": np.where(qualified, shear_capacity, np.nan)}
     for i, group in enumerate(GROUPS):
         tensile = fields[:,7+i]
         output[group+" force (N/mm)"] = tensile
-        output[group+" shear tie (N/mm)"] = extra[:,i]
-        output[group+" Strength D/C"] = (tensile/PHI_TIE+extra[:,i])/(steel.area[i]*steel.fy[i]/1000)
-        required = np.maximum((tensile/PHI_TIE+extra[:,i])*1000/steel.fy[i], shrinkage[:,i])
+        output[group+" Strength D/C"] = tensile/capacities[i]
+        required = np.maximum(tensile*1000/(PHI_TIE*steel.fy[i]), shrinkage[:,i])
         output[group+" As required (mm²/m)"] = required
         output[group+" D/C"] = required/steel.area[i]
         output[group+" WA (kN·m/m)"] = wa[:,i]
@@ -322,7 +321,8 @@ def section_check(h, membrane, moment, transverse, steel):
     output["Equilibrium residual"] = np.max(abs(residuals)/scale, axis=1)
     if np.max(output["Equilibrium residual"]) > 1e-7:
         raise ValueError("Six-component equilibrium tolerance exceeded; results are not accepted")
-    output["Status"] = np.where(best>1+1e-8, "Preview FAIL", np.where(np.isnan(fields[:,12]), "REVIEW", "Preview PASS"))
+    output["Status"] = np.where(known_dc>1+1e-8, "Preview FAIL",
+        np.where(~qualified | (v>1e-12), "REVIEW", "Preview PASS"))
     return pd.DataFrame(output)
 
 
@@ -341,43 +341,67 @@ def calculate(state, *, progress=None, chunk_size=2048):
     if frame["Thickness (mm)"].isna().any():
         raise ValueError("Missing recovered thickness at a force-record corner")
     frame = steel_axis_forces(frame, geometry.parent_axes)
+    connections = connection_layout(package, geometry, state)
+    frame = annotate_connections(frame, connections)
+    nominal = frame.loc[frame[INCLUDED]]
+    if nominal.empty:
+        raise ValueError("No nominal slab nodes remain outside the excluded connection lines / bearing end zones; no design D/C is available")
     parts = []
-    for begin in range(0, len(frame), chunk_size):
-        part = frame.iloc[begin:begin+chunk_size]
+    for begin in range(0, len(nominal), chunk_size):
+        part = nominal.iloc[begin:begin+chunk_size]
         checks = section_check(part["Thickness (mm)"].to_numpy(), part[["Nx","Ny","Nxy"]].to_numpy(),
             part[["Mx","My","Mxy"]].to_numpy(), part[["Vx","Vy"]].to_numpy(), steel)
+        checks.index = part.index
         parts.append(checks)
         if progress:
-            progress(min(begin+chunk_size,len(frame)), len(frame))
-    checked = pd.concat(parts, ignore_index=True)
+            progress(min(begin+chunk_size,len(nominal)), len(nominal))
+    checked = pd.concat(parts).reindex(frame.index)
     all_rows = pd.concat((frame.reset_index(drop=True), checked), axis=1)
     from concrete_pmm_pro.analysis.slab_code57 import strip_references, controlling_checks, check_breakdown
-    references = strip_references(frame['Thickness (mm)'].to_numpy(), frame[['Nx','Ny','Nxy']].to_numpy(),
-        frame[['Mx','My','Mxy']].to_numpy(), steel)
-    all_rows = pd.concat((all_rows, references), axis=1)
+    references = strip_references(nominal['Thickness (mm)'].to_numpy(), nominal[['Nx','Ny','Nxy']].to_numpy(),
+        nominal[['Mx','My','Mxy']].to_numpy(), steel)
+    references.index = nominal.index
+    all_rows = pd.concat((all_rows, references.reindex(frame.index)), axis=1)
     all_rows['Controlling check'] = controlling_checks(all_rows)
+    excluded = ~all_rows[INCLUDED]
+    all_rows.loc[excluded, 'Controlling check'] = 'Excluded node'
+    for column in ('Status', 'N–M field status', 'Shear status', 'Combined N–M–V status',
+                   'Code flexure reference status', 'Minimum sufficient screen status'):
+        all_rows.loc[excluded, column] = 'EXCLUDED'
+    all_rows.loc[excluded, 'Code reference reason'] = 'Node excluded from nominal slab design'
+    design = all_rows.loc[all_rows[INCLUDED]]
     step_keys = [c for c in ("OutputCase", "StepType", "StepNum") if c in all_rows]
     coverage = all_rows.groupby(step_keys, dropna=False).size().reset_index(name="Imported records")
+    nominal_counts = all_rows.groupby(step_keys, dropna=False)[INCLUDED].agg(['sum', 'count']).reset_index()
+    coverage['Nominal design records'] = nominal_counts['sum'].to_numpy()
+    coverage['Excluded records'] = (nominal_counts['count']-nominal_counts['sum']).to_numpy()
     coverage["Expected corner records"] = len(geometry.corners)
     coverage["Missing records"] = coverage["Expected corner records"]-coverage["Imported records"]
     incomplete = coverage["Missing records"].gt(0).any()
     summary = []
     for group, area in zip(GROUPS, steel.area):
         key = group+" As required (mm²/m)"
-        row = all_rows.loc[(all_rows[key]/area).idxmax()]
+        row = design.loc[(design[key]/area).idxmax()]
         summary.append({"Reinforcement": group, "As provided (mm²/m)": area, "As required (mm²/m)": row[key],
             "D/C": row[key]/area, "Case": row["OutputCase"], "Step": row["StepType"],
             "X (m)": row["X (m)"], "Y (m)": row["Y (m)"], "AreaElem": row["AreaElem"], "Joint": row["Joint"],
             "Status": "Preview FAIL" if row[key]/area>1+1e-8 else "REVIEW" if incomplete else "Preview PASS"})
-    governing = all_rows.loc[all_rows["Field D/C"].idxmax()]
-    statuses = all_rows["Status"].value_counts().to_dict()
+    governing = design.loc[design["Field D/C"].idxmax()]
+    nm_governing = design.loc[design["N–M field D/C"].idxmax()]
+    statuses = design["Status"].value_counts().to_dict()
     status = "Preview FAIL" if statuses.get("Preview FAIL") else "REVIEW" if statuses.get("REVIEW") or incomplete else "Preview PASS"
     result = {"version": VERSION, "fingerprint": signature, "rows": all_rows, "summary": pd.DataFrame(summary),
-        "governing": governing.to_dict(), "status": status, "counts": statuses, "geometry": geometry,
+        "governing": governing.to_dict(), "nm_governing": nm_governing.to_dict(),
+        "status": status, "counts": statuses, "geometry": geometry,
         "steel": steel, "scope": SCOPE, "seconds": time.monotonic()-start,
-        "source_rows": len(frame), "coverage": coverage, "incomplete": bool(incomplete),
+        "source_rows": len(frame), "design_rows": len(design), "excluded_rows": int(excluded.sum()),
+        "excluded_nodes": int(all_rows.loc[excluded, 'Joint'].nunique()),
+        "bearing_excluded_rows": int(all_rows['Bearing end-zone'].ne('').sum()),
+        "bearing_excluded_nodes": int(all_rows.loc[all_rows['Bearing end-zone'].ne(''), 'Joint'].nunique()),
+        "connections": connections,
+        "coverage": coverage, "incomplete": bool(incomplete),
         "code": workflow_project_code_label_from_session(state)}
-    result['check_summary'] = check_breakdown(all_rows)
-    result['reference_counts'] = all_rows['Minimum sufficient screen status'].value_counts().to_dict()
+    result['check_summary'] = check_breakdown(design)
+    result['reference_counts'] = design['Minimum sufficient screen status'].value_counts().to_dict()
     result['seconds'] = time.monotonic()-start
     return result

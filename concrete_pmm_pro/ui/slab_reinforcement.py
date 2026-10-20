@@ -20,24 +20,27 @@ def _compact_context() -> None:
 
 
 def export_guide() -> str:
-    lines = ["# CSiBridge deck slab import — SLAB.REVIEW57", "",
+    lines = ["# CSiBridge deck slab import — SLAB.SHEAR64", "",
         "Upload complete native .xlsx exports. Keep every worksheet, title, header and units row.",
         "Filenames are examples; tables are detected by column schema. The four sets may be combined in one workbook.",
         "Export in kN, m. Shell forces: kN/m; shell moments: kN-m/m; geometry and thickness: m.", ""]
     for i, row in enumerate(source.FILE_GUIDE, 1):
         lines += [f"{i}. {row['File / export set']}", f"   Tables: {row['Required tables']}", f"   Use: {row['Use']}", ""]
     lines += ["* The Advanced axes table is required where AdvanceAxes = Yes; this applies to the supplied model.",
-        "Keep U1A, U1B, U2A and U2B and every exported Max/Min row. Supplied force components in each row are taken as concurrent, per the project input basis.",
+        "Keep all design cases (for example U1A, U1B, U2A, U2B), with every exported Max/Min or static-result row. New equivalent-train-load case names are accepted. Supplied force components in each row are taken as concurrent, per the project input basis.",
         "Keep generated ~ joints in Objects And Elements - Joints; original Joint Coordinates alone does not cover the analysis mesh.",
         "Keep Thick1..4 and original Joint1..4 order for variable-thickness areas.",
         "Keep BridgeObj, BOSpan, StartSta and EndSta in Area Bridge Object Flags; station progression defines the straight bridge reinforcement directions.",
         "Top Slab is selected from CompType; diaphragm results stay in the source package and are excluded from slab checks.",
-        "Program Control, Frames, Links, Auto Mesh and Edge Constraints may stay; they are not used by this import route.",
+        "Keep Connectivity - Frame in the complete Connectivity Data export: its frame endpoints locate the I-girder connection lines. No additional workbook is needed.",
+        "Program Control, Links, Auto Mesh and Edge Constraints may stay; they are not used by this import route.",
         "The latest Objects And Elements export containing both Areas and Joints replaces the older Areas-only workbook.",
         "No stress workbook, load-combination definitions or moving-load recording-settings export is required for this workflow.",
-        "Materials, code and four slab reinforcement groups are read from the current project inputs.",
-        "Analysis > Slab Reinforcement calculates a coupled N-M stress-field preview and conservative shear screens. Complete deck design acceptance remains outside this section check.",
-        "Code flexure and minimum sufficient screens are independent N=0 references; nonzero membrane demand remains coupled N-M review.",
+        "For a new equivalent train UDL analysis, re-export the same four complete sets together. Actions are already factored CSI results: the app applies no further impact / load factor, force-reference shift or ballast redistribution. Record ballast and the actual UDL basis in Analysis > Slab Reinforcement > CSI load basis / Ballast.",
+        "Materials, code and four slab reinforcement groups are read from the current project inputs. Punching additionally needs physical load-area X/Y/L/B; no load-area dimensions are inferred from shell-force peaks.",
+        "Analysis > Slab Reinforcement calculates AASHTO LRFD 2020 directional N-M, shear and tension-side shear-tie component checks with the existing four physical reinforcement mats.",
+        "Agreed girder/diaphragm lines, bearing end zones and the fixed REVIEW61 isolated-peak rule are excluded before resistance evaluation; original source actions remain in the audit.",
+        "Four-mat temperature/spacing, sufficient flexural minimum and required development length are calculated. Girder and diaphragm face samples use the existing flange width / exported shell thickness, with no dv relaxation. Shell coupling, local support/load-path qualification, actual anchorage, fatigue and SLS remain separate. Punching has its own loaded-area normal-force check; existing Final Composite longitudinal interface results are linked read-only by current input hashes. Optional legacy research and zone averages are folded away.",
         "Imported workbooks are session inputs. Re-upload them after opening a Project JSON or restarting the app."]
     return "\n".join(lines) + "\n"
 
@@ -59,21 +62,22 @@ def _guide() -> None:
             st.markdown("\n".join(f"- `{table.strip()}`" for table in row["Required tables"].split(";")))
             st.caption(row["Use"])
         st.caption("* Advanced axes is required where AdvanceAxes = Yes, as in the supplied model. Sheet names may omit Assignments.")
-        st.markdown("Export in **kN, m**. Keep all rows for **U1A, U1B, U2A, U2B**, including Max/Min.")
-        st.caption("Keep Program Control, Frames, Links, Auto Mesh and Edge Constraints. The latest Areas + Joints export replaces the older Areas-only file.")
+        st.markdown("Export in **kN, m**. Keep all ULS cases and every Max/Min or static-result row. New equivalent-UDL case names are accepted.")
+        st.caption("After reanalysis with equivalent train loading, export the same four sets together. Imported strength forces are used directly, without multiplying impact / load factors or dispersing them through ballast again.")
+        st.caption("Keep Connectivity - Frame for I-girder connection geometry, plus the other worksheets in the complete exports. The latest Areas + Joints export replaces the older Areas-only file.")
         st.download_button("Download export checklist", export_guide(),
             file_name="CSiBridge_Deck_Slab_Export_Checklist.txt", mime="text/plain", key="slab_shell55_guide")
 
 
 def _overview(package: source.ShellPackage) -> None:
-    from concrete_pmm_pro.analysis.slab_shell56 import current
+    from concrete_pmm_pro.analysis.slab_design66 import current
     result=current(st.session_state)
     summary = package.summary
     render_metric_cards([
         {"title": "Imported Top Slab", "value": f"{summary['slab_elements']:,} elements", "detail": f"{summary['slab_objects']:,} Area objects", "status": "info"},
         {"title": "Slab force records", "value": f"{summary['slab_force_rows']:,}", "detail": f"{summary['excluded_force_rows']:,} non-slab records excluded from slab view", "status": "info"},
         {"title": "Thickness from CSI", "value": f"{summary['thickness_min_mm']:g}–{summary['thickness_max_mm']:g} mm", "detail": "Object corner overwrites; variable thickness retained", "status": "neutral"},
-        {"title": "Section review", "value": result['status'] if result else "NOT CALCULATED", "detail": "Review in Analysis → Slab Reinforcement", "status": "warning"},
+        {"title": "AASHTO components", "value": result['component_status'] if result else "NOT CALCULATED", "detail": "Analysis → Slab Reinforcement · complete deck acceptance remains separate", "status": "warning"},
     ])
     st.caption("Cases: " + ", ".join(summary["cases"]) + " · F / V: kN/m · M: kN·m/m · Coordinates: m")
 
@@ -118,10 +122,24 @@ def render_import_page() -> None:
         st.session_state.pop(source.BANK_KEY, None)
         st.session_state.pop(source.PENDING_KEY, None)
         st.session_state.pop("slab_shell55_strength56_result", None)
+        st.session_state.pop("slab_shell55_aashto62_result", None)
+        st.session_state.pop("slab_shell55_aashto62_csv_payload", None)
+        st.session_state.pop("slab_shell55_aashto63_faces_payload", None)
+        st.session_state.pop("slab_shell55_shear64_result", None)
+        st.session_state.pop("slab_shell55_top65_result", None)
+        st.session_state.pop("slab_shell55_design66_result", None)
+        st.session_state.pop("slab_shell55_top65_report", None)
         st.session_state["slab_shell55_upload_revision"] = revision + 1
         st.rerun()
     if clicked:
         st.session_state.pop("slab_shell55_strength56_result", None)
+        st.session_state.pop("slab_shell55_aashto62_result", None)
+        st.session_state.pop("slab_shell55_aashto62_csv_payload", None)
+        st.session_state.pop("slab_shell55_aashto63_faces_payload", None)
+        st.session_state.pop("slab_shell55_shear64_result", None)
+        st.session_state.pop("slab_shell55_top65_result", None)
+        st.session_state.pop("slab_shell55_design66_result", None)
+        st.session_state.pop("slab_shell55_top65_report", None)
         with st.spinner("Reading complete CSI workbooks and matching shell records…"):
             package = source.parse_files(uploads)
             st.session_state[source.BANK_KEY] = package
@@ -165,5 +183,6 @@ def reinforcement_inventory(state) -> pd.DataFrame:
 
 def render_analysis_page() -> None:
     _compact_context()
-    from concrete_pmm_pro.ui.slab_shell56_workspace import render
-    render()
+    from concrete_pmm_pro.ui.slab_top65_workspace import render
+    from concrete_pmm_pro.analysis import slab_design66
+    render(analysis_engine=slab_design66)

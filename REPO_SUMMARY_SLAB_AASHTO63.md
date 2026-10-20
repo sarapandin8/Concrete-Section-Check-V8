@@ -1,0 +1,1 @@
+Add AASHTO LRFD four-mat slab checks, sufficient flexural-minimum verification, required development lengths, and geometry-based girder/diaphragm face sampling. Preserve source forces and agreed exclusions, expose unresolved sections, and retain explicit limits on full deck acceptance.

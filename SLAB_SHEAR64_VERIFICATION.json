@@ -1,0 +1,693 @@
+{
+  "version": "SLAB.SHEAR64",
+  "code": "AASHTO LRFD 9th Edition (2020)",
+  "source_rows": 146432,
+  "design_rows": 113232,
+  "excluded_rows": 33200,
+  "geometry_excluded_rows": 26240,
+  "peak_excluded_rows": 6960,
+  "incomplete": false,
+  "seconds": 10.276486312999623,
+  "component_status": "FAIL",
+  "status": "REVIEW REQUIRED",
+  "scope": "AASHTO LRFD 2020 component checks: existing one-way shear and reinforcement checks, plus isolated rectangular loaded-area punching normal force (5.12.8.6). Punching moment transfer, local support paths and full shell interaction remain separate. No missing patch or demand is invented; overall deck acceptance remains REVIEW REQUIRED.",
+  "summary": [
+    {
+      "Check": "Shear · transverse",
+      "Status": "FAIL",
+      "Max D/C": 1.4903315268,
+      "Case": "U2A",
+      "Step": "Max",
+      "X (m)": 1.23571,
+      "Y (m)": -2.9,
+      "AreaElem": "1390-8",
+      "Joint": "~499",
+      "Failed nodes": 48,
+      "Review nodes": 1270
+    },
+    {
+      "Check": "Shear · longitudinal",
+      "Status": "FAIL",
+      "Max D/C": 3.001741496,
+      "Case": "U2A",
+      "Step": "Max",
+      "X (m)": 1.00804,
+      "Y (m)": -3.925,
+      "AreaElem": "1392-4",
+      "Joint": "~516",
+      "Failed nodes": 462,
+      "Review nodes": 372
+    },
+    {
+      "Check": "Direct N–M · transverse",
+      "Status": "PASS",
+      "Max D/C": 0.4412771269,
+      "Case": "U2A",
+      "Step": "Max",
+      "X (m)": 9.9875,
+      "Y (m)": 2.1,
+      "AreaElem": "1529-6",
+      "Joint": "~2609",
+      "Failed nodes": 0,
+      "Review nodes": 0
+    },
+    {
+      "Check": "Direct N–M · longitudinal",
+      "Status": "PASS",
+      "Max D/C": 0.3665233969,
+      "Case": "U2A",
+      "Step": "Min",
+      "X (m)": 0.55268,
+      "Y (m)": 2.7,
+      "AreaElem": "1383-9",
+      "Joint": "~395",
+      "Failed nodes": 0,
+      "Review nodes": 0
+    },
+    {
+      "Check": "Flexural minimum · transverse",
+      "Status": "PASS",
+      "Max D/C": 0.5363283819,
+      "Case": "U2A",
+      "Step": "Max",
+      "X (m)": 10.45714,
+      "Y (m)": 2.1,
+      "AreaElem": "1543-5",
+      "Joint": "~2611",
+      "Failed nodes": 0,
+      "Review nodes": 0
+    },
+    {
+      "Check": "Flexural minimum · longitudinal",
+      "Status": "PASS",
+      "Max D/C": 0.5867233094,
+      "Case": "U2A",
+      "Step": "Min",
+      "X (m)": 0.55268,
+      "Y (m)": 2.7,
+      "AreaElem": "1383-9",
+      "Joint": "~395",
+      "Failed nodes": 0,
+      "Review nodes": 0
+    },
+    {
+      "Check": "Flexural shear tie · transverse",
+      "Status": "FAIL",
+      "Max D/C": 1.2351214427,
+      "Case": "U2A",
+      "Step": "Max",
+      "X (m)": 16.93214,
+      "Y (m)": 2.1,
+      "AreaElem": "1646-5",
+      "Joint": "~4216",
+      "Failed nodes": 115,
+      "Review nodes": 1270
+    },
+    {
+      "Check": "Flexural shear tie · longitudinal",
+      "Status": "FAIL",
+      "Max D/C": 2.0770511952,
+      "Case": "U2A",
+      "Step": "Min",
+      "X (m)": 19.44643,
+      "Y (m)": 3.5,
+      "AreaElem": "1672-4",
+      "Joint": "~4786",
+      "Failed nodes": 92,
+      "Review nodes": 372
+    },
+    {
+      "Check": "Temperature minimum",
+      "Status": "PASS",
+      "Max D/C": 0.3333916203,
+      "Case": "U1A",
+      "Step": "Max",
+      "X (m)": 8.57857,
+      "Y (m)": -0.43333,
+      "AreaElem": "1518-5",
+      "Joint": "~2258",
+      "Failed nodes": 0,
+      "Review nodes": 0
+    },
+    {
+      "Check": "Bar spacing",
+      "Status": "PASS",
+      "Max D/C": 0.6666666667,
+      "Case": "U1A",
+      "Step": "Max",
+      "X (m)": 1.69107,
+      "Y (m)": -5.5,
+      "AreaElem": "1406-30",
+      "Joint": "~742",
+      "Failed nodes": 0,
+      "Review nodes": 0
+    }
+  ],
+  "coverage": [
+    {
+      "OutputCase": "U1A",
+      "StepType": "Max",
+      "Imported records": 18304,
+      "Checked records": 14156,
+      "Peak excluded records": 868,
+      "Expected records": 18304,
+      "Missing records": 0,
+      "Excluded records": 4148
+    },
+    {
+      "OutputCase": "U1A",
+      "StepType": "Min",
+      "Imported records": 18304,
+      "Checked records": 14168,
+      "Peak excluded records": 856,
+      "Expected records": 18304,
+      "Missing records": 0,
+      "Excluded records": 4136
+    },
+    {
+      "OutputCase": "U1B",
+      "StepType": "Max",
+      "Imported records": 18304,
+      "Checked records": 14152,
+      "Peak excluded records": 872,
+      "Expected records": 18304,
+      "Missing records": 0,
+      "Excluded records": 4152
+    },
+    {
+      "OutputCase": "U1B",
+      "StepType": "Min",
+      "Imported records": 18304,
+      "Checked records": 14152,
+      "Peak excluded records": 872,
+      "Expected records": 18304,
+      "Missing records": 0,
+      "Excluded records": 4152
+    },
+    {
+      "OutputCase": "U2A",
+      "StepType": "Max",
+      "Imported records": 18304,
+      "Checked records": 14152,
+      "Peak excluded records": 872,
+      "Expected records": 18304,
+      "Missing records": 0,
+      "Excluded records": 4152
+    },
+    {
+      "OutputCase": "U2A",
+      "StepType": "Min",
+      "Imported records": 18304,
+      "Checked records": 14152,
+      "Peak excluded records": 872,
+      "Expected records": 18304,
+      "Missing records": 0,
+      "Excluded records": 4152
+    },
+    {
+      "OutputCase": "U2B",
+      "StepType": "Max",
+      "Imported records": 18304,
+      "Checked records": 14152,
+      "Peak excluded records": 872,
+      "Expected records": 18304,
+      "Missing records": 0,
+      "Excluded records": 4152
+    },
+    {
+      "OutputCase": "U2B",
+      "StepType": "Min",
+      "Imported records": 18304,
+      "Checked records": 14148,
+      "Peak excluded records": 876,
+      "Expected records": 18304,
+      "Missing records": 0,
+      "Excluded records": 4156
+    }
+  ],
+  "steel": {
+    "area_mm2_m": [
+      1005.3096491487337,
+      1340.412865531645,
+      1340.412865531645,
+      1340.412865531645
+    ],
+    "centres_mm": [
+      64.0,
+      64.0,
+      48.0,
+      48.0
+    ],
+    "fc_MPa": 35.0
+  },
+  "input_hashes": {
+    "concrete_section_pro_project (32).json": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+    "Element Forces - Area Shells.xlsx": "5d0749e82960e22cc8d42073edc3e0221da38d20b4be9a5be6b9e7b88b94e081",
+    "TABLE Objects And Elements - Areas(1).xlsx": "75f06bb745ff4915f8f4558a4bd0558c04f453a4ccb5ff3b7df3fe0dffaba5cf",
+    "Area Assigment.xlsx": "98e92434eb70d3f93e92e3942ce370cd3af49ea3e21a578388dbaa420f64b93d",
+    "Connectivity Data.xlsx": "422cc75df02ca5999f25b5a65cff35183317bc94b021913fdd56021152711da2"
+  },
+  "all_eight_source_actions_preserved": true,
+  "all_source_keys_preserved": true,
+  "full_deck_design_acceptance": false,
+  "excluded_have_no_numeric_checks": true,
+  "unique_native_thicknesses": 51,
+  "direction_procedures": {
+    "Longitudinal": {
+      "5.7.3.4.1 · simplified": 113136,
+      "5.7.3.4.2 · general": 96
+    },
+    "Transverse": {
+      "5.7.3.4.2 · general": 68387,
+      "5.7.3.4.1 · simplified": 44845
+    }
+  },
+  "oneway_base_reused": true,
+  "unchanged_oneway_summary": true,
+  "punching_status": "NOT CALCULATED",
+  "defined_punching_areas": 0,
+  "interface_status": "REVIEW",
+  "interface_rows": [
+    {
+      "Girder": "BOBJ1 / Interior Girder 2",
+      "Interface status": "NOT CALCULATED",
+      "Max D/C": null,
+      "Source": "Flexure member collection",
+      "Scope": "This girder only · longitudinal flexural interface transfer",
+      "Action": "Calculate Flexure → Final — Composite"
+    },
+    {
+      "Girder": "BOBJ1 / Left Exterior Girder",
+      "Interface status": "NOT CALCULATED",
+      "Max D/C": null,
+      "Source": "Flexure member collection",
+      "Scope": "This girder only · longitudinal flexural interface transfer",
+      "Action": "Calculate Flexure → Final — Composite"
+    }
+  ],
+  "additional_punching_and_link_seconds": 0.3735990830009541,
+  "focused_tests_passed": 199,
+  "full_repository_suite_run": false,
+  "test_selection": [
+    "slab_punching64",
+    "slab_interface64",
+    "slab_aashto62_ui",
+    "slab_aashto62",
+    "slab_aashto63",
+    "slab_review61",
+    "slab_connections59",
+    "slab_shell55",
+    "slab_shell56",
+    "slab_shell56_ui",
+    "igird_interface_shear",
+    "igird_uls4_interface_integration",
+    "igird_flexure31",
+    "project_io"
+  ],
+  "compile_check": "PASS · app.py and seven new/modified modules",
+  "baseline_sha256": "e0305f36877c5660090c0626b347b50822adb29f5b17a96e568b6b7fe132569b",
+  "baseline_missing_files": [],
+  "baseline_changed_files": [
+    "README.md",
+    "concrete_pmm_pro/ui/slab_reinforcement.py",
+    "tests/test_slab_aashto62_ui.py"
+  ],
+  "all_other_baseline_files_byte_identical": true,
+  "native_actions_keys_masks_and_oneway_summary_equal_AASHTO63": true,
+  "project_json_new_fields": "Input-only project.metadata.slab_punching64.areas",
+  "analysis_result_persistence_added": false,
+  "ui": {
+    "calculate_to_render_seconds": 13.42787407400101,
+    "oneway_solver_seconds": 10.110046559999319,
+    "oneway_solver_calls_through_all_filters_and_punching_edits": 1,
+    "ui_view_count": 10,
+    "directional_case_envelopes_checked": 50,
+    "punching_case_views_checked": 6,
+    "chart_count_per_view": 1,
+    "exceptions": 0,
+    "view_change_seconds": [
+      2.9815819390005345,
+      3.201109351000923,
+      2.858751622999989,
+      2.9750655379993987,
+      2.671210902999519,
+      2.7735452899996744,
+      3.221459169000809,
+      2.9454690519996802,
+      2.4310754550006095,
+      2.2789281659988774
+    ],
+    "demonstration_area_edit_recalculate_to_render_seconds": 5.104487532000348,
+    "actual_project_has_punching_footprints": false,
+    "actual_project_punching_status": "NOT CALCULATED",
+    "demonstrations_not_project_design_results": true,
+    "all_source_forces_keys_masks_and_oneway_summary_equal_AASHTO63": true,
+    "stale_inputs_hide_graph": true,
+    "load_area_form_preserves_navigation": true,
+    "no_implicit_interface_flexure_or_research_calculation": true,
+    "interface_navigation_opens_final_composite_interface_view": true,
+    "manual_live_browser_screenshot_review": false,
+    "views": [
+      {
+        "view": "Shear · transverse",
+        "case": "All imported ULS cases",
+        "elements": 4576,
+        "max_known_dc": 1.4903315267672974
+      },
+      {
+        "view": "Shear · transverse",
+        "case": "U1A",
+        "elements": 4576,
+        "max_known_dc": 1.431259161047741
+      },
+      {
+        "view": "Shear · transverse",
+        "case": "U1B",
+        "elements": 4576,
+        "max_known_dc": 1.0503666291948959
+      },
+      {
+        "view": "Shear · transverse",
+        "case": "U2A",
+        "elements": 4576,
+        "max_known_dc": 1.4903315267672974
+      },
+      {
+        "view": "Shear · transverse",
+        "case": "U2B",
+        "elements": 4576,
+        "max_known_dc": 1.1017612459939568
+      },
+      {
+        "view": "Shear · longitudinal",
+        "case": "All imported ULS cases",
+        "elements": 4576,
+        "max_known_dc": 3.0017414960224635
+      },
+      {
+        "view": "Shear · longitudinal",
+        "case": "U1A",
+        "elements": 4576,
+        "max_known_dc": 2.780414947806533
+      },
+      {
+        "view": "Shear · longitudinal",
+        "case": "U1B",
+        "elements": 4576,
+        "max_known_dc": 2.4203084735857585
+      },
+      {
+        "view": "Shear · longitudinal",
+        "case": "U2A",
+        "elements": 4576,
+        "max_known_dc": 3.0017414960224635
+      },
+      {
+        "view": "Shear · longitudinal",
+        "case": "U2B",
+        "elements": 4576,
+        "max_known_dc": 2.656514168546692
+      },
+      {
+        "view": "Direct N–M · transverse",
+        "case": "All imported ULS cases",
+        "elements": 4576,
+        "max_known_dc": 0.4412771268981173
+      },
+      {
+        "view": "Direct N–M · transverse",
+        "case": "U1A",
+        "elements": 4576,
+        "max_known_dc": 0.4373411363189728
+      },
+      {
+        "view": "Direct N–M · transverse",
+        "case": "U1B",
+        "elements": 4576,
+        "max_known_dc": 0.3533295740243529
+      },
+      {
+        "view": "Direct N–M · transverse",
+        "case": "U2A",
+        "elements": 4576,
+        "max_known_dc": 0.4412771268981173
+      },
+      {
+        "view": "Direct N–M · transverse",
+        "case": "U2B",
+        "elements": 4576,
+        "max_known_dc": 0.3572555095420476
+      },
+      {
+        "view": "Direct N–M · longitudinal",
+        "case": "All imported ULS cases",
+        "elements": 4576,
+        "max_known_dc": 0.3665233968950001
+      },
+      {
+        "view": "Direct N–M · longitudinal",
+        "case": "U1A",
+        "elements": 4576,
+        "max_known_dc": 0.3452742203971668
+      },
+      {
+        "view": "Direct N–M · longitudinal",
+        "case": "U1B",
+        "elements": 4576,
+        "max_known_dc": 0.29491935654469686
+      },
+      {
+        "view": "Direct N–M · longitudinal",
+        "case": "U2A",
+        "elements": 4576,
+        "max_known_dc": 0.3665233968950001
+      },
+      {
+        "view": "Direct N–M · longitudinal",
+        "case": "U2B",
+        "elements": 4576,
+        "max_known_dc": 0.31616937685052965
+      },
+      {
+        "view": "Flexural minimum · transverse",
+        "case": "All imported ULS cases",
+        "elements": 4576,
+        "max_known_dc": 0.5363283818628577
+      },
+      {
+        "view": "Flexural minimum · transverse",
+        "case": "U1A",
+        "elements": 4576,
+        "max_known_dc": 0.5342987534988419
+      },
+      {
+        "view": "Flexural minimum · transverse",
+        "case": "U1B",
+        "elements": 4576,
+        "max_known_dc": 0.42360149174029454
+      },
+      {
+        "view": "Flexural minimum · transverse",
+        "case": "U2A",
+        "elements": 4576,
+        "max_known_dc": 0.5363283818628577
+      },
+      {
+        "view": "Flexural minimum · transverse",
+        "case": "U2B",
+        "elements": 4576,
+        "max_known_dc": 0.42509216848088927
+      },
+      {
+        "view": "Flexural minimum · longitudinal",
+        "case": "All imported ULS cases",
+        "elements": 4576,
+        "max_known_dc": 0.586723309372546
+      },
+      {
+        "view": "Flexural minimum · longitudinal",
+        "case": "U1A",
+        "elements": 4576,
+        "max_known_dc": 0.5565385309821747
+      },
+      {
+        "view": "Flexural minimum · longitudinal",
+        "case": "U1B",
+        "elements": 4576,
+        "max_known_dc": 0.4833158323638803
+      },
+      {
+        "view": "Flexural minimum · longitudinal",
+        "case": "U2A",
+        "elements": 4576,
+        "max_known_dc": 0.586723309372546
+      },
+      {
+        "view": "Flexural minimum · longitudinal",
+        "case": "U2B",
+        "elements": 4576,
+        "max_known_dc": 0.5156068306212357
+      },
+      {
+        "view": "Flexural shear tie · transverse",
+        "case": "All imported ULS cases",
+        "elements": 4576,
+        "max_known_dc": 1.2351214427264077
+      },
+      {
+        "view": "Flexural shear tie · transverse",
+        "case": "U1A",
+        "elements": 4576,
+        "max_known_dc": 1.2157869871126528
+      },
+      {
+        "view": "Flexural shear tie · transverse",
+        "case": "U1B",
+        "elements": 4576,
+        "max_known_dc": 1.0220109783526758
+      },
+      {
+        "view": "Flexural shear tie · transverse",
+        "case": "U2A",
+        "elements": 4576,
+        "max_known_dc": 1.2351214427264077
+      },
+      {
+        "view": "Flexural shear tie · transverse",
+        "case": "U2B",
+        "elements": 4576,
+        "max_known_dc": 1.0429828480727596
+      },
+      {
+        "view": "Flexural shear tie · longitudinal",
+        "case": "All imported ULS cases",
+        "elements": 4576,
+        "max_known_dc": 2.077051195157399
+      },
+      {
+        "view": "Flexural shear tie · longitudinal",
+        "case": "U1A",
+        "elements": 4576,
+        "max_known_dc": 1.9032004640350495
+      },
+      {
+        "view": "Flexural shear tie · longitudinal",
+        "case": "U1B",
+        "elements": 4576,
+        "max_known_dc": 1.6755460983059043
+      },
+      {
+        "view": "Flexural shear tie · longitudinal",
+        "case": "U2A",
+        "elements": 4576,
+        "max_known_dc": 2.077051195157399
+      },
+      {
+        "view": "Flexural shear tie · longitudinal",
+        "case": "U2B",
+        "elements": 4576,
+        "max_known_dc": 1.8493968294282537
+      },
+      {
+        "view": "Temperature minimum",
+        "case": "All imported ULS cases",
+        "elements": 4576,
+        "max_known_dc": 0.33339162032113373
+      },
+      {
+        "view": "Temperature minimum",
+        "case": "U1A",
+        "elements": 4576,
+        "max_known_dc": 0.33339162032113373
+      },
+      {
+        "view": "Temperature minimum",
+        "case": "U1B",
+        "elements": 4576,
+        "max_known_dc": 0.33339162032113373
+      },
+      {
+        "view": "Temperature minimum",
+        "case": "U2A",
+        "elements": 4576,
+        "max_known_dc": 0.33339162032113373
+      },
+      {
+        "view": "Temperature minimum",
+        "case": "U2B",
+        "elements": 4576,
+        "max_known_dc": 0.33339162032113373
+      },
+      {
+        "view": "Bar spacing",
+        "case": "All imported ULS cases",
+        "elements": 4576,
+        "max_known_dc": 0.666666666666667
+      },
+      {
+        "view": "Bar spacing",
+        "case": "U1A",
+        "elements": 4576,
+        "max_known_dc": 0.666666666666667
+      },
+      {
+        "view": "Bar spacing",
+        "case": "U1B",
+        "elements": 4576,
+        "max_known_dc": 0.666666666666667
+      },
+      {
+        "view": "Bar spacing",
+        "case": "U2A",
+        "elements": 4576,
+        "max_known_dc": 0.666666666666667
+      },
+      {
+        "view": "Bar spacing",
+        "case": "U2B",
+        "elements": 4576,
+        "max_known_dc": 0.666666666666667
+      }
+    ]
+  },
+  "plots": {
+    "plots": [
+      {
+        "file": "01_Actual_OneWay_Transverse.png",
+        "width": 1440,
+        "height": 720,
+        "traces": 34,
+        "native_elements": 4576,
+        "demonstration_only": false
+      },
+      {
+        "file": "02_Actual_OneWay_Longitudinal.png",
+        "width": 1440,
+        "height": 720,
+        "traces": 39,
+        "native_elements": 4576,
+        "demonstration_only": false
+      },
+      {
+        "file": "03_Actual_Punching_NOT_CALCULATED.png",
+        "width": 1440,
+        "height": 720,
+        "traces": 5,
+        "native_elements": 4576,
+        "demonstration_only": false
+      },
+      {
+        "file": "04_DEMO_ONLY_Punching_Three_Statuses.png",
+        "width": 1440,
+        "height": 720,
+        "traces": 14,
+        "native_elements": 4576,
+        "demonstration_only": true
+      }
+    ],
+    "review_prioritizes_amber_over_numeric_dc": true,
+    "live_browser_screenshot_review": false,
+    "exported_pngs_visually_reviewed": 4,
+    "text_overlap_or_clipping_observed": false
+  }
+}

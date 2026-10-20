@@ -205,7 +205,7 @@ def test_actual_app_slab_routes_do_not_run_girder_solvers_or_reparse_on_navigati
         assert not app.exception
         assert app.session_state["_nav_analysis_subpage"] == "Slab Reinforcement"
         assert any("NOT CALCULATED" in i.value for i in app.info)
-        assert next(b for b in app.button if b.key=='slab_shell55_strength56_calculate').disabled
-        next(b for b in app.button if b.key == "slab_shell55_to_loads").click().run()
+        assert next(b for b in app.button if b.key=='slab_shell55_aashto62_calculate').disabled
+        next(b for b in app.button if b.key == "slab_shell55_aashto62_import").click().run()
         assert not app.exception
         assert app.session_state["_nav_loads_subpage"] == "Slab Shell Results"

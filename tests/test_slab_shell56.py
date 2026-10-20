@@ -110,14 +110,18 @@ def test_zero_actions_keep_minimum_steel_check_and_do_not_require_a_shear_strain
     assert r['Top longitudinal Strength D/C']==0
 
 
-def test_added_shear_longitudinal_tie_is_not_omitted_or_phi_counted_twice():
-    r=check(v=(20,0))
-    assert r['Top longitudinal shear tie (N/mm)']==pytest.approx(20/.9)
-    assert r['Bottom longitudinal shear tie (N/mm)']==pytest.approx(20/.9)
-    assert r['Top transverse shear tie (N/mm)']==0
-    diagonal=check(v=(20,20))
-    assert diagonal['Top longitudinal shear tie (N/mm)']==pytest.approx(math.sqrt(800)/.9)
-    assert diagonal['Top transverse shear tie (N/mm)']==pytest.approx(math.sqrt(800)/.9)
+def test_separate_shear_never_invents_a_two_face_tie_or_qualifies_interaction():
+    # AUDIT58 withdraws CHECK56/REVIEW57's unconditional full-force addition.
+    # This is a scoped N-M field, not a replacement cracked-core mechanism.
+    zero=check()
+    for shear in ((20,0),(20,20),(-20,20)):
+        r=check(v=shear)
+        for group in engine.GROUPS:
+            assert r[group+' As required (mm²/m)']==zero[group+' As required (mm²/m)']
+            assert r[group+' force (N/mm)']==0
+        assert r['Shear D/C']>0
+        assert r['Combined N–M–V status']=='REVIEW'
+        assert r['Status']=='REVIEW'
 
 
 def test_shear_applicability_failure_never_becomes_preview_pass():

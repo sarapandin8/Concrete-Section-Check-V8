@@ -1,0 +1,323 @@
+{
+  "version": "SLAB.REVIEW61",
+  "source_rows": 146432,
+  "nominal_rows": 120192,
+  "nominal_excluded_rows": 26240,
+  "peak_excluded_records": 6960,
+  "peak_excluded_nodes": 244,
+  "peak_excluded_node_cases": 1740,
+  "retained_study_records": 113232,
+  "zones": 1202,
+  "zone_case_records": 9616,
+  "nominal_calculation_seconds": 5.559645173999968,
+  "study_seconds": 1.673975482000003,
+  "zone_error": null,
+  "nominal_unchanged": true,
+  "raw_actions_preserved": true,
+  "weighted_resultant_residual": 2.842170943040401e-14,
+  "study_design_acceptance": false,
+  "study_status": "REVIEW REQUIRED",
+  "criteria": {
+    "ratio_greater_than": 2.0,
+    "modified_score_greater_than": 3.5,
+    "minimum_neighbours": 4,
+    "single_pass": true,
+    "strict_local_maximum": true,
+    "opposing_retained_neighbour_pair": true,
+    "dc_threshold_used": false
+  },
+  "comparison": [
+    {
+      "Check": "N–M field",
+      "Nominal max D/C": 1.844326278,
+      "Nominal location": "X=1.236, Y=-3.925 · U2A / Max",
+      "Peaks excluded max D/C": 1.0607291681,
+      "Peaks excluded location": "X=1.008, Y=2.300 · U2A / Max",
+      "Zone mean max D/C": 0.7040373034,
+      "Zone mean location": "X=2.602, Y=2.186 · U2A / Max",
+      "Study status": "REVIEW REQUIRED"
+    },
+    {
+      "Check": "One-way shear",
+      "Nominal max D/C": 5.5359195413,
+      "Nominal location": "X=18.761, Y=2.700 · U2A / Min",
+      "Peaks excluded max D/C": 3.8645920594,
+      "Peaks excluded location": "X=19.446, Y=-3.500 · U2A / Min",
+      "Zone mean max D/C": 2.1197787781,
+      "Zone mean location": "X=12.805, Y=3.925 · U2A / Min",
+      "Study status": "REVIEW REQUIRED"
+    },
+    {
+      "Check": "Top longitudinal",
+      "Nominal max D/C": 0.9964906719,
+      "Nominal location": "X=19.446, Y=-3.925 · U2A / Min",
+      "Peaks excluded max D/C": 0.9964906719,
+      "Peaks excluded location": "X=19.446, Y=-3.925 · U2A / Min",
+      "Zone mean max D/C": 0.3333916203,
+      "Zone mean location": "X=0.815, Y=3.392 · U1A / Max",
+      "Study status": "REVIEW REQUIRED"
+    },
+    {
+      "Check": "Bottom longitudinal",
+      "Nominal max D/C": 1.844326278,
+      "Nominal location": "X=1.236, Y=-3.925 · U2A / Max",
+      "Peaks excluded max D/C": 1.0607291681,
+      "Peaks excluded location": "X=1.008, Y=2.300 · U2A / Max",
+      "Zone mean max D/C": 0.5931051414,
+      "Zone mean location": "X=0.815, Y=2.192 · U1A / Max",
+      "Study status": "REVIEW REQUIRED"
+    },
+    {
+      "Check": "Top transverse",
+      "Nominal max D/C": 0.8223768669,
+      "Nominal location": "X=1.463, Y=3.925 · U2A / Min",
+      "Peaks excluded max D/C": 0.8223768669,
+      "Peaks excluded location": "X=1.463, Y=3.925 · U2A / Min",
+      "Zone mean max D/C": 0.5320430682,
+      "Zone mean location": "X=18.418, Y=-3.925 · U2A / Min",
+      "Study status": "REVIEW REQUIRED"
+    },
+    {
+      "Check": "Bottom transverse",
+      "Nominal max D/C": 1.4104118908,
+      "Nominal location": "X=17.846, Y=2.700 · U2A / Max",
+      "Peaks excluded max D/C": 0.9597555173,
+      "Peaks excluded location": "X=5.789, Y=-3.925 · U1A / Max",
+      "Zone mean max D/C": 0.7040373034,
+      "Zone mean location": "X=2.602, Y=2.186 · U2A / Max",
+      "Study status": "REVIEW REQUIRED"
+    },
+    {
+      "Check": "Concrete compression",
+      "Nominal max D/C": 1.7581557047,
+      "Nominal location": "X=1.236, Y=-3.925 · U2A / Max",
+      "Peaks excluded max D/C": 1.0106241186,
+      "Peaks excluded location": "X=5.789, Y=-3.925 · U1A / Max",
+      "Zone mean max D/C": 0.70050858,
+      "Zone mean location": "X=17.389, Y=-2.186 · U2A / Max",
+      "Study status": "REVIEW REQUIRED"
+    }
+  ],
+  "filtered_governors": {
+    "N–M": {
+      "AreaElem": "1384-8",
+      "Joint": "~404",
+      "OutputCase": "U2A",
+      "StepType": "Max",
+      "X (m)": 1.00804,
+      "Y (m)": 2.3,
+      "N–M field D/C": 1.0607291681
+    },
+    "Shear": {
+      "AreaElem": "1681-12",
+      "Joint": "~4913",
+      "OutputCase": "U2A",
+      "StepType": "Min",
+      "X (m)": 19.44643,
+      "Y (m)": -3.5,
+      "Shear D/C": 3.8645920594
+    }
+  },
+  "input_hashes": {
+    "concrete_section_pro_project (32).json": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+    "Element Forces - Area Shells.xlsx": "5d0749e82960e22cc8d42073edc3e0221da38d20b4be9a5be6b9e7b88b94e081",
+    "TABLE Objects And Elements - Areas(1).xlsx": "75f06bb745ff4915f8f4558a4bd0558c04f453a4ccb5ff3b7df3fe0dffaba5cf",
+    "Area Assigment.xlsx": "98e92434eb70d3f93e92e3942ce370cd3af49ea3e21a578388dbaa420f64b93d",
+    "Connectivity Data.xlsx": "422cc75df02ca5999f25b5a65cff35183317bc94b021913fdd56021152711da2"
+  },
+  "verification": {
+    "focused_tests_passed": 106,
+    "full_repository_test_suite_run": false,
+    "py_compile_passed": true,
+    "full_input_streamlit_apptest": {
+      "exceptions": 0,
+      "solver_calls": 1,
+      "study_calls": 1,
+      "ui_views": [
+        {
+          "basis": "Nominal nodes",
+          "view": "N–M field"
+        },
+        {
+          "basis": "Nominal nodes",
+          "view": "One-way shear"
+        },
+        {
+          "basis": "Nominal nodes",
+          "view": "Code flexure reference"
+        },
+        {
+          "basis": "Peaks excluded · study",
+          "view": "N–M field"
+        },
+        {
+          "basis": "Peaks excluded · study",
+          "view": "One-way shear"
+        },
+        {
+          "basis": "Peaks excluded · study",
+          "view": "Code flexure reference"
+        },
+        {
+          "basis": "Zone averages · study",
+          "view": "N–M field"
+        },
+        {
+          "basis": "Zone averages · study",
+          "view": "One-way shear"
+        },
+        {
+          "basis": "Zone averages · study",
+          "view": "Code flexure reference"
+        }
+      ],
+      "direct_map_views": [
+        {
+          "basis": "Nominal nodes",
+          "view": "N–M field"
+        },
+        {
+          "basis": "Nominal nodes",
+          "view": "Overall section"
+        },
+        {
+          "basis": "Nominal nodes",
+          "view": "Top longitudinal"
+        },
+        {
+          "basis": "Nominal nodes",
+          "view": "Bottom longitudinal"
+        },
+        {
+          "basis": "Nominal nodes",
+          "view": "Top transverse"
+        },
+        {
+          "basis": "Nominal nodes",
+          "view": "Bottom transverse"
+        },
+        {
+          "basis": "Nominal nodes",
+          "view": "Concrete compression"
+        },
+        {
+          "basis": "Nominal nodes",
+          "view": "One-way shear"
+        },
+        {
+          "basis": "Nominal nodes",
+          "view": "Code flexure reference"
+        },
+        {
+          "basis": "Nominal nodes",
+          "view": "Minimum sufficient screen"
+        },
+        {
+          "basis": "Peaks excluded · study",
+          "view": "N–M field"
+        },
+        {
+          "basis": "Peaks excluded · study",
+          "view": "Overall section"
+        },
+        {
+          "basis": "Peaks excluded · study",
+          "view": "Top longitudinal"
+        },
+        {
+          "basis": "Peaks excluded · study",
+          "view": "Bottom longitudinal"
+        },
+        {
+          "basis": "Peaks excluded · study",
+          "view": "Top transverse"
+        },
+        {
+          "basis": "Peaks excluded · study",
+          "view": "Bottom transverse"
+        },
+        {
+          "basis": "Peaks excluded · study",
+          "view": "Concrete compression"
+        },
+        {
+          "basis": "Peaks excluded · study",
+          "view": "One-way shear"
+        },
+        {
+          "basis": "Peaks excluded · study",
+          "view": "Code flexure reference"
+        },
+        {
+          "basis": "Peaks excluded · study",
+          "view": "Minimum sufficient screen"
+        },
+        {
+          "basis": "Zone averages · study",
+          "view": "N–M field"
+        },
+        {
+          "basis": "Zone averages · study",
+          "view": "Overall section"
+        },
+        {
+          "basis": "Zone averages · study",
+          "view": "Top longitudinal"
+        },
+        {
+          "basis": "Zone averages · study",
+          "view": "Bottom longitudinal"
+        },
+        {
+          "basis": "Zone averages · study",
+          "view": "Top transverse"
+        },
+        {
+          "basis": "Zone averages · study",
+          "view": "Bottom transverse"
+        },
+        {
+          "basis": "Zone averages · study",
+          "view": "Concrete compression"
+        },
+        {
+          "basis": "Zone averages · study",
+          "view": "One-way shear"
+        },
+        {
+          "basis": "Zone averages · study",
+          "view": "Code flexure reference"
+        },
+        {
+          "basis": "Zone averages · study",
+          "view": "Minimum sufficient screen"
+        }
+      ],
+      "plotly_charts_per_ui_view": 1,
+      "nominal_rows_unchanged": true,
+      "nominal_summary_unchanged": true,
+      "study_not_saved_in_project_json": true,
+      "stale_inputs_hide_all_views": true,
+      "calculate_to_render_seconds": 11.636972979999996,
+      "nominal_solver_seconds": 6.417557455000008,
+      "study_seconds": 1.8400396279999995,
+      "exported_plots": [
+        "filtered_nm",
+        "filtered_shear",
+        "zones_nm",
+        "zones_shear"
+      ]
+    },
+    "manually_reviewed_exact_ui_plot_exports": [
+      "filtered_nm",
+      "filtered_shear",
+      "zones_nm",
+      "zones_shear"
+    ],
+    "full_workspace_browser_screenshot_review": false,
+    "nominal_calculations_unchanged": true,
+    "structural_validity_of_peak_deletion_established": false,
+    "equilibrated_design_strip_validation_established": false,
+    "baseline_zip_sha256": "23e432ad48170a1c37770c285d5e5fcf963ec5f809c60f520f358809a44b4890"
+  }
+}

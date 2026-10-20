@@ -103,4 +103,7 @@ class _StreamlitStub(types.ModuleType):
 
 
 if "streamlit" not in sys.modules:
-    sys.modules["streamlit"] = _StreamlitStub()
+    try:
+        __import__("streamlit")
+    except ImportError:
+        sys.modules["streamlit"] = _StreamlitStub()

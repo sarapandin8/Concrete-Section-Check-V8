@@ -1,0 +1,115 @@
+{
+  "version": "SLAB.DESIGN66",
+  "current_input_result_unchanged": true,
+  "all_eight_native_actions_preserved": true,
+  "source_rows": 146432,
+  "retained_rows": 113232,
+  "proposal": {
+    "status": "REVIEW",
+    "changed": true,
+    "trials": 1,
+    "known_rebar_checks_satisfied": true,
+    "spacing": [
+      90.0,
+      80.0,
+      150.0,
+      110.0
+    ],
+    "diameter": [
+      16.0,
+      16.0,
+      16.0,
+      16.0
+    ],
+    "native_rechecked": 113232,
+    "face_rechecked": 12136,
+    "concrete_shear_has_failures": true,
+    "minimum_trial_spacing": [
+      60.0,
+      60.0,
+      60.0,
+      60.0
+    ],
+    "applied_to_project": false,
+    "full_deck_acceptance": false,
+    "seconds": 3.794901621000008,
+    "scope": "A bar-spacing proposal for directional sectional checks only. Diameters, physical mat levels and concrete thickness are unchanged. All retained native records and available same-direction support-face samples are rechecked; exclusions and missing samples are preserved. Nxy/Mxy interaction, biaxial shear, local support paths, anchorage, fatigue and SLS remain separate. Proposed reinforcement is not applied to the model."
+  },
+  "comparison": [
+    {
+      "Check": "Shear · transverse",
+      "Status current": "FAIL",
+      "Max D/C current": 1.4903315268,
+      "Status proposed": "FAIL",
+      "Max D/C proposed": 1.264006054
+    },
+    {
+      "Check": "Shear · longitudinal",
+      "Status current": "FAIL",
+      "Max D/C current": 3.001741496,
+      "Status proposed": "FAIL",
+      "Max D/C proposed": 3.001741496
+    },
+    {
+      "Check": "Direct N–M · transverse",
+      "Status current": "PASS",
+      "Max D/C current": 0.4412771269,
+      "Status proposed": "PASS",
+      "Max D/C proposed": 0.3367911271
+    },
+    {
+      "Check": "Direct N–M · longitudinal",
+      "Status current": "PASS",
+      "Max D/C current": 0.3665233969,
+      "Status proposed": "PASS",
+      "Max D/C proposed": 0.2978775033
+    },
+    {
+      "Check": "Flexural minimum · transverse",
+      "Status current": "PASS",
+      "Max D/C current": 0.5363283819,
+      "Status proposed": "PASS",
+      "Max D/C proposed": 0.4030872516
+    },
+    {
+      "Check": "Flexural minimum · longitudinal",
+      "Status current": "PASS",
+      "Max D/C current": 0.5867233094,
+      "Status proposed": "PASS",
+      "Max D/C proposed": 0.3659964145
+    },
+    {
+      "Check": "Flexural shear tie · transverse",
+      "Status current": "FAIL",
+      "Max D/C current": 1.2351214427,
+      "Status proposed": "REVIEW",
+      "Max D/C proposed": 0.9456242005
+    },
+    {
+      "Check": "Flexural shear tie · longitudinal",
+      "Status current": "FAIL",
+      "Max D/C current": 2.0770511952,
+      "Status proposed": "REVIEW",
+      "Max D/C proposed": 0.9346730378
+    },
+    {
+      "Check": "Temperature minimum",
+      "Status current": "PASS",
+      "Max D/C current": 0.3333916203,
+      "Status proposed": "PASS",
+      "Max D/C proposed": 0.2500437152
+    },
+    {
+      "Check": "Bar spacing",
+      "Status current": "PASS",
+      "Max D/C current": 0.6666666667,
+      "Status proposed": "PASS",
+      "Max D/C proposed": 0.5
+    }
+  ],
+  "candidate_governors_individually_rechecked": true,
+  "designer_seconds": 3.8050609450001502,
+  "total_including_import_and_checks_seconds": 30.02552316099991,
+  "new_udl_reanalysis_available": false,
+  "overall_project_acceptance_unchanged": "FAIL"
+}

@@ -1,0 +1,1 @@
+Add a compact AASHTO LRFD 2020 top-slab ULS workflow using the existing four CSI exports and reinforcement mats. Add ballast/UDL provenance, four-mat envelopes, station D/C plots, clear-spacing checks, and read-only Summary/Report integration while preserving native actions and agreed exclusions. Full shell/deck acceptance remains outside the sectional checks.

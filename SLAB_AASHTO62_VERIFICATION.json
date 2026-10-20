@@ -1,0 +1,305 @@
+{
+  "version": "SLAB.AASHTO62",
+  "code": "AASHTO LRFD 9th Edition (2020)",
+  "source_rows": 146432,
+  "design_rows": 113232,
+  "excluded_rows": 33200,
+  "geometry_excluded_rows": 26240,
+  "peak_excluded_rows": 6960,
+  "incomplete": false,
+  "seconds": 5.367244280999785,
+  "component_status": "FAIL",
+  "status": "REVIEW REQUIRED",
+  "scope": "AASHTO LRFD Ninth Edition (2020), normal-weight nonprestressed RC slab: directional sectional shear (5.7.3.3–5.7.3.4), flexural shear tie (5.7.3.5), direct N–M strain-compatible strip checks (5.6.2 / 5.6.3.2.5), temperature minimum and bar spacing. Nxy/Mxy transfer, simultaneous biaxial shear (5.7.3.1), support critical-section qualification (5.7.3.2), anchorage/development, complete flexural-minimum qualification, local rail-load/punching effects, fatigue and SLS remain separate. A component PASS does not establish full deck acceptance. Exclusions are project review assumptions, not code-authorized removal of equilibrium actions.",
+  "summary": [
+    {
+      "Check": "Shear · transverse",
+      "Status": "FAIL",
+      "Max D/C": 5.8445131555,
+      "Case": "U2A",
+      "Step": "Max",
+      "X (m)": 1.46339,
+      "Y (m)": 2.3,
+      "AreaElem": "1398-1",
+      "Joint": "~601",
+      "Failed nodes": 450,
+      "Review nodes": 14
+    },
+    {
+      "Check": "Shear · longitudinal",
+      "Status": "FAIL",
+      "Max D/C": 3.001741496,
+      "Case": "U2A",
+      "Step": "Max",
+      "X (m)": 1.00804,
+      "Y (m)": -3.925,
+      "AreaElem": "1392-4",
+      "Joint": "~516",
+      "Failed nodes": 462,
+      "Review nodes": 0
+    },
+    {
+      "Check": "Direct N–M · transverse",
+      "Status": "PASS",
+      "Max D/C": 0.4412771269,
+      "Case": "U2A",
+      "Step": "Max",
+      "X (m)": 9.9875,
+      "Y (m)": 2.1,
+      "AreaElem": "1529-6",
+      "Joint": "~2609",
+      "Failed nodes": 0,
+      "Review nodes": 0
+    },
+    {
+      "Check": "Direct N–M · longitudinal",
+      "Status": "PASS",
+      "Max D/C": 0.3665233969,
+      "Case": "U2A",
+      "Step": "Min",
+      "X (m)": 0.55268,
+      "Y (m)": 2.7,
+      "AreaElem": "1383-9",
+      "Joint": "~395",
+      "Failed nodes": 0,
+      "Review nodes": 0
+    },
+    {
+      "Check": "Flexural shear tie · transverse",
+      "Status": "FAIL",
+      "Max D/C": 1.6630257686,
+      "Case": "U2A",
+      "Step": "Max",
+      "X (m)": 17.61786,
+      "Y (m)": 2.3,
+      "AreaElem": "1646-4",
+      "Joint": "~4410",
+      "Failed nodes": 288,
+      "Review nodes": 14
+    },
+    {
+      "Check": "Flexural shear tie · longitudinal",
+      "Status": "FAIL",
+      "Max D/C": 2.0770511952,
+      "Case": "U2A",
+      "Step": "Min",
+      "X (m)": 19.44643,
+      "Y (m)": 3.5,
+      "AreaElem": "1672-4",
+      "Joint": "~4786",
+      "Failed nodes": 92,
+      "Review nodes": 0
+    },
+    {
+      "Check": "Temperature minimum",
+      "Status": "PASS",
+      "Max D/C": 0.3333916203,
+      "Case": "U1A",
+      "Step": "Max",
+      "X (m)": 8.57857,
+      "Y (m)": -0.43333,
+      "AreaElem": "1518-5",
+      "Joint": "~2258",
+      "Failed nodes": 0,
+      "Review nodes": 0
+    },
+    {
+      "Check": "Bar spacing",
+      "Status": "PASS",
+      "Max D/C": 0.6666666667,
+      "Case": "U1A",
+      "Step": "Max",
+      "X (m)": 1.69107,
+      "Y (m)": -5.5,
+      "AreaElem": "1406-30",
+      "Joint": "~742",
+      "Failed nodes": 0,
+      "Review nodes": 0
+    }
+  ],
+  "coverage": [
+    {
+      "OutputCase": "U1A",
+      "StepType": "Max",
+      "Imported records": 18304,
+      "Checked records": 14156,
+      "Peak excluded records": 868,
+      "Expected records": 18304,
+      "Missing records": 0,
+      "Excluded records": 4148
+    },
+    {
+      "OutputCase": "U1A",
+      "StepType": "Min",
+      "Imported records": 18304,
+      "Checked records": 14168,
+      "Peak excluded records": 856,
+      "Expected records": 18304,
+      "Missing records": 0,
+      "Excluded records": 4136
+    },
+    {
+      "OutputCase": "U1B",
+      "StepType": "Max",
+      "Imported records": 18304,
+      "Checked records": 14152,
+      "Peak excluded records": 872,
+      "Expected records": 18304,
+      "Missing records": 0,
+      "Excluded records": 4152
+    },
+    {
+      "OutputCase": "U1B",
+      "StepType": "Min",
+      "Imported records": 18304,
+      "Checked records": 14152,
+      "Peak excluded records": 872,
+      "Expected records": 18304,
+      "Missing records": 0,
+      "Excluded records": 4152
+    },
+    {
+      "OutputCase": "U2A",
+      "StepType": "Max",
+      "Imported records": 18304,
+      "Checked records": 14152,
+      "Peak excluded records": 872,
+      "Expected records": 18304,
+      "Missing records": 0,
+      "Excluded records": 4152
+    },
+    {
+      "OutputCase": "U2A",
+      "StepType": "Min",
+      "Imported records": 18304,
+      "Checked records": 14152,
+      "Peak excluded records": 872,
+      "Expected records": 18304,
+      "Missing records": 0,
+      "Excluded records": 4152
+    },
+    {
+      "OutputCase": "U2B",
+      "StepType": "Max",
+      "Imported records": 18304,
+      "Checked records": 14152,
+      "Peak excluded records": 872,
+      "Expected records": 18304,
+      "Missing records": 0,
+      "Excluded records": 4152
+    },
+    {
+      "OutputCase": "U2B",
+      "StepType": "Min",
+      "Imported records": 18304,
+      "Checked records": 14148,
+      "Peak excluded records": 876,
+      "Expected records": 18304,
+      "Missing records": 0,
+      "Excluded records": 4156
+    }
+  ],
+  "steel": {
+    "area_mm2_m": [
+      1005.3096491487337,
+      1340.412865531645,
+      1340.412865531645,
+      1340.412865531645
+    ],
+    "centres_mm": [
+      64.0,
+      64.0,
+      48.0,
+      48.0
+    ],
+    "fc_MPa": 35.0
+  },
+  "input_hashes": {
+    "concrete_section_pro_project (32).json": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+    "Element Forces - Area Shells.xlsx": "5d0749e82960e22cc8d42073edc3e0221da38d20b4be9a5be6b9e7b88b94e081",
+    "Area Assigment.xlsx": "98e92434eb70d3f93e92e3942ce370cd3af49ea3e21a578388dbaa420f64b93d",
+    "Connectivity Data.xlsx": "422cc75df02ca5999f25b5a65cff35183317bc94b021913fdd56021152711da2",
+    "TABLE Objects And Elements - Areas(1).xlsx": "75f06bb745ff4915f8f4558a4bd0558c04f453a4ccb5ff3b7df3fe0dffaba5cf"
+  },
+  "all_eight_source_actions_preserved": true,
+  "full_deck_design_acceptance": false,
+  "excluded_have_no_numeric_checks": true,
+  "unique_native_thicknesses": 51,
+  "direction_procedures": {
+    "Longitudinal": {
+      "5.7.3.4.1 · simplified": 113136,
+      "5.7.3.4.2 · general": 96
+    },
+    "Transverse": {
+      "5.7.3.4.2 · general": 68387,
+      "5.7.3.4.1 · simplified": 44845
+    }
+  },
+  "all_source_keys_preserved": true,
+  "retained_source_keys_identical_to_REVIEW61_filtered_study": true,
+  "failed_nodes_any_direction_shear": 525,
+  "max_raw_to_reinforcement_axis_component_difference": 9.094947017729282e-13,
+  "independent_capacity_max_absolute_error_kN_m": {
+    "Longitudinal": 5.684341886080802e-14,
+    "Transverse": 1.1368683772161603e-13
+  },
+  "rank1057_example": {
+    "X (m)": 2.82946,
+    "Y (m)": -4.15,
+    "Longitudinal shear D/C": 0.525680936994763,
+    "Transverse shear D/C": 0.031269822802038924,
+    "Longitudinal phiVn (kN/m)": 198.80880710163768,
+    "Transverse phiVn (kN/m)": 360.7311775129248
+  },
+  "verification": {
+    "focused_tests_passed": 125,
+    "focused_test_files": [
+      "test_slab_shell55.py",
+      "test_slab_shell56.py",
+      "test_slab_shell56_ui.py",
+      "test_slab_code57.py",
+      "test_slab_code57_ui.py",
+      "test_slab_audit58.py",
+      "test_slab_connections59.py",
+      "test_slab_endzone60.py",
+      "test_slab_review61.py",
+      "test_slab_aashto62.py",
+      "test_slab_aashto62_ui.py"
+    ],
+    "full_repository_suite_run": false,
+    "py_compile_passed": true,
+    "full_input_ui": {
+      "full_input_source_rows": 146432,
+      "calculate_to_render_seconds": 8.190870036999968,
+      "solver_seconds": 6.126217354999881,
+      "solver_calls": 1,
+      "views": [
+        "Shear · transverse",
+        "Shear · longitudinal",
+        "Direct N–M · transverse",
+        "Direct N–M · longitudinal",
+        "Flexural shear tie · transverse",
+        "Flexural shear tie · longitudinal",
+        "Temperature minimum",
+        "Bar spacing"
+      ],
+      "exceptions": 0,
+      "charts_per_view": 1,
+      "legacy_solver_called": false
+    },
+    "direct_full_input_map_envelopes_checked": 40,
+    "primary_png_figures_rendered": 4,
+    "manual_png_visual_review": true,
+    "manual_live_browser_screenshot_review": false,
+    "full_shell_structural_validation_established": false,
+    "baseline_zip_sha256": "14e221e099c6eae4b4abec60b6a6690d518bc6811236661c42229ecd29fffb7e",
+    "baseline_core_girder_sls_legacy_equations_unchanged": true
+  },
+  "failed_nodes_any_known_component": 616,
+  "code_hashes": {
+    "concrete_pmm_pro/analysis/slab_aashto62.py": "08aea2a158d78da63219918d3733cba840c28ba0ddbb2026815696d650bcabfe",
+    "concrete_pmm_pro/ui/slab_aashto62_workspace.py": "b97f19f901f8b6f1d8aa8dca654d75ae024b1cfc1fac7fce04617de05675c0a4",
+    "concrete_pmm_pro/ui/slab_reinforcement.py": "6d6e489f4ec255067b4724b825a195efefd81e6d760f03ce599dfdf06776df4a",
+    "qa/slab_aashto62_real_inputs.py": "cb5d3cc8a87983944c3b7d66ce948228e88e37e92ceb270fbf67d5643dfe0d79"
+  }
+}

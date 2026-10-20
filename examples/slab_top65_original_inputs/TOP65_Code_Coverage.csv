@@ -1,0 +1,14 @@
+﻿Check,Article,Coverage,Basis / remaining action
+"Direct N–M, both physical mats",5.6.2 / 5.6.3.2.5,CALCULATED,Both bending signs; variable phi; compression steel strength not credited
+Flexural minimum,5.6.3.3,SUFFICIENT PROOF,1.33Mu at the same Nu; N=0 may also use conservative gamma3=1 Mcr upper bound
+Temperature / spacing: four mats,5.10.6 / 5.10.3.2,CALCULATED,Each face / each direction separately; temperature bound uses b→infinity
+Directional one-way shear / flexural shear tie,5.7.3 / 5.12.8.6.2,CALCULATED,Matching N/M/V/As; in-plane mesh is not vertical shear steel (Vs=0)
+Girder / diaphragm support-face shear,5.7.3.2,PARTIAL: source exclusions,Existing flange width / native diaphragm thickness; full contact assumed; no dv relaxation; unavailable source samples are not reconstructed
+Support width / local D-regions,5.7.1.2 / 5.7.3.2 / 5.8.2,REVIEW,Native support footprints retained as local-support review; local bearing/load paths not qualified
+Nxy / Mxy transfer,5.7.3.1,REVIEW,All concurrent components retained; separate directional N–M does not resolve shell coupling
+Simultaneous biaxial shear,5.7.3.1,REVIEW,Requires compatible refined analysis or 3D STM when warranted; separate PASS is not interaction acceptance
+Straight-bar development,5.10.8.2.1 / 5.7.3.5,REQUIRED LENGTH CALCULATED,Applicable epoxy upper bound 1.2/1.5; no confinement reduction; actual ends/laps/hooks not supplied
+Two-way / punching shear,5.12.8.6,NOT CALCULATED,Explicit isolated loaded areas only; a continuous train UDL does not define a local wheel footprint.
+Slab–girder interface / U-dowels,5.7.4,REVIEW,"Cross-interface demand, surface condition, crossing steel and anchorage required; no automatic U-leg credit in slab Vs"
+Fatigue / SLS / exposure cover,5.5 / 5.6.7 / 5.10,SEPARATE CHECK,Current supplied demand package is ULS; not a complete deck detailing or serviceability acceptance
+Parallel-bar clear spacing,5.10.3.1.1,REVIEW / FAIL,"Cast-in-place bars: max(1.5db, 1.5ag, 1.5 in); existing aggregate input, no new bar table."

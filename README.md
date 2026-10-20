@@ -1,3 +1,85 @@
+# SLAB.DESIGN66 — checked reinforcement spacing proposals
+
+Continue with the same four CSI exports and the existing reinforcement inputs. **Calculate Top slab** now also prepares a bounded bar-spacing proposal with the existing bar diameters and mat levels. Open **Suggested bar spacing · not applied** to review its four-mat checks and the one-way shear still requiring attention. No additional input table or calculation button is added.
+
+Every changed candidate is rechecked with the accepted AASHTO LRFD 2020 sectional equations against all retained native records and available matching support-face vectors. Trial spacings use a 10 mm grid, the cast-in-place clear-spacing trial bound and at most four iterations. This is a checked proposal, not a minimum-steel optimizer or full-deck approval. Unknown aggregate, source coverage, local support regions, shell coupling and anchorage retain their review states.
+
+Current inputs and their charts / Summary remain unchanged. The compact report separates **Current/** from **Proposal/**; changing ballast or nominal UDL metadata reuses a mechanically identical proposal. Revise the existing reinforcement inputs and Calculate again to assess an adopted layout. Full shell interaction, fatigue and SLS remain separate.
+
+The original JSON32 / four-export example produces DB16 spacings of **90 / 80 / 150 / 110 mm** for top longitudinal / bottom longitudinal / top transverse / bottom transverse. Its known shear-tie maxima reduce to **0.935 longitudinal / 0.946 transverse**, while one-way shear still reaches **3.002 longitudinal / 1.264 transverse**. The proposal is **REVIEW**; it is not automatically applied or certified. The example is not the user's future equivalent-UDL reanalysis.
+
+See [SLAB_DESIGN66_NOTES_TH.md](SLAB_DESIGN66_NOTES_TH.md), [SLAB_DESIGN66_VERIFICATION.json](SLAB_DESIGN66_VERIFICATION.json), [REPO_SUMMARY_SLAB_DESIGN66.md](REPO_SUMMARY_SLAB_DESIGN66.md), and [qa/slab_design66_real_inputs.py](qa/slab_design66_real_inputs.py).
+
+## Historical milestone — TOP65
+
+# SLAB.TOP65 — compact Top slab ULS review
+
+Use **Loads → Slab Shell Results** to import the same four complete CSI export sets, then **Analysis → Slab Reinforcement → Calculate Top slab**. New static-equivalent-train case names and blank static StepType are accepted. The existing four top/bottom longitudinal/transverse reinforcement mats are reused.
+
+One calculation prepares signed four-mat N–M envelopes, tension-side shear ties, directional one-way shear, minimum reinforcement and spacing checks. Choose **Plan map** or **Station D/C** for one graph at a time. Station curves show actual maxima with gaps and scope markers, without smoothing. Result Summary and Report / QA read current stored Top slab results; a compact report can be prepared without rerunning a solver.
+
+**CSI load basis / Ballast** records the load model, ballast below the sleeper (default 300 mm), track strip width and nominal pressure. The 2 m / 75 kN/m² defaults are editable assumptions for the previously discussed project, not a universal AASHTO U20 equivalent. These entries do not change imported forces, concrete depth or resistance. Impact/load factors and ballast redistribution are not applied again. Reanalyse CSI and re-export all four sets when its loading changes. A static full-span UDL is not automatically qualified as an envelope of moving-load longitudinal shear or local wheel effects.
+
+**AASHTO LRFD Ninth Edition (2020), sectional ULS scope.** Existing native forces, axes, equations and agreed connection/bearing/one-pass peak exclusions are preserved. A new cast-in-place clear-spacing check uses 5.10.3.1.1 and the existing aggregate input; an unconfirmed aggregate branch remains REVIEW. Direct N–M uses both physical mats, with top/bottom rows identifying bending sign. Nxy/Mxy interaction, simultaneous biaxial shear, local support paths, actual anchorage, fatigue and SLS remain separate. No full-deck certificate is issued. Punching retains the accepted isolated loaded-area route; continuous train UDL does not invent wheel footprints. Interface results remain a read-only link to current Final Composite Flexure checks.
+
+See [SLAB_TOP65_NOTES_TH.md](SLAB_TOP65_NOTES_TH.md), [SLAB_TOP65_VERIFICATION.json](SLAB_TOP65_VERIFICATION.json), [REPO_SUMMARY_SLAB_TOP65.md](REPO_SUMMARY_SLAB_TOP65.md), and [qa/slab_top65_real_inputs.py](qa/slab_top65_real_inputs.py). The example folder contains results from the **original** JSON32 / four exports, not the user's future UDL reanalysis.
+
+## Historical milestone — SHEAR64
+
+# SLAB.SHEAR64 — loaded-area punching and linked interface results
+
+**Analysis → Slab Reinforcement** now groups results into **One-way shear / Punching shear / Reinforcement**, with one primary Calculate button and one plan plot. The accepted AASHTO63 equations, native actions and agreed exclusions are preserved. Punching uses **AASHTO LRFD Ninth Edition (2020) 5.12.8.6** for isolated rectangular normal-force load/reaction areas, with no assumed footprint or added mesh/U punching Vs.
+
+Enter only physical load-area X/Y/L/B; existing materials, thickness and four mat levels are reused. Blank Vu uses an explicitly conservative absolute shell-corner demand bound: a passing bound is sufficient for the force component; an exceeded bound remains REVIEW. Optional independently established factored perimeter Vu receives a direct component check. Missing/excluded source, special perimeters and local support paths are guarded. **Full deck acceptance remains REVIEW REQUIRED.**
+
+The slab page reads each member's current **Flexure → Final — Composite → Interface shear** result using existing hashes and both strength/minimum reinforcement checks. It neither reruns Flexure nor extends a member result to all bridge girder lines. Geometry-only punching edits reuse valid one-way results. Project JSON saves area inputs in metadata, never solver caches.
+
+The unchanged supplied project still has known transverse/longitudinal shear **1.490 / 3.002**. Its actual punching footprints are absent (**NOT CALCULATED**) and interface checks need a current Flexure run after input-only JSON load. Demonstration footprints in the QA results are explicitly examples, never project defaults.
+
+See [SLAB_SHEAR64_NOTES_TH.md](SLAB_SHEAR64_NOTES_TH.md), [SLAB_SHEAR64_VERIFICATION.json](SLAB_SHEAR64_VERIFICATION.json), [REPO_SUMMARY_SLAB_SHEAR64.md](REPO_SUMMARY_SLAB_SHEAR64.md), and [qa/slab_shear64_real_inputs.py](qa/slab_shear64_real_inputs.py).
+
+## Historical milestone — AASHTO63
+
+# SLAB.AASHTO63 — four-mat code checks and support-face sections
+
+The default **Analysis → Slab Reinforcement** workspace uses AASHTO LRFD Ninth Edition (2020) with the existing top/bottom longitudinal/transverse mats. It adds fixed-Nu moment resistance and sufficient flexural-minimum proofs, per-mat temperature/spacing and conservative required straight-bar development lengths. Flexural shear ties use the appropriate strain-based flexural phi.
+
+Girder contact faces use the existing flange width; finite diaphragm faces use native thickness overwrites. Same-element/case eight-component interpolation does not reuse previously excluded corners. Local support footprints remain REVIEW rather than being declared passing. All native source forces, row identities and agreed REVIEW61 masks remain intact.
+
+The supplied example has **known transverse / longitudinal shear D/C 1.490 / 3.002** and shear-tie D/C **1.235 / 2.077**. Direct directional N–M, sufficient minimum proofs and four-mat temperature/spacing pass their scopes. **Full deck acceptance remains REVIEW REQUIRED**: shell coupling, local support paths, punching, interface transfer and actual anchorage are unresolved. These are code-based component checks, not a complete shell or bridge approval.
+
+Use the same JSON and four complete native CSI workbooks. Calculate once; ten graph views and case filters reuse stored results. Heavy source/cut CSVs are prepared only on an explicit request. Legacy research is opt-in and does not feed production results.
+
+See [SLAB_AASHTO63_NOTES_TH.md](SLAB_AASHTO63_NOTES_TH.md), [SLAB_AASHTO63_VERIFICATION.json](SLAB_AASHTO63_VERIFICATION.json), [REPO_SUMMARY_SLAB_AASHTO63.md](REPO_SUMMARY_SLAB_AASHTO63.md) and [qa/slab_aashto63_real_inputs.py](qa/slab_aashto63_real_inputs.py).
+
+## Historical milestone — AASHTO62
+
+# SLAB.AASHTO62 — directional AASHTO slab section checks
+
+The default **Analysis → Slab Reinforcement** workspace now checks AASHTO LRFD Ninth Edition (2020) directional shear, direct N–M strain-compatible strips and tension-side flexural shear ties using the existing four reinforcement mats. One Calculate button prepares all component views; chart/case filters do not rerun the solver. Legacy field and zone-average models are explicitly opt-in under **Case studies / Legacy shell model**.
+
+The unchanged project JSON and four native CSI exports remain the inputs. Agreed girder/diaphragm lines, bearing end zones and the fixed REVIEW61 one-pass peak rule are applied before checking. For the supplied model, 146,432 source rows become **113,232 checked rows**, with **26,240 geometric/end exclusions + 6,960 isolated-peak exclusions**. All original actions and omitted source identities remain auditable.
+
+The supplied model still has component failures: transverse shear **5.845**, longitudinal shear **3.002**, transverse shear tie **1.663**, longitudinal shear tie **2.077**. Direct N–M ratios exclude Nxy/Mxy transfer and are not a replacement for the earlier full N–M field. **Full deck acceptance remains REVIEW REQUIRED**: biaxial shell coupling, critical support sections, anchorage, complete flexural minimum, punching/local railway effects, fatigue and SLS are separate.
+
+See [SLAB_AASHTO62_NOTES_TH.md](SLAB_AASHTO62_NOTES_TH.md), [SLAB_AASHTO62_VERIFICATION.json](SLAB_AASHTO62_VERIFICATION.json) and [qa/slab_aashto62_real_inputs.py](qa/slab_aashto62_real_inputs.py). Existing girder equations and Project JSON input-only behaviour are preserved.
+
+## Historical milestone — legacy workspace
+
+# SLAB.AUDIT58 — correct inflated slab steel demands
+
+The supplied JSON32 and CSI exports reproduce REVIEW57's bottom-longitudinal D/C of **19.734376** exactly. The previous model added an unqualified full shear-chord force to **both** slab faces and let it distort N–M field selection. AUDIT58 withdraws that addition. Steel requirements now belong to the **N–M field only**; an independent one-way shear section screen is shown separately. Nonzero shear keeps **combined N–M–V at REVIEW**, even when independent components pass.
+
+For the supplied project, the four mat maxima change from 19.714 / 19.734 / 10.352 / 11.457 to **4.906 / 5.189 / 1.699 / 2.243** in the N–M-only scope. The separate shear screen still reaches **16.351** at a support corner. These results do not establish design acceptance. Inspect the support/load-transfer region before converting corner demands into reinforcement schedules.
+
+Use the unchanged JSON and four Excel exports, then Calculate once in **Analysis → Slab Reinforcement**. The default **N–M field** map, separate top cards, trace and CSV identify the scope of each ratio. **Overall section** means the maximum known component ratio, not a full interaction ratio.
+
+Verification: **75 focused tests passed**; full-input AppTest checked 146,432 rows through all 10 map views and a case filter with a single solver invocation. See [SLAB_AUDIT58_FINDINGS_TH.md](SLAB_AUDIT58_FINDINGS_TH.md), [SLAB_AUDIT58_VERIFICATION.json](SLAB_AUDIT58_VERIFICATION.json) and the reproducible [real-input QA script](qa/slab_audit58_real_inputs.py).
+
+## Previous milestone — superseded shear-addition method
+
+The REVIEW57/CHECK56 descriptions below record the earlier release. Their unconditional shear-tie addition is withdrawn by AUDIT58.
+
 # SLAB.REVIEW57 — code bending references and governing-check explanations
 
 Continue from CHECK56 in **Analysis → Slab Reinforcement**. Calculate once, then review the existing plan map or the new **Code flexure reference / Minimum sufficient screen** views. **What controls / All-case check breakdown** identifies each mechanism's actual source record and counts unique exceeded/review elements. The trace separates N–M tie demand from conservative shear-tie additions, and CSV exports retain those source identities.

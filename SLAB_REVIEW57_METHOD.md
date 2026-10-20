@@ -56,3 +56,7 @@ Additional tests verify different physical covers, high-strength ksi breakpoints
 - AASHTO LRFD Bridge Design Specifications, Ninth Edition (2020), supplied Section 5: 5.5.4.2, 5.6.2.1, 5.6.2.2 and 5.6.3.3. The minimum equation was checked against PDF page 52 (printed 5-42).
 - Existing repository AASHTO helper functions in concrete_pmm_pro/code_checks/aashto_lrfd.py.
 - CHECK56 source and transformation basis remains documented in SLAB_CHECK56_METHOD.md.
+# Superseded by SLAB.AUDIT58
+
+The original shear-tie additions inherited from CHECK56 are withdrawn. The N=0 bending reference below is retained, but current primary N–M / V scope and applicability are documented in [SLAB_AUDIT58_FINDINGS_TH.md](SLAB_AUDIT58_FINDINGS_TH.md).
+

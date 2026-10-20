@@ -1,0 +1,1 @@
+Add checked slab reinforcement spacing proposals using the existing AASHTO sectional engine and CSI imports. Recheck every retained vector, report remaining concrete shear failures, and separate current/proposed results without changing applied project inputs. Preserve existing equations, exclusions and input-only JSON saves.

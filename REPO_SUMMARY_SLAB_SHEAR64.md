@@ -1,0 +1,1 @@
+Add AASHTO LRFD 2020 loaded-area punching checks, conservative shell-demand bounds and read-only links to current Flexure interface results. Group slab checks into compact views, reuse valid one-way results after footprint edits, and preserve native actions, agreed exclusions and input-only project persistence.

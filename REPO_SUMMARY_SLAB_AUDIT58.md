@@ -1,0 +1,1 @@
+Fix inflated slab reinforcement demands by removing unqualified two-face shear-tie additions. Separate N–M steel checks from one-way shear screening, keep N–M–V interaction under review, and verify the supplied project with 75 focused tests and full-input UI checks.
