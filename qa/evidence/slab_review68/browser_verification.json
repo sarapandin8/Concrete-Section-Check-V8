@@ -1,0 +1,57 @@
+{
+  "milestone": "SLAB.REVIEW68",
+  "actual_four_file_upload": true,
+  "example_mats_explicitly_applied": true,
+  "browser": "134.0.6998.35",
+  "page_errors": [],
+  "single_calculate_command": true,
+  "single_main_chart": true,
+  "primary_button_style": {
+    "disabled": false,
+    "background": "linear-gradient(135deg, rgb(29, 111, 231), rgb(23, 92, 211))",
+    "color": "rgb(255, 255, 255)"
+  },
+  "review_initially_collapsed": true,
+  "review_expanded_without_error": true,
+  "report_prepared": true,
+  "browser_calculate_to_chart_seconds": 19.86806802800038,
+  "plan": {
+    "title": "<b><b>Direct N\u2013M \u00b7 transverse \u00b7 all ULS cases</b></b>",
+    "meta": {
+      "slab_version": "SLAB.REVIEW68",
+      "aggregation": "maximum retained actual corner/case; no averaging",
+      "full_deck_acceptance": false
+    },
+    "traces": 14
+  },
+  "profile": {
+    "title": "<b><b>Flexural shear tie \u00b7 longitudinal \u00b7 station envelope</b></b>",
+    "meta": {
+      "slab_version": "SLAB.REVIEW68",
+      "aggregation": "maximum at each actual station; no smoothing / averaging",
+      "scope_markers_use_secondary_axis": true,
+      "full_deck_acceptance": false
+    },
+    "range": [
+      0,
+      20
+    ],
+    "connectgaps": false
+  },
+  "native_case_filter": "U2A",
+  "viewport_widths": [
+    1440,
+    1280
+  ],
+  "title_box_at_scroll_top": {
+    "x": 402.578125,
+    "y": 274.671875,
+    "width": 709.078125,
+    "height": 23.34375
+  },
+  "document_overflow": {
+    "width": 1280,
+    "document": 1280
+  },
+  "full_deck_acceptance": false
+}

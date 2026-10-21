@@ -55,6 +55,7 @@ def _trace(result, selected, view):
             trace.append({'Direction':label,'Procedure':row[label+' procedure'],'Tension mat':row[label+' tension mat'],
                 'As (mm²/m)':row[label+' As tension (mm²/m)'],'dv (mm)':row[label+' dv (mm)'],
                 'sx (mm)':row[label+' sx (mm)'],'sxe (mm)':row[label+' sxe (mm)'],
+                'ag used (mm)':row.get(label+' aggregate used (mm)',0.),
                 'εs raw':row[label+' strain raw'],'εs used':row[label+' strain used'],
                 'β':row[label+' beta'],'θ (deg)':row[label+' theta (deg)'],'φf':row[label+' tie phi_f'],
                 'Vn (kN/m)':row[label+' Vn (kN/m)'],'φVn (kN/m)':row[label+' phiVn (kN/m)'],
@@ -66,7 +67,7 @@ def _trace(result, selected, view):
         st.latex(r'\beta=2,\;\theta=45^\circ\quad\text{when 5.7.3.4.1 applies}')
         st.latex(r'\beta={4.8\over1+750\varepsilon_s}{51\over39+s_{xe}/25.4},\quad\theta=29+3500\varepsilon_s')
         st.latex(r'\phi V_n\,[\mathrm{kN/m}]=0.90\,(0.0316\sqrt{6.894757293})\,\beta\sqrt{f_c^\prime[\mathrm{MPa}]}\,d_v[\mathrm{mm}]')
-        st.caption('One metre normal-weight RC strip; the 0.25 f′c bv dv ceiling also applies. General branch uses no vertical shear reinforcement. Actual qualifying mesh-layer distances define sx≤dv; ag=0 gives no unreported aggregate-size credit. In-plane mesh and girder U-dowels are not automatically slab shear stirrups.')
+        st.caption('One metre normal-weight RC strip; the 0.25 f′c bv dv ceiling also applies. General branch uses no vertical shear reinforcement. Actual qualifying mesh-layer distances define sx≤dv. Existing verified aggregate is used in Eq. 5.7.3.4.2-7; unverified ag remains zero. This does not change the simplified branch. In-plane mesh and girder U-dowels are not automatically slab shear stirrups.')
         st.latex(r'T_{req}=\max\left[0,{|M_u|\over\phi_f d_v}+{N_u\over2\phi_c}+{|V_u|\over\phi_v}\cot\theta\right],\quad (D/C)_{tie}={T_{req}\over A_sf_y}')
         st.caption('5.7.3.5-1 tension-side flexural shear tie, φf from the same-Nu moment capacity (0.75–0.90), φc=0.75, φv=0.90, Vs=Vp=0. This does not add the full shear force to both shell faces. Provided bar area is a full-development sectional basis; development/termination remains a separate detailing check.')
         st.markdown('**Direct N–M section · AASHTO 5.6.2 / 5.6.3.2.5**')

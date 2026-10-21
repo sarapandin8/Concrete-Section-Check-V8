@@ -28,6 +28,13 @@ def summary_rows(state):
             case=f'{check.Case} / {check.Step}', point=f"X={check['X (m)']:.3f}, Y={check['Y (m)']:.3f} m",
             action='Review the governing retained source vector and the matching reinforcement / section.' if check.Status != 'PASS' else
                 'Component passes its directional scope; retain the separate deck scope review.'))
+    local = result.get('local_transfer_review')
+    if local is not None:
+        for _, check in local.iterrows():
+            output.append(row('Local transfer index · '+check.Direction.lower()+' '+check.Check, 'REVIEW',
+                float(check['D/C']), case=f'{check.OutputCase} / {check.StepType}',
+                point=f"X={check['X (m)']:.3f}, Y={check['Y (m)']:.3f} m",
+                action='Original slab-only sectional index retained inside a finite reaction footprint. Qualify the local slab/support load path; this value is not an accepted composite transfer resistance.'))
     for _, detail in result['clear_spacing'].iterrows():
         ratio = float(detail['Clear spacing D/C'])
         output.append(row('Clear spacing · '+detail.Mat, detail['Clear spacing status'],

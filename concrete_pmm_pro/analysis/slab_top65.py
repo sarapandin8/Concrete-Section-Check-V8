@@ -251,6 +251,8 @@ def report_zip(result, *, interface=None):
             'Reinforcement_Details': result['reinforcement_summary'], 'Clear_Spacing': result['clear_spacing'],
             'Source_Coverage': result['coverage'], 'Exclusion_Counts': result['exclusion_counts'],
             'Code_Coverage': result['code_coverage'], 'Required_Actions': result['required_actions'], 'Shell_Axes': result['axes']}
+        if 'local_transfer_review' in result:
+            frames['Local_Transfer_Review'] = result['local_transfer_review']
         if interface is not None:
             frames['Linked_Interface'] = interface['rows']
         for name, frame in frames.items():

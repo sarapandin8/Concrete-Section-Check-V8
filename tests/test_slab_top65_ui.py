@@ -7,7 +7,7 @@ import pandas as pd
 from streamlit.testing.v1 import AppTest
 
 from concrete_pmm_pro.analysis import slab_top65 as top, slab_shear64 as accepted
-from concrete_pmm_pro.analysis import slab_design66 as active
+from concrete_pmm_pro.analysis import slab_review68 as active
 from test_slab_shell56 import model_state
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -31,6 +31,7 @@ from concrete_pmm_pro.analysis.slab_aashto63_sections import (
 )
 
 VERSION = 'SLAB.AASHTO63'
+MODEL_REVISION = 'SLAB.REVIEW68'
 RESULT_KEY = 'slab_shell55_aashto62_result'
 ES, PHI_V, KSI = 200000., .90, 6.894757293
 AXES = (('Longitudinal', 0, 1, 'Nx', 'Mx', 'Vx'),
@@ -53,6 +54,8 @@ SCOPE = ('AASHTO LRFD Ninth Edition (2020), normal-weight nonprestressed RC slab
     'four-mat temperature minimum and spacing; flexural minimum (5.6.3.3) '
     'using an explicitly sufficient gamma3=1 upper bound when steel fu is unavailable; '
     'girder/diaphragm support-face shear sampling (5.7.3.2), with no assumed dv relaxation; '
+    'both sectional directions over finite reaction footprints remain local-transfer REVIEW, '
+    'with original slab-only indices retained; '
     'required straight-bar development length (5.10.8.2.1). Nxy/Mxy transfer, simultaneous '
     'biaxial shear (5.7.3.1), local support/load-path qualification, actual '
     'bar ends/laps/available anchorage, local '
@@ -66,9 +69,26 @@ def fingerprint(state):
     if base is None:
         return None
     return hashlib.sha256(json.dumps({'version': VERSION, 'base': base,
-        'peak_rule': 'REVIEW61-one-pass', 'aggregate_mm': 0.,
+        'model_revision': MODEL_REVISION,
+        'peak_rule': 'REVIEW61-one-pass', 'aggregate_mm': aggregate_from_parameters(state.get('section_parameters') or {}),
         'reinforcement': 'four-mats-minimum-upper-bound-gamma3-development-reference',
-        'support_sections': 'physical-top-flange-face-no-dv-relaxation'}, sort_keys=True).encode()).hexdigest()
+        'support_sections': 'all-finite-reaction-footprints-both-directions-no-dv-relaxation'}, sort_keys=True).encode()).hexdigest()
+
+
+def aggregate_from_parameters(parameters):
+    """Use the existing verified material input; an unverified value earns no credit."""
+    if not parameters.get('shear_aggregate_confirmed', False):
+        return 0.
+    raw = parameters.get('shear_max_aggregate_mm')
+    if isinstance(raw, bool):
+        raise ValueError('Verified maximum aggregate size must be a finite nonnegative number')
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        raise ValueError('Verified maximum aggregate size must be a finite nonnegative number') from None
+    if not np.isfinite(value) or value < 0 or value > 100:
+        raise ValueError('Verified maximum aggregate size must be between 0 and 100 mm')
+    return value
 
 
 def current(state):
@@ -178,11 +198,12 @@ def development_reference(h,steel):
     return ld,location
 
 
-def directional_shear(h, n, m, v, steel, top, bottom, *, resistance=None):
+def directional_shear(h, n, m, v, steel, top, bottom, *, resistance=None, aggregate_mm=0.):
     """5.7.3.3/4: matching N,M,V, tension-side As, face-specific dv.
 
     Vs=Vp=0. In-plane slab mesh is not credited as vertical shear steel.
-    No aggregate input is invented: ag=0. sx uses qualified actual layers,
+    Default ag=0; only an existing verified material input earns aggregate
+    credit in the general procedure. sx uses qualified actual layers,
     bounded above by dv. Negative strain uses the explicitly permitted zero
     branch. An actual strain >.006 is REVIEW, never silently capped to PASS.
     """
@@ -199,7 +220,10 @@ def directional_shear(h, n, m, v, steel, top, bottom, *, resistance=None):
         np.full(len(h), steel.centre[top]), np.full(len(h), steel.centre[bottom]))))
     adequate_layers = np.minimum(steel.area[top], steel.area[bottom]) >= .003*1000*sx_trial
     sx = np.where(adequate_layers, sx_trial, dv)
-    sxe = np.clip(sx*1.38/.63, 12*25.4, 80*25.4)
+    aggregate_mm = float(aggregate_mm)
+    if not np.isfinite(aggregate_mm) or not 0 <= aggregate_mm <= 100:
+        raise ValueError('Maximum aggregate size must be between 0 and 100 mm')
+    sxe = np.clip(sx*1.38/(aggregate_mm/25.4+.63), 12*25.4, 80*25.4)
     demand = abs(v)
     moment_term = np.maximum(abs(m)*1000/dv, demand)
     eps_raw = (moment_term+.5*n+demand)/(ES*area/1000)
@@ -234,7 +258,7 @@ def directional_shear(h, n, m, v, steel, top, bottom, *, resistance=None):
         'Nu (kN/m)': n, 'Mu (kN·m/m)': m, 'Vu (kN/m)': v,
         'tension mat': np.where(selected == top, 'Top', 'Bottom'),
         'As tension (mm²/m)': area, 'fy tension (MPa)': fy,
-        'dv (mm)': dv, 'sx (mm)': sx, 'sxe (mm)': sxe,
+        'dv (mm)': dv, 'sx (mm)': sx, 'sxe (mm)': sxe, 'aggregate used (mm)': np.full(len(h),aggregate_mm),
         'strain raw': eps_raw, 'strain used': np.where(simplified, np.nan, eps),
         'both faces tension': both_tension, 'beta': beta, 'theta (deg)': theta,
         'procedure': np.where(simplified, '5.7.3.4.1 · simplified', '5.7.3.4.2 · general'),
@@ -243,7 +267,7 @@ def directional_shear(h, n, m, v, steel, top, bottom, *, resistance=None):
         'tie D/C': tie_dc, 'tie status': _status(tie_dc, qualified)}
 
 
-def section_checks(rows, steel):
+def section_checks(rows, steel, *, aggregate_mm=0.):
     h = rows['Thickness (mm)'].to_numpy(float)
     if np.any(h <= 0) or not np.isfinite(rows[['Thickness (mm)', 'Nx','Ny','Nxy','Mx','My','Mxy','Vx','Vy']].to_numpy(float)).all():
         raise ValueError('Directional checks require finite complete actions and positive thickness')
@@ -254,7 +278,7 @@ def section_checks(rows, steel):
     for label, top, bottom, nc, mc, vc in AXES:
         n, m, v = (rows[c].to_numpy(float) for c in (nc, mc, vc))
         resistance = fixed_axial_resistance(h,n,steel,top,bottom)
-        data.update({label+' '+key: value for key, value in directional_shear(h,n,m,v,steel,top,bottom,resistance=resistance).items()})
+        data.update({label+' '+key: value for key, value in directional_shear(h,n,m,v,steel,top,bottom,resistance=resistance,aggregate_mm=aggregate_mm).items()})
         nm = nm_ratios(h,n,m,steel,top,bottom)
         data[label+' N–M D/C'] = nm[:, 0]
         data[label+' N–M status'] = _status(nm[:, 0])
@@ -360,7 +384,7 @@ def code_coverage(rows,faces,connections):
          ('PARTIAL: source exclusions' if not faces[INCLUDED].all() else 'CALCULATED') if len(faces) else 'REVIEW',
          'Basis / remaining action':'Existing flange width / native diaphragm thickness; full contact assumed; no dv relaxation; unavailable source samples are not reconstructed'},
         {'Check':'Support width / local D-regions','Article':'5.7.1.2 / 5.7.3.2 / 5.8.2','Coverage':'REVIEW',
-         'Basis / remaining action':'Native support footprints retained as local-support review; local bearing/load paths not qualified'},
+         'Basis / remaining action':'Both sectional directions over all finite reaction footprints remain REVIEW; original slab-only indices and source actions retained. Local bearing/load paths not qualified'},
         {'Check':'Nxy / Mxy transfer','Article':'5.7.3.1','Coverage':'REVIEW' if coupling else 'NOT ACTIVATED',
          'Basis / remaining action':'All concurrent components retained; separate directional N–M does not resolve shell coupling'},
         {'Check':'Simultaneous biaxial shear','Article':'5.7.3.1','Coverage':'REVIEW' if biaxial else 'NOT ACTIVATED',
@@ -408,17 +432,20 @@ def calculate(state, *, progress=None):
         progress(.3, 'Checking directional AASHTO sections…')
     # Exact native thickness is retained; group-independent curves are reused
     # across all case/element samples with that thickness.
-    checked = section_checks(retained, steel)
+    aggregate = aggregate_from_parameters(state.get('section_parameters') or {})
+    checked = section_checks(retained, steel, aggregate_mm=aggregate)
     if progress:
         progress(.65,'Extracting girder / diaphragm faces from native geometry…')
     result_rows = pd.concat((frame, checked.reindex(frame.index)), axis=1)
     result_rows['Record type'] = 'Native corner'
     supports = support_geometry(connections,package)
-    # This is NOT another source exclusion: N-M and minimum checks remain.
-    # A one-way strip is not continued through the physical reaction area.
+    # This is NOT a source exclusion: N-M, source vectors and raw shear/tie
+    # indices remain. A plate over a finite contact patch is a local transfer
+    # region in both directions, not an independent slab-only beam parallel
+    # to the contact line. The unresolved transfer is REVIEW, never PASS.
+    reaction_region = in_support(result_rows[['X (m)','Y (m)']].to_numpy(float), supports)
     for direction,*_ in AXES:
-        region=in_support(result_rows[['X (m)','Y (m)']].to_numpy(float),
-            [s for s in supports if s['Direction']==direction])
+        region = reaction_region
         result_rows[direction+' local support region']=region
         for kind in ('shear','tie'):
             column = direction+' '+kind
@@ -441,15 +468,25 @@ def calculate(state, *, progress=None):
         faces.loc[~target_scope,REASON]='Target lies on an agreed connection / bearing exclusion'
         available = faces.loc[faces[INCLUDED]]
         if len(available):
-            face_checks = section_checks(available,steel)
+            face_checks = section_checks(available,steel,aggregate_mm=aggregate)
             faces = pd.concat((faces,face_checks.reindex(faces.index)),axis=1)
         else:
             empty_checks=checked.iloc[:0].reindex(faces.index)
             faces=pd.concat((faces,empty_checks),axis=1)
+        face_region = in_support(faces[['X (m)','Y (m)']].to_numpy(float), supports)
         for direction,*_ in AXES:
-            faces[direction+' local support region'] = False
+            faces[direction+' local support region'] = face_region
+            for kind in ('shear','tie'):
+                column = direction+' '+kind
+                faces[column+' native D/C'] = faces[column+' D/C']
+                faces.loc[face_region & faces[INCLUDED],column+' D/C'] = np.nan
+                faces.loc[face_region & faces[INCLUDED],column+' status'] = 'REVIEW'
         for _,status in VIEWS.values():
             faces.loc[~faces[INCLUDED],status] = 'REVIEW'
+        face_ratios = faces[[c for c,_ in VIEWS.values()]]
+        faces['Known component max D/C'] = face_ratios.max(axis=1)
+        faces['Section status'] = np.where(face_ratios.gt(1+1e-8).any(axis=1),'FAIL',
+            np.where(face_ratios.isna().any(axis=1),'REVIEW','PASS'))
     for _, status in VIEWS.values():
         result_rows.loc[~result_rows[INCLUDED],status]='EXCLUDED'
     result_rows.loc[~result_rows[INCLUDED],['Section status','Design acceptance']]='EXCLUDED'
@@ -502,7 +539,7 @@ def calculate(state, *, progress=None):
         'geometry_excluded_rows':int((~geometry_mask).sum()),'peak_excluded_rows':int(mask.sum()),
         'exclusion_counts':raw_counts,'axes':axes,'scope':SCOPE,'seconds':time.monotonic()-start,
         'component_status':'FAIL' if summary.Status.eq('FAIL').any() else 'REVIEW' if summary.Status.eq('REVIEW').any() else 'PASS',
-        'status':'REVIEW REQUIRED'}
+        'status':'REVIEW REQUIRED','aggregate_used_mm':aggregate,'model_revision':MODEL_REVISION}
 
 
 def map_adapter(result, view):

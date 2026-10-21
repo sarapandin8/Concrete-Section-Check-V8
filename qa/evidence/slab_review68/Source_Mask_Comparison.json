@@ -1,0 +1,11 @@
+{
+  "source_rows": 109824,
+  "design_rows": 84864,
+  "excluded_rows": 24960,
+  "local_transfer_native_records": 18144,
+  "source_keys_actions_and_masks_identical": true,
+  "baseline": "SLAB.IMPORT67",
+  "baseline_sha256": "017cf684907b8897082b96b467e1bfdd440d39bc11b84f1a4db6f07563a7660b",
+  "comparison": "Exact pandas equality of source record keys, all native and transformed signed actions, inclusion masks and exclusion reasons, against a pre-change run with the same native package and explicit screenshot mats.",
+  "new_source_exclusions": 0
+}

@@ -72,7 +72,7 @@ def _guide() -> None:
 
 
 def _overview(package: source.ShellPackage) -> None:
-    from concrete_pmm_pro.analysis.slab_design66 import current
+    from concrete_pmm_pro.analysis.slab_review68 import current
     result=current(st.session_state)
     summary = package.summary
     render_metric_cards([
@@ -130,6 +130,7 @@ def render_import_page() -> None:
         st.session_state.pop("slab_shell55_shear64_result", None)
         st.session_state.pop("slab_shell55_top65_result", None)
         st.session_state.pop("slab_shell55_design66_result", None)
+        st.session_state.pop("slab_shell55_review68_result", None)
         st.session_state.pop("slab_shell55_top65_report", None)
         st.session_state["slab_shell55_upload_revision"] = revision + 1
         st.rerun()
@@ -141,6 +142,7 @@ def render_import_page() -> None:
         st.session_state.pop("slab_shell55_shear64_result", None)
         st.session_state.pop("slab_shell55_top65_result", None)
         st.session_state.pop("slab_shell55_design66_result", None)
+        st.session_state.pop("slab_shell55_review68_result", None)
         st.session_state.pop("slab_shell55_top65_report", None)
         with st.spinner("Reading complete CSI workbooks and matching shell records…"):
             package = source.parse_files(uploads)
@@ -186,5 +188,5 @@ def reinforcement_inventory(state) -> pd.DataFrame:
 def render_analysis_page() -> None:
     _compact_context()
     from concrete_pmm_pro.ui.slab_top65_workspace import render
-    from concrete_pmm_pro.analysis import slab_design66
-    render(analysis_engine=slab_design66)
+    from concrete_pmm_pro.analysis import slab_review68
+    render(analysis_engine=slab_review68)

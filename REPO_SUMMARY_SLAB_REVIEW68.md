@@ -1,0 +1,1 @@
+Trace AASHTO slab sectional checks and local support transfer separately. Preserve original local indices in Summary and reports, add signed section-cut comparisons and relief eligibility evidence, and use only verified aggregate data in the general shear procedure. Keep source forces, exclusions and full-deck review status unchanged.

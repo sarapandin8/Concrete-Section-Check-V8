@@ -89,6 +89,39 @@ def _proposal(result):
             hide_index=True, width='stretch')
 
 
+def _code_review(result):
+    review=result.get('code_review')
+    if not isinstance(review,dict):
+        return
+    st.info('Sectional shear / tie results apply outside finite girder and diaphragm reaction footprints. Local transfer inside those footprints remains REVIEW; its original slab-only indices are retained below. This is not a shear exemption or a complete deck PASS.')
+    with st.expander('AASHTO applicability / Local transfer review', expanded=False):
+        vectors=review['governing_vectors']
+        columns=['Direction','Check','Region','Review status','D/C','OutputCase','X (m)','Y (m)']
+        st.dataframe(vectors[columns],hide_index=True,width='stretch',
+            column_config={'D/C':st.column_config.NumberColumn(format='%.3f')})
+        st.caption('Local transfer rows retain the original sectional indices; their design status is REVIEW. The source masks and all eight concurrent actions are unchanged. Sectional numerical maxima and unresolved local-transfer regions must both be assessed.')
+        st.markdown('**Governing tension-side shear ties**')
+        ties=vectors.loc[vectors.Check.eq('tie')]
+        columns=['Direction','Region','X (m)','Y (m)','M term (kN/m)','N term (kN/m)',
+            'V term (kN/m)','Tie demand (kN/m)','Tie capacity (kN/m)','D/C']
+        st.dataframe(ties[columns],hide_index=True,width='stretch')
+        st.latex(r'T_{req}=\max[0,\;T_M+T_N+T_V],\quad T_M={|M_u|\over\phi_f d_v},\;T_N={N_u\over2\phi_c},\;T_V={|V_u|\over\phi_v}\cot\theta')
+        st.caption('Tension positive, compression negative. Demand/capacity in kN/m. The existing four physical mats supply As fy; no U-dowel or second-mat shear credit is added.')
+        st.markdown('**Code options and their evidence**')
+        st.dataframe(review['eligibility'],hide_index=True,width='stretch')
+        st.caption('AASHTO LRFD 2020: 5.7.1.2 / 5.7.3.1 local load paths, 5.7.3.5 maximum-moment limit, 5.7.3.2 support sections, 5.7.3.4.2-7 aggregate. No maximum-moment cap or dv shift is applied from force ratios or nominal UDL metadata alone.')
+        st.markdown('**Selected signed section cuts · comparison only**')
+        cuts=review['section_cuts']
+        if len(cuts):
+            columns=['Direction','Origin region','OutputCase','Section coordinate (m)','Cut side','Width (m)',
+                'Source coverage','Available width (m)','Sectional shear D/C','Sectional tie D/C','Status']
+            st.dataframe(cuts[[c for c in columns if c in cuts]],hide_index=True,width='stretch')
+        for error in review['cut_errors']:
+            st.caption(error)
+        st.latex(r'R_{cut}=\int_a^b r(w)\,dw,\qquad r_{strip}=R_{cut}/(b-a)')
+        st.caption('Signed line integration of all eight native components, at the same case/step. Width is at most 1 m and stops at physical contact boundaries; actual clipped width is reported. FE-edge sides remain separate. Any missing or excluded source gives incomplete coverage and no numeric sectional check. These selected cuts do not establish a full strip envelope or external-load equilibrium; they never replace charts, Summary or design status.')
+
+
 def _coverage(result, link, analysis_engine=engine):
     with st.expander('Code scope / Details / Report', expanded=False):
         st.dataframe(result['reinforcement_summary'], hide_index=True, width='stretch')
@@ -146,6 +179,9 @@ def render(*, analysis_engine=engine):
             if 'top65_result' in result:
                 from concrete_pmm_pro.analysis import slab_top65
                 st.session_state[slab_top65.RESULT_KEY] = result['top65_result']
+            if 'design66_result' in result:
+                from concrete_pmm_pro.analysis import slab_design66
+                st.session_state[slab_design66.RESULT_KEY] = result['design66_result']
             st.session_state[accepted.RESULT_KEY] = result['shear_result']
             st.session_state[sections.RESULT_KEY] = result['base_result']
             for key in ('slab_shell55_top65_report', 'slab_shell55_aashto62_csv_payload', 'slab_shell55_aashto63_faces_payload'):
@@ -179,6 +215,7 @@ def render(*, analysis_engine=engine):
     if result['incomplete']:
         st.warning('Incomplete native corner/case coverage remains REVIEW; missing values are not filled.')
     _mats(result)
+    _code_review(result)
     _proposal(result)
     if not result['required_actions'].empty:
         with st.expander('Required actions', expanded=False):

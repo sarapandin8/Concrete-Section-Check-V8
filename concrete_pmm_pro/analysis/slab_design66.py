@@ -86,6 +86,7 @@ def _source_columns(frame):
         'Nx', 'Ny', 'Nxy', 'Mx', 'My', 'Mxy', 'Vx', 'Vy',
         'F11', 'F22', 'F12', 'M11', 'M22', 'M12', 'V13', 'V23',
         'Direction', 'Target in accepted scope']
+    names += [direction+' local support region' for direction,*_ in code.AXES]
     return [c for c in names if c in frame]
 
 
@@ -93,7 +94,8 @@ def evaluate(accepted, steel, parameters):
     """Every candidate uses the existing equations, not scaled old capacities."""
     original = accepted['rows']
     native = original.loc[original[INCLUDED], _source_columns(original)]
-    checks = code.section_checks(native, steel)
+    aggregate = code.aggregate_from_parameters(parameters)
+    checks = code.section_checks(native, steel, aggregate_mm=aggregate)
     # Preserve the accepted local-support scope. No new numeric tie value is
     # introduced inside an unresolved reaction footprint.
     for direction, *_ in code.AXES:
@@ -106,7 +108,12 @@ def evaluate(accepted, steel, parameters):
     if len(faces):
         faces = faces.loc[faces['Target in accepted scope'], _source_columns(faces)].copy()
         available = faces.loc[faces[INCLUDED]]
-        derived = code.section_checks(available, steel).reindex(faces.index) if len(available) else checks.iloc[:0].reindex(faces.index)
+        derived = code.section_checks(available, steel, aggregate_mm=aggregate).reindex(faces.index) if len(available) else checks.iloc[:0].reindex(faces.index)
+        for direction,*_ in code.AXES:
+            local = faces.get(direction+' local support region', pd.Series(False,index=faces.index)).fillna(False).astype(bool)
+            for kind in ('shear','tie'):
+                derived.loc[local,direction+' '+kind+' D/C'] = np.nan
+                derived.loc[local,direction+' '+kind+' status'] = 'REVIEW'
         for _, status in VIEWS.values():
             derived.loc[~faces[INCLUDED], status] = 'REVIEW'
         faces = pd.concat((faces, derived), axis=1)

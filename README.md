@@ -1,3 +1,13 @@
+# SLAB.REVIEW68 — sectional checks and local support transfer
+
+Finite girder/diaphragm reaction footprints remain local-transfer REVIEW in both slab directions. Original slab-only indices, concurrent source vectors and agreed source masks are retained. Summary and reports show unresolved local indices alongside the applied sectional results.
+
+The compact folded review adds M/N/V shear-tie terms, AASHTO relief eligibility and selected signed line-cut comparisons. Verified existing aggregate data is used only in the general shear procedure. No maximum-moment cap or support-dv relaxation is assumed; selected cuts do not replace the design envelope or certify the deck.
+
+See [SLAB_REVIEW68_NOTES_TH.md](SLAB_REVIEW68_NOTES_TH.md), [SLAB_REVIEW68_VERIFICATION.json](SLAB_REVIEW68_VERIFICATION.json), [REPO_SUMMARY_SLAB_REVIEW68.md](REPO_SUMMARY_SLAB_REVIEW68.md), and [qa/slab_review68_real_inputs.py](qa/slab_review68_real_inputs.py).
+
+## Historical milestone — IMPORT67
+
 # SLAB.IMPORT67 — native static shell exports without StepType
 
 The same four CSI export sets now accept **Element Forces - Area Shells with the StepType header absent**, as in a static equivalent-train-load analysis. An omitted step is stored as blank; exported Max/Min and StepNum identities are retained. Force values, case names, units, native record order and duplicate-record safeguards are preserved. No spreadsheet editing or extra confirmation is required.

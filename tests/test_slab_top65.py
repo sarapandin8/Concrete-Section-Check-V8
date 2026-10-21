@@ -72,15 +72,19 @@ def test_spacing_matches_cast_in_place_hand_calculation_and_unknown_is_not_pass(
     assert top.clear_spacing(s, {})['Clear spacing status'].eq('FAIL').all()
 
 
-def test_aggregate_change_invalidates_details_but_not_the_accepted_mechanical_base():
+def test_verified_aggregate_change_invalidates_and_recalculates_mechanics_without_changing_actions():
     state = model_state()
     saved = top.calculate(state)
     state[top.RESULT_KEY] = saved
     state['section_parameters']['shear_max_aggregate_mm'] = 20.
     state['section_parameters']['shear_aggregate_confirmed'] = True
     assert top.current(state) is None
-    with patch.object(code, 'calculate', side_effect=AssertionError('mechanics reran')):
+    with patch.object(code, 'calculate', wraps=code.calculate) as solver:
         changed = top.calculate(state, reuse=saved)
+    assert solver.call_count == 1
+    assert changed['aggregate_used_mm'] == 20.
+    for column in ('Nx', 'Ny', 'Nxy', 'Mx', 'My', 'Mxy', 'Vx', 'Vy', INCLUDED):
+        np.testing.assert_array_equal(saved['rows'][column], changed['rows'][column])
     assert changed['clear_spacing']['Clear spacing status'].eq('PASS').all()
 
 

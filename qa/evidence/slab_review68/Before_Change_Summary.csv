@@ -1,0 +1,11 @@
+﻿Check,Status,Max D/C,Case,Step,X (m),Y (m),AreaElem,Joint,Failed nodes,Review nodes
+Shear · transverse,REVIEW,0.4504061127,U2A,,18.76071,3.3,1672-5,~4592,0,1250
+Shear · longitudinal,FAIL,2.4683332523,U2A,,1.00804,3.925,1381-32,~375,296,372
+Direct N–M · transverse,PASS,0.3143203002,U2A,,1.46339,3.925,1395-29,~572,0,0
+Direct N–M · longitudinal,PASS,0.2446853926,U2A,,9.75268,5.5,1526-2,~2549,0,0
+Flexural minimum · transverse,PASS,0.2899751702,U2B,,0.55268,-3.925,1392-1,~514,0,0
+Flexural minimum · longitudinal,PASS,0.3655644419,U2A,,19.44643,3.5,1672-8,~4786,0,0
+Flexural shear tie · transverse,REVIEW,0.433775277,U2B,,6.47232,-4.0,1476-8,Girder 6/Minus/~1710→~1714,0,1250
+Flexural shear tie · longitudinal,FAIL,1.312982095,U2A,,19.44643,3.5,1672-4,~4786,22,372
+Temperature minimum,PASS,0.2500437152,U1A,,8.57857,-0.43333,1518-5,~2258,0,0
+Bar spacing,PASS,0.5,U1A,,1.69107,-5.5,1406-30,~742,0,0
