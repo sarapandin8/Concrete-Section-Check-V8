@@ -38,7 +38,7 @@ def test_upload_two_girders_one_calculate_and_view_changes_do_not_rerun():
         assert not any('Service LL+IM per girder' in n.label for n in app.number_input)
 
 
-def test_failed_replacement_is_visible_and_clear_x_removes_the_input_bank():
+def test_failed_replacement_is_visible_hidden_uploader_keeps_inputs_and_explicit_clear_removes_them():
     app = AppTest.from_string(app_code(),default_timeout=60)
     with patch('concrete_pmm_pro.ui.girder_deflect70.st.file_uploader',return_value=upload()):
         app.run();app.button(key='girder_deflect70_calculate').click().run()
@@ -52,5 +52,7 @@ def test_failed_replacement_is_visible_and_clear_x_removes_the_input_bank():
         assert not app.session_state[engine.RESULT_KEY]['service_available']
     with patch('concrete_pmm_pro.ui.girder_deflect70.st.file_uploader',return_value=None):
         app.run()
+        assert not app.exception and app.session_state[importer.BANK_KEY] == original
+        app.button(key='girder_deflect70_clear_import').click().run()
         assert not app.exception and importer.BANK_KEY not in app.session_state.filtered_state
         assert importer.ERROR_KEY not in app.session_state.filtered_state

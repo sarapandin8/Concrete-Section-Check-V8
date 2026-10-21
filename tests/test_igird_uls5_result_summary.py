@@ -4,7 +4,9 @@ import app
 
 
 def _base_state():
-    return {
+    # Presentation-only result rows, bound to a valid hypothetical input model.
+    # Currency/invalidation itself is exercised in test_analysis71.py.
+    state = {
         "section_preset_key": "parametric_i_girder",
         "project_design_code": "AASHTO LRFD",
         "project_code_edition": "AASHTO LRFD 9th Edition",
@@ -53,6 +55,30 @@ def _base_state():
             },
         },
     }
+    from test_igird_uls6_torsion_general_procedure import _state, _demand
+    from concrete_pmm_pro.ui import analysis_page as ap
+    model = _state()
+    model.update(state)
+    model['beam_uls_loads_table'] = _demand()
+    active = ap._active_beam_uls_demand_dataframe_from_session(model)
+    route = ap._beam_uls_strength_route_from_state(model, is_bridge=True, is_building=False)
+    cache = model['_beam_girder_uls_manual_calculation_cache']
+    for name in ['Flexure — Construction', 'Flexure — Final Composite', ap._IGIRDER_INTERFACE_SHEAR_CHECK_NAME,
+                 'Shear', 'Torsion', 'Shear + Torsion']:
+        if name == 'Flexure — Construction':
+            _, rows, _ = ap._beam_uls_construction_demand_from_state(model)
+            digest = ap._beam_uls_construction_flexure_hash(model, rows, strength_route=route)
+        elif name == 'Flexure — Final Composite':
+            digest = ap._beam_uls_final_composite_flexure_hash(model, active, strength_route=route)
+        elif name == ap._IGIRDER_INTERFACE_SHEAR_CHECK_NAME:
+            digest = ap._igird_interface_shear_hash(model, ap._igird_interface_source_dataframe(active),
+                settings=ap._igird_interface_shear_settings_from_state(model), strength_route=route)
+        else:
+            digest = ap._beam_uls_check_input_hash(model, active, strength_route=route, check_name=name)
+        cache[name]['input_hash'] = digest
+        cache[name]['result_version'] = (ap._beam_uls_expected_result_version(model, name)
+            or ap._IGIRDER_INTERFACE_SHEAR_RESULT_VERSION)
+    return model
 
 
 def test_igird_result_summary_uses_stage_specific_rows_and_ignores_legacy_flexure():

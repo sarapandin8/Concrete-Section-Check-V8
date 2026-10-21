@@ -9,28 +9,57 @@ from concrete_pmm_pro.serviceability import girder_deflect70 as engine
 from concrete_pmm_pro.visualization.girder_deflect70 import figure
 from concrete_pmm_pro.ui.commercial import render_page_header, render_metric_cards
 
+UPLOAD_KEY = 'girder_deflect70_ui_upload'
+VIEW_KEY = 'girder_deflect70_view'
+
+
+def _clear_import():
+    for key in [importer.BANK_KEY, importer.ERROR_KEY, 'girder_deflect70_processed_upload',
+                'girder_deflect70_upload_was_present']:
+        st.session_state.pop(key, None)
+
+
+def _ingest(uploaded):
+    payload = uploaded.getvalue()
+    digest = sha256(payload).hexdigest()
+    if digest == st.session_state.get('girder_deflect70_processed_upload'):
+        return
+    try:
+        st.session_state[importer.BANK_KEY] = importer.parse_workbook(payload, uploaded.name)
+        st.session_state.pop(importer.ERROR_KEY, None)
+    except (ValueError, TypeError) as exc:
+        st.session_state[importer.ERROR_KEY] = str(exc)
+    st.session_state['girder_deflect70_processed_upload'] = digest
+
+
+def _upload_changed():
+    """An explicit upload/clear event, unlike Streamlit's hidden-widget cleanup."""
+    uploaded = st.session_state.get(UPLOAD_KEY)
+    if uploaded is None:
+        _clear_import()
+    else:
+        _ingest(uploaded)
+
+
+def _remember_view():
+    view = dict(st.session_state.get(VIEW_KEY) or {})
+    for item in ['stage', 'girder']:
+        value = st.session_state.get('girder_deflect70_ui_' + item)
+        if value is not None:
+            view[item] = value
+    st.session_state[VIEW_KEY] = view
+
 
 def _upload():
     uploaded = st.file_uploader('Envelope SLS Girder Deflection (.xlsx)', type=['xlsx'],
-        key='girder_deflect70_ui_upload',
+        key=UPLOAD_KEY, on_change=_upload_changed,
         help='Export the SLS envelope with Max and Min at every station. One worksheet per girder, named for that girder. Required: Girder Distance, ItemType, WebTop Vert and the units row. Only WebTop Vert is used.')
-    present_key = 'girder_deflect70_upload_was_present'
     if uploaded is not None:
-        payload = uploaded.getvalue()
-        digest = sha256(payload).hexdigest()
-        if digest != st.session_state.get('girder_deflect70_processed_upload'):
-            try:
-                bank = importer.parse_workbook(payload, uploaded.name)
-                st.session_state[importer.BANK_KEY] = bank
-                st.session_state.pop(importer.ERROR_KEY, None)
-            except (ValueError, TypeError) as exc:
-                st.session_state[importer.ERROR_KEY] = str(exc)
-            st.session_state['girder_deflect70_processed_upload'] = digest
-        st.session_state[present_key] = True
-    elif st.session_state.get(present_key):
-        for key in [importer.BANK_KEY, importer.ERROR_KEY, 'girder_deflect70_processed_upload']:
-            st.session_state.pop(key, None)
-        st.session_state[present_key] = False
+        _ingest(uploaded)
+    # A file uploader is discarded when its page is hidden. Only its change
+    # callback may interpret None as the user's X/clear action.
+    elif st.session_state.get(importer.BANK_KEY) or st.session_state.get(importer.ERROR_KEY):
+        st.button('Clear Service import', on_click=_clear_import, key='girder_deflect70_clear_import')
     if st.session_state.get(importer.ERROR_KEY):
         st.error(st.session_state[importer.ERROR_KEY])
         st.caption('The previous valid input is retained for recovery. It is not used as the current Service result until this upload is replaced or removed.')
@@ -80,14 +109,21 @@ def render(*, build_curves, span_m):
         st.info('STALE — source or model inputs changed; Calculate again.' if engine.RESULT_KEY in st.session_state
             else 'NOT CALCULATED — press Calculate deflection / camber.')
         return
-    stage = st.radio('Stage', engine.STAGES, horizontal=True, key='girder_deflect70_ui_stage')
+    view = st.session_state.get(VIEW_KEY) or {}
+    stage_key = 'girder_deflect70_ui_stage'
+    if st.session_state.get(stage_key) not in engine.STAGES:
+        remembered = view.get('stage')
+        st.session_state[stage_key] = remembered if remembered in engine.STAGES else engine.STAGES[0]
+    stage = st.radio('Stage', engine.STAGES, horizontal=True, key=stage_key, on_change=_remember_view)
     service = stage == 'Service stage'
     girder = None
     if service and result['girders']:
         key = 'girder_deflect70_ui_girder'
         if st.session_state.get(key) not in result['girders']:
-            st.session_state[key] = result['girders'][0]
-        girder = st.selectbox('Service girder', result['girders'], key=key)
+            remembered = view.get('girder')
+            st.session_state[key] = remembered if remembered in result['girders'] else result['girders'][0]
+        girder = st.selectbox('Service girder', result['girders'], key=key, on_change=_remember_view)
+    _remember_view()
     selected = result['summary'].loc[result['summary'].Stage.eq(stage)]
     selected = selected.loc[selected.Girder.eq(girder)] if girder else selected.iloc[:1]
     row = selected.iloc[0]

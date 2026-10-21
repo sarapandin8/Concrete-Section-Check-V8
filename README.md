@@ -1,3 +1,11 @@
+# ANALYSIS.QA71 — reliable navigation and current-result status
+
+Audit the four I-girder Analysis subpages. Uploaded CSI Service envelopes and selected stage/girder survive navigation; explicit X/Clear still removes the import. Summary/Report validate all six ULS result versions and input hashes, so a changed section cannot reuse stale strength output. Sidebar and Analysis cards show calculated coverage independently of engineering acceptance and refresh after Calculate without another solver run.
+
+Existing strength/serviceability equations, native CSI data and agreed slab masks are preserved. Actual-project deflection and seven slab CSV outputs match the accepted 70 baseline. See [ANALYSIS_QA71_NOTES_TH.md](ANALYSIS_QA71_NOTES_TH.md), [ANALYSIS_QA71_VERIFICATION.json](ANALYSIS_QA71_VERIFICATION.json), and [REPO_SUMMARY_ANALYSIS_QA71.md](REPO_SUMMARY_ANALYSIS_QA71.md). Reproducibility helpers are `qa/analysis71_*.py`.
+
+## Historical milestone — DEFLECT70
+
 # SLS.DEFLECT70 — named girder plots and imported CSI Service envelopes
 
 **Analysis → SLS Deflection / Camber** accepts the supplied **Envelope SLS Girder Deflection .xlsx** format directly. Use one sheet per girder with Girder Distance, ItemType Max/Min, WebTop Vert and the units row. The selected Service plot names its girder and CSI component, preserves native signs/stations, and converts displacement units to mm. Other response directions are ignored. There is no generated bridge Service fallback or added camber/LL/dynamic factor.

@@ -1760,7 +1760,7 @@ section[data-testid="stSidebar"] div[data-testid="stFileUploader"] {
         )
 
 
-def _render_commercial_sidebar(active_workspace: str | None = None) -> None:
+def _render_commercial_sidebar(active_workspace: str | None = None) -> object:
     """Render a visual navigation rail without changing the existing page contracts.
 
     UI.COMMERCIAL4 keeps the top navigation available for backward
@@ -1822,12 +1822,27 @@ def _render_commercial_sidebar(active_workspace: str | None = None) -> None:
                         if callable(rerun):
                             rerun()
 
-    dirty_status = current_project_dirty_status(st.session_state)
+    status_slot = st.sidebar.empty()
+    status_slot.markdown(_commercial_project_status_html(st.session_state), unsafe_allow_html=True)
+    _render_sidebar_active_context()
+    _render_sidebar_project_file_actions()
+    return status_slot
+
+
+def _commercial_project_status_html(state) -> str:
+    """Read current result currency; the caller can refresh the same sidebar slot."""
+    dirty_status = current_project_dirty_status(state)
     model_dot = "warning" if dirty_status.model_status == "Modified" else "ready"
     analysis_dot = "warning" if dirty_status.analysis_status == "Out of date" else ("ready" if dirty_status.analysis_status == "Current" else "")
+    analysis_label = dirty_status.analysis_status
+    if (resolve_analysis_mode_settings(state).member_type == 'beam_girder'
+            and state.get('section_preset_key') == 'parametric_i_girder'):
+        from concrete_pmm_pro.reporting.analysis_current71 import aggregate
+        currency = aggregate(state)
+        analysis_label = currency['label']
+        analysis_dot = 'ready' if currency['complete'] else 'warning' if currency['done'] else ''
     affected_count = len(dirty_status.affected_checks)
-    st.sidebar.markdown(
-        f"""
+    return f"""
 <div class="cpmm-sidebar-status">
   <div class="cpmm-sidebar-section-label" style="margin-top:0;">Project Status</div>
   <div class="cpmm-sidebar-status-row">
@@ -1836,18 +1851,14 @@ def _render_commercial_sidebar(active_workspace: str | None = None) -> None:
   </div>
   <div class="cpmm-sidebar-status-row">
     <span class="cpmm-sidebar-status-dot {analysis_dot}">●</span>
-    <div><div class="cpmm-sidebar-status-title">Analysis</div><div class="cpmm-sidebar-status-value">{escape(dirty_status.analysis_status)}</div></div>
+    <div><div class="cpmm-sidebar-status-title">Analysis results</div><div class="cpmm-sidebar-status-value">{escape(analysis_label)}</div></div>
   </div>
   <div class="cpmm-sidebar-status-row">
     <span class="cpmm-sidebar-status-dot">{affected_count}</span>
     <div><div class="cpmm-sidebar-status-title">Affected Checks</div><div class="cpmm-sidebar-status-value">{escape(', '.join(dirty_status.affected_checks[:2]) if dirty_status.affected_checks else 'None')}</div></div>
   </div>
 </div>
-""",
-        unsafe_allow_html=True,
-    )
-    _render_sidebar_active_context()
-    _render_sidebar_project_file_actions()
+"""
 
 
 def _render_commercial_brand_header(active_workspace: str) -> None:
@@ -3704,30 +3715,8 @@ def _results_beam_uls_cache(state: object) -> dict[str, dict[str, object]]:
         return {}
     preset_key = str(state.get("section_preset_key") or "").strip() if hasattr(state, "get") else ""
     if preset_key == "parametric_i_girder":
-        # I-Girder uses stage-owned flexure entries and versioned Shear / V+T.
-        # Do not let legacy generic caches appear current in read-only summary.
-        filtered = dict(cache)
-        filtered.pop("Flexure", None)
-        expected_versions = {
-            "Shear": _IGIRDER_SHEAR_RESULT_VERSION,
-            "Torsion": _IGIRDER_TORSION_RESULT_VERSION,
-            "Shear + Torsion": _IGIRDER_COMBINED_VT_RESULT_VERSION,
-            "Interface Shear — Final Composite": _IGIRDER_INTERFACE_SHEAR_RESULT_VERSION,
-        }
-        for check_name, expected in expected_versions.items():
-            entry = filtered.get(check_name)
-            if isinstance(entry, dict) and str(entry.get("result_version") or "") != expected:
-                filtered.pop(check_name, None)
-        combined = filtered.get("Shear + Torsion")
-        if isinstance(combined, dict) and combined.get("input_hash"):
-            # Read-only signatures, no solver: a changed development/source
-            # input must not leave a stale ULS7 PASS in Summary or Report/QA.
-            active = _active_beam_uls_demand_dataframe_from_session(state)
-            route = _beam_uls_strength_route_from_state(state, is_bridge=True, is_building=False)
-            current_hash = _beam_uls_check_input_hash(state, active, strength_route=route, check_name="Shear + Torsion")
-            if str(combined["input_hash"]) != current_hash:
-                filtered.pop("Shear + Torsion", None)
-        return filtered
+        from concrete_pmm_pro.reporting.analysis_current71 import current_uls_cache
+        return current_uls_cache(state)
     return cache
 
 
@@ -5794,7 +5783,7 @@ def main() -> None:
         st.session_state["_nav_active_workspace"] = "Result Summary"
     if st.session_state.get("_nav_active_workspace") not in WORKSPACE_NAVIGATION:
         st.session_state["_nav_active_workspace"] = "Setup"
-    _render_commercial_sidebar(str(st.session_state.get("_nav_active_workspace", "Setup")))
+    sidebar_status_slot = _render_commercial_sidebar(str(st.session_state.get("_nav_active_workspace", "Setup")))
     if compact_sls:
         active_workspace = 'Analysis'
     elif compact_slab:
@@ -5819,6 +5808,10 @@ def main() -> None:
         render_results_workspace()
     elif active_workspace == "Report / QA":
         render_report_qa_workspace()
+    # A calculation may have populated a result after the sidebar was drawn.
+    # Refresh this existing slot without another rerun or solver invocation.
+    if sidebar_status_slot is not None:
+        sidebar_status_slot.markdown(_commercial_project_status_html(st.session_state), unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

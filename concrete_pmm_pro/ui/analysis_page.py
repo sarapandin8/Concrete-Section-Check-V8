@@ -32699,6 +32699,13 @@ def _commercial_analysis_dashboard_cards(settings: AnalysisModeSettings, active_
     ):
         status_title = "Runtime state"
         readiness, status_detail, status_style = _igird_composite_flexure_dashboard_state(st.session_state)
+    elif is_beam_girder_future_workflow(settings) and st.session_state.get('section_preset_key') == 'parametric_i_girder':
+        from concrete_pmm_pro.reporting.analysis_current71 import pages
+        currency = pages(st.session_state).get(active_subpage)
+        status_title = 'Stored result status'
+        readiness = currency['status'] if currency else 'NOT CALCULATED'
+        status_detail = currency['detail'] if currency else 'Calculate the selected check'
+        status_style = 'ready' if readiness == 'CURRENT' else 'warning'
     else:
         status_title = "Runtime state"
         status_detail = "Displayed status only; solver routing is unchanged"
@@ -32760,8 +32767,11 @@ def render_analysis_page() -> None:
             active_subpage = _analysis_subpage_choice()
     else:
         active_subpage = _analysis_subpage_choice()
+    dashboard_slot = None
     if not compact_bridge:
-        render_metric_cards(_commercial_analysis_dashboard_cards(settings, active_subpage))
+        dashboard_slot = st.empty()
+        with dashboard_slot.container():
+            render_metric_cards(_commercial_analysis_dashboard_cards(settings, active_subpage))
         render_section_bar("Analysis workspace", "The selected analysis subpage controls what is evaluated on this rerun.", mark="A")
     if active_subpage == "ULS Strength":
         render_analysis_uls_pmm()
@@ -32769,5 +32779,16 @@ def render_analysis_page() -> None:
         render_analysis_sls_stress()
     elif active_subpage == "SLS Deflection / Camber":
         render_analysis_sls_deflection_camber()
-    mark_analysis_current(st.session_state, workspace=f"Analysis / {active_subpage}")
+    if (_analysis_mode_from_session().member_type == 'beam_girder'
+            and st.session_state.get('section_preset_key') == 'parametric_i_girder'):
+        from concrete_pmm_pro.reporting.analysis_current71 import aggregate
+        if aggregate(st.session_state)['complete']:
+            from concrete_pmm_pro.state.dirty_state import update_dirty_state_from_session
+            update_dirty_state_from_session(st.session_state)
+            mark_analysis_current(st.session_state, workspace='Analysis / all four subpages')
+    else:
+        mark_analysis_current(st.session_state, workspace=f"Analysis / {active_subpage}")
+    if dashboard_slot is not None:
+        with dashboard_slot.container():
+            render_metric_cards(_commercial_analysis_dashboard_cards(settings, active_subpage))
     _render_runtime_diagnostics_expander()

@@ -1,0 +1,1 @@
+Fix Analysis navigation losing uploaded Service deflection and selected stage/girder. Align all six I-girder ULS caches with current input hashes in Summary/Report, and show per-page result currency without hidden solver reruns. Preserve existing engineering equations and verify native deflection/slab outputs against the accepted baseline.

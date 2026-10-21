@@ -1,0 +1,97 @@
+{
+  "milestone": "SLS.DEFLECT70",
+  "source_sha256": {
+    "concrete_section_pro_project (32).json": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+    "SLS deflection.xlsx": "4beac1fa04c5ad73f43a24c654826ac34362dfdac28be7e62fc1830969a7d536"
+  },
+  "input_files_modified": false,
+  "native_WebTop_Vert_rows": 96,
+  "girder_names": [
+    "Left Exterior Girder",
+    "Interior Girder 2"
+  ],
+  "max_service_abs_mm": [
+    9.227,
+    9.16
+  ],
+  "governing_x_m": [
+    10.45714,
+    10.45714
+  ],
+  "project_limit_mm": 13.333333333333334,
+  "service_utilization": [
+    0.692025,
+    0.6869999999999999
+  ],
+  "service_status": [
+    "Preview PASS",
+    "Preview PASS"
+  ],
+  "transfer_construction_camber_mm": [
+    18.754023847928803,
+    13.82028268843323
+  ],
+  "service_generated_curve_added": false,
+  "camber_or_dynamic_factor_added_to_import": false,
+  "full_deflection_acceptance": false,
+  "plots": [
+    {
+      "stage": "Transfer stage",
+      "girder": null,
+      "title": "Transfer deflection \u00b7 single I-girder<br><sup>Current section model \u00b7 calculated deflection / camber</sup>",
+      "traces": [
+        "Calculated response",
+        "Governing response"
+      ],
+      "x_range": [
+        0,
+        20.0
+      ]
+    },
+    {
+      "stage": "Construction stage",
+      "girder": null,
+      "title": "Construction deflection \u00b7 single I-girder<br><sup>Current section model \u00b7 calculated deflection / camber</sup>",
+      "traces": [
+        "Calculated response",
+        "Governing response"
+      ],
+      "x_range": [
+        0,
+        20.0
+      ]
+    },
+    {
+      "stage": "Service stage",
+      "girder": "Left Exterior Girder",
+      "title": "Service deflection \u00b7 Left Exterior Girder<br><sup>WebTop Vert \u00b7 Imported SLS envelope</sup>",
+      "traces": [
+        "Envelope Max",
+        "Envelope Min",
+        "Limit \u00b113.33 mm",
+        "Limit \u00b113.33 mm",
+        "Governing response"
+      ],
+      "x_range": [
+        0,
+        20.0
+      ]
+    },
+    {
+      "stage": "Service stage",
+      "girder": "Interior Girder 2",
+      "title": "Service deflection \u00b7 Interior Girder 2<br><sup>WebTop Vert \u00b7 Imported SLS envelope</sup>",
+      "traces": [
+        "Envelope Max",
+        "Envelope Min",
+        "Limit \u00b113.33 mm",
+        "Limit \u00b113.33 mm",
+        "Governing response"
+      ],
+      "x_range": [
+        0,
+        20.0
+      ]
+    }
+  ]
+}

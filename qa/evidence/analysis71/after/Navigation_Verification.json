@@ -1,0 +1,183 @@
+{
+  "initial": {
+    "bank": false,
+    "result_current": false,
+    "stage": null,
+    "girder": null,
+    "workspace": "Analysis",
+    "subpage": "SLS Deflection / Camber",
+    "dirty_analysis_status": "Current",
+    "calls": {
+      "deflection": 0,
+      "stress": 0,
+      "slab": 0,
+      "uls": 0
+    },
+    "sidebar_analysis": "Stale 0/4"
+  },
+  "before_navigation": {
+    "bank": true,
+    "result_current": true,
+    "stage": "Service stage",
+    "girder": "Interior Girder 2",
+    "workspace": "Analysis",
+    "subpage": "SLS Deflection / Camber",
+    "dirty_analysis_status": "Out of date",
+    "calls": {
+      "deflection": 1,
+      "stress": 0,
+      "slab": 0,
+      "uls": 0
+    },
+    "sidebar_analysis": "Partial 1/4"
+  },
+  "summary": {
+    "bank": true,
+    "result_current": true,
+    "stage": null,
+    "girder": null,
+    "workspace": "Result Summary",
+    "subpage": "SLS Deflection / Camber",
+    "dirty_analysis_status": "Out of date",
+    "calls": {
+      "deflection": 1,
+      "stress": 0,
+      "slab": 0,
+      "uls": 0
+    },
+    "sidebar_analysis": "Partial 1/4"
+  },
+  "report": {
+    "bank": true,
+    "result_current": true,
+    "stage": null,
+    "girder": null,
+    "workspace": "Report / QA",
+    "subpage": "SLS Deflection / Camber",
+    "dirty_analysis_status": "Out of date",
+    "calls": {
+      "deflection": 1,
+      "stress": 0,
+      "slab": 0,
+      "uls": 0
+    },
+    "sidebar_analysis": "Partial 1/4"
+  },
+  "returned": {
+    "bank": true,
+    "result_current": true,
+    "stage": "Service stage",
+    "girder": "Interior Girder 2",
+    "workspace": "Analysis",
+    "subpage": "SLS Deflection / Camber",
+    "dirty_analysis_status": "Out of date",
+    "calls": {
+      "deflection": 1,
+      "stress": 0,
+      "slab": 0,
+      "uls": 0
+    },
+    "sidebar_analysis": "Partial 1/4"
+  },
+  "four_subpage_navigation": {
+    "ULS Strength": {
+      "bank": true,
+      "result_current": true,
+      "stage": null,
+      "girder": null,
+      "workspace": "Analysis",
+      "subpage": "ULS Strength",
+      "dirty_analysis_status": "Out of date",
+      "calls": {
+        "deflection": 1,
+        "stress": 0,
+        "slab": 0,
+        "uls": 0
+      },
+      "sidebar_analysis": "Partial 1/4"
+    },
+    "SLS / Stress & Cracking": {
+      "bank": true,
+      "result_current": true,
+      "stage": null,
+      "girder": null,
+      "workspace": "Analysis",
+      "subpage": "SLS / Stress & Cracking",
+      "dirty_analysis_status": "Out of date",
+      "calls": {
+        "deflection": 1,
+        "stress": 0,
+        "slab": 0,
+        "uls": 0
+      },
+      "sidebar_analysis": "Partial 1/4"
+    },
+    "Slab Reinforcement": {
+      "bank": true,
+      "result_current": true,
+      "stage": null,
+      "girder": null,
+      "workspace": "Analysis",
+      "subpage": "Slab Reinforcement",
+      "dirty_analysis_status": "Out of date",
+      "calls": {
+        "deflection": 1,
+        "stress": 0,
+        "slab": 0,
+        "uls": 0
+      },
+      "sidebar_analysis": "Partial 1/4"
+    },
+    "SLS Deflection / Camber": {
+      "bank": true,
+      "result_current": true,
+      "stage": "Service stage",
+      "girder": "Interior Girder 2",
+      "workspace": "Analysis",
+      "subpage": "SLS Deflection / Camber",
+      "dirty_analysis_status": "Out of date",
+      "calls": {
+        "deflection": 1,
+        "stress": 0,
+        "slab": 0,
+        "uls": 0
+      },
+      "sidebar_analysis": "Partial 1/4"
+    }
+  },
+  "explicit_clear": {
+    "bank": false,
+    "result_current": false,
+    "stage": "Service stage",
+    "girder": "Interior Girder 2",
+    "workspace": "Analysis",
+    "subpage": "SLS Deflection / Camber",
+    "dirty_analysis_status": "Out of date",
+    "calls": {
+      "deflection": 1,
+      "stress": 0,
+      "slab": 0,
+      "uls": 0
+    },
+    "sidebar_analysis": "Stale 0/4"
+  },
+  "explicit_X": {
+    "bank": false,
+    "result_current": false,
+    "stage": "Service stage",
+    "girder": "Interior Girder 2",
+    "workspace": "Analysis",
+    "subpage": "SLS Deflection / Camber",
+    "dirty_analysis_status": "Out of date",
+    "calls": {
+      "deflection": 1,
+      "stress": 0,
+      "slab": 0,
+      "uls": 0
+    },
+    "sidebar_analysis": "Stale 0/4"
+  },
+  "browser": "134.0.6998.35",
+  "page_errors": [],
+  "expect_retained": true
+}

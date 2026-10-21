@@ -112,6 +112,8 @@ INPUT_GROUP_KEYS: dict[str, tuple[str, ...]] = {
         "beam_girder_construction_uls_settings",
         "building_beam_girder_service_load_settings",
         "building_beam_girder_sls_load_settings",
+        "girder_deflect70_input",
+        "girder_deflect70_upload_error",
     ),
     "Analysis settings": (
         "analysis_settings",
@@ -119,6 +121,8 @@ INPUT_GROUP_KEYS: dict[str, tuple[str, ...]] = {
         "custom_stress_check_points",
         "girder_sls_limit_settings",
         "girder_deflection_settings",
+        "girder_deflect69_settings",
+        "girder_deflect70_settings",
     ),
 }
 

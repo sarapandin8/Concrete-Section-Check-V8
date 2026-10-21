@@ -1,0 +1,26 @@
+{
+  "actual_full_app": true,
+  "source_sha256": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+  "source_file_modified": false,
+  "calculate_commands": 1,
+  "stage_engine_calls": 4,
+  "hidden_solver_reruns": false,
+  "input_fingerprint_unchanged_on_navigation": true,
+  "routes": [
+    {
+      "workspace": "Result Summary",
+      "current": true,
+      "stage_engine_calls": 4
+    },
+    {
+      "workspace": "Report / QA",
+      "current": true,
+      "stage_engine_calls": 4
+    },
+    {
+      "workspace": "Analysis",
+      "current": true,
+      "stage_engine_calls": 4
+    }
+  ]
+}

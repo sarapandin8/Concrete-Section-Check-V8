@@ -1,0 +1,189 @@
+{
+  "milestone": "ANALYSIS.QA71",
+  "release_date": "2026-10-21",
+  "baseline": "SLS.DEFLECT70",
+  "baseline_sha256": "5c1919fb83f6f746cfa716a1f455dc56bf2192ddfa4f90713e3456e8b3586f97",
+  "scope": "I-girder four-page navigation, result currency and representative source/output regressions; not whole-bridge design certification",
+  "source_sha256": {
+    "concrete_section_pro_project (32).json": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+    "Element Forces - Area Shells(1).xlsx": "d1eb5d961f067b848953bb7b63a0c0f86e3376dc06c3b48a1830dd5f7b487a8d",
+    "TABLE Objects And Elements - Areas(1).xlsx": "75f06bb745ff4915f8f4558a4bd0558c04f453a4ccb5ff3b7df3fe0dffaba5cf",
+    "Area Assigment.xlsx": "98e92434eb70d3f93e92e3942ce370cd3af49ea3e21a578388dbaa420f64b93d",
+    "Connectivity Data.xlsx": "422cc75df02ca5999f25b5a65cff35183317bc94b021913fdd56021152711da2",
+    "SLS deflection.xlsx": "4beac1fa04c5ad73f43a24c654826ac34362dfdac28be7e62fc1830969a7d536"
+  },
+  "input_files_modified": false,
+  "confirmed_fixes": [
+    "Retain actual Service upload across hidden uploader cleanup and restore selected stage/girder",
+    "Read per-page result currency instead of treating a page visit/global flag as calculated",
+    "Validate all six ULS result hashes/versions before Summary or Report reuse"
+  ],
+  "four_subpage_browser_navigation": [
+    "ULS Strength",
+    "SLS / Stress & Cracking",
+    "Slab Reinforcement",
+    "SLS Deflection / Camber"
+  ],
+  "summary_report_and_return_current": true,
+  "explicit_clear_and_X_verified": true,
+  "solver_calls_during_navigation": {
+    "deflection": 0,
+    "stress": 0,
+    "slab": 0,
+    "uls": 0
+  },
+  "uls_controlled_change_test": {
+    "metadata_fixture_only": true,
+    "engineering_solvers_called": 0,
+    "source_project_modified": false,
+    "controlled_change": "Tslab_mm + 10 mm in disposable state",
+    "fresh_entries": [
+      "Flexure — Construction",
+      "Shear",
+      "Flexure — Final Composite",
+      "Interface Shear — Final Composite",
+      "Torsion",
+      "Shear + Torsion"
+    ],
+    "analysis_rejects_stale": {
+      "Flexure — Construction": true,
+      "Flexure — Final Composite": true,
+      "Interface Shear — Final Composite": true,
+      "Shear": true,
+      "Torsion": true,
+      "Shear + Torsion": true
+    },
+    "summary_retains_stale_entries": [],
+    "all_stale_entries_rejected": true
+  },
+  "stress_handoff": {
+    "actual_full_app": true,
+    "source_sha256": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+    "source_file_modified": false,
+    "calculate_commands": 1,
+    "stage_engine_calls": 4,
+    "hidden_solver_reruns": false,
+    "input_fingerprint_unchanged_on_navigation": true,
+    "routes": [
+      {
+        "workspace": "Result Summary",
+        "current": true,
+        "stage_engine_calls": 4
+      },
+      {
+        "workspace": "Report / QA",
+        "current": true,
+        "stage_engine_calls": 4
+      },
+      {
+        "workspace": "Analysis",
+        "current": true,
+        "stage_engine_calls": 4
+      }
+    ]
+  },
+  "numerical_csv_equivalence": {
+    "slab": [
+      {
+        "file": "Check_Summary.csv",
+        "sha256": "43053a5d5adb3d4cbc7592dcfec3deae8086d424d7bbf67a98a62d7ab0feb496",
+        "baseline_byte_identical": true
+      },
+      {
+        "file": "Code_Eligibility.csv",
+        "sha256": "6c1dc3d86222728b565c4e6825b01a93500984511023d9d59ff6708d337cbbc6",
+        "baseline_byte_identical": true
+      },
+      {
+        "file": "Exclusions.csv",
+        "sha256": "a9ae5d7430aeb68872ffc85a9de62ae25351c2bd8f8834d30b4ba7213044d902",
+        "baseline_byte_identical": true
+      },
+      {
+        "file": "Four_Mats.csv",
+        "sha256": "8fb7fe6fc179a208bad6d6c0464174b94d1d2a51098892ed4e6d5d89bdbd5d10",
+        "baseline_byte_identical": true
+      },
+      {
+        "file": "Governing_Vectors.csv",
+        "sha256": "aef08c14b94343713b7a85743a324a1541a43f5df9e15edc75a3e2d6d19d9200",
+        "baseline_byte_identical": true
+      },
+      {
+        "file": "Selected_Section_Cuts.csv",
+        "sha256": "1c75dda4a329ebae9d9457853dca7e1087b01e36c9b7ff442d1e6a9e4b68d081",
+        "baseline_byte_identical": true
+      },
+      {
+        "file": "Source_Coverage.csv",
+        "sha256": "be05410d01639a2f9dc3f0ac56e20da57c61e0eb435e908baf69e68d15fb128d",
+        "baseline_byte_identical": true
+      }
+    ],
+    "deflection": [
+      {
+        "file": "CSI_Service_Source.csv",
+        "sha256": "0919d6ee03e530d71f0617f61924edebf319b08129c7471b3aa98ed58cc75076",
+        "baseline_byte_identical": true
+      },
+      {
+        "file": "Calculated_Stage_Source.csv",
+        "sha256": "b14849e62966800dc6c79d3919a4473077f218d6fc14eff7447522daeda2da5e",
+        "baseline_byte_identical": true
+      },
+      {
+        "file": "Checks.csv",
+        "sha256": "041608626d5a9bf28e28b7318e734014c801e993c65cad401c5f48e3111db8c7",
+        "baseline_byte_identical": true
+      },
+      {
+        "file": "Curves.csv",
+        "sha256": "6d3cbf022d7107f493e0fc72ce45e340641092bb50962ccaa646c373d9c3ccad",
+        "baseline_byte_identical": true
+      }
+    ]
+  },
+  "analysis_page_functions": {
+    "module": "concrete_pmm_pro/ui/analysis_page.py",
+    "baseline_functions": 610,
+    "new_functions": 610,
+    "changed_functions": [
+      "_commercial_analysis_dashboard_cards",
+      "render_analysis_page"
+    ],
+    "engineering_helpers_changed": false
+  },
+  "test_runs": [
+    {
+      "file": "qa/evidence/analysis71/tests/main.xml",
+      "tests": 903,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "qa/evidence/analysis71/tests/isolated.xml",
+      "tests": 43,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "qa/evidence/analysis71/tests/final_targeted.xml",
+      "tests": 25,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "unique_test_cases_passed": 947,
+  "all_reported_tests_passed": true,
+  "compile": "PASS (all 13 changed Python files)",
+  "engineering_equations_changed": false,
+  "CSI_force_axes_or_reference_changed": false,
+  "new_slab_exclusions": 0,
+  "result_persistence_added": false,
+  "full_design_acceptance_inferred": false,
+  "runtime_web_stack_changed": false,
+  "test_isolation": "The legacy strand UI test module replaces sys.modules[streamlit] without restoration."
+}

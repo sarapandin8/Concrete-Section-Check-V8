@@ -1,0 +1,10 @@
+{
+  "module": "concrete_pmm_pro/ui/analysis_page.py",
+  "baseline_functions": 610,
+  "new_functions": 610,
+  "changed_functions": [
+    "_commercial_analysis_dashboard_cards",
+    "render_analysis_page"
+  ],
+  "engineering_helpers_changed": false
+}

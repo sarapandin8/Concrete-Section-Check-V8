@@ -1,0 +1,30 @@
+{
+  "metadata_fixture_only": true,
+  "engineering_solvers_called": 0,
+  "source_project_modified": false,
+  "controlled_change": "Tslab_mm + 10 mm in disposable state",
+  "fresh_entries": [
+    "Flexure \u2014 Construction",
+    "Shear",
+    "Flexure \u2014 Final Composite",
+    "Interface Shear \u2014 Final Composite",
+    "Torsion",
+    "Shear + Torsion"
+  ],
+  "analysis_rejects_stale": {
+    "Flexure \u2014 Construction": true,
+    "Flexure \u2014 Final Composite": true,
+    "Interface Shear \u2014 Final Composite": true,
+    "Shear": true,
+    "Torsion": true,
+    "Shear + Torsion": true
+  },
+  "summary_retains_stale_entries": [
+    "Flexure \u2014 Construction",
+    "Shear",
+    "Flexure \u2014 Final Composite",
+    "Interface Shear \u2014 Final Composite",
+    "Torsion"
+  ],
+  "all_stale_entries_rejected": false
+}

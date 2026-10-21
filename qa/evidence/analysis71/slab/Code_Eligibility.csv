@@ -1,0 +1,10 @@
+﻿Direction,Article,Option,Assessment,Applied,Evidence
+Longitudinal,5.7.1.2 / 5.7.3.1,Finite reaction footprints,LOCAL TRANSFER REVIEW,True,Existing girder flange / diaphragm geometry. Both sectional directions remain REVIEW over contact patches; source actions and raw indices retained.
+Longitudinal,5.7.3.5,Maximum-moment reinforcement limit,NOT ESTABLISHED,False,Four force/mesh exports do not establish the maximum-moment direct-compression load path. A corner ratio or nominal UDL metadata is insufficient evidence.
+Longitudinal,5.7.3.2,Critical section at dv from support,NOT ESTABLISHED,False,Reaction direction and absence of a concentrated load inside dv are not established by the four exports. Physical-face sampling retained.
+Transverse,5.7.1.2 / 5.7.3.1,Finite reaction footprints,LOCAL TRANSFER REVIEW,True,Existing girder flange / diaphragm geometry. Both sectional directions remain REVIEW over contact patches; source actions and raw indices retained.
+Transverse,5.7.3.5,Maximum-moment reinforcement limit,NOT ESTABLISHED,False,Four force/mesh exports do not establish the maximum-moment direct-compression load path. A corner ratio or nominal UDL metadata is insufficient evidence.
+Transverse,5.7.3.2,Critical section at dv from support,NOT ESTABLISHED,False,Reaction direction and absence of a concentrated load inside dv are not established by the four exports. Physical-face sampling retained.
+Both,5.7.3.4.2-7,Verified aggregate size,UNVERIFIED; ag=0,False,ag used = 0 mm; existing material input. Simplified beta=2 / theta=45 degrees unaffected.
+Longitudinal,5.7.3.5 / 5.10.8,Top bar continuity / end anchorage,DECLARED IN PROJECT,False,Existing project declarations are reused. They do not independently establish the load path or development along every slab design strip.
+Longitudinal,5.7.3.5 / 5.10.8,Bottom bar continuity / end anchorage,DECLARED IN PROJECT,False,Existing project declarations are reused. They do not independently establish the load path or development along every slab design strip.

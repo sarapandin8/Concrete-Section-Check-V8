@@ -232,8 +232,12 @@ def test_igird_project_restore_drops_legacy_generic_flexure_cache() -> None:
     assert "Flexure — Construction" in restored_cache
 
 
-def test_result_summary_source_suppresses_legacy_igird_generic_flexure_cache() -> None:
-    app_source = (REPO_ROOT / "app.py").read_text(encoding="utf-8")
-    assert 'if preset_key == "parametric_i_girder":' in app_source
-    assert 'filtered.pop("Flexure", None)' in app_source
-    assert 'I-Girder uses stage-owned flexure entries' in app_source
+def test_result_summary_suppresses_legacy_igird_generic_flexure_cache() -> None:
+    import app
+    state = {
+        'section_preset_key': 'parametric_i_girder',
+        '_beam_girder_uls_manual_calculation_cache': {
+            'Flexure': {'input_hash': 'legacy', 'flexure_preview_df': pd.DataFrame([{'Status': 'PASS'}])}
+        },
+    }
+    assert app._results_beam_uls_cache(state) == {}

@@ -1,0 +1,22 @@
+{
+  "scope": "Analysis and related source/summary/report regressions; not the entire repository",
+  "isolated_reason": "The legacy strand UI test module replaces sys.modules[streamlit] without restoration.",
+  "main_files": 85,
+  "runs": {
+    "main": {
+      "tests": 903,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "exit_code": 0
+    },
+    "isolated": {
+      "tests": 43,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "exit_code": 0
+    }
+  },
+  "passed": true
+}
