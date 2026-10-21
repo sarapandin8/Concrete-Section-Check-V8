@@ -1,0 +1,381 @@
+{
+  "milestone": "SLAB.PRINT72",
+  "numerical_engine": "SLAB.REVIEW68",
+  "source_hashes": {
+    "concrete_section_pro_project (32).json": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+    "Element Forces - Area Shells(1).xlsx": "d1eb5d961f067b848953bb7b63a0c0f86e3376dc06c3b48a1830dd5f7b487a8d",
+    "TABLE Objects And Elements - Areas(1).xlsx": "75f06bb745ff4915f8f4558a4bd0558c04f453a4ccb5ff3b7df3fe0dffaba5cf",
+    "Area Assigment.xlsx": "98e92434eb70d3f93e92e3942ce370cd3af49ea3e21a578388dbaa420f64b93d",
+    "Connectivity Data.xlsx": "422cc75df02ca5999f25b5a65cff35183317bc94b021913fdd56021152711da2"
+  },
+  "source_files_modified": false,
+  "source_rows": 109824,
+  "design_rows": 84864,
+  "excluded_rows": 24960,
+  "all_native_keys_and_actions_preserved": true,
+  "new_source_exclusions": 0,
+  "numerical_csv_comparisons": [
+    {
+      "file": "Check_Summary.csv",
+      "sha256": "43053a5d5adb3d4cbc7592dcfec3deae8086d424d7bbf67a98a62d7ab0feb496",
+      "byte_identical_to_QA71": true
+    },
+    {
+      "file": "Four_Mats.csv",
+      "sha256": "8fb7fe6fc179a208bad6d6c0464174b94d1d2a51098892ed4e6d5d89bdbd5d10",
+      "byte_identical_to_QA71": true
+    },
+    {
+      "file": "Source_Coverage.csv",
+      "sha256": "be05410d01639a2f9dc3f0ac56e20da57c61e0eb435e908baf69e68d15fb128d",
+      "byte_identical_to_QA71": true
+    },
+    {
+      "file": "Exclusions.csv",
+      "sha256": "a9ae5d7430aeb68872ffc85a9de62ae25351c2bd8f8834d30b4ba7213044d902",
+      "byte_identical_to_QA71": true
+    },
+    {
+      "file": "Code_Eligibility.csv",
+      "sha256": "6c1dc3d86222728b565c4e6825b01a93500984511023d9d59ff6708d337cbbc6",
+      "byte_identical_to_QA71": true
+    },
+    {
+      "file": "Governing_Vectors.csv",
+      "sha256": "aef08c14b94343713b7a85743a324a1541a43f5df9e15edc75a3e2d6d19d9200",
+      "byte_identical_to_QA71": true
+    },
+    {
+      "file": "Selected_Section_Cuts.csv",
+      "sha256": "1c75dda4a329ebae9d9457853dca7e1087b01e36c9b7ff442d1e6a9e4b68d081",
+      "byte_identical_to_QA71": true
+    }
+  ],
+  "girders": [
+    {
+      "label": "G1",
+      "source_id": "601, 607, 613, 619, 625, 631, 637, 643, 649, 655, 661, 667, 673, 679, 685, 691, 697, 703, 709, 715, 721, 727, 733",
+      "a": [
+        4.531e-16,
+        3.7
+      ],
+      "b": [
+        20.0,
+        3.700000000000001
+      ]
+    },
+    {
+      "label": "G2",
+      "source_id": "602, 608, 614, 620, 626, 632, 638, 644, 650, 656, 662, 668, 674, 680, 686, 692, 698, 704, 710, 716, 722, 728, 734",
+      "a": [
+        3.0619999999999993e-16,
+        2.5
+      ],
+      "b": [
+        20.0,
+        2.500000000000001
+      ]
+    },
+    {
+      "label": "G3",
+      "source_id": "603, 609, 615, 621, 627, 633, 639, 645, 651, 657, 663, 669, 675, 681, 687, 693, 699, 705, 711, 717, 723, 729, 735",
+      "a": [
+        1.592e-16,
+        1.3
+      ],
+      "b": [
+        20.0,
+        1.3000000000000007
+      ]
+    },
+    {
+      "label": "G4",
+      "source_id": "604, 610, 616, 622, 628, 634, 640, 646, 652, 658, 664, 670, 676, 682, 688, 694, 700, 706, 712, 718, 724, 730, 736",
+      "a": [
+        -1.592e-16,
+        -1.3
+      ],
+      "b": [
+        20.0,
+        -1.2999999999999994
+      ]
+    },
+    {
+      "label": "G5",
+      "source_id": "605, 611, 617, 623, 629, 635, 641, 647, 653, 659, 665, 671, 677, 683, 689, 695, 701, 707, 713, 719, 725, 731, 737",
+      "a": [
+        -3.0619999999999993e-16,
+        -2.5
+      ],
+      "b": [
+        20.0,
+        -2.499999999999999
+      ]
+    },
+    {
+      "label": "G6",
+      "source_id": "606, 612, 618, 624, 630, 636, 642, 648, 654, 660, 666, 672, 678, 684, 690, 696, 702, 708, 714, 720, 726, 732, 738",
+      "a": [
+        -4.531e-16,
+        -3.7
+      ],
+      "b": [
+        20.0,
+        -3.6999999999999993
+      ]
+    }
+  ],
+  "bearing_stations_m": [
+    0.4,
+    19.6
+  ],
+  "bearing_reference": "centerline",
+  "bearing_reference_points": 12,
+  "bearing_symbols_are_footprints": false,
+  "charts": [
+    {
+      "view": "Shear \u00b7 transverse",
+      "mode": "plan",
+      "file": "plan_00.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 16
+    },
+    {
+      "view": "Shear \u00b7 transverse",
+      "mode": "profile",
+      "file": "profile_00.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 4
+    },
+    {
+      "view": "Shear \u00b7 longitudinal",
+      "mode": "plan",
+      "file": "plan_01.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 19
+    },
+    {
+      "view": "Shear \u00b7 longitudinal",
+      "mode": "profile",
+      "file": "profile_01.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 4
+    },
+    {
+      "view": "Direct N\u2013M \u00b7 transverse",
+      "mode": "plan",
+      "file": "plan_02.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 17
+    },
+    {
+      "view": "Direct N\u2013M \u00b7 transverse",
+      "mode": "profile",
+      "file": "profile_02.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 4
+    },
+    {
+      "view": "Direct N\u2013M \u00b7 longitudinal",
+      "mode": "plan",
+      "file": "plan_03.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 16
+    },
+    {
+      "view": "Direct N\u2013M \u00b7 longitudinal",
+      "mode": "profile",
+      "file": "profile_03.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 4
+    },
+    {
+      "view": "Flexural minimum \u00b7 transverse",
+      "mode": "plan",
+      "file": "plan_04.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 16
+    },
+    {
+      "view": "Flexural minimum \u00b7 transverse",
+      "mode": "profile",
+      "file": "profile_04.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 4
+    },
+    {
+      "view": "Flexural minimum \u00b7 longitudinal",
+      "mode": "plan",
+      "file": "plan_05.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 19
+    },
+    {
+      "view": "Flexural minimum \u00b7 longitudinal",
+      "mode": "profile",
+      "file": "profile_05.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 4
+    },
+    {
+      "view": "Flexural shear tie \u00b7 transverse",
+      "mode": "plan",
+      "file": "plan_06.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 17
+    },
+    {
+      "view": "Flexural shear tie \u00b7 transverse",
+      "mode": "profile",
+      "file": "profile_06.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 4
+    },
+    {
+      "view": "Flexural shear tie \u00b7 longitudinal",
+      "mode": "plan",
+      "file": "plan_07.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 12
+    },
+    {
+      "view": "Flexural shear tie \u00b7 longitudinal",
+      "mode": "profile",
+      "file": "profile_07.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 4
+    },
+    {
+      "view": "Temperature minimum",
+      "mode": "plan",
+      "file": "plan_08.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 13
+    },
+    {
+      "view": "Temperature minimum",
+      "mode": "profile",
+      "file": "profile_08.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 4
+    },
+    {
+      "view": "Bar spacing",
+      "mode": "plan",
+      "file": "plan_09.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 14
+    },
+    {
+      "view": "Bar spacing",
+      "mode": "profile",
+      "file": "profile_09.json",
+      "girder_labels": 6,
+      "bearing_stations_m": [
+        0.4,
+        19.6
+      ],
+      "bearing_reference": "centerline",
+      "trace_count": 4
+    }
+  ],
+  "print_format": "SVG",
+  "seconds": 184.27293683000062,
+  "status": "REVIEW REQUIRED",
+  "full_deck_acceptance": false
+}

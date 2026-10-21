@@ -79,8 +79,9 @@ def _punching(result):
         st.dataframe(table[['Area','Case','Perimeter type','Demand basis','Vu (kN)','phiVn (kN)','D/C','Status','Reason']],
             hide_index=True,width='stretch',column_config={c:st.column_config.NumberColumn(format='%.3f') for c in ['Vu (kN)','phiVn (kN)','D/C']})
     from concrete_pmm_pro.visualization.slab_punching64 import figure
+    from concrete_pmm_pro.visualization.slab_print72 import export_config
     st.plotly_chart(figure(result,case),width='stretch',key='slab_shell55_punch64_plan',
-        config={'displaylogo':False,'toImageButtonOptions':{'format':'png','width':1440,'height':720,'scale':1.5}})
+        config=export_config())
     st.caption('Loaded rectangle and minimum valid critical perimeter are shown on the imported slab. Free edges contribute no resisting perimeter. Amber means REVIEW, including an exceeded demand bound; it is not an actual-load FAIL. Existing connection/end/peak omissions cannot be reconstructed into a passing automatic demand.')
     with st.expander('Calculation trace / Equations',expanded=False):
         st.latex(r'V_n=\min\left(0.063+{0.126\over\beta_c},\,0.126\right)\lambda\sqrt{f_c^\prime}\,b_0d_v\quad\mathrm{(ksi,in,kips)}')

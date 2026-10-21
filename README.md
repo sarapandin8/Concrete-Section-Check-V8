@@ -1,3 +1,19 @@
+# SLAB.COLOR73 — more vivid slab plot colours
+
+Use a medium blue–teal result field with stronger yellow/red limit colours and clearer station curves. Keep the white print background, native I-girder/bearing references, chart layout and SVG camera export. Only seven palette constants change; calculations, data and source geometry are preserved.
+
+See [SLAB_COLOR73_NOTES_TH.md](SLAB_COLOR73_NOTES_TH.md), [SLAB_COLOR73_VERIFICATION.json](SLAB_COLOR73_VERIFICATION.json), and [REPO_SUMMARY_SLAB_COLOR73.md](REPO_SUMMARY_SLAB_COLOR73.md).
+
+## Historical milestone — SLAB.PRINT72
+
+# SLAB.PRINT72 — labelled girder / bearing references and lighter print plots
+
+Slab Reinforcement maps identify imported I-girder centerlines and confirmed project bearing CL / inside-face references. Station plots retain their D/C meaning and show girder coordinates separately. A shared pastel palette uses white paper, dark text, distinct over-limit colors and light grey excluded/review regions. The main and punching chart camera action exports scalable SVG.
+
+No additional inputs or numerical changes are introduced. All seven actual-project slab CSV outputs match accepted QA71. See [SLAB_PRINT72_NOTES_TH.md](SLAB_PRINT72_NOTES_TH.md), [SLAB_PRINT72_VERIFICATION.json](SLAB_PRINT72_VERIFICATION.json), and [REPO_SUMMARY_SLAB_PRINT72.md](REPO_SUMMARY_SLAB_PRINT72.md).
+
+## Historical milestone — ANALYSIS.QA71
+
 # ANALYSIS.QA71 — reliable navigation and current-result status
 
 Audit the four I-girder Analysis subpages. Uploaded CSI Service envelopes and selected stage/girder survive navigation; explicit X/Clear still removes the import. Summary/Report validate all six ULS result versions and input hashes, so a changed section cannot reuse stale strength output. Sidebar and Analysis cards show calculated coverage independently of engineering acceptance and refresh after Calculate without another solver run.

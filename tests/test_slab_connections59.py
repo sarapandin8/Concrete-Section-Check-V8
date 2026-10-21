@@ -101,7 +101,7 @@ def test_map_uses_retained_corners_and_keeps_complete_import_coverage():
         assert not selected['Map incomplete'].any()
         assert selected['Excluded connection records'].eq(16).all()
         fig = plan_figure(result,view=view)
-        assert any(t.name=='Excluded connections' for t in fig.data)
+        assert any(t.name=='I-girder CL' for t in fig.data)
         assert all(not t.name.startswith('Gov.') or all(y != 0 for y in t.y) for t in fig.data)
 
 

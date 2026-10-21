@@ -1,0 +1,1 @@
+Label native I-girder centerlines and confirmed bearing references on slab result plots. Add a shared pastel print palette and scalable SVG export, with complete labels and legends. Preserve all slab forces, exclusions, resistance equations and numerical results.

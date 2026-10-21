@@ -1,0 +1,158 @@
+{
+  "milestone": "SLAB.COLOR73",
+  "source": "Verified PRINT72 native-data Plotly figures",
+  "structural_solver_rerun": false,
+  "palette": {
+    "SAFE_FILL": "#acd0e2",
+    "MID_FILL": "#52a5c4",
+    "LIMIT_FILL": "#f4cf75",
+    "FAIL_FILL": "#ed9f91",
+    "HIGH_FILL": "#c94f64",
+    "RESPONSE": "#2f7fa3",
+    "FAIL": "#bf4b55"
+  },
+  "figures_verified": 20,
+  "all_non_colour_fields_unchanged": true,
+  "checks": [
+    {
+      "view": "Shear \u00b7 transverse",
+      "mode": "plan",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "bf24ecc181aa957b818fdb8f63e8059cba98543a98e2a94e20b009c7a328b04e"
+    },
+    {
+      "view": "Shear \u00b7 transverse",
+      "mode": "profile",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "224856cf3c2b03a3dd51abde56eea07ca3e93e3784f4219508b6fcca1d2e2fac"
+    },
+    {
+      "view": "Shear \u00b7 longitudinal",
+      "mode": "plan",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "3c10c017ac97cc0364a3631d7bc716003fc3299e3ed9cf4328dd9150d99d97aa"
+    },
+    {
+      "view": "Shear \u00b7 longitudinal",
+      "mode": "profile",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "366df22f4f255f1a826815e2198af0e5b02c4d282dd31f361699067401c1b020"
+    },
+    {
+      "view": "Direct N\u2013M \u00b7 transverse",
+      "mode": "plan",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "e4fefc927b2c3741176819ea19dcd028277363ba470ca13158f7eb08fc83ecbb"
+    },
+    {
+      "view": "Direct N\u2013M \u00b7 transverse",
+      "mode": "profile",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "16dd000b7b5427682b5e8fa5238d5f7a4b3bb22626cf3aa96ba734688275e9c7"
+    },
+    {
+      "view": "Direct N\u2013M \u00b7 longitudinal",
+      "mode": "plan",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "c43631f58336e7bbf522ec192bef3b055fbd5eb43aceb71037351db66fc67b76"
+    },
+    {
+      "view": "Direct N\u2013M \u00b7 longitudinal",
+      "mode": "profile",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "5c71d1d488da8cb082ba41247dafef19a54e3dfe01e6a5eb91c031f513b43741"
+    },
+    {
+      "view": "Flexural minimum \u00b7 transverse",
+      "mode": "plan",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "610e2b6d477660a09f43fbbfa5743facfe62d5a465b706643bb4e3a3b94c0f42"
+    },
+    {
+      "view": "Flexural minimum \u00b7 transverse",
+      "mode": "profile",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "f1bb3950d04351965b4e3148295c82e15b48ffdb0a04f646e4b752750ccf017b"
+    },
+    {
+      "view": "Flexural minimum \u00b7 longitudinal",
+      "mode": "plan",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "a944fb3a261b3f8f53df014e99d345e7c839161d01b9e574735e334c2c03000d"
+    },
+    {
+      "view": "Flexural minimum \u00b7 longitudinal",
+      "mode": "profile",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "c908a08de6689be3eea20e93fbc512f747de26d5230c7984ab7d8754f369f63e"
+    },
+    {
+      "view": "Flexural shear tie \u00b7 transverse",
+      "mode": "plan",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "8a590b8ee0343c080f14dba9ab45a2e67ff0cac97a592b5c3ed5958ca83d2d02"
+    },
+    {
+      "view": "Flexural shear tie \u00b7 transverse",
+      "mode": "profile",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "8e3a4f2cd62426f389de9ba3963876fb97b0355bf3e1b216ab8c80f49adc51aa"
+    },
+    {
+      "view": "Flexural shear tie \u00b7 longitudinal",
+      "mode": "plan",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "35b87d1f51a2df02e6ae99e0b9fb18bb313b00950d44d1cc91b1d0925d311731"
+    },
+    {
+      "view": "Flexural shear tie \u00b7 longitudinal",
+      "mode": "profile",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "04f7ac826cfdddf9ce385392008001308779f9af477ff638a6b6e374ba03ecaf"
+    },
+    {
+      "view": "Temperature minimum",
+      "mode": "plan",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "c0fbbb7b4f62c3c7b91ef6d1405c8bdc1981e4657ef3a4eff9c812bd17c58308"
+    },
+    {
+      "view": "Temperature minimum",
+      "mode": "profile",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "0a049db497f5bec2d0f4347af448c4129d35d57360190deb94b56b8aba344d66"
+    },
+    {
+      "view": "Bar spacing",
+      "mode": "plan",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "4309650dea74c31c46df8b16142bcf38bd87d15d4f56842a494550849be8f039"
+    },
+    {
+      "view": "Bar spacing",
+      "mode": "profile",
+      "non_colour_fields_unchanged": true,
+      "numeric_colour_values_unchanged": true,
+      "non_colour_sha256": "30211e43078dae17fd4524c7149441416a335669824560fc80b6679adc739793"
+    }
+  ]
+}

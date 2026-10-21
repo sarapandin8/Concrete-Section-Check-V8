@@ -13,13 +13,14 @@ from concrete_pmm_pro.analysis.slab_shell56 import GROUPS, VERSION
 from concrete_pmm_pro.analysis.slab_connections59 import INCLUDED
 from concrete_pmm_pro.analysis.slab_code57 import FLEXURE_VIEW, MINIMUM_VIEW, REFERENCE_VIEWS
 from concrete_pmm_pro.visualization.plot_readability import apply_global_plot_readability
+from concrete_pmm_pro.visualization import slab_print72 as printing
 
 VIEWS = ["N–M field", "Overall section", *GROUPS, "Concrete compression", "One-way shear", FLEXURE_VIEW, MINIMUM_VIEW]
 ALL_CASES = "All imported ULS cases"
-SAFE = "#176b9b"
-LIMIT = "#f4c95d"
-FAIL = "#c93535"
-UNKNOWN = "#cbd2dc"
+SAFE = printing.RESPONSE
+LIMIT = printing.LIMIT_FILL
+FAIL = printing.FAIL
+UNKNOWN = printing.UNKNOWN
 
 
 def view_column(view):
@@ -84,8 +85,8 @@ def _color_scale(maximum):
     # The colorbar shows the actual D/C values; values are never clipped.
     top = math.log1p(max(1.05, maximum))
     limit = math.log(2)/top
-    colors = [[0, SAFE], [max(0,limit*.65), "#68a9bb"],
-        [limit, LIMIT], [min(1,limit+1e-8), FAIL], [1,"#7b1825"]]
+    colors = [[0, printing.SAFE_FILL], [max(0,limit*.65), printing.MID_FILL],
+        [limit, LIMIT], [min(1,limit+1e-8), printing.FAIL_FILL], [1, printing.HIGH_FILL]]
     return top, colors
 
 
@@ -157,20 +158,12 @@ def plan_figure(result, *, view="Overall section", case=ALL_CASES):
         centres = np.array(centres)
         fig.add_trace(go.Scatter(x=centres[:,0],y=centres[:,1],mode="markers",marker={"size":9,"opacity":0},
             text=hovers,hovertemplate="%{text}<extra></extra>",showlegend=False,name="Source details"))
-    lines = result.get('connections', {}).get('lines', pd.DataFrame())
-    if not lines.empty:
-        xy = np.array([[r['X1 (m)'], r['Y1 (m)'], r['X2 (m)'], r['Y2 (m)']]
-                       for r in lines.to_dict('records')])
-        x = np.column_stack((xy[:, 0], xy[:, 2], np.full(len(xy), np.nan))).ravel()
-        y = np.column_stack((xy[:, 1], xy[:, 3], np.full(len(xy), np.nan))).ravel()
-        fig.add_trace(go.Scatter(x=x, y=y, mode='lines', line={'width':1.3, 'color':'#705333', 'dash':'dot'},
-            name='Excluded connections', hoverinfo='skip', connectgaps=False))
     ends = result.get('connections', {}).get('end_zones', {})
     if ends.get('active'):
         polygons = [np.vstack((np.asarray(p), np.asarray(p)[0], [[np.nan,np.nan]])) for p in ends['polygons']]
         xy = np.concatenate(polygons)
         fig.add_trace(go.Scatter(x=xy[:,0],y=xy[:,1],mode='lines',fill='toself',
-            fillcolor=UNKNOWN,opacity=.90,line={'width':1,'color':'#64748b','dash':'dot'},
+            fillcolor=UNKNOWN,opacity=.90,line={'width':1,'color':'#aab4bf','dash':'dot'},
             name='Excluded end zones',hoverinfo='skip',connectgaps=False))
     ticks = [v for v in (0,.5,1,2,5,10,20,50,100) if v<=maximum]
     if maximum>ticks[-1]*1.1:
@@ -199,4 +192,5 @@ def plan_figure(result, *, view="Overall section", case=ALL_CASES):
         hovermode="closest",xaxis={"title":"Global X (m)","range":[low[0]-pad[0],high[0]+pad[0]],"constrain":"domain","showgrid":False,"zeroline":False},
         yaxis={"title":"Global Y (m)","range":[low[1]-pad[1],high[1]+pad[1]],"scaleanchor":"x","scaleratio":1,
             "constrain":"domain","showgrid":False,"zeroline":False},uirevision=f"SLAB56:{view}:{case}")
+    printing.add_plan_references(fig, result)
     return apply_global_plot_readability(fig)

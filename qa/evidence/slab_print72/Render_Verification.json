@@ -1,0 +1,186 @@
+{
+  "milestone": "SLAB.PRINT72",
+  "charts_checked": 20,
+  "checks": [
+    {
+      "view": "Shear \u00b7 transverse",
+      "mode": "plan",
+      "annotation_count": 8,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Shear \u00b7 transverse",
+      "mode": "profile",
+      "annotation_count": 3,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Shear \u00b7 longitudinal",
+      "mode": "plan",
+      "annotation_count": 8,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Shear \u00b7 longitudinal",
+      "mode": "profile",
+      "annotation_count": 3,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Direct N\u2013M \u00b7 transverse",
+      "mode": "plan",
+      "annotation_count": 8,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Direct N\u2013M \u00b7 transverse",
+      "mode": "profile",
+      "annotation_count": 3,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Direct N\u2013M \u00b7 longitudinal",
+      "mode": "plan",
+      "annotation_count": 8,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Direct N\u2013M \u00b7 longitudinal",
+      "mode": "profile",
+      "annotation_count": 3,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Flexural minimum \u00b7 transverse",
+      "mode": "plan",
+      "annotation_count": 8,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Flexural minimum \u00b7 transverse",
+      "mode": "profile",
+      "annotation_count": 3,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Flexural minimum \u00b7 longitudinal",
+      "mode": "plan",
+      "annotation_count": 8,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Flexural minimum \u00b7 longitudinal",
+      "mode": "profile",
+      "annotation_count": 3,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Flexural shear tie \u00b7 transverse",
+      "mode": "plan",
+      "annotation_count": 8,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Flexural shear tie \u00b7 transverse",
+      "mode": "profile",
+      "annotation_count": 3,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Flexural shear tie \u00b7 longitudinal",
+      "mode": "plan",
+      "annotation_count": 8,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Flexural shear tie \u00b7 longitudinal",
+      "mode": "profile",
+      "annotation_count": 3,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Temperature minimum",
+      "mode": "plan",
+      "annotation_count": 8,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Temperature minimum",
+      "mode": "profile",
+      "annotation_count": 3,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Bar spacing",
+      "mode": "plan",
+      "annotation_count": 8,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    },
+    {
+      "view": "Bar spacing",
+      "mode": "profile",
+      "annotation_count": 3,
+      "labels_within_export": true,
+      "label_title_legend_overlap": false,
+      "export_width": 1440,
+      "export_height": 780
+    }
+  ]
+}

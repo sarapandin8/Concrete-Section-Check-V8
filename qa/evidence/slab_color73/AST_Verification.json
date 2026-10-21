@@ -1,0 +1,49 @@
+{
+  "milestone": "SLAB.COLOR73",
+  "baseline_zip_sha256": "7b58c981b3746f093babbdc1e4cd120e8a12d230b1049d76e988d61e589c92df",
+  "changed_production_files": [
+    "concrete_pmm_pro/visualization/slab_print72.py"
+  ],
+  "production_modules_compared": 297,
+  "changed_constants": {
+    "SAFE_FILL": {
+      "before": "#e7f2f6",
+      "after": "#acd0e2"
+    },
+    "MID_FILL": {
+      "before": "#b8d5df",
+      "after": "#52a5c4"
+    },
+    "LIMIT_FILL": {
+      "before": "#f3e4bc",
+      "after": "#f4cf75"
+    },
+    "FAIL_FILL": {
+      "before": "#efc7c2",
+      "after": "#ed9f91"
+    },
+    "HIGH_FILL": {
+      "before": "#d58b91",
+      "after": "#c94f64"
+    },
+    "RESPONSE": {
+      "before": "#5e889c",
+      "after": "#2f7fa3"
+    },
+    "FAIL": {
+      "before": "#b1535d",
+      "after": "#bf4b55"
+    }
+  },
+  "only_seven_colour_constants_changed": true,
+  "all_other_module_ast_nodes_identical": true,
+  "all_other_production_modules_byte_identical": true,
+  "compile": {
+    "status": "PASS",
+    "files": [
+      "app.py",
+      "concrete_pmm_pro/visualization/slab_print72.py",
+      "qa/slab_color73_preview.py"
+    ]
+  }
+}

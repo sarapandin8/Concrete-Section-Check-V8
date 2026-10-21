@@ -1,0 +1,7 @@
+﻿OutputCase,StepType,Imported records,Checked records,Peak excluded records,Expected records,Missing records,Excluded records
+S1A,,18304,14144,880,18304,0,4160
+S1C,,18304,14144,880,18304,0,4160
+U1A,,18304,14144,880,18304,0,4160
+U1B,,18304,14144,880,18304,0,4160
+U2A,,18304,14144,880,18304,0,4160
+U2B,,18304,14144,880,18304,0,4160

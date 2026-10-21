@@ -10,6 +10,7 @@ from concrete_pmm_pro.analysis.slab_connections59 import INCLUDED
 from concrete_pmm_pro.analysis.slab_top65 import VERSION
 from concrete_pmm_pro.visualization.slab_shell56 import ALL_CASES, plan_figure, SAFE, FAIL, UNKNOWN
 from concrete_pmm_pro.visualization.plot_readability import apply_global_plot_readability
+from concrete_pmm_pro.visualization.slab_print72 import add_profile_references
 
 
 def plan(result, adapted, view, case=ALL_CASES):
@@ -26,9 +27,10 @@ def plan(result, adapted, view, case=ALL_CASES):
         if segments:
             xy = np.asarray(segments)
             fig.add_trace(go.Scatter(x=xy[:, 0], y=xy[:, 1], mode='lines',
-                line={'color': SAFE, 'width': 1}, hoverinfo='skip', name='Support faces', connectgaps=False))
+                line={'color': SAFE, 'width': 1}, hoverinfo='skip', name='Support faces', connectgaps=False,
+                meta={'slab_context': 'Support faces'}))
     fig.update_layout(title_text=view+' · '+('all ULS cases' if case == ALL_CASES else escape(case)),
-        uirevision=f'{version}:{view}:{case}', meta={'slab_version': version,
+        uirevision=f'{version}:{view}:{case}', meta={**(fig.layout.meta or {}), 'slab_version': version,
             'aggregation': 'maximum retained actual corner/case; no averaging',
             'full_deck_acceptance': False})
     return fig
@@ -112,4 +114,5 @@ def profile(adapted, view, case=ALL_CASES):
         for zone in ends['zones']:
             fig.add_vrect(x0=zone['From station (m)'], x1=zone['To station (m)'],
                 fillcolor=UNKNOWN, opacity=.45, line_width=0, layer='below')
+    add_profile_references(fig, adapted)
     return apply_global_plot_readability(fig)

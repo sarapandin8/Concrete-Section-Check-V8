@@ -1,0 +1,76 @@
+{
+  "milestone": "SLAB.COLOR73",
+  "release_date": "2026-10-21",
+  "scope": "Palette-only enhancement to the accepted SLAB.PRINT72 baseline",
+  "baseline_zip_sha256": "7b58c981b3746f093babbdc1e4cd120e8a12d230b1049d76e988d61e589c92df",
+  "colour_constants": {
+    "SAFE_FILL": {
+      "before": "#e7f2f6",
+      "after": "#acd0e2"
+    },
+    "MID_FILL": {
+      "before": "#b8d5df",
+      "after": "#52a5c4"
+    },
+    "LIMIT_FILL": {
+      "before": "#f3e4bc",
+      "after": "#f4cf75"
+    },
+    "FAIL_FILL": {
+      "before": "#efc7c2",
+      "after": "#ed9f91"
+    },
+    "HIGH_FILL": {
+      "before": "#d58b91",
+      "after": "#c94f64"
+    },
+    "RESPONSE": {
+      "before": "#5e889c",
+      "after": "#2f7fa3"
+    },
+    "FAIL": {
+      "before": "#b1535d",
+      "after": "#bf4b55"
+    }
+  },
+  "source_files_modified": [
+    "concrete_pmm_pro/visualization/slab_print72.py"
+  ],
+  "ast_equivalence_except_seven_colours": true,
+  "other_production_modules_byte_identical": true,
+  "source_hashes": {
+    "concrete_section_pro_project (32).json": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+    "Element Forces - Area Shells(1).xlsx": "d1eb5d961f067b848953bb7b63a0c0f86e3376dc06c3b48a1830dd5f7b487a8d",
+    "TABLE Objects And Elements - Areas(1).xlsx": "75f06bb745ff4915f8f4558a4bd0558c04f453a4ccb5ff3b7df3fe0dffaba5cf",
+    "Area Assigment.xlsx": "98e92434eb70d3f93e92e3942ce370cd3af49ea3e21a578388dbaa420f64b93d",
+    "Connectivity Data.xlsx": "422cc75df02ca5999f25b5a65cff35183317bc94b021913fdd56021152711da2"
+  },
+  "figures_rendered": 20,
+  "figure_sources": "Captured verified PRINT72 native-data figures",
+  "all_non_colour_fields_unchanged": true,
+  "numeric_marker_colour_arrays_and_scale_stops_unchanged": true,
+  "girder_and_bearing_geometry_labels_and_layout_unchanged": true,
+  "equations_input_actions_and_project_json_behaviour_unchanged": true,
+  "svg_camera_export_unchanged": true,
+  "structural_solver_rerun": false,
+  "compile": {
+    "status": "PASS",
+    "files": [
+      "app.py",
+      "concrete_pmm_pro/visualization/slab_print72.py",
+      "qa/slab_color73_preview.py"
+    ]
+  },
+  "targeted_regression_tests": {
+    "tests": 5,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0
+  },
+  "test_scope": "Five existing global-readability tests; separate 20 native-figure comparisons verify reference, scale and non-colour preservation.",
+  "test_collection_limit": "Full print72 test module was not collected because its transitive fixture imports require the unavailable Streamlit testing runtime; structural tests not rerun.",
+  "baseline_279_tests_rerun": false,
+  "manual_visual_review": "Plan and profile exported previews reviewed: colours clearer; legends, girder and bearing references retained.",
+  "figure_evidence": "qa/evidence/slab_color73/Colour_Verification.json",
+  "status": "PASS for palette-only scope"
+}

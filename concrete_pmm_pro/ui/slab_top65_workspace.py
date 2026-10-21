@@ -15,6 +15,7 @@ from concrete_pmm_pro.ui.slab_shear64_workspace import _areas, _interface, _punc
 from concrete_pmm_pro.ui.slab_interface64 import linked_results
 from concrete_pmm_pro.visualization import slab_top65 as plots
 from concrete_pmm_pro.visualization.slab_shell56 import ALL_CASES, element_envelope
+from concrete_pmm_pro.visualization.slab_print72 import export_config
 
 GROUPS = ['Reinforcement', 'One-way shear', 'Punching shear']
 
@@ -255,8 +256,9 @@ def render(*, analysis_engine=engine):
     }</style>''')
     with st.container(key='slab_top65_plot'):
         st.plotly_chart(fig, width='stretch', key='slab_shell55_aashto62_plan',
-            config={'displaylogo': False, 'toImageButtonOptions': {'format': 'png', 'width': 1440, 'height': 720, 'scale': 1.5}})
+            config=export_config())
     st.caption('D/C=1 is the limit. Plan = retained actual corner/case maxima per element; grey = excluded / unresolved. Station D/C = known maximum at each physical station, with gaps and separate scope markers. No smoothing or averaging. Shear/tie include matching support-face samples. Filters do not change the all-case summary.')
+    st.caption('G1, G2, … follow the imported girder connection order. Bearing CL / inside-face references use the existing confirmed project offsets; open squares mark reference intersections, not bearing footprints. Station envelopes span the slab width; girder coordinates are plan references. Use the chart camera icon for a scalable SVG print export.')
     show = result['summary'].loc[result['summary'].Check.isin(visible)].copy()
     show['Case / step'] = show.Case+' / '+show.Step
     st.dataframe(show[['Check', 'Status', 'Max D/C', 'Case / step', 'X (m)', 'Y (m)', 'Failed nodes', 'Review nodes']],
