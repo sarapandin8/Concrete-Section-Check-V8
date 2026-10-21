@@ -1,0 +1,1 @@
+Persist imported CSiBridge slab shell tables, units and source identities in Project JSON. Restore validated inputs automatically, preserve full numeric precision, and clear prior-project data and stale slab results on load.

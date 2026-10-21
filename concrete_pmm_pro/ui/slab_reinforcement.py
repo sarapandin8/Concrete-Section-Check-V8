@@ -42,7 +42,7 @@ def export_guide() -> str:
         "Analysis > Slab Reinforcement calculates AASHTO LRFD 2020 directional N-M, shear and tension-side shear-tie component checks with the existing four physical reinforcement mats.",
         "Agreed girder/diaphragm lines, bearing end zones and the fixed REVIEW61 isolated-peak rule are excluded before resistance evaluation; original source actions remain in the audit.",
         "Four-mat temperature/spacing, sufficient flexural minimum and required development length are calculated. Girder and diaphragm face samples use the existing flange width / exported shell thickness, with no dv relaxation. Shell coupling, local support/load-path qualification, actual anchorage, fatigue and SLS remain separate. Punching has its own loaded-area normal-force check; existing Final Composite longitudinal interface results are linked read-only by current input hashes. Optional legacy research and zone averages are folded away.",
-        "Imported workbooks are session inputs. Re-upload them after opening a Project JSON or restarting the app."]
+        "Save Project JSON includes the imported shell tables, units and source file identities. Reopening that JSON restores them automatically; re-upload only to replace the analysis data. Calculate slab checks again after loading."]
     return "\n".join(lines) + "\n"
 
 
@@ -123,6 +123,7 @@ def render_import_page() -> None:
     if clear:
         st.session_state.pop(source.BANK_KEY, None)
         st.session_state.pop(source.PENDING_KEY, None)
+        st.session_state.pop("slab_shell55_restored_from_project", None)
         st.session_state.pop("slab_shell55_strength56_result", None)
         st.session_state.pop("slab_shell55_aashto62_result", None)
         st.session_state.pop("slab_shell55_aashto62_csv_payload", None)
@@ -135,6 +136,7 @@ def render_import_page() -> None:
         st.session_state["slab_shell55_upload_revision"] = revision + 1
         st.rerun()
     if clicked:
+        st.session_state.pop("slab_shell55_restored_from_project", None)
         st.session_state.pop("slab_shell55_strength56_result", None)
         st.session_state.pop("slab_shell55_aashto62_result", None)
         st.session_state.pop("slab_shell55_aashto62_csv_payload", None)
@@ -148,10 +150,15 @@ def render_import_page() -> None:
             package = source.parse_files(uploads)
             st.session_state[source.BANK_KEY] = package
             st.session_state[source.PENDING_KEY] = package.signature
+        # The sidebar's download payload is rendered before this page. Refresh
+        # it now so the next Save includes this import, not the previous bank.
+        st.rerun()
     package = st.session_state.get(source.BANK_KEY)
     if isinstance(package, source.ShellPackage):
         if source.current_package(st.session_state) is not None:
             st.success("IMPORTED — required tables and input links are available. Open Slab Reinforcement to calculate or review section checks.")
+            if st.session_state.get("slab_shell55_restored_from_project"):
+                st.caption("Restored from Project JSON — shell inputs are ready. Calculate slab checks again; upload Excel only to replace the data.")
             _overview(package)
             if st.button("Open Slab Reinforcement →", key="slab_shell55_open_analysis"):
                 st.session_state["_nav_active_workspace"] = "Analysis"
@@ -167,7 +174,7 @@ def render_import_page() -> None:
         _audit(package)
     else:
         st.info("No shell data imported. Select the Excel exports and press Import & validate shell data.")
-    st.caption("Import once for Analysis → Slab Reinforcement. Re-upload the Excel package after opening a Project JSON or restarting the app.")
+    st.caption("Save Project JSON includes the last imported shell package. Import selected replacement files before saving. Reopening the saved JSON restores the inputs automatically.")
 
 
 def reinforcement_inventory(state) -> pd.DataFrame:

@@ -1,3 +1,11 @@
+# SLAB.PROJECT74 — portable CSI shell inputs in Project JSON
+
+Save Project JSON now includes the imported slab shell tables, units and source identities. Reopen the project to restore validated inputs automatically and calculate slab checks without re-uploading Excel. Existing JSON files without an embedded package still need a one-time import and save. Clear removes the package from subsequent saves; load discards previous-project inputs and stale slab results. Engineering calculations and the accepted COLOR73 charts remain unchanged.
+
+See [SLAB_PROJECT74_NOTES_TH.md](SLAB_PROJECT74_NOTES_TH.md), [SLAB_PROJECT74_VERIFICATION.json](SLAB_PROJECT74_VERIFICATION.json), and [REPO_SUMMARY_SLAB_PROJECT74.md](REPO_SUMMARY_SLAB_PROJECT74.md).
+
+## Historical milestone — SLAB.COLOR73
+
 # SLAB.COLOR73 — more vivid slab plot colours
 
 Use a medium blue–teal result field with stronger yellow/red limit colours and clearer station curves. Keep the white print background, native I-girder/bearing references, chart layout and SVG camera export. Only seven palette constants change; calculations, data and source geometry are preserved.

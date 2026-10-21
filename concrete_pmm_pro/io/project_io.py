@@ -950,6 +950,13 @@ def _prestress_table_metadata_from_session(session_state: Any) -> list[dict[str,
 def project_from_session_state(session_state: Any) -> ProjectModel:
     from concrete_pmm_pro.analysis.igird_slab_layers import parameters as slab_layer_parameters
     metadata = dict(_get_session_value(session_state, "project_metadata", {}) or {})
+    from concrete_pmm_pro.io import slab_project74
+    shell_inputs = slab_project74.input_metadata(session_state)
+    if shell_inputs is not None:
+        metadata[slab_project74.METADATA_KEY] = shell_inputs
+    else:
+        # Clearing/replacing the live bank must not resurrect a previous archive.
+        metadata.pop(slab_project74.METADATA_KEY, None)
     from concrete_pmm_pro.analysis.igird_slab_layers import INTERFACE_KEY
     interface = _get_session_value(session_state, INTERFACE_KEY, None)
     if isinstance(interface, dict):
@@ -1181,11 +1188,17 @@ def project_from_json(json_text: str) -> ProjectModel:
         raise ProjectIOError("Invalid project JSON: root value must be an object.")
 
     try:
-        return ProjectModel.model_validate(_migrate_legacy_data(raw_data))
+        project = ProjectModel.model_validate(_migrate_legacy_data(raw_data))
     except ValidationError as exc:
         first_error = exc.errors()[0]
         location = ".".join(str(part) for part in first_error.get("loc", ())) or "project"
         raise ProjectIOError(f"Invalid project data at {location}: {first_error.get('msg', 'validation failed')}") from exc
+    from concrete_pmm_pro.io import slab_project74
+    try:
+        slab_project74.restore(project.metadata.get(slab_project74.METADATA_KEY))
+    except ValueError as exc:
+        raise ProjectIOError(str(exc)) from exc
+    return project
 
 
 def _loads_to_table(loads: list[LoadCase]) -> pd.DataFrame:
@@ -1445,6 +1458,12 @@ def _reset_loaded_project_dirty_state(session_state: MutableMapping[str, Any], *
 
 
 def apply_project_to_session_state(project: ProjectModel, session_state: MutableMapping[str, Any]) -> None:
+    from concrete_pmm_pro.io import slab_project74, slab_shell_import
+    try:
+        shell_inputs = slab_project74.restore(project.metadata.get(slab_project74.METADATA_KEY))
+    except ValueError as exc:
+        # Validate before clearing any state from the currently open project.
+        raise ProjectIOError(str(exc)) from exc
     # Project JSON is the canonical transaction boundary. Widget keys are only
     # UI transport and must never survive from the previously open project.
     _clear_crossbeam_restore_widget_state(session_state)
@@ -1757,6 +1776,10 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
     if REINFORCEMENT_FLAGS_PRESET_KEY in project.metadata:
         session_state[REINFORCEMENT_FLAGS_PRESET_KEY] = project.metadata[REINFORCEMENT_FLAGS_PRESET_KEY]
     session_state["project_metadata"] = dict(project.metadata)
+    if shell_inputs is not None:
+        session_state[slab_shell_import.BANK_KEY] = shell_inputs
+        session_state[slab_shell_import.PENDING_KEY] = shell_inputs.signature
+        session_state[slab_project74.RESTORED_KEY] = True
     from concrete_pmm_pro.analysis.girder_axial_convention import SETTINGS_KEY as AXIAL_CONVENTION_KEY
     if AXIAL_CONVENTION_KEY in project.metadata:
         session_state[AXIAL_CONVENTION_KEY] = dict(project.metadata[AXIAL_CONVENTION_KEY])

@@ -1,0 +1,352 @@
+{
+  "milestone": "SLAB.PROJECT74",
+  "source_hashes": {
+    "concrete_section_pro_project (32).json": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+    "Area Assigment.xlsx": "98e92434eb70d3f93e92e3942ce370cd3af49ea3e21a578388dbaa420f64b93d",
+    "Connectivity Data.xlsx": "422cc75df02ca5999f25b5a65cff35183317bc94b021913fdd56021152711da2",
+    "Element Forces - Area Shells(1).xlsx": "d1eb5d961f067b848953bb7b63a0c0f86e3376dc06c3b48a1830dd5f7b487a8d",
+    "TABLE Objects And Elements - Areas(1).xlsx": "75f06bb745ff4915f8f4558a4bd0558c04f453a4ccb5ff3b7df3fe0dffaba5cf"
+  },
+  "exact_round_trip_all_tables": true,
+  "units_sources_notes_and_signatures_preserved": true,
+  "force_and_geometry_values_preserved_exactly": true,
+  "shell_axes_girder_and_bearing_geometry_preserved": true,
+  "fresh_process_without_excel": true,
+  "tables": {
+    "flags": {
+      "rows": 296,
+      "columns": [
+        "Area",
+        "AutoBridge",
+        "BridgeObj",
+        "BOSpan",
+        "CompType",
+        "StartSta",
+        "EndSta"
+      ],
+      "dtypes": [
+        "object",
+        "object",
+        "object",
+        "object",
+        "object",
+        "float64",
+        "float64"
+      ],
+      "sha256": "cdb9ab06f0e116e6ab51100a87ae7fef6e986cae63de6bb28241c84617c65453"
+    },
+    "axes": {
+      "rows": 276,
+      "columns": [
+        "Area",
+        "Angle",
+        "AdvanceAxes"
+      ],
+      "dtypes": [
+        "object",
+        "int64",
+        "object"
+      ],
+      "sha256": "ae246fcb265b67929b175fe6b1c40a07225cdcf5ad526501ccda737edb5e335f"
+    },
+    "advanced": {
+      "rows": 276,
+      "columns": [
+        "Area",
+        "LocalPlane",
+        "PlOption1",
+        "PlCoordSys",
+        "CoordDir1",
+        "CoordDir2",
+        "PlVecJt1",
+        "PlVecJt2",
+        "PlVecX",
+        "PlVecY",
+        "PlVecZ"
+      ],
+      "dtypes": [
+        "object",
+        "object",
+        "object",
+        "object",
+        "object",
+        "object",
+        "object",
+        "object",
+        "int64",
+        "int64",
+        "int64"
+      ],
+      "sha256": "717c6cf4f439403f6ada6345726034c6ecc2ecf633052e34d435a91983c7b45e"
+    },
+    "thickness": {
+      "rows": 296,
+      "columns": [
+        "Area",
+        "ThickOver",
+        "Thick1",
+        "Thick2",
+        "Thick3",
+        "Thick4"
+      ],
+      "dtypes": [
+        "object",
+        "object",
+        "float64",
+        "float64",
+        "float64",
+        "float64"
+      ],
+      "sha256": "123c2692a70ee1dbb70d49676c12dd0952af32a5e2a81781b435a74459e57fbc"
+    },
+    "sections": {
+      "rows": 296,
+      "columns": [
+        "Area",
+        "Section",
+        "MatProp"
+      ],
+      "dtypes": [
+        "object",
+        "object",
+        "object"
+      ],
+      "sha256": "52a41ff9fb2c8511970c39a99fa9f17c752ebe28952ac467b37a79aa62ac80c8"
+    },
+    "parents": {
+      "rows": 296,
+      "columns": [
+        "Area",
+        "NumJoints",
+        "Joint1",
+        "Joint2",
+        "Joint3",
+        "Joint4",
+        "Perimeter",
+        "AreaArea",
+        "Volume",
+        "CentroidX",
+        "CentroidY",
+        "CentroidZ",
+        "GUID"
+      ],
+      "dtypes": [
+        "object",
+        "int64",
+        "object",
+        "object",
+        "object",
+        "object",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "object"
+      ],
+      "sha256": "23b1065e3443277993e4297a21d19097f1278a0a4be6cfbd0975e97a02bcd6f0"
+    },
+    "frames": {
+      "rows": 138,
+      "columns": [
+        "Frame",
+        "JointI",
+        "JointJ",
+        "IsCurved",
+        "Length",
+        "CentroidX",
+        "CentroidY",
+        "CentroidZ",
+        "GUID"
+      ],
+      "dtypes": [
+        "object",
+        "object",
+        "object",
+        "object",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "object"
+      ],
+      "sha256": "dd1bbe323c33caa896c4713031be93430afb2f7f2ef62f19defcb14898e19215"
+    },
+    "joints": {
+      "rows": 480,
+      "columns": [
+        "Joint",
+        "CoordSys",
+        "CoordType",
+        "XorR",
+        "Y",
+        "Z",
+        "SpecialJt",
+        "GlobalX",
+        "GlobalY",
+        "GlobalZ",
+        "GUID"
+      ],
+      "dtypes": [
+        "object",
+        "object",
+        "object",
+        "float64",
+        "float64",
+        "float64",
+        "object",
+        "float64",
+        "float64",
+        "float64",
+        "object"
+      ],
+      "sha256": "ef2bb3ec673e982b870c4970c49ff66880c1ce9d078cd106dfa6f5e116543e94"
+    },
+    "forces": {
+      "rows": 127680,
+      "columns": [
+        "Area",
+        "AreaElem",
+        "ShellType",
+        "Joint",
+        "OutputCase",
+        "CaseType",
+        "StepType",
+        "F11",
+        "F22",
+        "F12",
+        "FMax",
+        "FMin",
+        "FAngle",
+        "FVM",
+        "M11",
+        "M22",
+        "M12",
+        "MMax",
+        "MMin",
+        "MAngle",
+        "V13",
+        "V23",
+        "VMax",
+        "VAngle"
+      ],
+      "dtypes": [
+        "object",
+        "object",
+        "object",
+        "object",
+        "object",
+        "object",
+        "object",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64",
+        "float64"
+      ],
+      "sha256": "ebc915b90de107d555a176a7779c8ed2a60e4eb361caf3915ae6cc4577a095cb"
+    },
+    "elements": {
+      "rows": 5320,
+      "columns": [
+        "AreaElem",
+        "AreaObject",
+        "ElemJt1",
+        "ElemJt2",
+        "ElemJt3",
+        "ElemJt4"
+      ],
+      "dtypes": [
+        "object",
+        "object",
+        "object",
+        "object",
+        "object",
+        "object"
+      ],
+      "sha256": "cd8152626bc81a2393a58ff8a1058fd914f83fcef24bb3258458712b073f65e7"
+    },
+    "nodes": {
+      "rows": 5733,
+      "columns": [
+        "JointElem",
+        "JointObject",
+        "GlobalX",
+        "GlobalY",
+        "GlobalZ"
+      ],
+      "dtypes": [
+        "object",
+        "object",
+        "float64",
+        "float64",
+        "float64"
+      ],
+      "sha256": "5185078d337eb06798f5e0f354b8312422e05d17492a44bfaa286561c8c115d1"
+    }
+  },
+  "source_force_records": 127680,
+  "slab_force_records": 109824,
+  "source_cases": [
+    "S1A",
+    "S1C",
+    "U1A",
+    "U1B",
+    "U2A",
+    "U2B"
+  ],
+  "project_json_bytes": 25483883,
+  "raw_shell_archive_bytes": 23847407,
+  "first_save_seconds": 5.162672866000094,
+  "validate_and_restore_seconds": 4.884677928999963,
+  "warm_project_construction_seconds": 0.3059022279999226,
+  "archive_stable_after_second_save": true,
+  "resistance_results_persisted": false,
+  "recalculation_csv_comparisons": {
+    "Check_Summary": {
+      "byte_identical_to_PRINT72": true,
+      "sha256": "43053a5d5adb3d4cbc7592dcfec3deae8086d424d7bbf67a98a62d7ab0feb496"
+    },
+    "Four_Mats": {
+      "byte_identical_to_PRINT72": true,
+      "sha256": "8fb7fe6fc179a208bad6d6c0464174b94d1d2a51098892ed4e6d5d89bdbd5d10"
+    },
+    "Source_Coverage": {
+      "byte_identical_to_PRINT72": true,
+      "sha256": "be05410d01639a2f9dc3f0ac56e20da57c61e0eb435e908baf69e68d15fb128d"
+    },
+    "Exclusions": {
+      "byte_identical_to_PRINT72": true,
+      "sha256": "a9ae5d7430aeb68872ffc85a9de62ae25351c2bd8f8834d30b4ba7213044d902"
+    },
+    "Code_Eligibility": {
+      "byte_identical_to_PRINT72": true,
+      "sha256": "6c1dc3d86222728b565c4e6825b01a93500984511023d9d59ff6708d337cbbc6"
+    },
+    "Governing_Vectors": {
+      "byte_identical_to_PRINT72": true,
+      "sha256": "aef08c14b94343713b7a85743a324a1541a43f5df9e15edc75a3e2d6d19d9200"
+    },
+    "Selected_Section_Cuts": {
+      "byte_identical_to_PRINT72": true,
+      "sha256": "1c75dda4a329ebae9d9457853dca7e1087b01e36c9b7ff442d1e6a9e4b68d081"
+    }
+  },
+  "calculated_source_rows": 109824,
+  "calculated_design_rows": 84864,
+  "calculated_status": "REVIEW REQUIRED",
+  "seconds": 79.39579203699986
+}

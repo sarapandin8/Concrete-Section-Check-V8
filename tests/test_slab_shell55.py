@@ -153,7 +153,7 @@ def test_stale_file_selection_is_not_exposed_as_current_data():
     assert shell.current_package(state) is None
 
 
-def test_new_project_clears_session_shell_package_and_does_not_persist_in_json():
+def test_project_without_embedded_shell_inputs_clears_the_previous_session_package():
     state = {shell.BANK_KEY: "old model", shell.PENDING_KEY: ("old",), "slab_shell55_uploads_0": "old widget"}
     apply_project_to_session_state(ProjectModel(), state)
     assert not any(str(k).startswith("slab_shell55_") for k in state)

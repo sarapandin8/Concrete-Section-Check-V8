@@ -1,0 +1,14 @@
+{
+  "baseline_zip_sha256": "b9fe43cbfe9ab42884e22deb2bdd4ba4ae312fef32a123bb9ef05bbec9a20899",
+  "modified_production_files": [
+    "concrete_pmm_pro/io/project_io.py",
+    "concrete_pmm_pro/ui/slab_reinforcement.py"
+  ],
+  "added_production_files": [
+    "concrete_pmm_pro/io/slab_project74.py"
+  ],
+  "other_existing_production_modules_byte_identical": true,
+  "existing_production_modules_compared": 297,
+  "equations_and_resistance_engines_unchanged": true,
+  "accepted_importer_and_COLOR73_print_palette_unchanged": true
+}
