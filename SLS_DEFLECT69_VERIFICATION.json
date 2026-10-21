@@ -1,0 +1,100 @@
+{
+  "milestone": "SLS.DEFLECT69",
+  "release_date": "2026-10-21",
+  "baseline": {
+    "name": "concrete-section-pro_SLAB-REVIEW68.zip",
+    "sha256": "ab6c871b33ffff2b911f90bfce416a6ee4329ea4cfea10b5e964f92f946208a9"
+  },
+  "project_input": {
+    "sha256": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+    "modified": false
+  },
+  "engineering": {
+    "span_m": 20.0,
+    "camber_up_mm": {
+      "transfer": 18.754023847928803,
+      "construction": 13.82028268843323,
+      "service_sustained": 9.912454310482387
+    },
+    "actual_generated_bridge_LL_source_missing": true,
+    "project_railway_LL_limit_mm": 13.333333333333334,
+    "railway_limit_owner_confirmation_required": true,
+    "highway_L800_not_applied_to_train_or_stage_camber": true,
+    "original_stage_curve_function_byte_identical": true,
+    "full_deflection_acceptance": false,
+    "status": "REVIEW REQUIRED",
+    "scope": [
+      "Constant EI and midspan equivalent Pe retained",
+      "Stage-dependent Ec, Pe(x), end-section EI, creep/shrinkage and cracked stiffness are not certified by this preview"
+    ]
+  },
+  "tests": {
+    "passed": 697,
+    "batches": {
+      "main": {
+        "tests": 654,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0
+      },
+      "isolated": {
+        "tests": 43,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0
+      }
+    },
+    "scope_patterns": [
+      "test_serviceability*.py",
+      "test_girder*.py",
+      "test_igird_sls*.py",
+      "test_result_summary*.py",
+      "test_report_qa*.py",
+      "test_project*.py",
+      "test_slab*.py"
+    ],
+    "isolation": "test_girder_strand_debonding_ui.py is run in a separate pytest process because its existing Streamlit fake replaces sys.modules without restoring it.",
+    "compile_files": 12,
+    "compile": "PASS"
+  },
+  "browser": {
+    "passed": true,
+    "viewports_px": [
+      1440,
+      1280
+    ],
+    "single_calculate_command": true,
+    "single_visible_chart": true,
+    "full_span_0_to_20": true,
+    "endpoints_retained": true,
+    "page_errors": [],
+    "no_document_overflow": true,
+    "report_downloaded": true,
+    "three_stage_plots_visually_reviewed": true,
+    "qa_only_explicit_LL_kN_m": 20.0,
+    "qa_LL_never_applied_to_original_project": true
+  },
+  "summary_report_handoff": {
+    "milestone": "SLS.DEFLECT69",
+    "actual_full_app": true,
+    "original_project_sha256": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+    "source_project_unchanged": true,
+    "calculation_invocations": 1,
+    "three_stage_navigation": true,
+    "summary_and_report_results_current": true,
+    "hidden_solver_reruns": false,
+    "live_source_missing": true,
+    "limit_mm": 13.333333333333334,
+    "status": "REVIEW REQUIRED",
+    "full_deflection_acceptance": false
+  },
+  "persistence": "Input settings only; no runtime result caches in project JSON",
+  "unchanged_scope": [
+    "CSI imported actions, axes and reference points",
+    "Slab masks and native concurrent vectors",
+    "I-girder/slab Vn/Tn/V-T and flexure kernels",
+    "Prestress loss kernel",
+    "Original stage curve equations"
+  ],
+  "evidence_directory": "qa/evidence/sls_deflect69"
+}

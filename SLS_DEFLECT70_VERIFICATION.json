@@ -1,0 +1,128 @@
+{
+  "milestone": "SLS.DEFLECT70",
+  "release_date": "2026-10-21",
+  "baseline": {
+    "name": "concrete-section-pro_SLS-DEFLECT69.zip",
+    "sha256": "6d346d9b39dce8db7637cc9ab1259837312443ceea0627af614ce4e8c68e6739"
+  },
+  "source_sha256": {
+    "concrete_section_pro_project (32).json": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+    "SLS deflection.xlsx": "4beac1fa04c5ad73f43a24c654826ac34362dfdac28be7e62fc1830969a7d536"
+  },
+  "input_files_modified": false,
+  "source_contract": "User-declared SLS individual-girder envelope; native Max/Min pairs; case/combination definition absent in supplied format",
+  "import": {
+    "girders": [
+      "Left Exterior Girder",
+      "Interior Girder 2"
+    ],
+    "vertical_rows": 96,
+    "stations_per_girder": 24,
+    "components_used": [
+      "WebTop Vert"
+    ],
+    "station_coordinate": "Girder Distance",
+    "length_unit_conversion_once": true,
+    "native_values_and_signs_preserved": true,
+    "single_case_rows_rejected": true,
+    "missing_pairs_duplicates_invalid_units_rejected": true,
+    "no_service_generated_fallback": true,
+    "no_added_camber_LL_impact_or_creep": true
+  },
+  "engineering": {
+    "service_abs_max_mm": [
+      9.227,
+      9.16
+    ],
+    "governing_x_m": [
+      10.45714,
+      10.45714
+    ],
+    "project_limit_mm": 13.333333333333334,
+    "project_criterion_owner_confirmation_required": true,
+    "service_utilization": [
+      0.692025,
+      0.6869999999999999
+    ],
+    "service_status": [
+      "Preview PASS",
+      "Preview PASS"
+    ],
+    "LL_only_limits_reference_only_without_source_definition": true,
+    "calculated_transfer_construction_camber_mm": [
+      18.754023847928803,
+      13.82028268843323
+    ],
+    "original_generated_stage_curve_function_byte_identical": true,
+    "full_deflection_acceptance": false
+  },
+  "tests": {
+    "regression_passed": 722,
+    "batches": {
+      "main": {
+        "tests": 679,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0
+      },
+      "isolated": {
+        "tests": 43,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0
+      },
+      "targeted": {
+        "tests": 70,
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0
+      }
+    },
+    "post_visual_polish_targeted_passed": 70,
+    "isolation": "The existing test_girder_strand_debonding_ui.py replaces the Streamlit module without restoring it and is run in a separate pytest process.",
+    "compile": "PASS",
+    "compile_files": 12
+  },
+  "browser": {
+    "passed": true,
+    "actual_file_upload": true,
+    "two_girders_selectable": true,
+    "single_command": true,
+    "single_plot": true,
+    "all_native_24_Max_and_24_Min_stations_plotted_per_girder": true,
+    "viewports_px": [
+      1440,
+      1280
+    ],
+    "legend_and_titles_visually_verified": true,
+    "document_overflow": false,
+    "page_errors": [],
+    "downloaded_audit_native_vertical_rows": 96
+  },
+  "summary_report_handoff": {
+    "milestone": "SLS.DEFLECT70",
+    "actual_full_app": true,
+    "source_files_unchanged": true,
+    "calculation_invocations": 1,
+    "three_stage_and_girder_navigation": true,
+    "summary_and_report_results_current": true,
+    "hidden_solver_reruns": false,
+    "service_import_available": true,
+    "girders": [
+      "Left Exterior Girder",
+      "Interior Girder 2"
+    ],
+    "status": "REVIEW REQUIRED",
+    "full_deflection_acceptance": false
+  },
+  "persistence": "Normalized source rows and criterion inputs only; no runtime results or widgets saved in JSON",
+  "unchanged_scope": [
+    "Building girder DEFLECT69 route",
+    "CSI force axes/reference points",
+    "Girder/slab strength kernels",
+    "Slab masks and native action vectors",
+    "Prestress loss kernel",
+    "Original calculated stage-response equations"
+  ],
+  "evidence_directory": "qa/evidence/sls_deflect70"
+}

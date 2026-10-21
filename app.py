@@ -2223,6 +2223,10 @@ def _results_sls_complete_for_report(state: object) -> bool:
 
     if not hasattr(state, "get"):
         return False
+    if state.get('girder_deflect69_result') is not None or state.get('girder_deflect70_result') is not None:
+        # A stored instantaneous preview does not close the long-term,
+        # nonprismatic and track-response qualifications.
+        return False
     if _results_is_crossbeam_workflow(state):
         # CROSSBEAM.SLS closeout is intentionally staged.  Transfer and Final
         # Service gross-section stress can be complete/current while the
@@ -2365,6 +2369,14 @@ def _results_railway_sls_review_action(decision_df: pd.DataFrame | None) -> str:
     return "Run or refresh staged SLS stress checks before Report / QA."
 
 def _results_sls_available(state: object) -> bool:
+    if state.get('girder_deflect70_result') is not None:
+        from concrete_pmm_pro.serviceability.girder_deflect70 import current as deflect70_current
+        if deflect70_current(state) is not None:
+            return True
+    if state.get('girder_deflect69_result') is not None and state.get('girder_deflect70_result') is None:
+        from concrete_pmm_pro.serviceability.girder_deflect69 import current as deflect69_current
+        if deflect69_current(state) is not None:
+            return True
     return _results_sls_stress_available(state)
 
 
@@ -2628,6 +2640,30 @@ def _render_results_required_actions(state: object, rows: list[dict[str, object]
 
 
 def _results_sls_summary_cards(state: object) -> list[dict[str, object]]:
+    if state.get('girder_deflect70_result') is not None and not _results_is_crossbeam_workflow(state) and not _results_sls_stress_available(state):
+        from concrete_pmm_pro.serviceability.girder_deflect70 import current as deflect70_current
+        result = deflect70_current(state)
+        if result is not None:
+            service = result['summary'].loc[lambda f: f.Check.eq('Imported SLS envelope |WebTop Vert|')]
+            known = service.loc[service.Utilization.notna()]
+            governing = known.loc[known.Utilization.idxmax()] if len(known) else service.iloc[0]
+            return [
+                {'title': 'Design code', 'value': _results_design_code_label(state), 'detail': 'Stored girder deflection results', 'status': 'info'},
+                {'title': 'Service envelope', 'value': governing.Status, 'detail': governing.Girder, 'status': _results_style_for_status(governing.Status)},
+                {'title': 'Full SLS scope', 'value': result['status'], 'detail': 'Source model / long-term coverage remain separate', 'status': 'warning'},
+                {'title': 'Required action', 'value': 'Review source / scope', 'detail': governing.Basis, 'status': 'warning'},
+            ]
+    if state.get('girder_deflect69_result') is not None and state.get('girder_deflect70_result') is None and not _results_is_crossbeam_workflow(state) and not _results_sls_stress_available(state):
+        from concrete_pmm_pro.serviceability.girder_deflect69 import current as deflect69_current
+        result = deflect69_current(state)
+        if result is not None:
+            ll = result['summary'].loc[lambda f:f.Check.eq('LL+IM increment')].iloc[0]
+            return [
+                {'title':'Design code','value':_results_design_code_label(state),'detail':'Stored deflection preview','status':'info'},
+                {'title':'LL+IM deflection','value':ll.Status,'detail':result['limit_basis'],'status':_results_style_for_status(ll.Status)},
+                {'title':'Full SLS scope','value':result['status'],'detail':'Stress and refined/long-term deflection remain separate','status':'warning'},
+                {'title':'Required action','value':'Review source / scope','detail':ll.Basis,'status':'warning'},
+            ]
     if _results_is_crossbeam_workflow(state):
         rows = _results_crossbeam_sls_summary_rows(state)
         current_rows = [row for row in rows if bool(row.get("__calculated"))]
@@ -4482,6 +4518,12 @@ def _results_governing_rows(state: object) -> list[dict[str, object]]:
             from concrete_pmm_pro.reporting.slab_top65 import summary_rows as slab_summary_rows
             rows.extend(slab_summary_rows(state))
     _results_add_sls_rows(state, rows)
+    if not _results_is_crossbeam_workflow(state):
+        if state.get('girder_deflect70_result') is not None:
+            from concrete_pmm_pro.serviceability.girder_deflect70 import summary_rows as deflect_summary_rows
+        else:
+            from concrete_pmm_pro.serviceability.girder_deflect69 import summary_rows as deflect_summary_rows
+        rows.extend(deflect_summary_rows(state))
     return rows
 
 

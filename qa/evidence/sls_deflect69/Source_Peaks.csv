@@ -1,0 +1,6 @@
+﻿Stage,Curve,min,max
+Transfer stage,Deflection @ Transfer,0.0,18.754023847928803
+Construction stage,Deflection @ Erection / CIP pour,0.0,13.82028268843323
+Service stage,Deflection on Completion,0.0,9.912454310482387
+Service stage,Final Service Sustained Deflection,0.0,9.912454310482387
+Service stage,Final Service Sust. + LL Deflection,0.0,9.912454310482387

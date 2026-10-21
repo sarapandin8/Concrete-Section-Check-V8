@@ -1,3 +1,25 @@
+# SLS.DEFLECT70 — named girder plots and imported CSI Service envelopes
+
+**Analysis → SLS Deflection / Camber** accepts the supplied **Envelope SLS Girder Deflection .xlsx** format directly. Use one sheet per girder with Girder Distance, ItemType Max/Min, WebTop Vert and the units row. The selected Service plot names its girder and CSI component, preserves native signs/stations, and converts displacement units to mm. Other response directions are ignored. There is no generated bridge Service fallback or added camber/LL/dynamic factor.
+
+Transfer/Construction retain the original single-girder section-model calculations. One Calculate command prepares the stages and all imported girders; stage/girder navigation and Summary/Report are read-only. Input-only project JSON preserves the normalized import and criteria. The railway envelope limit is an owner-confirmed project criterion. An LL-only highway criterion remains reference-only when the export does not identify its load definition; full SLS acceptance is not inferred.
+
+The actual example contains 96 vertical records across Left Exterior Girder and Interior Girder 2. Their maximum magnitudes are 9.227 and 9.160 mm, both at x = 10.45714 m. The accepted slab and girder-strength baseline is unchanged.
+
+See [SLS_DEFLECT70_NOTES_TH.md](SLS_DEFLECT70_NOTES_TH.md), [SLS_DEFLECT70_VERIFICATION.json](SLS_DEFLECT70_VERIFICATION.json), [REPO_SUMMARY_SLS_DEFLECT70.md](REPO_SUMMARY_SLS_DEFLECT70.md), and the `qa/sls_deflect70_*.py` reproducibility helpers.
+
+## Historical milestone — DEFLECT69
+
+# SLS.DEFLECT69 — stage-aware deflection and live-load limits
+
+**Analysis → SLS Deflection / Camber** uses one Calculate command and one full-span plot selected by stage. Live-load deflection is checked as an increment, separately from prestress camber. Missing bridge LL input remains REVIEW; identical elastic service curves no longer imply a long-term analysis or a zero train-load response.
+
+The folded settings add project railway/custom LL limits, optional AASHTO highway L/800, and optional transfer/construction project tolerances. The railway min(L/1500, 30 mm) option is a project criterion requiring owner confirmation, not a universal AASHTO railway rule. Summary/Report read current stored results without rerunning solvers; JSON persists settings only. The existing constant-EI, equivalent-midspan-Pe stage equations are preserved. Refined stage effects and creep/shrinkage remain outside this instantaneous preview.
+
+See [SLS_DEFLECT69_NOTES_TH.md](SLS_DEFLECT69_NOTES_TH.md), [SLS_DEFLECT69_VERIFICATION.json](SLS_DEFLECT69_VERIFICATION.json), and [REPO_SUMMARY_SLS_DEFLECT69.md](REPO_SUMMARY_SLS_DEFLECT69.md). QA helpers reproduce the supplied input JSON, live browser plots, and one-calculation Summary/Report handoff. The accepted SLAB.REVIEW68 slab analysis is unchanged.
+
+## Historical milestone — REVIEW68
+
 # SLAB.REVIEW68 — sectional checks and local support transfer
 
 Finite girder/diaphragm reaction footprints remain local-transfer REVIEW in both slab directions. Original slab-only indices, concurrent source vectors and agreed source masks are retained. Summary and reports show unresolved local indices alongside the applied sectional results.

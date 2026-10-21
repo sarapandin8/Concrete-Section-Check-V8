@@ -1,0 +1,444 @@
+{
+  "milestone": "SLS.DEFLECT69",
+  "browser": "134.0.6998.35",
+  "page_errors": [],
+  "single_calculate_command": true,
+  "single_visible_chart": true,
+  "viewports": [
+    1440,
+    1280
+  ],
+  "document_overflow": {
+    "width": 1280,
+    "document": 1280
+  },
+  "original_project_LL_source_missing": true,
+  "explicit_QA_only_live_udl_kN_m": 20.0,
+  "explicit_LL_plot_available": true,
+  "report_downloaded": true,
+  "stages": {
+    "Transfer stage": {
+      "title": "<b><b>Transfer \u00b7 deflection / camber<br><sup>AASHTO LRFD 9th Edition \u00b7 instantaneous</sup></b></b>",
+      "meta": {
+        "version": "SLS.DEFLECT69",
+        "stage": "Transfer stage",
+        "positive_direction": "upward",
+        "limit_applies_to": "Optional project absolute-response tolerance",
+        "live_source_available": false,
+        "full_deflection_acceptance": false
+      },
+      "range": [
+        0,
+        20
+      ],
+      "traces": [
+        {
+          "name": "Transfer response",
+          "x": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ],
+          "y": [
+            0,
+            3.7512823584931922,
+            7.032925566605248,
+            9.869852065393275,
+            12.284052244025311,
+            14.294584439780323,
+            15.917574938048205,
+            17.166217972329783,
+            18.050775724236793,
+            18.578578323491932,
+            18.754023847928803,
+            18.578578323491932,
+            18.050775724236793,
+            17.166217972329783,
+            15.917574938048208,
+            14.294584439780323,
+            12.284052244025311,
+            9.869852065393275,
+            7.0329255666052495,
+            3.7512823584931914,
+            0
+          ],
+          "connectgaps": false
+        },
+        {
+          "name": "Governing response",
+          "x": [
+            10
+          ],
+          "y": [
+            18.754023847928803
+          ],
+          "connectgaps": null
+        }
+      ]
+    },
+    "Construction stage": {
+      "title": "<b><b>Construction \u00b7 deflection / camber<br><sup>AASHTO LRFD 9th Edition \u00b7 instantaneous</sup></b></b>",
+      "meta": {
+        "version": "SLS.DEFLECT69",
+        "stage": "Construction stage",
+        "positive_direction": "upward",
+        "limit_applies_to": "Optional project absolute-response tolerance",
+        "live_source_available": false,
+        "full_deflection_acceptance": false
+      },
+      "range": [
+        0,
+        20
+      ],
+      "traces": [
+        {
+          "name": "Construction response",
+          "x": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ],
+          "y": [
+            0,
+            2.9657320910783067,
+            5.484125541816397,
+            7.600232457202121,
+            9.3538046945777,
+            10.779293863639728,
+            11.905851326439164,
+            12.757328197381346,
+            13.352275343225969,
+            13.703943383087118,
+            13.82028268843323,
+            13.703943383087115,
+            13.352275343225969,
+            12.757328197381346,
+            11.905851326439167,
+            10.779293863639728,
+            9.3538046945777,
+            7.600232457202121,
+            5.4841255418163986,
+            2.965732091078306,
+            0
+          ],
+          "connectgaps": false
+        },
+        {
+          "name": "Governing response",
+          "x": [
+            10
+          ],
+          "y": [
+            13.82028268843323
+          ],
+          "connectgaps": null
+        }
+      ]
+    },
+    "Service stage": {
+      "title": "<b><b>Service \u00b7 deflection / camber<br><sup>AASHTO LRFD 9th Edition \u00b7 instantaneous</sup></b></b>",
+      "meta": {
+        "version": "SLS.DEFLECT69",
+        "stage": "Service stage",
+        "positive_direction": "upward",
+        "limit_applies_to": "LL increment",
+        "live_source_available": false,
+        "full_deflection_acceptance": false
+      },
+      "range": [
+        0,
+        20
+      ],
+      "traces": [
+        {
+          "name": "Sustained \u00b7 elastic",
+          "x": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ],
+          "y": [
+            0,
+            2.258969096866118,
+            4.13078946484888,
+            5.66524860666849,
+            6.906276671783948,
+            7.891946456393059,
+            8.654473403432416,
+            9.220215602577433,
+            9.609673790242296,
+            9.837491349580016,
+            9.912454310482387,
+            9.837491349580013,
+            9.609673790242296,
+            9.220215602577433,
+            8.654473403432416,
+            7.891946456393056,
+            6.906276671783948,
+            5.66524860666849,
+            4.130789464848882,
+            2.258969096866118,
+            0
+          ],
+          "connectgaps": false
+        },
+        {
+          "name": "LL limit \u00b7 13.33 mm",
+          "x": [
+            0,
+            20
+          ],
+          "y": [
+            -13.333333333333334,
+            -13.333333333333334
+          ],
+          "connectgaps": false
+        }
+      ]
+    },
+    "Service stage \u00b7 QA LL20": {
+      "title": "<b><b>Service \u00b7 deflection / camber<br><sup>AASHTO LRFD 9th Edition \u00b7 instantaneous</sup></b></b>",
+      "meta": {
+        "version": "SLS.DEFLECT69",
+        "stage": "Service stage",
+        "positive_direction": "upward",
+        "limit_applies_to": "LL increment",
+        "live_source_available": true,
+        "full_deflection_acceptance": false
+      },
+      "range": [
+        0,
+        20
+      ],
+      "traces": [
+        {
+          "name": "Sustained \u00b7 elastic",
+          "x": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ],
+          "y": [
+            0,
+            2.258969096866118,
+            4.13078946484888,
+            5.66524860666849,
+            6.906276671783948,
+            7.891946456393059,
+            8.654473403432416,
+            9.220215602577433,
+            9.609673790242296,
+            9.837491349580016,
+            9.912454310482387,
+            9.837491349580013,
+            9.609673790242296,
+            9.220215602577433,
+            8.654473403432416,
+            7.891946456393056,
+            6.906276671783948,
+            5.66524860666849,
+            4.130789464848882,
+            2.258969096866118,
+            0
+          ],
+          "connectgaps": false
+        },
+        {
+          "name": "Net with LL+IM",
+          "x": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ],
+          "y": [
+            0,
+            1.6429805127607966,
+            2.9162992229047626,
+            3.8855282922599366,
+            4.608525510674587,
+            5.135434296017219,
+            5.508683694176551,
+            5.762988379061561,
+            5.925348652601425,
+            6.015050444745578,
+            6.043665313463663,
+            6.015050444745574,
+            5.925348652601425,
+            5.762988379061561,
+            5.508683694176551,
+            5.135434296017215,
+            4.608525510674587,
+            3.8855282922599366,
+            2.9162992229047644,
+            1.6429805127607966,
+            0
+          ],
+          "connectgaps": false
+        },
+        {
+          "name": "LL+IM increment",
+          "x": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ],
+          "y": [
+            0,
+            -0.6159885841053211,
+            -1.2144902419441177,
+            -1.7797203144085532,
+            -2.29775116110936,
+            -2.7565121603758405,
+            -3.1457897092558644,
+            -3.4572272235158716,
+            -3.6843251376408706,
+            -3.822440904834439,
+            -3.8687889970187235,
+            -3.822440904834439,
+            -3.6843251376408706,
+            -3.4572272235158716,
+            -3.1457897092558644,
+            -2.7565121603758405,
+            -2.29775116110936,
+            -1.7797203144085532,
+            -1.2144902419441177,
+            -0.6159885841053211,
+            0
+          ],
+          "connectgaps": false
+        },
+        {
+          "name": "LL limit \u00b7 13.33 mm",
+          "x": [
+            0,
+            20
+          ],
+          "y": [
+            -13.333333333333334,
+            -13.333333333333334
+          ],
+          "connectgaps": false
+        },
+        {
+          "name": "Governing response",
+          "x": [
+            10
+          ],
+          "y": [
+            -3.8687889970187235
+          ],
+          "connectgaps": null
+        }
+      ]
+    }
+  },
+  "full_deflection_acceptance": false
+}

@@ -1,0 +1,1 @@
+Add envelope-only CSiBridge Service deflection import with per-sheet girder selection and WebTop Vert unit conversion. Name every stage plot by its girder/source, preserve calculated Transfer/Construction, and remove the generated bridge Service fallback. Persist imported inputs only and keep Summary/Report read-only with scoped project-limit checks.

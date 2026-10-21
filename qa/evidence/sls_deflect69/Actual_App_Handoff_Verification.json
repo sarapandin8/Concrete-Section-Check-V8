@@ -1,0 +1,14 @@
+{
+  "milestone": "SLS.DEFLECT69",
+  "actual_full_app": true,
+  "original_project_sha256": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+  "source_project_unchanged": true,
+  "calculation_invocations": 1,
+  "three_stage_navigation": true,
+  "summary_and_report_results_current": true,
+  "hidden_solver_reruns": false,
+  "live_source_missing": true,
+  "limit_mm": 13.333333333333334,
+  "status": "REVIEW REQUIRED",
+  "full_deflection_acceptance": false
+}

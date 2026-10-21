@@ -1,0 +1,6 @@
+﻿Stage,Check,Response,Demand (mm),Limit (mm),Utilization,x (m),Status,Basis
+Transfer stage,Net elastic response,CAMBER,18.754023847928803,,,10.0,REVIEW,Response only; no universal stage camber limit assigned
+Construction stage,Net elastic response,CAMBER,13.82028268843323,,,10.0,REVIEW,Response only; no universal stage camber limit assigned
+Service stage,Net elastic response,CAMBER,9.912454310482387,,,10.0,REVIEW,Response only; no universal stage camber limit assigned
+Service stage,LL+IM increment,SOURCE MISSING,,13.333333333333334,,,REVIEW,LL source missing; prestress camber cannot establish an LL PASS
+Service stage,Long-term / full response,NOT CALCULATED,,,,,REVIEW,"Creep/shrinkage, nonprismatic EI, Pe(x), cracked stiffness and track response require their applicable analysis"

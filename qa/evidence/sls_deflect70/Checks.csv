@@ -1,0 +1,6 @@
+﻿Stage,Girder,Check,Branch,Demand (mm),Limit (mm),Utilization,x (m),Status,Basis
+Transfer stage,Current single-girder section model,Net elastic response,,18.754023847928803,,,10.0,REVIEW,Response only; project stage tolerance not specified
+Construction stage,Current single-girder section model,Net elastic response,,13.82028268843323,,,10.0,REVIEW,Response only; project stage tolerance not specified
+Service stage,Left Exterior Girder,Imported SLS envelope |WebTop Vert|,Min,9.227,13.333333333333334,0.692025,10.45714,Preview PASS,Project SLS envelope |WebTop Vert| criterion; confirm the railway owner specification
+Service stage,Interior Girder 2,Imported SLS envelope |WebTop Vert|,Min,9.16,13.333333333333334,0.6869999999999999,10.45714,Preview PASS,Project SLS envelope |WebTop Vert| criterion; confirm the railway owner specification
+Service stage,Source model / full SLS scope,Source coverage / full deflection,,,,,,REVIEW,"Imported SLS values are used as exported. Load-combination definitions and long-term coverage are not included in this workbook; no camber, LL, impact or creep increment is added."

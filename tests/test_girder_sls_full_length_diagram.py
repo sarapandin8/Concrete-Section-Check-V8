@@ -271,15 +271,17 @@ def test_deflect_sls1_2_adds_dedicated_analysis_deflection_tab() -> None:
 def test_deflect_sls1_adds_short_term_deflection_camber_workspace() -> None:
     assert "DEFLECT.SLS1" in SOURCE
     assert "SLS Deflection / Camber" in SOURCE
-    assert "Deflection / Camber decision summary" in SOURCE
+    assert 'from concrete_pmm_pro.ui.girder_deflect69 import render' in SOURCE
     assert "Deflection —" in SOURCE
     assert "positive = upward camber / negative = downward deflection" in SOURCE
     assert "Deflection @ Transfer" in SOURCE
     assert "Deflection on Completion" in SOURCE
     assert "Final Service Sust. + LL Deflection" in SOURCE
-    assert "Deflection component audit" in SOURCE
-    assert "L/1000" in SOURCE
-    assert "Prestress camber uses a simplified constant equivalent moment Pe·e at midspan" in SOURCE
+    workspace = (REPO_ROOT / 'concrete_pmm_pro/ui/girder_deflect69.py').read_text()
+    assert "Deflection component audit" in workspace
+    from concrete_pmm_pro.serviceability.girder_deflect69 import PROFILES
+    assert 'aashto_vehicle' in PROFILES and 'rail_project' in PROFILES
+    assert "Source stage camber uses equivalent midspan Pe·e" in workspace
     assert "not change the SLS stress solver" in SOURCE
     assert "Pe(x) station engine" in SOURCE
 
@@ -303,7 +305,9 @@ def test_deflect_sls1_5_zero_display_and_camber_status_semantics() -> None:
     assert 'return "-"' in SOURCE
     assert 'Down {down_text} · Up {up_text}' in SOURCE
     assert 'Down @ x={down_x_text}; Up @ x={up_x_text}' in SOURCE
-    assert 'Transfer and Construction rows report response semantics (CAMBER / DEFLECTION / RESPONSE)' in SOURCE
+    workspace = (REPO_ROOT / 'concrete_pmm_pro/ui/girder_deflect69.py').read_text()
+    engine = (REPO_ROOT / 'concrete_pmm_pro/serviceability/girder_deflect69.py').read_text()
+    assert 'Response only; no universal stage camber limit assigned' in engine
 
 
 

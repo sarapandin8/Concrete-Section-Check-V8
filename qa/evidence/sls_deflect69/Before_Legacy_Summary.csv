@@ -1,0 +1,6 @@
+﻿Stage,Case,Check status,Max upward camber (mm),x up (m),Max downward deflection (mm),x down (m),Limit (mm),Utilization
+Transfer stage,Deflection @ Transfer,CAMBER,18.754023847928803,10.0,0.0,0.0,55.55555555555556,0.0
+Construction stage,Deflection @ Erection / CIP pour,CAMBER,13.82028268843323,10.0,0.0,0.0,55.55555555555556,0.0
+Service stage,Deflection on Completion,PASS,9.912454310482387,10.0,0.0,0.0,55.55555555555556,0.0
+Service stage,Final Service Sustained Deflection,PASS,9.912454310482387,10.0,0.0,0.0,55.55555555555556,0.0
+Service stage,Final Service Sust. + LL Deflection,PASS,9.912454310482387,10.0,0.0,0.0,55.55555555555556,0.0

@@ -1,0 +1,197 @@
+{
+  "milestone": "SLS.DEFLECT69",
+  "project_sha256": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+  "project_inputs_modified": false,
+  "generated_stage_curve_formula_changes": false,
+  "before": [
+    {
+      "Stage": "Transfer stage",
+      "Case": "Deflection @ Transfer",
+      "Check status": "CAMBER",
+      "Max upward camber (mm)": 18.7540238479,
+      "x up (m)": 10.0,
+      "Max downward deflection (mm)": 0.0,
+      "x down (m)": 0.0,
+      "Limit (mm)": 55.5555555556,
+      "Utilization": 0.0
+    },
+    {
+      "Stage": "Construction stage",
+      "Case": "Deflection @ Erection / CIP pour",
+      "Check status": "CAMBER",
+      "Max upward camber (mm)": 13.8202826884,
+      "x up (m)": 10.0,
+      "Max downward deflection (mm)": 0.0,
+      "x down (m)": 0.0,
+      "Limit (mm)": 55.5555555556,
+      "Utilization": 0.0
+    },
+    {
+      "Stage": "Service stage",
+      "Case": "Deflection on Completion",
+      "Check status": "PASS",
+      "Max upward camber (mm)": 9.9124543105,
+      "x up (m)": 10.0,
+      "Max downward deflection (mm)": 0.0,
+      "x down (m)": 0.0,
+      "Limit (mm)": 55.5555555556,
+      "Utilization": 0.0
+    },
+    {
+      "Stage": "Service stage",
+      "Case": "Final Service Sustained Deflection",
+      "Check status": "PASS",
+      "Max upward camber (mm)": 9.9124543105,
+      "x up (m)": 10.0,
+      "Max downward deflection (mm)": 0.0,
+      "x down (m)": 0.0,
+      "Limit (mm)": 55.5555555556,
+      "Utilization": 0.0
+    },
+    {
+      "Stage": "Service stage",
+      "Case": "Final Service Sust. + LL Deflection",
+      "Check status": "PASS",
+      "Max upward camber (mm)": 9.9124543105,
+      "x up (m)": 10.0,
+      "Max downward deflection (mm)": 0.0,
+      "x down (m)": 0.0,
+      "Limit (mm)": 55.5555555556,
+      "Utilization": 0.0
+    }
+  ],
+  "current": [
+    {
+      "Stage": "Transfer stage",
+      "Check": "Net elastic response",
+      "Response": "CAMBER",
+      "Demand (mm)": 18.7540238479,
+      "Limit (mm)": null,
+      "Utilization": null,
+      "x (m)": 10.0,
+      "Status": "REVIEW",
+      "Basis": "Response only; no universal stage camber limit assigned"
+    },
+    {
+      "Stage": "Construction stage",
+      "Check": "Net elastic response",
+      "Response": "CAMBER",
+      "Demand (mm)": 13.8202826884,
+      "Limit (mm)": null,
+      "Utilization": null,
+      "x (m)": 10.0,
+      "Status": "REVIEW",
+      "Basis": "Response only; no universal stage camber limit assigned"
+    },
+    {
+      "Stage": "Service stage",
+      "Check": "Net elastic response",
+      "Response": "CAMBER",
+      "Demand (mm)": 9.9124543105,
+      "Limit (mm)": null,
+      "Utilization": null,
+      "x (m)": 10.0,
+      "Status": "REVIEW",
+      "Basis": "Response only; no universal stage camber limit assigned"
+    },
+    {
+      "Stage": "Service stage",
+      "Check": "LL+IM increment",
+      "Response": "SOURCE MISSING",
+      "Demand (mm)": null,
+      "Limit (mm)": 13.3333333333,
+      "Utilization": null,
+      "x (m)": null,
+      "Status": "REVIEW",
+      "Basis": "LL source missing; prestress camber cannot establish an LL PASS"
+    },
+    {
+      "Stage": "Service stage",
+      "Check": "Long-term / full response",
+      "Response": "NOT CALCULATED",
+      "Demand (mm)": null,
+      "Limit (mm)": null,
+      "Utilization": null,
+      "x (m)": null,
+      "Status": "REVIEW",
+      "Basis": "Creep/shrinkage, nonprismatic EI, Pe(x), cracked stiffness and track response require their applicable analysis"
+    }
+  ],
+  "source_peaks": [
+    {
+      "Stage": "Transfer stage",
+      "Curve": "Deflection @ Transfer",
+      "min": 0.0,
+      "max": 18.7540238479
+    },
+    {
+      "Stage": "Construction stage",
+      "Curve": "Deflection @ Erection / CIP pour",
+      "min": 0.0,
+      "max": 13.8202826884
+    },
+    {
+      "Stage": "Service stage",
+      "Curve": "Deflection on Completion",
+      "min": 0.0,
+      "max": 9.9124543105
+    },
+    {
+      "Stage": "Service stage",
+      "Curve": "Final Service Sustained Deflection",
+      "min": 0.0,
+      "max": 9.9124543105
+    },
+    {
+      "Stage": "Service stage",
+      "Curve": "Final Service Sust. + LL Deflection",
+      "min": 0.0,
+      "max": 9.9124543105
+    }
+  ],
+  "live_available": false,
+  "span_m": 20.0,
+  "limit_mm": 13.333333333333334,
+  "limit_basis": "Project railway criterion; not an AASHTO highway limit",
+  "status": "REVIEW REQUIRED",
+  "full_deflection_acceptance": false,
+  "plots": {
+    "Transfer stage": {
+      "trace_names": [
+        "Transfer response",
+        "Governing response"
+      ],
+      "x_range": [
+        0,
+        20.0
+      ],
+      "limit_targets": "Optional project absolute-response tolerance"
+    },
+    "Construction stage": {
+      "trace_names": [
+        "Construction response",
+        "Governing response"
+      ],
+      "x_range": [
+        0,
+        20.0
+      ],
+      "limit_targets": "Optional project absolute-response tolerance"
+    },
+    "Service stage": {
+      "trace_names": [
+        "Sustained · elastic",
+        "LL limit · 13.33 mm"
+      ],
+      "x_range": [
+        0,
+        20.0
+      ],
+      "limit_targets": "LL increment"
+    }
+  },
+  "known_model_qualifications": [
+    "Constant EI and midspan equivalent Pe retained",
+    "Stage-dependent Ec, Pe(x), end-section EI, creep/shrinkage and cracked stiffness are not certified by this preview"
+  ]
+}

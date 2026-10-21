@@ -1,0 +1,139 @@
+﻿Stage,Curve,Station x (m),Deflection (mm),Basis note,Prestress basis,E used (MPa),Precast Ix (mm^4),Composite Ix (mm^4),Transfer auto w (kN/m),Construction auto w (kN/m),Service sustained w (kN/m),Service LL w (kN/m),Girder,Role,ItemType,Source row,Girder Distance,Distance unit,WebTop Vert,Vertical unit
+Transfer stage,Calculated response,0.0,0.0,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,1.0,3.7512823584931922,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,2.0,7.032925566605248,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,3.0,9.869852065393275,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,4.0,12.284052244025311,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,5.0,14.294584439780323,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,6.0,15.917574938048205,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,7.0,17.166217972329783,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,8.0,18.050775724236793,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,9.0,18.578578323491932,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,10.0,18.754023847928803,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,11.0,18.578578323491932,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,12.0,18.050775724236793,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,13.0,17.166217972329783,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,14.0,15.917574938048208,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,15.0,14.294584439780323,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,16.0,12.284052244025311,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,17.0,9.869852065393275,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,18.0,7.0329255666052495,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,19.0,3.7512823584931914,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Transfer stage,Calculated response,20.0,0.0,Pe_transfer camber + self-weight,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,0.0,0.0,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,1.0,2.9657320910783067,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,2.0,5.484125541816397,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,3.0,7.600232457202121,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,4.0,9.3538046945777,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,5.0,10.779293863639728,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,6.0,11.905851326439164,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,7.0,12.757328197381346,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,8.0,13.352275343225969,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,9.0,13.703943383087118,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,10.0,13.82028268843323,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,11.0,13.703943383087115,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,12.0,13.352275343225969,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,13.0,12.757328197381346,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,14.0,11.905851326439167,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,15.0,10.779293863639728,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,16.0,9.3538046945777,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,17.0,7.600232457202121,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,18.0,5.4841255418163986,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,19.0,2.965732091078306,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Construction stage,Calculated response,20.0,0.0,Pe_construction camber + girder self-weight + wet topping,"Pe=3798.5 kN, yps=144.7 mm",31528.558482747037,137814102564.10257,341593501017.9541,12.74,23.03,6.0,0.0,Current single-girder section model,Calculated,,,,,,
+Service stage,Envelope Max,0.0,0.0,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,3.0,0.0,m,0.0,m
+Service stage,Envelope Min,0.0,0.0,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,4.0,0.0,m,0.0,m
+Service stage,Envelope Max,0.325,-0.417,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,5.0,0.325,m,-0.000417,m
+Service stage,Envelope Min,0.325,-0.481,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,6.0,0.325,m,-0.000481,m
+Service stage,Envelope Max,1.23571,-1.589,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,7.0,1.23571,m,-0.001589,m
+Service stage,Envelope Min,1.23571,-1.8339999999999999,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,8.0,1.23571,m,-0.001834,m
+Service stage,Envelope Max,2.14643,-2.716,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,9.0,2.14643,m,-0.002716,m
+Service stage,Envelope Min,2.14643,-3.1350000000000002,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,10.0,2.14643,m,-0.003135,m
+Service stage,Envelope Max,3.05714,-3.776,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,11.0,3.05714,m,-0.003776,m
+Service stage,Envelope Min,3.05714,-4.359,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,12.0,3.05714,m,-0.004359,m
+Service stage,Envelope Max,3.96786,-4.75,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,13.0,3.96786,m,-0.00475,m
+Service stage,Envelope Min,3.96786,-5.484,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,14.0,3.96786,m,-0.005484,m
+Service stage,Envelope Max,4.87857,-5.621,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,15.0,4.87857,m,-0.005621,m
+Service stage,Envelope Min,4.87857,-6.49,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,16.0,4.87857,m,-0.00649,m
+Service stage,Envelope Max,5.78929,-6.372,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,17.0,5.78929,m,-0.006372,m
+Service stage,Envelope Min,5.78929,-7.359,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,18.0,5.78929,m,-0.007359,m
+Service stage,Envelope Max,6.7,-6.993,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,19.0,6.7,m,-0.006993,m
+Service stage,Envelope Min,6.7,-8.076,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,20.0,6.7,m,-0.008076,m
+Service stage,Envelope Max,7.63929,-7.485,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,21.0,7.63929,m,-0.007485,m
+Service stage,Envelope Min,7.63929,-8.644,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,22.0,7.63929,m,-0.008644,m
+Service stage,Envelope Max,8.57857,-7.819,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,23.0,8.57857,m,-0.007819,m
+Service stage,Envelope Min,8.57857,-9.029,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,24.0,8.57857,m,-0.009029,m
+Service stage,Envelope Max,9.51786,-7.988,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,25.0,9.51786,m,-0.007988,m
+Service stage,Envelope Min,9.51786,-9.225000000000001,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,26.0,9.51786,m,-0.009225,m
+Service stage,Envelope Max,10.45714,-7.991,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,27.0,10.45714,m,-0.007991,m
+Service stage,Envelope Min,10.45714,-9.227,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,28.0,10.45714,m,-0.009227,m
+Service stage,Envelope Max,11.39643,-7.826,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,29.0,11.39643,m,-0.007826,m
+Service stage,Envelope Min,11.39643,-9.036999999999999,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,30.0,11.39643,m,-0.009037,m
+Service stage,Envelope Max,12.33571,-7.497,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,31.0,12.33571,m,-0.007497,m
+Service stage,Envelope Min,12.33571,-8.658000000000001,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,32.0,12.33571,m,-0.008658,m
+Service stage,Envelope Max,13.275,-7.0089999999999995,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,33.0,13.275,m,-0.007009,m
+Service stage,Envelope Min,13.275,-8.094000000000001,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,34.0,13.275,m,-0.008094,m
+Service stage,Envelope Max,14.18929,-6.388999999999999,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,35.0,14.18929,m,-0.006389,m
+Service stage,Envelope Min,14.18929,-7.378,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,36.0,14.18929,m,-0.007378,m
+Service stage,Envelope Max,15.10357,-5.636,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,37.0,15.10357,m,-0.005636,m
+Service stage,Envelope Min,15.10357,-6.508,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,38.0,15.10357,m,-0.006508,m
+Service stage,Envelope Max,16.01786,-4.764,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,39.0,16.01786,m,-0.004764,m
+Service stage,Envelope Min,16.01786,-5.5,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,40.0,16.01786,m,-0.0055,m
+Service stage,Envelope Max,16.93214,-3.786,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,41.0,16.93214,m,-0.003786,m
+Service stage,Envelope Min,16.93214,-4.3709999999999996,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,42.0,16.93214,m,-0.004371,m
+Service stage,Envelope Max,17.84643,-2.722,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,43.0,17.84643,m,-0.002722,m
+Service stage,Envelope Min,17.84643,-3.142,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,44.0,17.84643,m,-0.003142,m
+Service stage,Envelope Max,18.76071,-1.59,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,45.0,18.76071,m,-0.00159,m
+Service stage,Envelope Min,18.76071,-1.835,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,46.0,18.76071,m,-0.001835,m
+Service stage,Envelope Max,19.675,-0.415,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,47.0,19.675,m,-0.000415,m
+Service stage,Envelope Min,19.675,-0.479,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,48.0,19.675,m,-0.000479,m
+Service stage,Envelope Max,20.0,0.0,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Max,49.0,20.0,m,0.0,m
+Service stage,Envelope Min,20.0,0.0,,,,,,,,,,Left Exterior Girder,Imported SLS envelope,Min,50.0,20.0,m,0.0,m
+Service stage,Envelope Max,0.0,0.0,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,3.0,0.0,m,0.0,m
+Service stage,Envelope Min,0.0,0.0,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,4.0,0.0,m,0.0,m
+Service stage,Envelope Max,0.325,-0.414,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,5.0,0.325,m,-0.000414,m
+Service stage,Envelope Min,0.325,-0.47800000000000004,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,6.0,0.325,m,-0.000478,m
+Service stage,Envelope Max,1.23571,-1.577,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,7.0,1.23571,m,-0.001577,m
+Service stage,Envelope Min,1.23571,-1.82,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,8.0,1.23571,m,-0.00182,m
+Service stage,Envelope Max,2.14643,-2.697,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,9.0,2.14643,m,-0.002697,m
+Service stage,Envelope Min,2.14643,-3.114,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,10.0,2.14643,m,-0.003114,m
+Service stage,Envelope Max,3.05714,-3.751,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,11.0,3.05714,m,-0.003751,m
+Service stage,Envelope Min,3.05714,-4.3309999999999995,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,12.0,3.05714,m,-0.004331,m
+Service stage,Envelope Max,3.96786,-4.717,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,13.0,3.96786,m,-0.004717,m
+Service stage,Envelope Min,3.96786,-5.4479999999999995,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,14.0,3.96786,m,-0.005448,m
+Service stage,Envelope Max,4.87857,-5.58,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,15.0,4.87857,m,-0.00558,m
+Service stage,Envelope Min,4.87857,-6.444,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,16.0,4.87857,m,-0.006444,m
+Service stage,Envelope Max,5.78929,-6.324,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,17.0,5.78929,m,-0.006324,m
+Service stage,Envelope Min,5.78929,-7.303999999999999,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,18.0,5.78929,m,-0.007304,m
+Service stage,Envelope Max,6.7,-6.938,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,19.0,6.7,m,-0.006938,m
+Service stage,Envelope Min,6.7,-8.014000000000001,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,20.0,6.7,m,-0.008014,m
+Service stage,Envelope Max,7.63929,-7.427,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,21.0,7.63929,m,-0.007427,m
+Service stage,Envelope Min,7.63929,-8.579,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,22.0,7.63929,m,-0.008579,m
+Service stage,Envelope Max,8.57857,-7.760000000000001,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,23.0,8.57857,m,-0.00776,m
+Service stage,Envelope Min,8.57857,-8.963000000000001,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,24.0,8.57857,m,-0.008963,m
+Service stage,Envelope Max,9.51786,-7.927999999999999,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,25.0,9.51786,m,-0.007928,m
+Service stage,Envelope Min,9.51786,-9.157,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,26.0,9.51786,m,-0.009157,m
+Service stage,Envelope Max,10.45714,-7.931000000000001,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,27.0,10.45714,m,-0.007931,m
+Service stage,Envelope Min,10.45714,-9.16,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,28.0,10.45714,m,-0.00916,m
+Service stage,Envelope Max,11.39643,-7.7669999999999995,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,29.0,11.39643,m,-0.007767,m
+Service stage,Envelope Min,11.39643,-8.971,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,30.0,11.39643,m,-0.008971,m
+Service stage,Envelope Max,12.33571,-7.439,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,31.0,12.33571,m,-0.007439,m
+Service stage,Envelope Min,12.33571,-8.593,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,32.0,12.33571,m,-0.008593,m
+Service stage,Envelope Max,13.275,-6.954,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,33.0,13.275,m,-0.006954,m
+Service stage,Envelope Min,13.275,-8.033,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,34.0,13.275,m,-0.008033,m
+Service stage,Envelope Max,14.18929,-6.3420000000000005,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,35.0,14.18929,m,-0.006342,m
+Service stage,Envelope Min,14.18929,-7.325,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,36.0,14.18929,m,-0.007325,m
+Service stage,Envelope Max,15.10357,-5.598,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,37.0,15.10357,m,-0.005598,m
+Service stage,Envelope Min,15.10357,-6.465,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,38.0,15.10357,m,-0.006465,m
+Service stage,Envelope Max,16.01786,-4.734999999999999,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,39.0,16.01786,m,-0.004735,m
+Service stage,Envelope Min,16.01786,-5.468,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,40.0,16.01786,m,-0.005468,m
+Service stage,Envelope Max,16.93214,-3.766,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,41.0,16.93214,m,-0.003766,m
+Service stage,Envelope Min,16.93214,-4.348999999999999,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,42.0,16.93214,m,-0.004349,m
+Service stage,Envelope Max,17.84643,-2.709,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,43.0,17.84643,m,-0.002709,m
+Service stage,Envelope Min,17.84643,-3.128,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,44.0,17.84643,m,-0.003128,m
+Service stage,Envelope Max,18.76071,-1.5839999999999999,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,45.0,18.76071,m,-0.001584,m
+Service stage,Envelope Min,18.76071,-1.829,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,46.0,18.76071,m,-0.001829,m
+Service stage,Envelope Max,19.675,-0.415,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,47.0,19.675,m,-0.000415,m
+Service stage,Envelope Min,19.675,-0.479,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,48.0,19.675,m,-0.000479,m
+Service stage,Envelope Max,20.0,0.0,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Max,49.0,20.0,m,0.0,m
+Service stage,Envelope Min,20.0,0.0,,,,,,,,,,Interior Girder 2,Imported SLS envelope,Min,50.0,20.0,m,0.0,m

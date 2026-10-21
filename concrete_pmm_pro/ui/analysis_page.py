@@ -22002,104 +22002,18 @@ def _deflection_action_hints(summary_df: pd.DataFrame) -> list[str]:
 
 
 def _render_girder_deflection_camber_workspace(*, basis_options: object) -> None:
-    """Render DEFLECT.SLS1 short-term deflection / camber preview workspace."""
-    if "igird_sls_member_bank" in st.session_state:
-        st.info("Imported CSiBridge SLS cases feed the stress workspace. Deflection/camber here still uses the app's generated stage-load model.")
-
-
-    st.markdown("### SLS Deflection / Camber")
-    st.caption(
-        "Short-term elastic deflection/camber check for simple-span Beam/Girder workflows. "
-        "Positive values are upward camber and negative values are downward deflection. "
-        "Long-term creep/shrinkage and cracked-section deflection are not included."
-    )
+    """SLS.DEFLECT70: calculated precast stages; bridge Service uses CSI envelopes."""
+    mode = _analysis_mode_from_session()
+    if mode.member_type == 'beam_girder':
+        from concrete_pmm_pro.ui.girder_deflect70 import render
+    else:
+        from concrete_pmm_pro.ui.girder_deflect69 import render
     bases = getattr(basis_options, "bases", {}) or {}
     if "precast_gross" not in bases:
-        st.info("Build a valid Beam/Girder section before running the deflection/camber preview.")
+        st.info("Build a valid Beam/Girder section before calculating deflection / camber.")
         return
-    span = _girder_sls_span_length_from_session([])
-    with st.expander("Deflection check settings", expanded=True):
-        cols = st.columns([1.0, 1.0, 2.0])
-        limit_options = ["L/240", "L/360", "L/480", "L/1000", "Custom", "Review only"]
-        key = "girder_deflection_allowable_limit_basis"
-        if st.session_state.get(key) not in limit_options:
-            st.session_state[key] = "L/360"
-        with cols[0]:
-            st.selectbox("Allowable downward deflection", limit_options, key=key)
-        with cols[1]:
-            st.metric("Span L", f"{span:.3f} m")
-        with cols[2]:
-            st.caption("Select project-specific downward-deflection criteria. Transfer and Construction rows report response semantics (CAMBER / DEFLECTION / RESPONSE) rather than service acceptance status.")
-    _limit_label, limit_mm = _girder_deflection_limit_mm(span)
-    curve_df = _girder_deflection_curve_rows(basis_options=basis_options)
-    if curve_df.empty:
-        st.info("Deflection/camber curves are not available for the current section basis.")
-        return
-    summary_df = _girder_deflection_summary_rows(curve_df, limit_mm=limit_mm)
-    st.markdown("**Deflection / Camber decision summary**")
-    _render_analysis_summary_strip(_girder_deflection_overall_cards(summary_df, limit_label=_limit_label), columns=4)
-    if not summary_df.empty:
-        display_df = summary_df.copy()
-        if "Max upward camber (mm)" in display_df.columns:
-            display_df["Max upward camber (mm)"] = display_df["Max upward camber (mm)"].map(
-                lambda v: _girder_deflection_response_text(float(v), decimals=3) if not isinstance(v, str) else v
-            )
-        if "Max downward deflection (mm)" in display_df.columns:
-            display_df["Max downward deflection (mm)"] = display_df["Max downward deflection (mm)"].map(
-                lambda v: _girder_deflection_response_text(float(v), decimals=3) if not isinstance(v, str) else v
-            )
-        if {"Max upward camber (mm)", "x up (m)"}.issubset(display_df.columns):
-            display_df["x up (m)"] = [
-                _girder_deflection_response_x_text(max_up, x_up, decimals=3)
-                for max_up, x_up in zip(summary_df["Max upward camber (mm)"], summary_df["x up (m)"], strict=False)
-            ]
-        if {"Max downward deflection (mm)", "x down (m)"}.issubset(display_df.columns):
-            display_df["x down (m)"] = [
-                _girder_deflection_response_x_text(max_down, x_down, decimals=3)
-                for max_down, x_down in zip(summary_df["Max downward deflection (mm)"], summary_df["x down (m)"], strict=False)
-            ]
-        for col in ("Limit (mm)", "Utilization"):
-            if col in display_df.columns:
-                display_df[col] = display_df[col].map(lambda v: v if isinstance(v, str) else round(float(v), 3))
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
-    hints = _deflection_action_hints(summary_df)
-    if hints:
-        items = "".join(f"<li>{escape(hint)}</li>" for hint in hints)
-        st.markdown(
-            '<div class="cpmm-sls-action-panel"><div class="cpmm-sls-action-title">Deflection / camber action hints</div>'
-            f"<ul>{items}</ul></div>",
-            unsafe_allow_html=True,
-        )
-    tab_specs = [
-        ("Transfer stage", "Transfer camber/deflection from Pe_transfer and self-weight"),
-        ("Construction stage", "Construction / CIP pour camber/deflection from Pe_construction, self-weight, and wet topping"),
-        ("Service stage", "Final service short-term deflection from locked-in components plus sustained/LL service increments"),
-    ]
-    tabs = st.tabs([label for label, _note in tab_specs])
-    for tab, (stage_label, note) in zip(tabs, tab_specs, strict=False):
-        with tab:
-            st.caption(note)
-            st.plotly_chart(_make_girder_deflection_figure(curve_df, stage_label=stage_label), use_container_width=True)
-    with st.expander("Deflection component audit", expanded=False):
-        audit_cols = [
-            "Stage",
-            "Curve",
-            "Station x (m)",
-            "Deflection (mm)",
-            "Basis note",
-            "Prestress basis",
-            "E used (MPa)",
-            "Precast Ix (mm^4)",
-            "Composite Ix (mm^4)",
-            "Transfer auto w (kN/m)",
-            "Construction auto w (kN/m)",
-            "Service sustained w (kN/m)",
-            "Service LL w (kN/m)",
-        ]
-        st.dataframe(curve_df[[col for col in audit_cols if col in curve_df.columns]], use_container_width=True, hide_index=True)
-        st.write("- UDL deflection uses simple-span elastic formula 5wL⁴/(384EI) shape along x.")
-        st.write("- Prestress camber uses a simplified constant equivalent moment Pe·e at midspan. Debonding is represented through the active midspan Pe/yps only in this first milestone.")
-        st.write("- Service increments use the composite transformed section when available; otherwise the precast gross basis is used as fallback.")
+    render(build_curves=lambda: _girder_deflection_curve_rows(basis_options=basis_options),
+        span_m=_girder_sls_span_length_from_session([]))
 
 
 def _render_railway_u_girder_lifting_audit_panel(df: pd.DataFrame, *, span_length_m: float) -> None:
@@ -32535,13 +32449,12 @@ def _render_crossbeam_sls_deflection_workspace() -> None:
         st.info(str(result.get("scope") or ""))
 
 def render_analysis_sls_deflection_camber() -> None:
-    st.subheader("SLS Deflection / Camber")
     mode_settings = _analysis_mode_from_session()
     if is_portal_frame_crossbeam_workflow(mode_settings):
+        st.subheader("SLS Deflection / Camber")
         _render_crossbeam_sls_deflection_workspace()
         return
     _render_project_design_code_guard(workflow="girder_sls")
-    st.info("Deflection convention: positive = upward camber, negative = downward deflection.")
 
     is_bridge_workflow = is_beam_girder_future_workflow(mode_settings)
     is_building_workflow = is_building_beam_girder_workflow(mode_settings)
@@ -32826,7 +32739,7 @@ def render_analysis_page() -> None:
     compact_bridge=compact_sls or (is_beam_girder_future_workflow(_analysis_mode_from_session())
         and _beam_uls_is_precast_composite_bridge(st.session_state,is_bridge=True)
         and st.session_state.get('_nav_analysis_subpage','ULS Strength')=='ULS Strength')
-    if member and not compact_sls:
+    if member and not compact_sls and st.session_state.get('_nav_analysis_subpage') != 'SLS Deflection / Camber':
         if compact_bridge:st.caption('Design member: '+str(member)+' · current section / reinforcement / support inputs')
         else:st.info(f'ULS imported girder: {member}. Calculate using the current section, reinforcement, prestress and support settings; results identify the source girder/case.')
     _sync_analysis_settings_code_to_project()

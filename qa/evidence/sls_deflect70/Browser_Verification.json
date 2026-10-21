@@ -1,0 +1,506 @@
+{
+  "milestone": "SLS.DEFLECT70",
+  "browser": "134.0.6998.35",
+  "page_errors": [],
+  "actual_workbook_uploaded_through_browser": true,
+  "no_service_fallback_before_upload": true,
+  "single_calculate_command": true,
+  "single_visible_chart": true,
+  "two_girders_selectable": true,
+  "viewports_px": [
+    1440,
+    1280
+  ],
+  "document_overflow": {
+    "width": 1280,
+    "document": 1280
+  },
+  "report_downloaded_with_96_native_vertical_rows": true,
+  "plots": {
+    "Transfer": {
+      "title": "<b><b>Transfer deflection \u00b7 single I-girder<br><sup>Current section model \u00b7 calculated deflection / camber</sup></b></b>",
+      "meta": {
+        "version": "SLS.DEFLECT70",
+        "stage": "Transfer stage",
+        "girder": "Current single-girder section model",
+        "component": "Calculated vertical response",
+        "source": "Generated stage loads",
+        "service_available": true,
+        "full_deflection_acceptance": false
+      },
+      "range": [
+        0,
+        20
+      ],
+      "traces": [
+        {
+          "name": "Calculated response",
+          "x": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ],
+          "y": [
+            0,
+            3.7512823584931922,
+            7.032925566605248,
+            9.869852065393275,
+            12.284052244025311,
+            14.294584439780323,
+            15.917574938048205,
+            17.166217972329783,
+            18.050775724236793,
+            18.578578323491932,
+            18.754023847928803,
+            18.578578323491932,
+            18.050775724236793,
+            17.166217972329783,
+            15.917574938048208,
+            14.294584439780323,
+            12.284052244025311,
+            9.869852065393275,
+            7.0329255666052495,
+            3.7512823584931914,
+            0
+          ],
+          "connectgaps": false
+        },
+        {
+          "name": "Governing response",
+          "x": [
+            10
+          ],
+          "y": [
+            18.754023847928803
+          ],
+          "connectgaps": null
+        }
+      ]
+    },
+    "Construction": {
+      "title": "<b><b>Construction deflection \u00b7 single I-girder<br><sup>Current section model \u00b7 calculated deflection / camber</sup></b></b>",
+      "meta": {
+        "version": "SLS.DEFLECT70",
+        "stage": "Construction stage",
+        "girder": "Current single-girder section model",
+        "component": "Calculated vertical response",
+        "source": "Generated stage loads",
+        "service_available": true,
+        "full_deflection_acceptance": false
+      },
+      "range": [
+        0,
+        20
+      ],
+      "traces": [
+        {
+          "name": "Calculated response",
+          "x": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20
+          ],
+          "y": [
+            0,
+            2.9657320910783067,
+            5.484125541816397,
+            7.600232457202121,
+            9.3538046945777,
+            10.779293863639728,
+            11.905851326439164,
+            12.757328197381346,
+            13.352275343225969,
+            13.703943383087118,
+            13.82028268843323,
+            13.703943383087115,
+            13.352275343225969,
+            12.757328197381346,
+            11.905851326439167,
+            10.779293863639728,
+            9.3538046945777,
+            7.600232457202121,
+            5.4841255418163986,
+            2.965732091078306,
+            0
+          ],
+          "connectgaps": false
+        },
+        {
+          "name": "Governing response",
+          "x": [
+            10
+          ],
+          "y": [
+            13.82028268843323
+          ],
+          "connectgaps": null
+        }
+      ]
+    },
+    "Left Exterior Girder": {
+      "title": "<b><b>Service deflection \u00b7 Left Exterior Girder<br><sup>WebTop Vert \u00b7 Imported SLS envelope</sup></b></b>",
+      "meta": {
+        "version": "SLS.DEFLECT70",
+        "stage": "Service stage",
+        "girder": "Left Exterior Girder",
+        "component": "WebTop Vert",
+        "source": "Imported SLS envelope",
+        "service_available": true,
+        "full_deflection_acceptance": false
+      },
+      "range": [
+        0,
+        20
+      ],
+      "traces": [
+        {
+          "name": "Envelope Max",
+          "x": [
+            0,
+            0.325,
+            1.23571,
+            2.14643,
+            3.05714,
+            3.96786,
+            4.87857,
+            5.78929,
+            6.7,
+            7.63929,
+            8.57857,
+            9.51786,
+            10.45714,
+            11.39643,
+            12.33571,
+            13.275,
+            14.18929,
+            15.10357,
+            16.01786,
+            16.93214,
+            17.84643,
+            18.76071,
+            19.675,
+            20
+          ],
+          "y": [
+            0,
+            -0.417,
+            -1.589,
+            -2.716,
+            -3.776,
+            -4.75,
+            -5.621,
+            -6.372,
+            -6.993,
+            -7.485,
+            -7.819,
+            -7.988,
+            -7.991,
+            -7.826,
+            -7.497,
+            -7.0089999999999995,
+            -6.388999999999999,
+            -5.636,
+            -4.764,
+            -3.786,
+            -2.722,
+            -1.59,
+            -0.415,
+            0
+          ],
+          "connectgaps": false
+        },
+        {
+          "name": "Envelope Min",
+          "x": [
+            0,
+            0.325,
+            1.23571,
+            2.14643,
+            3.05714,
+            3.96786,
+            4.87857,
+            5.78929,
+            6.7,
+            7.63929,
+            8.57857,
+            9.51786,
+            10.45714,
+            11.39643,
+            12.33571,
+            13.275,
+            14.18929,
+            15.10357,
+            16.01786,
+            16.93214,
+            17.84643,
+            18.76071,
+            19.675,
+            20
+          ],
+          "y": [
+            0,
+            -0.481,
+            -1.8339999999999999,
+            -3.1350000000000002,
+            -4.359,
+            -5.484,
+            -6.49,
+            -7.359,
+            -8.076,
+            -8.644,
+            -9.029,
+            -9.225000000000001,
+            -9.227,
+            -9.036999999999999,
+            -8.658000000000001,
+            -8.094000000000001,
+            -7.378,
+            -6.508,
+            -5.5,
+            -4.3709999999999996,
+            -3.142,
+            -1.835,
+            -0.479,
+            0
+          ],
+          "connectgaps": false
+        },
+        {
+          "name": "Limit \u00b113.33 mm",
+          "x": [
+            0,
+            20
+          ],
+          "y": [
+            -13.333333333333334,
+            -13.333333333333334
+          ],
+          "connectgaps": false
+        },
+        {
+          "name": "Limit \u00b113.33 mm",
+          "x": [
+            0,
+            20
+          ],
+          "y": [
+            13.333333333333334,
+            13.333333333333334
+          ],
+          "connectgaps": false
+        },
+        {
+          "name": "Governing response",
+          "x": [
+            10.45714
+          ],
+          "y": [
+            -9.227
+          ],
+          "connectgaps": null
+        }
+      ]
+    },
+    "Interior Girder 2": {
+      "title": "<b><b>Service deflection \u00b7 Interior Girder 2<br><sup>WebTop Vert \u00b7 Imported SLS envelope</sup></b></b>",
+      "meta": {
+        "version": "SLS.DEFLECT70",
+        "stage": "Service stage",
+        "girder": "Interior Girder 2",
+        "component": "WebTop Vert",
+        "source": "Imported SLS envelope",
+        "service_available": true,
+        "full_deflection_acceptance": false
+      },
+      "range": [
+        0,
+        20
+      ],
+      "traces": [
+        {
+          "name": "Envelope Max",
+          "x": [
+            0,
+            0.325,
+            1.23571,
+            2.14643,
+            3.05714,
+            3.96786,
+            4.87857,
+            5.78929,
+            6.7,
+            7.63929,
+            8.57857,
+            9.51786,
+            10.45714,
+            11.39643,
+            12.33571,
+            13.275,
+            14.18929,
+            15.10357,
+            16.01786,
+            16.93214,
+            17.84643,
+            18.76071,
+            19.675,
+            20
+          ],
+          "y": [
+            0,
+            -0.414,
+            -1.577,
+            -2.697,
+            -3.751,
+            -4.717,
+            -5.58,
+            -6.324,
+            -6.938,
+            -7.427,
+            -7.760000000000001,
+            -7.927999999999999,
+            -7.931000000000001,
+            -7.7669999999999995,
+            -7.439,
+            -6.954,
+            -6.3420000000000005,
+            -5.598,
+            -4.734999999999999,
+            -3.766,
+            -2.709,
+            -1.5839999999999999,
+            -0.415,
+            0
+          ],
+          "connectgaps": false
+        },
+        {
+          "name": "Envelope Min",
+          "x": [
+            0,
+            0.325,
+            1.23571,
+            2.14643,
+            3.05714,
+            3.96786,
+            4.87857,
+            5.78929,
+            6.7,
+            7.63929,
+            8.57857,
+            9.51786,
+            10.45714,
+            11.39643,
+            12.33571,
+            13.275,
+            14.18929,
+            15.10357,
+            16.01786,
+            16.93214,
+            17.84643,
+            18.76071,
+            19.675,
+            20
+          ],
+          "y": [
+            0,
+            -0.47800000000000004,
+            -1.82,
+            -3.114,
+            -4.3309999999999995,
+            -5.4479999999999995,
+            -6.444,
+            -7.303999999999999,
+            -8.014000000000001,
+            -8.579,
+            -8.963000000000001,
+            -9.157,
+            -9.16,
+            -8.971,
+            -8.593,
+            -8.033,
+            -7.325,
+            -6.465,
+            -5.468,
+            -4.348999999999999,
+            -3.128,
+            -1.829,
+            -0.479,
+            0
+          ],
+          "connectgaps": false
+        },
+        {
+          "name": "Limit \u00b113.33 mm",
+          "x": [
+            0,
+            20
+          ],
+          "y": [
+            -13.333333333333334,
+            -13.333333333333334
+          ],
+          "connectgaps": false
+        },
+        {
+          "name": "Limit \u00b113.33 mm",
+          "x": [
+            0,
+            20
+          ],
+          "y": [
+            13.333333333333334,
+            13.333333333333334
+          ],
+          "connectgaps": false
+        },
+        {
+          "name": "Governing response",
+          "x": [
+            10.45714
+          ],
+          "y": [
+            -9.16
+          ],
+          "connectgaps": null
+        }
+      ]
+    }
+  },
+  "full_deflection_acceptance": false
+}

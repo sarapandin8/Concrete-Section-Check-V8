@@ -1031,6 +1031,16 @@ def project_from_session_state(session_state: Any) -> ProjectModel:
     beam_girder_sls_auto_load_settings = _beam_girder_sls_auto_load_settings_metadata_from_session(session_state)
     if beam_girder_sls_auto_load_settings:
         metadata[BEAM_GIRDER_SLS_AUTO_LOAD_SETTINGS_KEY] = beam_girder_sls_auto_load_settings
+    from concrete_pmm_pro.serviceability.girder_deflect69 import SETTINGS_KEY as deflect69_key, settings as deflect69_settings
+    if isinstance(_get_session_value(session_state, deflect69_key), dict):
+        metadata[deflect69_key] = deflect69_settings(session_state)
+    from concrete_pmm_pro.serviceability.girder_deflect70 import SETTINGS_KEY as deflect70_key, settings as deflect70_settings
+    from concrete_pmm_pro.io.girder_deflect70 import BANK_KEY as deflect70_bank_key, input_metadata as deflect70_metadata
+    if isinstance(_get_session_value(session_state, deflect70_key), dict):
+        metadata[deflect70_key] = deflect70_settings(session_state)
+    deflect70_bank = deflect70_metadata(session_state)
+    if deflect70_bank is not None:
+        metadata[deflect70_bank_key] = deflect70_bank
     beam_girder_construction_uls_settings = _beam_girder_construction_uls_settings_metadata_from_session(session_state)
     if beam_girder_construction_uls_settings:
         metadata[BEAM_GIRDER_CONSTRUCTION_ULS_SETTINGS_KEY] = beam_girder_construction_uls_settings
@@ -1439,7 +1449,7 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
     # UI transport and must never survive from the previously open project.
     _clear_crossbeam_restore_widget_state(session_state)
     for key in list(session_state):
-        if str(key).startswith(('slab_shell55_', 'parametric_i_girder_deck_long_rebar_', 'parametric_i_girder_shear_aggregate',
+        if str(key).startswith(('slab_shell55_', 'girder_deflect69_', 'girder_deflect70_', 'parametric_i_girder_deck_long_rebar_', 'parametric_i_girder_shear_aggregate',
             'parametric_i_girder_shear_max_aggregate', 'parametric_i_girder_shear_verified_sx', 'parametric_i_girder_shear_sx_layers')):
             session_state.pop(key,None)
 
@@ -1713,6 +1723,15 @@ def apply_project_to_session_state(project: ProjectModel, session_state: Mutable
     beam_girder_sls_auto_load_settings = project.metadata.get(BEAM_GIRDER_SLS_AUTO_LOAD_SETTINGS_KEY)
     if isinstance(beam_girder_sls_auto_load_settings, dict):
         session_state[BEAM_GIRDER_SLS_AUTO_LOAD_SETTINGS_KEY] = auto_load_settings_from_mapping(beam_girder_sls_auto_load_settings).as_metadata()
+    from concrete_pmm_pro.serviceability.girder_deflect69 import SETTINGS_KEY as deflect69_key, settings as deflect69_settings
+    if isinstance(project.metadata.get(deflect69_key), dict):
+        session_state[deflect69_key] = deflect69_settings({deflect69_key: project.metadata[deflect69_key]})
+    from concrete_pmm_pro.serviceability.girder_deflect70 import SETTINGS_KEY as deflect70_key, settings as deflect70_settings
+    from concrete_pmm_pro.io.girder_deflect70 import BANK_KEY as deflect70_bank_key, validate_bank as deflect70_validate
+    if isinstance(project.metadata.get(deflect70_key), dict):
+        session_state[deflect70_key] = deflect70_settings({deflect70_key: project.metadata[deflect70_key]})
+    if project.metadata.get(deflect70_bank_key) is not None:
+        session_state[deflect70_bank_key] = deflect70_validate(project.metadata[deflect70_bank_key])
     beam_girder_construction_uls_settings = project.metadata.get(BEAM_GIRDER_CONSTRUCTION_ULS_SETTINGS_KEY)
     if isinstance(beam_girder_construction_uls_settings, dict):
         session_state[BEAM_GIRDER_CONSTRUCTION_ULS_SETTINGS_KEY] = construction_uls_settings_from_mapping(beam_girder_construction_uls_settings).as_metadata()

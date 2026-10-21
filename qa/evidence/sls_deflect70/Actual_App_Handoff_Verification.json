@@ -1,0 +1,16 @@
+{
+  "milestone": "SLS.DEFLECT70",
+  "actual_full_app": true,
+  "source_files_unchanged": true,
+  "calculation_invocations": 1,
+  "three_stage_and_girder_navigation": true,
+  "summary_and_report_results_current": true,
+  "hidden_solver_reruns": false,
+  "service_import_available": true,
+  "girders": [
+    "Left Exterior Girder",
+    "Interior Girder 2"
+  ],
+  "status": "REVIEW REQUIRED",
+  "full_deflection_acceptance": false
+}
