@@ -1,0 +1,1 @@
+Add automatic punching input review from saved load areas and CSI load-basis metadata. Fold optional area inputs, guide continuous-UDL models to one-way shear, and record unresolved local punching scope in reports.

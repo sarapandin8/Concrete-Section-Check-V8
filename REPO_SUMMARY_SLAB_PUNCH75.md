@@ -1,0 +1,1 @@
+Fix punching load-area Apply feedback, provide an editable blank row, and prevent added/deleted rows from replaying after save. Preserve validated area inputs and require Calculate to refresh punching results.

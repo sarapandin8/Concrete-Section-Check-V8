@@ -1,0 +1,69 @@
+{
+  "milestone": "SLAB.PUNCHAUTO76",
+  "release_date": "2026-10-22",
+  "baseline_sha256": "9288adc7a4cb12b3e599049b1bb87bce39e1a20ad2813c7f5f7d123d524355e7",
+  "modified_production_files": [
+    "concrete_pmm_pro/analysis/slab_top65.py",
+    "concrete_pmm_pro/ui/slab_shear64_workspace.py",
+    "concrete_pmm_pro/ui/slab_top65_workspace.py"
+  ],
+  "added_production_files": [
+    "concrete_pmm_pro/analysis/slab_punching76.py"
+  ],
+  "other_existing_production_modules_byte_identical": true,
+  "existing_production_modules_compared": 298,
+  "top65_ast_unchanged_except_report_zip": true,
+  "numerical_calculate_fingerprint_current_and_punching64_unchanged": true,
+  "project74_persistence_and_color73_palette_unchanged": true,
+  "compile": {
+    "status": "PASS",
+    "files": [
+      "app.py",
+      "concrete_pmm_pro/analysis/slab_top65.py",
+      "concrete_pmm_pro/ui/slab_shear64_workspace.py",
+      "concrete_pmm_pro/ui/slab_top65_workspace.py",
+      "concrete_pmm_pro/analysis/slab_punching76.py",
+      "tests/test_slab_punch76_auto.py",
+      "tests/test_slab_aashto62_ui.py",
+      "tests/test_slab_top65.py"
+    ]
+  },
+  "tests": {
+    "targeted.xml": {
+      "tests": 46,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    },
+    "regression.xml": {
+      "tests": 82,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0
+    }
+  },
+  "unique_tests_passed": 128,
+  "automatic_input_review": {
+    "source": "Committed physical areas and saved CSI load-basis metadata",
+    "routes": [
+      "saved_areas",
+      "continuous_udl",
+      "udl_basis_unmatched",
+      "footprint_missing"
+    ],
+    "physical_footprints_inferred_from_shell_peaks": false,
+    "UDL_creates_local_punching_PASS": false,
+    "UDL_is_a_code_exemption": false,
+    "optional_area_table_folded": true,
+    "oneway_navigation_without_solver_rerun": true,
+    "report_uses_result_snapshot": true,
+    "local_punching_without_physical_footprint": "NOT CALCULATED"
+  },
+  "reference": {
+    "url": "https://docs.csiamerica.com/help-files/safe/Menus/Design/Punching_Check_Overwrites.htm",
+    "use": "CSI software input/perimeter workflow; does not change the accepted AASHTO calculation basis"
+  },
+  "test_scope": "Actual app.py with Streamlit AppTest and synthetic structural fixtures. Real 127,680-row project not rerun.",
+  "full_deck_acceptance": false,
+  "status": "PASS for automatic input/scope review workflow"
+}

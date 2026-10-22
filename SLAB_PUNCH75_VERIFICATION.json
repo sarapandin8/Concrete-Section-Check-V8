@@ -1,0 +1,51 @@
+{
+  "milestone": "SLAB.PUNCH75",
+  "release_date": "2026-10-22",
+  "baseline_sha256": "18c300d0957b953d98dcc5d0c719e16c86579727773bbc3750f4df565f25bc32",
+  "modified_production_files": [
+    "concrete_pmm_pro/ui/slab_shear64_workspace.py"
+  ],
+  "other_production_modules_byte_identical": true,
+  "production_modules_compared": 298,
+  "compile": {
+    "status": "PASS",
+    "files": [
+      "app.py",
+      "concrete_pmm_pro/ui/slab_shear64_workspace.py",
+      "tests/test_slab_punch75_ui.py"
+    ]
+  },
+  "tests": {
+    "targeted.xml": {
+      "tests": 34,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "regression.xml": {
+      "tests": 67,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "unique_tests_passed": 101,
+  "actual_streamlit_app_test_checks": [
+    "Empty Apply shows an actionable warning and saves no false definition",
+    "Blank row accepts X/Y/L/B input without adding a row first",
+    "Valid Apply displays its committed area count after rerun",
+    "Apply does not invoke the structural solver",
+    "Calculate after Apply produces numeric punching D/C in a qualified uniform-thickness fixture",
+    "Both optional automatic Vu and direct design Vu routes work",
+    "Invalid or duplicate drafts preserve the previous definitions",
+    "Added and deleted rows are not replayed after commit",
+    "Delete all clears definitions and invalidates old current results",
+    "Applied definitions survive PROJECT74 save/load; form drafts/notices are cleared on load"
+  ],
+  "equations_and_engine_unchanged": true,
+  "project74_persistence_unchanged": true,
+  "color73_plots_unchanged": true,
+  "real_127680_row_project_rerun": false,
+  "test_scope": "Existing numerical tests and actual app.py through Streamlit AppTest; synthetic geometry fixtures.",
+  "status": "PASS for punching Apply transaction and feedback scope"
+}

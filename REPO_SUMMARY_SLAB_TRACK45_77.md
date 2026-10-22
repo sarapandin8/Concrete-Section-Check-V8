@@ -1,0 +1,1 @@
+Add project-defined 45-degree track-load distribution maps, separate exact I-girder flange contact areas from slab-only punching scope, and preserve existing CSI forces and one-way shear checks. Persist track inputs in project JSON and include geometry traceability in compact reports.
