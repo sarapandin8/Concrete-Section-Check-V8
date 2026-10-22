@@ -11,7 +11,7 @@ from concrete_pmm_pro.analysis import slab_shell56 as inputs
 from concrete_pmm_pro.io.slab_shell_import import current_package
 from concrete_pmm_pro.ui.commercial import render_page_header, render_metric_cards
 from concrete_pmm_pro.ui.slab_aashto63_workspace import number, _trace, _audit, _case_studies
-from concrete_pmm_pro.ui.slab_shear64_workspace import _areas, _interface, _punching
+from concrete_pmm_pro.ui.slab_shear64_workspace import _areas, _interface, _punching, _automatic_punching_inputs
 from concrete_pmm_pro.ui.slab_interface64 import linked_results
 from concrete_pmm_pro.visualization import slab_top65 as plots
 from concrete_pmm_pro.visualization.slab_shell56 import ALL_CASES, element_envelope
@@ -150,7 +150,10 @@ def render(*, analysis_engine=engine):
     st.caption('Code-based ULS sections · eight concurrent shell components retained · imported forces ×1.00.')
     group = st.radio('Review group', GROUPS, horizontal=True, key='slab_shell55_shear64_group')
     if group == 'Punching shear':
-        _areas()
+        automatic_review = st.empty()
+        from concrete_pmm_pro.ui.slab_track77_workspace import inputs as track_inputs
+        track_inputs()
+        _areas(expanded=False)
     package = current_package(st.session_state)
     error = None
     try:
@@ -194,6 +197,9 @@ def render(*, analysis_engine=engine):
         finally:
             bar.empty()
     link = linked_results(st.session_state)
+    if group == 'Punching shear':
+        with automatic_review.container():
+            _automatic_punching_inputs()
     if result is None:
         st.info('STALE — inputs changed; Calculate again.' if engine.RESULT_KEY in st.session_state else
             'NOT CALCULATED — press Calculate Top slab. Four existing reinforcement mats are reused; no second reinforcement input table is needed.')
@@ -203,7 +209,8 @@ def render(*, analysis_engine=engine):
         _interface(link)
         _case_studies()
         return
-    _cards(result)
+    if group != 'Punching shear':
+        _cards(result)
     st.caption(f"{result['design_rows']:,} retained native records · {result['excluded_rows']:,} excluded · "
         f"{len(result['support_faces']):,} support-face samples · ULS components: {result['component_status']} · "
         f"deck acceptance: {result['status']}.")
@@ -215,15 +222,14 @@ def render(*, analysis_engine=engine):
     st.caption('Sectional ULS scope: Nxy/Mxy interaction, local support paths, actual anchorage and fatigue / SLS require their separate checks.')
     if result['incomplete']:
         st.warning('Incomplete native corner/case coverage remains REVIEW; missing values are not filled.')
-    _mats(result)
-    _code_review(result)
-    _proposal(result)
+    if group != 'Punching shear':
+        _mats(result)
+        _code_review(result)
+        _proposal(result)
     if not result['required_actions'].empty:
         with st.expander('Required actions', expanded=False):
             st.dataframe(result['required_actions'], hide_index=True, width='stretch')
     if group == 'Punching shear':
-        if basis['method'] == 'equivalent_udl' and not result['punching']['areas']:
-            st.info('The declared train load is a continuous area-load strip. One-way shear is calculated from CSI. No isolated punching footprint is implied by this UDL model; local concentrated loads / reactions require their physical footprints for a separate punching check.')
         _punching(result)
         _interface(link)
         _coverage(result, link, engine)

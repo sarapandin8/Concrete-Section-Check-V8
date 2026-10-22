@@ -69,7 +69,7 @@ def test_punching_apply_form_keeps_navigation_and_reuses_oneway_base():
         app.button(key='slab_shell55_aashto62_calculate').click().run()
         assert solver.call_count==1
         app.radio(key='slab_shell55_shear64_group').set_value('Punching shear').run()
-        assert not app.exception and len(app.get('plotly_chart'))==1
+        assert not app.exception and len(app.get('plotly_chart'))==0
         assert app.session_state[code.RESULT_KEY]['punching']['status']=='NOT CALCULATED'
         app.session_state['slab_shell55_punch64_editor']={'edited_rows':{},'deleted_rows':[],
             'added_rows':[dict(zip(punching.COLUMNS,['P1',.5,.5,200.,200.,10.]))]}

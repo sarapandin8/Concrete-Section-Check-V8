@@ -1,0 +1,29 @@
+{
+  "milestone": "SLAB.PUNCH78",
+  "baseline_sha256": "32e9abb39358de64c97b81356eed3627ff14852809a85411f21848f332232bf1",
+  "targeted_tests_passed": 180,
+  "full_repository_suite_claimed": false,
+  "python_version": "3.12.14 (main, Aug 25 2026, 14:00:49) [Clang 22.1.3 ]",
+  "streamlit_test_version": "1.61.0",
+  "all_python_sources_syntax_checked": 861,
+  "source_actions_unchanged": true,
+  "core_sectional_engines_and_project_io_byte_identical": true,
+  "actual_project_status": "REVIEW",
+  "actual_project_max_dc_bound": 1.064059548898746,
+  "actual_project_bound_seconds": 0.41812009299997044,
+  "original_files_changed": [
+    "README.md",
+    "concrete_pmm_pro/analysis/slab_shear64.py",
+    "concrete_pmm_pro/analysis/slab_top65.py",
+    "concrete_pmm_pro/reporting/slab_top65.py",
+    "concrete_pmm_pro/ui/slab_shear64_workspace.py",
+    "concrete_pmm_pro/ui/slab_top65_workspace.py",
+    "tests/test_slab_connections59.py",
+    "tests/test_slab_punch75_ui.py",
+    "tests/test_slab_punch76_auto.py",
+    "tests/test_slab_top65.py",
+    "tests/test_slab_track77.py"
+  ],
+  "visual_review": "Actual 1440 x 780 PNG / SVG reviewed; same governing point as the table; shared print layout",
+  "scope": "Derived sufficient normal-shear bound, not full physical-perimeter / deck acceptance"
+}

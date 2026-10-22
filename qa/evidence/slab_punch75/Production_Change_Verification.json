@@ -1,0 +1,9 @@
+{
+  "baseline_sha256": "18c300d0957b953d98dcc5d0c719e16c86579727773bbc3750f4df565f25bc32",
+  "modified_production_files": [
+    "concrete_pmm_pro/ui/slab_shear64_workspace.py"
+  ],
+  "other_production_modules_byte_identical": true,
+  "production_modules_compared": 298,
+  "equations_and_engine_unchanged": true
+}

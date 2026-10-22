@@ -1,3 +1,39 @@
+# SLAB.PUNCHLOCAL79 — actual-thickness local shear review
+
+Use each CSiBridge native corner's actual thickness for its local normal-shear D/C. The global minimum thickness is no longer substituted into resistance elsewhere. Charts, governing traces, Result Summary and read-only report exports use the same location-specific thickness and effective depth. No new engineering inputs are needed.
+
+This is a local normal-shear index using the lower coefficient of the AASHTO LRFD 2020 punching resistance equation. A below-one local index does not certify an actual critical perimeter across depth changes or surface folds. Existing physical-area checks and their guards are retained.
+
+See [SLAB_PUNCHLOCAL79_NOTES_TH.md](SLAB_PUNCHLOCAL79_NOTES_TH.md), [REPO_SUMMARY_SLAB_PUNCHLOCAL79.md](REPO_SUMMARY_SLAB_PUNCHLOCAL79.md), and `qa/evidence/slab_punchlocal79/`. The accepted source is SLAB.PUNCH78; source actions, one-way shear, other sectional checks and input persistence are unchanged.
+
+## Historical milestone — SLAB.PUNCH78
+
+# SLAB.PUNCH78 — automatic adopted-force punching bound
+
+Analysis → Slab Reinforcement → Punching shear now calculates and plots a conservative normal-shear D/C bound from the existing CSiBridge exports. Reuse the imported forces at factor 1.0, read reinforcement depths and slab thickness automatically, and apply the minimum AASHTO LRFD 2020 concrete-resistance coefficient with the minimum imported slab depth. No new patch size or design shear entry is required. Explicit physical-area checks remain available separately.
+
+This is a derived sufficient bound, not an AASHTO-prescribed pointwise punching equation or an actual physical-perimeter D/C. An exceeded bound is REVIEW. Source gaps, excluded regions, folded-surface load paths, moment transfer and overall bridge acceptance are not converted to PASS.
+
+See [SLAB_PUNCH78_NOTES_TH.md](SLAB_PUNCH78_NOTES_TH.md), [REPO_SUMMARY_SLAB_PUNCH78.md](REPO_SUMMARY_SLAB_PUNCH78.md), and `qa/evidence/slab_punch78/` for the actual project check and figure. The accepted source is SLAB.TRACK45-77; earlier calculation and input-persistence modules are retained.
+
+## Historical milestone — SLAB.PUNCHAUTO76
+
+# SLAB.PUNCHAUTO76 — automatic punching input and load-model review
+
+Read saved physical load areas and the existing CSI load-basis declaration automatically. Reuse defined areas without re-entry; guide continuous-train-UDL models to one-way shear and keep optional local-area inputs folded. Undefined punching results no longer show an empty grey result map. The report records the same load-model scope. Continuous UDL does not define a local wheel/reaction footprint and does not produce a punching exemption or PASS.
+
+See [SLAB_PUNCHAUTO76_NOTES_TH.md](SLAB_PUNCHAUTO76_NOTES_TH.md), [SLAB_PUNCHAUTO76_VERIFICATION.json](SLAB_PUNCHAUTO76_VERIFICATION.json), and [REPO_SUMMARY_SLAB_PUNCHAUTO76.md](REPO_SUMMARY_SLAB_PUNCHAUTO76.md).
+
+## Historical milestone — SLAB.PUNCH75
+
+# SLAB.PUNCH75 — responsive punching load-area Apply
+
+Provide an editable blank row and actionable feedback when no area is entered. Successful Apply shows the saved area count outside the expander and resets the editor transaction so added/deleted rows cannot replay. Invalid drafts preserve the previously applied definitions. Calculate Top slab then refreshes punching checks; the accepted calculation engines, PROJECT74 input persistence and COLOR73 plots are retained.
+
+See [SLAB_PUNCH75_NOTES_TH.md](SLAB_PUNCH75_NOTES_TH.md), [SLAB_PUNCH75_VERIFICATION.json](SLAB_PUNCH75_VERIFICATION.json), and [REPO_SUMMARY_SLAB_PUNCH75.md](REPO_SUMMARY_SLAB_PUNCH75.md).
+
+## Historical milestone — SLAB.PROJECT74
+
 # SLAB.PROJECT74 — portable CSI shell inputs in Project JSON
 
 Save Project JSON now includes the imported slab shell tables, units and source identities. Reopen the project to restore validated inputs automatically and calculate slab checks without re-uploading Excel. Existing JSON files without an embedded package still need a one-time import and save. Clear removes the package from subsequent saves; load discards previous-project inputs and stale slab results. Engineering calculations and the accepted COLOR73 charts remain unchanged.

@@ -1,0 +1,3 @@
+Track,Offset from deck CL (m),Physical width (m),Spread depth (mm),Distributed width (m),Source inside slab,Within outer girder extent,Intersected girders,Girder contacts,Load path,Local punching D/C
+T1,-2.5,2.0,300.0,2.6,True,True,"Girder 4, Girder 5, Girder 6",3,Continuous strip across line supports,
+T2,2.5,2.0,300.0,2.6,True,True,"Girder 1, Girder 2, Girder 3",3,Continuous strip across line supports,

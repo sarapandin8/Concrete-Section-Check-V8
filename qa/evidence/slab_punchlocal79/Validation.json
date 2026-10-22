@@ -1,0 +1,31 @@
+{
+  "milestone": "SLAB.PUNCHLOCAL79",
+  "baseline_sha256": "59d70e45c7e035d795804be97f1f83271b47b5b1421810350c791728dcfc2c1d",
+  "targeted_tests_passed": 94,
+  "full_repository_suite_claimed": false,
+  "streamlit_test_version": "1.61.0",
+  "python_sources_syntax_checked": 863,
+  "source_actions_and_masks_unchanged": true,
+  "other_core_calculators_and_project_io_byte_identical": true,
+  "global_minimum_depth_applied": false,
+  "every_resistance_uses_same_corner_thickness": true,
+  "actual_max_local_dc": 0.6292651130357226,
+  "scope_status": "REVIEW",
+  "old_global_minimum_max_dc": 1.064059548898746,
+  "original_files_changed": [
+    "README.md",
+    "concrete_pmm_pro/analysis/slab_punching78.py",
+    "concrete_pmm_pro/analysis/slab_shear64.py",
+    "concrete_pmm_pro/analysis/slab_top65.py",
+    "concrete_pmm_pro/reporting/slab_top65.py",
+    "concrete_pmm_pro/ui/slab_punching78_workspace.py",
+    "concrete_pmm_pro/ui/slab_shear64_workspace.py",
+    "concrete_pmm_pro/visualization/slab_punching78.py",
+    "tests/test_slab_punch76_auto.py",
+    "tests/test_slab_punching78.py",
+    "tests/test_slab_top65.py",
+    "tests/test_slab_track77.py"
+  ],
+  "visual_review": "Actual 1440 x 780 PNG reviewed; governing marker matches table; actual h/dv available on hover",
+  "scope": "Local normal-shear index; actual variable-thickness punching perimeter acceptance remains separate"
+}

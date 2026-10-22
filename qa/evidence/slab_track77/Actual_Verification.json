@@ -1,0 +1,64 @@
+{
+  "milestone": "SLAB.TRACK45-77",
+  "source_rows": 109824,
+  "imported_force_records": 127680,
+  "slab_rows": 109824,
+  "design_rows": 84864,
+  "native_girder_count": 6,
+  "girder_flange_widths_m": [
+    0.6
+  ],
+  "all_source_and_section_rows_identical": true,
+  "all_summaries_and_faces_identical": true,
+  "accepted_mechanics_reused": true,
+  "track_rebuild_seconds": 0.5321273110000675,
+  "total_including_import_seconds": 22.72298693499988,
+  "tracks": [
+    {
+      "Track": "T1",
+      "Offset from deck CL (m)": -2.5,
+      "Physical width (m)": 2.0,
+      "Spread depth (mm)": 300.0,
+      "Distributed width (m)": 2.6,
+      "Source inside slab": true,
+      "Within outer girder extent": true,
+      "Intersected girders": "Girder 4, Girder 5, Girder 6",
+      "Girder contacts": 3,
+      "Load path": "Continuous strip across line supports",
+      "Local punching D/C": null
+    },
+    {
+      "Track": "T2",
+      "Offset from deck CL (m)": 2.5,
+      "Physical width (m)": 2.0,
+      "Spread depth (mm)": 300.0,
+      "Distributed width (m)": 2.6,
+      "Source inside slab": true,
+      "Within outer girder extent": true,
+      "Intersected girders": "Girder 1, Girder 2, Girder 3",
+      "Girder contacts": 3,
+      "Load path": "Continuous strip across line supports",
+      "Local punching D/C": null
+    }
+  ],
+  "area_m2": {
+    "GIRDER CONTACT \u00b7 PROJECT SCOPE": 71.99999999999997,
+    "DIRECT TRACK FOOTPRINT": 48.00000000000003,
+    "45 DEGREE SPREAD": 7.950791605162599e-18,
+    "OUTSIDE TRAIN STRIPS": 100.0
+  },
+  "notes": [
+    "Girder contacts use existing flange widths and the project full-contact assumption; gaps, discontinuities and local bearing/interface need separate review."
+  ],
+  "punching_status": "NOT CALCULATED",
+  "full_deck_acceptance": false,
+  "code_exemption": false,
+  "actions_multiplier": 1.0,
+  "input_hashes": {
+    "concrete_section_pro_project (32).json": "5ae372e7ad165558deed5dc6f71b1cc4a20fc5102134e439da72a4e271555178",
+    "Element Forces - Area Shells(1).xlsx": "d1eb5d961f067b848953bb7b63a0c0f86e3376dc06c3b48a1830dd5f7b487a8d",
+    "TABLE Objects And Elements - Areas(1).xlsx": "75f06bb745ff4915f8f4558a4bd0558c04f453a4ccb5ff3b7df3fe0dffaba5cf",
+    "Area Assigment.xlsx": "98e92434eb70d3f93e92e3942ce370cd3af49ea3e21a578388dbaa420f64b93d",
+    "Connectivity Data.xlsx": "422cc75df02ca5999f25b5a65cff35183317bc94b021913fdd56021152711da2"
+  }
+}

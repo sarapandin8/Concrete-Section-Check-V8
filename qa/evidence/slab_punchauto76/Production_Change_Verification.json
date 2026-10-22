@@ -1,0 +1,14 @@
+{
+  "baseline_sha256": "9288adc7a4cb12b3e599049b1bb87bce39e1a20ad2813c7f5f7d123d524355e7",
+  "modified_production_files": [
+    "concrete_pmm_pro/analysis/slab_top65.py",
+    "concrete_pmm_pro/ui/slab_shear64_workspace.py",
+    "concrete_pmm_pro/ui/slab_top65_workspace.py"
+  ],
+  "added_production_files": [
+    "concrete_pmm_pro/analysis/slab_punching76.py"
+  ],
+  "other_existing_production_modules_byte_identical": true,
+  "top65_ast_unchanged_except_report_zip": true,
+  "numerical_calculate_fingerprint_current_and_punching64_unchanged": true
+}

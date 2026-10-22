@@ -2,8 +2,9 @@
 import hashlib,json
 from concrete_pmm_pro.analysis import slab_aashto63 as base
 from concrete_pmm_pro.analysis import slab_punching64 as punching
+from concrete_pmm_pro.analysis import slab_punching78 as bound
 
-VERSION='SLAB.SHEAR64'
+VERSION='SLAB.SHEAR64.PUNCHLOCAL79'
 RESULT_KEY='slab_shell55_shear64_result'
 VIEWS=base.VIEWS
 AXES=base.AXES
@@ -27,9 +28,10 @@ def calculate(state,*,progress=None,reuse=None):
     if accepted is None:accepted=base.calculate(state,progress=progress)
     if progress:progress(.93,'Checking loaded-area punching perimeters…')
     p=punching.calculate(accepted,punching.config(state))
+    screen=bound.calculate(accepted)
     return {**accepted,'version':VERSION,'fingerprint':fingerprint(state),'base_result':accepted,
-        'punching':p,'status':'REVIEW REQUIRED','base_reused':reuse is accepted,
-        'scope':'AASHTO LRFD 2020 component checks: existing one-way shear and reinforcement checks, plus isolated rectangular loaded-area punching normal force (5.12.8.6). Punching moment transfer, local support paths and full shell interaction remain separate. No missing patch or demand is invented; overall deck acceptance remains REVIEW REQUIRED.'}
+        'punching':p,'punching_screen78':screen,'status':'REVIEW REQUIRED','base_reused':reuse is accepted,
+        'scope':'AASHTO LRFD 2020 component checks: existing one-way shear and reinforcement checks, plus isolated rectangular loaded-area punching normal force (5.12.8.6). '+bound.SCOPE}
 
 
 def map_adapter(result,view):

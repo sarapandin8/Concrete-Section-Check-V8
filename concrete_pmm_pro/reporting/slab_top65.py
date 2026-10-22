@@ -40,6 +40,19 @@ def summary_rows(state):
         output.append(row('Clear spacing · '+detail.Mat, detail['Clear spacing status'],
             ratio if math.isfinite(ratio) else None, action=detail.Basis))
     punching = result['punching']
+    screen = result.get('punching_screen78')
+    if screen:
+        gov = screen['governing']
+        check = row('Punching local normal-shear index', screen['status'],
+            screen['max_dc'] if math.isfinite(screen['max_dc']) else None,
+            case=str(gov['OutputCase']) if gov else '-',
+            point=f"X={gov['X (m)']:.3f}, Y={gov['Y (m)']:.3f} m" if gov else '-',
+            action='Local index from adopted CSI forces and actual thickness at that source point. '+
+                ('; '.join(screen['geometry_issues'])+'. ' if screen['geometry_issues'] else '')+
+                'Local indices do not replace an actual critical-perimeter check.')
+        check['Demand'] = f"Q bound {gov['Q bound (kN/m)']:.3f} kN/m" if gov else 'Unavailable'
+        check['Capacity / Limit'] = f"Actual-thickness resistance {screen['governing_unit_resistance_kN_per_m']:.3f} kN/m"
+        output.append(check)
     if len(punching['rows']):
         known = punching['rows'].loc[punching['rows']['D/C'].notna()]
         ratio = float(known['D/C'].max()) if len(known) else None

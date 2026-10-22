@@ -15,30 +15,67 @@ from concrete_pmm_pro.visualization.slab_shell56 import ALL_CASES,plan_figure,el
 GROUPS=['One-way shear','Punching shear','Reinforcement']
 
 
-def _areas():
-    try:areas=punching.config(st.session_state)
+def _review_oneway():
+    st.session_state['slab_shell55_shear64_group']='One-way shear'
+
+
+def _automatic_punching_inputs():
+    from concrete_pmm_pro.ui.slab_punching78_workspace import inputs as bound_inputs
+    bound_inputs()
+
+
+def _areas(*,expanded=None):
+    try:
+        areas=punching.config(st.session_state)
+        signature=punching.signature(st.session_state)
     except ValueError as exc:
-        st.warning('Correct punching-area inputs: '+str(exc));areas=[]
-    with st.expander('Punching load / reaction areas',expanded=not areas):
+        st.warning('Correct punching-area inputs: '+str(exc));areas=[];signature=None
+    with st.expander('Punching load / reaction areas · optional',expanded=not areas if expanded is None else expanded):
         st.caption('Enter the physical area where load reaches the slab: centre X/Y in the imported global coordinates, L along the bridge, B transverse. Dimensions are at the slab surface after any load dispersion. Materials, thickness and reinforcement levels are read automatically.')
         frame=pd.DataFrame(areas,columns=punching.COLUMNS)
+        if not areas:
+            # A real, typed blank row is editable without finding the table's
+            # add-row control. It is not a manufactured load-area definition.
+            frame=pd.DataFrame({c:pd.Series([None],dtype='object' if c=='Area' else 'float64')
+                for c in punching.COLUMNS})
+            st.caption('Fill the blank row: X/Y in m and L/B in mm. Area name and Vu may be left blank.')
+        revision=int(st.session_state.get('slab_shell55_punch75_editor_revision',0))
+        editor_key='slab_shell55_punch64_editor'+(f'_{revision}' if revision else '')
         with st.form('slab_shell55_punch64_form'):
             edited=st.data_editor(frame,hide_index=True,num_rows='dynamic',width='stretch',
-                key='slab_shell55_punch64_editor',column_config={
-                    'Area':st.column_config.TextColumn('Area',help='Unique load-area name, e.g. P1.'),
-                    **{c:st.column_config.NumberColumn(c,format='%.3f',required=True) for c in punching.COLUMNS[1:5]},
+                key=editor_key,column_config={
+                    'Area':st.column_config.TextColumn('Area',help='Unique load-area name, e.g. P1. Blank names are assigned automatically.'),
+                    **{c:st.column_config.NumberColumn(c,format='%.3f',
+                        help='Required physical coordinate or loaded-area dimension.') for c in punching.COLUMNS[1:5]},
                     punching.COLUMNS[-1]:st.column_config.NumberColumn(punching.COLUMNS[-1],min_value=0.,format='%.3f',
                         help='Optional independently established factored design shear across the critical perimeter, in kN; not an unfactored axle load. Blank uses an automatic conservative shell-force bound.')})
             save=st.form_submit_button('Apply load areas')
         if save:
-            try:areas=punching.normalise(edited)
+            try:updated=punching.normalise(edited)
             except ValueError as exc:st.error(str(exc))
             else:
-                metadata=dict(st.session_state.get('project_metadata') or {})
-                metadata[punching.CONFIG_KEY]={'version':1,'areas':areas}
-                st.session_state['project_metadata']=metadata
-                st.rerun()
+                if not updated and not areas:
+                    st.warning('No load areas applied. Enter centre X/Y (m) and positive L/B (mm) in the blank row, then Apply. Vu is optional.')
+                else:
+                    metadata=dict(st.session_state.get('project_metadata') or {})
+                    metadata[punching.CONFIG_KEY]={'version':1,'areas':updated}
+                    st.session_state['project_metadata']=metadata
+                    # Rebase the editor after committing: replaying the old
+                    # added/deleted row delta could duplicate or remove areas.
+                    st.session_state['slab_shell55_punch75_editor_revision']=revision+1
+                    st.session_state['slab_shell55_punch75_notice']={
+                        'signature':punching.signature(st.session_state),'count':len(updated)}
+                    st.rerun()
         st.caption('Blank Vu: automatic upper-bound demand, with no assumed spatial simultaneity of moving-load extrema. Passing the bound is sufficient for the direct shear component; an exceeded bound remains REVIEW. Enter direct factored Vu only when independently known. No punching patch is invented from a stress peak.')
+    # The expander can close after a successful Apply; keep its acknowledgement
+    # visible outside it, including on the rerun that refreshes Save Project JSON.
+    notice=st.session_state.get('slab_shell55_punch75_notice')
+    if isinstance(notice,dict) and notice.get('signature')==signature:
+        count=notice['count']
+        if count:
+            st.success(f"Applied {count} load area{'s' if count!=1 else ''}. Use Calculate below to calculate or refresh Punching shear.")
+        else:
+            st.info('Load areas cleared. Punching shear has no defined load area. Use Calculate below to update the results.')
 
 
 def _interface(link):
@@ -59,8 +96,8 @@ def _coverage(result,link):
     with st.expander('AASHTO coverage / remaining checks',expanded=False):
         table=result['code_coverage'].copy()
         mask=table.Check.eq('Two-way / punching shear')
-        table.loc[mask,'Coverage']=result['punching']['status']
-        table.loc[mask,'Basis / remaining action']='Explicit loaded area; isolated rectangular normal-force check. Automatic shell demand is an upper bound; special perimeters remain guarded.'
+        table.loc[mask,'Coverage']=result.get('punching_screen78',result['punching'])['status']
+        table.loc[mask,'Basis / remaining action']='Adopted CSI forces and actual thickness at each source point; local indices and explicit physical-perimeter checks are separate. Depth changes and moment transfer remain guarded.'
         mask=table.Check.eq('Slab–girder interface / U-dowels')
         table.loc[mask,'Coverage']='LINKED · '+link['status']
         table.loc[mask,'Basis / remaining action']='Existing Final Composite longitudinal interface result for the listed members only; separate joint opening/roll acceptance is not inferred.'
@@ -69,20 +106,53 @@ def _coverage(result,link):
 
 
 def _punching(result):
+    if 'punching_screen78' in result:
+        from concrete_pmm_pro.ui.slab_punching78_workspace import render as bound_render
+        bound_render(result)
+        if not result['punching']['rows'].empty:
+            with st.expander('Explicit physical load areas · perimeter checks', expanded=False):
+                _physical_punching(result)
+        if result.get('track_distribution', {}).get('config', {}).get('enabled'):
+            with st.expander('Track distribution · geometry', expanded=False):
+                from concrete_pmm_pro.visualization.slab_track77 import figure as track_figure
+                from concrete_pmm_pro.visualization.slab_print72 import export_config
+                st.plotly_chart(track_figure(result), width='stretch', key='slab_shell55_track77_geometry', config=export_config())
+        return
+    _physical_punching(result)
+
+
+def _physical_punching(result):
     p=result['punching']
+    distribution=result.get('track_distribution')
+    track_active=bool(distribution and distribution['config']['enabled'])
     if p['rows'].empty:
-        st.info('NOT CALCULATED — define the physical loaded area above, Apply load areas, then Calculate Slab Reinforcement. No punching D/C is inferred from a single shell node.')
-        case='All punching cases'
+        # A grey deck is not a calculated punching result. The automatic input
+        # review explains the actual model and the missing local-load scope.
+        if track_active:
+            from concrete_pmm_pro.visualization.slab_track77 import figure as track_figure
+            from concrete_pmm_pro.visualization.slab_print72 import export_config
+            from concrete_pmm_pro.ui.slab_track77_workspace import trace as track_trace
+            st.plotly_chart(track_figure(result),width='stretch',key='slab_shell55_punch64_plan',config=export_config())
+            track_trace(distribution)
+            st.caption('Continuous train-load influence and actual girder flange contacts are calculated. There is no isolated punching D/C in this result; the map is a geometry / load-path view, not a strength acceptance map.')
+        else:
+            st.caption('No isolated punching D/C is available in the current result. The automatic review above describes the load-model scope.')
+        return
     else:
         case=st.selectbox('Punching case to review',['All punching cases',*list(dict.fromkeys(p['rows'].Case))],key='slab_shell55_punch64_case')
         table=p['rows'] if case=='All punching cases' else p['rows'].loc[p['rows'].Case.eq(case)]
         st.dataframe(table[['Area','Case','Perimeter type','Demand basis','Vu (kN)','phiVn (kN)','D/C','Status','Reason']],
             hide_index=True,width='stretch',column_config={c:st.column_config.NumberColumn(format='%.3f') for c in ['Vu (kN)','phiVn (kN)','D/C']})
     from concrete_pmm_pro.visualization.slab_punching64 import figure
+    if track_active:
+        from concrete_pmm_pro.visualization.slab_track77 import figure
     from concrete_pmm_pro.visualization.slab_print72 import export_config
-    st.plotly_chart(figure(result,case),width='stretch',key='slab_shell55_punch64_plan',
+    st.plotly_chart(figure(result,case),width='stretch',key='slab_shell55_punch64_physical_plan',
         config=export_config())
-    st.caption('Loaded rectangle and minimum valid critical perimeter are shown on the imported slab. Free edges contribute no resisting perimeter. Amber means REVIEW, including an exceeded demand bound; it is not an actual-load FAIL. Existing connection/end/peak omissions cannot be reconstructed into a passing automatic demand.')
+    if track_active:
+        from concrete_pmm_pro.ui.slab_track77_workspace import trace as track_trace
+        track_trace(distribution)
+    st.caption('Available loaded-area paths and critical perimeters are shown on the imported slab. Fully supported areas outside slab-only scope have no punching D/C; they are not PASS. Free edges contribute no resisting perimeter. An exceeded automatic demand bound remains REVIEW. Existing connection/end/peak omissions cannot be reconstructed into a passing automatic demand.')
     with st.expander('Calculation trace / Equations',expanded=False):
         st.latex(r'V_n=\min\left(0.063+{0.126\over\beta_c},\,0.126\right)\lambda\sqrt{f_c^\prime}\,b_0d_v\quad\mathrm{(ksi,in,kips)}')
         st.latex(r'\beta_c={\max(L,B)\over\min(L,B)},\quad\phi=0.90,\quad V_s=0,\quad\mathrm{offset}\ge0.5d_v')
@@ -99,7 +169,9 @@ def render():
         icon='SL',kicker='Analysis / Deck slab',badge='SLAB.SHEAR64',accent='blue')
     st.caption('Code-based component checks. One-way shear includes its tension-side reinforcement check. Punching uses explicit load areas. Existing girder interface results are linked by current inputs; full deck acceptance remains REVIEW REQUIRED.')
     group=st.radio('Review group',GROUPS,horizontal=True,key='slab_shell55_shear64_group')
-    if group=='Punching shear':_areas()
+    if group=='Punching shear':
+        _automatic_punching_inputs()
+        _areas(expanded=False)
     package=current_package(st.session_state)
     error=None
     try:inputs.steel_from_state(st.session_state);punching.config(st.session_state)

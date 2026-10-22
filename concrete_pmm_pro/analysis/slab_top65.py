@@ -20,10 +20,11 @@ import pandas as pd
 from concrete_pmm_pro.analysis import slab_shear64 as accepted
 from concrete_pmm_pro.analysis import slab_aashto63 as sections
 from concrete_pmm_pro.analysis import slab_shell56 as inputs
+from concrete_pmm_pro.analysis import slab_track77 as track
 from concrete_pmm_pro.analysis.slab_connections59 import INCLUDED
 from concrete_pmm_pro.io.slab_shell_import import current_package
 
-VERSION = 'SLAB.TOP65'
+VERSION = 'SLAB.TOP65.PUNCHLOCAL79'
 RESULT_KEY = 'slab_shell55_top65_result'
 CONFIG_KEY = 'slab_top65_load_basis'
 METHODS = {'imported': 'Imported CSI shell results',
@@ -86,7 +87,7 @@ def fingerprint(state):
     return hashlib.sha256(json.dumps({'version': VERSION, 'base': base,
         'clear_spacing_inputs': {k: parameters.get(k) for k in
             ('shear_max_aggregate_mm', 'shear_aggregate_confirmed')},
-        'load_basis': load_basis(state)}, sort_keys=True).encode()).hexdigest()
+        'load_basis': load_basis(state), 'track_distribution': track.signature(state)}, sort_keys=True).encode()).hexdigest()
 
 
 def current(state):
@@ -203,6 +204,10 @@ def required_actions(result):
     if result['punching']['status'] == 'FAIL':
         actions.append({'Priority': 1, 'Check': 'Punching shear', 'Status': 'FAIL', 'D/C': math.nan,
             'Action': 'Review the explicitly defined loaded area and its governing perimeter.'})
+    screen = result.get('punching_screen78')
+    if screen and screen['status'] == 'REVIEW':
+        actions.append({'Priority': 2, 'Check': 'Punching local normal-shear index', 'Status': 'REVIEW',
+            'D/C': screen['max_dc'], 'Action': 'Review actual thickness and source coverage. A local index below one does not complete a variable-depth critical-perimeter check.'})
     if result['clear_spacing']['Clear spacing status'].eq('FAIL').any():
         actions.append({'Priority': 1, 'Check': 'Minimum clear spacing', 'Status': 'FAIL', 'D/C': math.nan,
             'Action': 'Increase parallel bar spacing or revise bar diameter / aggregate.'})
@@ -218,21 +223,25 @@ def calculate(state, *, progress=None, reuse=None):
     candidate = (reuse or {}).get('shear_result', reuse)
     valid = isinstance(candidate, dict) and candidate.get('version') == accepted.VERSION and candidate.get('fingerprint') == accepted.fingerprint(state)
     result = candidate if valid else accepted.calculate(state, progress=progress, reuse=sections.current(state))
+    track_config = track.config(state)
+    track_result = track.calculate(result, track_config)
+    punching_result = track.apply_contact_scope(result['punching'], result, track_config)
     spacing = clear_spacing(result['steel'], state.get('section_parameters') or {})
     mats = bending_envelopes(result, spacing)
     coverage = result['code_coverage'].copy()
     mask = coverage.Check.eq('Two-way / punching shear')
-    coverage.loc[mask, 'Coverage'] = result['punching']['status']
-    coverage.loc[mask, 'Basis / remaining action'] = 'Explicit isolated loaded areas only; a continuous train UDL does not define a local wheel footprint.'
+    coverage.loc[mask, 'Coverage'] = 'FAIL' if punching_result['status'] == 'FAIL' else result['punching_screen78']['status']
+    coverage.loc[mask, 'Basis / remaining action'] = 'Local normal-shear index using the actual thickness at each native corner. Explicit critical-perimeter checks remain separate; variable-depth perimeter acceptance is not inferred from a passing local index.'
     coverage = pd.concat((coverage, pd.DataFrame([{'Check': 'Parallel-bar clear spacing',
         'Article': '5.10.3.1.1', 'Coverage': 'CALCULATED' if spacing['Clear spacing status'].eq('PASS').all() else 'REVIEW / FAIL',
         'Basis / remaining action': 'Cast-in-place bars: max(1.5db, 1.5ag, 1.5 in); existing aggregate input, no new bar table.'}])), ignore_index=True)
-    fail = (result['component_status'] == 'FAIL' or result['punching']['status'] == 'FAIL' or
+    fail = (result['component_status'] == 'FAIL' or punching_result['status'] == 'FAIL' or
             spacing['Clear spacing status'].eq('FAIL').any())
     out = {**result, 'version': VERSION, 'fingerprint': fingerprint(state), 'shear_result': result,
+        'punching': punching_result, 'track_distribution': track_result,
         'load_basis': basis, 'load_basis_status': basis_status(state, basis),
         'clear_spacing': spacing, 'mat_envelopes': mats, 'code_coverage': coverage,
-        'component_status': 'FAIL' if fail else 'REVIEW' if mats['Known checks'].eq('REVIEW').any() or result['component_status'] == 'REVIEW' else 'PASS',
+        'component_status': 'FAIL' if fail else 'REVIEW' if mats['Known checks'].eq('REVIEW').any() or result['component_status'] == 'REVIEW' or result['punching_screen78']['status'] == 'REVIEW' else 'PASS',
         'status': 'FAIL' if fail else 'REVIEW REQUIRED', 'top65_seconds': time.monotonic()-start,
         'actions_multiplier': 1., 'ballast_in_resistance': False, 'accepted_result_reused': bool(valid)}
     out['required_actions'] = required_actions(out)
@@ -245,6 +254,8 @@ def map_adapter(result, view):
 
 def report_zip(result, *, interface=None):
     """Read-only compact report; no source parsing or solver invocation."""
+    from concrete_pmm_pro.analysis.slab_punching76 import assessment
+    from concrete_pmm_pro.analysis.slab_punching78 import report_payload
     buffer = BytesIO()
     with ZipFile(buffer, 'w', ZIP_DEFLATED) as archive:
         frames = {'Check_Summary': result['summary'], 'Four_Mat_Envelopes': result['mat_envelopes'],
@@ -257,12 +268,41 @@ def report_zip(result, *, interface=None):
             frames['Linked_Interface'] = interface['rows']
         for name, frame in frames.items():
             archive.writestr(name+'.csv', frame.to_csv(index=False).encode('utf-8-sig'))
+        screen = result['punching_screen78']
+        archive.writestr('Punching79/Summary.csv', screen['summary'].to_csv(index=False).encode('utf-8-sig'))
+        archive.writestr('Punching79/Source_Checks.csv', screen['rows'].to_csv(index=False).encode('utf-8-sig'))
+        archive.writestr('Punching79/Basis.json', json.dumps(report_payload(screen), indent=2, ensure_ascii=False, allow_nan=False))
         provenance = {'version': VERSION, 'code': result['code'], 'fingerprint': result['fingerprint'],
             'component_status': result['component_status'], 'deck_status': result['status'],
             'full_deck_acceptance': False, 'load_basis': result['load_basis'],
             'load_basis_status': result['load_basis_status'], 'source_actions_multiplier': 1.,
             'ballast_in_resistance': False, 'scope': result['scope']}
         archive.writestr('Provenance.json', json.dumps(provenance, indent=2, ensure_ascii=False))
+        review=assessment(result['punching']['areas'],result['load_basis'],result['load_basis_status'],
+            check_status=result['punching']['status'])
+        review.update(adopted_local_index_status=screen['status'],
+            adopted_local_max_dc=report_payload(screen)['max_dc'],
+            local_index_is_actual_perimeter_ratio=False)
+        distribution = result.get('track_distribution')
+        if distribution and distribution['config']['enabled']:
+            review.update(track_distribution=distribution['config'],
+                track_geometry_status=distribution['status'],
+                local_train_punching_status='NOT CALCULATED',
+                geometry_colors_are_utilization=False)
+            if not result['punching']['areas']:
+                review.update(route='track45_continuous', title='Continuous track strips · project 45-degree distribution',
+                    message=track.SCOPE,
+                    action='Review one-way shear and local support transfer. No isolated train punching result is inferred from UDL.')
+            archive.writestr('Track45/Scope_and_Geometry.json', json.dumps(track.report_payload(distribution), indent=2))
+            for name, key in [('Track_Strips', 'tracks'), ('Native_Corner_Zones', 'points'), ('Exact_Element_Fractions', 'elements')]:
+                archive.writestr('Track45/'+name+'.csv', distribution[key].to_csv(index=False).encode('utf-8-sig'))
+        review.update(route='actual_thickness_local_index',
+            title='Adopted CSI shear field · actual-thickness local index',
+            local_check_status=screen['status'],
+            physical_perimeter_check_status=result['punching']['status'],
+            message=screen['scope'],
+            action='Review local source thickness and the actual critical-perimeter requirements. Neither below-one nor above-one local indices certify a complete punching check.')
+        archive.writestr('Punching_Automatic_Review.json',json.dumps(review,indent=2,ensure_ascii=False))
         archive.writestr('READ_ME.txt', 'AASHTO LRFD Ninth Edition (2020).\n'
             'The imported shell actions are already factored; multiplier=1.0.\n'
             'Ballast and equivalent train pressure are analysis provenance only.\n'

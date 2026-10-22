@@ -24,6 +24,7 @@ def connected_state():
     state[BANK_KEY].tables['frames'] = pd.DataFrame([
         dict(Frame='G1', JointI='~1', JointJ='A', IsCurved='No'),
         dict(Frame='G2', JointI='A', JointJ='B', IsCurved='No')])
+    state[BANK_KEY].units['frames'] = {'Frame':'Text', 'JointI':'Text', 'JointJ':'Text', 'IsCurved':'Yes/No'}
     return state
 
 

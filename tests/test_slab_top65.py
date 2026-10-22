@@ -161,7 +161,7 @@ def test_profile_keeps_native_gaps_full_extent_and_known_numeric_maximum():
     pd.testing.assert_frame_equal(frame, before)
 
 
-def test_compact_report_is_read_only_and_project_json_contains_only_input_provenance():
+def test_compact_report_is_read_only_and_project_json_restores_inputs_without_results():
     state = model_state()
     top.save_load_basis(state, {'method': 'equivalent_udl'})
     result = top.calculate(state)
@@ -174,12 +174,19 @@ def test_compact_report_is_read_only_and_project_json_contains_only_input_proven
         provenance = json.loads(z.read('Provenance.json'))
         assert provenance['source_actions_multiplier'] == 1.
         assert not provenance['full_deck_acceptance'] and not provenance['ballast_in_resistance']
+        automatic_review = json.loads(z.read('Punching_Automatic_Review.json'))
+        assert automatic_review['route'] == 'actual_thickness_local_index'
+        assert automatic_review['local_check_status'] == result['punching_screen78']['status']
+        assert automatic_review['physical_perimeter_check_status'] == 'NOT CALCULATED'
+        assert not automatic_review['code_exemption']
     encoded = project_to_json(project_from_session_state(state))
     assert top.RESULT_KEY not in encoded and 'shear_result' not in encoded
     restored = {top.RESULT_KEY: {'old': True}}
     apply_project_to_session_state(project_from_json(encoded), restored)
     assert top.load_basis(restored) == top.load_basis(state)
-    assert top.RESULT_KEY not in restored and BANK_KEY not in restored
+    assert top.RESULT_KEY not in restored and BANK_KEY in restored
+    for name, table in state[BANK_KEY].tables.items():
+        pd.testing.assert_frame_equal(table, restored[BANK_KEY].tables[name], check_exact=True)
 
 
 def test_summary_and_report_rows_are_read_only_include_scope_and_never_reuse_stale_pass():
