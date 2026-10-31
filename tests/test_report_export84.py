@@ -21,11 +21,12 @@ from test_word_report_export import _one_pixel_png
 from test_igird_reportcharts8 import calculated_state
 
 
-def test_real_renderer_reuses_one_worker_and_matches_original_png_pixels():
+def test_real_renderer_reuses_one_worker_and_matches_configured_native_png_pixels():
     figure = go.Figure(go.Bar(x=['A', 'B'], y=[1.234567, -2.345678]))
     figure.update_layout(width=480, height=320)
-    # The original call path validates a Figure via from_json before rendering.
+    # Compare reuse to a fresh native render with the same Cloud profile.
     script = ("import plotly.io as pio,sys; pio.kaleido.scope.mathjax=None; "
+              "pio.kaleido.scope.chromium_args += ('--single-process',); "
               "sys.stdout.buffer.write(pio.from_json(sys.stdin.read()).to_image(format='png'))")
     expected = subprocess.run([sys.executable, '-c', script], input=figure.to_json().encode(),
                               capture_output=True, check=True, timeout=30).stdout

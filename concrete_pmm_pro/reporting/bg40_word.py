@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from copy import deepcopy
 from io import BytesIO, TextIOWrapper
 import json
 import posixpath
@@ -22,6 +23,7 @@ from .bg40_data import CalculationReport, build_report_figure, display, source_s
 from .figure_export import plotly_figure_to_png_bytes, static_image_export_session
 from .bg40_print import prepare_print_figure
 from . import bg40_template as reference
+from .word_stream import StreamingWordBody, active_body
 
 
 class ReportFigureError(ValueError):
@@ -47,6 +49,9 @@ def _defaults(doc, report):
 
 
 def _para(doc, text, *, bold=False, role='body'):
+    stream = active_body(doc)
+    if stream is not None:
+        stream.flush()
     p = doc.add_paragraph()
     p.add_run(str(text))
     reference.paragraph_format(p, role)
@@ -89,8 +94,8 @@ def _table(doc, data, title, source):
         table.autofit = False
         weights = []
         for col in columns:
-            lengths = [len(display(x)) for x in data[col].tolist()]
-            weight = min(3.4, max(.8, (max([len(str(col)), *lengths]) ** .5) / 4))
+            longest = max(len(str(col)), max((len(display(x)) for x in data[col]), default=0))
+            weight = min(3.4, max(.8, (longest ** .5) / 4))
             if str(col).lower() in {'status', 'd/c', 'unit'}:
                 weight = 1.
             weights.append(weight)
@@ -107,12 +112,36 @@ def _table(doc, data, title, source):
             for paragraph in cell.paragraphs:
                 paragraph.paragraph_format.keep_with_next = True
             cell.width = width
-        for values in data[columns].itertuples(index=False, name=None):
-            row = table.add_row()
-            _xml(row._tr.get_or_add_trPr(), 'w:cantSplit')
-            for cell, value, width in zip(row.cells, values, widths):
-                _cell_text(cell, value)
+        stream = active_body(doc)
+        if stream is not None:
+            # All rows share the same supplied Word formats. Format one empty
+            # prototype, then copy it and change text only (no per-cell XML
+            # parsing or full-table cell lookup for every source row).
+            prototype = table.add_row()
+            _xml(prototype._tr.get_or_add_trPr(), 'w:cantSplit')
+            for cell, width in zip(prototype.cells, widths):
+                _cell_text(cell, '')
                 cell.width = width
+            template = deepcopy(prototype._tr)
+            table._tbl.remove(prototype._tr)
+            def rows():
+                stream.table_progress(caption, 0, len(data))
+                for count, values in enumerate(zip(*(data[col] for col in columns)), 1):
+                    row = deepcopy(template)
+                    for cell, value in zip(row.tc_lst, values):
+                        run = next(cell.iter(qn('w:r')))
+                        run.text = display(value)
+                    yield row
+                    if count % 500 == 0 or count == len(data):
+                        stream.table_progress(caption, count, len(data))
+            stream.write_table(table, rows())
+        else:
+            for values in data[columns].itertuples(index=False, name=None):
+                row = table.add_row()
+                _xml(row._tr.get_or_add_trPr(), 'w:cantSplit')
+                for cell, value, width in zip(row.cells, values, widths):
+                    _cell_text(cell, value)
+                    cell.width = width
         if source:
             p = _para(doc, 'Source: ' + source)
             p.paragraph_format.space_after = Pt(9)
@@ -182,151 +211,153 @@ def _build_bg40_word_report(report, state, *, include_figures,
     if report.signature != source_signature(state, report.metadata):
         raise ValueError('Report evidence is stale. Build the current report package before export.')
     doc = reference.document()
-    _defaults(doc, report)
-    doc.core_properties.title = report.metadata.report_title
-    doc.core_properties.subject = report.metadata.project_name or ''
-    doc.core_properties.author = report.metadata.prepared_by or ''
-    report.figure_audit.clear()
-    figure_counts = {}
-    total_figures = sum(len(ch.figures) for ch in report.chapters) if include_figures else 0
-
-    def unavailable(item, reason):
-        item['reason'] = reason
-        if require_all_figures:
-            raise ReportFigureError('1 required report figure(s) could not be embedded. '
-                f"Figure {item['number']} {item['title']}: {reason}")
-        _para(doc, 'Figure not embedded: ' + item['title'] + '. ' + reason)
-
-    def emit_figure(chapter, index, spec):
-        figure_counts[chapter.number] = figure_counts.get(chapter.number, 0) + 1
-        number = f'{chapter.number}.{figure_counts[chapter.number]}'
-        item = {'chapter': chapter.number, 'number': number,
-                'title': spec['title'], 'spec': spec, 'status': 'UNAVAILABLE'}
-        report.figure_audit.append(item)
-        notify(f"Creating figure {len(report.figure_audit)}/{total_figures}: {spec['title']}",
-               .15 + .65 * (len(report.figure_audit)-1)/max(1,total_figures))
-        try:
-            figure = build_report_figure(state, spec)
-        except (ValueError, TypeError, KeyError, ArithmeticError, AttributeError) as exc:
-            unavailable(item, str(exc))
-            return
-        if figure is None:
-            unavailable(item, 'Source figure unavailable for the current input context')
-            return
-        presentation = prepare_print_figure(figure, spec)
-        data, warnings = plotly_figure_to_png_bytes(presentation.figure, timeout_seconds=60.)
-        if data:
+    with StreamingWordBody(doc, progress=lambda message: notify(message,
+            .15 + .65 * len(report.figure_audit)/max(1,total_figures))) as body_stream:
+        _defaults(doc, report)
+        doc.core_properties.title = report.metadata.report_title
+        doc.core_properties.subject = report.metadata.project_name or ''
+        doc.core_properties.author = report.metadata.prepared_by or ''
+        report.figure_audit.clear()
+        figure_counts = {}
+        total_figures = sum(len(ch.figures) for ch in report.chapters) if include_figures else 0
+    
+        def unavailable(item, reason):
+            item['reason'] = reason
+            if require_all_figures:
+                raise ReportFigureError('1 required report figure(s) could not be embedded. '
+                    f"Figure {item['number']} {item['title']}: {reason}")
+            _para(doc, 'Figure not embedded: ' + item['title'] + '. ' + reason)
+    
+        def emit_figure(chapter, index, spec):
+            figure_counts[chapter.number] = figure_counts.get(chapter.number, 0) + 1
+            number = f'{chapter.number}.{figure_counts[chapter.number]}'
+            item = {'chapter': chapter.number, 'number': number,
+                    'title': spec['title'], 'spec': spec, 'status': 'UNAVAILABLE'}
+            report.figure_audit.append(item)
+            notify(f"Creating figure {len(report.figure_audit)}/{total_figures}: {spec['title']}",
+                   .15 + .65 * (len(report.figure_audit)-1)/max(1,total_figures))
+            try:
+                figure = build_report_figure(state, spec)
+            except (ValueError, TypeError, KeyError, ArithmeticError, AttributeError) as exc:
+                unavailable(item, str(exc))
+                return
+            if figure is None:
+                unavailable(item, 'Source figure unavailable for the current input context')
+                return
+            presentation = prepare_print_figure(figure, spec)
+            data, warnings = plotly_figure_to_png_bytes(presentation.figure, timeout_seconds=60.)
+            if data:
+                p = doc.add_paragraph()
+                reference.paragraph_format(p)
+                # Inline drawings need a full line box even when the source body
+                # text uses slightly less than single spacing.
+                p.paragraph_format.line_spacing = 1.0
+                p.paragraph_format.space_before = Pt(4)
+                p.paragraph_format.keep_with_next = True
+                section = doc.sections[0]
+                picture = p.add_run().add_picture(BytesIO(data), width=section.page_width-section.left_margin-section.right_margin)
+                picture._inline.docPr.id = body_stream.next_drawing_id()
+                picture._inline.docPr.name = f'Picture {picture._inline.docPr.id}'
+                title = _para(doc, f'Figure {number} {spec["title"]}')
+                title.paragraph_format.keep_with_next = bool(presentation.caption)
+                meta = dict(figure.layout.meta or {})
+                if presentation.caption:
+                    caption = _para(doc, presentation.caption)
+                    if spec.get('kind') == 'workflow82' and meta.get('source_cases'):
+                        caption.paragraph_format.keep_together = True
+                        caption.paragraph_format.keep_with_next = bool(meta.get('source_cases'))
+                item.update(status='EMBEDDED', context=meta, caption=presentation.caption)
+                if meta.get('source_cases'):
+                    _para(doc, '; '.join(f'{k}: {v}' for k,v in meta['source_cases'].items()))
+            else:
+                unavailable(item, ' '.join(warnings) or 'PNG renderer returned no image')
+        _para(doc, 'TABLE OF CONTENTS', role='toc')
+        for ch in report.chapters:
             p = doc.add_paragraph()
-            reference.paragraph_format(p)
-            # Inline drawings need a full line box even when the source body
-            # text uses slightly less than single spacing.
-            p.paragraph_format.line_spacing = 1.0
-            p.paragraph_format.space_before = Pt(4)
-            p.paragraph_format.keep_with_next = True
-            section = doc.sections[0]
-            p.add_run().add_picture(BytesIO(data), width=section.page_width-section.left_margin-section.right_margin)
-            title = _para(doc, f'Figure {number} {spec["title"]}')
-            title.paragraph_format.keep_with_next = bool(presentation.caption)
-            meta = dict(figure.layout.meta or {})
-            if presentation.caption:
-                caption = _para(doc, presentation.caption)
-                if spec.get('kind') == 'workflow82' and meta.get('source_cases'):
-                    caption.paragraph_format.keep_together = True
-                    caption.paragraph_format.keep_with_next = bool(meta.get('source_cases'))
-            item.update(status='EMBEDDED', context=meta, caption=presentation.caption)
-            if meta.get('source_cases'):
-                _para(doc, '; '.join(f'{k}: {v}' for k,v in meta['source_cases'].items()))
-        else:
-            unavailable(item, ' '.join(warnings) or 'PNG renderer returned no image')
-    _para(doc, 'TABLE OF CONTENTS', role='toc')
-    for ch in report.chapters:
-        notify(f'Writing chapter {ch.number}: {ch.title}',
-               .15 + .65 * len(report.figure_audit)/max(1,total_figures))
-        p = doc.add_paragraph()
-        p.style = doc.styles['Heading 2']
-        link = _xml(p._p, 'w:hyperlink', w__anchor=f'bg40_chapter_{ch.number}')
-        run = _xml(link, 'w:r')
-        _xml(run, 'w:t').text = f'Chapter {ch.number}  {ch.title}'
-        p.add_run('   ')
-        _field(p, f'PAGEREF bg40_chapter_{ch.number} \\h')
-    _para(doc, report.metadata.report_title, bold=True)
-    _para(doc, report.metadata.project_name or 'Project name not recorded')
-    _para(doc, f"Revision {report.metadata.revision} | {report.metadata.report_date or 'Date not recorded'}")
-    _para(doc, f"Prepared by: {report.metadata.prepared_by or 'Not recorded'} | Checked by: {report.metadata.checked_by or 'Not recorded'}")
-    _para(doc, 'Design code: ' + report.code + ' | Report status: ' + report.status)
-    if report.metadata.note:
-        _para(doc, report.metadata.note)
-    if report.workflow_key == 'i_girder':
-        doc.add_page_break()
-    reference.heading(doc, 'Governing Check Summary', 1)
-    _table(doc, report.controls, 'Stored governing checks', 'Stored Analysis cases and source acceptance gates')
-    for warning in report.warnings:
-        _para(doc, warning)
-    for ch in report.chapters:
+            p.style = doc.styles['Heading 2']
+            link = _xml(p._p, 'w:hyperlink', w__anchor=f'bg40_chapter_{ch.number}')
+            run = _xml(link, 'w:r')
+            _xml(run, 'w:t').text = f'Chapter {ch.number}  {ch.title}'
+            p.add_run('   ')
+            _field(p, f'PAGEREF bg40_chapter_{ch.number} \\h')
+        _para(doc, report.metadata.report_title, bold=True)
+        _para(doc, report.metadata.project_name or 'Project name not recorded')
+        _para(doc, f"Revision {report.metadata.revision} | {report.metadata.report_date or 'Date not recorded'}")
+        _para(doc, f"Prepared by: {report.metadata.prepared_by or 'Not recorded'} | Checked by: {report.metadata.checked_by or 'Not recorded'}")
+        _para(doc, 'Design code: ' + report.code + ' | Report status: ' + report.status)
+        if report.metadata.note:
+            _para(doc, report.metadata.note)
         if report.workflow_key == 'i_girder':
             doc.add_page_break()
-        heading = reference.heading(doc, f'Chapter {ch.number} {ch.title}', 1)
-        _bookmark(heading, ch.number)
-        _para(doc, 'Chapter status: ' + ch.status, bold=True)
-        for text in ch.notes:
-            _para(doc, text)
-        if not ch.tables and not ch.calculations and ch.status not in {'NOT APPLICABLE', 'SCOPE REVIEW'}:
-            _para(doc, 'No current stored calculation is available for this chapter. Run the corresponding Analysis check before reporting its result.')
-        for table in ch.tables:
-            _table(doc, table.data, table.title, table.source)
-        if ch.calculations:
-            reference.heading(doc, f'{ch.number} Calculation Details', 2)
-        emitted = set()
-        for calculation_index, calc in enumerate(ch.calculations):
-            p = _para(doc, calc.title, bold=True)
-            p.paragraph_format.keep_with_next = True
-            p = _para(doc, 'Reference: ' + calc.reference)
-            p.paragraph_format.keep_with_next = True
-            _equation(doc, calc.formula)
-            _equation(doc, calc.substitution)
-            _para(doc, 'Result: ' + calc.result, bold=True)
-            following = ch.calculations[calculation_index+1].title if calculation_index+1 < len(ch.calculations) else ''
+        reference.heading(doc, 'Governing Check Summary', 1)
+        _table(doc, report.controls, 'Stored governing checks', 'Stored Analysis cases and source acceptance gates')
+        for warning in report.warnings:
+            _para(doc, warning)
+        for ch in report.chapters:
+            notify(f'Writing chapter {ch.number}: {ch.title}',
+                   .15 + .65 * len(report.figure_audit)/max(1,total_figures))
+            if report.workflow_key == 'i_girder':
+                doc.add_page_break()
+            heading = reference.heading(doc, f'Chapter {ch.number} {ch.title}', 1)
+            _bookmark(heading, ch.number)
+            _para(doc, 'Chapter status: ' + ch.status, bold=True)
+            for text in ch.notes:
+                _para(doc, text)
+            if not ch.tables and not ch.calculations and ch.status not in {'NOT APPLICABLE', 'SCOPE REVIEW'}:
+                _para(doc, 'No current stored calculation is available for this chapter. Run the corresponding Analysis check before reporting its result.')
+            for table in ch.tables:
+                _table(doc, table.data, table.title, table.source)
+            if ch.calculations:
+                reference.heading(doc, f'{ch.number} Calculation Details', 2)
+            emitted = set()
+            for calculation_index, calc in enumerate(ch.calculations):
+                p = _para(doc, calc.title, bold=True)
+                p.paragraph_format.keep_with_next = True
+                p = _para(doc, 'Reference: ' + calc.reference)
+                p.paragraph_format.keep_with_next = True
+                _equation(doc, calc.formula)
+                _equation(doc, calc.substitution)
+                _para(doc, 'Result: ' + calc.result, bold=True)
+                following = ch.calculations[calculation_index+1].title if calculation_index+1 < len(ch.calculations) else ''
+                if include_figures:
+                    for index, spec in enumerate(ch.figures, 1):
+                        label = spec.get('after_label')
+                        if label and calc.title.startswith(label) and not following.startswith(label):
+                            emit_figure(ch, index, spec)
+                            emitted.add(index)
             if include_figures:
-                for index, spec in enumerate(ch.figures, 1):
-                    label = spec.get('after_label')
-                    if label and calc.title.startswith(label) and not following.startswith(label):
-                        emit_figure(ch, index, spec)
-                        emitted.add(index)
-        if include_figures:
-            for i, spec in enumerate(ch.figures, 1):
-                if i not in emitted:
-                    emit_figure(ch, i, spec)
-    if include_appendices:
-        if report.workflow_key == 'i_girder':
-            doc.add_page_break()
-        reference.heading(doc, 'Appendix A Source Register', 1)
-        _para(doc, 'Complete row identities and full precision result tables are included in the companion evidence ZIP. The register below groups the imported files and worksheets.')
-        cols = ['File', 'Sheet', 'Source SHA256', 'Coupling']
-        if not report.sources.empty:
-            _table(doc, report.sources[cols].drop_duplicates(), 'Imported source files', 'Original import metadata')
-        else:
-            _para(doc, 'No imported source identity is recorded. Input values require source-document review.')
-        reference.heading(doc, 'Appendix B Calculation Provenance', 1)
-        _para(doc, 'Layout reference: ' + REFERENCE)
-        _para(doc, 'Report version: ' + VERSION)
-        _para(doc, 'Stored result signature: ' + report.signature)
-        _para(doc, 'Design code references and project criteria are shown beside the actual stored calculations. Reference example values have not been copied into the design.')
-        if report.figure_audit:
-            import pandas as pd
-            reference.heading(doc, 'Appendix C Figure Register', 1)
-            _table(doc, pd.DataFrame([{'Figure':f['number'],'Title':f['title'],
-                'Status':f['status'],'Source context':str((f.get('context') or {}).get('source_case','')),
-                'Note':f.get('reason','')} for f in report.figure_audit]),
-                'Calculation figures', '')
-    missing = [f for f in report.figure_audit if f['status'] != 'EMBEDDED']
-    if include_figures and require_all_figures and missing:
-        names = '; '.join(f"Figure {f['number']} {f['title']}: {f.get('reason', 'source figure unavailable')}"
-                         for f in missing)
-        raise ReportFigureError(f'{len(missing)} required report figure(s) could not be embedded. {names}')
-    output = BytesIO()
-    notify('Saving the complete Word document', .83)
-    doc.save(output)
-    return output.getvalue()
+                for i, spec in enumerate(ch.figures, 1):
+                    if i not in emitted:
+                        emit_figure(ch, i, spec)
+        if include_appendices:
+            if report.workflow_key == 'i_girder':
+                doc.add_page_break()
+            reference.heading(doc, 'Appendix A Source Register', 1)
+            _para(doc, 'Complete row identities and full precision result tables are included in the companion evidence ZIP. The register below groups the imported files and worksheets.')
+            cols = ['File', 'Sheet', 'Source SHA256', 'Coupling']
+            if not report.sources.empty:
+                _table(doc, report.sources[cols].drop_duplicates(), 'Imported source files', 'Original import metadata')
+            else:
+                _para(doc, 'No imported source identity is recorded. Input values require source-document review.')
+            reference.heading(doc, 'Appendix B Calculation Provenance', 1)
+            _para(doc, 'Layout reference: ' + REFERENCE)
+            _para(doc, 'Report version: ' + VERSION)
+            _para(doc, 'Stored result signature: ' + report.signature)
+            _para(doc, 'Design code references and project criteria are shown beside the actual stored calculations. Reference example values have not been copied into the design.')
+            if report.figure_audit:
+                import pandas as pd
+                reference.heading(doc, 'Appendix C Figure Register', 1)
+                _table(doc, pd.DataFrame([{'Figure':f['number'],'Title':f['title'],
+                    'Status':f['status'],'Source context':str((f.get('context') or {}).get('source_case','')),
+                    'Note':f.get('reason','')} for f in report.figure_audit]),
+                    'Calculation figures', '')
+        missing = [f for f in report.figure_audit if f['status'] != 'EMBEDDED']
+        if include_figures and require_all_figures and missing:
+            names = '; '.join(f"Figure {f['number']} {f['title']}: {f.get('reason', 'source figure unavailable')}"
+                             for f in missing)
+            raise ReportFigureError(f'{len(missing)} required report figure(s) could not be embedded. {names}')
+        notify('Saving the complete Word document', .83)
+        return body_stream.save()
 
 
 def _write_json(archive, name, value, **options):

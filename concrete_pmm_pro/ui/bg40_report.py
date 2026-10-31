@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
 import logging
+import json
+from time import monotonic
 
 import pandas as pd
 import streamlit as st
@@ -14,10 +16,20 @@ from concrete_pmm_pro.reporting.workflow_reports import build_workflow_report, w
 from concrete_pmm_pro.reporting.bg40_word import build_bg40_word_report, build_evidence_zip
 from concrete_pmm_pro.reporting.report_models import ReportMetadata
 from concrete_pmm_pro.reporting.figure_export import report_export_slot
+from concrete_pmm_pro.reporting.export_runtime import (
+    RELEASE, check_export_headroom, environment_snapshot,
+)
 
 ARTIFACT_KEY = '_bg40_report82_artifact'
 ERROR_KEY = '_bg40_report82_error'
 LOGGER = logging.getLogger(__name__)
+if not LOGGER.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+    LOGGER.addHandler(handler)
+LOGGER.setLevel(logging.INFO)
+LOGGER.propagate = False
+DIAGNOSTICS_KEY = '_bg40_cloud85_export_diagnostics'
 
 
 def supports_complete_report(state):
@@ -146,7 +158,7 @@ def render(state):
     if not supports_complete_report(state):
         return
     st.markdown('## Calculation Report')
-    st.caption('BG40 R10 Word format · all chapters, equations, figures and source appendices included automatically.')
+    st.caption('BG40 R10 Word format · all chapters, equations, figures and source appendices included automatically. · ' + RELEASE)
     metadata = _report_details(state)
     st.caption('Stored Analysis results are checked when creating the report. Opening this page does not build the document or its charts.')
     st.warning('Report export does not confirm engineering acceptance. FAIL, REVIEW, STALE, missing checks and source scope limitations are retained; missing checks are not calculated here.')
@@ -165,8 +177,16 @@ def render(state):
         state.pop(ARTIFACT_KEY, None)
         current = False
         progress_bar = st.progress(0., text='Preparing stored report sources…')
+        started = monotonic()
+        diagnostics = {'environment':environment_snapshot()}
+        state[DIAGNOSTICS_KEY] = diagnostics
+        LOGGER.info('%s export start %s', RELEASE, json.dumps(diagnostics['environment']))
         def progress(message, fraction):
-            LOGGER.info('Complete report export: %.0f%% %s', 100*fraction, message)
+            snapshot = check_export_headroom()
+            diagnostics.update(stage=message, fraction=fraction,
+                elapsed_seconds=round(monotonic()-started, 2), memory=snapshot)
+            LOGGER.info('%s %.2fs %.0f%% %s %s', RELEASE,
+                monotonic()-started, 100*fraction, message, json.dumps(snapshot))
             progress_bar.progress(float(fraction), text=message)
         try:
             with report_export_slot():
@@ -176,7 +196,8 @@ def render(state):
             state.pop(ERROR_KEY, None)
             current = True
         except Exception as exc:
-            LOGGER.exception('BG40 complete report export failed')
+            diagnostics['error'] = str(exc)
+            LOGGER.exception('%s complete report export failed', RELEASE)
             state[ERROR_KEY] = str(exc)
         finally:
             progress_bar.empty()
@@ -185,6 +206,8 @@ def render(state):
                  'A report with missing figures is not offered as a complete download.')
         with st.expander('Export error details', expanded=False):
             st.text(state[ERROR_KEY])
+            if state.get(DIAGNOSTICS_KEY):
+                st.json(state[DIAGNOSTICS_KEY])
     if current:
         saved = state[ARTIFACT_KEY]
         st.download_button('Download complete Word report (.docx)', saved['docx'],

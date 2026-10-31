@@ -87,7 +87,7 @@ def test_report_figure_context_default_creation() -> None:
 def test_requirements_include_kaleido_for_plotly_png_export() -> None:
     requirements_text = Path("requirements.txt").read_text(encoding="utf-8")
 
-    assert "plotly>=5.22,<6" in requirements_text
+    assert "plotly==5.24.1" in requirements_text
     assert "kaleido==0.2.1" in requirements_text
 
 

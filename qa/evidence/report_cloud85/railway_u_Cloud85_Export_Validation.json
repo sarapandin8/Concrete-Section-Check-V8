@@ -1,0 +1,138 @@
+{
+  "download_payload_sha256": "afff34971e248dccf3459aca2aac5a997e0651a672f1b816d86c5028b65ca819",
+  "download_payload_matches_artifact": true,
+  "native_static_renderer": true,
+  "post_export_document_edits": false,
+  "content_selection_widgets": 0,
+  "figures": 7,
+  "native_equations": 45,
+  "tables": 40,
+  "chapters": 10,
+  "engineering_status": "FAIL",
+  "original_styles_and_theme_preserved": true,
+  "workflow": "railway_u",
+  "source_fixture": "railway_u.pkl",
+  "runtime83": {
+    "runs": [
+      {
+        "seconds": 0.697,
+        "calls": {},
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      },
+      {
+        "seconds": 3.156,
+        "calls": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 7
+        },
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.281,
+        "calls": {
+          "report_builds": 0,
+          "word_exports": 0,
+          "png_renders": 0
+        },
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.232,
+        "calls": {
+          "report_builds": 0,
+          "word_exports": 0,
+          "png_renders": 0
+        },
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.385,
+        "calls": {
+          "report_builds": 0,
+          "word_exports": 0,
+          "png_renders": 0
+        },
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      }
+    ],
+    "total_builds": {
+      "report_builds": 1,
+      "word_exports": 1,
+      "png_renders": 7
+    },
+    "parent_process_peak_rss_mib": 248.57,
+    "peak_scope": "Python app process only; native renderer children are excluded.",
+    "reopens_without_rebuild": 3
+  },
+  "cloud85": {
+    "runs": [
+      {
+        "seconds": 0.697,
+        "exceptions": []
+      },
+      {
+        "seconds": 3.156,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.281,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.232,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.385,
+        "exceptions": []
+      }
+    ],
+    "counts": {
+      "complete_exports": 1,
+      "renderer_worker_starts": 1
+    },
+    "progress_events": 139,
+    "progress_reaches_complete": true,
+    "maximum_process_tree_rss_mib": 493.78,
+    "maximum_parent_rss_mib": 244.82,
+    "maximum_concurrent_child_processes": 5,
+    "live_descendants_after_export": 0,
+    "resource_scope": "Linux app process and all native descendants, sampled every 50 ms. Summed RSS double-counts shared pages; local observation, not a Cloud quota guarantee.",
+    "diagnostics": {
+      "environment": {
+        "release": "REPORT.CLOUD85",
+        "python": "3.12.14",
+        "streamlit": "1.61.0",
+        "pandas": "2.2.3",
+        "plotly": "5.24.1",
+        "kaleido": "0.2.1",
+        "python-docx": "1.2.0",
+        "app_rss_mib": 187.6,
+        "container_used_mib": 4330.7,
+        "container_limit_mib": 8192.0,
+        "container_headroom_mib": 3861.3
+      },
+      "stage": "Complete report ready to download",
+      "fraction": 1.0,
+      "elapsed_seconds": 2.92,
+      "memory": {
+        "app_rss_mib": 210.7,
+        "container_used_mib": 4355.6,
+        "container_limit_mib": 8192.0,
+        "container_headroom_mib": 3836.4
+      }
+    }
+  },
+  "fixture_label": "railway_u"
+}

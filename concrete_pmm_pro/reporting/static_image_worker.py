@@ -8,6 +8,11 @@ def main():
     import plotly.io as pio
     if getattr(pio.kaleido, 'scope', None) is not None:
         pio.kaleido.scope.mathjax = None
+        # Kaleido's documented low-resource profile: keep the original safety
+        # and shared-memory flags, adding a single Chromium process.
+        flags = tuple(pio.kaleido.scope.chromium_args)
+        if '--single-process' not in flags:
+            pio.kaleido.scope.chromium_args = (*flags, '--single-process')
     output = Path(sys.argv[1]) / 'frame.png'
     for line in sys.stdin:
         request_id = None

@@ -1,0 +1,9 @@
+{
+  "mode": "EXPORT84 DOM",
+  "rows": 15000,
+  "columns": 7,
+  "seconds": 66.023,
+  "parent_peak_rss_mib": 1412.25,
+  "output_bytes": 887614,
+  "measurement_scope": "One Python process, native chart renderer not used; validation parse runs separately."
+}

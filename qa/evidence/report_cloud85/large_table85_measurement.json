@@ -1,0 +1,9 @@
+{
+  "mode": "CLOUD85 stream",
+  "rows": 15000,
+  "columns": 7,
+  "seconds": 4.905,
+  "parent_peak_rss_mib": 127.13,
+  "output_bytes": 894555,
+  "measurement_scope": "One Python process, native chart renderer not used; validation parse runs separately."
+}

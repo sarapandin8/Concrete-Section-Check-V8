@@ -1,0 +1,17 @@
+{
+  "large_table": {
+    "main_document_canonical_xml_identical": true,
+    "original_styles_theme_headers_and_package_metadata_identical": true,
+    "changed_nonmedia_package_parts": [],
+    "original_main_xml_sha256": "85da1a48211219218d38423c1ae7a390117b7d07168735fa583c14e3784fed4e",
+    "new_main_xml_sha256": "85da1a48211219218d38423c1ae7a390117b7d07168735fa583c14e3784fed4e",
+    "table_rows_including_header": 15001
+  },
+  "i_girder": {
+    "main_document_canonical_xml_identical": true,
+    "original_styles_theme_headers_and_package_metadata_identical": true,
+    "changed_nonmedia_package_parts": [],
+    "original_main_xml_sha256": "4a471c240ff1638162e46aff64f71740961b20eeacad85aa418d4cf1def7cff2",
+    "new_main_xml_sha256": "4a471c240ff1638162e46aff64f71740961b20eeacad85aa418d4cf1def7cff2"
+  }
+}
