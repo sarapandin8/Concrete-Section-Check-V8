@@ -1,0 +1,78 @@
+{
+  "download_payload_sha256": "25e6cb5662254fc67df0b03ee2e9978dda1d2c45808ed058313fdfd254f9bd85",
+  "download_payload_matches_artifact": true,
+  "native_static_renderer": true,
+  "post_export_document_edits": false,
+  "content_selection_widgets": 0,
+  "figures": 7,
+  "native_equations": 45,
+  "tables": 40,
+  "chapters": 10,
+  "engineering_status": "FAIL",
+  "original_styles_and_theme_preserved": true,
+  "workflow": "railway_u",
+  "source_fixture": "railway_u.pkl",
+  "runtime83": {
+    "runs": [
+      {
+        "seconds": 0.661,
+        "calls": {},
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      },
+      {
+        "seconds": 8.686,
+        "calls": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 7
+        },
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.32,
+        "calls": {
+          "report_builds": 0,
+          "word_exports": 0,
+          "png_renders": 0
+        },
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.249,
+        "calls": {
+          "report_builds": 0,
+          "word_exports": 0,
+          "png_renders": 0
+        },
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.307,
+        "calls": {
+          "report_builds": 0,
+          "word_exports": 0,
+          "png_renders": 0
+        },
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      }
+    ],
+    "total_builds": {
+      "report_builds": 1,
+      "word_exports": 1,
+      "png_renders": 7
+    },
+    "parent_process_peak_rss_mib": 291.16,
+    "peak_scope": "Python app process only; native renderer children are excluded.",
+    "reopens_without_rebuild": 3
+  }
+}

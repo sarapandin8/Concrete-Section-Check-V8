@@ -36,6 +36,16 @@ def plain(value):
     return _plain(value)
 
 
+def _json_signature(payload, *, default=None):
+    """Hash the same complete JSON without allocating a second full byte copy."""
+    digest = hashlib.sha256()
+    encoder = json.JSONEncoder(sort_keys=True, ensure_ascii=False,
+        separators=(',', ':'), default=default)
+    for chunk in encoder.iterencode(payload):
+        digest.update(chunk.encode('utf-8'))
+    return digest.hexdigest()
+
+
 def frame(value):
     if isinstance(value, pd.DataFrame):
         return value.copy(deep=True)
@@ -162,8 +172,7 @@ def source_signature(state, metadata=None, include_figures=True, include_appendi
             body[name + '_input_binding'] = engine.fingerprint(state)
         except (ValueError, TypeError, KeyError) as exc:
             body[name + '_input_binding'] = type(exc).__name__ + ': ' + str(exc)
-    return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False,
-                                     separators=(',', ':')).encode()).hexdigest()
+    return _json_signature(body)
 
 
 def _status(values):

@@ -1,0 +1,17 @@
+{
+  "source_file": "logs-sarapandin8-concrete-section-check-v8-main-app.py-2026-10-31T08_59_25.036Z.txt",
+  "sha256": "8b3ec28c2f9fad13aea45d71ae2580c14b78a19b11ed89272bd18f627d6a288c",
+  "lines": 888,
+  "python_traceback_found": false,
+  "explicit_oom_or_killed_marker_found": false,
+  "fatal_cause_confirmed": false,
+  "assessment": "Resource pressure is suspected from the Oh no screenshot and absent fatal traceback; the Cloud termination cause is not confirmed.",
+  "observed_environment": {
+    "python": "3.14.10",
+    "pandas": "3.1.0",
+    "streamlit": "1.61.0",
+    "starlette": "1.3.1",
+    "plotly": "5.24.1",
+    "kaleido": "0.2.1"
+  }
+}

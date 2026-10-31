@@ -1,0 +1,1 @@
+Defer Report/QA document preparation, previews, and ULS charts until explicitly requested. Validate saved exports once per rerun, hash report JSON incrementally without changing digests, and contain preparation errors in the report UI. Preserve complete BG40 R10 downloads, stored-result gates, and all engineering kernels.

@@ -5,13 +5,11 @@ prestress-loss or displacement solver is called by this report adapter.
 """
 from __future__ import annotations
 from dataclasses import asdict, is_dataclass
-import hashlib
-import json
 import math
 import re
 import pandas as pd
 
-from .bg40_data import Calculation, CalculationReport, Chapter, display, fields_table, plain, _status, _source_rows
+from .bg40_data import Calculation, CalculationReport, Chapter, display, fields_table, plain, _status, _source_rows, _json_signature
 from .report_models import ReportMetadata
 
 VERSION = 'REPORT.ALL82'
@@ -105,7 +103,7 @@ def universal_signature(state,metadata=None,include_figures=True,include_appendi
         'metadata':plain(metadata),'figures':include_figures,'appendices':include_appendices,
         'inputs':input_snapshot(state),'bindings':{k:state.get(k) for k in bindings},
         'results':{k:plain(obj(v)) for k,v in stored_sources(state).items()}}
-    return hashlib.sha256(json.dumps(payload,sort_keys=True,ensure_ascii=False,separators=(',',':'),default=str).encode()).hexdigest()
+    return _json_signature(payload,default=str)
 
 
 def currency(state):

@@ -171,7 +171,11 @@ def render_uls_report_charts(state, *, code_label):
     from concrete_pmm_pro.ui.result_table_display import result_table_for_display
     if state.get('section_preset_key') != 'parametric_i_girder':
         return
-    with st.expander('I-girder ULS report charts — stored results', expanded=False):
+    panel = st.expander('I-girder ULS report charts — stored results', expanded=False,
+        key='bg40_83_uls_charts_open', on_change='rerun')
+    if not panel.open:
+        return
+    with panel:
         label = st.selectbox('ULS check for report chart', list(CHECK_LABELS.values()),
                              key='igird_uls_report_check')
         check = next(k for k, v in CHECK_LABELS.items() if v == label)

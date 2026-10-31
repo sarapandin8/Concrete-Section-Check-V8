@@ -5206,23 +5206,29 @@ def render_report_qa_workspace() -> None:
     from concrete_pmm_pro.ui.bg40_report import render as render_bg40_report
     from concrete_pmm_pro.reporting.workflow_reports import workflow_key
     render_bg40_report(st.session_state)
-    with st.expander('Engineering review and required actions', expanded=False):
-        render_metric_cards(_report_qa_dashboard_cards(st.session_state))
-        if _results_is_crossbeam_workflow(st.session_state):
-            _render_report_qa_crossbeam_readiness(st.session_state, _report_qa_crossbeam_context(st.session_state))
-        else:
-            from concrete_pmm_pro.ui.igird_flexure_workspace import render_stored_scope_review
-            render_stored_scope_review(st.session_state)
-            _render_report_qa_result_summary_alignment(st.session_state)
-    with st.expander('Calculation traces and export QA', expanded=False):
-        if workflow_key(st.session_state) == 'i_girder':
-            _render_report_qa_igird_shear_equation_trace(st.session_state)
-            from concrete_pmm_pro.ui.igird_uls_report import render_uls_report_charts
-            render_uls_report_charts(st.session_state, code_label=_results_design_code_label(st.session_state))
-            _render_report_qa_igird_torsion_equation_trace(st.session_state)
-            _render_report_qa_igird_combined_vt_equation_trace(st.session_state)
-        else:
-            st.caption('Chapter calculations, stored source tables and figure registers are available in the report preview above and in the source-evidence download.')
+    review = st.expander('Engineering review and required actions', expanded=False,
+        key='bg40_83_review_open', on_change='rerun')
+    if review.open:
+        with review:
+            render_metric_cards(_report_qa_dashboard_cards(st.session_state))
+            if _results_is_crossbeam_workflow(st.session_state):
+                _render_report_qa_crossbeam_readiness(st.session_state, _report_qa_crossbeam_context(st.session_state))
+            else:
+                from concrete_pmm_pro.ui.igird_flexure_workspace import render_stored_scope_review
+                render_stored_scope_review(st.session_state)
+                _render_report_qa_result_summary_alignment(st.session_state)
+    traces = st.expander('Calculation traces and export QA', expanded=False,
+        key='bg40_83_traces_open', on_change='rerun')
+    if traces.open:
+        with traces:
+            if workflow_key(st.session_state) == 'i_girder':
+                _render_report_qa_igird_shear_equation_trace(st.session_state)
+                from concrete_pmm_pro.ui.igird_uls_report import render_uls_report_charts
+                render_uls_report_charts(st.session_state, code_label=_results_design_code_label(st.session_state))
+                _render_report_qa_igird_torsion_equation_trace(st.session_state)
+                _render_report_qa_igird_combined_vt_equation_trace(st.session_state)
+            else:
+                st.caption('Chapter calculations, stored source tables and figure registers are available in the report preview above and in the source-evidence download.')
     _render_runtime_diagnostics_expander()
 
 
@@ -5811,7 +5817,7 @@ def main() -> None:
         render_report_qa_workspace()
     # A calculation may have populated a result after the sidebar was drawn.
     # Refresh this existing slot without another rerun or solver invocation.
-    if sidebar_status_slot is not None:
+    if sidebar_status_slot is not None and active_workspace != 'Report / QA':
         sidebar_status_slot.markdown(_commercial_project_status_html(st.session_state), unsafe_allow_html=True)
 
 

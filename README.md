@@ -1,3 +1,11 @@
+# REPORT.RUNTIME83 — lighter Report / QA entry
+
+Opening Report / QA no longer prepares documents, hidden preview tables, or ULS charts. All available content remains included automatically when creating the complete Word report. Saved exports retain the original source currency guards and BG40 R10 layout.
+
+See [README_REPORT_RUNTIME83_TH.md](README_REPORT_RUNTIME83_TH.md), [REPO_SUMMARY_REPORT_RUNTIME83.md](REPO_SUMMARY_REPORT_RUNTIME83.md), and RELEASE_REPORT_RUNTIME83.json.
+
+## Previous release REPORT.ALL82
+
 # REPORT.ALL82 — shared complete Word reports for every workflow
 
 Report / QA uses **Create complete Word report** and **Download complete Word report (.docx)** for Column/Pier PMM, Building Beam/Girder, Bridge Beam/Girder, Railway U-Girder, Precast I-Girder and Portal Frame Crossbeam (Cast-in-Place and Precast Segmental). Content is included automatically from stored Analysis results. The supplied BG40 R10 Word template remains the presentation source.

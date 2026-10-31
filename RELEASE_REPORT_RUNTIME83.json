@@ -1,0 +1,618 @@
+{
+  "runtime_patch": "REPORT.RUNTIME83",
+  "document_format_version": "REPORT.ALL82",
+  "baseline": "concrete-section-pro_REPORT-ALL82.zip",
+  "baseline_sha256": "2686fedf39f575d7ef353618d0ab2e5d98af8b05302152c41e990fc1c90cc8c5",
+  "problem": "Report entry eagerly prepared the full report, preview tables and a hidden ULS chart; collapsed Streamlit expanders did not skip that work.",
+  "cloud_termination_cause_confirmed": false,
+  "fix": [
+    "Prepare report documents only on explicit Create complete Word report",
+    "Execute optional preview/review/traces/charts only when open",
+    "Check saved artifact currency once per rerun",
+    "Incrementally hash identical JSON bytes",
+    "Contain preparation errors at the UI boundary and log traceback"
+  ],
+  "word_template_and_generators_unchanged": true,
+  "complete_default_content_unchanged": true,
+  "content_selection_widgets": 0,
+  "engineering_modules_byte_identical": 160,
+  "engineering_solver_or_project_json_or_persistence_changes": false,
+  "verification": {
+    "targeted_regression_passed": 153,
+    "targeted_regression_warnings": 6,
+    "native_download_workflows": 7,
+    "native_png_figures": 106,
+    "editable_word_equations": 409,
+    "reopens_without_regeneration": 21,
+    "all_required_figures_embedded": true,
+    "no_solvers_called_during_report_export": true,
+    "source_statuses_preserved": true,
+    "full_repository_suite_run": false,
+    "live_cloud_test_run": false
+  },
+  "entry_benchmark": {
+    "before": {
+      "elapsed_seconds": 3.641,
+      "peak_rss_mib": 326.01,
+      "calls": {
+        "report_builds": 1,
+        "uls_chart_builds": 1
+      },
+      "exceptions": [],
+      "dataframes": 6,
+      "plotly_charts": 1,
+      "download_buttons": 2,
+      "selectboxes": 4
+    },
+    "after": {
+      "elapsed_seconds": 0.713,
+      "peak_rss_mib": 190.75,
+      "calls": {},
+      "exceptions": [],
+      "dataframes": 0,
+      "plotly_charts": 0,
+      "download_buttons": 1,
+      "selectboxes": 0
+    },
+    "peak_parent_rss_reduction_percent": 41.5,
+    "same_stored_example": true,
+    "limitations": "Fresh local AppTest process, Python 3.12.14/pandas 2.2.3. This is not a Cloud memory measurement or a whole-system memory total. Cloud log shows Python 3.14.10/pandas 3.1.0."
+  },
+  "exports": [
+    {
+      "example": "i_girder",
+      "download_payload_sha256": "ad978d17eeb0ff529a8229262e3811b5bc42747ab9fa467e4595474742071a8e",
+      "download_payload_matches_artifact": true,
+      "native_static_renderer": true,
+      "post_export_document_edits": false,
+      "content_selection_widgets": 0,
+      "figures": 58,
+      "native_equations": 219,
+      "tables": 79,
+      "chapters": 10,
+      "engineering_status": "FAIL",
+      "original_styles_and_theme_preserved": true,
+      "workflow": "i_girder",
+      "source_fixture": "i_girder.pkl",
+      "runtime83": {
+        "runs": [
+          {
+            "seconds": 0.806,
+            "calls": {},
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 60.94,
+            "calls": {
+              "report_builds": 1,
+              "word_exports": 1,
+              "png_renders": 58
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 1.668,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 1.435,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 1.607,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          }
+        ],
+        "total_builds": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 58
+        },
+        "parent_process_peak_rss_mib": 396.09,
+        "peak_scope": "Python app process only; native renderer children are excluded.",
+        "reopens_without_rebuild": 3
+      }
+    },
+    {
+      "example": "column",
+      "download_payload_sha256": "92ac2e8792f1f23acdbbad2375a8979a424ad69a494a7a3e19ef84982fff5b95",
+      "download_payload_matches_artifact": true,
+      "native_static_renderer": true,
+      "post_export_document_edits": false,
+      "content_selection_widgets": 0,
+      "figures": 5,
+      "native_equations": 32,
+      "tables": 33,
+      "chapters": 10,
+      "engineering_status": "REVIEW",
+      "original_styles_and_theme_preserved": true,
+      "workflow": "column",
+      "source_fixture": "column.pkl",
+      "runtime83": {
+        "runs": [
+          {
+            "seconds": 0.895,
+            "calls": {},
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 8.73,
+            "calls": {
+              "report_builds": 1,
+              "word_exports": 1,
+              "png_renders": 5
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.178,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.185,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.177,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          }
+        ],
+        "total_builds": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 5
+        },
+        "parent_process_peak_rss_mib": 247.3,
+        "peak_scope": "Python app process only; native renderer children are excluded.",
+        "reopens_without_rebuild": 3
+      }
+    },
+    {
+      "example": "building_beam",
+      "download_payload_sha256": "fa18c7bd7b62c0d2927260d520376e033f42ebefd1bdff14a0075a7586efa085",
+      "download_payload_matches_artifact": true,
+      "native_static_renderer": true,
+      "post_export_document_edits": false,
+      "content_selection_widgets": 0,
+      "figures": 6,
+      "native_equations": 43,
+      "tables": 34,
+      "chapters": 10,
+      "engineering_status": "FAIL",
+      "original_styles_and_theme_preserved": true,
+      "workflow": "building_beam",
+      "source_fixture": "building_beam.pkl",
+      "runtime83": {
+        "runs": [
+          {
+            "seconds": 0.877,
+            "calls": {},
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 8.077,
+            "calls": {
+              "report_builds": 1,
+              "word_exports": 1,
+              "png_renders": 6
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.352,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.25,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.267,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          }
+        ],
+        "total_builds": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 6
+        },
+        "parent_process_peak_rss_mib": 277.6,
+        "peak_scope": "Python app process only; native renderer children are excluded.",
+        "reopens_without_rebuild": 3
+      }
+    },
+    {
+      "example": "bridge_beam",
+      "download_payload_sha256": "957ce94b4ed87e22a47469adc076ef6d6b20402537e902050564ffb7cfe66964",
+      "download_payload_matches_artifact": true,
+      "native_static_renderer": true,
+      "post_export_document_edits": false,
+      "content_selection_widgets": 0,
+      "figures": 6,
+      "native_equations": 40,
+      "tables": 34,
+      "chapters": 10,
+      "engineering_status": "FAIL",
+      "original_styles_and_theme_preserved": true,
+      "workflow": "bridge_beam",
+      "source_fixture": "bridge_beam.pkl",
+      "runtime83": {
+        "runs": [
+          {
+            "seconds": 0.688,
+            "calls": {},
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 7.238,
+            "calls": {
+              "report_builds": 1,
+              "word_exports": 1,
+              "png_renders": 6
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.396,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.338,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.244,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          }
+        ],
+        "total_builds": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 6
+        },
+        "parent_process_peak_rss_mib": 277.84,
+        "peak_scope": "Python app process only; native renderer children are excluded.",
+        "reopens_without_rebuild": 3
+      }
+    },
+    {
+      "example": "railway_u",
+      "download_payload_sha256": "25e6cb5662254fc67df0b03ee2e9978dda1d2c45808ed058313fdfd254f9bd85",
+      "download_payload_matches_artifact": true,
+      "native_static_renderer": true,
+      "post_export_document_edits": false,
+      "content_selection_widgets": 0,
+      "figures": 7,
+      "native_equations": 45,
+      "tables": 40,
+      "chapters": 10,
+      "engineering_status": "FAIL",
+      "original_styles_and_theme_preserved": true,
+      "workflow": "railway_u",
+      "source_fixture": "railway_u.pkl",
+      "runtime83": {
+        "runs": [
+          {
+            "seconds": 0.661,
+            "calls": {},
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 8.686,
+            "calls": {
+              "report_builds": 1,
+              "word_exports": 1,
+              "png_renders": 7
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.32,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.249,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.307,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          }
+        ],
+        "total_builds": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 7
+        },
+        "parent_process_peak_rss_mib": 291.16,
+        "peak_scope": "Python app process only; native renderer children are excluded.",
+        "reopens_without_rebuild": 3
+      }
+    },
+    {
+      "example": "crossbeam_cip",
+      "download_payload_sha256": "2664bd260fd34b62b22da95461f921dc9d9630829e7b0bc5c783460c1d401675",
+      "download_payload_matches_artifact": true,
+      "native_static_renderer": true,
+      "post_export_document_edits": false,
+      "content_selection_widgets": 0,
+      "figures": 13,
+      "native_equations": 18,
+      "tables": 82,
+      "chapters": 10,
+      "engineering_status": "REVIEW",
+      "original_styles_and_theme_preserved": true,
+      "workflow": "crossbeam",
+      "source_fixture": "crossbeam_cip.pkl",
+      "runtime83": {
+        "runs": [
+          {
+            "seconds": 0.73,
+            "calls": {},
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 16.917,
+            "calls": {
+              "report_builds": 1,
+              "word_exports": 1,
+              "png_renders": 13
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.224,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.202,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.419,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          }
+        ],
+        "total_builds": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 13
+        },
+        "parent_process_peak_rss_mib": 357.93,
+        "peak_scope": "Python app process only; native renderer children are excluded.",
+        "reopens_without_rebuild": 3
+      }
+    },
+    {
+      "example": "crossbeam_segmental",
+      "download_payload_sha256": "9b49b6f7067fae77f98b081be224dcb2b5857902456baa3a45663f332b72f4a6",
+      "download_payload_matches_artifact": true,
+      "native_static_renderer": true,
+      "post_export_document_edits": false,
+      "content_selection_widgets": 0,
+      "figures": 11,
+      "native_equations": 12,
+      "tables": 72,
+      "chapters": 10,
+      "engineering_status": "FAIL",
+      "original_styles_and_theme_preserved": true,
+      "workflow": "crossbeam",
+      "source_fixture": "crossbeam_segmental.pkl",
+      "runtime83": {
+        "runs": [
+          {
+            "seconds": 0.69,
+            "calls": {},
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 20.328,
+            "calls": {
+              "report_builds": 1,
+              "word_exports": 1,
+              "png_renders": 11
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.269,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.46,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.221,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          }
+        ],
+        "total_builds": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 11
+        },
+        "parent_process_peak_rss_mib": 416.27,
+        "peak_scope": "Python app process only; native renderer children are excluded.",
+        "reopens_without_rebuild": 3
+      }
+    }
+  ],
+  "live_deployment_performed": false,
+  "installation": "Replace repository files with the source folder, then reboot Streamlit app; load project inputs and recalculate Analysis as needed."
+}

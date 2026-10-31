@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
+import logging
 
 import pandas as pd
 import streamlit as st
@@ -15,6 +16,7 @@ from concrete_pmm_pro.reporting.report_models import ReportMetadata
 
 ARTIFACT_KEY = '_bg40_report82_artifact'
 ERROR_KEY = '_bg40_report82_error'
+LOGGER = logging.getLogger(__name__)
 
 
 def supports_complete_report(state):
@@ -84,8 +86,18 @@ def _report_details(state):
     return default_metadata(state)
 
 
-def _render_preview(report, state):
-    with st.expander('Report preview and source evidence', expanded=False):
+def _render_preview(report, state, metadata):
+    panel = st.expander('Report preview and source evidence', expanded=False,
+        key='bg40_83_preview_open', on_change='rerun')
+    if not panel.open:
+        return
+    with panel:
+        try:
+            report = report or build_workflow_report(state, metadata)
+        except Exception as exc:
+            LOGGER.exception('BG40 report preview failed')
+            st.error('Report preview could not be loaded: ' + str(exc))
+            return
         st.caption('Every available chapter, calculation, figure and source appendix is included automatically.')
         if report.warnings:
             for warning in report.warnings:
@@ -102,7 +114,9 @@ def _render_preview(report, state):
         for table in chapter.tables:
             st.markdown('**' + table.title + '**')
             st.caption('Source: ' + table.source)
-            st.dataframe(table.data, hide_index=True, width='stretch')
+            if len(table.data) > 200:
+                st.caption(f'Preview: first 200 of {len(table.data):,} rows. The complete Word report and source evidence retain all rows.')
+            st.dataframe(table.data.head(200), hide_index=True, width='stretch')
         for calc in chapter.calculations:
             st.markdown('**' + calc.title + '**')
             st.caption('Reference: ' + calc.reference)
@@ -125,41 +139,48 @@ def render(state):
     st.markdown('## Calculation Report')
     st.caption('BG40 R10 Word format · all chapters, equations, figures and source appendices included automatically.')
     metadata = _report_details(state)
-    report = build_workflow_report(state, metadata)
-    count = sum(len(c.figures) for c in report.chapters)
-    st.caption(f'{len(report.chapters)} chapters · {count} figures · '
-               f'{report.code} · Engineering status: {report.status}')
-    if report.status not in {'PASS', 'Preview PASS'}:
-        st.warning('Engineering review required. Failed, missing and stale checks remain clearly identified in the report. '
-                   'Report generation does not calculate missing checks.')
-
-    current = artifact_is_current(state, metadata)
+    st.caption('Stored Analysis results are checked when creating the report. Opening this page does not build the document or its charts.')
+    st.warning('Report export does not confirm engineering acceptance. FAIL, REVIEW, STALE, missing checks and source scope limitations are retained; missing checks are not calculated here.')
+    report = None
+    try:
+        current = artifact_is_current(state, metadata)
+    except Exception as exc:
+        LOGGER.exception('BG40 report currency check failed')
+        state[ERROR_KEY] = str(exc)
+        current = False
     label = 'Rebuild complete Word report' if current else 'Create complete Word report'
     if st.button(label, type='secondary' if current else 'primary',
                  width='stretch', key='bg40_80_build'):
+        # Release the previous export before allocating a replacement. Never
+        # retain a failed replacement as an apparently complete download.
+        state.pop(ARTIFACT_KEY, None)
+        current = False
         try:
             with st.spinner('Preparing the complete report and all figures…'):
+                report = build_workflow_report(state, metadata)
                 state[ARTIFACT_KEY] = build_complete_artifact(state, metadata, report)
             state.pop(ERROR_KEY, None)
-            st.rerun()
-        except (ValueError, TypeError, KeyError, ArithmeticError, AttributeError, OSError) as exc:
+            current = True
+        except Exception as exc:
+            LOGGER.exception('BG40 complete report export failed')
             state[ERROR_KEY] = str(exc)
     if state.get(ERROR_KEY):
         st.error('The complete report could not be created. Retry after resolving the export error below. '
                  'A report with missing figures is not offered as a complete download.')
         with st.expander('Export error details', expanded=False):
             st.text(state[ERROR_KEY])
-    if artifact_is_current(state, metadata):
+    if current:
         saved = state[ARTIFACT_KEY]
         st.download_button('Download complete Word report (.docx)', saved['docx'],
             file_name='Concrete_Section_Pro_Calculation_Report_BG40.docx',
             mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             key='bg40_80_download', type='primary', width='stretch', on_click='ignore')
         st.caption(f"Complete Word file prepared · {len(saved['figures'])} figures embedded · BG40 R10 layout.")
+        st.caption('Engineering status: ' + saved['status'])
         with st.expander('Additional download — source evidence', expanded=False):
             st.download_button('Download report and source evidence (.zip)', saved['evidence'],
                 file_name='Concrete_Section_Pro_Report_Evidence_BG40.zip',
                 mime='application/zip', key='bg40_80_evidence', width='stretch', on_click='ignore')
     elif state.get(ARTIFACT_KEY):
         st.warning('STALE — report inputs, stored results or report details changed. Create the complete Word report again before downloading.')
-    _render_preview(report, state)
+    _render_preview(report, state, metadata)

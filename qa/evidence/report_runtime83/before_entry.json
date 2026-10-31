@@ -1,0 +1,13 @@
+{
+  "elapsed_seconds": 3.641,
+  "peak_rss_mib": 326.01,
+  "calls": {
+    "report_builds": 1,
+    "uls_chart_builds": 1
+  },
+  "exceptions": [],
+  "dataframes": 6,
+  "plotly_charts": 1,
+  "download_buttons": 2,
+  "selectboxes": 4
+}

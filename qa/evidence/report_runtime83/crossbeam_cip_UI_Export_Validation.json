@@ -1,0 +1,78 @@
+{
+  "download_payload_sha256": "2664bd260fd34b62b22da95461f921dc9d9630829e7b0bc5c783460c1d401675",
+  "download_payload_matches_artifact": true,
+  "native_static_renderer": true,
+  "post_export_document_edits": false,
+  "content_selection_widgets": 0,
+  "figures": 13,
+  "native_equations": 18,
+  "tables": 82,
+  "chapters": 10,
+  "engineering_status": "REVIEW",
+  "original_styles_and_theme_preserved": true,
+  "workflow": "crossbeam",
+  "source_fixture": "crossbeam_cip.pkl",
+  "runtime83": {
+    "runs": [
+      {
+        "seconds": 0.73,
+        "calls": {},
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      },
+      {
+        "seconds": 16.917,
+        "calls": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 13
+        },
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.224,
+        "calls": {
+          "report_builds": 0,
+          "word_exports": 0,
+          "png_renders": 0
+        },
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.202,
+        "calls": {
+          "report_builds": 0,
+          "word_exports": 0,
+          "png_renders": 0
+        },
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.419,
+        "calls": {
+          "report_builds": 0,
+          "word_exports": 0,
+          "png_renders": 0
+        },
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      }
+    ],
+    "total_builds": {
+      "report_builds": 1,
+      "word_exports": 1,
+      "png_renders": 13
+    },
+    "parent_process_peak_rss_mib": 357.93,
+    "peak_scope": "Python app process only; native renderer children are excluded.",
+    "reopens_without_rebuild": 3
+  }
+}
