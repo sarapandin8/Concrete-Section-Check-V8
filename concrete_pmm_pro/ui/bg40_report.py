@@ -15,6 +15,7 @@ from concrete_pmm_pro.reporting.bg40_data import (
 from concrete_pmm_pro.reporting.workflow_reports import build_workflow_report, workflow_key, LABELS
 from concrete_pmm_pro.reporting.bg40_word import build_bg40_word_report, build_evidence_zip
 from concrete_pmm_pro.reporting.report_models import ReportMetadata
+from concrete_pmm_pro.reporting.source_stream import preparation_progress, checkpoint
 from concrete_pmm_pro.reporting.figure_export import report_export_slot
 from concrete_pmm_pro.reporting.export_runtime import (
     RELEASE, check_export_headroom, environment_snapshot,
@@ -74,12 +75,11 @@ def artifact_is_current(state, metadata, *, include_figures=True, include_append
 def build_complete_artifact(state, metadata, report=None, *, progress=None):
     """The same full export is used by the UI, with no per-content switches."""
     def notify(message, fraction):
-        if progress is not None:
-            progress(message, fraction)
-    with report_export_slot():
+        checkpoint(message, fraction)
+    with report_export_slot(), preparation_progress(progress):
         report = report or build_workflow_report(state, metadata)
         docx = build_bg40_word_report(report, state, include_figures=True,
-            include_appendices=True, require_all_figures=True, progress=progress)
+            include_appendices=True, require_all_figures=True, progress=notify)
         notify('Verifying that the stored results are still current', .86)
         signature = source_signature(state, metadata)
         if signature != report.signature:
@@ -189,7 +189,7 @@ def render(state):
                 monotonic()-started, 100*fraction, message, json.dumps(snapshot))
             progress_bar.progress(float(fraction), text=message)
         try:
-            with report_export_slot():
+            with report_export_slot(), preparation_progress(progress):
                 progress('Reading stored Analysis results', .02)
                 report = build_workflow_report(state, metadata)
                 state[ARTIFACT_KEY] = build_complete_artifact(state, metadata, report, progress=progress)

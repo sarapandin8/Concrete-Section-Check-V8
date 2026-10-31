@@ -4,7 +4,7 @@ from pathlib import Path
 import platform
 from importlib.metadata import version
 
-RELEASE = 'REPORT.CLOUD85'
+RELEASE = 'REPORT.CLOUD86'
 
 
 class ReportResourceError(RuntimeError):

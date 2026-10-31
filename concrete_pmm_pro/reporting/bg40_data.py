@@ -14,6 +14,7 @@ from typing import Any
 import pandas as pd
 
 from .report_models import ReportMetadata
+from .source_stream import plain_view, checkpoint
 
 VERSION = 'REPORT.ALL82'
 REFERENCE = 'BG40_Final_Complete_R10.docx'
@@ -48,7 +49,7 @@ def _json_signature(payload, *, default=None):
 
 def frame(value):
     if isinstance(value, pd.DataFrame):
-        return value.copy(deep=True)
+        return value.copy(deep=False)
     return pd.DataFrame(value) if isinstance(value, (list, tuple)) else pd.DataFrame()
 
 
@@ -153,10 +154,10 @@ def source_signature(state, metadata=None, include_figures=True, include_appendi
     keys.update([ap._BEAM_ULS_MANUAL_CALC_CACHE_KEY, mr.CACHE_KEY,
                  deform.RESULT_KEY, deform.SETTINGS_KEY, BANK_KEY, ERROR_KEY])
     from .bg40_print import PRESENTATION_VERSION
-    body = {'version': VERSION, 'metadata': plain(metadata), 'figures': include_figures,
+    body = {'version': VERSION, 'metadata': metadata, 'figures': include_figures,
             'presentation_profile': PRESENTATION_VERSION,
             'appendices': include_appendices,
-            'state': {k: plain(state.get(k)) for k in sorted(keys)}}
+            'state': {k: state.get(k) for k in sorted(keys)}}
     # Use the same bindings as Analysis for development, hoops and materials.
     from concrete_pmm_pro.ui.igird_uls_report import report_member_inputs
     from concrete_pmm_pro.ui import igird_sls53_results as stress
@@ -172,7 +173,7 @@ def source_signature(state, metadata=None, include_figures=True, include_appendi
             body[name + '_input_binding'] = engine.fingerprint(state)
         except (ValueError, TypeError, KeyError) as exc:
             body[name + '_input_binding'] = type(exc).__name__ + ': ' + str(exc)
-    return _json_signature(body)
+    return _json_signature(plain_view(body))
 
 
 def _status(values):
@@ -244,6 +245,7 @@ def build_calculation_report(state, metadata=None):
     from concrete_pmm_pro.serviceability import girder_deflect70 as deform
     from concrete_pmm_pro.analysis import slab_review68 as deck
 
+    checkpoint('Reading design criteria and section inputs', .025)
     metadata = metadata or ReportMetadata(project_name=state.get('project_name'))
     code = str(state.get('project_code_edition') or state.get('code_edition') or 'Design code edition not recorded')
     chapters = [Chapter(i + 1, title) for i, title in enumerate(CHAPTERS)]
@@ -316,9 +318,10 @@ def build_calculation_report(state, metadata=None):
             raw[key] = data
     c4.status = 'REVIEW' if c4.tables else 'NOT CALCULATED'
     c5.notes.append('The complete source vector at a row is kept together. A table of governing results never constructs a new independent Vmax–Tmax combination.')
+    checkpoint('Collecting ULS input source rows', .03)
     members = report_member_inputs(state)
     for member, rows in members.items():
-        raw['ULS input ' + member] = rows.copy()
+        raw['ULS input ' + member] = rows.copy(deep=False)
         sources.extend(_source_rows(rows, member))
         columns = [k for k in ('Case Name', 'Station x (m)', 'Mux', 'Vuy', 'Tu', 'Muy', 'Vux', 'Nu') if k in rows]
         c5.table('5.1 ULS actions for ' + member, rows[columns], 'Loads ULS member bank; kN and kN·m')
@@ -329,6 +332,7 @@ def build_calculation_report(state, metadata=None):
         c5.table('5.2 SLS actions', sls_inputs[[c for c in ('Stage', 'Case Name', 'Station x (m)', 'N', 'Mx', 'My', 'V', 'T') if c in sls_inputs]], 'Active SLS Loads; kN and kN·m')
     c5.status = 'AVAILABLE' if members or not sls_inputs.empty else 'NOT CALCULATED'
     for check in FRAME_KEYS:
+        checkpoint('Checking stored ULS '+check+' sources', .04)
         chapter = c6 if check == 'Flexure' else c7
         packages = current_check_packages(state, check, member_rows=members)
         for missing in members.keys() - packages.keys():
@@ -338,7 +342,7 @@ def build_calculation_report(state, metadata=None):
         for member, package in packages.items():
             result = package['result']
             data = result[FRAME_KEYS[check]]
-            raw[check + ' ' + member] = data.copy()
+            raw[check + ' ' + member] = data.copy(deep=False)
             control = controlling_result(data, check)
             row = control['row'] or {}
             native_status = _status(eligible_rows(data, check).get('Status', pd.Series(dtype=str)))
@@ -375,6 +379,7 @@ def build_calculation_report(state, metadata=None):
     c7.notes.insert(0, 'The code-based shear, torsion and concurrent V–T results are the primary checks. Combined research composite models are outside this report acceptance scope.')
     for ch, checks in [(c6, {'Flexure'}), (c7, {'Shear', 'Torsion', 'Shear + Torsion'})]:
         ch.status = _status(r['Status'] for r in controls if r['Check'] in checks) if ch.tables else 'NOT CALCULATED'
+    checkpoint('Checking stored SLS stress sources', .05)
     stress = sls.current(state)
     c8.notes.append('Compression is negative and tension positive. Stage and material-specific stored limits, force-content decisions and reference assumptions remain attached to each result.')
     if stress:
@@ -391,7 +396,7 @@ def build_calculation_report(state, metadata=None):
                         'Actual stress (MPa)', 'Limit stress (MPa)', 'Utilization', 'Status']
             c8.table(stage + ' stress checks', checks[[c for c in selected if c in checks]], entry['profile'])
             for case, data in entry['cases'].items():
-                raw['SLS ' + stage + ' ' + case] = data['raw'].copy()
+                raw['SLS ' + stage + ' ' + case] = data['raw'].copy(deep=False)
                 for component in data['limits']:
                     c8.figures.append({'kind': 'stress', 'stage': stage, 'case': case,
                         'component': component, 'title': f"{stress['member']} | {stage} | {case} | {component}"})
@@ -427,6 +432,7 @@ def build_calculation_report(state, metadata=None):
     elif state.get(sls.RUNTIME_KEY) is not None:
         c8.status = 'STALE'
         warnings.append('SLS stress results are stale and have been excluded.')
+    checkpoint('Checking stored deflection sources', .06)
     displacement = deform.current(state)
     c9.notes.append('Service WebTop Vert envelopes retain their exported signs and unit conversion. They are not attributed to a live-load-only case when the export does not provide that definition.')
     if displacement:
@@ -454,6 +460,7 @@ def build_calculation_report(state, metadata=None):
     elif state.get(deform.RESULT_KEY) is not None:
         c9.status = 'STALE'
         warnings.append('Deflection results are stale and have been excluded.')
+    checkpoint('Checking stored deck slab sources', .07)
     slab = deck.current(state)
     c10.notes.append('Local normal-shear D/C is a local index, not an actual critical-perimeter punching acceptance. A value below one does not close the physical-perimeter or full-deck review.')
     if slab:
@@ -476,7 +483,7 @@ def build_calculation_report(state, metadata=None):
         screen = slab.get('punching_screen78')
         if screen:
             c10.table('10.5 Punching local index by case', screen['summary'], screen['code'] + ' | ' + screen['thickness_basis'])
-            raw['Punching local source rows'] = screen['rows'].copy()
+            raw['Punching local source rows'] = screen['rows'].copy(deep=False)
             c10.notes.extend([screen['scope'], *screen['geometry_issues']])
             c10.figures.append({'kind': 'punching', 'title': 'Punching local D/C in plan with actual thickness'})
             r = screen.get('governing') or {}
@@ -493,7 +500,7 @@ def build_calculation_report(state, metadata=None):
     sources_df = pd.DataFrame(sources).drop_duplicates() if sources else pd.DataFrame(columns=['Member', 'File', 'Sheet', 'Excel row', 'Case', 'Step', 'x (m)', 'Source SHA256', 'Coupling', 'Evidence'])
     for ch in chapters:
         for i, t in enumerate(ch.tables):
-            raw[f'Chapter {ch.number} table {i+1} {t.title}'] = t.data.copy()
+            raw[f'Chapter {ch.number} table {i+1} {t.title}'] = t.data.copy(deep=False)
     controls_df = pd.DataFrame(controls, columns=['Member', 'Check', 'Case', 'x', 'D/C', 'Basis', 'Status'])
     result_status = _status([r['Status'] for r in controls] + [c8.status, c9.status])
     # Missing chapters and unresolved slab scope never become an issue-ready report.
@@ -506,9 +513,10 @@ def build_calculation_report(state, metadata=None):
         'girder_prestress_code_loss_settings', 'beam_girder_system_settings',
         'beam_girder_sls_auto_load_settings', 'beam_uls_loads_table', 'beam_sls_loads_table',
         'project_metadata', 'project_design_code', 'project_code_edition')
+    checkpoint('Verifying complete source data without copying result tables', .08)
     report = CalculationReport(metadata, code, chapters, sources_df, controls_df,
         source_signature(state, metadata), result_status, list(dict.fromkeys(warnings)), raw,
-        {key: plain(state.get(key)) for key in snapshot_keys if key in state})
+        {key: state.get(key) for key in snapshot_keys if key in state})
     from .bg40_figures import add_figures
     return add_figures(report, state)
 

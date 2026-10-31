@@ -1,0 +1,1043 @@
+{
+  "release": "REPORT.CLOUD86",
+  "date": "2026-11-01",
+  "baseline_release": "REPORT.CLOUD85",
+  "baseline_commit": "5a81a5d4351719f901077552e11a83aae7f2c2ee",
+  "cloud_log": {
+    "log_timestamp_utc": "2026-10-31T20:46:14.196Z",
+    "python": "3.12.16",
+    "release": "REPORT.CLOUD85",
+    "last_stage": "Reading stored Analysis results",
+    "last_fraction": 0.02,
+    "app_rss_mib": 993.8,
+    "container_used_mib": 1984.0,
+    "container_limit_mib": 3072.0,
+    "container_headroom_mib": 1088.0,
+    "health_check_connection_reset_utc": "2026-10-31T20:46:54Z",
+    "kernel_oom_event_in_supplied_log": false
+  },
+  "tests": {
+    "passed": 217,
+    "warnings": 6,
+    "seconds": 144.35,
+    "scope": "Targeted report and prior report regression modules; not the entire repository suite. Existing pandas concat FutureWarnings.",
+    "py_compile": "passed"
+  },
+  "source_memory_benchmark": {
+    "baseline": {
+      "rows_per_table": 100000,
+      "columns": 32,
+      "tables": 2,
+      "serialized_cells": 6400000,
+      "signature": "6dd82f383aeb3f3bc9d0365ca927eb628c236dd9c501bf4c5a6340436d844c48",
+      "seconds": 18.935,
+      "peak_rss_mib": 704.77,
+      "pre_hash_peak_rss_mib": 190.33,
+      "scope": "Isolated source fingerprint, not full report time. Synthetic source; all cells retained."
+    },
+    "candidate": {
+      "rows_per_table": 100000,
+      "columns": 32,
+      "tables": 2,
+      "serialized_cells": 6400000,
+      "signature": "6dd82f383aeb3f3bc9d0365ca927eb628c236dd9c501bf4c5a6340436d844c48",
+      "seconds": 17.927,
+      "peak_rss_mib": 227.0,
+      "pre_hash_peak_rss_mib": 189.17,
+      "scope": "Isolated source fingerprint, not full report time. Synthetic source; all cells retained."
+    },
+    "same_complete_source_signature": true,
+    "scope": "Synthetic two-table source, 6.4 million cells; source hashing only, not the actual failing project or full Word export."
+  },
+  "i_girder_fidelity": {
+    "word_part_differences": [],
+    "evidence_json_csv_count": 87,
+    "evidence_differences": []
+  },
+  "native_workflows": {
+    "i_girder": {
+      "download_payload_sha256": "9ab2f3dfbdcc5813f95c617aeaf910fd0b4c7091fd88920c5954bbe2a6015711",
+      "download_payload_matches_artifact": true,
+      "native_static_renderer": true,
+      "post_export_document_edits": false,
+      "content_selection_widgets": 0,
+      "figures": 58,
+      "native_equations": 219,
+      "tables": 79,
+      "chapters": 10,
+      "engineering_status": "FAIL",
+      "original_styles_and_theme_preserved": true,
+      "workflow": "i_girder",
+      "source_fixture": "calculated_example.pkl",
+      "runtime83": {
+        "runs": [
+          {
+            "seconds": 0.607,
+            "calls": {},
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 20.736,
+            "calls": {
+              "report_builds": 1,
+              "word_exports": 1,
+              "png_renders": 58
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 1.747,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 1.561,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 1.586,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          }
+        ],
+        "total_builds": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 58
+        },
+        "parent_process_peak_rss_mib": 340.84,
+        "peak_scope": "Python app process only; native renderer children are excluded.",
+        "reopens_without_rebuild": 3
+      },
+      "cloud86": {
+        "runs": [
+          {
+            "seconds": 0.607,
+            "exceptions": []
+          },
+          {
+            "seconds": 20.736,
+            "exceptions": []
+          },
+          {
+            "seconds": 1.747,
+            "exceptions": []
+          },
+          {
+            "seconds": 1.561,
+            "exceptions": []
+          },
+          {
+            "seconds": 1.586,
+            "exceptions": []
+          }
+        ],
+        "counts": {
+          "complete_exports": 1,
+          "renderer_worker_starts": 8
+        },
+        "progress_events": 316,
+        "progress_reaches_complete": true,
+        "maximum_process_tree_rss_mib": 519.14,
+        "maximum_parent_rss_mib": 332.74,
+        "maximum_concurrent_child_processes": 5,
+        "live_descendants_after_export": 0,
+        "resource_scope": "Linux app process and all native descendants, sampled every 50 ms. Summed RSS double-counts shared pages; local observation, not a Cloud quota guarantee.",
+        "diagnostics": {
+          "environment": {
+            "release": "REPORT.CLOUD86",
+            "python": "3.12.14",
+            "streamlit": "1.61.0",
+            "pandas": "2.2.3",
+            "plotly": "5.24.1",
+            "kaleido": "0.2.1",
+            "python-docx": "1.2.0",
+            "app_rss_mib": 205.0,
+            "container_used_mib": 3445.3,
+            "container_limit_mib": 8192.0,
+            "container_headroom_mib": 4746.7
+          },
+          "stage": "Complete report ready to download",
+          "fraction": 1.0,
+          "elapsed_seconds": 20.49,
+          "memory": {
+            "app_rss_mib": 276.3,
+            "container_used_mib": 3694.3,
+            "container_limit_mib": 8192.0,
+            "container_headroom_mib": 4497.7
+          }
+        }
+      }
+    },
+    "building_beam": {
+      "download_payload_sha256": "4b6015f268dd40cc5b2282c4fba79be7e3af0148bd0e06471802e748022334a0",
+      "download_payload_matches_artifact": true,
+      "native_static_renderer": true,
+      "post_export_document_edits": false,
+      "content_selection_widgets": 0,
+      "figures": 6,
+      "native_equations": 43,
+      "tables": 34,
+      "chapters": 10,
+      "engineering_status": "FAIL",
+      "original_styles_and_theme_preserved": true,
+      "workflow": "building_beam",
+      "source_fixture": "building_beam.pkl",
+      "runtime83": {
+        "runs": [
+          {
+            "seconds": 0.716,
+            "calls": {},
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 2.669,
+            "calls": {
+              "report_builds": 1,
+              "word_exports": 1,
+              "png_renders": 6
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.248,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.229,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.341,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          }
+        ],
+        "total_builds": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 6
+        },
+        "parent_process_peak_rss_mib": 242.68,
+        "peak_scope": "Python app process only; native renderer children are excluded.",
+        "reopens_without_rebuild": 3
+      },
+      "cloud86": {
+        "runs": [
+          {
+            "seconds": 0.716,
+            "exceptions": []
+          },
+          {
+            "seconds": 2.669,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.248,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.229,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.341,
+            "exceptions": []
+          }
+        ],
+        "counts": {
+          "complete_exports": 1,
+          "renderer_worker_starts": 1
+        },
+        "progress_events": 123,
+        "progress_reaches_complete": true,
+        "maximum_process_tree_rss_mib": 448.65,
+        "maximum_parent_rss_mib": 236.56,
+        "maximum_concurrent_child_processes": 5,
+        "live_descendants_after_export": 0,
+        "resource_scope": "Linux app process and all native descendants, sampled every 50 ms. Summed RSS double-counts shared pages; local observation, not a Cloud quota guarantee.",
+        "diagnostics": {
+          "environment": {
+            "release": "REPORT.CLOUD86",
+            "python": "3.12.14",
+            "streamlit": "1.61.0",
+            "pandas": "2.2.3",
+            "plotly": "5.24.1",
+            "kaleido": "0.2.1",
+            "python-docx": "1.2.0",
+            "app_rss_mib": 188.7,
+            "container_used_mib": 3868.8,
+            "container_limit_mib": 8192.0,
+            "container_headroom_mib": 4323.2
+          },
+          "stage": "Complete report ready to download",
+          "fraction": 1.0,
+          "elapsed_seconds": 2.48,
+          "memory": {
+            "app_rss_mib": 208.9,
+            "container_used_mib": 3848.9,
+            "container_limit_mib": 8192.0,
+            "container_headroom_mib": 4343.1
+          }
+        }
+      }
+    },
+    "crossbeam_segmental": {
+      "download_payload_sha256": "865a2a2af38eba55fe8d645bce1ff7bd16e7e74fcca4af5b2ae8b0e4c1af189f",
+      "download_payload_matches_artifact": true,
+      "native_static_renderer": true,
+      "post_export_document_edits": false,
+      "content_selection_widgets": 0,
+      "figures": 11,
+      "native_equations": 12,
+      "tables": 72,
+      "chapters": 10,
+      "engineering_status": "FAIL",
+      "original_styles_and_theme_preserved": true,
+      "workflow": "crossbeam",
+      "source_fixture": "crossbeam_segmental.pkl",
+      "runtime83": {
+        "runs": [
+          {
+            "seconds": 0.605,
+            "calls": {},
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 11.335,
+            "calls": {
+              "report_builds": 1,
+              "word_exports": 1,
+              "png_renders": 11
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.384,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.23,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.207,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          }
+        ],
+        "total_builds": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 11
+        },
+        "parent_process_peak_rss_mib": 290.09,
+        "peak_scope": "Python app process only; native renderer children are excluded.",
+        "reopens_without_rebuild": 3
+      },
+      "cloud86": {
+        "runs": [
+          {
+            "seconds": 0.605,
+            "exceptions": []
+          },
+          {
+            "seconds": 11.335,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.384,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.23,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.207,
+            "exceptions": []
+          }
+        ],
+        "counts": {
+          "complete_exports": 1,
+          "renderer_worker_starts": 2
+        },
+        "progress_events": 233,
+        "progress_reaches_complete": true,
+        "maximum_process_tree_rss_mib": 480.8,
+        "maximum_parent_rss_mib": 288.53,
+        "maximum_concurrent_child_processes": 5,
+        "live_descendants_after_export": 0,
+        "resource_scope": "Linux app process and all native descendants, sampled every 50 ms. Summed RSS double-counts shared pages; local observation, not a Cloud quota guarantee.",
+        "diagnostics": {
+          "environment": {
+            "release": "REPORT.CLOUD86",
+            "python": "3.12.14",
+            "streamlit": "1.61.0",
+            "pandas": "2.2.3",
+            "plotly": "5.24.1",
+            "kaleido": "0.2.1",
+            "python-docx": "1.2.0",
+            "app_rss_mib": 188.8,
+            "container_used_mib": 3866.5,
+            "container_limit_mib": 8192.0,
+            "container_headroom_mib": 4325.5
+          },
+          "stage": "Complete report ready to download",
+          "fraction": 1.0,
+          "elapsed_seconds": 11.13,
+          "memory": {
+            "app_rss_mib": 215.2,
+            "container_used_mib": 3613.5,
+            "container_limit_mib": 8192.0,
+            "container_headroom_mib": 4578.5
+          }
+        }
+      }
+    },
+    "crossbeam_cip": {
+      "download_payload_sha256": "530d294a08ea5f4202f067d7449588dac8cc8d9fa06c943e47289dba11d4e317",
+      "download_payload_matches_artifact": true,
+      "native_static_renderer": true,
+      "post_export_document_edits": false,
+      "content_selection_widgets": 0,
+      "figures": 13,
+      "native_equations": 18,
+      "tables": 81,
+      "chapters": 10,
+      "engineering_status": "REVIEW",
+      "original_styles_and_theme_preserved": true,
+      "workflow": "crossbeam",
+      "source_fixture": "crossbeam_cip.pkl",
+      "runtime83": {
+        "runs": [
+          {
+            "seconds": 0.713,
+            "calls": {},
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 7.188,
+            "calls": {
+              "report_builds": 1,
+              "word_exports": 1,
+              "png_renders": 13
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.219,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.198,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.202,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          }
+        ],
+        "total_builds": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 13
+        },
+        "parent_process_peak_rss_mib": 266.39,
+        "peak_scope": "Python app process only; native renderer children are excluded.",
+        "reopens_without_rebuild": 3
+      },
+      "cloud86": {
+        "runs": [
+          {
+            "seconds": 0.713,
+            "exceptions": []
+          },
+          {
+            "seconds": 7.188,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.219,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.198,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.202,
+            "exceptions": []
+          }
+        ],
+        "counts": {
+          "complete_exports": 1,
+          "renderer_worker_starts": 2
+        },
+        "progress_events": 271,
+        "progress_reaches_complete": true,
+        "maximum_process_tree_rss_mib": 470.61,
+        "maximum_parent_rss_mib": 264.49,
+        "maximum_concurrent_child_processes": 5,
+        "live_descendants_after_export": 0,
+        "resource_scope": "Linux app process and all native descendants, sampled every 50 ms. Summed RSS double-counts shared pages; local observation, not a Cloud quota guarantee.",
+        "diagnostics": {
+          "environment": {
+            "release": "REPORT.CLOUD86",
+            "python": "3.12.14",
+            "streamlit": "1.61.0",
+            "pandas": "2.2.3",
+            "plotly": "5.24.1",
+            "kaleido": "0.2.1",
+            "python-docx": "1.2.0",
+            "app_rss_mib": 188.5,
+            "container_used_mib": 3887.2,
+            "container_limit_mib": 8192.0,
+            "container_headroom_mib": 4304.8
+          },
+          "stage": "Complete report ready to download",
+          "fraction": 1.0,
+          "elapsed_seconds": 7.02,
+          "memory": {
+            "app_rss_mib": 212.0,
+            "container_used_mib": 3877.9,
+            "container_limit_mib": 8192.0,
+            "container_headroom_mib": 4314.1
+          }
+        }
+      }
+    },
+    "column": {
+      "download_payload_sha256": "11694e06b1f1585781ee551162de507b9a4e341cdc9c71ae3e348dcaba18f75e",
+      "download_payload_matches_artifact": true,
+      "native_static_renderer": true,
+      "post_export_document_edits": false,
+      "content_selection_widgets": 0,
+      "figures": 5,
+      "native_equations": 32,
+      "tables": 33,
+      "chapters": 10,
+      "engineering_status": "REVIEW",
+      "original_styles_and_theme_preserved": true,
+      "workflow": "column",
+      "source_fixture": "column.pkl",
+      "runtime83": {
+        "runs": [
+          {
+            "seconds": 0.595,
+            "calls": {},
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 4.089,
+            "calls": {
+              "report_builds": 1,
+              "word_exports": 1,
+              "png_renders": 5
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.18,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.156,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.161,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          }
+        ],
+        "total_builds": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 5
+        },
+        "parent_process_peak_rss_mib": 231.66,
+        "peak_scope": "Python app process only; native renderer children are excluded.",
+        "reopens_without_rebuild": 3
+      },
+      "cloud86": {
+        "runs": [
+          {
+            "seconds": 0.595,
+            "exceptions": []
+          },
+          {
+            "seconds": 4.089,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.18,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.156,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.161,
+            "exceptions": []
+          }
+        ],
+        "counts": {
+          "complete_exports": 1,
+          "renderer_worker_starts": 1
+        },
+        "progress_events": 115,
+        "progress_reaches_complete": true,
+        "maximum_process_tree_rss_mib": 753.08,
+        "maximum_parent_rss_mib": 221.91,
+        "maximum_concurrent_child_processes": 5,
+        "live_descendants_after_export": 0,
+        "resource_scope": "Linux app process and all native descendants, sampled every 50 ms. Summed RSS double-counts shared pages; local observation, not a Cloud quota guarantee.",
+        "diagnostics": {
+          "environment": {
+            "release": "REPORT.CLOUD86",
+            "python": "3.12.14",
+            "streamlit": "1.61.0",
+            "pandas": "2.2.3",
+            "plotly": "5.24.1",
+            "kaleido": "0.2.1",
+            "python-docx": "1.2.0",
+            "app_rss_mib": 185.8,
+            "container_used_mib": 3602.6,
+            "container_limit_mib": 8192.0,
+            "container_headroom_mib": 4589.4
+          },
+          "stage": "Complete report ready to download",
+          "fraction": 1.0,
+          "elapsed_seconds": 3.93,
+          "memory": {
+            "app_rss_mib": 206.2,
+            "container_used_mib": 3767.6,
+            "container_limit_mib": 8192.0,
+            "container_headroom_mib": 4424.4
+          }
+        }
+      }
+    },
+    "bridge_beam": {
+      "download_payload_sha256": "17467569b68d552af40678097de1348ec048804039ac48859cd4ca415bfda107",
+      "download_payload_matches_artifact": true,
+      "native_static_renderer": true,
+      "post_export_document_edits": false,
+      "content_selection_widgets": 0,
+      "figures": 6,
+      "native_equations": 40,
+      "tables": 34,
+      "chapters": 10,
+      "engineering_status": "FAIL",
+      "original_styles_and_theme_preserved": true,
+      "workflow": "bridge_beam",
+      "source_fixture": "bridge_beam.pkl",
+      "runtime83": {
+        "runs": [
+          {
+            "seconds": 0.766,
+            "calls": {},
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 2.92,
+            "calls": {
+              "report_builds": 1,
+              "word_exports": 1,
+              "png_renders": 6
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.262,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.224,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.302,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          }
+        ],
+        "total_builds": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 6
+        },
+        "parent_process_peak_rss_mib": 242.24,
+        "peak_scope": "Python app process only; native renderer children are excluded.",
+        "reopens_without_rebuild": 3
+      },
+      "cloud86": {
+        "runs": [
+          {
+            "seconds": 0.766,
+            "exceptions": []
+          },
+          {
+            "seconds": 2.92,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.262,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.224,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.302,
+            "exceptions": []
+          }
+        ],
+        "counts": {
+          "complete_exports": 1,
+          "renderer_worker_starts": 1
+        },
+        "progress_events": 123,
+        "progress_reaches_complete": true,
+        "maximum_process_tree_rss_mib": 447.35,
+        "maximum_parent_rss_mib": 234.15,
+        "maximum_concurrent_child_processes": 5,
+        "live_descendants_after_export": 0,
+        "resource_scope": "Linux app process and all native descendants, sampled every 50 ms. Summed RSS double-counts shared pages; local observation, not a Cloud quota guarantee.",
+        "diagnostics": {
+          "environment": {
+            "release": "REPORT.CLOUD86",
+            "python": "3.12.14",
+            "streamlit": "1.61.0",
+            "pandas": "2.2.3",
+            "plotly": "5.24.1",
+            "kaleido": "0.2.1",
+            "python-docx": "1.2.0",
+            "app_rss_mib": 188.3,
+            "container_used_mib": 3843.1,
+            "container_limit_mib": 8192.0,
+            "container_headroom_mib": 4348.9
+          },
+          "stage": "Complete report ready to download",
+          "fraction": 1.0,
+          "elapsed_seconds": 2.71,
+          "memory": {
+            "app_rss_mib": 208.1,
+            "container_used_mib": 3856.6,
+            "container_limit_mib": 8192.0,
+            "container_headroom_mib": 4335.4
+          }
+        }
+      }
+    },
+    "railway_u": {
+      "download_payload_sha256": "1eaf150820ad05c0d2ea4c7b270d054fb44a8bbe6efcb50273caa15a8000d2c2",
+      "download_payload_matches_artifact": true,
+      "native_static_renderer": true,
+      "post_export_document_edits": false,
+      "content_selection_widgets": 0,
+      "figures": 7,
+      "native_equations": 45,
+      "tables": 40,
+      "chapters": 10,
+      "engineering_status": "FAIL",
+      "original_styles_and_theme_preserved": true,
+      "workflow": "railway_u",
+      "source_fixture": "railway_u.pkl",
+      "runtime83": {
+        "runs": [
+          {
+            "seconds": 0.597,
+            "calls": {},
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 2.619,
+            "calls": {
+              "report_builds": 1,
+              "word_exports": 1,
+              "png_renders": 7
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.225,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.193,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.336,
+            "calls": {
+              "report_builds": 0,
+              "word_exports": 0,
+              "png_renders": 0
+            },
+            "plotly_charts": 0,
+            "dataframes": 0,
+            "exceptions": []
+          }
+        ],
+        "total_builds": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 7
+        },
+        "parent_process_peak_rss_mib": 248.06,
+        "peak_scope": "Python app process only; native renderer children are excluded.",
+        "reopens_without_rebuild": 3
+      },
+      "cloud86": {
+        "runs": [
+          {
+            "seconds": 0.597,
+            "exceptions": []
+          },
+          {
+            "seconds": 2.619,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.225,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.193,
+            "exceptions": []
+          },
+          {
+            "seconds": 0.336,
+            "exceptions": []
+          }
+        ],
+        "counts": {
+          "complete_exports": 1,
+          "renderer_worker_starts": 1
+        },
+        "progress_events": 139,
+        "progress_reaches_complete": true,
+        "maximum_process_tree_rss_mib": 453.48,
+        "maximum_parent_rss_mib": 245.06,
+        "maximum_concurrent_child_processes": 5,
+        "live_descendants_after_export": 0,
+        "resource_scope": "Linux app process and all native descendants, sampled every 50 ms. Summed RSS double-counts shared pages; local observation, not a Cloud quota guarantee.",
+        "diagnostics": {
+          "environment": {
+            "release": "REPORT.CLOUD86",
+            "python": "3.12.14",
+            "streamlit": "1.61.0",
+            "pandas": "2.2.3",
+            "plotly": "5.24.1",
+            "kaleido": "0.2.1",
+            "python-docx": "1.2.0",
+            "app_rss_mib": 187.5,
+            "container_used_mib": 3593.2,
+            "container_limit_mib": 8192.0,
+            "container_headroom_mib": 4598.8
+          },
+          "stage": "Complete report ready to download",
+          "fraction": 1.0,
+          "elapsed_seconds": 2.44,
+          "memory": {
+            "app_rss_mib": 209.4,
+            "container_used_mib": 3611.1,
+            "container_limit_mib": 8192.0,
+            "container_headroom_mib": 4580.9
+          }
+        }
+      }
+    }
+  },
+  "github_baseline": {
+    "commit": "5a81a5d4351719f901077552e11a83aae7f2c2ee",
+    "files_checked": 321,
+    "different": [],
+    "not_in_baseline": []
+  },
+  "preserved": [
+    "BG40 R10 styles and theme",
+    "all available chapters, tables, equations and figures",
+    "full source cells and matching signature bytes",
+    "FAIL/REVIEW/STALE and missing-source guards",
+    "read-only report; no solver calls",
+    "Project JSON behavior"
+  ],
+  "limitations": [
+    "The supplied log does not prove a kernel OOM kill; resource exhaustion is a supported diagnosis, not a confirmed platform cause.",
+    "The actual failed project JSON/runtime was not supplied, so live project reproduction remains unverified.",
+    "Local process RSS and synthetic benchmark figures do not guarantee a Cloud memory budget or full-report duration."
+  ],
+  "delivery": {
+    "github_write": "blocked",
+    "error": "403 Resource not accessible by integration",
+    "main_branch_modified": false,
+    "live_deployed": false
+  }
+}

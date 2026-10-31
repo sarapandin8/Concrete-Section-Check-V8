@@ -4,13 +4,14 @@ Input preparation may validate a source fingerprint. No strength, stress,
 prestress-loss or displacement solver is called by this report adapter.
 """
 from __future__ import annotations
-from dataclasses import asdict, is_dataclass
+from dataclasses import fields, is_dataclass
 import math
 import re
 import pandas as pd
 
 from .bg40_data import Calculation, CalculationReport, Chapter, display, fields_table, plain, _status, _source_rows, _json_signature
 from .report_models import ReportMetadata
+from .source_stream import plain_view, checkpoint
 
 VERSION = 'REPORT.ALL82'
 LABELS = {'i_girder':'Precast I-Girder', 'column':'Column Pier Wall Pylon',
@@ -41,13 +42,13 @@ def workflow_key(state):
 
 
 def obj(value):
-    if is_dataclass(value): return asdict(value)
+    if is_dataclass(value): return {f.name:getattr(value,f.name) for f in fields(value)}
     if hasattr(value,'model_dump'): return value.model_dump()
     return value
 
 
 def frame(value):
-    if isinstance(value,pd.DataFrame): return value.copy(deep=True)
+    if isinstance(value,pd.DataFrame): return value.copy(deep=False)
     value = obj(value)
     if isinstance(value,dict) and isinstance(value.get('rows'),list): value = value['rows']
     if isinstance(value,(tuple,list)): return pd.DataFrame([obj(x) for x in value if isinstance(obj(x),dict)])
@@ -78,7 +79,7 @@ def input_snapshot(state):
         if not name.startswith(('crossbeam_','girder_','beam_','building_','railway_','column_','section_','slab_','rebar_','prestress_')): continue
         if VIEW.search(name) or DIAGNOSTIC.search(name) or any(x in name for x in ('_result','_summary','_fingerprint','_input_hash','_cache')): continue
         keys.add(key)
-    return {k:plain(obj(state.get(k))) for k in sorted(keys) if state.get(k) is not None and not DIAGNOSTIC.search(k)}
+    return {k:obj(state.get(k)) for k in sorted(keys) if state.get(k) is not None and not DIAGNOSTIC.search(k)}
 
 
 def stored_sources(state):
@@ -100,10 +101,10 @@ def universal_signature(state,metadata=None,include_figures=True,include_appendi
         'rc_demand_capacity_pmm_result_hash','serviceability_summary_hash','analysis_input_hash',
         'result_summary_beam_girder_sls_cache_hash')
     payload = {'version':VERSION,'presentation':PRESENTATION_VERSION,'workflow':workflow_key(state),
-        'metadata':plain(metadata),'figures':include_figures,'appendices':include_appendices,
+        'metadata':metadata,'figures':include_figures,'appendices':include_appendices,
         'inputs':input_snapshot(state),'bindings':{k:state.get(k) for k in bindings},
-        'results':{k:plain(obj(v)) for k,v in stored_sources(state).items()}}
-    return _json_signature(payload,default=str)
+        'results':{k:obj(v) for k,v in stored_sources(state).items()}}
+    return _json_signature(plain_view(payload),default=str)
 
 
 def currency(state):
@@ -115,7 +116,7 @@ def currency(state):
 def table(report,chapter,name,value,source,*,columns=None,show=True):
     data = frame(value)
     if data.empty: return data
-    report.raw_tables[name] = data.copy(deep=True)
+    report.raw_tables[name] = data.copy(deep=False)
     cols = [k for k in (columns or list(data)) if k in data]
     if columns is None: cols = [k for k in cols if not any(isinstance(v,(dict,list,tuple)) for v in data[k])]
     if show and cols: chapter.table(name,data[cols],source)
@@ -527,6 +528,7 @@ def build_workflow_report(state,metadata=None):
     if key=='i_girder':
         from .bg40_data import build_calculation_report
         return build_calculation_report(state,metadata)
+    checkpoint('Reading '+LABELS[key]+' stored sources', .03)
     report=base(state,metadata,key); current=currency(state); stale=current=='STALE'
     if current=='UNVERIFIED': report.warnings.append('Legacy stored results have no project-wide current-input binding. Source values require engineering review; the report does not certify their currency.')
     if key=='column': column(report,state,stale)
@@ -552,8 +554,9 @@ def build_workflow_report(state,metadata=None):
                 ('Station s (m)','Station x (m)','Governing x','Direction','Dir','point_name','Fiber'))
             identities=[next((k for k in group if k in item.data),None) for group in groups]
             item.data.attrs['report_repeat_columns']=[k for k in identities if k]
-            report.raw_tables.setdefault(f'Chapter {chapter.number} table {i} {item.title}',item.data.copy(deep=True))
-    report.stored_results={k:plain(obj(v)) for k,v in stored_sources(state).items()}
+            report.raw_tables.setdefault(f'Chapter {chapter.number} table {i} {item.title}',item.data.copy(deep=False))
+    report.stored_results={k:obj(v) for k,v in stored_sources(state).items()}
     report.status='STALE' if stale else _status([c.status for c in report.chapters[5:10] if c.status!='NOT APPLICABLE'])
+    checkpoint('Verifying complete source data without copying result tables', .08)
     report.signature=universal_signature(state,report.metadata)
     return report

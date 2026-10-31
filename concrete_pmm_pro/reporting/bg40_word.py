@@ -360,7 +360,10 @@ def _build_bg40_word_report(report, state, *, include_figures,
         return body_stream.save()
 
 
-def _write_json(archive, name, value, **options):
+def _write_json(archive, name, value, *, source_objects=False, **options):
+    if source_objects:
+        from .source_stream import plain_view
+        value = plain_view(value)
     with archive.open(name, 'w') as stream:
         with TextIOWrapper(stream, encoding='utf-8', newline='') as text:
             text.writelines(json.JSONEncoder(ensure_ascii=False, indent=2, **options).iterencode(value))
@@ -406,9 +409,9 @@ def build_evidence_zip(report, docx_bytes, *, progress=None):
         archive.writestr('Calculation_Report_BG40.docx', docx_bytes)
         _write_csv(archive, 'Source_Register.csv', report.sources)
         _write_csv(archive, 'Governing_Checks.csv', report.controls)
-        _write_json(archive, 'ProjectInputSnapshot.json', report.input_snapshot)
+        _write_json(archive, 'ProjectInputSnapshot.json', report.input_snapshot, source_objects=True)
         if report.stored_results:
-            _write_json(archive, 'StoredResultSnapshot.json', report.stored_results, default=str)
+            _write_json(archive, 'StoredResultSnapshot.json', report.stored_results, source_objects=True, default=str)
         _write_json(archive, 'Figure_Register.json', report.figure_audit, default=str)
         # Extract the exact embedded images, retaining chapter/figure identity.
         embedded = [x for x in report.figure_audit if x['status'] == 'EMBEDDED']
