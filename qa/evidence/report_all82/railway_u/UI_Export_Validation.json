@@ -1,0 +1,15 @@
+{
+  "download_payload_sha256": "52c157a72a28a8dbde19b9f92360cdaf1644d1d3fbb6a4829cbbfcb67fe38eab",
+  "download_payload_matches_artifact": true,
+  "native_static_renderer": true,
+  "post_export_document_edits": false,
+  "content_selection_widgets": 0,
+  "figures": 7,
+  "native_equations": 45,
+  "tables": 40,
+  "chapters": 10,
+  "engineering_status": "FAIL",
+  "original_styles_and_theme_preserved": true,
+  "workflow": "railway_u",
+  "source_fixture": "railway_u.pkl"
+}

@@ -1,4 +1,11 @@
-# REPORT.DEFAULT81 — complete BG40 Word report by default
+# REPORT.ALL82 — shared complete Word reports for every workflow
+
+Report / QA uses **Create complete Word report** and **Download complete Word report (.docx)** for Column/Pier PMM, Building Beam/Girder, Bridge Beam/Girder, Railway U-Girder, Precast I-Girder and Portal Frame Crossbeam (Cast-in-Place and Precast Segmental). Content is included automatically from stored Analysis results. The supplied BG40 R10 Word template remains the presentation source.
+
+See [README_REPORT_ALL82_TH.md](README_REPORT_ALL82_TH.md) and [REPO_SUMMARY_REPORT_ALL82.md](REPO_SUMMARY_REPORT_ALL82.md).
+
+## Previous release REPORT.DEFAULT81
+
 
 I-girder Report / QA now starts with **Create complete Word report**, followed
 by **Download complete Word report (.docx)**. All available figures, editable

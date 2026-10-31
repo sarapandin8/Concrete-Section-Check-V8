@@ -1,0 +1,15 @@
+{
+  "download_payload_sha256": "c954c05e65d77768d0247eaf32ce4ea381c5d52819da858fd979ad9f6826a957",
+  "download_payload_matches_artifact": true,
+  "native_static_renderer": true,
+  "post_export_document_edits": false,
+  "content_selection_widgets": 0,
+  "figures": 13,
+  "native_equations": 18,
+  "tables": 82,
+  "chapters": 10,
+  "engineering_status": "REVIEW",
+  "original_styles_and_theme_preserved": true,
+  "workflow": "crossbeam",
+  "source_fixture": "crossbeam_cip.pkl"
+}

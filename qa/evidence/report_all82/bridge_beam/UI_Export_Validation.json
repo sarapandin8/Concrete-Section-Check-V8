@@ -1,0 +1,15 @@
+{
+  "download_payload_sha256": "1aa4e19d8bd5fea42f03da4de8b8f1055c225aa26ab2dca0058e6caa95582236",
+  "download_payload_matches_artifact": true,
+  "native_static_renderer": true,
+  "post_export_document_edits": false,
+  "content_selection_widgets": 0,
+  "figures": 6,
+  "native_equations": 40,
+  "tables": 34,
+  "chapters": 10,
+  "engineering_status": "FAIL",
+  "original_styles_and_theme_preserved": true,
+  "workflow": "bridge_beam",
+  "source_fixture": "bridge_beam.pkl"
+}

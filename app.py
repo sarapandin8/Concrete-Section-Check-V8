@@ -5203,50 +5203,26 @@ def _render_report_qa_igird_combined_vt_equation_trace(state: object) -> None:
 
 
 def render_report_qa_workspace() -> None:
-    from concrete_pmm_pro.ui.bg40_report import render as render_bg40_report, supports_complete_report
-    if supports_complete_report(st.session_state) and not _results_is_crossbeam_workflow(st.session_state):
-        # Complete export is the primary task; detailed QA stays optional.
-        render_bg40_report(st.session_state)
-        with st.expander('Engineering review and required actions', expanded=False):
-            render_metric_cards(_report_qa_dashboard_cards(st.session_state))
+    from concrete_pmm_pro.ui.bg40_report import render as render_bg40_report
+    from concrete_pmm_pro.reporting.workflow_reports import workflow_key
+    render_bg40_report(st.session_state)
+    with st.expander('Engineering review and required actions', expanded=False):
+        render_metric_cards(_report_qa_dashboard_cards(st.session_state))
+        if _results_is_crossbeam_workflow(st.session_state):
+            _render_report_qa_crossbeam_readiness(st.session_state, _report_qa_crossbeam_context(st.session_state))
+        else:
             from concrete_pmm_pro.ui.igird_flexure_workspace import render_stored_scope_review
             render_stored_scope_review(st.session_state)
             _render_report_qa_result_summary_alignment(st.session_state)
-        with st.expander('Calculation traces and export QA', expanded=False):
+    with st.expander('Calculation traces and export QA', expanded=False):
+        if workflow_key(st.session_state) == 'i_girder':
             _render_report_qa_igird_shear_equation_trace(st.session_state)
             from concrete_pmm_pro.ui.igird_uls_report import render_uls_report_charts
             render_uls_report_charts(st.session_state, code_label=_results_design_code_label(st.session_state))
             _render_report_qa_igird_torsion_equation_trace(st.session_state)
             _render_report_qa_igird_combined_vt_equation_trace(st.session_state)
-            render_analysis_report_qa()
-        _render_runtime_diagnostics_expander()
-        return
-    render_page_header(
-        "Report / QA",
-        "Review stored analysis results, traceability, report readiness, limitations, and export QA without rerunning solvers.",
-        icon="QA",
-        kicker="Report workspace",
-        badge="Report readiness",
-        accent="blue",
-    )
-    render_metric_cards(_report_qa_dashboard_cards(st.session_state))
-    from concrete_pmm_pro.ui.igird_flexure_workspace import render_stored_scope_review
-    render_stored_scope_review(st.session_state)
-    if _results_is_crossbeam_workflow(st.session_state):
-        _render_report_qa_crossbeam_workspace(st.session_state)
-    else:
-        _render_report_qa_result_summary_alignment(st.session_state)
-        _render_report_qa_igird_shear_equation_trace(st.session_state)
-        from concrete_pmm_pro.ui.igird_uls_report import render_uls_report_charts
-        render_uls_report_charts(st.session_state,code_label=_results_design_code_label(st.session_state))
-        _render_report_qa_igird_torsion_equation_trace(st.session_state)
-        _render_report_qa_igird_combined_vt_equation_trace(st.session_state)
-        render_section_bar(
-            "Traceability / report tools",
-            "Report and QA tools summarize stored results only; PMM, SLS, ULS, and verification solvers are not rerun here.",
-            mark="Q",
-        )
-        render_analysis_report_qa()
+        else:
+            st.caption('Chapter calculations, stored source tables and figure registers are available in the report preview above and in the source-evidence download.')
     _render_runtime_diagnostics_expander()
 
 
@@ -5780,8 +5756,7 @@ def _compact_slab_chrome() -> bool:
 def _compact_igird_report_chrome() -> bool:
     from concrete_pmm_pro.ui.bg40_report import supports_complete_report
     return (st.session_state.get('_nav_active_workspace') == 'Report / QA'
-            and supports_complete_report(st.session_state)
-            and not _results_is_crossbeam_workflow(st.session_state))
+            and supports_complete_report(st.session_state))
 
 
 def main() -> None:

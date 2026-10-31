@@ -1,0 +1,15 @@
+{
+  "download_payload_sha256": "2fbeb8c08c610bd85ecfe6d01f4980fb8dd5b1d4b066293c3599d26a35c32c28",
+  "download_payload_matches_artifact": true,
+  "native_static_renderer": true,
+  "post_export_document_edits": false,
+  "content_selection_widgets": 0,
+  "figures": 6,
+  "native_equations": 43,
+  "tables": 34,
+  "chapters": 10,
+  "engineering_status": "FAIL",
+  "original_styles_and_theme_preserved": true,
+  "workflow": "building_beam",
+  "source_fixture": "building_beam.pkl"
+}

@@ -59,9 +59,14 @@ def _cell_text(cell, value, *, header=False):
     reference.cell_format(cell, header)
 
 
-def _column_groups(columns):
+def _column_groups(columns, repeat_columns=None):
     if len(columns) <= 7:
         return [columns]
+    if repeat_columns:
+        identity = [c for c in repeat_columns if c in columns][:3]
+        others = [c for c in columns if c not in identity]
+        size = max(2, 7-len(identity))
+        return [[*identity, *others[i:i+size]] for i in range(0,len(others),size)]
     # Repeat source identity when wider audit schemas need another panel.
     preferred = ['Case', 'Case Name', 'Stage', 'Girder', 'Group ID', 'ID', 'Parameter', 'Mat']
     identity = next((c for c in preferred if c in columns), columns[0])
@@ -72,7 +77,7 @@ def _column_groups(columns):
 def _table(doc, data, title, source):
     if data.empty:
         return
-    for panel, columns in enumerate(_column_groups(list(data.columns)), 1):
+    for panel, columns in enumerate(_column_groups(list(data.columns), data.attrs.get('report_repeat_columns')), 1):
         caption = title + (f' part {panel}' if len(data.columns) > 7 else '')
         p = _para(doc, caption, bold=True)
         p.paragraph_format.keep_with_next = True
@@ -197,9 +202,12 @@ def build_bg40_word_report(report: CalculationReport, state, *, include_figures=
             p.add_run().add_picture(BytesIO(data), width=section.page_width-section.left_margin-section.right_margin)
             title = _para(doc, f'Figure {number} {spec["title"]}')
             title.paragraph_format.keep_with_next = bool(presentation.caption)
-            if presentation.caption:
-                _para(doc, presentation.caption)
             meta = dict(figure.layout.meta or {})
+            if presentation.caption:
+                caption = _para(doc, presentation.caption)
+                if spec.get('kind') == 'workflow82' and meta.get('source_cases'):
+                    caption.paragraph_format.keep_together = True
+                    caption.paragraph_format.keep_with_next = bool(meta.get('source_cases'))
             item.update(status='EMBEDDED', context=meta, caption=presentation.caption)
             if meta.get('source_cases'):
                 _para(doc, '; '.join(f'{k}: {v}' for k,v in meta['source_cases'].items()))
@@ -222,19 +230,21 @@ def build_bg40_word_report(report: CalculationReport, state, *, include_figures=
     _para(doc, 'Design code: ' + report.code + ' | Report status: ' + report.status)
     if report.metadata.note:
         _para(doc, report.metadata.note)
-    doc.add_page_break()
+    if report.workflow_key == 'i_girder':
+        doc.add_page_break()
     reference.heading(doc, 'Governing Check Summary', 1)
-    _table(doc, report.controls, 'Stored ULS governing checks', 'All current stored members and cases')
+    _table(doc, report.controls, 'Stored governing checks', 'Stored Analysis cases and source acceptance gates')
     for warning in report.warnings:
         _para(doc, warning)
     for ch in report.chapters:
-        doc.add_page_break()
+        if report.workflow_key == 'i_girder':
+            doc.add_page_break()
         heading = reference.heading(doc, f'Chapter {ch.number} {ch.title}', 1)
         _bookmark(heading, ch.number)
         _para(doc, 'Chapter status: ' + ch.status, bold=True)
         for text in ch.notes:
             _para(doc, text)
-        if not ch.tables and not ch.calculations:
+        if not ch.tables and not ch.calculations and ch.status not in {'NOT APPLICABLE', 'SCOPE REVIEW'}:
             _para(doc, 'No current stored calculation is available for this chapter. Run the corresponding Analysis check before reporting its result.')
         for table in ch.tables:
             _table(doc, table.data, table.title, table.source)
@@ -261,7 +271,8 @@ def build_bg40_word_report(report: CalculationReport, state, *, include_figures=
                 if i not in emitted:
                     emit_figure(ch, i, spec)
     if include_appendices:
-        doc.add_page_break()
+        if report.workflow_key == 'i_girder':
+            doc.add_page_break()
         reference.heading(doc, 'Appendix A Source Register', 1)
         _para(doc, 'Complete row identities and full precision result tables are included in the companion evidence ZIP. The register below groups the imported files and worksheets.')
         cols = ['File', 'Sheet', 'Source SHA256', 'Coupling']
@@ -299,6 +310,8 @@ def build_evidence_zip(report, docx_bytes):
         archive.writestr('Governing_Checks.csv', report.controls.to_csv(index=False).encode('utf-8-sig'))
         archive.writestr('ProjectInputSnapshot.json', json.dumps(report.input_snapshot,
             ensure_ascii=False, indent=2))
+        if report.stored_results:
+            archive.writestr('StoredResultSnapshot.json', json.dumps(report.stored_results, ensure_ascii=False, indent=2, default=str))
         archive.writestr('Figure_Register.json', json.dumps(report.figure_audit,
             ensure_ascii=False, indent=2, default=str))
         # Extract the exact embedded images, retaining chapter/figure identity.
@@ -316,7 +329,7 @@ def build_evidence_zip(report, docx_bytes):
              'calculations': [asdict(x) for x in c.calculations]} for c in report.chapters],
             ensure_ascii=False, indent=2))
         archive.writestr('Provenance.json', json.dumps({'version': VERSION,
-            'layout_reference': REFERENCE, 'design_code': report.code,
+            'layout_reference': REFERENCE, 'design_code': report.code, 'workflow': report.workflow_key,
             'status': report.status, 'signature': report.signature,
             'warnings': report.warnings, 'solver_recalculation': False,
             'full_punching_acceptance': False}, ensure_ascii=False, indent=2))

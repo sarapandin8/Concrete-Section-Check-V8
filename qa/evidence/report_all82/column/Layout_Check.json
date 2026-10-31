@@ -1,0 +1,30 @@
+{
+  "pages": 21,
+  "outside_page_text": [],
+  "possible_blank_pages": [],
+  "sparse_pages_for_review": [],
+  "document_sha256": "bdbebef57189115facda06ce52a96584e658ab0773721fd6ba1a2882fc469cbd",
+  "pixel_hashes": {
+    "page-1.png": "5a594398dd962cd68b1e4421da5473fdf968556b734d34b2ab0c726e0dd21765",
+    "page-2.png": "9e9c50130f1c0d26919550a2ddba6fde7404010f11f02c07226430c3e6d92a4e",
+    "page-3.png": "fbc50fa3d6b315e1486ea214a215a5b063930d9a8411d0393f6cc66b95c7ad6b",
+    "page-4.png": "4dfbb490ab8a8394be990e620ee3ff2cdeb8f8b5a9cba4d88ddbefabf97c3e18",
+    "page-5.png": "165cf511a378907cbd95ce5440f4bc679191c9f29e22da316797090f1401275f",
+    "page-6.png": "daa9c298103cca5442773883216a225f2b87ea37decbcd80bf95a73977cff7f1",
+    "page-7.png": "4c5d11f376216615a1e944b03170d9648a4688f5438d3c383005db9b18a2a094",
+    "page-8.png": "6c5c982b81ccc358e6bd147d9f4a95b225802bb813ae68271e6a1925da973c3d",
+    "page-9.png": "faf8d231e7e2de47f97b2cee3ba0a45b478517f09c561d4e7c4edc6b50734284",
+    "page-10.png": "f057e34f2309850262e577967d45a69192d17fa63b1bd2b415a4af1a4167f043",
+    "page-11.png": "0cb601f856908072c9029bc0054c2c091db731e1e641ad6faab5ec8212ca40b7",
+    "page-12.png": "17715ebaf090f48b180f6888ec9a77012ea68014b38fdddc5fa615671e6875d5",
+    "page-13.png": "2a52264a0da176bd5ecb5c9d27e15f59c314d11131391e77d68b62255d8358c7",
+    "page-14.png": "5556ac5f0ed510f7fa571ecd1abcfe56c3e6aad9e6253ba6a397409f8b369f67",
+    "page-15.png": "7298cb6de3c0faa79485a658dc406f7c897be0b1c96e8182637e9a01bb81c310",
+    "page-16.png": "c51fdfd71494d57d76c8e301debd1f8ee613d1ddc288e9a602573c82b7987c4c",
+    "page-17.png": "6f10e72f813c41ac821267501d8173c40b3cf88ed31618ccefb7d0f87fb7a4de",
+    "page-18.png": "416a3385b9b0a0c98968b38aca196b634e68f122411f9206690d83bb6b248be0",
+    "page-19.png": "5ec3ba180549dd411bebb5fe9b9666ed5a89af61194f4c4ba8cb661e7e269e8e",
+    "page-20.png": "4480af04d9ae1ecc3b1bde2ae1b262e3aef6e4065227e079dce8db6b3453db6f",
+    "page-21.png": "02f7c28bc6ee05835c715aa0cffed91c6b540ba0bbbafd0b2215dd8ea0600afa"
+  }
+}

@@ -16,7 +16,8 @@ def test_report_qa_workspace_uses_result_summary_readiness_cards() -> None:
 
     assert "Report readiness" in body
     assert "_report_qa_dashboard_cards(st.session_state)" in body
-    assert "render_analysis_report_qa()" in body
+    assert "render_bg40_report(st.session_state)" in body
+    assert "render_analysis_report_qa()" not in body
     assert "render_report_qa_page()" not in body
     assert "Report / QA does not rerun PMM, ULS, SLS, or verification solvers." in SOURCE
 

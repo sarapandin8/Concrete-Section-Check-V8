@@ -1,0 +1,15 @@
+{
+  "download_payload_sha256": "f3ed9abe7dbd5a05bd7cf6184737d8407b29c9b393c24a294f5245891a50eef4",
+  "download_payload_matches_artifact": true,
+  "native_static_renderer": true,
+  "post_export_document_edits": false,
+  "content_selection_widgets": 0,
+  "figures": 58,
+  "native_equations": 219,
+  "tables": 79,
+  "chapters": 10,
+  "engineering_status": "FAIL",
+  "original_styles_and_theme_preserved": true,
+  "workflow": "i_girder",
+  "source_fixture": "i_girder.pkl"
+}

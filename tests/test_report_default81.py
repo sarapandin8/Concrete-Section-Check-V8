@@ -118,10 +118,10 @@ def test_plain_calculation_notes_are_not_misparsed_as_math(state, monkeypatch):
     assert 'Mu, Nu, Vu, Tu from one physical row/case' in '\n'.join(p.text for p in doc.paragraphs)
 
 
-def test_other_workflows_do_not_route_to_i_girder_report():
+def test_complete_export_is_available_for_every_workflow():
     assert supports_complete_report({'section_preset_key': 'parametric_i_girder'})
-    assert not supports_complete_report({'section_preset_key': 'railway_u_girder'})
-    assert not supports_complete_report({})
+    assert supports_complete_report({'section_preset_key': 'railway_u_girder'})
+    assert supports_complete_report({})
 
 
 def test_missing_source_labels_print_readably_without_editing_source_data(state):

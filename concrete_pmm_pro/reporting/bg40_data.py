@@ -15,7 +15,7 @@ import pandas as pd
 
 from .report_models import ReportMetadata
 
-VERSION = 'REPORT.DEFAULT81'
+VERSION = 'REPORT.ALL82'
 REFERENCE = 'BG40_Final_Complete_R10.docx'
 CHAPTERS = (
     'Design Criteria Design Loads and Load Combinations',
@@ -113,10 +113,16 @@ class CalculationReport:
     raw_tables: dict[str, pd.DataFrame] = field(default_factory=dict)
     input_snapshot: dict = field(default_factory=dict)
     figure_audit: list[dict] = field(default_factory=list)
+    workflow_key: str = 'i_girder'
+    workflow_label: str = 'Precast I-Girder'
+    stored_results: dict = field(default_factory=dict)
 
 
 def source_signature(state, metadata=None, include_figures=True, include_appendices=True):
     """Include inputs AND complete output cells; navigation cannot refresh an artifact."""
+    from .workflow_reports import workflow_key, universal_signature
+    if workflow_key(state) != 'i_girder':
+        return universal_signature(state, metadata, include_figures, include_appendices)
     keys = {'section_preset_key', 'section_geometry', 'section_parameters', 'section_dimensions',
             'concrete_material', 'concrete_materials', 'rebar_materials', 'prestress_materials',
             'rebars', 'prestress_elements', 'project_metadata', 'project_name',
@@ -506,6 +512,9 @@ def _vt_definitions():
 def build_report_figure(state, spec):
     """Reuse Analysis chart builders; no capacity/stress solver is called."""
     kind = spec['kind']
+    if kind == 'workflow82':
+        from .workflow_figures import build
+        return build(state, spec)
     if kind not in {'uls', 'stress', 'deflection', 'punching', 'section'}:
         from .bg40_figures import extra_figure
         return extra_figure(state, spec)

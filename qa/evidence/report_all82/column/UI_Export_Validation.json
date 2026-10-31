@@ -1,0 +1,15 @@
+{
+  "download_payload_sha256": "bdbebef57189115facda06ce52a96584e658ab0773721fd6ba1a2882fc469cbd",
+  "download_payload_matches_artifact": true,
+  "native_static_renderer": true,
+  "post_export_document_edits": false,
+  "content_selection_widgets": 0,
+  "figures": 5,
+  "native_equations": 32,
+  "tables": 33,
+  "chapters": 10,
+  "engineering_status": "REVIEW",
+  "original_styles_and_theme_preserved": true,
+  "workflow": "column",
+  "source_fixture": "column.pkl"
+}

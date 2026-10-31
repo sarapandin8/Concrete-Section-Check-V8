@@ -62,7 +62,8 @@ def update_header(doc, report):
     # Replace only the source project's identifying text.
     for section in doc.sections:
         for index, p in enumerate(section.header.paragraphs):
-            content = ('STRUCTURAL DESIGN CALCULATION \t\t   |  IG  |  Precast I-Girder'
+            tag = {'i_girder':'IG','column':'RC','building_beam':'BB','bridge_beam':'BG','railway_u':'UG','crossbeam':'CB'}.get(report.workflow_key,'RC')
+            content = (f'STRUCTURAL DESIGN CALCULATION \t\t   |  {tag}  |  {report.workflow_label}'
                        if index == 0 else '\t\t' + (report.metadata.project_name or 'Project name not recorded'))
             exemplar = next((deepcopy(r._r.rPr) for r in p.runs
                              if r.text.strip() and r._r.rPr is not None), None)

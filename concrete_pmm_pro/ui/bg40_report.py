@@ -7,17 +7,18 @@ import pandas as pd
 import streamlit as st
 
 from concrete_pmm_pro.reporting.bg40_data import (
-    build_calculation_report, build_report_figure, source_signature,
+    build_report_figure, source_signature,
 )
+from concrete_pmm_pro.reporting.workflow_reports import build_workflow_report, workflow_key, LABELS
 from concrete_pmm_pro.reporting.bg40_word import build_bg40_word_report, build_evidence_zip
 from concrete_pmm_pro.reporting.report_models import ReportMetadata
 
-ARTIFACT_KEY = '_bg40_report81_artifact'
-ERROR_KEY = '_bg40_report81_error'
+ARTIFACT_KEY = '_bg40_report82_artifact'
+ERROR_KEY = '_bg40_report82_error'
 
 
 def supports_complete_report(state):
-    return state.get('section_preset_key') == 'parametric_i_girder'
+    return workflow_key(state) in LABELS
 
 
 def _text(value, default=''):
@@ -57,7 +58,7 @@ def artifact_is_current(state, metadata, *, include_figures=True, include_append
 
 def build_complete_artifact(state, metadata, report=None):
     """The same full export is used by the UI, with no per-content switches."""
-    report = report or build_calculation_report(state, metadata)
+    report = report or build_workflow_report(state, metadata)
     docx = build_bg40_word_report(report, state, include_figures=True,
                                   include_appendices=True, require_all_figures=True)
     signature = source_signature(state, metadata)
@@ -124,7 +125,7 @@ def render(state):
     st.markdown('## Calculation Report')
     st.caption('BG40 R10 Word format · all chapters, equations, figures and source appendices included automatically.')
     metadata = _report_details(state)
-    report = build_calculation_report(state, metadata)
+    report = build_workflow_report(state, metadata)
     count = sum(len(c.figures) for c in report.chapters)
     st.caption(f'{len(report.chapters)} chapters · {count} figures · '
                f'{report.code} · Engineering status: {report.status}')

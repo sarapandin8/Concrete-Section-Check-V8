@@ -1,0 +1,15 @@
+{
+  "download_payload_sha256": "3c95fa4efc790025ff1099946c013e99aebfd322785782833d840295df39bb28",
+  "download_payload_matches_artifact": true,
+  "native_static_renderer": true,
+  "post_export_document_edits": false,
+  "content_selection_widgets": 0,
+  "figures": 11,
+  "native_equations": 12,
+  "tables": 72,
+  "chapters": 10,
+  "engineering_status": "FAIL",
+  "original_styles_and_theme_preserved": true,
+  "workflow": "crossbeam",
+  "source_fixture": "crossbeam_segmental.pkl"
+}
