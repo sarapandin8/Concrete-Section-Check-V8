@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from io import BytesIO
+from io import BytesIO, TextIOWrapper
 import json
+import posixpath
 import re
+from shutil import copyfileobj
 import textwrap
 from zipfile import ZipFile, ZIP_DEFLATED
 
@@ -14,9 +16,10 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Mm, Pt, RGBColor
+from lxml import etree
 
 from .bg40_data import CalculationReport, build_report_figure, display, source_signature, VERSION, REFERENCE
-from .figure_export import plotly_figure_to_png_bytes
+from .figure_export import plotly_figure_to_png_bytes, static_image_export_session
 from .bg40_print import prepare_print_figure
 from . import bg40_template as reference
 
@@ -163,7 +166,19 @@ def _bookmark(heading, number):
 
 
 def build_bg40_word_report(report: CalculationReport, state, *, include_figures=True,
-                          include_appendices=True, require_all_figures=True):
+                          include_appendices=True, require_all_figures=True, progress=None):
+    with static_image_export_session():
+        return _build_bg40_word_report(report, state, include_figures=include_figures,
+            include_appendices=include_appendices, require_all_figures=require_all_figures,
+            progress=progress)
+
+
+def _build_bg40_word_report(report, state, *, include_figures,
+                           include_appendices, require_all_figures, progress):
+    def notify(message, fraction):
+        if progress is not None:
+            progress(message, fraction)
+    notify('Checking stored report sources', .10)
     if report.signature != source_signature(state, report.metadata):
         raise ValueError('Report evidence is stale. Build the current report package before export.')
     doc = reference.document()
@@ -173,20 +188,30 @@ def build_bg40_word_report(report: CalculationReport, state, *, include_figures=
     doc.core_properties.author = report.metadata.prepared_by or ''
     report.figure_audit.clear()
     figure_counts = {}
+    total_figures = sum(len(ch.figures) for ch in report.chapters) if include_figures else 0
+
+    def unavailable(item, reason):
+        item['reason'] = reason
+        if require_all_figures:
+            raise ReportFigureError('1 required report figure(s) could not be embedded. '
+                f"Figure {item['number']} {item['title']}: {reason}")
+        _para(doc, 'Figure not embedded: ' + item['title'] + '. ' + reason)
+
     def emit_figure(chapter, index, spec):
         figure_counts[chapter.number] = figure_counts.get(chapter.number, 0) + 1
         number = f'{chapter.number}.{figure_counts[chapter.number]}'
         item = {'chapter': chapter.number, 'number': number,
                 'title': spec['title'], 'spec': spec, 'status': 'UNAVAILABLE'}
         report.figure_audit.append(item)
+        notify(f"Creating figure {len(report.figure_audit)}/{total_figures}: {spec['title']}",
+               .15 + .65 * (len(report.figure_audit)-1)/max(1,total_figures))
         try:
             figure = build_report_figure(state, spec)
         except (ValueError, TypeError, KeyError, ArithmeticError, AttributeError) as exc:
-            item['reason'] = str(exc)
-            _para(doc, 'Figure unavailable: ' + spec['title'] + '. ' + str(exc))
+            unavailable(item, str(exc))
             return
         if figure is None:
-            _para(doc, 'Figure unavailable for the current input context: ' + spec['title'])
+            unavailable(item, 'Source figure unavailable for the current input context')
             return
         presentation = prepare_print_figure(figure, spec)
         data, warnings = plotly_figure_to_png_bytes(presentation.figure, timeout_seconds=60.)
@@ -212,10 +237,11 @@ def build_bg40_word_report(report: CalculationReport, state, *, include_figures=
             if meta.get('source_cases'):
                 _para(doc, '; '.join(f'{k}: {v}' for k,v in meta['source_cases'].items()))
         else:
-            item['reason'] = ' '.join(warnings)
-            _para(doc, 'Figure not embedded: ' + spec['title'] + '. ' + ' '.join(warnings))
+            unavailable(item, ' '.join(warnings) or 'PNG renderer returned no image')
     _para(doc, 'TABLE OF CONTENTS', role='toc')
     for ch in report.chapters:
+        notify(f'Writing chapter {ch.number}: {ch.title}',
+               .15 + .65 * len(report.figure_audit)/max(1,total_figures))
         p = doc.add_paragraph()
         p.style = doc.styles['Heading 2']
         link = _xml(p._p, 'w:hyperlink', w__anchor=f'bg40_chapter_{ch.number}')
@@ -298,39 +324,88 @@ def build_bg40_word_report(report: CalculationReport, state, *, include_figures=
                          for f in missing)
         raise ReportFigureError(f'{len(missing)} required report figure(s) could not be embedded. {names}')
     output = BytesIO()
+    notify('Saving the complete Word document', .83)
     doc.save(output)
     return output.getvalue()
 
 
-def build_evidence_zip(report, docx_bytes):
+def _write_json(archive, name, value, **options):
+    with archive.open(name, 'w') as stream:
+        with TextIOWrapper(stream, encoding='utf-8', newline='') as text:
+            text.writelines(json.JSONEncoder(ensure_ascii=False, indent=2, **options).iterencode(value))
+
+
+def _write_csv(archive, name, data):
+    with archive.open(name, 'w') as stream:
+        with TextIOWrapper(stream, encoding='utf-8-sig', newline='') as text:
+            data.to_csv(text, index=False, chunksize=1000)
+
+
+def _embedded_image_paths(document):
+    """Read inline picture identities without constructing a second Word DOM."""
+    with document.open('word/_rels/document.xml.rels') as stream:
+        relations = etree.parse(stream)
+    targets = {node.get('Id'): posixpath.normpath(posixpath.join('word', node.get('Target')))
+               for node in relations.getroot()
+               if node.get('Target') and node.get('TargetMode') != 'External'}
+    inline_tag = '{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}inline'
+    blip_tag = '{http://schemas.openxmlformats.org/drawingml/2006/main}blip'
+    embed_key = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed'
+    with document.open('word/document.xml') as stream:
+        # Clear complete paragraphs/tables too; clearing only pictures would
+        # still accumulate all of the document's text and table nodes.
+        for _, node in etree.iterparse(stream, events=('end',)):
+            if node.tag == inline_tag:
+                blip = next(node.iter(blip_tag), None)
+                if blip is not None:
+                    yield targets[blip.get(embed_key)]
+            if node.tag in {inline_tag, qn('w:p'), qn('w:tr')}:
+                node.clear()
+                while node.getprevious() is not None:
+                    del node.getparent()[0]
+
+
+def build_evidence_zip(report, docx_bytes, *, progress=None):
+    def notify(message, fraction):
+        if progress is not None:
+            progress(message, fraction)
     output = BytesIO()
     with ZipFile(output, 'w', ZIP_DEFLATED) as archive:
+        notify('Packaging the Word report and source snapshots', 0.)
         archive.writestr('Calculation_Report_BG40.docx', docx_bytes)
-        archive.writestr('Source_Register.csv', report.sources.to_csv(index=False).encode('utf-8-sig'))
-        archive.writestr('Governing_Checks.csv', report.controls.to_csv(index=False).encode('utf-8-sig'))
-        archive.writestr('ProjectInputSnapshot.json', json.dumps(report.input_snapshot,
-            ensure_ascii=False, indent=2))
+        _write_csv(archive, 'Source_Register.csv', report.sources)
+        _write_csv(archive, 'Governing_Checks.csv', report.controls)
+        _write_json(archive, 'ProjectInputSnapshot.json', report.input_snapshot)
         if report.stored_results:
-            archive.writestr('StoredResultSnapshot.json', json.dumps(report.stored_results, ensure_ascii=False, indent=2, default=str))
-        archive.writestr('Figure_Register.json', json.dumps(report.figure_audit,
-            ensure_ascii=False, indent=2, default=str))
+            _write_json(archive, 'StoredResultSnapshot.json', report.stored_results, default=str)
+        _write_json(archive, 'Figure_Register.json', report.figure_audit, default=str)
         # Extract the exact embedded images, retaining chapter/figure identity.
-        document = Document(BytesIO(docx_bytes))
         embedded = [x for x in report.figure_audit if x['status'] == 'EMBEDDED']
-        for item, shape in zip(embedded, document.inline_shapes):
-            rel = shape._inline.graphic.graphicData.pic.blipFill.blip.embed
-            part = document.part.related_parts[rel]
-            archive.writestr('figures/Figure_' + item['number'].replace('.', '_') + '.png', part.blob)
+        notify('Copying the exact embedded report figures', .35)
+        with ZipFile(BytesIO(docx_bytes)) as document:
+            images = iter(_embedded_image_paths(document))
+            for item in embedded:
+                target = next(images, None)
+                if target is None:
+                    raise ValueError('Figure evidence does not match the complete Word report')
+                with document.open(target) as source, archive.open(
+                        'figures/Figure_' + item['number'].replace('.', '_') + '.png', 'w') as destination:
+                    copyfileobj(source, destination, length=65536)
+            if next(images, None) is not None:
+                raise ValueError('Word report contains an unregistered inline figure')
         for i, (name, data) in enumerate(report.raw_tables.items(), 1):
+            notify(f'Packaging source table {i}/{len(report.raw_tables)}',
+                   .45 + .45*(i-1)/max(1,len(report.raw_tables)))
             safe = re.sub(r'[^A-Za-z0-9_-]+', '_', name).strip('_')[:115]
-            archive.writestr(f'tables/{i:03d}_{safe}.csv', data.to_csv(index=False).encode('utf-8-sig'))
-        archive.writestr('Calculations.json', json.dumps([
+            _write_csv(archive, f'tables/{i:03d}_{safe}.csv', data)
+        _write_json(archive, 'Calculations.json', [
             {'chapter': c.number, 'title': c.title, 'status': c.status,
              'calculations': [asdict(x) for x in c.calculations]} for c in report.chapters],
-            ensure_ascii=False, indent=2))
-        archive.writestr('Provenance.json', json.dumps({'version': VERSION,
+            )
+        _write_json(archive, 'Provenance.json', {'version': VERSION,
             'layout_reference': REFERENCE, 'design_code': report.code, 'workflow': report.workflow_key,
             'status': report.status, 'signature': report.signature,
             'warnings': report.warnings, 'solver_recalculation': False,
-            'full_punching_acceptance': False}, ensure_ascii=False, indent=2))
+            'full_punching_acceptance': False})
+    notify('Source evidence package prepared', 1.)
     return output.getvalue()

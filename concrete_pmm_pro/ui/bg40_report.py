@@ -13,6 +13,7 @@ from concrete_pmm_pro.reporting.bg40_data import (
 from concrete_pmm_pro.reporting.workflow_reports import build_workflow_report, workflow_key, LABELS
 from concrete_pmm_pro.reporting.bg40_word import build_bg40_word_report, build_evidence_zip
 from concrete_pmm_pro.reporting.report_models import ReportMetadata
+from concrete_pmm_pro.reporting.figure_export import report_export_slot
 
 ARTIFACT_KEY = '_bg40_report82_artifact'
 ERROR_KEY = '_bg40_report82_error'
@@ -58,16 +59,24 @@ def artifact_is_current(state, metadata, *, include_figures=True, include_append
         state, metadata, include_figures, include_appendices))
 
 
-def build_complete_artifact(state, metadata, report=None):
+def build_complete_artifact(state, metadata, report=None, *, progress=None):
     """The same full export is used by the UI, with no per-content switches."""
-    report = report or build_workflow_report(state, metadata)
-    docx = build_bg40_word_report(report, state, include_figures=True,
-                                  include_appendices=True, require_all_figures=True)
-    signature = source_signature(state, metadata)
-    if signature != report.signature:
-        raise ValueError('Report inputs changed during export. Build the current report again.')
-    return {'signature': signature, 'docx': docx,
-            'evidence': build_evidence_zip(report, docx),
+    def notify(message, fraction):
+        if progress is not None:
+            progress(message, fraction)
+    with report_export_slot():
+        report = report or build_workflow_report(state, metadata)
+        docx = build_bg40_word_report(report, state, include_figures=True,
+            include_appendices=True, require_all_figures=True, progress=progress)
+        notify('Verifying that the stored results are still current', .86)
+        signature = source_signature(state, metadata)
+        if signature != report.signature:
+            raise ValueError('Report inputs changed during export. Build the current report again.')
+        evidence = build_evidence_zip(report, docx,
+            progress=lambda message, fraction: notify(message, .90+.09*fraction))
+        notify('Complete report ready to download', 1.)
+        return {'signature': signature, 'docx': docx,
+            'evidence': evidence,
             'figures': list(report.figure_audit), 'status': report.status,
             'chapters': len(report.chapters)}
 
@@ -155,15 +164,22 @@ def render(state):
         # retain a failed replacement as an apparently complete download.
         state.pop(ARTIFACT_KEY, None)
         current = False
+        progress_bar = st.progress(0., text='Preparing stored report sources…')
+        def progress(message, fraction):
+            LOGGER.info('Complete report export: %.0f%% %s', 100*fraction, message)
+            progress_bar.progress(float(fraction), text=message)
         try:
-            with st.spinner('Preparing the complete report and all figures…'):
+            with report_export_slot():
+                progress('Reading stored Analysis results', .02)
                 report = build_workflow_report(state, metadata)
-                state[ARTIFACT_KEY] = build_complete_artifact(state, metadata, report)
+                state[ARTIFACT_KEY] = build_complete_artifact(state, metadata, report, progress=progress)
             state.pop(ERROR_KEY, None)
             current = True
         except Exception as exc:
             LOGGER.exception('BG40 complete report export failed')
             state[ERROR_KEY] = str(exc)
+        finally:
+            progress_bar.empty()
     if state.get(ERROR_KEY):
         st.error('The complete report could not be created. Retry after resolving the export error below. '
                  'A report with missing figures is not offered as a complete download.')

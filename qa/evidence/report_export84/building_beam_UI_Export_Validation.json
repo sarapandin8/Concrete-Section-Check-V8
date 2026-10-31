@@ -1,0 +1,113 @@
+{
+  "download_payload_sha256": "74d618c76f73a96f9b0c0f2f57b5b7fb3bf757792d45b6d0bc77fcd5ac909d9c",
+  "download_payload_matches_artifact": true,
+  "native_static_renderer": true,
+  "post_export_document_edits": false,
+  "content_selection_widgets": 0,
+  "figures": 6,
+  "native_equations": 43,
+  "tables": 34,
+  "chapters": 10,
+  "engineering_status": "FAIL",
+  "original_styles_and_theme_preserved": true,
+  "workflow": "building_beam",
+  "source_fixture": "building_beam.pkl",
+  "runtime83": {
+    "runs": [
+      {
+        "seconds": 0.654,
+        "calls": {},
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      },
+      {
+        "seconds": 3.059,
+        "calls": {
+          "report_builds": 1,
+          "word_exports": 1,
+          "png_renders": 6
+        },
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.224,
+        "calls": {
+          "report_builds": 0,
+          "word_exports": 0,
+          "png_renders": 0
+        },
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.231,
+        "calls": {
+          "report_builds": 0,
+          "word_exports": 0,
+          "png_renders": 0
+        },
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.223,
+        "calls": {
+          "report_builds": 0,
+          "word_exports": 0,
+          "png_renders": 0
+        },
+        "plotly_charts": 0,
+        "dataframes": 0,
+        "exceptions": []
+      }
+    ],
+    "total_builds": {
+      "report_builds": 1,
+      "word_exports": 1,
+      "png_renders": 6
+    },
+    "parent_process_peak_rss_mib": 250.48,
+    "peak_scope": "Python app process only; native renderer children are excluded.",
+    "reopens_without_rebuild": 3
+  },
+  "export84": {
+    "runs": [
+      {
+        "seconds": 0.654,
+        "exceptions": []
+      },
+      {
+        "seconds": 3.058,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.224,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.231,
+        "exceptions": []
+      },
+      {
+        "seconds": 0.223,
+        "exceptions": []
+      }
+    ],
+    "counts": {
+      "complete_exports": 1,
+      "renderer_worker_starts": 1
+    },
+    "progress_events": 55,
+    "progress_reaches_complete": true,
+    "maximum_process_tree_rss_mib": 553.03,
+    "maximum_parent_rss_mib": 243.48,
+    "maximum_concurrent_child_processes": 8,
+    "live_descendants_after_export": 0,
+    "resource_scope": "Linux app process and all native descendants, sampled every 50 ms. Summed RSS double-counts shared pages; local observation, not a Cloud quota guarantee."
+  }
+}
