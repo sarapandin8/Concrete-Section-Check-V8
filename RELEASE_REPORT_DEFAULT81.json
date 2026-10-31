@@ -1,0 +1,54 @@
+{
+  "release": "REPORT.DEFAULT81",
+  "baseline": "REPORT.BG40.80",
+  "baseline_sha256": "7a37909cf6e2ae99c71925011a0f4c74bb894afda120dd92c0f26be1e0739f6b",
+  "targeted_and_regression_tests_passed": 218,
+  "changed": [
+    "README.md",
+    "app.py",
+    "concrete_pmm_pro/reporting/bg40_data.py",
+    "concrete_pmm_pro/reporting/bg40_word.py",
+    "concrete_pmm_pro/ui/analysis_page.py",
+    "concrete_pmm_pro/ui/bg40_report.py",
+    "tests/test_report_bg40_80.py"
+  ],
+  "added": [
+    "README_REPORT_DEFAULT81_TH.md",
+    "REPO_SUMMARY_REPORT_DEFAULT81.md",
+    "concrete_pmm_pro/reporting/bg40_print.py",
+    "qa/build_report_default81_sample.py",
+    "qa/evidence/report_default81/Layout_Check.json",
+    "qa/evidence/report_default81/UI_Export_Validation.json",
+    "qa/report_default81_ui_export.py",
+    "tests/test_report_default81.py"
+  ],
+  "unchanged_engineering_input_modules": 125,
+  "ui_export": {
+    "download_payload_sha256": "d1225d89ab4e3eeed76bc10042d7c928b184959f6ab82674d5b3f08947f9617d",
+    "download_payload_matches_artifact": true,
+    "native_static_renderer": true,
+    "post_export_document_edits": false,
+    "content_selection_widgets": 0,
+    "figures": 58,
+    "native_equations": 219,
+    "tables": 79,
+    "chapters": 10,
+    "engineering_status": "FAIL",
+    "original_styles_and_theme_preserved": true,
+    "source_fixture": "calculated_example.pkl"
+  },
+  "layout": {
+    "pages": 93,
+    "rendered_pages": 93,
+    "changed_pages": [
+      39,
+      41,
+      43,
+      45
+    ],
+    "issues": [],
+    "images_inspected_at_native_resolution": 93,
+    "visual_review": "All pages reviewed; unchanged page images matched by SHA256 after final edits",
+    "visual_review_status": "PASS"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "version": "REPORT.BG40.80",
+  "accepted_baseline_sha256": "b5002d7b02d5ecb9520a040ac9994a610299ae3d8ba88d40445ca9fafa0dba07",
+  "changed_original_files": [
+    "README.md",
+    "app.py"
+  ],
+  "engineering_modules_changed": false,
+  "tests_passed": 104,
+  "test_scope": "Targeted and related regression; not the entire application suite",
+  "word_rendered": true,
+  "word_figures": 34,
+  "native_template_styles_and_theme_preserved": true,
+  "native_page_setup_preserved": true,
+  "source_document_modified": false,
+  "punching_acceptance_not_upgraded": true,
+  "project_json_behavior_changed": false,
+  "browser_ui_validation": "Streamlit AppTest interaction; no live-browser screenshot available"
+}

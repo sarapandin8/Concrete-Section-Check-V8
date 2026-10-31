@@ -1,0 +1,14 @@
+{
+  "download_payload_sha256": "d1225d89ab4e3eeed76bc10042d7c928b184959f6ab82674d5b3f08947f9617d",
+  "download_payload_matches_artifact": true,
+  "native_static_renderer": true,
+  "post_export_document_edits": false,
+  "content_selection_widgets": 0,
+  "figures": 58,
+  "native_equations": 219,
+  "tables": 79,
+  "chapters": 10,
+  "engineering_status": "FAIL",
+  "original_styles_and_theme_preserved": true,
+  "source_fixture": "calculated_example.pkl"
+}

@@ -1,0 +1,14 @@
+{
+  "pages": 93,
+  "rendered_pages": 93,
+  "changed_pages": [
+    39,
+    41,
+    43,
+    45
+  ],
+  "issues": [],
+  "images_inspected_at_native_resolution": 93,
+  "visual_review": "All pages reviewed; unchanged page images matched by SHA256 after final edits",
+  "visual_review_status": "PASS"
+}

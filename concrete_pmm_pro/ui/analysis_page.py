@@ -25047,6 +25047,12 @@ def _render_pre_report_qa_expander() -> None:
             key="ui_keys1_analysis_page_download_button_15417",
         )
 
+        from concrete_pmm_pro.ui.bg40_report import supports_complete_report
+        if supports_complete_report(st.session_state):
+            st.caption('The complete BG40 Word report and source evidence are available at the top of Report / QA. '
+                       'All figures and source appendices are included automatically.')
+            return
+
         st.markdown("**Report Export Foundation**")
         st.info("Report manifest, draft outline, draft Word export, and Word report QA are available. PDF export remains future work.")
         _render_column_pier_vt_report_preview_panel()

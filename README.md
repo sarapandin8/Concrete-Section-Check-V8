@@ -1,4 +1,18 @@
-# SLAB.PUNCHLOCAL79 — actual-thickness local shear review
+# REPORT.DEFAULT81 — complete BG40 Word report by default
+
+I-girder Report / QA now starts with **Create complete Word report**, followed
+by **Download complete Word report (.docx)**. All available figures, editable
+equations, chapters and source appendices are included automatically. See
+[README_REPORT_DEFAULT81_TH.md](README_REPORT_DEFAULT81_TH.md) and
+[REPO_SUMMARY_REPORT_DEFAULT81.md](REPO_SUMMARY_REPORT_DEFAULT81.md).
+
+## Previous release REPORT.BG40.80
+
+Adds a calculation report in the supplied BG40 R10 format: nine main chapters plus deck reinforcement and punching review, editable Word equations, governing values, source evidence and current-result guards. Open **Report / QA → Structural Design Calculation Report → Build Calculation Report**.
+
+See [README_REPORT_BG40_80_TH.md](README_REPORT_BG40_80_TH.md) and [REPO_SUMMARY_REPORT_BG40_80.md](REPO_SUMMARY_REPORT_BG40_80.md). The accepted starting release is SLAB.PUNCHLOCAL79. No engineering equations or analysis algorithms changed. No Project JSON or result-persistence change.
+
+## SLAB.PUNCHLOCAL79 — actual-thickness local shear review
 
 Use each CSiBridge native corner's actual thickness for its local normal-shear D/C. The global minimum thickness is no longer substituted into resistance elsewhere. Charts, governing traces, Result Summary and read-only report exports use the same location-specific thickness and effective depth. No new engineering inputs are needed.
 

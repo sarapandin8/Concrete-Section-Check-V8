@@ -5203,6 +5203,24 @@ def _render_report_qa_igird_combined_vt_equation_trace(state: object) -> None:
 
 
 def render_report_qa_workspace() -> None:
+    from concrete_pmm_pro.ui.bg40_report import render as render_bg40_report, supports_complete_report
+    if supports_complete_report(st.session_state) and not _results_is_crossbeam_workflow(st.session_state):
+        # Complete export is the primary task; detailed QA stays optional.
+        render_bg40_report(st.session_state)
+        with st.expander('Engineering review and required actions', expanded=False):
+            render_metric_cards(_report_qa_dashboard_cards(st.session_state))
+            from concrete_pmm_pro.ui.igird_flexure_workspace import render_stored_scope_review
+            render_stored_scope_review(st.session_state)
+            _render_report_qa_result_summary_alignment(st.session_state)
+        with st.expander('Calculation traces and export QA', expanded=False):
+            _render_report_qa_igird_shear_equation_trace(st.session_state)
+            from concrete_pmm_pro.ui.igird_uls_report import render_uls_report_charts
+            render_uls_report_charts(st.session_state, code_label=_results_design_code_label(st.session_state))
+            _render_report_qa_igird_torsion_equation_trace(st.session_state)
+            _render_report_qa_igird_combined_vt_equation_trace(st.session_state)
+            render_analysis_report_qa()
+        _render_runtime_diagnostics_expander()
+        return
     render_page_header(
         "Report / QA",
         "Review stored analysis results, traceability, report readiness, limitations, and export QA without rerunning solvers.",
@@ -5759,6 +5777,13 @@ def _compact_slab_chrome() -> bool:
         or (workspace == "Analysis" and st.session_state.get("_nav_analysis_subpage") == "Slab Reinforcement"))
 
 
+def _compact_igird_report_chrome() -> bool:
+    from concrete_pmm_pro.ui.bg40_report import supports_complete_report
+    return (st.session_state.get('_nav_active_workspace') == 'Report / QA'
+            and supports_complete_report(st.session_state)
+            and not _results_is_crossbeam_workflow(st.session_state))
+
+
 def main() -> None:
     st.set_page_config(page_title="Concrete Section Pro", layout="wide", initial_sidebar_state="expanded")
     _render_global_commercial_tab_styles()
@@ -5767,7 +5792,8 @@ def main() -> None:
     # the premium app shell below carries the visible commercial header.
     compact_sls = _compact_igird_sls_chrome()
     compact_slab = _compact_slab_chrome()
-    if not (compact_sls or compact_slab):
+    compact_report = _compact_igird_report_chrome()
+    if not (compact_sls or compact_slab or compact_report):
         st.title("Concrete Section Pro")
         st.caption(
             "Concrete section analysis and design-review workspace. "
@@ -5786,7 +5812,7 @@ def main() -> None:
     sidebar_status_slot = _render_commercial_sidebar(str(st.session_state.get("_nav_active_workspace", "Setup")))
     if compact_sls:
         active_workspace = 'Analysis'
-    elif compact_slab:
+    elif compact_slab or compact_report:
         active_workspace = str(st.session_state['_nav_active_workspace'])
     else:
         _render_commercial_brand_header(str(st.session_state.get("_nav_active_workspace", "Setup")))
