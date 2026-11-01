@@ -195,15 +195,15 @@ def _bookmark(heading, number):
 
 
 def build_bg40_word_report(report: CalculationReport, state, *, include_figures=True,
-                          include_appendices=True, require_all_figures=True, progress=None):
+                          include_appendices=True, require_all_figures=True, progress=None, compact=False):
     with static_image_export_session():
         return _build_bg40_word_report(report, state, include_figures=include_figures,
             include_appendices=include_appendices, require_all_figures=require_all_figures,
-            progress=progress)
+            progress=progress, compact=compact)
 
 
 def _build_bg40_word_report(report, state, *, include_figures,
-                           include_appendices, require_all_figures, progress):
+                           include_appendices, require_all_figures, progress, compact=False):
     def notify(message, fraction):
         if progress is not None:
             progress(message, fraction)
@@ -244,7 +244,7 @@ def _build_bg40_word_report(report, state, *, include_figures,
             if figure is None:
                 unavailable(item, 'Source figure unavailable for the current input context')
                 return
-            presentation = prepare_print_figure(figure, spec)
+            presentation = prepare_print_figure(figure, spec, compact=compact)
             data, warnings = plotly_figure_to_png_bytes(presentation.figure, timeout_seconds=60.)
             if data:
                 p = doc.add_paragraph()
@@ -271,6 +271,34 @@ def _build_bg40_word_report(report, state, *, include_figures,
                     _para(doc, '; '.join(f'{k}: {v}' for k,v in meta['source_cases'].items()))
             else:
                 unavailable(item, ' '.join(warnings) or 'PNG renderer returned no image')
+        def heading(text, level=1):
+            p = reference.heading(doc, text, level)
+            if compact and level == 1:
+                p.paragraph_format.page_break_before = False
+                p.paragraph_format.space_before = Pt(12)
+                p.paragraph_format.keep_with_next = True
+            return p
+
+        def emit_table(data, title, source):
+            if not compact:
+                _table(doc, data, title, source)
+                return
+            from .compact_report import compact_rows, grouped_bar_trace, is_parameter_table
+            if is_parameter_table(data):
+                p = _para(doc, title, bold=True)
+                p.paragraph_format.keep_with_next = True
+                # All values retained, without a two-column table for every trace.
+                for start in range(0, len(data), 3):
+                    _para(doc, '; '.join(f'{row[0]} = {display(row[1])}'
+                        for row in data.iloc[start:start+3].itertuples(index=False, name=None)))
+                if source:
+                    _para(doc, 'Source: ' + source)
+                return
+            data, note = compact_rows(grouped_bar_trace(data))
+            _table(doc, data, title, source)
+            if note:
+                _para(doc, note)
+
         _para(doc, 'TABLE OF CONTENTS', role='toc')
         for ch in report.chapters:
             p = doc.add_paragraph()
@@ -285,28 +313,32 @@ def _build_bg40_word_report(report, state, *, include_figures,
         _para(doc, f"Revision {report.metadata.revision} | {report.metadata.report_date or 'Date not recorded'}")
         _para(doc, f"Prepared by: {report.metadata.prepared_by or 'Not recorded'} | Checked by: {report.metadata.checked_by or 'Not recorded'}")
         _para(doc, 'Design code: ' + report.code + ' | Report status: ' + report.status)
+        if compact:
+            _para(doc, 'Compact calculation report: all chapter calculations and available figures are retained. Long result tables show governing source rows with coverage counts; full source records can be downloaded separately.')
         if report.metadata.note:
             _para(doc, report.metadata.note)
-        if report.workflow_key == 'i_girder':
+        if report.workflow_key == 'i_girder' and not compact:
             doc.add_page_break()
-        reference.heading(doc, 'Governing Check Summary', 1)
-        _table(doc, report.controls, 'Stored governing checks', 'Stored Analysis cases and source acceptance gates')
+        heading('Governing Check Summary', 1)
+        emit_table(report.controls, 'Stored governing checks', 'Stored Analysis cases and source acceptance gates')
         for warning in report.warnings:
             _para(doc, warning)
         for ch in report.chapters:
             notify(f'Writing chapter {ch.number}: {ch.title}',
                    .15 + .65 * len(report.figure_audit)/max(1,total_figures))
-            if report.workflow_key == 'i_girder':
+            if report.workflow_key == 'i_girder' and not compact:
                 doc.add_page_break()
-            heading = reference.heading(doc, f'Chapter {ch.number} {ch.title}', 1)
-            _bookmark(heading, ch.number)
-            _para(doc, 'Chapter status: ' + ch.status, bold=True)
+            chapter_heading = heading(f'Chapter {ch.number} {ch.title}', 1)
+            _bookmark(chapter_heading, ch.number)
+            status_paragraph = _para(doc, 'Chapter status: ' + ch.status, bold=True)
+            if compact:
+                status_paragraph.paragraph_format.keep_with_next = True
             for text in ch.notes:
                 _para(doc, text)
             if not ch.tables and not ch.calculations and ch.status not in {'NOT APPLICABLE', 'SCOPE REVIEW'}:
                 _para(doc, 'No current stored calculation is available for this chapter. Run the corresponding Analysis check before reporting its result.')
             for table in ch.tables:
-                _table(doc, table.data, table.title, table.source)
+                emit_table(table.data, table.title, table.source)
             if ch.calculations:
                 reference.heading(doc, f'{ch.number} Calculation Details', 2)
             emitted = set()
@@ -330,21 +362,21 @@ def _build_bg40_word_report(report, state, *, include_figures,
                     if i not in emitted:
                         emit_figure(ch, i, spec)
         if include_appendices:
-            if report.workflow_key == 'i_girder':
+            if report.workflow_key == 'i_girder' and not compact:
                 doc.add_page_break()
-            reference.heading(doc, 'Appendix A Source Register', 1)
-            _para(doc, 'Complete row identities and full precision result tables are included in the companion evidence ZIP. The register below groups the imported files and worksheets.')
+            heading('Appendix A Source Register', 1)
+            _para(doc, 'Complete row identities and full precision result tables are available through the optional source evidence download. The register below groups the imported files and worksheets.')
             cols = ['File', 'Sheet', 'Source SHA256', 'Coupling']
             if not report.sources.empty:
                 _table(doc, report.sources[cols].drop_duplicates(), 'Imported source files', 'Original import metadata')
             else:
                 _para(doc, 'No imported source identity is recorded. Input values require source-document review.')
-            reference.heading(doc, 'Appendix B Calculation Provenance', 1)
+            heading('Appendix B Calculation Provenance', 1)
             _para(doc, 'Layout reference: ' + REFERENCE)
             _para(doc, 'Report version: ' + VERSION)
             _para(doc, 'Stored result signature: ' + report.signature)
             _para(doc, 'Design code references and project criteria are shown beside the actual stored calculations. Reference example values have not been copied into the design.')
-            if report.figure_audit:
+            if report.figure_audit and not compact:
                 import pandas as pd
                 reference.heading(doc, 'Appendix C Figure Register', 1)
                 _table(doc, pd.DataFrame([{'Figure':f['number'],'Title':f['title'],

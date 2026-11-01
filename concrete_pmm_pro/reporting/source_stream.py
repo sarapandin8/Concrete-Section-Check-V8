@@ -26,17 +26,17 @@ def preparation_progress(callback):
         _PROGRESS.reset(token)
 
 
-def checkpoint(message=None, fraction=None):
+def checkpoint(message=None, fraction=None, *, throttle=False):
     context = _PROGRESS.get()
     if context is None or context[0] is None:
         return
     now = monotonic()
-    if message is None and now-context[1] < 1.:
-        return
     if message is not None:
         context[2] = message
     if fraction is not None:
         context[3] = fraction
+    if (message is None or throttle) and now-context[1] < 1.:
+        return
     context[1] = now
     context[0](context[2], context[3])
 

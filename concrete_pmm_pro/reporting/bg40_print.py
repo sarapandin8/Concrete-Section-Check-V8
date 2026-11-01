@@ -28,7 +28,7 @@ def _plain_note(value):
     return re.sub(r'\bNone\b|\bnan\b|<NA>', 'Not available', text)
 
 
-def prepare_print_figure(figure, spec):
+def prepare_print_figure(figure, spec, *, compact=False):
     """Return an independent print layout without changing the source figure."""
     printed = go.Figure(deepcopy(figure.to_dict()))
     caption = str(spec.get('caption') or '').strip()
@@ -125,4 +125,23 @@ def prepare_print_figure(figure, spec):
                     'xanchor':'center','entrywidth':440,'entrywidthmode':'pixels'})
         printed.update_xaxes(tickfont_size=20,title_font_size=22,automargin=True)
         printed.update_yaxes(tickfont_size=20,title_font_size=22,automargin=True)
+    if compact and kind in {'deflection','slab_plan','slab_profile','punching_perimeters','punching'}:
+        # Two legible full-width plots per A4 page instead of a half-empty page
+        # per plot. Axis ranges, source values and geometry stay untouched.
+        notes, retained = [], []
+        for annotation in printed.layout.annotations:
+            if (annotation.yref == 'paper' and annotation.y is not None
+                    and (annotation.y < 0 or (annotation.y == 0 and (annotation.yshift or 0) < 0))):
+                notes.append(_plain_note(annotation.text))
+            else:
+                retained.append(annotation)
+        printed.layout.annotations = tuple(retained)
+        caption = ' '.join([caption, *notes]).strip()
+        printed.update_layout(width=1200, height=580, font={'size':22},
+            title={'font':{'size':24}}, margin={'l':105,'r':90,'t':100,'b':160},
+            legend={'font':{'size':19},'orientation':'h','y':-.20,
+                    'x':.5,'xanchor':'center','yanchor':'top','yref':'paper','xref':'paper',
+                    'entrywidth':440,'entrywidthmode':'pixels'})
+        printed.update_xaxes(tickfont_size=20, title_font_size=22, automargin=True)
+        printed.update_yaxes(tickfont_size=20, title_font_size=22, automargin=True)
     return PrintFigure(printed, caption)

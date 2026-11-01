@@ -15,8 +15,9 @@ import pandas as pd
 
 from .report_models import ReportMetadata
 from .source_stream import plain_view, checkpoint
+from .source_digest import source_digest
 
-VERSION = 'REPORT.ALL82'
+VERSION = 'REPORT.COMPACT87'
 REFERENCE = 'BG40_Final_Complete_R10.docx'
 CHAPTERS = (
     'Design Criteria Design Loads and Load Combinations',
@@ -173,7 +174,7 @@ def source_signature(state, metadata=None, include_figures=True, include_appendi
             body[name + '_input_binding'] = engine.fingerprint(state)
         except (ValueError, TypeError, KeyError) as exc:
             body[name + '_input_binding'] = type(exc).__name__ + ': ' + str(exc)
-    return _json_signature(plain_view(body))
+    return source_digest(body)
 
 
 def _status(values):

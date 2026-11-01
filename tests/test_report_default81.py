@@ -86,7 +86,7 @@ def test_complete_default_includes_every_available_figure_equation_and_appendix(
     with patch.object(mr, 'calculate_member', side_effect=AssertionError('No report solve')), \
          patch.object(ap, '_beam_uls_calculate_selected_check', side_effect=AssertionError('No report solve')), \
          patch.object(ap, '_girder_full_length_sls_stage_rows', side_effect=AssertionError('No report stress solve')):
-        artifact = build_complete_artifact(state, metadata, report)
+        artifact = build_complete_artifact(state, metadata, report, compact=False, include_evidence=True)
     doc = Document(BytesIO(artifact['docx']))
     assert len(doc.inline_shapes) == sum(len(c.figures) for c in report.chapters) > 0
     assert doc._element.xpath('.//m:oMath')

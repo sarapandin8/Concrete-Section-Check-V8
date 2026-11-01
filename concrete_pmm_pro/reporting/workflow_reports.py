@@ -12,6 +12,7 @@ import pandas as pd
 from .bg40_data import Calculation, CalculationReport, Chapter, display, fields_table, plain, _status, _source_rows, _json_signature
 from .report_models import ReportMetadata
 from .source_stream import plain_view, checkpoint
+from .source_digest import source_digest
 
 VERSION = 'REPORT.ALL82'
 LABELS = {'i_girder':'Precast I-Girder', 'column':'Column Pier Wall Pylon',
@@ -104,7 +105,7 @@ def universal_signature(state,metadata=None,include_figures=True,include_appendi
         'metadata':metadata,'figures':include_figures,'appendices':include_appendices,
         'inputs':input_snapshot(state),'bindings':{k:state.get(k) for k in bindings},
         'results':{k:obj(v) for k,v in stored_sources(state).items()}}
-    return _json_signature(plain_view(payload),default=str)
+    return source_digest(payload)
 
 
 def currency(state):

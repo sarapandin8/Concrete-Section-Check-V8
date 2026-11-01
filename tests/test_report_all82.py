@@ -60,7 +60,7 @@ def test_complete_word_preserves_template_equations_source_gates_and_all_figures
     monkeypatch.setattr('concrete_pmm_pro.reporting.bg40_word.plotly_figure_to_png_bytes',lambda *a,**k:(_one_pixel_png(),[]))
     before=source_signature(state,meta); binding=state[LAST_ANALYSIS_HASH_KEY]
     with no_solvers():
-        report=build_workflow_report(state,meta); artifact=build_complete_artifact(state,meta,report)
+        report=build_workflow_report(state,meta); artifact=build_complete_artifact(state,meta,report,compact=False,include_evidence=True)
     assert source_signature(state,meta)==before and state[LAST_ANALYSIS_HASH_KEY]==binding
     doc=Document(BytesIO(artifact['docx']))
     assert len(doc.inline_shapes)==sum(len(c.figures) for c in report.chapters)>0

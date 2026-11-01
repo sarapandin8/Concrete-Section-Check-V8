@@ -72,25 +72,25 @@ def artifact_is_current(state, metadata, *, include_figures=True, include_append
         state, metadata, include_figures, include_appendices))
 
 
-def build_complete_artifact(state, metadata, report=None, *, progress=None):
+def build_complete_artifact(state, metadata, report=None, *, progress=None, compact=True, include_evidence=False):
     """The same full export is used by the UI, with no per-content switches."""
     def notify(message, fraction):
         checkpoint(message, fraction)
     with report_export_slot(), preparation_progress(progress):
         report = report or build_workflow_report(state, metadata)
         docx = build_bg40_word_report(report, state, include_figures=True,
-            include_appendices=True, require_all_figures=True, progress=notify)
+            include_appendices=True, require_all_figures=True, progress=notify, compact=compact)
         notify('Verifying that the stored results are still current', .86)
         signature = source_signature(state, metadata)
         if signature != report.signature:
             raise ValueError('Report inputs changed during export. Build the current report again.')
-        evidence = build_evidence_zip(report, docx,
-            progress=lambda message, fraction: notify(message, .90+.09*fraction))
+        evidence = (build_evidence_zip(report, docx,
+            progress=lambda message, fraction: notify(message, .90+.09*fraction)) if include_evidence else None)
         notify('Complete report ready to download', 1.)
         return {'signature': signature, 'docx': docx,
             'evidence': evidence,
             'figures': list(report.figure_audit), 'status': report.status,
-            'chapters': len(report.chapters)}
+            'chapters': len(report.chapters), 'compact': compact}
 
 
 def _report_details(state):
@@ -119,7 +119,7 @@ def _render_preview(report, state, metadata):
             LOGGER.exception('BG40 report preview failed')
             st.error('Report preview could not be loaded: ' + str(exc))
             return
-        st.caption('Every available chapter, calculation, figure and source appendix is included automatically.')
+        st.caption('The Word report includes all calculations and figures. Long tables are summarized; full rows remain available in source evidence.')
         if report.warnings:
             for warning in report.warnings:
                 st.warning(warning)
@@ -136,7 +136,7 @@ def _render_preview(report, state, metadata):
             st.markdown('**' + table.title + '**')
             st.caption('Source: ' + table.source)
             if len(table.data) > 200:
-                st.caption(f'Preview: first 200 of {len(table.data):,} rows. The complete Word report and source evidence retain all rows.')
+                st.caption(f'Preview: first 200 of {len(table.data):,} rows. Source evidence retains all rows; Word shows governing results.')
             st.dataframe(table.data.head(200), hide_index=True, width='stretch')
         for calc in chapter.calculations:
             st.markdown('**' + calc.title + '**')
@@ -158,7 +158,7 @@ def render(state):
     if not supports_complete_report(state):
         return
     st.markdown('## Calculation Report')
-    st.caption('BG40 R10 Word format · all chapters, equations, figures and source appendices included automatically. · ' + RELEASE)
+    st.caption('BG40 R10 Word format · compact report with all equations, calculations and figures. · ' + RELEASE)
     metadata = _report_details(state)
     st.caption('Stored Analysis results are checked when creating the report. Opening this page does not build the document or its charts.')
     st.warning('Report export does not confirm engineering acceptance. FAIL, REVIEW, STALE, missing checks and source scope limitations are retained; missing checks are not calculated here.')
@@ -169,7 +169,7 @@ def render(state):
         LOGGER.exception('BG40 report currency check failed')
         state[ERROR_KEY] = str(exc)
         current = False
-    label = 'Rebuild complete Word report' if current else 'Create complete Word report'
+    label = 'Rebuild Word report' if current else 'Create Word report'
     if st.button(label, type='secondary' if current else 'primary',
                  width='stretch', key='bg40_80_build'):
         # Release the previous export before allocating a replacement. Never
@@ -210,16 +210,32 @@ def render(state):
                 st.json(state[DIAGNOSTICS_KEY])
     if current:
         saved = state[ARTIFACT_KEY]
-        st.download_button('Download complete Word report (.docx)', saved['docx'],
+        st.download_button('Download Word report (.docx)', saved['docx'],
             file_name='Concrete_Section_Pro_Calculation_Report_BG40.docx',
             mime='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             key='bg40_80_download', type='primary', width='stretch', on_click='ignore')
-        st.caption(f"Complete Word file prepared · {len(saved['figures'])} figures embedded · BG40 R10 layout.")
+        st.caption(f"Compact Word file prepared · {len(saved['figures'])} figures embedded · BG40 R10 layout.")
         st.caption('Engineering status: ' + saved['status'])
         with st.expander('Additional download — source evidence', expanded=False):
-            st.download_button('Download report and source evidence (.zip)', saved['evidence'],
-                file_name='Concrete_Section_Pro_Report_Evidence_BG40.zip',
-                mime='application/zip', key='bg40_80_evidence', width='stretch', on_click='ignore')
+            st.caption('Optional full source tables and audit data. The Word report is already ready.')
+            if saved.get('evidence') is None and st.button('Prepare source evidence', key='bg40_87_prepare_evidence'):
+                try:
+                    with st.spinner('Preparing full source evidence…'), report_export_slot():
+                        evidence_report = build_workflow_report(state, metadata)
+                        if evidence_report.signature != saved['signature']:
+                            raise ValueError('Source changed. Create the current Word report first.')
+                        evidence_report.figure_audit = saved['figures']
+                        evidence = build_evidence_zip(evidence_report, saved['docx'])
+                        if source_signature(state, metadata) != saved['signature']:
+                            raise ValueError('Source changed during evidence export. Rebuild the report.')
+                        saved['evidence'] = evidence
+                except Exception as exc:
+                    LOGGER.exception('Source evidence export failed')
+                    st.error('Source evidence could not be prepared: ' + str(exc))
+            if saved.get('evidence') is not None:
+                st.download_button('Download report and source evidence (.zip)', saved['evidence'],
+                    file_name='Concrete_Section_Pro_Report_Evidence_BG40.zip',
+                    mime='application/zip', key='bg40_80_evidence', width='stretch', on_click='ignore')
     elif state.get(ARTIFACT_KEY):
         st.warning('STALE — report inputs, stored results or report details changed. Create the complete Word report again before downloading.')
     _render_preview(report, state, metadata)
